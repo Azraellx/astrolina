@@ -1,0 +1,211 @@
+.import-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 40px);
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.import-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.import-modal header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.import-modal .close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.import-modal .close:hover {
+  color: var(--text-strong);
+}
+
+.import-intro {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.import-textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--text-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.import-textarea:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.import-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.import-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  border: 1px dashed rgba(var(--tint), 0.25);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.02);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.import-dropzone:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: var(--text-strong);
+}
+
+.import-dropzone.over {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--text-strong);
+}
+
+.import-dropzone strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.import-file-error {
+  margin: -6px 0 0 0;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.import-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.import-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(var(--tint), 0.05);
+}
+
+.import-list li:last-child {
+  border-bottom: none;
+}
+
+.import-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.import-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.import-errors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.import-errors li {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.import-modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.import-modal button.secondary,
+.import-modal button.primary {
+  padding: 7px 14px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.import-modal button.secondary {
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.14);
+  color: var(--text-muted);
+}
+
+.import-modal button.secondary:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.24);
+}
+
+.import-modal button.primary {
+  background: rgba(var(--accent-rgb), 0.92);
+  border: 1px solid transparent;
+  color: #0a0a0f;
+  font-weight: 600;
+}
+
+.import-modal button.primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.import-modal button.primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

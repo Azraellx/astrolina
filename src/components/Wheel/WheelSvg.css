@@ -64,7 +64,25 @@
 
 .wheel-svg .angle-degree-lg {
   fill: var(--text);
-  font-size: 11px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-planet degree · sign · minute readout inside the planet ring. */
+.wheel-svg .planet-readout {
+  color: var(--text-dim);
+}
+
+.wheel-svg .readout-deg {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.wheel-svg .readout-min {
+  fill: var(--text-muted);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 

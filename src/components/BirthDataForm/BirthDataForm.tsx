@@ -8,6 +8,8 @@ interface BirthDataFormProps {
   initial?: StoredChart | null;
   onSubmit: (chart: StoredChart) => void;
   onCancel: () => void;
+  /** Opens the import flow; only shown when creating (not editing). */
+  onImport?: () => void;
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -103,6 +105,7 @@ export function BirthDataForm({
   initial,
   onSubmit,
   onCancel,
+  onImport,
 }: BirthDataFormProps) {
   const now = new Date();
   const [name, setName] = useState(initial?.name ?? '');
@@ -340,12 +343,21 @@ export function BirthDataForm({
         {error && <p className="form-error">{error}</p>}
 
         <footer>
-          <button type="button" className="secondary" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="submit" className="primary">
-            {initial ? 'Save' : 'Create chart'}
-          </button>
+          <div className="footer-left">
+            {onImport && !initial && (
+              <button type="button" className="secondary" onClick={onImport}>
+                Import
+              </button>
+            )}
+          </div>
+          <div className="footer-actions">
+            <button type="button" className="secondary" onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="submit" className="primary">
+              {initial ? 'Save' : 'Create chart'}
+            </button>
+          </div>
         </footer>
       </form>
     </div>

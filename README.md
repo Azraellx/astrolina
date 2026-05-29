@@ -1,73 +1,105 @@
-# React + TypeScript + Vite
+# Astrocartography
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web-based astrocartography tool for practicing astrologers. Plot a natal
+chart's planetary lines on an interactive world map, drag to relocate, and read
+the relocated chart wheel inline — on any device, no install.
 
-Currently, two official plugins are available:
+Runs entirely in the browser (ephemeris included), deployed as a static site on
+Cloudflare Pages with a single edge function for geocoding.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- **Astrocartography lines** — MC / IC / ASC / DSC for the ten classical
+  planets, color-coded per planet, dashed per angle.
+- **Parans** (meridian × horizon) and **local-space** lines, toggleable.
+- **Live relocation** — hover or pin anywhere on the map; the relocated angles
+  and chart wheel update in real time. Pin your natal location, or recenter the
+  map on the active pin.
+- **Relocated chart wheel** — a compact wheel beside the map, plus an expandable
+  detailed view with an Advanced mode that draws each planet's
+  degree · sign · minute readout and the aspect grid.
+- **Chart library** — store multiple charts (localStorage), switch between them,
+  edit, and delete.
+- **Birthplace geocoding + timezone resolution** — search any place
+  (OpenStreetMap), with historical-DST handling and an "uncertain" flag for
+  pre-1970 births outside US/Europe.
+- **Import** — paste an AstroDataBank-style text block or a comma-delimited
+  export, or drop a `.txt` / `.csv`, to add charts in bulk.
+- **Light / dark basemap** themes.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech stack
 
-## Expanding the ESLint configuration
+- **Vite + React + TypeScript**
+- **MapLibre GL** with **Protomaps** vector basemaps (`.pmtiles`)
+- **astronomia** (Moshier ephemeris) for planetary positions — client-side
+- **tz-lookup** + **luxon** for timezone/offset resolution
+- **Cloudflare Pages** hosting; one **Pages Function** (`/api/geocode`) proxies
+  and edge-caches OpenStreetMap's Nominatim
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Getting started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Requires Node 20.19+ or 22.12+.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev        # Vite dev server (http://localhost:5173)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+In dev, `/api/geocode` is served by a Vite middleware (see `vite.config.ts`) so
+the search box works the same as in production.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Build & preview
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build      # tsc -b + vite build  → dist/
+npm run preview    # preview the built static site (no functions)
 ```
+
+To preview exactly as Cloudflare serves it — static assets **and** the
+`functions/` directory — use Wrangler:
+
+```bash
+npm run build
+npx wrangler pages dev dist     # serves dist/ + runs /api/geocode for real
+```
+
+### Deploy
+
+```bash
+npm run deploy     # npm run build && wrangler pages deploy dist --project-name astrolina
+```
+
+`wrangler pages deploy` automatically discovers the `functions/` directory at
+the project root and bundles it with the upload — no separate Worker deploy is
+needed. The deploy output should mention compiling/uploading a Functions bundle.
+
+## Project layout
+
+```
+src/
+  components/        UI (Map, Sidebar, ChartWheel, ExpandedChartSidebar,
+                     BirthDataForm, ImportChartModal, …)
+  lib/
+    ephemeris.ts     planetary positions, angles, relocation
+    astro/           lines, parans, local-space generation
+    atlas/           geocode (client) + timezone resolution
+    chartLibrary.ts  localStorage-backed chart store
+    importCharts.ts  text-block / CSV import parser
+    theme.ts         basemap themes
+functions/
+  api/geocode.ts     Cloudflare Pages Function: cached Nominatim proxy
+  _shared/           server-side fetch shared by the function and the dev shim
+docs/
+  differences-vs-pro-tools.md   honest comparison vs Solar Fire / Astro Gold / …
+```
+
+## Notes
+
+- **Geocoder contact:** Nominatim's usage policy asks for an identifying
+  `User-Agent` with contact info — set in `functions/_shared/geocodeSource.ts`.
+  Update it (or swap to a paid provider) before heavy production traffic; only
+  that one file changes.
+- **Accuracy & scope:** for how this prototype compares to desktop pro tools —
+  ephemeris precision, atlas coverage, parans, house cusps, and what's
+  deliberately deferred — see
+  [`docs/differences-vs-pro-tools.md`](docs/differences-vs-pro-tools.md).

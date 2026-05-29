@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { FeatureCollection, LineString } from 'geojson';
 import type { LineProps } from '../../lib/astro/lines';
@@ -34,6 +34,11 @@ interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+}
+
+export interface MapHandle {
+  /** Recenter the map on a coordinate, easing to a usable zoom if zoomed out. */
+  flyTo: (lat: number, lng: number) => void;
 }
 
 function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
@@ -158,7 +163,7 @@ function pushData(map: maplibregl.Map, data: MapData) {
   if (ls) ls.setData(data.localSpace);
 }
 
-export function Map({
+export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   parans,
   localSpace,
@@ -169,9 +174,21 @@ export function Map({
   onLeave,
   onClick,
   onPinNatal,
-}: MapProps) {
+}: MapProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    flyTo: (lat: number, lng: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      map.flyTo({
+        center: [lng, lat],
+        zoom: Math.max(map.getZoom(), 4),
+        essential: true,
+      });
+    },
+  }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
@@ -316,4 +333,4 @@ export function Map({
   }, [pin, pinType]);
 
   return <div ref={containerRef} className="map-container" />;
-}
+});

@@ -7,10 +7,19 @@
   background: rgba(var(--bg-panel), 0.98);
   border-right: 1px solid rgba(var(--tint), 0.1);
   color: var(--text-strong);
+  /* Row layout: a scrolling content column plus a fixed drag strip on the
+     right, so the resize handle never sits under the scrollbar. */
+  display: flex;
+  overflow: hidden;
+}
+
+/* The content column owns the vertical scroll, so tall content (e.g. Advanced
+   mode) is always reachable on small screens. */
+.es-scroll {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  /* Whole panel scrolls vertically so tall content (e.g. Advanced mode) is
-     always reachable on small screens. */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -41,19 +50,33 @@
   min-width: 0;
 }
 
+/* Advanced toggle sits to the left of the collapse button, top-right. */
+.es-header-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .es-close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  gap: 6px;
   height: 28px;
   background: rgba(var(--tint), 0.04);
   border: 1px solid rgba(var(--tint), 0.1);
   border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0;
+  padding: 0 10px;
   flex-shrink: 0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
@@ -71,11 +94,51 @@
 }
 
 .es-relocated {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 4px 0 0 0;
   font-size: 11px;
   color: var(--cool);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
+}
+
+/* Recenter button beside the "Pinned at …" text — flies the map to the pin. */
+.es-recenter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 5px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.es-recenter-btn:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.65);
+}
+
+.es-relocated.natal-pinned .es-recenter-btn {
+  background: rgba(var(--success-rgb), 0.12);
+  border-color: rgba(var(--success-rgb), 0.4);
+  color: var(--success);
+}
+
+.es-relocated.natal-pinned .es-recenter-btn:hover {
+  background: rgba(var(--success-rgb), 0.22);
+  border-color: rgba(var(--success-rgb), 0.65);
 }
 
 .es-relocated.pinned {
@@ -348,85 +411,25 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 18px;
-  gap: 12px;
-}
-
-/* Advanced toggle pinned to the top-right of the wheel section. */
-.es-wheel-advanced {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  z-index: 2;
+  padding: 10px 12px 14px;
+  gap: 10px;
 }
 
 .es-wheel-pane {
   display: flex;
-  /* `safe center` keeps the wheel centered until it's zoomed wider than the
-     panel, then aligns it to the start so the scroll reaches the left edge. */
+  /* `safe center` keeps the wheel centered until it's wider than the panel
+     (only when the panel is narrower than the wheel's minimum size), then
+     aligns to the start so the scroll reaches the left edge. */
   justify-content: safe center;
-  /* Horizontal scroll appears only when the wheel is zoomed past panel width;
+  /* Horizontal scroll appears only when the panel is narrower than MIN_WHEEL;
      vertical growth is handled by the panel's own page scroll. */
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-/* Reserves the post-zoom footprint so the wheel doesn't overlap siblings. */
-.es-wheel-scaler {
-  flex-shrink: 0;
-}
-
-/* Scaled from the top-left so it fills the scaler box exactly. */
-.es-wheel-inner {
-  transform-origin: top left;
-}
-
 .es-section-wheel svg {
   display: block;
-}
-
-/* Zoom controls — top-left of the wheel section (mirrors the Advanced
-   toggle top-right; the wheel's corners are clear of its edge labels). */
-.es-wheel-zoom {
-  position: absolute;
-  top: 14px;
-  left: 18px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.es-zoom-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  background: rgba(var(--bg-panel), 0.9);
-  border: 1px solid rgba(var(--tint), 0.14);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.es-zoom-btn:hover:not(:disabled) {
-  background: rgba(var(--accent-rgb), 0.14);
-  border-color: rgba(var(--accent-rgb), 0.5);
-  color: var(--accent);
-}
-
-.es-zoom-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.es-zoom-reset {
-  font-size: 13px;
+  flex-shrink: 0;
 }
 
 .es-aspect-toggles {
@@ -486,27 +489,32 @@
 /* --- Drag handle on right edge --- */
 
 .es-drag-handle {
-  position: absolute;
-  top: 0;
-  right: -3px;
-  bottom: 0;
-  width: 6px;
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 12px;
   cursor: ew-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  background: rgba(var(--tint), 0.04);
+  border-left: 1px solid rgba(var(--tint), 0.06);
+  transition: background 0.12s;
+}
+
+.es-drag-handle:hover,
+.es-drag-handle:active {
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .es-drag-handle:hover .es-drag-grip,
 .es-drag-handle:active .es-drag-grip {
-  background: rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--accent-rgb), 0.7);
 }
 
 .es-drag-grip {
-  width: 2px;
-  height: 48px;
+  width: 3px;
+  height: 64px;
   border-radius: 2px;
-  background: rgba(var(--tint), 0.18);
+  background: rgba(var(--tint), 0.28);
   transition: background 0.12s;
 }

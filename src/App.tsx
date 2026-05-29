@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Map } from './components/Map/Map';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Map, type MapHandle } from './components/Map/Map';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { ChartSwitcher } from './components/ChartSwitcher/ChartSwitcher';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
 import { BirthDataForm } from './components/BirthDataForm/BirthDataForm';
+import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { TEST_BIRTH } from './lib/birthData';
 import {
   birthDataToJD,
@@ -58,6 +59,7 @@ export default function App() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const [visiblePlanets, setVisiblePlanets] = useState<Set<PlanetName>>(
     () => new Set(TRADITIONAL_PLANETS),
@@ -71,6 +73,7 @@ export default function App() {
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  const mapRef = useRef<MapHandle>(null);
 
   useEffect(() => {
     applyTheme(theme);
@@ -223,6 +226,9 @@ export default function App() {
     );
     setHover({ lat, lng });
   }, []);
+  const onRecenterPin = useCallback(() => {
+    if (pinned) mapRef.current?.flyTo(pinned.lat, pinned.lng);
+  }, [pinned]);
   const onPinNatal = useCallback(() => {
     if (!current) return;
     setPinned({
@@ -246,6 +252,15 @@ export default function App() {
     setHover(null);
   };
 
+  const handleImport = (imported: StoredChart[]) => {
+    setImporting(false);
+    if (imported.length === 0) return;
+    setCharts((prev) => [...prev, ...imported]);
+    setCurrentId(imported[0].id);
+    setPinned(null);
+    setHover(null);
+  };
+
   const handleDelete = (id: string) => {
     setCharts((prev) => {
       const next = prev.filter((c) => c.id !== id);
@@ -260,6 +275,7 @@ export default function App() {
   return (
     <>
       <Map
+        ref={mapRef}
         lines={lines}
         parans={parans}
         localSpace={localSpace}
@@ -315,6 +331,7 @@ export default function App() {
           angles={angles}
           planets={ecliptic}
           onClose={() => setWheelExpanded(false)}
+          onRecenterPin={onRecenterPin}
           onSelectChart={(id) => setCurrentId(id)}
           onNewChart={() => setCreating(true)}
           onEditChart={(id) => setEditingId(id)}
@@ -329,6 +346,7 @@ export default function App() {
           angles={angles}
           planets={ecliptic}
           onExpand={() => setWheelExpanded(true)}
+          onRecenterPin={onRecenterPin}
         />
       )}
       {(creating || editingChart) && (
@@ -339,6 +357,16 @@ export default function App() {
             setCreating(false);
             setEditingId(null);
           }}
+          onImport={() => {
+            setCreating(false);
+            setImporting(true);
+          }}
+        />
+      )}
+      {importing && (
+        <ImportChartModal
+          onCancel={() => setImporting(false)}
+          onImport={handleImport}
         />
       )}
     </>

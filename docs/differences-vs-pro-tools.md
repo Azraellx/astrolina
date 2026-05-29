@@ -19,16 +19,17 @@ We use the Moshier engine via the MIT-licensed `astronomia` package, running ent
 
 **Path to fix:** swap in Swiss Ephemeris compiled to WebAssembly behind the same function signature. ~1–2 days of work, requires either AGPL acceptance (open-source SaaS) or a one-time commercial license from Astrodienst (~$750).
 
-### 2. Atlas: no historical timezone / DST handling
+### 2. Atlas: tzdb-based, not ACS-grade historical curation
 
-The prototype currently uses a hardcoded birth chart. When the atlas Worker is wired up (Phase E), it will use the open-source `tzdb` for timezone lookup. That database is excellent for **post-1970** dates and **for North America and Europe**.
+Birthplace search uses OpenStreetMap (Nominatim, proxied and edge-cached through a Cloudflare Pages Function), and the timezone / UTC offset is resolved with `tz-lookup` + the IANA `tzdb` via luxon. That stack is excellent for **post-1970** dates and **for North America and Europe**. The app already flags pre-1970 births outside those regions as "uncertain" so the user knows to spot-check.
 
 **Practical impact:**
 - For pre-1970 births, especially outside North America and Western Europe, historical DST and local mean time records get spotty. Edge cases: WWII-era European DST changes, 19th-century US births before standard time zones (1883), pre-1949 Chinese local times, etc.
 - Solar Fire and Astro Gold license the proprietary **ACS Atlas** (Astro Computing Services), which captures these edge cases by hand-curation across decades.
 - **What a pro might catch:** a famous pre-1900 chart calculated 1–4 minutes off, putting the MC line 0.25°–1° off its expected longitude.
+- **Note:** imported charts carry their own coordinates and offset, so import sidesteps both the geocoder and tzdb entirely — the source data is authoritative.
 
-**Path to fix:** UI flag for "uncertain birth time / location" on flagged date ranges so the user knows to spot-check; eventually license ACS Atlas data or build an open atlas through user-submitted corrections.
+**Path to fix:** the "uncertain birth time / location" flag already ships; beyond that, license ACS Atlas data or build an open atlas through user-submitted corrections.
 
 ### 3. Parans: only meridian × horizon cases
 
@@ -50,7 +51,7 @@ These are the "angular" parans that practitioners discuss most often.
 
 ### 4. Chart wheel: angles only, no house cusps
 
-The relocated chart wheel shows the four angles (ASC, MC, DSC, IC) and the planets in their ecliptic positions, but doesn't draw house cusp lines (2nd, 3rd, 5th, 6th, etc.).
+The relocated chart wheel shows the four angles (ASC, MC, DSC, IC) and the planets in their ecliptic positions — with an Advanced mode that adds each planet's degree · sign · minute readout and the aspect grid — but it doesn't draw house cusp lines (2nd, 3rd, 5th, 6th, etc.).
 
 **Practical impact:**
 - For locational work, the four angles are what carry most of the interpretive weight ("the Sun is on your MC in Madrid, so…"). House cusps matter more for natal interpretation than for ACG.
@@ -100,7 +101,7 @@ Still missing:
 - **Transpluto** and other hypothetical bodies (Vulcan, Cupido, Hades, etc.) — deliberately omitted because there's no consensus ephemeris. Different schools publish different positions.
 - **Centaurs beyond Chiron** (Pholus, Nessus, Chariklo) — same orbital-element approach would work; not enough demand to justify yet.
 
-### 7. Not implemented (and explicitly deferred to v2)
+### 9. Not implemented (and explicitly deferred to v2)
 
 These are in the roadmap but intentionally out of scope for the prototype:
 
@@ -138,10 +139,14 @@ Show / hide parans, local space, individual planets — all from one sidebar, in
 
 Once the PDF export and embeddable widgets are wired up (Phase E), the tool becomes part of the astrologer's deliverable — branded map in the client report, embedded map on their website. The desktop tools produce maps the astrologer prints and emails as a screenshot. The distribution flywheel here (every client gets a branded export, sees the tool's quality) is straightforward.
 
+### 6. Chart data import and portability
+
+Paste an AstroDataBank-style text block (the format astro.com and many tools export) or a comma-delimited export — or drop a `.txt` / `.csv` — and charts import in bulk, with coordinates and timezone offset read straight from the source. Charts then live in a local library you can switch between, edit, and delete. The desktop tools each have their own database format and limited cross-import; getting a roster of clients in is often manual re-entry.
+
 ---
 
 ## Honest summary for a pro audience
 
-> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity. We compute the ten classical planets, plus mean lunar nodes, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta). The planets use VSOP87 / Meeus (accurate to ~1 arcsecond, invisible on the map); the minor bodies use static orbital elements (accurate to ~0.1° within ±200 years of J2000). We don't yet have fixed stars, true node, Lilith, cyclocartography, time animation, an in-zodiaco toggle, or an ACS-grade atlas — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, and a relocated wheel, this can already replace the map portion of your workflow on any device."
+> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus mean lunar nodes, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta). The planets use VSOP87 / Meeus (accurate to ~1 arcsecond, invisible on the map); the minor bodies use static orbital elements (accurate to ~0.1° within ±200 years of J2000). We don't yet have fixed stars, true node, Lilith, cyclocartography, time animation, an in-zodiaco toggle, or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, and a relocated wheel, this can already replace the map portion of your workflow on any device."
 
 Concrete, specific, and doesn't oversell.

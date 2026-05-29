@@ -4,28 +4,19 @@ export interface GeocodeResult {
   lng: number;
 }
 
-const ENDPOINT = 'https://nominatim.openstreetmap.org/search';
-
+// Calls our own edge function (functions/api/geocode.ts), which proxies and
+// caches Nominatim with a policy-compliant User-Agent. In dev the same path is
+// served by a Vite middleware (see vite.config.ts).
 export async function geocode(
   query: string,
   signal?: AbortSignal,
 ): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
-  const url = `${ENDPOINT}?format=json&limit=6&q=${encodeURIComponent(trimmed)}`;
-  const res = await fetch(url, {
-    signal,
-    headers: { 'Accept-Language': 'en' },
-  });
+  const res = await fetch(
+    `/api/geocode?q=${encodeURIComponent(trimmed)}&limit=6`,
+    { signal },
+  );
   if (!res.ok) throw new Error(`Geocoder error: ${res.status}`);
-  const json = (await res.json()) as Array<{
-    display_name: string;
-    lat: string;
-    lon: string;
-  }>;
-  return json.map((item) => ({
-    label: item.display_name,
-    lat: Number.parseFloat(item.lat),
-    lng: Number.parseFloat(item.lon),
-  }));
+  return (await res.json()) as GeocodeResult[];
 }

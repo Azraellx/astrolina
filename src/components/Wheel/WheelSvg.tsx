@@ -106,21 +106,51 @@ export function WheelSvg({
 }: WheelSvgProps) {
   const cx = size / 2;
   const cy = size / 2;
-  // Detailed mode reserves 80px on each side so the angle-degree labels
-  // (~70px wide for strings like "23°45' Sag") never clip past the SVG box.
-  const rOuter = size / 2 - (detailed ? 80 : 4);
-  const rZodiacInner = rOuter - (detailed ? 36 : 0);
-  // Planet ring inner boundary — creates the visible "second layer" between
-  // the zodiac band and the central aspect area.
-  const rPlanets = (detailed ? rZodiacInner : rOuter) - (detailed ? 22 : 26);
-  const rPlanetRingInner = detailed ? rPlanets - 18 : 0;
-  const rAspectRing = detailed ? rPlanetRingInner - 4 : rPlanets - 22;
+  // Detailed mode reserves 64px on each side so the angle-degree labels
+  // (~55px wide for strings like "29°59' Sco") stay inside the SVG box while
+  // keeping the empty margin around the wheel tight.
+  const rOuter = size / 2 - (detailed ? 64 : 4);
+  const rZodiacInner = rOuter - (detailed ? 34 : 0);
+  // Planet glyph ring, then a readout ring (degree · sign · minute) just
+  // inside it — mirroring a printed natal chart.
+  const rPlanets = (detailed ? rZodiacInner - 20 : rOuter - 26);
+  const rReadout = detailed ? rPlanets - 34 : 0;
+  const rPlanetRingInner = detailed ? Math.max(10, rReadout - 26) : 0;
+  const rAspectRing = detailed ? rPlanetRingInner - 2 : rPlanets - 22;
   const rInner = detailed ? rAspectRing : rPlanets - 22;
+  const showReadouts = detailed && rReadout > 30;
 
   const aspects = detailed ? computeAspects(planets) : [];
   const filteredAspects = visibleAspects
     ? aspects.filter((a) => visibleAspects.has(a.category))
     : aspects;
+
+  // Spread overlapping planets along the ring so their glyphs and readouts
+  // don't collide; the true position is still marked by a tick on the zodiac
+  // band. Aspect lines keep using the true longitudes.
+  const displayLon = new Map<string, number>();
+  if (detailed) {
+    const arr = planets.map((p) => ({
+      name: p.name,
+      off: ((((p.lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360,
+    }));
+    arr.sort((a, b) => a.off - b.off);
+    // Min angular separation that yields ~16px of arc at the readout ring.
+    const sep = Math.min(
+      20,
+      Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rReadout, 1))),
+    );
+    for (let i = 1; i < arr.length; i++) {
+      if (arr[i].off - arr[i - 1].off < sep) arr[i].off = arr[i - 1].off + sep;
+    }
+    for (let i = arr.length - 2; i >= 0; i--) {
+      if (arr[i + 1].off - arr[i].off < sep) arr[i].off = arr[i + 1].off - sep;
+    }
+    for (const e of arr) {
+      displayLon.set(e.name, angles.asc + (e.off * Math.PI) / 180);
+    }
+  }
+  const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
 
   return (
     <svg
@@ -243,9 +273,40 @@ export function WheelSvg({
           );
         })}
 
+      {/* Connector from the true zodiac position to the (possibly spread)
+          glyph, plus a tick on the zodiac band marking the exact longitude. */}
+      {detailed &&
+        planets.map((p) => {
+          const truePos = svgPos(p.lon, angles.asc, rZodiacInner, cx, cy);
+          const glyphPos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
+          const tickPos = svgPos(p.lon, angles.asc, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(p.lon, angles.asc, rZodiacInner - 8, cx, cy);
+          return (
+            <g key={`mark-${p.name}`}>
+              <line
+                x1={truePos.x}
+                y1={truePos.y}
+                x2={glyphPos.x}
+                y2={glyphPos.y}
+                stroke={PLANET_COLORS[p.name]}
+                strokeWidth={0.6}
+                opacity={0.4}
+              />
+              <line
+                x1={tickPos.x}
+                y1={tickPos.y}
+                x2={tipPos.x}
+                y2={tipPos.y}
+                stroke={PLANET_COLORS[p.name]}
+                strokeWidth={1.5}
+              />
+            </g>
+          );
+        })}
+
       {planets.map((p) => {
-        const pos = svgPos(p.lon, angles.asc, rPlanets, cx, cy);
-        const r = detailed ? 12 : 9;
+        const pos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
+        const r = detailed ? 11 : 9;
         return (
           <g key={p.name}>
             <circle
@@ -279,20 +340,35 @@ export function WheelSvg({
         );
       })}
 
-      {detailed &&
+      {/* Degree · sign · minute readout, stacked just inside each glyph. */}
+      {showReadouts &&
         planets.map((p) => {
-          const tickPos = svgPos(p.lon, angles.asc, rZodiacInner - 2, cx, cy);
-          const tipPos = svgPos(p.lon, angles.asc, rZodiacInner - 8, cx, cy);
+          const pos = svgPos(lonFor(p), angles.asc, rReadout, cx, cy);
+          const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
+          const signIdx = Math.floor(lonDeg / 30);
+          const inSign = lonDeg % 30;
+          const deg = Math.floor(inSign);
+          const min = Math.floor((inSign - deg) * 60);
           return (
-            <line
-              key={`tick-${p.name}`}
-              x1={tickPos.x}
-              y1={tickPos.y}
-              x2={tipPos.x}
-              y2={tipPos.y}
-              stroke={PLANET_COLORS[p.name]}
-              strokeWidth={1.5}
-            />
+            <g key={`rdo-${p.name}`} className="planet-readout">
+              <text
+                x={pos.x}
+                y={pos.y - 11}
+                textAnchor="middle"
+                className="readout-deg"
+              >
+                {deg}°
+              </text>
+              <ZodiacGlyph sign={signIdx} x={pos.x} y={pos.y + 2} size={14} />
+              <text
+                x={pos.x}
+                y={pos.y + 21}
+                textAnchor="middle"
+                className="readout-min"
+              >
+                {String(min).padStart(2, '0')}&#39;
+              </text>
+            </g>
           );
         })}
     </svg>

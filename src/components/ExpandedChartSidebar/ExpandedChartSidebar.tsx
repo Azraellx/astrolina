@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   PLANET_COLORS,
   PLANET_DISPLAY,
@@ -37,6 +37,7 @@ interface ExpandedChartSidebarProps {
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
   onClose: () => void;
+  onRecenterPin: () => void;
   onSelectChart: (id: string) => void;
   onNewChart: () => void;
   onEditChart: (id: string) => void;
@@ -49,22 +50,14 @@ const ADVANCED_KEY = 'astro:advanced:v1';
 // Shared with CoordReadout in the non-expanded view, so the Angles dropdown
 // remembers its open/closed state across both layouts.
 const SHOW_ANGLES_KEY = 'astro:coord-show-angles:v1';
-const WHEEL_ZOOM_KEY = 'astro:wheel-zoom:v1';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
 
-// Wheel sizing. The base diameter fits the panel width; zoom scales it from
-// there. MIN_WHEEL keeps it legible even on narrow panels, MAX_WHEEL stops it
+// Wheel sizing. The diameter fits the panel width, with MIN_WHEEL keeping it
+// legible (never squished) even on narrow panels and MAX_WHEEL stopping it
 // from ballooning on very wide ones.
 const MIN_WHEEL = 280;
 const MAX_WHEEL = 900;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
-const ZOOM_STEP = 0.2;
-
-function clampZoom(z: number): number {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
-}
 
 const ASPECT_GLYPHS: Record<string, string> = {
   conjunction: '☌',
@@ -141,6 +134,7 @@ export function ExpandedChartSidebar({
   angles,
   planets,
   onClose,
+  onRecenterPin,
   onSelectChart,
   onNewChart,
   onEditChart,
@@ -202,12 +196,18 @@ export function ExpandedChartSidebar({
   };
 
   const draggingRef = useRef(false);
+  // Cursor-to-edge offset captured at mousedown, so grabbing the handle (which
+  // sits a few px inside the right edge) doesn't make the width jump.
+  const dragOffsetRef = useRef(0);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!draggingRef.current) return;
       const maxWidth = Math.min(window.innerWidth - 120, 1200);
-      const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, e.clientX));
+      const newWidth = Math.max(
+        MIN_WIDTH,
+        Math.min(maxWidth, e.clientX + dragOffsetRef.current),
+      );
       setWidth(newWidth);
     };
     const onUp = () => {
@@ -232,8 +232,8 @@ export function ExpandedChartSidebar({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // The wheel's base diameter fits the panel width (the sidebar scrolls
-  // vertically, so width is the constraint); zoom scales it from there.
+  // The wheel diameter fits the panel width (the sidebar scrolls vertically,
+  // so width is the constraint), floored at MIN_WHEEL so it never gets squished.
   const wheelPaneRef = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(400);
 
@@ -248,41 +248,20 @@ export function ExpandedChartSidebar({
     return () => observe.disconnect();
   }, []);
 
-  const [zoom, setZoom] = useState<number>(() => {
-    const saved = Number(localStorage.getItem(WHEEL_ZOOM_KEY));
-    return saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : 1;
-  });
-  useEffect(() => {
-    localStorage.setItem(WHEEL_ZOOM_KEY, String(zoom));
-  }, [zoom]);
-
-  const baseSize = Math.floor(
+  const wheelSize = Math.floor(
     Math.max(MIN_WHEEL, Math.min(MAX_WHEEL, paneWidth)),
   );
-  const scaledSize = Math.round(baseSize * zoom);
 
-  // Mouse-wheel zoom over the wheel. Attached natively so we can call
-  // preventDefault (React's onWheel is passive) and stop the page from
-  // scrolling while zooming the chart.
-  useEffect(() => {
-    const el = wheelPaneRef.current;
-    if (!el || !angles) return;
-    const onWheelZoom = (e: WheelEvent) => {
-      e.preventDefault();
-      setZoom((z) => clampZoom(z + (e.deltaY < 0 ? 0.1 : -0.1)));
-    };
-    el.addEventListener('wheel', onWheelZoom, { passive: false });
-    return () => el.removeEventListener('wheel', onWheelZoom);
-  }, [angles]);
-
-  const beginDrag = () => {
+  const beginDrag = (e: ReactMouseEvent) => {
     draggingRef.current = true;
+    dragOffsetRef.current = width - e.clientX;
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
   };
 
   return (
     <aside className="expanded-sidebar" style={{ width: `${width}px` }}>
+      <div className="es-scroll">
       <section className="es-section es-section-header">
         <div className="es-header-row">
           <div className="es-switcher">
@@ -295,23 +274,41 @@ export function ExpandedChartSidebar({
               onDelete={onDeleteChart}
             />
           </div>
-          <button
-            type="button"
-            className="es-close-btn"
-            onClick={onClose}
-            title="Collapse (Esc)"
-            aria-label="Close expanded view"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+          <div className="es-header-actions">
+            {angles && (
+              <button
+                type="button"
+                className={`es-advanced-toggle ${advanced ? 'on' : 'off'}`}
+                onClick={() => setAdvanced((v) => !v)}
+                title="Toggle detailed natal data (dec, speed, ℞, exact orbs, aspect grid)"
+                role="switch"
+                aria-checked={advanced}
+              >
+                <span className="es-toggle-label">Advanced</span>
+                <span className="es-toggle-track">
+                  <span className="es-toggle-thumb" />
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="es-close-btn"
+              onClick={onClose}
+              title="Collapse (Esc)"
+              aria-label="Close expanded view"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>Collapse</span>
+            </button>
+          </div>
         </div>
         {chart && (
           <p className="es-meta">
@@ -340,10 +337,38 @@ export function ExpandedChartSidebar({
                 ? 'Relocated to'
                 : 'Located at natal';
           return (
-            <p className={`es-relocated ${stateClass}`}>
-              {label} {displayPoint.lat.toFixed(3)}°,{' '}
-              {displayPoint.lng.toFixed(3)}°
-            </p>
+            <div className={`es-relocated ${stateClass}`}>
+              <span className="es-relocated-text">
+                {label} {displayPoint.lat.toFixed(3)}°,{' '}
+                {displayPoint.lng.toFixed(3)}°
+              </span>
+              {pinned && (
+                <button
+                  type="button"
+                  className="es-recenter-btn"
+                  onClick={onRecenterPin}
+                  title="Center map on pin"
+                  aria-label="Center map on pin"
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M8 1.5c-2.5 0-4.5 2-4.5 4.5 0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5c0-2.5-2-4.5-4.5-4.5z"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
+                    <circle cx="8" cy="6" r="1.6" fill="currentColor" />
+                  </svg>
+                  <span>Center</span>
+                </button>
+              )}
+            </div>
           );
         })()}
 
@@ -466,78 +491,15 @@ export function ExpandedChartSidebar({
       })()}
 
       <section className="es-section es-section-wheel">
-        {angles && (
-          <button
-            type="button"
-            className={`es-advanced-toggle es-wheel-advanced ${advanced ? 'on' : 'off'}`}
-            onClick={() => setAdvanced((v) => !v)}
-            title="Toggle detailed natal data (dec, speed, ℞, exact orbs, aspect grid)"
-            role="switch"
-            aria-checked={advanced}
-          >
-            <span className="es-toggle-label">Advanced</span>
-            <span className="es-toggle-track">
-              <span className="es-toggle-thumb" />
-            </span>
-          </button>
-        )}
-        {angles && (
-          <div className="es-wheel-zoom">
-            <button
-              type="button"
-              className="es-zoom-btn"
-              onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
-              disabled={zoom >= ZOOM_MAX}
-              title="Zoom in"
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="es-zoom-btn"
-              onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
-              disabled={zoom <= ZOOM_MIN}
-              title="Zoom out"
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="es-zoom-btn es-zoom-reset"
-              onClick={() => setZoom(1)}
-              disabled={zoom === 1}
-              title="Reset zoom"
-              aria-label="Reset zoom"
-            >
-              ⌖
-            </button>
-          </div>
-        )}
         <div className="es-wheel-pane" ref={wheelPaneRef}>
           {angles ? (
-            <div
-              className="es-wheel-scaler"
-              style={{ width: scaledSize, height: scaledSize }}
-            >
-              <div
-                className="es-wheel-inner"
-                style={{
-                  width: baseSize,
-                  height: baseSize,
-                  transform: `scale(${zoom})`,
-                }}
-              >
-                <WheelSvg
-                  size={baseSize}
-                  angles={angles}
-                  planets={planets}
-                  detailed={true}
-                  visibleAspects={visibleAspects}
-                />
-              </div>
-            </div>
+            <WheelSvg
+              size={wheelSize}
+              angles={angles}
+              planets={planets}
+              detailed={true}
+              visibleAspects={visibleAspects}
+            />
           ) : (
             <div className="es-empty">No chart selected</div>
           )}
@@ -562,6 +524,7 @@ export function ExpandedChartSidebar({
           </div>
         )}
       </section>
+      </div>
 
       <div
         className="es-drag-handle"

@@ -58,6 +58,43 @@
   color: var(--text-faint);
 }
 
+/* When pinned, the indicator is a button that recenters the map on the pin. */
+.pin-recenter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 5px;
+  margin: -2px 0;
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.pin-recenter:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.chart-wheel.natal-pinned .pin-recenter {
+  background: rgba(var(--success-rgb), 0.1);
+  border-color: rgba(var(--success-rgb), 0.4);
+}
+
+.chart-wheel.natal-pinned .pin-recenter:hover {
+  background: rgba(var(--success-rgb), 0.2);
+  border-color: rgba(var(--success-rgb), 0.65);
+}
+
+.pin-recenter svg {
+  flex-shrink: 0;
+}
+
 .chart-wheel-header .coords {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -69,14 +106,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  gap: 6px;
   height: 24px;
   background: rgba(var(--tint), 0.04);
   border: 1px solid rgba(var(--tint), 0.1);
   border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
