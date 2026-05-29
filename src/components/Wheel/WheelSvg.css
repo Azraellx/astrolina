@@ -1,0 +1,75 @@
+/* Styles for the shared SVG wheel. Unscoped so they apply equally
+   inside ChartWheel (mini) and ExpandedChartSidebar (detailed). */
+
+.wheel-svg .ring {
+  fill: none;
+  stroke: rgba(var(--tint), 0.18);
+  stroke-width: 1;
+}
+
+.wheel-svg .planet-disc-fill {
+  fill: rgba(var(--bg-panel), 0.94);
+}
+
+.wheel-svg .angle {
+  stroke: rgba(var(--tint), 0.25);
+  stroke-width: 1;
+}
+
+.wheel-svg .angle.asc-dsc {
+  stroke: rgba(var(--accent-rgb), 0.55);
+}
+
+.wheel-svg .angle.mc-ic {
+  stroke: rgba(var(--cool-rgb), 0.55);
+}
+
+.wheel-svg .angle-label {
+  fill: var(--text-dim);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.wheel-svg .angle-degree {
+  fill: var(--text);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wheel-svg .planet-glyph {
+  font-size: 9px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.wheel-svg .sign-divider {
+  stroke: rgba(var(--tint), 0.22);
+  stroke-width: 1;
+}
+
+.wheel-svg .sign-glyph {
+  fill: var(--text);
+  font-size: 18px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.wheel-svg .angle-label-lg {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.wheel-svg .angle-degree-lg {
+  fill: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wheel-svg .planet-glyph-lg {
+  font-size: 16px;
+  font-weight: 500;
+  pointer-events: none;
+}

@@ -1,0 +1,577 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  PLANET_COLORS,
+  PLANET_DISPLAY,
+  TRADITIONAL_PLANETS,
+  type EclipticPosition,
+  type PlanetName,
+  type RelocatedAngles,
+} from '../../lib/ephemeris';
+import type { StoredChart } from '../../lib/chartLibrary';
+import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
+import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import {
+  WheelSvg,
+  fmtLon,
+  computeAspects,
+  SIGNS,
+  type AspectCategory,
+} from '../Wheel/WheelSvg';
+import './ExpandedChartSidebar.css';
+
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+function fmtChartDate(c: StoredChart): string {
+  return `${c.day} ${MONTHS[c.month - 1]} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+}
+
+interface ExpandedChartSidebarProps {
+  chart: StoredChart | null;
+  charts: StoredChart[];
+  point: { lat: number; lng: number } | null;
+  pinned: boolean;
+  isNatalPin: boolean;
+  angles: RelocatedAngles | null;
+  planets: EclipticPosition[];
+  onClose: () => void;
+  onSelectChart: (id: string) => void;
+  onNewChart: () => void;
+  onEditChart: (id: string) => void;
+  onDeleteChart: (id: string) => void;
+}
+
+const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
+const ASPECTS_KEY = 'astro:visible-aspects:v1';
+const ADVANCED_KEY = 'astro:advanced:v1';
+// Shared with CoordReadout in the non-expanded view, so the Angles dropdown
+// remembers its open/closed state across both layouts.
+const SHOW_ANGLES_KEY = 'astro:coord-show-angles:v1';
+const WHEEL_ZOOM_KEY = 'astro:wheel-zoom:v1';
+const DEFAULT_WIDTH = 720;
+const MIN_WIDTH = 480;
+
+// Wheel sizing. The base diameter fits the panel width; zoom scales it from
+// there. MIN_WHEEL keeps it legible even on narrow panels, MAX_WHEEL stops it
+// from ballooning on very wide ones.
+const MIN_WHEEL = 280;
+const MAX_WHEEL = 900;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.2;
+
+function clampZoom(z: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+}
+
+const ASPECT_GLYPHS: Record<string, string> = {
+  conjunction: '☌',
+  opposition: '☍',
+  trine: '△',
+  square: '□',
+  sextile: '⚹',
+};
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+// Long-form longitude with arc-seconds: "23°45'12" Sag"
+function fmtLonExact(lonRad: number): string {
+  const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
+  const sign = SIGNS[Math.floor(lonDeg / 30)];
+  const inSign = lonDeg % 30;
+  const d = Math.floor(inSign);
+  const mFull = (inSign - d) * 60;
+  const m = Math.floor(mFull);
+  let s = Math.round((mFull - m) * 60);
+  let dd = d;
+  let mm = m;
+  if (s === 60) { s = 0; mm += 1; }
+  if (mm === 60) { mm = 0; dd += 1; }
+  return `${dd}°${pad2(mm)}'${pad2(s)}" ${sign}`;
+}
+
+// Signed declination, deg/min: "+12°34'" or "-05°02'"
+function fmtDec(decRad: number): string {
+  const decDeg = (decRad * 180) / Math.PI;
+  const sign = decDeg >= 0 ? '+' : '-';
+  const abs = Math.abs(decDeg);
+  const d = Math.floor(abs);
+  let m = Math.round((abs - d) * 60);
+  let dd = d;
+  if (m === 60) { m = 0; dd += 1; }
+  return `${sign}${pad2(dd)}°${pad2(m)}'`;
+}
+
+// Speed in degrees/day, signed for retrograde, 2 decimals.
+function fmtSpeed(degPerDay: number): string {
+  return `${degPerDay >= 0 ? '+' : ''}${degPerDay.toFixed(2)}°/d`;
+}
+
+// Aspect orb as "0°12'" — seconds rarely meaningful for orbs.
+function fmtOrb(orbDeg: number): string {
+  const d = Math.floor(orbDeg);
+  let m = Math.round((orbDeg - d) * 60);
+  let dd = d;
+  if (m === 60) { m = 0; dd += 1; }
+  return `${dd}°${pad2(m)}'`;
+}
+
+const ASPECT_TOGGLES: {
+  key: AspectCategory;
+  label: string;
+  cssClass: string;
+}[] = [
+  { key: 'harmonious', label: 'Trine / Sextile', cssClass: 'trine' },
+  { key: 'hard', label: 'Square / Opp', cssClass: 'square' },
+  { key: 'conjunction', label: 'Conj', cssClass: 'conj' },
+];
+
+const TRADITIONAL_SET: Set<PlanetName> = new Set(TRADITIONAL_PLANETS);
+
+export function ExpandedChartSidebar({
+  chart,
+  charts,
+  point,
+  pinned,
+  isNatalPin,
+  angles,
+  planets,
+  onClose,
+  onSelectChart,
+  onNewChart,
+  onEditChart,
+  onDeleteChart,
+}: ExpandedChartSidebarProps) {
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    return saved && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(WIDTH_KEY, String(width));
+  }, [width]);
+
+  const [visibleAspects, setVisibleAspects] = useState<Set<AspectCategory>>(
+    () => {
+      try {
+        const raw = localStorage.getItem(ASPECTS_KEY);
+        if (raw) return new Set(JSON.parse(raw) as AspectCategory[]);
+      } catch {
+        /* fall through */
+      }
+      return new Set<AspectCategory>(['harmonious', 'hard', 'conjunction']);
+    },
+  );
+
+  useEffect(() => {
+    localStorage.setItem(
+      ASPECTS_KEY,
+      JSON.stringify(Array.from(visibleAspects)),
+    );
+  }, [visibleAspects]);
+
+  const [advanced, setAdvanced] = useState<boolean>(
+    () => localStorage.getItem(ADVANCED_KEY) === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0');
+  }, [advanced]);
+
+  // Angles dropdown shares its boolean with the non-expanded CoordReadout.
+  const [anglesOpen, setAnglesOpen] = useState<boolean>(
+    () => localStorage.getItem(SHOW_ANGLES_KEY) === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem(SHOW_ANGLES_KEY, anglesOpen ? '1' : '0');
+  }, [anglesOpen]);
+
+  // Longitude formatter shared by the header angles and the planet rows.
+  const fmt = advanced ? fmtLonExact : fmtLon;
+
+  const toggleAspect = (cat: AspectCategory) => {
+    setVisibleAspects((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const maxWidth = Math.min(window.innerWidth - 120, 1200);
+      const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, e.clientX));
+      setWidth(newWidth);
+    };
+    const onUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // The wheel's base diameter fits the panel width (the sidebar scrolls
+  // vertically, so width is the constraint); zoom scales it from there.
+  const wheelPaneRef = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState(400);
+
+  useEffect(() => {
+    if (!wheelPaneRef.current) return;
+    const observe = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setPaneWidth(entry.contentRect.width);
+    });
+    observe.observe(wheelPaneRef.current);
+    return () => observe.disconnect();
+  }, []);
+
+  const [zoom, setZoom] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(WHEEL_ZOOM_KEY));
+    return saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : 1;
+  });
+  useEffect(() => {
+    localStorage.setItem(WHEEL_ZOOM_KEY, String(zoom));
+  }, [zoom]);
+
+  const baseSize = Math.floor(
+    Math.max(MIN_WHEEL, Math.min(MAX_WHEEL, paneWidth)),
+  );
+  const scaledSize = Math.round(baseSize * zoom);
+
+  // Mouse-wheel zoom over the wheel. Attached natively so we can call
+  // preventDefault (React's onWheel is passive) and stop the page from
+  // scrolling while zooming the chart.
+  useEffect(() => {
+    const el = wheelPaneRef.current;
+    if (!el || !angles) return;
+    const onWheelZoom = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => clampZoom(z + (e.deltaY < 0 ? 0.1 : -0.1)));
+    };
+    el.addEventListener('wheel', onWheelZoom, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelZoom);
+  }, [angles]);
+
+  const beginDrag = () => {
+    draggingRef.current = true;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  return (
+    <aside className="expanded-sidebar" style={{ width: `${width}px` }}>
+      <section className="es-section es-section-header">
+        <div className="es-header-row">
+          <div className="es-switcher">
+            <ChartSwitcher
+              current={chart}
+              charts={charts}
+              onSelect={onSelectChart}
+              onNew={onNewChart}
+              onEdit={onEditChart}
+              onDelete={onDeleteChart}
+            />
+          </div>
+          <button
+            type="button"
+            className="es-close-btn"
+            onClick={onClose}
+            title="Collapse (Esc)"
+            aria-label="Close expanded view"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+        {chart && (
+          <p className="es-meta">
+            {fmtChartDate(chart)} · {chart.birthplace.label}
+          </p>
+        )}
+        {(() => {
+          const displayPoint =
+            point ??
+            (chart
+              ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng }
+              : null);
+          if (!displayPoint) return null;
+          const stateClass = isNatalPin
+            ? 'natal-pinned'
+            : pinned
+              ? 'pinned'
+              : point
+                ? ''
+                : 'natal';
+          const label = isNatalPin
+            ? '📌 Pinned at natal'
+            : pinned
+              ? '📌 Pinned at'
+              : point
+                ? 'Relocated to'
+                : 'Located at natal';
+          return (
+            <p className={`es-relocated ${stateClass}`}>
+              {label} {displayPoint.lat.toFixed(3)}°,{' '}
+              {displayPoint.lng.toFixed(3)}°
+            </p>
+          );
+        })()}
+
+        {angles && (
+          <div className="es-angles">
+            <button
+              type="button"
+              className="es-angles-toggle"
+              onClick={() => setAnglesOpen((v) => !v)}
+              aria-expanded={anglesOpen}
+            >
+              <span>Angles</span>
+              <span className="es-angles-chevron">{anglesOpen ? '▴' : '▾'}</span>
+            </button>
+            {anglesOpen && (
+              <ul className="es-angle-list">
+                <li>
+                  <span className="es-name">ASC</span>
+                  <span className="es-lon">{fmt(angles.asc)}</span>
+                </li>
+                <li>
+                  <span className="es-name">MC</span>
+                  <span className="es-lon">{fmt(angles.mc)}</span>
+                </li>
+                <li>
+                  <span className="es-name">DSC</span>
+                  <span className="es-lon">{fmt(angles.dsc)}</span>
+                </li>
+                <li>
+                  <span className="es-name">IC</span>
+                  <span className="es-lon">{fmt(angles.ic)}</span>
+                </li>
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+
+      {angles && (() => {
+        // Pluto sits atop the second column (above the North Node) rather than
+        // at the foot of the traditional column.
+        const leftCol = planets.filter(
+          (p) => TRADITIONAL_SET.has(p.name) && p.name !== 'Pluto',
+        );
+        const pluto = planets.find((p) => p.name === 'Pluto');
+        const rightCol = [
+          ...(pluto ? [pluto] : []),
+          ...planets.filter((p) => !TRADITIONAL_SET.has(p.name)),
+        ];
+        const renderRow = (p: EclipticPosition) => (
+          <li key={p.name} className={advanced ? 'advanced' : ''}>
+            <div className="es-row-main">
+              <span
+                className="es-glyph"
+                style={{ color: PLANET_COLORS[p.name] }}
+              >
+                <PlanetGlyph planet={p.name} size={13} />
+              </span>
+              <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
+              <span className="es-lon">
+                {fmt(p.lon)}
+                {advanced && p.retrograde ? (
+                  <span className="es-rx" title="Retrograde">℞</span>
+                ) : null}
+              </span>
+            </div>
+            {advanced && p.dec !== undefined && p.speed !== undefined && (
+              <div className="es-row-extra">
+                dec {fmtDec(p.dec)} · {fmtSpeed(p.speed)}
+              </div>
+            )}
+          </li>
+        );
+        return (
+        <section className="es-section es-section-details">
+          <div className="es-planets-col">
+            <h3>Planets</h3>
+            <div className="es-planet-cols">
+              <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
+              {rightCol.length > 0 && (
+                <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
+              )}
+            </div>
+          </div>
+        </section>
+        );
+      })()}
+
+      {angles && advanced && (() => {
+        const aspects = computeAspects(planets).sort((a, b) => a.orb - b.orb);
+        if (aspects.length === 0) return null;
+        return (
+          <section className="es-section es-section-aspects">
+            <h3>Aspects ({aspects.length})</h3>
+            <ul className="es-aspect-list">
+              {aspects.map((a, i) => (
+                <li key={i} className={`asp asp-${a.category}`}>
+                  <span
+                    className="asp-planet"
+                    style={{ color: PLANET_COLORS[a.a as PlanetName] }}
+                  >
+                    <PlanetGlyph planet={a.a as PlanetName} size={12} />
+                  </span>
+                  <span className="asp-glyph" style={{ color: a.color }}>
+                    {ASPECT_GLYPHS[a.type] ?? a.type}
+                  </span>
+                  <span
+                    className="asp-planet"
+                    style={{ color: PLANET_COLORS[a.b as PlanetName] }}
+                  >
+                    <PlanetGlyph planet={a.b as PlanetName} size={12} />
+                  </span>
+                  <span className="asp-type">{a.type}</span>
+                  <span className="asp-orb">{fmtOrb(a.orb)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
+
+      <section className="es-section es-section-wheel">
+        {angles && (
+          <button
+            type="button"
+            className={`es-advanced-toggle es-wheel-advanced ${advanced ? 'on' : 'off'}`}
+            onClick={() => setAdvanced((v) => !v)}
+            title="Toggle detailed natal data (dec, speed, ℞, exact orbs, aspect grid)"
+            role="switch"
+            aria-checked={advanced}
+          >
+            <span className="es-toggle-label">Advanced</span>
+            <span className="es-toggle-track">
+              <span className="es-toggle-thumb" />
+            </span>
+          </button>
+        )}
+        {angles && (
+          <div className="es-wheel-zoom">
+            <button
+              type="button"
+              className="es-zoom-btn"
+              onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+              disabled={zoom >= ZOOM_MAX}
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="es-zoom-btn"
+              onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+              disabled={zoom <= ZOOM_MIN}
+              title="Zoom out"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="es-zoom-btn es-zoom-reset"
+              onClick={() => setZoom(1)}
+              disabled={zoom === 1}
+              title="Reset zoom"
+              aria-label="Reset zoom"
+            >
+              ⌖
+            </button>
+          </div>
+        )}
+        <div className="es-wheel-pane" ref={wheelPaneRef}>
+          {angles ? (
+            <div
+              className="es-wheel-scaler"
+              style={{ width: scaledSize, height: scaledSize }}
+            >
+              <div
+                className="es-wheel-inner"
+                style={{
+                  width: baseSize,
+                  height: baseSize,
+                  transform: `scale(${zoom})`,
+                }}
+              >
+                <WheelSvg
+                  size={baseSize}
+                  angles={angles}
+                  planets={planets}
+                  detailed={true}
+                  visibleAspects={visibleAspects}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="es-empty">No chart selected</div>
+          )}
+        </div>
+        {angles && (
+          <div className="es-aspect-toggles">
+            {ASPECT_TOGGLES.map((t) => {
+              const on = visibleAspects.has(t.key);
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
+                  onClick={() => toggleAspect(t.key)}
+                  title={`Toggle ${t.label}`}
+                >
+                  <span className="es-asp-swatch" />
+                  <span className="es-asp-label">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div
+        className="es-drag-handle"
+        onMouseDown={beginDrag}
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize"
+      >
+        <div className="es-drag-grip" />
+      </div>
+    </aside>
+  );
+}

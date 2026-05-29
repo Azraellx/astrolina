@@ -1,0 +1,256 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.birth-form {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.birth-form header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.birth-form header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.birth-form .close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.birth-form .close:hover {
+  color: var(--text-strong);
+}
+
+.birth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.birth-form .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.birth-form input {
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  padding: 7px 9px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.birth-form input:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.spin-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spin-group .sep {
+  color: var(--text-faint);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.spin-input {
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  padding: 7px 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.spin-input::-webkit-outer-spin-button,
+.spin-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.spin-input:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.spin-hint {
+  margin: -6px 0 0 0;
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.location-field {
+  position: relative;
+}
+
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 2px 0 0 0;
+  padding: 0;
+  list-style: none;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.suggestions li {
+  border-bottom: 1px solid rgba(var(--tint), 0.05);
+}
+
+.suggestions li:last-child {
+  border-bottom: none;
+}
+
+.suggestions button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.suggestions button:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.suggestions .place-label {
+  font-size: 12px;
+  color: var(--text-strong);
+}
+
+.suggestions .place-coords {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.suggestions .hint {
+  padding: 7px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: none;
+}
+
+.resolved {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: var(--success);
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.birth-form footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.birth-form button.secondary,
+.birth-form button.primary {
+  padding: 7px 14px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.birth-form button.secondary {
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.14);
+  color: var(--text-muted);
+}
+
+.birth-form button.secondary:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.24);
+}
+
+.birth-form button.primary {
+  background: rgba(var(--accent-rgb), 0.92);
+  border: 1px solid transparent;
+  color: #0a0a0f;
+  font-weight: 600;
+}
+
+.birth-form button.primary:hover {
+  background: var(--accent);
+}

@@ -1,0 +1,139 @@
+:root {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+
+  --bg-page: #0a0a0f;
+  --bg-panel: 15, 15, 22;
+  --bg-menu: 20, 20, 28;
+  --tint: 255, 255, 255;
+
+  --text-strong: #e7e7ea;
+  --text: #cccfd6;
+  --text-muted: #a0a0aa;
+  --text-dim: #8a8a96;
+  --text-faint: #6b6b78;
+
+  --accent: #f5b83d;
+  --accent-rgb: 245, 184, 61;
+  --accent-hover: #ffd070;
+  --cool: #5ec2e0;
+  --cool-rgb: 94, 194, 224;
+  --danger: #e85a4f;
+  --success: #8de0a3;
+  --success-rgb: 141, 224, 163;
+
+  --scrim: rgba(0, 0, 0, 0.72);
+  --scrim-strong: rgba(0, 0, 0, 0.82);
+
+  --pin-stroke: #0a0a0f;
+  --label-halo: rgba(10, 10, 15, 0.95);
+
+  color: var(--text-strong);
+  background: var(--bg-page);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-page: #eef0f4;
+  --bg-panel: 255, 255, 255;
+  --bg-menu: 252, 252, 254;
+  /* Tint stays "neutral darker" but we step it down a hair so borders/dividers
+     feel like a light-gray scheme rather than pen-on-paper black. */
+  --tint: 40, 44, 56;
+
+  --text-strong: #4a4e5a;
+  --text: #5e6270;
+  --text-muted: #7a7e8a;
+  --text-dim: #989ca6;
+  --text-faint: #b4b7c0;
+
+  --accent: #c97b1a;
+  --accent-rgb: 201, 123, 26;
+  --accent-hover: #a96514;
+  --cool: #3a9ac0;
+  --cool-rgb: 58, 154, 192;
+  --danger: #d04a3a;
+  --success: #3aa965;
+  --success-rgb: 58, 169, 101;
+
+  --scrim: rgba(74, 78, 90, 0.4);
+  --scrim-strong: rgba(74, 78, 90, 0.55);
+
+  --pin-stroke: #ffffff;
+  --label-halo: rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme='vintage'] {
+  color-scheme: dark;
+
+  --bg-page: #2a2017;
+  --bg-panel: 58, 42, 28;
+  --bg-menu: 70, 52, 36;
+  --tint: 240, 226, 192;
+
+  --text-strong: #f0e2c0;
+  --text: #dac9a4;
+  --text-muted: #b8a07c;
+  --text-dim: #8e7a5e;
+  --text-faint: #6e5d48;
+
+  --accent: #f5b83d;
+  --accent-rgb: 245, 184, 61;
+  --accent-hover: #ffd070;
+  --cool: #7accdd;
+  --cool-rgb: 122, 204, 221;
+  --danger: #e87a5a;
+  --success: #a8d68a;
+  --success-rgb: 168, 214, 138;
+
+  --scrim: rgba(18, 12, 4, 0.7);
+  --scrim-strong: rgba(18, 12, 4, 0.85);
+
+  --pin-stroke: #2a2017;
+  --label-halo: rgba(28, 20, 12, 0.95);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.app-header {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  padding: 12px 16px;
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 8px;
+  pointer-events: auto;
+  min-width: 180px;
+  max-width: 420px;
+}
+
+.tz-warning {
+  margin-top: 4px !important;
+  font-size: 10px !important;
+  color: var(--accent) !important;
+  letter-spacing: 0.04em;
+}
+
+.app-header-meta {
+  margin-top: 4px !important;
+  font-size: 10px !important;
+  color: var(--text-faint) !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+

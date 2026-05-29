@@ -1,0 +1,94 @@
+.coord-readout {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(var(--tint), 0.06);
+  font-variant-numeric: tabular-nums;
+}
+
+.coord-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-strong);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.coord-readout.source-hover .coord-line {
+  color: var(--cool);
+}
+
+.coord-readout.source-pinned .coord-line {
+  color: var(--accent);
+}
+
+.coord-readout.source-natal-pinned .coord-line {
+  color: var(--success);
+}
+
+.show-more-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.show-more-btn:hover {
+  color: var(--accent);
+}
+
+.show-more-chevron {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.angle-list {
+  list-style: none;
+  margin: 5px 0 0 0;
+  padding: 0;
+}
+
+.angle-list li {
+  display: grid;
+  grid-template-columns: 26px auto auto 1fr;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  padding: 1px 0;
+  color: var(--text);
+}
+
+.angle-list .angle-label {
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.angle-list .angle-deg {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.angle-list .angle-sign {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.angle-list .angle-ms {
+  color: var(--text);
+}

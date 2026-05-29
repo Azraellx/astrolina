@@ -1,0 +1,512 @@
+.expanded-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 30;
+  background: rgba(var(--bg-panel), 0.98);
+  border-right: 1px solid rgba(var(--tint), 0.1);
+  color: var(--text-strong);
+  display: flex;
+  flex-direction: column;
+  /* Whole panel scrolls vertically so tall content (e.g. Advanced mode) is
+     always reachable on small screens. */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.es-section {
+  padding: 14px 18px;
+}
+
+.es-section + .es-section {
+  border-top: 1px solid rgba(var(--tint), 0.06);
+}
+
+/* --- Section 1: header --- */
+
+.es-section-header {
+  flex-shrink: 0;
+}
+
+.es-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.es-switcher {
+  flex: 1;
+  min-width: 0;
+}
+
+.es-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.es-close-btn:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+
+.es-meta {
+  margin: 6px 0 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.es-relocated {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: var(--cool);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.es-relocated.pinned {
+  color: var(--accent);
+}
+
+.es-relocated.natal-pinned {
+  color: var(--success);
+}
+
+.es-relocated.natal {
+  color: var(--text);
+}
+
+/* --- Angles dropdown (header) — mirrors CoordReadout's collapsible --- */
+
+.es-angles {
+  margin-top: 8px;
+}
+
+.es-angles-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.es-angles-toggle:hover {
+  color: var(--accent);
+}
+
+.es-angles-chevron {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* --- Section 2: planets + angles --- */
+
+.es-section-details {
+  flex-shrink: 0;
+}
+
+.es-section h3 {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.es-planet-list,
+.es-angle-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Two explicit columns: Sun→Neptune on the left; Pluto then the minor
+   bodies on the right. Manual split, so it holds regardless of list height. */
+.es-planet-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  align-items: start;
+}
+
+.es-planet-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(var(--tint), 0.04);
+}
+
+.es-row-main {
+  display: grid;
+  grid-template-columns: 16px auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.es-row-extra {
+  margin-top: 1px;
+  padding-left: 22px;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.es-rx {
+  margin-left: 4px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Advanced switch — a simple on/off toggle rather than a dropdown. */
+.es-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 0.12s;
+}
+
+.es-toggle-track {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.18);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.es-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.es-advanced-toggle:hover .es-toggle-track {
+  background: rgba(var(--tint), 0.28);
+}
+
+.es-advanced-toggle.on {
+  color: var(--accent);
+}
+
+.es-advanced-toggle.on .es-toggle-track {
+  background: rgba(var(--accent-rgb), 0.55);
+}
+
+.es-advanced-toggle.on .es-toggle-thumb {
+  transform: translateX(12px);
+  background: var(--accent);
+}
+
+.es-advanced-toggle.on:hover .es-toggle-track {
+  background: rgba(var(--accent-rgb), 0.7);
+}
+
+/* Angles list inside the header dropdown — two per row, flush with the
+   panel edges. */
+.es-angle-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  margin-top: 6px;
+}
+
+.es-angle-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(var(--tint), 0.04);
+}
+
+.es-planet-list li:last-child {
+  border-bottom: none;
+}
+
+/* Drop the bottom border on the last cell of each angle column (ASC/MC
+   in a 2-up layout means the last row is DSC/IC). */
+.es-angle-list li:nth-last-child(-n + 2) {
+  border-bottom: none;
+}
+
+.es-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--text);
+}
+
+.es-name {
+  color: var(--text);
+}
+
+.es-lon {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  font-size: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* --- Aspects section (only shown in Advanced mode) --- */
+
+.es-section-aspects {
+  flex-shrink: 0;
+}
+
+.es-aspect-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+
+.es-aspect-list .asp {
+  display: grid;
+  grid-template-columns: 14px 14px 14px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 10px;
+  border-bottom: 1px solid rgba(var(--tint), 0.04);
+}
+
+.es-aspect-list .asp-planet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.es-aspect-list .asp-glyph {
+  font-size: 12px;
+  text-align: center;
+  line-height: 1;
+}
+
+.es-aspect-list .asp-type {
+  color: var(--text-muted);
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.es-aspect-list .asp-orb {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+/* --- Section 3: wheel + aspect toggles --- */
+
+.es-section-wheel {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 18px;
+  gap: 12px;
+}
+
+/* Advanced toggle pinned to the top-right of the wheel section. */
+.es-wheel-advanced {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 2;
+}
+
+.es-wheel-pane {
+  display: flex;
+  /* `safe center` keeps the wheel centered until it's zoomed wider than the
+     panel, then aligns it to the start so the scroll reaches the left edge. */
+  justify-content: safe center;
+  /* Horizontal scroll appears only when the wheel is zoomed past panel width;
+     vertical growth is handled by the panel's own page scroll. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Reserves the post-zoom footprint so the wheel doesn't overlap siblings. */
+.es-wheel-scaler {
+  flex-shrink: 0;
+}
+
+/* Scaled from the top-left so it fills the scaler box exactly. */
+.es-wheel-inner {
+  transform-origin: top left;
+}
+
+.es-section-wheel svg {
+  display: block;
+}
+
+/* Zoom controls — top-left of the wheel section (mirrors the Advanced
+   toggle top-right; the wheel's corners are clear of its edge labels). */
+.es-wheel-zoom {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.es-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: rgba(var(--bg-panel), 0.9);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.es-zoom-btn:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+
+.es-zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.es-zoom-reset {
+  font-size: 13px;
+}
+
+.es-aspect-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 8px;
+  flex-shrink: 0;
+}
+
+.es-asp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.es-asp-toggle:hover {
+  background: rgba(var(--tint), 0.05);
+}
+
+.es-asp-toggle.off {
+  opacity: 0.4;
+}
+
+.es-asp-toggle .es-asp-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 1.5px solid currentColor;
+  flex-shrink: 0;
+}
+
+.es-asp-toggle.trine .es-asp-swatch { color: var(--cool); }
+.es-asp-toggle.square .es-asp-swatch { color: var(--danger); }
+.es-asp-toggle.conj .es-asp-swatch { color: var(--accent); }
+
+.es-asp-toggle.on.trine { border-color: rgba(var(--cool-rgb), 0.5); }
+.es-asp-toggle.on.square { border-color: rgba(var(--danger-rgb, 232, 90, 79), 0.5); }
+.es-asp-toggle.on.conj { border-color: rgba(var(--accent-rgb), 0.5); }
+
+.es-empty {
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* --- Drag handle on right edge --- */
+
+.es-drag-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.es-drag-handle:hover .es-drag-grip,
+.es-drag-handle:active .es-drag-grip {
+  background: rgba(var(--accent-rgb), 0.6);
+}
+
+.es-drag-grip {
+  width: 2px;
+  height: 48px;
+  border-radius: 2px;
+  background: rgba(var(--tint), 0.18);
+  transition: background 0.12s;
+}

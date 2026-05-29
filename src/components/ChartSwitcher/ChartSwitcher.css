@@ -1,0 +1,180 @@
+.chart-switcher {
+  position: relative;
+  display: inline-block;
+}
+
+.switcher-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.switcher-trigger .label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.switcher-trigger .name-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.switcher-trigger strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.02em;
+  transition: color 0.12s;
+}
+
+.switcher-trigger .switcher-icon {
+  color: var(--text-faint);
+  transition: color 0.12s, transform 0.12s;
+  flex-shrink: 0;
+}
+
+.switcher-trigger:hover strong,
+.switcher-trigger:hover .switcher-icon {
+  color: var(--accent);
+}
+
+.switcher-trigger:hover .switcher-icon {
+  transform: scale(1.08);
+}
+
+.switcher-trigger .meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.switcher-trigger .uncertain {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.switcher-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 260px;
+  max-width: 360px;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 8px;
+  z-index: 50;
+  padding: 4px;
+}
+
+.switcher-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.switcher-menu li {
+  display: flex;
+  align-items: stretch;
+  border-radius: 5px;
+  margin-bottom: 1px;
+}
+
+.switcher-menu li.active .chart-row {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.switcher-menu li.empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.chart-row {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 5px 0 0 5px;
+}
+
+.chart-row:hover {
+  background: rgba(var(--tint), 0.05);
+}
+
+.chart-name {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.chart-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.chart-actions {
+  display: flex;
+  align-items: center;
+}
+
+.chart-actions .action {
+  background: transparent;
+  border: none;
+  padding: 0 8px;
+  color: var(--text-faint);
+  font-size: 14px;
+  cursor: pointer;
+  height: 100%;
+}
+
+.chart-actions .action:hover {
+  color: var(--text-strong);
+}
+
+.chart-actions .action.danger:hover {
+  color: var(--danger);
+}
+
+.new-chart {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 4px;
+  border-radius: 0 0 5px 5px;
+}
+
+.new-chart:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+}

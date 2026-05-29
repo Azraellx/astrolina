@@ -1,0 +1,156 @@
+.map-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.map-pin {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.map-pin-dot {
+  position: absolute;
+  inset: 7px;
+  background: var(--accent);
+  border: 2px solid var(--pin-stroke);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.6);
+}
+
+.map-pin-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(var(--accent-rgb), 0.7);
+  border-radius: 50%;
+  animation: map-pin-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.map-pin:hover .map-pin-dot {
+  background: var(--accent-hover);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.8);
+}
+
+.map-pin.natal .map-pin-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 1px rgba(var(--success-rgb), 0.6);
+}
+
+.map-pin.natal .map-pin-ring {
+  border-color: rgba(var(--success-rgb), 0.7);
+}
+
+.map-pin.natal:hover .map-pin-dot {
+  box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.85);
+}
+
+@keyframes map-pin-pulse {
+  0% {
+    transform: scale(0.55);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+/* MapLibre default-control restyling */
+
+/* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */
+.maplibregl-ctrl-top-right {
+  top: 16px !important;
+  right: 16px !important;
+}
+
+.maplibregl-ctrl-top-right > .maplibregl-ctrl {
+  margin: 0 !important;
+}
+
+/* Bottom-right is now just the attribution chip */
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl {
+  margin: 0 16px 16px 0 !important;
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(var(--bg-panel), 0.78) !important;
+  color: var(--text-faint) !important;
+  font-size: 10px !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(var(--tint), 0.08) !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--text-muted) !important;
+}
+
+.maplibregl-ctrl-attrib a:hover {
+  color: var(--accent) !important;
+}
+
+/* Hide the collapse (i) button — text is always visible so the toggle is redundant */
+.maplibregl-ctrl-attrib-button {
+  display: none !important;
+}
+
+/* Nav control group: stack vertically (+, -, compass top→bottom) */
+.maplibregl-ctrl-group {
+  display: flex !important;
+  flex-direction: column !important;
+  background: rgba(var(--bg-panel), 0.94) !important;
+  border: 1px solid rgba(var(--tint), 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+.maplibregl-ctrl-group button {
+  background-color: transparent !important;
+  width: 34px !important;
+  height: 34px !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: rgba(var(--tint), 0.08) !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(var(--tint), 0.08) !important;
+  border-left: none !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(var(--mapctrl-invert, 1)) brightness(var(--mapctrl-brightness, 0.85));
+}
+
+.maplibregl-ctrl-group {
+  background: rgba(var(--bg-panel), 0.94) !important;
+  border: 1px solid rgba(var(--tint), 0.08) !important;
+  box-shadow: none !important;
+}
+
+.maplibregl-ctrl-group button {
+  background-color: transparent !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: rgba(var(--tint), 0.08) !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(var(--tint), 0.08) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(var(--mapctrl-invert, 1)) brightness(var(--mapctrl-brightness, 0.85));
+}
+
+:root[data-theme='light'] {
+  --mapctrl-invert: 0;
+  --mapctrl-brightness: 0.4;
+}

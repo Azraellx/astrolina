@@ -1,0 +1,126 @@
+.chart-wheel {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  width: 312px;
+  padding: 10px 14px 12px;
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 8px;
+  color: var(--text-strong);
+  transition:
+    width 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.15s;
+}
+
+.chart-wheel.expanded {
+  width: 612px;
+  padding: 12px 24px 18px;
+  max-width: calc(100vw - 32px);
+}
+
+.chart-wheel.pinned {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.chart-wheel.natal-pinned {
+  border-color: rgba(var(--success-rgb), 0.6);
+}
+
+.chart-wheel.natal-pinned .pin-indicator {
+  color: var(--success);
+}
+
+.chart-wheel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chart-wheel.expanded .chart-wheel-header {
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.chart-wheel-header .pin-indicator {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chart-wheel:not(.pinned):not(.natal-pinned) .pin-indicator {
+  color: var(--text-faint);
+}
+
+.chart-wheel-header .coords {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: 1;
+  text-align: right;
+}
+
+.wheel-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.wheel-expand-btn:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+
+.wheel-expand-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chart-wheel-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 240px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.chart-wheel-svg-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.chart-wheel svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  transition: width 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-height: 720px) {
+  .chart-wheel.expanded {
+    width: 520px;
+  }
+  .chart-wheel.expanded svg {
+    max-height: calc(100vh - 100px);
+  }
+}
