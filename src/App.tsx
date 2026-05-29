@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Map, type MapHandle } from './components/Map/Map';
+import type { FeatureCollection, LineString } from 'geojson';
+import { Map, type MapHandle, type OverlayData } from './components/Map/Map';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
@@ -12,14 +13,33 @@ import {
   birthDataToJD,
   getPlanetPositions,
   gmstRadians,
+  projectOntoEcliptic,
   relocate,
   toEclipticPositions,
   TRADITIONAL_PLANETS,
+  type CoordSystem,
+  type HouseSystem,
   type PlanetName,
 } from './lib/ephemeris';
-import { generateLines, type LineType } from './lib/astro/lines';
-import { generateParans } from './lib/astro/parans';
-import { generateLocalSpace } from './lib/astro/localSpace';
+import { generateLines, type LineProps, type LineType } from './lib/astro/lines';
+import { generateParans, type ParanProps } from './lib/astro/parans';
+import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
+import {
+  buildOverlay,
+  OVERLAY_LABEL_PREFIX,
+  prefixLabels,
+  type OverlayMode,
+} from './lib/astro/timeline';
+import {
+  loadOverlayDate,
+  loadOverlayMode,
+  loadOverlayPartner,
+  loadOverlayStep,
+  saveOverlayDate,
+  saveOverlayMode,
+  saveOverlayPartner,
+  saveOverlayStep,
+} from './lib/overlayPrefs';
 import {
   loadCharts,
   loadCurrentId,
@@ -36,6 +56,45 @@ interface Point {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+
+// Pure filter helpers shared by the base chart and the overlay, so the two
+// can't drift apart in what the visibility toggles do.
+function filterLines(
+  fc: FeatureCollection<LineString, LineProps>,
+  planets: Set<PlanetName>,
+  lineTypes: Set<LineType>,
+): FeatureCollection<LineString, LineProps> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter(
+      (f) =>
+        planets.has(f.properties.planet) &&
+        lineTypes.has(f.properties.lineType),
+    ),
+  };
+}
+function filterParans(
+  fc: FeatureCollection<LineString, ParanProps>,
+  planets: Set<PlanetName>,
+): FeatureCollection<LineString, ParanProps> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter(
+      (f) =>
+        planets.has(f.properties.planetA) &&
+        planets.has(f.properties.planetB),
+    ),
+  };
+}
+function filterLocalSpace(
+  fc: FeatureCollection<LineString, LocalSpaceProps>,
+  planets: Set<PlanetName>,
+): FeatureCollection<LineString, LocalSpaceProps> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter((f) => planets.has(f.properties.planet)),
+  };
+}
 
 const seedChart: StoredChart = {
   ...TEST_BIRTH,
@@ -69,16 +128,69 @@ export default function App() {
   );
   const [showParans, setShowParans] = useState(false);
   const [showLocalSpace, setShowLocalSpace] = useState(false);
+  const [coordSystem, setCoordSystem] = useState<CoordSystem>(() =>
+    localStorage.getItem('astro:coord-system:v1') === 'zodiaco'
+      ? 'zodiaco'
+      : 'mundo',
+  );
+  const [houseSystem, setHouseSystem] = useState<HouseSystem>(() => {
+    const v = localStorage.getItem('astro:house-system:v1');
+    return v === 'whole' || v === 'equal' ? v : 'placidus';
+  });
   const [hover, setHover] = useState<Point | null>(null);
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() =>
+    loadOverlayMode(),
+  );
+  const [targetDate, setTargetDate] = useState<number>(() => loadOverlayDate());
+  const [partnerId, setPartnerId] = useState<string | null>(() =>
+    loadOverlayPartner(),
+  );
+  const [stepDays, setStepDays] = useState<number>(() => loadOverlayStep());
+  const [playing, setPlaying] = useState(false);
+
   const mapRef = useRef<MapHandle>(null);
 
   useEffect(() => {
     applyTheme(theme);
     saveTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('astro:coord-system:v1', coordSystem);
+  }, [coordSystem]);
+  useEffect(() => {
+    localStorage.setItem('astro:house-system:v1', houseSystem);
+  }, [houseSystem]);
+
+  useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
+  useEffect(() => saveOverlayDate(targetDate), [targetDate]);
+  useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
+  useEffect(() => saveOverlayStep(stepDays), [stepDays]);
+
+  // Animation: advance the target date one step per tick while playing. setData
+  // is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps the
+  // sweep smooth without thrashing recompute.
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(
+      () => setTargetDate((d) => d + stepDays * 86_400_000),
+      120,
+    );
+    return () => window.clearInterval(id);
+  }, [playing, stepDays]);
+
+  // Pause if the overlay leaves a time mode (synastry/off have no scrubber).
+  const isTimeMode =
+    overlayMode === 'transits' ||
+    overlayMode === 'progressed' ||
+    overlayMode === 'solar-arc';
+  useEffect(() => {
+    if (!isTimeMode && playing) setPlaying(false);
+  }, [isTimeMode, playing]);
 
   useEffect(() => {
     saveCharts(charts);
@@ -101,66 +213,111 @@ export default function App() {
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
 
+  // Positions feeding the map LINES: in-zodiaco projects each body onto the
+  // ecliptic first; in-mundo uses the true sky positions. The wheel keeps using
+  // `positions`/`ecliptic` (longitude is identical either way).
+  const linePositions = useMemo(
+    () => (coordSystem === 'zodiaco' ? projectOntoEcliptic(positions, jd) : positions),
+    [coordSystem, positions, jd],
+  );
+
   const allLines = useMemo(
-    () => generateLines(positions, gmst),
-    [positions, gmst],
+    () => generateLines(linePositions, gmst),
+    [linePositions, gmst],
   );
   const allParans = useMemo(
-    () => generateParans(positions, gmst),
-    [positions, gmst],
+    () => generateParans(linePositions, gmst),
+    [linePositions, gmst],
   );
   const allLocalSpace = useMemo(
     () =>
       current
         ? generateLocalSpace(
-            positions,
+            linePositions,
             gmst,
             current.birthplace.lat,
             current.birthplace.lng,
           )
         : EMPTY_FC,
-    [positions, gmst, current],
+    [linePositions, gmst, current],
   );
 
   const lines = useMemo(
-    () => ({
-      type: 'FeatureCollection' as const,
-      features: allLines.features.filter(
-        (f) =>
-          visiblePlanets.has(f.properties.planet) &&
-          visibleLineTypes.has(f.properties.lineType),
-      ),
-    }),
+    () => filterLines(allLines, visiblePlanets, visibleLineTypes),
     [allLines, visiblePlanets, visibleLineTypes],
   );
 
   const parans = useMemo(
-    () =>
-      showParans
-        ? {
-            type: 'FeatureCollection' as const,
-            features: allParans.features.filter(
-              (f) =>
-                visiblePlanets.has(f.properties.planetA) &&
-                visiblePlanets.has(f.properties.planetB),
-            ),
-          }
-        : EMPTY_FC,
+    () => (showParans ? filterParans(allParans, visiblePlanets) : EMPTY_FC),
     [allParans, visiblePlanets, showParans],
   );
 
-
   const localSpace = useMemo(
     () =>
-      showLocalSpace
-        ? {
-            type: 'FeatureCollection' as const,
-            features: allLocalSpace.features.filter((f) =>
-              visiblePlanets.has(f.properties.planet),
-            ),
-          }
-        : EMPTY_FC,
+      showLocalSpace ? filterLocalSpace(allLocalSpace, visiblePlanets) : EMPTY_FC,
     [allLocalSpace, visiblePlanets, showLocalSpace],
+  );
+
+  // ── Timeline / overlay: a second chart layer (transits, secondary
+  // progressions, solar-arc directions, or a synastry partner) derived from the
+  // current chart via buildOverlay, then run through the SAME generators and
+  // visibility filters as the base.
+  const partner = useMemo(
+    () => (partnerId ? (charts.find((c) => c.id === partnerId) ?? null) : null),
+    [charts, partnerId],
+  );
+  const overlayLayer = useMemo(() => {
+    if (overlayMode === 'off' || !current) return null;
+    return buildOverlay(current, overlayMode, targetDate, partner);
+  }, [overlayMode, current, targetDate, partner]);
+
+  const overlay = useMemo<OverlayData | null>(() => {
+    if (!overlayLayer) return null;
+    const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
+    const ovPositions =
+      coordSystem === 'zodiaco'
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        : overlayLayer.positions;
+    return {
+      lines: filterLines(
+        prefixLabels(
+          generateLines(ovPositions, overlayLayer.gmst),
+          prefix,
+        ),
+        visiblePlanets,
+        visibleLineTypes,
+      ),
+      parans: showParans
+        ? filterParans(
+            prefixLabels(
+              generateParans(ovPositions, overlayLayer.gmst),
+              prefix,
+            ),
+            visiblePlanets,
+          )
+        : EMPTY_FC,
+      localSpace: showLocalSpace
+        ? filterLocalSpace(
+            generateLocalSpace(
+              ovPositions,
+              overlayLayer.gmst,
+              overlayLayer.originLat,
+              overlayLayer.originLng,
+            ),
+            visiblePlanets,
+          )
+        : EMPTY_FC,
+    };
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem]);
+
+  // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
+  // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
+  const overlayEcliptic = useMemo(
+    () =>
+      overlayLayer
+        ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd)
+        : null,
+    [overlayLayer],
   );
 
   const activePoint = pinned ?? hover;
@@ -179,16 +336,16 @@ export default function App() {
   const birthAngles = useMemo(
     () =>
       current
-        ? relocate(jd, current.birthplace.lat, current.birthplace.lng)
+        ? relocate(jd, current.birthplace.lat, current.birthplace.lng, houseSystem)
         : null,
-    [jd, current],
+    [jd, current, houseSystem],
   );
   const angles = useMemo(
     () =>
       activePoint && current
-        ? relocate(jd, activePoint.lat, activePoint.lng)
+        ? relocate(jd, activePoint.lat, activePoint.lng, houseSystem)
         : birthAngles,
-    [jd, activePoint, current, birthAngles],
+    [jd, activePoint, current, birthAngles, houseSystem],
   );
 
   const togglePlanet = useCallback((p: PlanetName) => {
@@ -279,6 +436,7 @@ export default function App() {
         lines={lines}
         parans={parans}
         localSpace={localSpace}
+        overlay={overlay}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
@@ -318,8 +476,25 @@ export default function App() {
         setShowParans={setShowParans}
         showLocalSpace={showLocalSpace}
         setShowLocalSpace={setShowLocalSpace}
+        coordSystem={coordSystem}
+        setCoordSystem={setCoordSystem}
+        houseSystem={houseSystem}
+        setHouseSystem={setHouseSystem}
         theme={theme}
         setTheme={setTheme}
+        overlayMode={overlayMode}
+        setOverlayMode={setOverlayMode}
+        targetDate={targetDate}
+        setTargetDate={setTargetDate}
+        stepDays={stepDays}
+        setStepDays={setStepDays}
+        playing={playing}
+        setPlaying={setPlaying}
+        partnerId={partnerId}
+        setPartnerId={setPartnerId}
+        charts={charts}
+        currentId={current?.id ?? null}
+        overlayLabel={overlayLayer?.label ?? null}
       />
       {wheelExpanded ? (
         <ExpandedChartSidebar
@@ -330,6 +505,9 @@ export default function App() {
           isNatalPin={isNatalPin}
           angles={angles}
           planets={ecliptic}
+          overlayPlanets={overlayEcliptic}
+          overlayLabel={overlayLayer?.label ?? null}
+          visiblePlanets={visiblePlanets}
           onClose={() => setWheelExpanded(false)}
           onRecenterPin={onRecenterPin}
           onSelectChart={(id) => setCurrentId(id)}

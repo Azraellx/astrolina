@@ -49,29 +49,50 @@ const ASPECT_TYPES: {
   { name: 'sextile',     angle: 60,  orb: 4, color: '#5ec2e0', category: 'harmonious' },
 ];
 
+// The tightest aspect (if any) between two ecliptic longitudes (radians).
+function aspectBetween(
+  lonA: number,
+  lonB: number,
+): { type: string; category: AspectCategory; color: string; orb: number } | null {
+  let diff = Math.abs(((lonA - lonB) * 180) / Math.PI);
+  if (diff > 180) diff = 360 - diff;
+  for (const t of ASPECT_TYPES) {
+    const orb = Math.abs(diff - t.angle);
+    if (orb <= t.orb) {
+      return { type: t.name, category: t.category, color: t.color, orb };
+    }
+  }
+  return null;
+}
+
 export function computeAspects(planets: EclipticPosition[]): Aspect[] {
   const out: Aspect[] = [];
   for (let i = 0; i < planets.length; i++) {
     for (let j = i + 1; j < planets.length; j++) {
       const a = planets[i];
       const b = planets[j];
-      let diff = Math.abs(((a.lon - b.lon) * 180) / Math.PI);
-      if (diff > 180) diff = 360 - diff;
-      for (const t of ASPECT_TYPES) {
-        const orb = Math.abs(diff - t.angle);
-        if (orb <= t.orb) {
-          out.push({
-            a: a.name,
-            b: b.name,
-            type: t.name,
-            category: t.category,
-            color: t.color,
-            orb,
-            lonA: a.lon,
-            lonB: b.lon,
-          });
-          break;
-        }
+      const asp = aspectBetween(a.lon, b.lon);
+      if (asp) {
+        out.push({ a: a.name, b: b.name, ...asp, lonA: a.lon, lonB: b.lon });
+      }
+    }
+  }
+  return out;
+}
+
+// Aspects BETWEEN two charts (bi-wheel): every inner planet against every outer
+// planet. `a` is the inner (natal) body, `b` the outer (overlay) body. Used for
+// transit-to-natal, progressed-to-natal, and synastry aspect lines.
+export function computeCrossAspects(
+  inner: EclipticPosition[],
+  outer: EclipticPosition[],
+): Aspect[] {
+  const out: Aspect[] = [];
+  for (const a of inner) {
+    for (const b of outer) {
+      const asp = aspectBetween(a.lon, b.lon);
+      if (asp) {
+        out.push({ a: a.name, b: b.name, ...asp, lonA: a.lon, lonB: b.lon });
       }
     }
   }
@@ -89,6 +110,36 @@ function svgPos(
   return { x: cx + r * Math.cos(theta), y: cy + r * Math.sin(theta) };
 }
 
+// Spread overlapping planets along a ring so their glyphs don't collide. Two
+// relaxation passes (forward then backward) enforce a min angular separation
+// sized to give ~16px of arc at the given ring radius. Returns display
+// longitudes keyed by planet name; the true longitude is still marked by a
+// tick at the planet's real position by the caller.
+function spreadOnRing(
+  planets: EclipticPosition[],
+  ascRad: number,
+  ringRadius: number,
+): Map<string, number> {
+  const arr = planets.map((p) => ({
+    name: p.name,
+    off: ((((p.lon - ascRad) * 180) / Math.PI) % 360 + 360) % 360,
+  }));
+  arr.sort((a, b) => a.off - b.off);
+  const sep = Math.min(
+    20,
+    Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(ringRadius, 1))),
+  );
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i].off - arr[i - 1].off < sep) arr[i].off = arr[i - 1].off + sep;
+  }
+  for (let i = arr.length - 2; i >= 0; i--) {
+    if (arr[i + 1].off - arr[i].off < sep) arr[i].off = arr[i + 1].off - sep;
+  }
+  const m = new Map<string, number>();
+  for (const e of arr) m.set(e.name, ascRad + (e.off * Math.PI) / 180);
+  return m;
+}
+
 interface WheelSvgProps {
   size: number;
   angles: RelocatedAngles;
@@ -96,6 +147,19 @@ interface WheelSvgProps {
   detailed: boolean;
   /** Advanced mode reveals the per-planet degree·sign·minute readout ring. */
   advanced?: boolean;
+  /**
+   * Bi-wheel: a second chart's planets (transits / progressed / solar-arc /
+   * synastry partner) drawn in an outer ring just inside the zodiac band,
+   * dashed and dimmed. Detailed mode only, and only when the wheel is large
+   * enough to fit the extra ring.
+   */
+  overlayPlanets?: EclipticPosition[] | null;
+  /**
+   * Bi-ring detail: when true, the overlay planets get their own
+   * degree·sign·minute readout ring (like the natal Advanced readout), giving
+   * astrologers exact overlay positions. Default off shows glyphs only.
+   */
+  overlayDetailed?: boolean;
   visibleAspects?: Set<AspectCategory>;
 }
 
@@ -105,6 +169,8 @@ export function WheelSvg({
   planets,
   detailed,
   advanced = false,
+  overlayPlanets,
+  overlayDetailed = false,
   visibleAspects,
 }: WheelSvgProps) {
   const cx = size / 2;
@@ -113,9 +179,29 @@ export function WheelSvg({
   // angle callouts), so it only needs a small breathing margin like the mini.
   const rOuter = size / 2 - (detailed ? 14 : 4);
   const rZodiacInner = rOuter - (detailed ? 34 : 0);
+  // Bi-wheel: when a second chart is supplied (and the wheel is big enough),
+  // its planets occupy an outer ring just inside the zodiac band, and the natal
+  // glyph ring is pushed inward to make room. Everything inside cascades from
+  // rPlanets, so the readout/house/aspect rings shift in automatically.
+  const hasOverlay =
+    detailed && !!overlayPlanets && overlayPlanets.length > 0 && size >= 420;
+  const rOverlay = hasOverlay ? rZodiacInner - 18 : 0;
+  // Bi-ring detail: an overlay readout ring (degree·sign·minute) just inside the
+  // overlay glyphs, mirroring the natal readout. Needs extra radial room, so
+  // it's gated on a larger wheel; when on, the natal glyph ring drops further in.
+  const showOverlayReadouts = hasOverlay && overlayDetailed && size >= 575;
+  // The readout fan sits 36px inside the overlay glyph ring (was 30) so the
+  // degree value clears the planet discs with more breathing room.
+  const rOverlayReadout = showOverlayReadouts ? rOverlay - 36 : 0;
   // Planet glyph ring, then a readout ring (degree · sign · minute) just
   // inside it — mirroring a printed natal chart.
-  const rPlanets = (detailed ? rZodiacInner - 20 : rOuter - 26);
+  const rPlanets = detailed
+    ? hasOverlay
+      ? showOverlayReadouts
+        ? rOverlayReadout - 36
+        : rOverlay - 28
+      : rZodiacInner - 20
+    : rOuter - 26;
   // Gap from the planet glyphs to the readout trio (the 34px base widened by
   // ~15% to give the degree value more breathing room from the planet circle).
   const rReadout = detailed ? rPlanets - 39 : 0;
@@ -146,6 +232,14 @@ export function WheelSvg({
     ? aspects.filter((a) => visibleAspects.has(a.category))
     : aspects;
 
+  // Bi-wheel cross-aspects (overlay-to-natal). Drawn dashed so they read as
+  // distinct from the solid natal-to-natal aspect lines, and gated by the same
+  // category toggles.
+  const crossAspects = hasOverlay ? computeCrossAspects(planets, overlayPlanets!) : [];
+  const filteredCrossAspects = visibleAspects
+    ? crossAspects.filter((a) => visibleAspects.has(a.category))
+    : crossAspects;
+
   // Spread overlapping planets along the ring so their glyphs and readouts
   // don't collide; the true position is still marked by a tick on the zodiac
   // band. Aspect lines keep using the true longitudes.
@@ -175,6 +269,18 @@ export function WheelSvg({
     }
   }
   const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
+
+  // One spread for the overlay ring, shared by its glyphs and (when shown) its
+  // readout trio so the two stay radially aligned. Sized to the innermost ring
+  // in use — the minutes slot when the readout is on — so nothing collides there.
+  const overlaySpreadRadius = showOverlayReadouts
+    ? Math.max(rOverlayReadout - 16, 1)
+    : rOverlay;
+  const overlayDisplay = hasOverlay
+    ? spreadOnRing(overlayPlanets!, angles.asc, overlaySpreadRadius)
+    : null;
+  const overlayLonFor = (p: EclipticPosition) =>
+    overlayDisplay?.get(p.name) ?? p.lon;
 
   return (
     <svg
@@ -259,13 +365,22 @@ export function WheelSvg({
           );
         })}
 
-      {/* Placidus house cusps. The four angle cusps (1/4/7/10) are the bold
-          ASC–DSC / MC–IC diameters drawn below, so here we draw only the eight
-          intermediate cusp spokes plus all twelve house numbers. */}
+      {/* House cusps. The four angles (ASC/MC/DSC/IC) are drawn as bold
+          diameters below, so any cusp coincident with one is skipped here.
+          In Placidus that's cusps 1/4/7/10; in Equal/Whole the 4th/10th (and
+          others) float free of the meridian and so ARE drawn. */}
       {detailed && houseBand > 0 &&
-        [1, 2, 4, 5, 7, 8, 10, 11].map((idx) => {
-          const lon = angles.cusps[idx];
+        angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
+          const angleDiff = (a: number) => {
+            let d = Math.abs(((lon - a) % (2 * Math.PI)));
+            if (d > Math.PI) d = 2 * Math.PI - d;
+            return d;
+          };
+          const onAxis = [angles.asc, angles.mc, angles.dsc, angles.ic].some(
+            (a) => angleDiff(a) < 0.0087, // ~0.5°
+          );
+          if (onAxis) return null;
           const inner = svgPos(lon, angles.asc, houseRingInner, cx, cy);
           const outer = svgPos(lon, angles.asc, houseRingOuter, cx, cy);
           return (
@@ -364,6 +479,27 @@ export function WheelSvg({
           );
         })}
 
+      {/* Bi-wheel cross-aspect lines (overlay ↔ natal), dashed. */}
+      {hasOverlay &&
+        filteredCrossAspects.map((a, i) => {
+          const posA = svgPos(a.lonA, angles.asc, rAspectRing, cx, cy);
+          const posB = svgPos(a.lonB, angles.asc, rAspectRing, cx, cy);
+          const opacity = 0.4 + (1 - a.orb / 8) * 0.4;
+          return (
+            <line
+              key={`xasp-${i}`}
+              x1={posA.x}
+              y1={posA.y}
+              x2={posB.x}
+              y2={posB.y}
+              stroke={a.color}
+              strokeWidth={1}
+              strokeDasharray="3 2"
+              opacity={opacity}
+            />
+          );
+        })}
+
       {/* Connector from the true zodiac position to the (possibly spread)
           glyph, plus a tick on the zodiac band marking the exact longitude. */}
       {detailed &&
@@ -430,6 +566,93 @@ export function WheelSvg({
           </g>
         );
       })}
+
+      {/* Bi-wheel: the overlay chart's planets in an outer ring, dashed and
+          dimmed, with a tick on the zodiac band marking each true longitude. */}
+      {hasOverlay && (
+        <g className="wheel-overlay-ring" opacity={0.92}>
+          {overlayPlanets!.map((p) => {
+            const truePos = svgPos(p.lon, angles.asc, rZodiacInner, cx, cy);
+            const glyphPos = svgPos(overlayLonFor(p), angles.asc, rOverlay, cx, cy);
+            const tickPos = svgPos(p.lon, angles.asc, rZodiacInner - 2, cx, cy);
+            const tipPos = svgPos(p.lon, angles.asc, rZodiacInner - 7, cx, cy);
+            return (
+              <g key={`ov-${p.name}`}>
+                <line
+                  x1={truePos.x}
+                  y1={truePos.y}
+                  x2={glyphPos.x}
+                  y2={glyphPos.y}
+                  stroke={PLANET_COLORS[p.name]}
+                  strokeWidth={0.6}
+                  strokeDasharray="2 2"
+                  opacity={0.45}
+                />
+                <line
+                  x1={tickPos.x}
+                  y1={tickPos.y}
+                  x2={tipPos.x}
+                  y2={tipPos.y}
+                  stroke={PLANET_COLORS[p.name]}
+                  strokeWidth={1.2}
+                />
+                <circle
+                  cx={glyphPos.x}
+                  cy={glyphPos.y}
+                  r={9}
+                  className="planet-disc-fill"
+                  stroke={PLANET_COLORS[p.name]}
+                  strokeWidth={1.1}
+                  strokeDasharray="2 1.5"
+                />
+                <PlanetGlyph
+                  planet={p.name}
+                  x={glyphPos.x}
+                  y={glyphPos.y}
+                  size={13}
+                  color={PLANET_COLORS[p.name]}
+                />
+              </g>
+            );
+          })}
+        </g>
+      )}
+
+      {/* Bi-ring detail: the overlay planets' degree·sign·minute readout, fanned
+          along the spoke just inside the overlay glyphs — the natal readout's
+          twin, so overlay positions read exactly. */}
+      {showOverlayReadouts &&
+        overlayPlanets!.map((p) => {
+          const degPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout + 16, cx, cy);
+          const signPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout, cx, cy);
+          const minPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout - 16, cx, cy);
+          const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
+          const signIdx = Math.floor(lonDeg / 30);
+          const inSign = lonDeg % 30;
+          const deg = Math.floor(inSign);
+          const min = Math.floor((inSign - deg) * 60);
+          return (
+            <g key={`ovrdo-${p.name}`} className="planet-readout overlay-readout">
+              <text
+                x={degPos.x}
+                y={degPos.y + 3}
+                textAnchor="middle"
+                className="readout-deg"
+              >
+                {deg}°
+              </text>
+              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={13} />
+              <text
+                x={minPos.x}
+                y={minPos.y + 3}
+                textAnchor="middle"
+                className="readout-min"
+              >
+                {String(min).padStart(2, '0')}&#39;
+              </text>
+            </g>
+          );
+        })}
 
       {/* Degree · sign · minute readout. Each value gets its own radial slot
           (degree nearest the glyph, then sign, then minutes), so the trio

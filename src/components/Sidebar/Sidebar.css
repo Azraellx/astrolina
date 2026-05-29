@@ -287,10 +287,104 @@
   opacity: 0.7;
 }
 
-.line-toggle.asc .line-swatch {
-  border-top-style: dashed;
+/* ASC/DSC are solid on the map, distinguished by directional arrows chained
+   along the line. The legend mirrors that with an arrow glyph: → ascendant,
+   ← descendant. */
+.line-arrow-swatch {
+  width: 18px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+  flex-shrink: 0;
 }
 
-.line-toggle.dsc .line-swatch {
-  border-top: 1.5px dotted var(--text);
+/* ── Transits & overlays ─────────────────────────────────────── */
+.overlay-mode-list {
+  margin-bottom: 6px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(var(--tint), 0.06);
+}
+
+.timeline-datetime {
+  width: 100%;
+  padding: 5px 7px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  color-scheme: dark;
+}
+
+.timeline-utc-note {
+  margin-top: -4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.timeline-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.timeline-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.timeline-controls .tech-toggle {
+  justify-content: center;
+}
+
+.timeline-steps {
+  margin: 0;
+}
+
+.timeline-steps .line-toggle {
+  justify-content: center;
+  border-color: rgba(var(--tint), 0.08);
+}
+
+.timeline-steps .line-toggle.on {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.timeline-readout {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.timeline-empty {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.calc-hint {
+  margin: 6px 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* Synastry partner picker: keep it from growing without bound — about 8 rows
+   tall, then scroll. */
+.synastry-list {
+  max-height: 224px;
+  overflow-y: auto;
+  padding-right: 2px;
 }

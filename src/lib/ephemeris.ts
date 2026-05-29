@@ -286,7 +286,7 @@ export function obliquity(jd: number): number {
   return nutation.meanObliquity(jd) + deps;
 }
 
-function raDecToEclipticLon(ra: number, dec: number, eps: number): number {
+export function raDecToEclipticLon(ra: number, dec: number, eps: number): number {
   const lon = Math.atan2(
     Math.sin(ra) * Math.cos(eps) + Math.tan(dec) * Math.sin(eps),
     Math.cos(ra),
@@ -298,6 +298,67 @@ function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
   return Math.asin(
     Math.sin(dec) * Math.cos(eps) - Math.cos(dec) * Math.sin(eps) * Math.sin(ra),
   );
+}
+
+// Ecliptic spherical (lon, lat) -> equatorial RA/dec for a given obliquity.
+// Same rotation as eclCartToRaDec but parameterised by `eps` so the solar-arc
+// round-trip below uses one consistent obliquity in both directions.
+function eclipticToRaDec(
+  lon: number,
+  lat: number,
+  eps: number,
+): { ra: number; dec: number } {
+  const x = Math.cos(lat) * Math.cos(lon);
+  const y = Math.cos(lat) * Math.sin(lon);
+  const z = Math.sin(lat);
+  const cosE = Math.cos(eps);
+  const sinE = Math.sin(eps);
+  const xe = x;
+  const ye = y * cosE - z * sinE;
+  const ze = y * sinE + z * cosE;
+  let ra = Math.atan2(ye, xe);
+  if (ra < 0) ra += 2 * Math.PI;
+  const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye));
+  return { ra, dec };
+}
+
+// Shift a body's ECLIPTIC longitude by deltaLonRad (keeping its ecliptic
+// latitude), then convert back to RA/dec. Used for solar-arc directions, where
+// every natal body is advanced by the solar arc. NOTE: the arc must be applied
+// in ecliptic longitude — adding it directly to RA is wrong for bodies off the
+// equator (Pluto, the Moon). Pass eps = obliquity(jd) for the round-trip.
+export function shiftEclipticLongitude(
+  p: PlanetPosition,
+  deltaLonRad: number,
+  eps: number,
+): PlanetPosition {
+  const lon = raDecToEclipticLon(p.ra, p.dec, eps) + deltaLonRad;
+  const lat = raDecToEclipticLat(p.ra, p.dec, eps);
+  const { ra, dec } = eclipticToRaDec(lon, lat, eps);
+  return { name: p.name, ra, dec };
+}
+
+// Which convention the astrocartography lines use:
+//  - 'mundo'   — each body's actual position in the sky (RA/dec as computed).
+//  - 'zodiaco' — each body projected onto the ecliptic plane (latitude → 0)
+//                before the line is drawn.
+// They diverge most for high-latitude bodies (Pluto up to ~17°, Moon up to ~5°).
+export type CoordSystem = 'mundo' | 'zodiaco';
+
+// Project bodies onto the ecliptic (set ecliptic latitude to 0) and convert back
+// to RA/dec — the "in zodiaco" line convention. Longitude is unchanged, so the
+// chart wheel (which reads ecliptic longitude) is unaffected; only the line
+// geometry on the map shifts for off-ecliptic bodies.
+export function projectOntoEcliptic(
+  positions: PlanetPosition[],
+  jd: number,
+): PlanetPosition[] {
+  const eps = obliquity(jd);
+  return positions.map((p) => {
+    const lon = raDecToEclipticLon(p.ra, p.dec, eps);
+    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+    return { name: p.name, ra, dec };
+  });
 }
 
 export function toEclipticPositions(
@@ -332,10 +393,15 @@ export function toEclipticPositions(
   });
 }
 
+// House-division systems offered in the wheel. The four angles (ASC/MC/DSC/IC)
+// are identical across systems; only the intermediate cusps differ.
+export type HouseSystem = 'placidus' | 'whole' | 'equal';
+
 export function relocate(
   jd: number,
   latDeg: number,
   lngDeg: number,
+  system: HouseSystem = 'placidus',
 ): RelocatedAngles {
   const eps = obliquity(jd);
   const gmst = gmstRadians(jd);
@@ -357,35 +423,50 @@ export function relocate(
   const dsc = (asc + Math.PI) % (2 * Math.PI);
   const ic = (mc + Math.PI) % (2 * Math.PI);
 
-  // Placidus intermediate cusps (11, 12, 8, 9) by the standard semi-arc
-  // time-division: each divides a point's diurnal semi-arc into thirds. RAMC
-  // is the local sidereal time `lst`. The remaining cusps follow by symmetry
-  // (2/3/5/6 are the antipodes of 8/9/11/12; 1/4/7/10 are the angles).
-  const tanPhi = Math.tan(phi);
   const norm2pi = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  // Right ascension (radians) → ecliptic longitude (radians), correct quadrant.
-  const raToLon = (ra: number) => norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * cosEps));
-  // Diurnal semi-arc (radians) of the ecliptic point at longitude `lon`.
-  const semiArc = (lon: number) => {
-    const dec = Math.asin(sinEps * Math.sin(lon));
-    const c = Math.max(-1, Math.min(1, -tanPhi * Math.tan(dec)));
-    return Math.acos(c);
-  };
-  // Fixed-point solve: cusp RA = lst + dir·H where H converges to frac·DSA.
-  const solveCusp = (dir: number, frac: number) => {
-    let H = frac * (Math.PI / 2);
-    for (let i = 0; i < 25; i++) H = frac * semiArc(raToLon(lst + dir * H));
-    return raToLon(lst + dir * H);
-  };
-  const c11 = solveCusp(1, 1 / 3);
-  const c12 = solveCusp(1, 2 / 3);
-  const c9 = solveCusp(-1, 1 / 3);
-  const c8 = solveCusp(-1, 2 / 3);
-  const opp = (a: number) => norm2pi(a + Math.PI);
-  const cusps = [
-    asc, opp(c8), opp(c9), ic, opp(c11), opp(c12),
-    dsc, c8, c9, mc, c11, c12,
-  ];
+  const HALF_SIGN = Math.PI / 6; // 30°
+
+  let cusps: number[];
+  if (system === 'equal') {
+    // Equal house: cusp 1 = ASC, then every 30° from it. MC floats (drawn as
+    // its own axis, not necessarily on cusp 10).
+    cusps = Array.from({ length: 12 }, (_, i) => norm2pi(asc + i * HALF_SIGN));
+  } else if (system === 'whole') {
+    // Whole-sign house: cusp 1 = 0° of the sign the ASC falls in; houses are
+    // whole signs from there.
+    const ascDeg = (asc * 180) / Math.PI;
+    const signStart = ((Math.floor(ascDeg / 30) * 30) * Math.PI) / 180;
+    cusps = Array.from({ length: 12 }, (_, i) => norm2pi(signStart + i * HALF_SIGN));
+  } else {
+    // Placidus intermediate cusps (11, 12, 8, 9) by the standard semi-arc
+    // time-division: each divides a point's diurnal semi-arc into thirds. RAMC
+    // is the local sidereal time `lst`. The remaining cusps follow by symmetry
+    // (2/3/5/6 are the antipodes of 8/9/11/12; 1/4/7/10 are the angles).
+    const tanPhi = Math.tan(phi);
+    // Right ascension (radians) → ecliptic longitude (radians), correct quadrant.
+    const raToLon = (ra: number) => norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * cosEps));
+    // Diurnal semi-arc (radians) of the ecliptic point at longitude `lon`.
+    const semiArc = (lon: number) => {
+      const dec = Math.asin(sinEps * Math.sin(lon));
+      const c = Math.max(-1, Math.min(1, -tanPhi * Math.tan(dec)));
+      return Math.acos(c);
+    };
+    // Fixed-point solve: cusp RA = lst + dir·H where H converges to frac·DSA.
+    const solveCusp = (dir: number, frac: number) => {
+      let H = frac * (Math.PI / 2);
+      for (let i = 0; i < 25; i++) H = frac * semiArc(raToLon(lst + dir * H));
+      return raToLon(lst + dir * H);
+    };
+    const c11 = solveCusp(1, 1 / 3);
+    const c12 = solveCusp(1, 2 / 3);
+    const c9 = solveCusp(-1, 1 / 3);
+    const c8 = solveCusp(-1, 2 / 3);
+    const opp = (a: number) => norm2pi(a + Math.PI);
+    cusps = [
+      asc, opp(c8), opp(c9), ic, opp(c11), opp(c12),
+      dsc, c8, c9, mc, c11, c12,
+    ];
+  }
 
   return { asc, mc, dsc, ic, cusps };
 }

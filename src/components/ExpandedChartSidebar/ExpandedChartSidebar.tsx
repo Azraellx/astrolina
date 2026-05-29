@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import {
   PLANET_COLORS,
   PLANET_DISPLAY,
-  TRADITIONAL_PLANETS,
   type EclipticPosition,
   type PlanetName,
   type RelocatedAngles,
@@ -14,6 +13,7 @@ import {
   WheelSvg,
   fmtLon,
   computeAspects,
+  computeCrossAspects,
   SIGNS,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
@@ -36,6 +36,10 @@ interface ExpandedChartSidebarProps {
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
+  overlayPlanets?: EclipticPosition[] | null;
+  overlayLabel?: string | null;
+  /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
+  visiblePlanets: Set<PlanetName>;
   onClose: () => void;
   onRecenterPin: () => void;
   onSelectChart: (id: string) => void;
@@ -123,8 +127,6 @@ const ASPECT_TOGGLES: {
   { key: 'conjunction', label: 'Conj', cssClass: 'conj' },
 ];
 
-const TRADITIONAL_SET: Set<PlanetName> = new Set(TRADITIONAL_PLANETS);
-
 export function ExpandedChartSidebar({
   chart,
   charts,
@@ -133,6 +135,9 @@ export function ExpandedChartSidebar({
   isNatalPin,
   angles,
   planets,
+  overlayPlanets,
+  overlayLabel,
+  visiblePlanets,
   onClose,
   onRecenterPin,
   onSelectChart,
@@ -185,6 +190,13 @@ export function ExpandedChartSidebar({
 
   // Longitude formatter shared by the header angles and the planet rows.
   const fmt = advanced ? fmtLonExact : fmtLon;
+
+  // Respect the Map Filter's planet toggles across every area of the expanded
+  // view (planet list, wheel, aspects, overlay aspects). Order is preserved
+  // from the incoming arrays (PLANET_NAMES order).
+  const shownPlanets = planets.filter((p) => visiblePlanets.has(p.name));
+  const shownOverlay =
+    overlayPlanets?.filter((p) => visiblePlanets.has(p.name)) ?? null;
 
   const toggleAspect = (cat: AspectCategory) => {
     setVisibleAspects((prev) => {
@@ -407,17 +419,12 @@ export function ExpandedChartSidebar({
         )}
       </section>
 
-      {angles && (() => {
-        // Pluto sits atop the second column (above the North Node) rather than
-        // at the foot of the traditional column.
-        const leftCol = planets.filter(
-          (p) => TRADITIONAL_SET.has(p.name) && p.name !== 'Pluto',
-        );
-        const pluto = planets.find((p) => p.name === 'Pluto');
-        const rightCol = [
-          ...(pluto ? [pluto] : []),
-          ...planets.filter((p) => !TRADITIONAL_SET.has(p.name)),
-        ];
+      {angles && shownPlanets.length > 0 && (() => {
+        // Fill the two columns row-by-row: item 0 top-left, item 1 top-right,
+        // item 2 left (row 2), item 3 right (row 2)… So even indices go left,
+        // odd go right. Stays balanced and compact as planets are toggled off.
+        const leftCol = shownPlanets.filter((_, i) => i % 2 === 0);
+        const rightCol = shownPlanets.filter((_, i) => i % 2 === 1);
         const renderRow = (p: EclipticPosition) => (
           <li key={p.name} className={advanced ? 'advanced' : ''}>
             <div className="es-row-main">
@@ -458,14 +465,23 @@ export function ExpandedChartSidebar({
       })()}
 
       <section className="es-section es-section-wheel">
+        {angles && overlayLabel && (
+          <div className="es-overlay-bar">
+            <span className="es-overlay-caption">
+              <span className="es-overlay-dot" /> {overlayLabel}
+            </span>
+          </div>
+        )}
         <div className="es-wheel-pane" ref={wheelPaneRef}>
           {angles ? (
             <WheelSvg
               size={wheelSize}
               angles={angles}
-              planets={planets}
+              planets={shownPlanets}
               detailed={true}
               advanced={advanced}
+              overlayPlanets={shownOverlay}
+              overlayDetailed={advanced}
               visibleAspects={visibleAspects}
             />
           ) : (
@@ -494,7 +510,7 @@ export function ExpandedChartSidebar({
       </section>
 
       {angles && advanced && (() => {
-        const aspects = computeAspects(planets)
+        const aspects = computeAspects(shownPlanets)
           .filter((a) => visibleAspects.has(a.category))
           .sort((a, b) => a.orb - b.orb);
         if (aspects.length === 0) return null;
@@ -516,6 +532,45 @@ export function ExpandedChartSidebar({
                   <span
                     className="asp-planet"
                     style={{ color: PLANET_COLORS[a.b as PlanetName] }}
+                  >
+                    <PlanetGlyph planet={a.b as PlanetName} size={12} />
+                  </span>
+                  <span className="asp-type">{a.type}</span>
+                  <span className="asp-orb">{fmtOrb(a.orb)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
+
+      {angles && advanced && shownOverlay && shownOverlay.length > 0 && (() => {
+        const cross = computeCrossAspects(shownPlanets, shownOverlay)
+          .filter((a) => visibleAspects.has(a.category))
+          .sort((a, b) => a.orb - b.orb);
+        if (cross.length === 0) return null;
+        return (
+          <section className="es-section es-section-aspects es-section-cross">
+            <h3>
+              Overlay aspects ({cross.length})
+              <span className="es-cross-hint">natal ↔ overlay</span>
+            </h3>
+            <ul className="es-aspect-list">
+              {cross.map((a, i) => (
+                <li key={i} className={`asp asp-${a.category}`}>
+                  <span
+                    className="asp-planet"
+                    style={{ color: PLANET_COLORS[a.a as PlanetName] }}
+                  >
+                    <PlanetGlyph planet={a.a as PlanetName} size={12} />
+                  </span>
+                  <span className="asp-glyph" style={{ color: a.color }}>
+                    {ASPECT_GLYPHS[a.type] ?? a.type}
+                  </span>
+                  <span
+                    className="asp-planet asp-planet-overlay"
+                    style={{ color: PLANET_COLORS[a.b as PlanetName] }}
+                    title="Overlay body"
                   >
                     <PlanetGlyph planet={a.b as PlanetName} size={12} />
                   </span>

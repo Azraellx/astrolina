@@ -109,3 +109,9 @@
   font-weight: 500;
   pointer-events: none;
 }
+
+/* Overlay (bi-ring) readout sits a touch dimmer than the natal readout so the
+   two rings stay visually distinct. */
+.overlay-readout {
+  opacity: 0.8;
+}
