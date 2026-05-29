@@ -457,8 +457,46 @@ export function ExpandedChartSidebar({
         );
       })()}
 
+      <section className="es-section es-section-wheel">
+        <div className="es-wheel-pane" ref={wheelPaneRef}>
+          {angles ? (
+            <WheelSvg
+              size={wheelSize}
+              angles={angles}
+              planets={planets}
+              detailed={true}
+              advanced={advanced}
+              visibleAspects={visibleAspects}
+            />
+          ) : (
+            <div className="es-empty">No chart selected</div>
+          )}
+        </div>
+        {angles && (
+          <div className="es-aspect-toggles">
+            {ASPECT_TOGGLES.map((t) => {
+              const on = visibleAspects.has(t.key);
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
+                  onClick={() => toggleAspect(t.key)}
+                  title={`Toggle ${t.label}`}
+                >
+                  <span className="es-asp-swatch" />
+                  <span className="es-asp-label">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       {angles && advanced && (() => {
-        const aspects = computeAspects(planets).sort((a, b) => a.orb - b.orb);
+        const aspects = computeAspects(planets)
+          .filter((a) => visibleAspects.has(a.category))
+          .sort((a, b) => a.orb - b.orb);
         if (aspects.length === 0) return null;
         return (
           <section className="es-section es-section-aspects">
@@ -489,41 +527,6 @@ export function ExpandedChartSidebar({
           </section>
         );
       })()}
-
-      <section className="es-section es-section-wheel">
-        <div className="es-wheel-pane" ref={wheelPaneRef}>
-          {angles ? (
-            <WheelSvg
-              size={wheelSize}
-              angles={angles}
-              planets={planets}
-              detailed={true}
-              visibleAspects={visibleAspects}
-            />
-          ) : (
-            <div className="es-empty">No chart selected</div>
-          )}
-        </div>
-        {angles && (
-          <div className="es-aspect-toggles">
-            {ASPECT_TOGGLES.map((t) => {
-              const on = visibleAspects.has(t.key);
-              return (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
-                  onClick={() => toggleAspect(t.key)}
-                  title={`Toggle ${t.label}`}
-                >
-                  <span className="es-asp-swatch" />
-                  <span className="es-asp-label">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
       </div>
 
       <div

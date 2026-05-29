@@ -49,15 +49,15 @@ These are the "angular" parans that practitioners discuss most often.
 
 **Path to fix:** add a numerical solver (Newton's method, ~30 lines) for horizon × horizon. Fixed-star parans require a star catalog (e.g., FK6 or Hipparcos with proper motion).
 
-### 4. Chart wheel: angles only, no house cusps
+### 4. Chart wheel: Placidus only, no house system selector
 
-The relocated chart wheel shows the four angles (ASC, MC, DSC, IC) and the planets in their ecliptic positions — with an Advanced mode that adds each planet's degree · sign · minute readout and the aspect grid — but it doesn't draw house cusp lines (2nd, 3rd, 5th, 6th, etc.).
+The expanded (large) chart wheel draws all twelve **Placidus** house cusps by default — the four angle axes (ASC, MC, DSC, IC = cusps 1/4/7/10) plus the eight intermediate cusp spokes and house numbers. Placidus matches the default of Solar Fire and Astro Gold. The mini wheel still shows angles only, to stay legible at small size.
 
 **Practical impact:**
-- For locational work, the four angles are what carry most of the interpretive weight ("the Sun is on your MC in Madrid, so…"). House cusps matter more for natal interpretation than for ACG.
-- **What a pro might catch:** they expect to see 12 spokes radiating from the center. Without them, the wheel reads as "incomplete." Easy add.
+- Placidus is computed by the standard semi-arc time-division (cusps 11/12/8/9 by iteration, the rest by symmetry). It is mathematically undefined inside the polar circles (~±66°); there the semi-arc cosine is clamped so the wheel degrades gracefully rather than rendering NaN spokes.
+- **What a pro might catch:** practitioners who use Koch, Whole Sign, Equal, Regiomontanus, etc. can't switch systems yet — the wheel is Placidus-only.
 
-**Path to fix:** add house system selector (Placidus, Koch, Whole Sign, Equal). Whole Sign and Equal are trivial (signs from ASC); Placidus needs the standard semi-arc iteration (~50 lines).
+**Path to fix:** add a house-system selector. Whole Sign and Equal are trivial (signs/degrees from ASC); Koch/Regiomontanus are a few more lines of the same semi-arc machinery already in `relocate`.
 
 ### 5. Line calculation: in mundo only, no zodiaco toggle
 

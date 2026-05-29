@@ -43,6 +43,21 @@
   pointer-events: none;
 }
 
+/* Placidus intermediate house cusps — fainter than the four angle axes. */
+.wheel-svg .house-cusp {
+  stroke: rgba(var(--tint), 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.wheel-svg .house-number {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 .wheel-svg .sign-divider {
   stroke: rgba(var(--tint), 0.22);
   stroke-width: 1;
@@ -55,17 +70,20 @@
   pointer-events: none;
 }
 
-.wheel-svg .angle-label-lg {
-  fill: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+/* Degree graduation scale on the zodiac rim (Advanced mode). */
+.wheel-svg .deg-tick {
+  stroke: rgba(var(--tint), 0.22);
+  stroke-width: 0.6;
 }
 
-.wheel-svg .angle-degree-lg {
-  fill: var(--text);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
+.wheel-svg .deg-tick-5 {
+  stroke: rgba(var(--tint), 0.32);
+  stroke-width: 0.8;
+}
+
+.wheel-svg .deg-tick-10 {
+  stroke: rgba(var(--tint), 0.45);
+  stroke-width: 1;
 }
 
 /* Per-planet degree · sign · minute readout inside the planet ring. */

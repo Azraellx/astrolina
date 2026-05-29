@@ -94,6 +94,8 @@ interface WheelSvgProps {
   angles: RelocatedAngles;
   planets: EclipticPosition[];
   detailed: boolean;
+  /** Advanced mode reveals the per-planet degree·sign·minute readout ring. */
+  advanced?: boolean;
   visibleAspects?: Set<AspectCategory>;
 }
 
@@ -102,23 +104,42 @@ export function WheelSvg({
   angles,
   planets,
   detailed,
+  advanced = false,
   visibleAspects,
 }: WheelSvgProps) {
   const cx = size / 2;
   const cy = size / 2;
-  // Detailed mode reserves 64px on each side so the angle-degree labels
-  // (~55px wide for strings like "29°59' Sco") stay inside the SVG box while
-  // keeping the empty margin around the wheel tight.
-  const rOuter = size / 2 - (detailed ? 64 : 4);
+  // The expanded wheel draws everything inside the outer ring (no exterior
+  // angle callouts), so it only needs a small breathing margin like the mini.
+  const rOuter = size / 2 - (detailed ? 14 : 4);
   const rZodiacInner = rOuter - (detailed ? 34 : 0);
   // Planet glyph ring, then a readout ring (degree · sign · minute) just
   // inside it — mirroring a printed natal chart.
   const rPlanets = (detailed ? rZodiacInner - 20 : rOuter - 26);
-  const rReadout = detailed ? rPlanets - 34 : 0;
-  const rPlanetRingInner = detailed ? Math.max(10, rReadout - 26) : 0;
-  const rAspectRing = detailed ? rPlanetRingInner - 2 : rPlanets - 22;
-  const rInner = detailed ? rAspectRing : rPlanets - 22;
-  const showReadouts = detailed && rReadout > 30;
+  // Gap from the planet glyphs to the readout trio (the 34px base widened by
+  // ~15% to give the degree value more breathing room from the planet circle).
+  const rReadout = detailed ? rPlanets - 39 : 0;
+  // The degree·sign·minute readout ring only appears in Advanced mode.
+  const showReadouts = detailed && advanced && rReadout > 30;
+  // Dedicated house ring: a band just inside the planet glyphs — or inside the
+  // readout ring when Advanced is on — holding the cusp spokes and house
+  // numbers so nothing else overlaps them. Its two borders (houseRingOuter and
+  // houseRingInner) ARE the band edges, replacing the old thin double border.
+  const houseRingOuter = detailed
+    ? (showReadouts ? rReadout - 28 : rPlanets - 22)
+    : 0;
+  const houseBand = detailed ? Math.min(24, Math.max(0, houseRingOuter - 12)) : 0;
+  const houseRingInner = houseRingOuter - houseBand;
+  const rAspectRing = detailed ? houseRingInner : rPlanets - 22;
+  const rInner = detailed ? houseRingInner : rPlanets - 22;
+
+  // The wheel is rotated so the ASC sits at due-left, which makes the ASC–DSC
+  // axis a true horizontal diameter. The MC is NOT at due-top, though (that
+  // only holds when asc − mc = 90°), so the detailed MC–IC axis is drawn at the
+  // MC's real longitude via svgPos — keeping the cusp-10/cusp-4 separators
+  // aligned with the house numbers.
+  const mcOuter = svgPos(angles.mc, angles.asc, rOuter, cx, cy);
+  const icOuter = svgPos(angles.ic, angles.asc, rOuter, cx, cy);
 
   const aspects = detailed ? computeAspects(planets) : [];
   const filteredAspects = visibleAspects
@@ -135,11 +156,14 @@ export function WheelSvg({
       off: ((((p.lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360,
     }));
     arr.sort((a, b) => a.off - b.off);
-    // Min angular separation that yields ~16px of arc at the readout ring.
-    const sep = Math.min(
-      20,
-      Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rReadout, 1))),
-    );
+    // Min angular separation that yields ~16px of arc. When the Advanced
+    // readouts are shown the trio fans inward to rReadout − 16, so we base the
+    // separation on that innermost (minutes) ring — the tightest arc — so
+    // neighbouring readouts clear there too.
+    const sepRadius = showReadouts
+      ? Math.max(rReadout - 16, 1)
+      : Math.max(rReadout, 1);
+    const sep = Math.min(20, Math.max(4, (16 * 360) / (2 * Math.PI * sepRadius)));
     for (let i = 1; i < arr.length; i++) {
       if (arr[i].off - arr[i - 1].off < sep) arr[i].off = arr[i - 1].off + sep;
     }
@@ -172,11 +196,12 @@ export function WheelSvg({
         />
       )}
 
-      {/* Concentric ring boundaries */}
+      {/* Concentric ring boundaries. In detailed mode the inner two circles
+          bound the dedicated house ring band. */}
       <circle cx={cx} cy={cy} r={rOuter} className="ring" />
       {detailed && <circle cx={cx} cy={cy} r={rZodiacInner} className="ring" />}
-      {detailed && (
-        <circle cx={cx} cy={cy} r={rPlanetRingInner} className="ring" />
+      {detailed && houseBand > 0 && (
+        <circle cx={cx} cy={cy} r={houseRingOuter} className="ring" />
       )}
       <circle cx={cx} cy={cy} r={rInner} className="ring" />
 
@@ -213,6 +238,70 @@ export function WheelSvg({
           );
         })}
 
+      {/* Degree scale (Advanced only): 1° graduation ticks on the inner edge
+          of the zodiac band, longer at 5° and 10°. Resets each sign (0–30°),
+          so any planet or angle can be read to the degree without callouts. */}
+      {detailed &&
+        advanced &&
+        Array.from({ length: 360 }).map((_, d) => {
+          const lon = (d * Math.PI) / 180;
+          const len = d % 10 === 0 ? 8 : d % 5 === 0 ? 5 : 2.5;
+          const o = svgPos(lon, angles.asc, rZodiacInner, cx, cy);
+          const i = svgPos(lon, angles.asc, rZodiacInner - len, cx, cy);
+          const cls =
+            d % 10 === 0
+              ? 'deg-tick deg-tick-10'
+              : d % 5 === 0
+                ? 'deg-tick deg-tick-5'
+                : 'deg-tick';
+          return (
+            <line key={`deg-${d}`} x1={o.x} y1={o.y} x2={i.x} y2={i.y} className={cls} />
+          );
+        })}
+
+      {/* Placidus house cusps. The four angle cusps (1/4/7/10) are the bold
+          ASC–DSC / MC–IC diameters drawn below, so here we draw only the eight
+          intermediate cusp spokes plus all twelve house numbers. */}
+      {detailed && houseBand > 0 &&
+        [1, 2, 4, 5, 7, 8, 10, 11].map((idx) => {
+          const lon = angles.cusps[idx];
+          if (!Number.isFinite(lon)) return null;
+          const inner = svgPos(lon, angles.asc, houseRingInner, cx, cy);
+          const outer = svgPos(lon, angles.asc, houseRingOuter, cx, cy);
+          return (
+            <line
+              key={`cusp-${idx}`}
+              x1={inner.x}
+              y1={inner.y}
+              x2={outer.x}
+              y2={outer.y}
+              className="house-cusp"
+            />
+          );
+        })}
+
+      {detailed && houseBand > 0 &&
+        angles.cusps.map((lon, idx) => {
+          const next = angles.cusps[(idx + 1) % 12];
+          if (!Number.isFinite(lon) || !Number.isFinite(next)) return null;
+          // Bisector of the house (cusp idx → next cusp), centered in the
+          // dedicated house ring band.
+          const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          const mid = lon + span / 2;
+          const pos = svgPos(mid, angles.asc, (houseRingInner + houseRingOuter) / 2, cx, cy);
+          return (
+            <text
+              key={`house-${idx}`}
+              x={pos.x}
+              y={pos.y + 3}
+              textAnchor="middle"
+              className="house-number"
+            >
+              {idx + 1}
+            </text>
+          );
+        })}
+
       <line
         x1={cx - rOuter}
         y1={cy}
@@ -220,13 +309,23 @@ export function WheelSvg({
         y2={cy}
         className="angle asc-dsc"
       />
-      <line
-        x1={cx}
-        y1={cy - rOuter}
-        x2={cx}
-        y2={cy + rOuter}
-        className="angle mc-ic"
-      />
+      {detailed ? (
+        <line
+          x1={mcOuter.x}
+          y1={mcOuter.y}
+          x2={icOuter.x}
+          y2={icOuter.y}
+          className="angle mc-ic"
+        />
+      ) : (
+        <line
+          x1={cx}
+          y1={cy - rOuter}
+          x2={cx}
+          y2={cy + rOuter}
+          className="angle mc-ic"
+        />
+      )}
 
       {!detailed && (
         <>
@@ -241,18 +340,10 @@ export function WheelSvg({
         </>
       )}
 
-      {detailed && (
-        <>
-          <text x={cx - rOuter - 4} y={cy - 4} textAnchor="end" className="angle-label-lg">ASC</text>
-          <text x={cx - rOuter - 4} y={cy + 14} textAnchor="end" className="angle-degree-lg">{fmtLon(angles.asc)}</text>
-          <text x={cx + rOuter + 4} y={cy - 4} className="angle-label-lg">DSC</text>
-          <text x={cx + rOuter + 4} y={cy + 14} className="angle-degree-lg">{fmtLon(angles.dsc)}</text>
-          <text x={cx} y={cy - rOuter - 14} textAnchor="middle" className="angle-label-lg">MC</text>
-          <text x={cx} y={cy - rOuter - 2} textAnchor="middle" className="angle-degree-lg">{fmtLon(angles.mc)}</text>
-          <text x={cx} y={cy + rOuter + 14} textAnchor="middle" className="angle-label-lg">IC</text>
-          <text x={cx} y={cy + rOuter + 26} textAnchor="middle" className="angle-degree-lg">{fmtLon(angles.ic)}</text>
-        </>
-      )}
+      {/* The expanded wheel intentionally omits the ASC/MC/DSC/IC degree
+          callouts — those positions are listed in the sidebar. Advanced mode
+          instead shows a degree scale on the rim (drawn with the zodiac band
+          above) so any planet/angle position is readable in place. */}
 
       {detailed &&
         filteredAspects.map((a, i) => {
@@ -340,10 +431,17 @@ export function WheelSvg({
         );
       })}
 
-      {/* Degree · sign · minute readout, stacked just inside each glyph. */}
+      {/* Degree · sign · minute readout. Each value gets its own radial slot
+          (degree nearest the glyph, then sign, then minutes), so the trio
+          fans out along the spoke — laying out horizontally on the sides and
+          vertically at the top/bottom instead of always stacking vertically.
+          This mirrors how a natal wheel arranges each planet's position and
+          keeps neighbouring readouts from overlapping. */}
       {showReadouts &&
         planets.map((p) => {
-          const pos = svgPos(lonFor(p), angles.asc, rReadout, cx, cy);
+          const degPos = svgPos(lonFor(p), angles.asc, rReadout + 16, cx, cy);
+          const signPos = svgPos(lonFor(p), angles.asc, rReadout, cx, cy);
+          const minPos = svgPos(lonFor(p), angles.asc, rReadout - 16, cx, cy);
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;
@@ -352,17 +450,17 @@ export function WheelSvg({
           return (
             <g key={`rdo-${p.name}`} className="planet-readout">
               <text
-                x={pos.x}
-                y={pos.y - 11}
+                x={degPos.x}
+                y={degPos.y + 3}
                 textAnchor="middle"
                 className="readout-deg"
               >
                 {deg}°
               </text>
-              <ZodiacGlyph sign={signIdx} x={pos.x} y={pos.y + 2} size={14} />
+              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={14} />
               <text
-                x={pos.x}
-                y={pos.y + 21}
+                x={minPos.x}
+                y={minPos.y + 3}
                 textAnchor="middle"
                 className="readout-min"
               >

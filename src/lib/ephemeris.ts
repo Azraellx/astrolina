@@ -138,6 +138,13 @@ export interface RelocatedAngles {
   mc: number;
   dsc: number;
   ic: number;
+  /**
+   * The 12 Placidus house cusps in ecliptic longitude (radians), index 0 =
+   * cusp 1 … index 11 = cusp 12. Cusps 1/4/7/10 equal asc/ic/dsc/mc exactly.
+   * Placidus is undefined inside the polar circles; there the semi-arc cosine
+   * is clamped so the wheel degrades gracefully instead of producing NaN.
+   */
+  cusps: number[];
 }
 
 const earth = new planetposition.Planet(data.vsop87Bearth);
@@ -347,12 +354,40 @@ export function relocate(
   let diff = ((asc - mc) + 2 * Math.PI) % (2 * Math.PI);
   if (diff > Math.PI) asc = (asc + Math.PI) % (2 * Math.PI);
 
-  return {
-    asc,
-    mc,
-    dsc: (asc + Math.PI) % (2 * Math.PI),
-    ic: (mc + Math.PI) % (2 * Math.PI),
+  const dsc = (asc + Math.PI) % (2 * Math.PI);
+  const ic = (mc + Math.PI) % (2 * Math.PI);
+
+  // Placidus intermediate cusps (11, 12, 8, 9) by the standard semi-arc
+  // time-division: each divides a point's diurnal semi-arc into thirds. RAMC
+  // is the local sidereal time `lst`. The remaining cusps follow by symmetry
+  // (2/3/5/6 are the antipodes of 8/9/11/12; 1/4/7/10 are the angles).
+  const tanPhi = Math.tan(phi);
+  const norm2pi = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  // Right ascension (radians) → ecliptic longitude (radians), correct quadrant.
+  const raToLon = (ra: number) => norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * cosEps));
+  // Diurnal semi-arc (radians) of the ecliptic point at longitude `lon`.
+  const semiArc = (lon: number) => {
+    const dec = Math.asin(sinEps * Math.sin(lon));
+    const c = Math.max(-1, Math.min(1, -tanPhi * Math.tan(dec)));
+    return Math.acos(c);
   };
+  // Fixed-point solve: cusp RA = lst + dir·H where H converges to frac·DSA.
+  const solveCusp = (dir: number, frac: number) => {
+    let H = frac * (Math.PI / 2);
+    for (let i = 0; i < 25; i++) H = frac * semiArc(raToLon(lst + dir * H));
+    return raToLon(lst + dir * H);
+  };
+  const c11 = solveCusp(1, 1 / 3);
+  const c12 = solveCusp(1, 2 / 3);
+  const c9 = solveCusp(-1, 1 / 3);
+  const c8 = solveCusp(-1, 2 / 3);
+  const opp = (a: number) => norm2pi(a + Math.PI);
+  const cusps = [
+    asc, opp(c8), opp(c9), ic, opp(c11), opp(c12),
+    dsc, c8, c9, mc, c11, c12,
+  ];
+
+  return { asc, mc, dsc, ic, cusps };
 }
 
 export function getPlanetPositions(jd: number): PlanetPosition[] {
