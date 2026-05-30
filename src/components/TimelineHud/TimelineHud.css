@@ -5,10 +5,17 @@
 .timeline-hud {
   position: absolute;
   bottom: 16px;
-  left: 50%;
+  /* Center over the *visible* map, not the whole viewport: when the expanded
+     chart sidebar is open it publishes its width as --es-width, so we treat the
+     sidebar's right edge as the left bound. We only count the sidebar as 50% of
+     its real width for the shift (so the center moves right by a quarter of the
+     width, not half) — full recentering pushed the bars too far right. The top
+     (Mapping Tools) and bottom (Timeline) bars stop hiding behind the expanded
+     sidebar without over-shooting. --es-width is 0 when it's closed. */
+  left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   z-index: 12;
-  max-width: calc(100vw - 360px);
+  max-width: calc(100vw - var(--es-width, 0px) - 360px);
   background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 10px;

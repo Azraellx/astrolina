@@ -37,12 +37,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wheel-svg .planet-glyph {
-  font-size: 9px;
-  font-weight: 600;
-  pointer-events: none;
-}
-
 /* Placidus intermediate house cusps — fainter than the four angle axes. */
 .wheel-svg .house-cusp {
   stroke: rgba(var(--tint), 0.28);
@@ -61,13 +55,6 @@
 .wheel-svg .sign-divider {
   stroke: rgba(var(--tint), 0.22);
   stroke-width: 1;
-}
-
-.wheel-svg .sign-glyph {
-  fill: var(--text);
-  font-size: 18px;
-  font-weight: 500;
-  pointer-events: none;
 }
 
 /* Degree graduation scale on the zodiac rim (Advanced mode). */
@@ -104,14 +91,31 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wheel-svg .planet-glyph-lg {
-  font-size: 16px;
-  font-weight: 500;
-  pointer-events: none;
-}
-
 /* Overlay (bi-ring) readout sits a touch dimmer than the natal readout so the
    two rings stay visually distinct. */
 .overlay-readout {
   opacity: 0.8;
+}
+
+/* Bi-wheel separator ring: a faint dashed circle in the gap between the outer
+   overlay planets and the inner natal ring, making the two-chart split read at
+   a glance. */
+.wheel-svg .overlay-divider {
+  stroke: rgba(var(--accent-rgb), 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* Advanced house-cusp degree + sign labels ringing the outside of the rim.
+   The group's `color` drives the sign glyph's currentColor stroke; the degree
+   text sets its own fill. */
+.wheel-svg .cusp-rim-label {
+  color: var(--text-muted);
+}
+
+.wheel-svg .cusp-rim-deg {
+  fill: var(--text);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }

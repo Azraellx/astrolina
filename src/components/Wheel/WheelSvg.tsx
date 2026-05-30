@@ -174,9 +174,10 @@ export function WheelSvg({
 }: WheelSvgProps) {
   const cx = size / 2;
   const cy = size / 2;
-  // The expanded wheel draws everything inside the outer ring (no exterior
-  // angle callouts), so it only needs a small breathing margin like the mini.
-  const rOuter = size / 2 - (detailed ? 14 : 4);
+  // The expanded wheel draws everything inside the outer ring; Advanced mode
+  // adds a ring of house-cusp degree labels just OUTSIDE the rim, so it reserves
+  // extra margin (28px) for them. Otherwise just a small breathing margin.
+  const rOuter = size / 2 - (detailed ? (advanced ? 28 : 14) : 4);
   const rZodiacInner = rOuter - (detailed ? 34 : 0);
   // Bi-wheel: when a second chart is supplied (and the wheel is big enough),
   // its planets occupy an outer ring just inside the zodiac band, and the natal
@@ -189,18 +190,33 @@ export function WheelSvg({
   // overlay glyphs, mirroring the natal readout. Needs extra radial room, so
   // it's gated on a larger wheel; when on, the natal glyph ring drops further in.
   const showOverlayReadouts = hasOverlay && overlayDetailed && size >= 575;
-  // The readout fan sits 36px inside the overlay glyph ring (was 30) so the
-  // degree value clears the planet discs with more breathing room.
-  const rOverlayReadout = showOverlayReadouts ? rOverlay - 36 : 0;
+  // The readout fan sits 40px inside the overlay glyph ring so the degree value
+  // clears the planet discs with comfortable breathing room. OV_FAN is the
+  // radial gap between the fan's degree / sign / minute slots — a touch wider
+  // than the natal readout's 16 so the overlay trio reads roomier on the rim.
+  const rOverlayReadout = showOverlayReadouts ? rOverlay - 40 : 0;
+  const OV_FAN = 18;
   // Planet glyph ring, then a readout ring (degree · sign · minute) just
   // inside it — mirroring a printed natal chart.
+  // The natal glyph ring drops further in when an overlay is present — the gap
+  // from the overlay zone to the natal ring is widened ~15% (28→32, 36→41) so
+  // the separator ring has clear breathing room on both sides and the overlay
+  // discs no longer crowd it.
   const rPlanets = detailed
     ? hasOverlay
       ? showOverlayReadouts
-        ? rOverlayReadout - 36
-        : rOverlay - 28
+        ? rOverlayReadout - 41
+        : rOverlay - 32
       : rZodiacInner - 20
     : rOuter - 26;
+  // Bi-wheel separator: a hairline ring drawn in the gap between the overlay
+  // (outer) planet zone and the natal (inner) glyph ring, so the two charts read
+  // as distinct bands. Centered on the midpoint of that gap — between the overlay
+  // content's inner edge (its readout minutes slot, or its glyph disc) and the
+  // natal glyph disc's outer edge — so it clears both rings symmetrically.
+  const rOverlayDivider = hasOverlay
+    ? ((showOverlayReadouts ? rOverlayReadout - OV_FAN : rOverlay - 9) + (rPlanets + 11)) / 2
+    : 0;
   // Gap from the planet glyphs to the readout trio (the 34px base widened by
   // ~15% to give the degree value more breathing room from the planet circle).
   const rReadout = detailed ? rPlanets - 39 : 0;
@@ -234,7 +250,7 @@ export function WheelSvg({
   // Bi-wheel cross-aspects (overlay-to-natal). Drawn dashed so they read as
   // distinct from the solid natal-to-natal aspect lines, and gated by the same
   // category toggles.
-  const crossAspects = hasOverlay ? computeCrossAspects(planets, overlayPlanets!) : [];
+  const crossAspects = hasOverlay ? computeCrossAspects(overlayPlanets!, planets) : [];
   const filteredCrossAspects = visibleAspects
     ? crossAspects.filter((a) => visibleAspects.has(a.category))
     : crossAspects;
@@ -273,7 +289,7 @@ export function WheelSvg({
   // readout trio so the two stay radially aligned. Sized to the innermost ring
   // in use — the minutes slot when the readout is on — so nothing collides there.
   const overlaySpreadRadius = showOverlayReadouts
-    ? Math.max(rOverlayReadout - 16, 1)
+    ? Math.max(rOverlayReadout - OV_FAN, 1)
     : rOverlay;
   const overlayDisplay = hasOverlay
     ? spreadOnRing(overlayPlanets!, angles.asc, overlaySpreadRadius)
@@ -307,6 +323,9 @@ export function WheelSvg({
       {detailed && <circle cx={cx} cy={cy} r={rZodiacInner} className="ring" />}
       {detailed && houseBand > 0 && (
         <circle cx={cx} cy={cy} r={houseRingOuter} className="ring" />
+      )}
+      {hasOverlay && rOverlayDivider > 0 && (
+        <circle cx={cx} cy={cy} r={rOverlayDivider} className="ring overlay-divider" />
       )}
       <circle cx={cx} cy={cy} r={rInner} className="ring" />
 
@@ -361,6 +380,33 @@ export function WheelSvg({
                 : 'deg-tick';
           return (
             <line key={`deg-${d}`} x1={o.x} y1={o.y} x2={i.x} y2={i.y} className={cls} />
+          );
+        })}
+
+      {/* Advanced: house-cusp degree + sign labels ringing the OUTSIDE of the
+          wheel, the way printed natal charts annotate each cusp. Each shows the
+          cusp's degree-within-sign and the sign glyph (e.g. "23 ♋"), so every
+          house boundary is readable in place. */}
+      {detailed &&
+        advanced &&
+        angles.cusps.map((lon, idx) => {
+          if (!Number.isFinite(lon)) return null;
+          const pos = svgPos(lon, angles.asc, rOuter + 12, cx, cy);
+          const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
+          const signIdx = Math.floor(lonDeg / 30);
+          const deg = Math.floor(lonDeg % 30);
+          return (
+            <g key={`cuspdeg-${idx}`} className="cusp-rim-label">
+              <text
+                x={pos.x - 1}
+                y={pos.y + 3}
+                textAnchor="end"
+                className="cusp-rim-deg"
+              >
+                {deg}°
+              </text>
+              <ZodiacGlyph sign={signIdx} x={pos.x + 7} y={pos.y} size={11} />
+            </g>
           );
         })}
 
@@ -610,9 +656,9 @@ export function WheelSvg({
           twin, so overlay positions read exactly. */}
       {showOverlayReadouts &&
         overlayPlanets!.map((p) => {
-          const degPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout + 16, cx, cy);
+          const degPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout + OV_FAN, cx, cy);
           const signPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout, cx, cy);
-          const minPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout - 16, cx, cy);
+          const minPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout - OV_FAN, cx, cy);
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;

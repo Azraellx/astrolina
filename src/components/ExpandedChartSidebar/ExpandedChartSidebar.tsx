@@ -593,22 +593,23 @@ export function ExpandedChartSidebar({
       })()}
 
       {angles && advanced && shownOverlay && shownOverlay.length > 0 && (() => {
-        const cross = computeCrossAspects(shownPlanets, shownOverlay)
+        // Overlay-first ordering: the overlay body is the subject of the aspect
+        // (e.g. "transiting Mars conjunct natal Sun"), so it's listed first and
+        // the natal body second.
+        const cross = computeCrossAspects(shownOverlay, shownPlanets)
           .filter((a) => visibleAspects.has(a.category))
           .sort((a, b) => a.orb - b.orb);
         if (cross.length === 0) return null;
         return (
           <section className="es-section es-section-aspects es-section-cross">
-            <h3>
-              Overlay aspects ({cross.length})
-              <span className="es-cross-hint">natal ↔ overlay</span>
-            </h3>
+            <h3>Overlay aspects ({cross.length})</h3>
             <ul className="es-aspect-list">
               {cross.map((a, i) => (
                 <li key={i} className={`asp asp-${a.category}`}>
                   <span
-                    className="asp-planet"
+                    className="asp-planet asp-planet-overlay"
                     style={{ color: PLANET_COLORS[a.a as PlanetName] }}
+                    title="Overlay body"
                   >
                     <PlanetGlyph planet={a.a as PlanetName} size={12} />
                   </span>
@@ -616,9 +617,8 @@ export function ExpandedChartSidebar({
                     {ASPECT_GLYPHS[a.type] ?? a.type}
                   </span>
                   <span
-                    className="asp-planet asp-planet-overlay"
+                    className="asp-planet"
                     style={{ color: PLANET_COLORS[a.b as PlanetName] }}
-                    title="Overlay body"
                   >
                     <PlanetGlyph planet={a.b as PlanetName} size={12} />
                   </span>

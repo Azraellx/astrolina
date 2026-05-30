@@ -1,3 +1,30 @@
+/* Bundled 'Noto Sans Symbols' subset used for the astrological glyphs. URLs are
+   relative to this file (src/), so they point into ./fonts. */
+@font-face {
+  font-family: 'Noto Sans Symbols';
+  src:
+    url('./fonts/subset-NotoSansSymbols-Regular.woff2') format('woff2'),
+    url('./fonts/subset-NotoSansSymbols-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Astrological glyphs: rendered from the bundled 'Noto Sans Symbols' subset.
+   font-variant-emoji: text — together with the
+   U+FE0E selector baked into each character — forces the flat, monochrome
+   symbol on every OS instead of a colored emoji. The span variant adds inline
+   layout niceties; SVG <text>.astro-glyph just needs the font + variant. */
+.astro-glyph {
+  font-family: 'Noto Sans Symbols', sans-serif;
+  font-variant-emoji: text;
+}
+
+span.astro-glyph {
+  display: inline-block;
+  line-height: 1;
+}
+
 :root {
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   color-scheme: dark;
