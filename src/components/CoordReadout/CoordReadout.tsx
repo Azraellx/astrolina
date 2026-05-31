@@ -80,7 +80,7 @@ export function CoordReadout({ point, angles, source }: CoordReadoutProps) {
             aria-expanded={open}
           >
             <span>Angles</span>
-            <span className="show-more-chevron">{open ? '▴' : '▾'}</span>
+            <span className="show-more-chevron">{open ? '▾' : '▸'}</span>
           </button>
 
           {open && (

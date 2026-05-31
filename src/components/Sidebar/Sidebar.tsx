@@ -5,6 +5,7 @@ import {
   PLANET_NAMES,
   type CoordSystem,
   type HouseSystem,
+  type NodeType,
   type PlanetName,
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
@@ -25,6 +26,8 @@ interface SidebarProps {
   setCoordSystem: (c: CoordSystem) => void;
   houseSystem: HouseSystem;
   setHouseSystem: (h: HouseSystem) => void;
+  nodeType: NodeType;
+  setNodeType: (n: NodeType) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   showRoads: boolean;
@@ -51,6 +54,11 @@ const HOUSE_SYSTEMS: { value: HouseSystem; label: string; hint: string }[] = [
   { value: 'equal', label: 'Equal', hint: '30° houses measured from the Ascendant' },
 ];
 
+const NODE_TYPES: { value: NodeType; label: string; hint: string }[] = [
+  { value: 'true', label: 'True Node', hint: 'Osculating node — the Moon’s instantaneous orbit (desktop-tool default)' },
+  { value: 'mean', label: 'Mean Node', hint: 'Smoothed long-term average node position' },
+];
+
 // Sidebar sections behave as an accordion — at most one open at a time — so the
 // panel never grows into a tall stack of expanded sections.
 type SidebarSection = 'theme' | 'filters' | 'calc';
@@ -69,6 +77,8 @@ export function Sidebar({
   setCoordSystem,
   houseSystem,
   setHouseSystem,
+  nodeType,
+  setNodeType,
   theme,
   setTheme,
   showRoads,
@@ -213,7 +223,7 @@ export function Sidebar({
             })}
           </ul>
 
-          <h2>Techniques</h2>
+          {/* Parans / Local Space sit under Lines without their own heading. */}
           <ul className="technique-list">
             <li>
               <button
@@ -294,8 +304,29 @@ export function Sidebar({
             ))}
           </ul>
           <p className="calc-hint">
-            Sets the house cusps in the expanded wheel. The angles (ASC/MC/DSC/IC)
-            are the same in every system.
+            Sets the house cusps in the expanded wheel. The angles are the same in every system.
+          </p>
+
+          <h2>Lunar node</h2>
+          <ul className="theme-list">
+            {NODE_TYPES.map(({ value, label, hint }) => (
+              <li key={value}>
+                <button
+                  type="button"
+                  className={`theme-option ${nodeType === value ? 'active' : ''}`}
+                  onClick={() => setNodeType(value)}
+                  title={hint}
+                >
+                  <span className="radio">{nodeType === value ? '●' : '○'}</span>
+                  <span className="label">{label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="calc-hint">
+            {nodeType === 'true'
+              ? 'True node follows the Moon’s instantaneous orbit; it oscillates ±~1.5° around the mean and can briefly turn direct.'
+              : 'Mean node is the smoothed average; it always moves retrograde at a steady rate.'}
           </p>
         </div>
       )}

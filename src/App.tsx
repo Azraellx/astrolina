@@ -8,13 +8,9 @@ import {
 } from './components/Map/Map';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
-import {
-  MappingToolsHud,
-  type MapTool,
-} from './components/MappingToolsHud/MappingToolsHud';
+import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
-import { ChartSwitcher } from './components/ChartSwitcher/ChartSwitcher';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
 import { BirthDataForm } from './components/BirthDataForm/BirthDataForm';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
@@ -29,6 +25,7 @@ import {
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
+  type NodeType,
   type PlanetName,
 } from './lib/ephemeris';
 import { generateLines, type LineProps, type LineType } from './lib/astro/lines';
@@ -149,6 +146,9 @@ export default function App() {
     const v = localStorage.getItem('astro:house-system:v1');
     return v === 'whole' || v === 'equal' ? v : 'placidus';
   });
+  const [nodeType, setNodeType] = useState<NodeType>(() =>
+    localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
+  );
   const [showRoads, setShowRoads] = useState(
     () => localStorage.getItem('astro:show-roads:v1') === '1',
   );
@@ -159,6 +159,18 @@ export default function App() {
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+
+  // View toggles (driven by the top bar's View menu). Both default on. The chart
+  // panel shows compact or expanded per the last `wheelExpanded` choice.
+  const [showChart, setShowChart] = useState(
+    () => localStorage.getItem('astro:view-chart:v1') !== '0',
+  );
+  const [showCoords, setShowCoords] = useState(
+    () => localStorage.getItem('astro:view-coords:v1') !== '0',
+  );
+  const [showSettings, setShowSettings] = useState(
+    () => localStorage.getItem('astro:view-settings:v1') !== '0',
+  );
 
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() =>
     loadOverlayMode(),
@@ -173,6 +185,9 @@ export default function App() {
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
+  // The current map-pin-state accent resolved to a concrete color, for the WebGL
+  // measure layers (which can't read CSS vars). Kept in sync below.
+  const [measureColor, setMeasureColor] = useState('#8b909c');
 
   const mapRef = useRef<MapHandle>(null);
 
@@ -188,11 +203,23 @@ export default function App() {
     localStorage.setItem('astro:house-system:v1', houseSystem);
   }, [houseSystem]);
   useEffect(() => {
+    localStorage.setItem('astro:node-type:v1', nodeType);
+  }, [nodeType]);
+  useEffect(() => {
     localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
   }, [showRoads]);
   useEffect(() => {
     localStorage.setItem('astro:show-rivers:v1', showRivers ? '1' : '0');
   }, [showRivers]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-chart:v1', showChart ? '1' : '0');
+  }, [showChart]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-coords:v1', showCoords ? '1' : '0');
+  }, [showCoords]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-settings:v1', showSettings ? '1' : '0');
+  }, [showSettings]);
 
   useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
@@ -230,12 +257,12 @@ export default function App() {
     [current],
   );
   const positions = useMemo(
-    () => (current ? getPlanetPositions(jd) : []),
-    [current, jd],
+    () => (current ? getPlanetPositions(jd, nodeType) : []),
+    [current, jd, nodeType],
   );
   const ecliptic = useMemo(
-    () => toEclipticPositions(positions, jd),
-    [positions, jd],
+    () => toEclipticPositions(positions, jd, nodeType),
+    [positions, jd, nodeType],
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
 
@@ -294,8 +321,8 @@ export default function App() {
   );
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
-    return buildOverlay(current, overlayMode, targetDate, partner);
-  }, [overlayMode, current, targetDate, partner]);
+    return buildOverlay(current, overlayMode, targetDate, partner, nodeType);
+  }, [overlayMode, current, targetDate, partner, nodeType]);
 
   const overlay = useMemo<OverlayData | null>(() => {
     if (!overlayLayer) return null;
@@ -335,9 +362,9 @@ export default function App() {
   const overlayEcliptic = useMemo(
     () =>
       overlayLayer
-        ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd)
+        ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd, nodeType)
         : null,
-    [overlayLayer],
+    [overlayLayer, nodeType],
   );
 
   const activePoint = pinned ?? hover;
@@ -353,6 +380,17 @@ export default function App() {
       : activePoint
         ? 'hover'
         : 'natal';
+
+  // Publish the pin state to <html> so the single --map-accent source (index.css)
+  // recolors the map chrome, and resolve that accent to a concrete color for the
+  // WebGL measure layers. Re-resolves on theme change too (the palette differs).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-mapstate', coordSource);
+    const resolved = getComputedStyle(root).getPropertyValue('--map-accent').trim();
+    if (resolved) setMeasureColor(resolved);
+  }, [coordSource, theme]);
+
   const birthAngles = useMemo(
     () =>
       current
@@ -414,6 +452,9 @@ export default function App() {
     });
     setHover(null);
   }, [current]);
+  // Stable so the measure effect (which depends on it) isn't torn down on every
+  // re-render during a drag.
+  const stopMeasure = useCallback(() => setMapTool('off'), []);
 
   const handleSaveChart = (chart: StoredChart) => {
     setCharts((prev) => {
@@ -463,23 +504,17 @@ export default function App() {
         showRoads={showRoads}
         showRivers={showRivers}
         measureActive={mapTool === 'measure'}
+        measureColor={measureColor}
         onMeasure={setMeasure}
+        onMeasureCancel={stopMeasure}
         onHover={onHover}
         onLeave={onLeave}
         onClick={onClick}
         onPinNatal={onPinNatal}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
-      {!wheelExpanded && (
+      {!wheelExpanded && showCoords && (
         <header className="app-header">
-          <ChartSwitcher
-            current={current}
-            charts={charts}
-            onSelect={(id) => setCurrentId(id)}
-            onNew={() => setCreating(true)}
-            onEdit={(id) => setEditingId(id)}
-            onDelete={handleDelete}
-          />
           {current?.tzUncertain && (
             <p className="tz-warning">
               ⚠ Pre-1970 timezone outside US/EU — verify DST against an atlas
@@ -492,74 +527,103 @@ export default function App() {
           />
         </header>
       )}
-      <Sidebar
-        visiblePlanets={visiblePlanets}
-        togglePlanet={togglePlanet}
-        visibleLineTypes={visibleLineTypes}
-        toggleLineType={toggleLineType}
-        showParans={showParans}
-        setShowParans={setShowParans}
-        showLocalSpace={showLocalSpace}
-        setShowLocalSpace={setShowLocalSpace}
-        coordSystem={coordSystem}
-        setCoordSystem={setCoordSystem}
-        houseSystem={houseSystem}
-        setHouseSystem={setHouseSystem}
-        theme={theme}
-        setTheme={setTheme}
-        showRoads={showRoads}
-        setShowRoads={setShowRoads}
-        showRivers={showRivers}
-        setShowRivers={setShowRivers}
-      />
-      <MappingToolsHud tool={mapTool} setTool={setMapTool} measure={measure} />
-      <TimelineHud
-        overlayMode={overlayMode}
-        setOverlayMode={setOverlayMode}
-        targetDate={targetDate}
-        setTargetDate={setTargetDate}
-        stepUnit={stepUnit}
-        setStepUnit={setStepUnit}
-        playing={playing}
-        setPlaying={setPlaying}
-        partnerId={partnerId}
-        setPartnerId={setPartnerId}
-        charts={charts}
-        currentId={current?.id ?? null}
-        overlayMeasure={overlayLayer?.measure ?? null}
-      />
-      {wheelExpanded ? (
-        <ExpandedChartSidebar
-          chart={current}
-          charts={charts}
-          point={activePoint}
-          pinned={pinned != null}
-          isNatalPin={isNatalPin}
-          angles={angles}
-          planets={ecliptic}
-          overlayPlanets={overlayEcliptic}
-          overlayLabel={overlayLayer?.labelFull ?? null}
-          overlayPartner={overlayMode === 'synastry' ? partner : null}
+      {showSettings && (
+        <Sidebar
           visiblePlanets={visiblePlanets}
-          onClose={() => setWheelExpanded(false)}
-          onRecenterPin={onRecenterPin}
-          onSelectChart={(id) => setCurrentId(id)}
-          onNewChart={() => setCreating(true)}
-          onEditChart={(id) => setEditingId(id)}
-          onDeleteChart={handleDelete}
-        />
-      ) : (
-        <ChartWheel
-          chart={current}
-          point={activePoint}
-          pinned={pinned != null}
-          isNatalPin={isNatalPin}
-          angles={angles}
-          planets={ecliptic}
-          onExpand={() => setWheelExpanded(true)}
-          onRecenterPin={onRecenterPin}
+          togglePlanet={togglePlanet}
+          visibleLineTypes={visibleLineTypes}
+          toggleLineType={toggleLineType}
+          showParans={showParans}
+          setShowParans={setShowParans}
+          showLocalSpace={showLocalSpace}
+          setShowLocalSpace={setShowLocalSpace}
+          coordSystem={coordSystem}
+          setCoordSystem={setCoordSystem}
+          houseSystem={houseSystem}
+          setHouseSystem={setHouseSystem}
+          nodeType={nodeType}
+          setNodeType={setNodeType}
+          theme={theme}
+          setTheme={setTheme}
+          showRoads={showRoads}
+          setShowRoads={setShowRoads}
+          showRivers={showRivers}
+          setShowRivers={setShowRivers}
         />
       )}
+      <TopNav
+        mapState={coordSource}
+        pinned={pinned != null}
+        onRecenterPin={onRecenterPin}
+        onPinNatal={onPinNatal}
+        current={current}
+        charts={charts}
+        currentId={current?.id ?? null}
+        onSelectChart={(id) => setCurrentId(id)}
+        onNewChart={() => setCreating(true)}
+        onEditChart={(id) => setEditingId(id)}
+        onDeleteChart={handleDelete}
+        chartExpanded={wheelExpanded}
+        onToggleExpand={() => setWheelExpanded((v) => !v)}
+        tool={mapTool}
+        setTool={setMapTool}
+        measure={measure}
+        overlayMode={overlayMode}
+        setOverlayMode={setOverlayMode}
+        partnerId={partnerId}
+        setPartnerId={setPartnerId}
+        showChart={showChart}
+        setShowChart={setShowChart}
+        showCoords={showCoords}
+        setShowCoords={setShowCoords}
+        showSettings={showSettings}
+        setShowSettings={setShowSettings}
+      />
+      {isTimeMode && (
+        <TimelineHud
+          overlayMode={overlayMode}
+          mapState={coordSource}
+          targetDate={targetDate}
+          setTargetDate={setTargetDate}
+          stepUnit={stepUnit}
+          setStepUnit={setStepUnit}
+          playing={playing}
+          setPlaying={setPlaying}
+          charts={charts}
+          currentId={current?.id ?? null}
+          overlayMeasure={overlayLayer?.measure ?? null}
+        />
+      )}
+      {showChart &&
+        (wheelExpanded ? (
+          <ExpandedChartSidebar
+            chart={current}
+            charts={charts}
+            point={activePoint}
+            pinned={pinned != null}
+            isNatalPin={isNatalPin}
+            angles={angles}
+            planets={ecliptic}
+            overlayPlanets={overlayEcliptic}
+            overlayLabel={overlayLayer?.labelFull ?? null}
+            overlayPartner={overlayMode === 'synastry' ? partner : null}
+            visiblePlanets={visiblePlanets}
+            onClose={() => setWheelExpanded(false)}
+            onRecenterPin={onRecenterPin}
+            onSelectChart={(id) => setCurrentId(id)}
+            onNewChart={() => setCreating(true)}
+            onEditChart={(id) => setEditingId(id)}
+            onDeleteChart={handleDelete}
+          />
+        ) : (
+          <ChartWheel
+            point={activePoint}
+            pinned={pinned != null}
+            isNatalPin={isNatalPin}
+            angles={angles}
+            planets={ecliptic}
+          />
+        ))}
       {(creating || editingChart) && (
         <BirthDataForm
           initial={editingChart}

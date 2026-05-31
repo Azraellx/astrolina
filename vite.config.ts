@@ -38,9 +38,12 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          maplibre: ['maplibre-gl'],
-          astronomia: ['astronomia', 'astronomia/data'],
+        // Group all of astronomia (lib + the per-file VSOP87B data modules,
+        // imported by subpath) and maplibre into their own cacheable chunks.
+        manualChunks(id) {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
+          if (id.includes('node_modules/astronomia')) return 'astronomia';
+          return undefined;
         },
       },
     },

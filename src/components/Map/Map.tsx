@@ -7,11 +7,10 @@ import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
-  MEASURE_COLORS,
   type Theme,
 } from '../../lib/theme';
 import { ensureGlyphImages, GLYPH_IMAGE_PREFIX } from './glyphImages';
-import { applyBasemapStyle, applyDetailToggles } from './basemapStyle';
+import { applyDetailToggles } from './basemapStyle';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -38,7 +37,7 @@ const PARAN_LABEL_FIELD = [
   'format',
   planetGlyph('planetA'),
   {},
-  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', ''],
+  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
   {},
   ' × ',
   {},
@@ -70,7 +69,7 @@ const PARAN_OV_LABEL_FIELD = [
   {},
   planetGlyph('planetA'),
   {},
-  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', ''],
+  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
   {},
   ' × ',
   {},
@@ -87,8 +86,15 @@ export interface OverlayData {
 }
 
 // Live result of the on-map measurement tool: great-circle separation between
-// the click origin and the current point, as a central angle plus distance.
+// the click origin and the current point, as a central angle plus distance, with
+// the two endpoints so the readout can show start/end lat-long.
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
 export interface MeasureInfo {
+  start: LatLng;
+  end: LatLng;
   angleDeg: number;
   km: number;
   miles: number;
@@ -97,10 +103,7 @@ export interface MeasureInfo {
 const EARTH_RADIUS_KM = 6371.0088;
 const KM_PER_MILE = 1.609344;
 
-function measureBetween(
-  a: { lng: number; lat: number },
-  b: { lng: number; lat: number },
-): MeasureInfo {
+function measureBetween(a: LatLng, b: LatLng): MeasureInfo {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
@@ -111,7 +114,13 @@ function measureBetween(
     Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   const km = EARTH_RADIUS_KM * c;
-  return { angleDeg: (c * 180) / Math.PI, km, miles: km / KM_PER_MILE };
+  return {
+    start: { lat: a.lat, lng: a.lng },
+    end: { lat: b.lat, lng: b.lng },
+    angleDeg: (c * 180) / Math.PI,
+    km,
+    miles: km / KM_PER_MILE,
+  };
 }
 
 interface MapProps {
@@ -129,7 +138,11 @@ interface MapProps {
   /** When true, click-drag on the map measures great-circle distance (and map
    *  panning is suspended for the duration). */
   measureActive?: boolean;
+  /** Color of the measure line/points — the current map-pin-state accent. */
+  measureColor: string;
   onMeasure?: (m: MeasureInfo | null) => void;
+  /** Right-click while measuring cancels (exits) the tool. */
+  onMeasureCancel?: () => void;
   onHover?: (lat: number, lng: number) => void;
   onLeave?: () => void;
   onClick?: (lat: number, lng: number) => void;
@@ -470,7 +483,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   showRoads = false,
   showRivers = false,
   measureActive,
+  measureColor,
   onMeasure,
+  onMeasureCancel,
   onHover,
   onLeave,
   onClick,
@@ -496,6 +511,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const dataRef = useRef<MapData>({ lines, parans, localSpace, overlay });
   dataRef.current = { lines, parans, localSpace, overlay };
   const themeRef = useRef(theme);
+  // Read inside the (once-bound) load/style.load handlers so they always paint
+  // the measure layers with the latest map-state accent.
+  const measureColorRef = useRef(measureColor);
+  measureColorRef.current = measureColor;
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
   const detailRef = useRef({ showRoads, showRivers });
   detailRef.current = { showRoads, showRivers };
@@ -508,7 +527,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       style: BASEMAP_STYLE_URLS[themeRef.current],
       center: [0, 20],
       zoom: 1.5,
-      maxZoom: 8,
+      // MapLibre's hard ceiling. OpenFreeMap vector tiles only carry data to
+      // z14, so past that the map overzooms (scales z14 tiles — blurrier) but
+      // still lets you zoom right in for fine placement.
+      maxZoom: 22,
       attributionControl: false,
     });
 
@@ -537,12 +559,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
 
     map.on('load', async () => {
-      await ensureGlyphImages(map);
-      applyBasemapStyle(map, themeRef.current, detailRef.current);
+      await ensureGlyphImages(
+        map,
+        themeRef.current === 'dark' ? '' : LABEL_HALO_COLORS[themeRef.current],
+      );
+      applyDetailToggles(map, detailRef.current);
       setupCustomLayers(
         map,
         LABEL_HALO_COLORS[themeRef.current],
-        MEASURE_COLORS[themeRef.current],
+        measureColorRef.current,
       );
       pushData(map, dataRef.current);
     });
@@ -564,12 +589,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     themeRef.current = theme;
     map.setStyle(BASEMAP_STYLE_URLS[theme]);
     map.once('style.load', async () => {
-      await ensureGlyphImages(map);
-      applyBasemapStyle(map, theme, detailRef.current);
-      setupCustomLayers(map, LABEL_HALO_COLORS[theme], MEASURE_COLORS[theme]);
+      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme]);
+      applyDetailToggles(map, detailRef.current);
+      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current);
       pushData(map, dataRef.current);
     });
   }, [theme]);
+
+  // Repaint the measure layers when the map-state accent changes (e.g. pinning a
+  // location) without needing a full style reload.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer('measure-line')) return;
+    map.setPaintProperty('measure-line', 'line-color', measureColor);
+    map.setPaintProperty('measure-points', 'circle-color', measureColor);
+  }, [measureColor]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -646,6 +680,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
     let origin: { lng: number; lat: number } | null = null;
     const onDown = (e: maplibregl.MapMouseEvent) => {
+      // Left button only — right-click is reserved for cancelling the tool.
+      if (e.originalEvent.button !== 0) return;
       origin = { lng: e.lngLat.lng, lat: e.lngLat.lat };
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
@@ -659,17 +695,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const onUp = () => {
       origin = null;
     };
+    // Right-click anywhere on the map exits the measure tool (no context menu).
+    const onContextMenu = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault();
+      origin = null;
+      onMeasureCancel?.();
+    };
 
     map.dragPan.disable();
     map.getCanvas().style.cursor = 'crosshair';
     map.on('mousedown', onDown);
     map.on('mousemove', onMove);
     map.on('mouseup', onUp);
+    map.on('contextmenu', onContextMenu);
 
     return () => {
       map.off('mousedown', onDown);
       map.off('mousemove', onMove);
       map.off('mouseup', onUp);
+      map.off('contextmenu', onContextMenu);
       map.dragPan.enable();
       map.getCanvas().style.cursor = '';
       const src = map.getSource('measure') as
@@ -678,7 +722,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       src?.setData(EMPTY_FC());
       onMeasure?.(null);
     };
-  }, [measureActive, onMeasure]);
+  }, [measureActive, onMeasure, onMeasureCancel]);
 
   useEffect(() => {
     const map = mapRef.current;

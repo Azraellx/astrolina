@@ -1,7 +1,0 @@
-/* The mapping-tools bar reuses the bottom overlay bar's chrome (.timeline-hud)
-   but docks at the top-center. Only the position and shadow direction differ. */
-.mapping-hud {
-  top: 16px;
-  bottom: auto;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-}

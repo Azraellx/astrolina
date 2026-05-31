@@ -9,7 +9,18 @@ import {
   nutation,
   coord,
 } from 'astronomia';
-import data from 'astronomia/data';
+// Import only the eight VSOP87B planet tables we actually use, by subpath.
+// (Importing the `astronomia/data` barrel would reference every dataset —
+// including the unused vsop87D tables and the 4.9 MB ELP lunar series — and only
+// stays small via fragile object-property tree-shaking.)
+import vsop87Bearth from 'astronomia/data/vsop87Bearth';
+import vsop87Bmercury from 'astronomia/data/vsop87Bmercury';
+import vsop87Bvenus from 'astronomia/data/vsop87Bvenus';
+import vsop87Bmars from 'astronomia/data/vsop87Bmars';
+import vsop87Bjupiter from 'astronomia/data/vsop87Bjupiter';
+import vsop87Bsaturn from 'astronomia/data/vsop87Bsaturn';
+import vsop87Buranus from 'astronomia/data/vsop87Buranus';
+import vsop87Bneptune from 'astronomia/data/vsop87Bneptune';
 import type { BirthData } from './birthData';
 
 export type PlanetName =
@@ -147,14 +158,14 @@ export interface RelocatedAngles {
   cusps: number[];
 }
 
-const earth = new planetposition.Planet(data.vsop87Bearth);
-const mercury = new planetposition.Planet(data.vsop87Bmercury);
-const venus = new planetposition.Planet(data.vsop87Bvenus);
-const mars = new planetposition.Planet(data.vsop87Bmars);
-const jupiter = new planetposition.Planet(data.vsop87Bjupiter);
-const saturn = new planetposition.Planet(data.vsop87Bsaturn);
-const uranus = new planetposition.Planet(data.vsop87Buranus);
-const neptune = new planetposition.Planet(data.vsop87Bneptune);
+const earth = new planetposition.Planet(vsop87Bearth);
+const mercury = new planetposition.Planet(vsop87Bmercury);
+const venus = new planetposition.Planet(vsop87Bvenus);
+const mars = new planetposition.Planet(vsop87Bmars);
+const jupiter = new planetposition.Planet(vsop87Bjupiter);
+const saturn = new planetposition.Planet(vsop87Bsaturn);
+const uranus = new planetposition.Planet(vsop87Buranus);
+const neptune = new planetposition.Planet(vsop87Bneptune);
 
 const DEG2RAD = Math.PI / 180;
 const J2000 = 2451545.0;
@@ -258,6 +269,45 @@ function meanNodeRaDec(jd: number, isSouth: boolean): { ra: number; dec: number 
   const y = Math.sin(lon);
   const z = 0;
   return eclCartToRaDec(x, y, z);
+}
+
+// Lunar node convention: the smoothed long-term average ('mean') or the
+// instantaneous osculating node ('true', which oscillates ±~1.5° around the
+// mean with a ~173-day period). Most desktop tools default to true.
+export type NodeType = 'mean' | 'true';
+
+// Moon's ecliptic position (astronomia lon/lat radians, range km) → ecliptic
+// cartesian. Units are arbitrary here — only the direction matters downstream.
+function moonEclCart(jd: number): { x: number; y: number; z: number } {
+  const { lon, lat, range } = moonposition.position(jd);
+  return {
+    x: range * Math.cos(lat) * Math.cos(lon),
+    y: range * Math.cos(lat) * Math.sin(lon),
+    z: range * Math.sin(lat),
+  };
+}
+
+// True (osculating) lunar node: the ascending node of the Moon's instantaneous
+// orbit. The orbit plane is fixed by the angular momentum h = r × v; the line of
+// nodes lies along ẑ × h, so the ascending node's ecliptic longitude is
+// Ω = atan2(hx, −hy). We get the Moon's velocity from a centered finite
+// difference of its astronomia ecliptic position. The node is on the ecliptic
+// (lat 0), so it converts to RA/dec exactly like the mean node — keeping the two
+// node modes frame-consistent.
+function trueNodeRaDec(jd: number, isSouth: boolean): { ra: number; dec: number } {
+  const h = 0.02; // days (~29 min) — small enough for an instantaneous velocity
+  const r = moonEclCart(jd);
+  const rm = moonEclCart(jd - h);
+  const rp = moonEclCart(jd + h);
+  const vx = (rp.x - rm.x) / (2 * h);
+  const vy = (rp.y - rm.y) / (2 * h);
+  const vz = (rp.z - rm.z) / (2 * h);
+  const hx = r.y * vz - r.z * vy;
+  const hy = r.z * vx - r.x * vz;
+  let lon = Math.atan2(hx, -hy);
+  if (isSouth) lon += Math.PI;
+  lon = ((lon % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  return eclCartToRaDec(Math.cos(lon), Math.sin(lon), 0);
 }
 
 export function birthDataToJD(b: BirthData): number {
@@ -364,12 +414,14 @@ export function projectOntoEcliptic(
 export function toEclipticPositions(
   positions: PlanetPosition[],
   jd: number,
+  nodeType: NodeType = 'mean',
 ): EclipticPosition[] {
   const eps = obliquity(jd);
   // Sample again ~12h later to derive ecliptic-longitude speed, which gives
-  // us retrograde state and °/day motion for the advanced readout.
+  // us retrograde state and °/day motion for the advanced readout. nodeType is
+  // forwarded so the node rows' speed/retrograde matches the node convention.
   const dt = 0.5;
-  const positionsLater = getPlanetPositions(jd + dt);
+  const positionsLater = getPlanetPositions(jd + dt, nodeType);
   return positions.map((p, i) => {
     const lon = raDecToEclipticLon(p.ra, p.dec, eps);
     const lat = raDecToEclipticLat(p.ra, p.dec, eps);
@@ -471,7 +523,10 @@ export function relocate(
   return { asc, mc, dsc, ic, cusps };
 }
 
-export function getPlanetPositions(jd: number): PlanetPosition[] {
+export function getPlanetPositions(
+  jd: number,
+  nodeType: NodeType = 'mean',
+): PlanetPosition[] {
   const sun = solar.apparentEquatorialVSOP87(earth, jd);
   const moon = moonEquatorial(jd);
   const me = elliptic.position(mercury, earth, jd);
@@ -483,8 +538,8 @@ export function getPlanetPositions(jd: number): PlanetPosition[] {
   const ne = elliptic.position(neptune, earth, jd);
   const pl = pluto.astrometric(jd, earth);
 
-  const nn = meanNodeRaDec(jd, false);
-  const sn = meanNodeRaDec(jd, true);
+  const nn = nodeType === 'true' ? trueNodeRaDec(jd, false) : meanNodeRaDec(jd, false);
+  const sn = nodeType === 'true' ? trueNodeRaDec(jd, true) : meanNodeRaDec(jd, true);
   const ch = minorBodyRaDec('Chiron', jd);
   const cr = minorBodyRaDec('Ceres', jd);
   const pa = minorBodyRaDec('Pallas', jd);

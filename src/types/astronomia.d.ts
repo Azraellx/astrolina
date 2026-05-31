@@ -68,22 +68,42 @@ declare module 'astronomia' {
 
 }
 
-declare module 'astronomia/data' {
-  interface PlanetData {
-    name: string;
-    L: unknown;
-    B: unknown;
-    R: unknown;
-  }
-  const data: {
-    vsop87Bearth: PlanetData;
-    vsop87Bmercury: PlanetData;
-    vsop87Bvenus: PlanetData;
-    vsop87Bmars: PlanetData;
-    vsop87Bjupiter: PlanetData;
-    vsop87Bsaturn: PlanetData;
-    vsop87Buranus: PlanetData;
-    vsop87Bneptune: PlanetData;
-  };
-  export default data;
+interface Vsop87PlanetData {
+  name: string;
+  L: unknown;
+  B: unknown;
+  R: unknown;
+}
+
+declare module 'astronomia/data/vsop87Bearth' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bmercury' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bvenus' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bmars' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bjupiter' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bsaturn' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Buranus' {
+  const d: Vsop87PlanetData;
+  export default d;
+}
+declare module 'astronomia/data/vsop87Bneptune' {
+  const d: Vsop87PlanetData;
+  export default d;
 }

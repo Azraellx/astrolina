@@ -31,23 +31,20 @@ Birthplace search uses OpenStreetMap (Nominatim, proxied and edge-cached through
 
 **Path to fix:** the "uncertain birth time / location" flag already ships; beyond that, license ACS Atlas data or build an open atlas through user-submitted corrections.
 
-### 3. Parans: only meridian × horizon cases
+### 3. Parans: planet–planet complete; no fixed-star parans yet
 
-We compute parans for the four closed-form cases:
-- Planet A on **MC** + Planet B on horizon (rising or setting)
-- Planet A on **IC** + Planet B on horizon (rising or setting)
-
-These are the "angular" parans that practitioners discuss most often.
+We compute all planet-to-planet parans:
+- Planet A on **MC** or **IC** while Planet B is on the horizon (rising or setting).
+- **Horizon × horizon** — both planets on the horizon together, in any rising/setting combination. Solved in closed form: the two-on-the-horizon condition reduces to a linear equation in the local sidereal time (`cos(θ−raA) = k·cos(θ−raB)`, `k = tan(decA)/tan(decB)`), giving two latitudes per pair with no iteration.
 
 **What we don't compute yet:**
-- Horizon × horizon parans (one planet rising while another is rising or setting). These require numerical root-finding rather than a closed-form formula.
-- Pre-1900 fixed-star parans (Bernadette Brady's work).
+- Fixed-star parans (Bernadette Brady's work) — planet-to-star and star-to-star.
 
 **Practical impact:**
-- For typical chart reading, the meridian × horizon parans cover the latitudes most practitioners want to discuss. Horizon × horizon parans tend to fall at similar latitudes anyway and add maybe 20% more lines.
-- **What a pro might catch:** if they're a Bernadette Brady–trained "Star Phase Astrology" practitioner, they'll immediately ask for fixed-star parans and horizon × horizon parans. We'd need to add those before they could fully replace their existing workflow.
+- Planet–planet parans (meridian and horizon) are now complete, covering what most practitioners discuss.
+- **What a pro might catch:** a Bernadette Brady–trained "Star Phase Astrology" practitioner will want fixed-star parans; those aren't in yet.
 
-**Path to fix:** add a numerical solver (Newton's method, ~30 lines) for horizon × horizon. Fixed-star parans require a star catalog (e.g., FK6 or Hipparcos with proper motion).
+**Path to fix:** fixed-star parans need a star catalog (e.g., FK6 or Hipparcos with proper motion); the same meridian/horizon machinery then applies once a star's RA/dec is available.
 
 ### 4. Chart wheel: Placidus / Whole Sign / Equal selectable; Koch & others not yet
 
@@ -59,26 +56,7 @@ The expanded (large) chart wheel draws all twelve house cusps, switchable betwee
 
 **Path to fix:** add the remaining systems. Porphyry is trivial (trisect the quadrants in longitude); Koch/Regiomontanus/Campanus are a few more lines of the same semi-arc machinery already in `relocate`.
 
-### 5. Line calculation: in-mundo / in-zodiaco toggle ✓ shipped
-
-Both conventions are now available, switchable from the **Calculation** section of the sidebar (default **in mundo**). In mundo uses each body's actual position in the sky (RA/declination — "in space"); in zodiaco projects each body onto the ecliptic plane first (latitude → 0), then draws the line for that projected point. The toggle applies to lines, parans, and local space, and to any active overlay (transits/progressions/synastry) as well; the chart wheel is unaffected since ecliptic longitude is identical either way.
-
-**Practical impact:**
-- For planets near the ecliptic (Sun by definition, Mercury, Venus, Mars, Jupiter, Saturn — all within ~3°), the two methods give nearly identical lines.
-- For planets with high ecliptic latitude — **Pluto** especially (up to 17° latitude), and **the Moon** (up to 5°) — the two methods diverge noticeably. In a representative chart the projection moves Pluto's MC line ~3° of longitude and the Moon's ~0.5°.
-- Astrologers disagree about which method is correct. Most pre-2000 books and tools default to in-zodiaco; in-mundo is increasingly preferred for being "what the sky actually shows." Solar Maps defaults to in-zodiaco — set the toggle to match if cross-checking against it.
-
-### 6. Lunar nodes: mean only, true node deferred
-
-Lunar nodes are computed using the **mean node** formula (Ω = 125.04452 − 0.0529538083 · d, the standard Brown's lunar theory linear approximation). Most desktop tools default to **true node**, which oscillates around the mean position with a ~173-day cycle and ±1.5° amplitude due to the moon's actual orbital wobble.
-
-**Practical impact:**
-- For most chart reading, the mean and true node positions agree within a degree, and which one a practitioner uses is a matter of school/tradition.
-- **What a pro might catch:** if they cross-check against Solar Fire or Astrodienst and see the North Node 0.5–1.5° off, that's the mean-vs-true difference, not an error.
-
-**Path to fix:** compute true node from the moon's actual orbital position (~30 lines, requires iterating the lunar orbit beyond what astronomia exposes directly).
-
-### 7. Minor bodies: orbital-element ephemerides, not Swiss-grade
+### 5. Minor bodies: orbital-element ephemerides, not Swiss-grade
 
 For Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta), we use **static orbital elements at J2000** with a Kepler-equation solver, rather than Swiss Ephemeris's precomputed positions.
 
@@ -89,7 +67,7 @@ For Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta), we use
 
 **Path to fix:** swap to Swiss Ephemeris (same swap that fixes the planets — both benefit from one change).
 
-### 8. Not implemented: fixed stars, Lilith, Transpluto, other hypotheticals
+### 6. Not implemented: fixed stars, Lilith, Transpluto, other hypotheticals
 
 Still missing:
 
@@ -98,7 +76,7 @@ Still missing:
 - **Transpluto** and other hypothetical bodies (Vulcan, Cupido, Hades, etc.) — deliberately omitted because there's no consensus ephemeris. Different schools publish different positions.
 - **Centaurs beyond Chiron** (Pholus, Nessus, Chariklo) — same orbital-element approach would work; not enough demand to justify yet.
 
-### 9. Not implemented (and explicitly deferred to v2)
+### 7. Not implemented (and explicitly deferred to v2)
 
 These are in the roadmap but intentionally out of scope for the prototype:
 
@@ -106,8 +84,6 @@ These are in the roadmap but intentionally out of scope for the prototype:
 - **Vedic / sidereal mode** — tropical only at the moment. Vedic astrocartography is barely served by any tool, which is a real opportunity.
 - **Embeddable widgets** — so an astrologer can drop a map into their own website.
 - **Server-side PDF rendering** — export currently relies on the browser, fine for prototype but limited for branded high-quality exports at scale.
-
-Note: **cyclocartography** (transits, secondary progressions, and solar-arc directions plotted on the map), **time animation** (a date scrubber that sweeps the lines, with play/pause), and **relationship maps** (a second chart overlaid as a bi-wheel with cross-aspects) were on this list and have since shipped.
 
 ---
 
@@ -147,6 +123,6 @@ A single overlay slot sits on top of the natal map and can show **transits**, **
 
 ## Honest summary for a pro audience
 
-> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus mean lunar nodes, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta). The planets use VSOP87 / Meeus (accurate to ~1 arcsecond, invisible on the map); the minor bodies use static orbital elements (accurate to ~0.1° within ±200 years of J2000). You can overlay transits, secondary progressions, and solar-arc directions on the map, scrub or animate them over time, overlay a second chart for relationship work, and switch lines between in-mundo and in-zodiaco. We don't yet have fixed stars, true node, Lilith, house systems beyond Placidus / Whole Sign / Equal, Swiss-grade ephemeris, or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
+> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus the lunar nodes (mean or true, your choice), Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta). The planets use VSOP87 / Meeus (accurate to ~1 arcsecond, invisible on the map); the minor bodies use static orbital elements (accurate to ~0.1° within ±200 years of J2000). You can overlay transits, secondary progressions, and solar-arc directions on the map, scrub or animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco. We don't yet have fixed stars (or fixed-star parans), Lilith, house systems beyond Placidus / Whole Sign / Equal, Swiss-grade ephemeris, or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
 
 Concrete, specific, and doesn't oversell.

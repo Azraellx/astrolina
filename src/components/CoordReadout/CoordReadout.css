@@ -1,7 +1,4 @@
 .coord-readout {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(var(--tint), 0.06);
   font-variant-numeric: tabular-nums;
 }
 

@@ -20,19 +20,27 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  min-width: 0;
 }
 
 .switcher-trigger .name-row {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
 }
 
+/* Single-line name + meta: keeps the switcher exactly two lines tall, so a narrow
+   bar (e.g. while the sidebar is open) clips the text instead of wrapping it and
+   growing the nav bar's height. */
 .switcher-trigger strong {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 0.12s;
 }
 
@@ -58,6 +66,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .switcher-trigger .uncertain {

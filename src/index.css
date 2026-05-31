@@ -48,6 +48,16 @@ span.astro-glyph {
   --danger: #e85a4f;
   --success: #8de0a3;
   --success-rgb: 141, 224, 163;
+  --neutral: #8b909c;
+  --neutral-rgb: 139, 144, 156;
+
+  /* Map-pin-state accent — the single source for the gray/blue/orange/green that
+     the map chrome (HUD bars, minimap, edge glow, measure line) follows. It is
+     deliberately NOT --accent, so the rest of the UI keeps its steady brand
+     accent; :root[data-mapstate] (below) remaps it per pin state. Defaults to
+     brand for the initial paint before the state attribute is set. */
+  --map-accent: var(--accent);
+  --map-accent-rgb: var(--accent-rgb);
 
   --scrim: rgba(0, 0, 0, 0.72);
   --scrim-strong: rgba(0, 0, 0, 0.82);
@@ -121,6 +131,99 @@ span.astro-glyph {
   --label-halo: rgba(28, 20, 12, 0.95);
 }
 
+/* Glass: frosted silver/white panels floating over the light basemap. Gray,
+   white and silver tones with the same warm accent the light theme uses. The
+   translucency + blur live in the panel/button overrides further down; the
+   variables here just set the palette the components read. */
+:root[data-theme='glass'] {
+  color-scheme: light;
+
+  --bg-page: #dfe3ea;
+  --bg-panel: 246, 248, 252; /* near-white silver, used translucently */
+  --bg-menu: 248, 249, 252; /* opaque dropdown popups */
+  --tint: 60, 68, 86; /* cool slate — borders/fills read on light glass */
+
+  --text-strong: #2b3140;
+  --text: #3e4452;
+  --text-muted: #5e6473;
+  --text-dim: #818796;
+  --text-faint: #a6abb7;
+
+  --accent: #c97b1a;
+  --accent-rgb: 201, 123, 26;
+  --accent-hover: #a96514;
+  --cool: #3a9ac0;
+  --cool-rgb: 58, 154, 192;
+  --danger: #d04a3a;
+  --success: #3aa965;
+  --success-rgb: 58, 169, 101;
+
+  --scrim: rgba(70, 78, 96, 0.42);
+  --scrim-strong: rgba(70, 78, 96, 0.58);
+
+  --pin-stroke: #ffffff;
+  --label-halo: rgba(255, 255, 255, 0.95);
+}
+
+/* ── Map-pin state → accent (single source) ─────────────────────────
+   App sets data-mapstate on <html>; this remaps --map-accent for the whole map
+   chrome at once. Theme palette stays the source of the actual colors, so the
+   mapping lives here in exactly one place. */
+:root[data-mapstate='natal'] {
+  --map-accent: var(--neutral);
+  --map-accent-rgb: var(--neutral-rgb);
+}
+:root[data-mapstate='hover'] {
+  --map-accent: var(--cool);
+  --map-accent-rgb: var(--cool-rgb);
+}
+:root[data-mapstate='pinned'] {
+  --map-accent: var(--accent);
+  --map-accent-rgb: var(--accent-rgb);
+}
+:root[data-mapstate='natal-pinned'] {
+  --map-accent: var(--success);
+  --map-accent-rgb: var(--success-rgb);
+}
+
+/* ── Glass surfaces: frost the floating HUD panels ──────────────── */
+:root[data-theme='glass'] .app-header,
+:root[data-theme='glass'] .chart-info-panel,
+:root[data-theme='glass'] .timeline-hud,
+:root[data-theme='glass'] .sidebar,
+:root[data-theme='glass'] .chart-wheel {
+  background: rgba(var(--bg-panel), 0.6);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    0 8px 30px rgba(40, 48, 70, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+/* The expanded chart reader is a dense surface — a touch more opaque so its
+   text stays crisp over a busy map. */
+:root[data-theme='glass'] .expanded-sidebar {
+  background: rgba(var(--bg-panel), 0.72);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* ── Glass buttons: translucent white chips. :not() guards keep each control's
+   active/on accent state intact (it's set by higher-priority component CSS). */
+:root[data-theme='glass'] .thud-step-btn,
+:root[data-theme='glass'] .thud-date,
+:root[data-theme='glass'] .wheel-expand-btn,
+:root[data-theme='glass'] .sidebar-header,
+:root[data-theme='glass'] .thud-play:not(.on),
+:root[data-theme='glass'] .theme-option:not(.active),
+:root[data-theme='glass'] .tech-toggle:not(.on),
+:root[data-theme='glass'] .planet-toggle:not(.on),
+:root[data-theme='glass'] .line-toggle:not(.on) {
+  background: rgba(255, 255, 255, 0.42);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -152,16 +255,12 @@ body,
   transition: opacity 0.5s ease, left 0.2s ease;
 }
 
-.map-edge-glow[data-state='hover'] {
-  --glow-color: rgba(var(--cool-rgb), 0.6);
-  animation: edge-pulse 5.2s ease-in-out infinite;
-}
-.map-edge-glow[data-state='pinned'] {
-  --glow-color: rgba(var(--accent-rgb), 0.65);
-  animation: edge-pulse 5.2s ease-in-out infinite;
-}
+/* Color comes from the single --map-accent source (root data-mapstate); these
+   states just decide when the glow is visible + pulses (natal = no glow). */
+.map-edge-glow[data-state='hover'],
+.map-edge-glow[data-state='pinned'],
 .map-edge-glow[data-state='natal-pinned'] {
-  --glow-color: rgba(var(--success-rgb), 0.65);
+  --glow-color: rgba(var(--map-accent-rgb), 0.63);
   animation: edge-pulse 5.2s ease-in-out infinite;
 }
 

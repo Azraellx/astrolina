@@ -1,0 +1,340 @@
+/* The top command bar reuses the overlay bar's chrome (.timeline-hud — theme +
+   accent + mapstate-driven border), but docks at the top center as an inset
+   island whose lower corners sweep down. */
+/* The whole top cluster: the main bar plus any active tool's secondary bar,
+   stacked and centered at the top. Positioning lives here so the bars themselves
+   are simple static islands. */
+.topnav-stack {
+  position: absolute;
+  top: 10px;
+  left: calc(50% + var(--es-width, 0px) / 4);
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Both bars are static within the stack — undo .timeline-hud's absolute docking. */
+.topnav-stack > .timeline-hud {
+  position: relative;
+  inset: auto;
+  transform: none;
+}
+
+.topnav {
+  /* Slightly larger bottom corners so the ends curve down into the map. */
+  border-radius: 14px 14px 40px 40px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.3);
+  /* Content-sized: the controls sit together with small uniform gaps, so the bar
+     is no wider than it needs to be (no slack between the name/status/menus). */
+  width: max-content;
+}
+
+/* Secondary tool bar below the main bar — compact, its own little island. */
+.topnav-toolbar {
+  padding: 6px 18px;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
+  display: flex;
+  align-items: center;
+}
+.topnav-toolbar-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Measure result: endpoints (start → end lat-long) above the angle/distance. */
+.topnav-measure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.topnav-measure-endpoints {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+.topnav-measure-arrow {
+  color: var(--accent);
+}
+.topnav-measure-dist {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* One compact row: name · [sidebar | divider | status] · [ruler overlay view],
+   all adjacent with small uniform gaps — no slack between sections. Generous side
+   padding gives the far-left/right controls breathing room from the edges. */
+.topnav-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 28px;
+}
+
+.topnav-left {
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Caps the name's footprint and collapses to zero (with a fade) when the
+     sidebar is open so the controls slide left. NOTE: no overflow:hidden here —
+     it would clip the switcher's drop-down menu (which opens below the bar). */
+  max-width: 240px;
+  /* Extra breathing room before the Sidebar button (on top of the 12px row gap)
+     so the name/city isn't crowding it. */
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  transition: opacity 0.3s ease, max-width 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.topnav-stack.chart-expanded .topnav-left {
+  opacity: 0;
+  max-width: 0;
+  margin-right: -12px; /* also absorb the row gap so nothing is left behind */
+  pointer-events: none;
+}
+
+.topnav-center {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topnav-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Toggle the chart sidebar — icon + "Sidebar" label, left of the separator. */
+.topnav-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.topnav-expand svg {
+  flex-shrink: 0;
+}
+.topnav-expand:hover:not(:disabled) {
+  background: rgba(var(--tint), 0.08);
+  border-color: rgba(var(--tint), 0.24);
+}
+/* Pressed/enabled look while the sidebar is open. */
+.topnav-expand.active {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+.topnav-expand:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Icon-only tool toggle (the ruler/Measure button) — squarer than a labelled
+   trigger; reuses .navmenu-trigger chrome incl. the .active pressed state. */
+.topnav-tool {
+  padding: 0 8px;
+}
+.topnav-tool svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.topnav-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 0;
+  background: rgba(var(--tint), 0.12);
+  flex-shrink: 0;
+}
+
+/* ── Status pill (NATAL / HOVER / PINNED / NATAL PIN) ───────────── */
+.topnav-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  /* Reserve the width of the longest label ("NATAL PIN" + pin icon) so the bar
+     doesn't jump as the status changes. */
+  min-width: 108px;
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* When pinned the pill is a button that recenters the map on the pin. */
+button.topnav-status {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s;
+}
+button.topnav-status:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: rgba(var(--accent-rgb), 0.65);
+}
+.topnav-status svg {
+  flex-shrink: 0;
+}
+
+/* ── Measure readout (inline beside Tools when Measure is active) ── */
+.topnav-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.topnav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── Dropdown menus (Tools / Overlay / View) ───────────────────── */
+.navmenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.navmenu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.navmenu-trigger:hover {
+  background: rgba(var(--tint), 0.08);
+  border-color: rgba(var(--tint), 0.24);
+}
+.navmenu-trigger.open,
+.navmenu-trigger.active {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+}
+.navmenu-caret {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.navmenu-trigger.open .navmenu-caret,
+.navmenu-trigger.active .navmenu-caret {
+  color: var(--accent);
+}
+
+.navmenu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 170px;
+  padding: 5px;
+  background: rgb(var(--bg-menu));
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 9px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  z-index: 20;
+}
+
+.navmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.navmenu-item:hover {
+  background: rgba(var(--tint), 0.08);
+}
+.navmenu-item.on {
+  color: var(--accent);
+}
+
+.navmenu-marker {
+  width: 12px;
+  font-size: 10px;
+  color: var(--accent);
+  text-align: center;
+}
+.navmenu-marker.check {
+  font-size: 11px;
+}
+.navmenu-item:not(.on) .navmenu-marker {
+  color: var(--text-faint);
+}
+
+.navmenu-divider {
+  height: 1px;
+  margin: 5px 6px;
+  background: rgba(var(--tint), 0.12);
+}
+
+.navmenu-hint {
+  display: block;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.navmenu-partner {
+  padding: 4px 6px 2px;
+}
+.navmenu-partner .thud-select-wrap {
+  width: 100%;
+}
+.navmenu-partner .thud-select {
+  width: 100%;
+}

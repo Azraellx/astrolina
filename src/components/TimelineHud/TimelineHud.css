@@ -24,9 +24,34 @@
   backdrop-filter: blur(6px);
 }
 
-/* While an overlay mode is active, lift the accent so the HUD reads as "live". */
-.timeline-hud:not([data-mode='off']) {
-  border-color: rgba(var(--accent-rgb), 0.4);
+/* The map chrome recolors its WHOLE accent to track the active map location:
+   every control reading var(--accent)/var(--accent-rgb) (dropdowns, step/play
+   buttons, focus rings, the measure pill, the border) shifts with it, matching
+   the edge glow. Rather than re-deriving the gray/blue/orange/green per state
+   here, the bar simply aliases its --accent to the shared --map-accent source
+   (set once on <html> per pin state — see index.css). */
+.timeline-hud {
+  --accent: var(--map-accent);
+  --accent-rgb: var(--map-accent-rgb);
+  --accent-hover: var(--map-accent);
+  border-color: rgba(var(--map-accent-rgb), 0.55);
+}
+
+/* Prominent dynamic measure (Age / Angle) for progressed & solar-arc, as a pill
+   centered above the scrubber. Accent-tinted, so it tracks the map-state color. */
+.thud-measure {
+  width: fit-content;
+  margin: 9px auto 1px;
+  padding: 3px 16px 4px;
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .thud-row {
@@ -160,6 +185,53 @@
   border-color: rgba(var(--accent-rgb), 0.55);
 }
 
+/* Adjustable step-amount box, sitting just right of the forward step button.
+   Defaults to the scale's mini-notch count; overriding it only changes how far a
+   step press jumps (not the ruler). */
+.thud-stepsize {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.thud-stepinput {
+  width: 34px;
+  height: 28px;
+  padding: 0 4px;
+  text-align: center;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.thud-stepinput::-webkit-outer-spin-button,
+.thud-stepinput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.thud-stepinput:hover {
+  border-color: rgba(var(--tint), 0.24);
+}
+
+.thud-stepinput:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.thud-stepunit {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  text-transform: lowercase;
+}
+
 /* ── Compass-style ruler scrubber (sits above the bar) ─────────── */
 .thud-ruler {
   position: relative;
@@ -234,7 +306,7 @@
 }
 
 .thud-date {
-  padding: 5px 8px;
+  padding: 5px 6px;
   background: rgba(var(--tint), 0.05);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
@@ -244,6 +316,14 @@
   font-variant-numeric: tabular-nums;
   /* color-scheme is inherited from :root per theme (light → dark calendar icon,
      dark/vintage → light icon), so the native picker glyph stays legible. */
+}
+
+/* Pull the native calendar glyph in tight against the time fields — Chromium
+   leaves a wide default margin there, which read as dead space between the AM/PM
+   and the icon. */
+.thud-date::-webkit-calendar-picker-indicator {
+  margin-left: 2px;
+  padding: 0;
 }
 
 /* Vintage's dark color-scheme makes the native calendar glyph stark white,

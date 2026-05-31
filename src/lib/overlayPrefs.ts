@@ -8,7 +8,7 @@ const PARTNER_KEY = 'astro:overlay-partner:v1';
 // v2: stores a time-unit name (hour/day/week/month/year) rather than a day count.
 const STEP_KEY = 'astro:overlay-step:v2';
 
-const UNITS: TimeUnit[] = ['hour', 'day', 'week', 'month', 'year'];
+const UNITS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
 
 const MODES: OverlayMode[] = [
   'off',

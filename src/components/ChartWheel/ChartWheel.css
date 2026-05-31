@@ -21,130 +21,13 @@
   max-width: calc(100vw - 32px);
 }
 
-.chart-wheel.pinned {
-  border-color: rgba(var(--accent-rgb), 0.55);
-}
-
-.chart-wheel.natal-pinned {
-  border-color: rgba(var(--success-rgb), 0.6);
-}
-
-.chart-wheel.natal-pinned .pin-indicator {
-  color: var(--success);
-}
-
-/* Hover (relocated, not pinned): blue accent matching the map edge-glow, the
-   same way pinned shows orange and natal-pinned shows green. */
+/* Pinned (orange) / natal-pinned (green) / hover (blue) all draw their border
+   from the shared --map-accent source (set on <html> per pin state), so the
+   minimap matches the bars and edge glow without re-listing the palette. */
+.chart-wheel.pinned,
+.chart-wheel.natal-pinned,
 .chart-wheel.hover {
-  border-color: rgba(var(--cool-rgb), 0.5);
-}
-
-.chart-wheel.hover .pin-indicator {
-  color: var(--cool);
-}
-
-.chart-wheel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.chart-wheel.expanded .chart-wheel-header {
-  font-size: 11px;
-  margin-bottom: 8px;
-}
-
-.chart-wheel-header .pin-indicator {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.chart-wheel:not(.pinned):not(.natal-pinned):not(.hover) .pin-indicator {
-  color: var(--text-faint);
-}
-
-/* When pinned, the indicator is a button that recenters the map on the pin.
-   Sized to match the Expand button (same height/border-radius/padding) so the
-   two header controls read as a matched pair in the minimap. */
-.pin-recenter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 9px;
-  background: rgba(var(--accent-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-rgb), 0.35);
-  border-radius: 5px;
-  color: inherit;
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.pin-recenter:hover {
-  background: rgba(var(--accent-rgb), 0.2);
-  border-color: rgba(var(--accent-rgb), 0.6);
-}
-
-.chart-wheel.natal-pinned .pin-recenter {
-  background: rgba(var(--success-rgb), 0.1);
-  border-color: rgba(var(--success-rgb), 0.4);
-}
-
-.chart-wheel.natal-pinned .pin-recenter:hover {
-  background: rgba(var(--success-rgb), 0.2);
-  border-color: rgba(var(--success-rgb), 0.65);
-}
-
-.pin-recenter svg {
-  flex-shrink: 0;
-}
-
-.chart-wheel-header .coords {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  flex: 1;
-  text-align: right;
-}
-
-.wheel-expand-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 24px;
-  background: rgba(var(--tint), 0.04);
-  border: 1px solid rgba(var(--tint), 0.1);
-  border-radius: 5px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 9px;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.wheel-expand-btn:hover:not(:disabled) {
-  background: rgba(var(--accent-rgb), 0.12);
-  border-color: rgba(var(--accent-rgb), 0.5);
-  color: var(--accent);
-}
-
-.wheel-expand-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
 .chart-wheel-placeholder {

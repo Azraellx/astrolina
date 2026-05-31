@@ -12,6 +12,7 @@ import {
   obliquity,
   raDecToEclipticLon,
   shiftEclipticLongitude,
+  type NodeType,
   type PlanetPosition,
 } from '../ephemeris';
 import type { StoredChart } from '../chartLibrary';
@@ -27,18 +28,22 @@ export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
 // Timeline granularity. Each unit defines the MAJOR (labeled) notch interval on
 // the ruler and how many sub-segments it splits into; the minor notch — and the
-// amount one Step button press / one animation tick advances — is major/subdiv.
-//   hour  → 6 segments → minor 10 min
-//   day   → 4 segments → minor 6 h
-//   week  → 7 segments → minor 1 day
-//   month → 6 segments → minor 5 days
-//   year  → 12 segments → minor ~1 month
-export type TimeUnit = 'hour' | 'day' | 'week' | 'month' | 'year';
+// default amount one Step button press / one animation tick advances — is
+// major/subdiv.
+//   minute → 5 segments → minor 1 min
+//   hour   → 6 segments → minor 10 min
+//   day    → 4 segments → minor 6 h
+//   week   → 7 segments → minor 1 day
+//   month  → 6 segments → minor 5 days
+//   year   → 12 segments → minor ~1 month
+export type TimeUnit = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
 
+const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 export const TIME_UNITS: Record<TimeUnit, { major: number; subdiv: number }> = {
+  minute: { major: 5 * MIN_MS, subdiv: 5 },
   hour: { major: HOUR_MS, subdiv: 6 },
   day: { major: DAY_MS, subdiv: 4 },
   week: { major: 7 * DAY_MS, subdiv: 7 },
@@ -105,6 +110,7 @@ export function buildOverlay(
   mode: OverlayKind,
   targetDate: number, // epoch ms UTC; ignored for synastry
   partner: StoredChart | null,
+  nodeType: NodeType = 'mean',
 ): OverlayLayer | null {
   switch (mode) {
     case 'transits': {
@@ -114,7 +120,7 @@ export function buildOverlay(
         measure: null,
         labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
         jd,
-        positions: getPlanetPositions(jd),
+        positions: getPlanetPositions(jd, nodeType),
         gmst: gmstRadians(jd),
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
@@ -134,7 +140,7 @@ export function buildOverlay(
         measure: `Age ${yearsElapsed.toFixed(1)}`,
         labelFull: `Secondary Progressions · age ${yearsElapsed.toFixed(1)}`,
         jd: progressedJD,
-        positions: getPlanetPositions(progressedJD),
+        positions: getPlanetPositions(progressedJD, nodeType),
         gmst,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
@@ -143,14 +149,14 @@ export function buildOverlay(
     case 'solar-arc': {
       const birthJD = birthDataToJD(chart);
       const eps = obliquity(birthJD);
-      const natal = getPlanetPositions(birthJD);
+      const natal = getPlanetPositions(birthJD, nodeType);
       const yearsElapsed =
         (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
       const progressedJD = birthJD + yearsElapsed;
       // Solar arc = how far the secondary-progressed Sun has moved in ecliptic
       // longitude from its natal place (≈ 0.9856°/yr ≈ the native's age).
       const natalSunLon = raDecToEclipticLon(natal[0].ra, natal[0].dec, eps);
-      const progSun = getPlanetPositions(progressedJD)[0];
+      const progSun = getPlanetPositions(progressedJD, nodeType)[0];
       const arc = normalizeAngle(
         raDecToEclipticLon(progSun.ra, progSun.dec, eps) - natalSunLon,
       );
@@ -159,7 +165,7 @@ export function buildOverlay(
       const positions = natal.map((p) => shiftEclipticLongitude(p, arc, eps));
       return {
         kind: mode,
-        measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
+        measure: `Sun ${((arc * 180) / Math.PI).toFixed(1)}°`,
         labelFull: `Solar Arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
         jd: birthJD,
         positions,
@@ -176,7 +182,7 @@ export function buildOverlay(
         measure: null,
         labelFull: `Synastry · ${partner.name}`,
         jd: pjd,
-        positions: getPlanetPositions(pjd),
+        positions: getPlanetPositions(pjd, nodeType),
         gmst: gmstRadians(pjd),
         originLat: partner.birthplace.lat,
         originLng: partner.birthplace.lng,

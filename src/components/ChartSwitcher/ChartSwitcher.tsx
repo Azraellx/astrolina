@@ -9,6 +9,18 @@ interface ChartSwitcherProps {
   onNew: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Top-bar variant: hide the add-person icon (the expanded sidebar keeps it). */
+  compact?: boolean;
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// "14 March 1990" — full birth date for the bar's chart label.
+function fmtBirthDate(c: StoredChart): string {
+  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
 }
 
 export function ChartSwitcher({
@@ -18,6 +30,7 @@ export function ChartSwitcher({
   onNew,
   onEdit,
   onDelete,
+  compact = false,
 }: ChartSwitcherProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -42,27 +55,29 @@ export function ChartSwitcher({
         <span className="label">
           <span className="name-row">
             <strong>{current ? current.name : 'No chart selected'}</strong>
-            <svg
-              className="switcher-icon"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-              <circle cx="9.5" cy="7" r="4" />
-              <path d="M22 11h-6" />
-              <path d="M19 8v6" />
-            </svg>
+            {!compact && (
+              <svg
+                className="switcher-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9.5" cy="7" r="4" />
+                <path d="M22 11h-6" />
+                <path d="M19 8v6" />
+              </svg>
+            )}
           </span>
           {current && (
             <span className="meta">
-              {current.birthplace.label.split(',')[0]} · {current.year}
+              {current.birthplace.label.split(',')[0]} · {fmtBirthDate(current)}
               {current.tzUncertain && (
                 <span className="uncertain" title="Pre-1970 outside US/EU — verify DST">
                   ⚠

@@ -8,32 +8,29 @@ import {
 import type { StoredChart } from '../../lib/chartLibrary';
 import './TimelineHud.css';
 
+// Active map location state, shared with the map edge-glow — drives the HUD
+// border color (blue hover / orange pinned / green natal-pinned).
+export type MapState = 'natal' | 'hover' | 'pinned' | 'natal-pinned';
+
 interface TimelineHudProps {
+  /** Drives the slider range + birth anchor; the mode picker itself lives in the
+   *  top bar now. Only time modes (transits/progressed/solar-arc) render this HUD. */
   overlayMode: OverlayMode;
-  setOverlayMode: (m: OverlayMode) => void;
+  mapState: MapState;
   targetDate: number;
   setTargetDate: (ms: number) => void;
   stepUnit: TimeUnit;
   setStepUnit: (u: TimeUnit) => void;
   playing: boolean;
   setPlaying: (v: boolean) => void;
-  partnerId: string | null;
-  setPartnerId: (id: string | null) => void;
   charts: StoredChart[];
   currentId: string | null;
   /** Dynamic measure for the readout ("Age 32.0" / "30.2°"); null hides it. */
   overlayMeasure: string | null;
 }
 
-const OVERLAY_MODES: { mode: OverlayMode; label: string }[] = [
-  { mode: 'off', label: 'Off' },
-  { mode: 'transits', label: 'Transits' },
-  { mode: 'progressed', label: 'Progressed' },
-  { mode: 'solar-arc', label: 'Solar Arc' },
-  { mode: 'synastry', label: 'Synastry' },
-];
-
 const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
+  { unit: 'minute', label: 'Minute' },
   { unit: 'hour', label: 'Hour' },
   { unit: 'day', label: 'Day' },
   { unit: 'week', label: 'Week' },
@@ -43,6 +40,7 @@ const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
 
 // Per-minor-notch pixel spacing (UI tuning). Major spacing = px × subdiv.
 const RULER_PX: Record<TimeUnit, number> = {
+  minute: 14,
   hour: 12,
   day: 16,
   week: 11,
@@ -50,13 +48,31 @@ const RULER_PX: Record<TimeUnit, number> = {
   year: 8,
 };
 
-// Human description of one minor notch (= one Step / one tick), for tooltips.
+// Human description of one minor notch (= one default Step / one tick), for
+// tooltips.
 const MINOR_LABEL: Record<TimeUnit, string> = {
+  minute: '1 min',
   hour: '10 min',
   day: '6 hours',
   week: '1 day',
   month: '5 days',
   year: '1 month',
+};
+
+// The base unit each scale's mini-notch is measured in, plus the default count
+// of that base per mini-notch. The step-size box defaults to `count` and lets
+// the user override how many base-units one Step press advances — purely the
+// step increment; it doesn't redraw the ruler. (count × baseMs ≈ minorStepMs.)
+const MIN_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const STEP_UNIT: Record<TimeUnit, { count: number; baseMs: number; label: string }> = {
+  minute: { count: 1, baseMs: MIN_MS, label: 'min' },
+  hour: { count: 10, baseMs: MIN_MS, label: 'min' },
+  day: { count: 6, baseMs: HOUR_MS, label: 'h' },
+  week: { count: 1, baseMs: DAY_MS, label: 'd' },
+  month: { count: 5, baseMs: DAY_MS, label: 'd' },
+  year: { count: 1, baseMs: 30 * DAY_MS, label: 'mo' },
 };
 
 const YEAR_MS = 365.2425 * 86_400_000;
@@ -73,6 +89,8 @@ function pad2(n: number): string {
 // Label for a major (labeled) notch, formatted to suit the granularity.
 function fmtTick(ms: number, unit: TimeUnit): string {
   const d = new Date(ms);
+  if (unit === 'minute')
+    return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   if (unit === 'hour') return `${pad2(d.getUTCHours())}:00`;
   if (unit === 'year') return String(d.getUTCFullYear());
   if (unit === 'month')
@@ -196,25 +214,17 @@ function TimeRuler({
 
 export function TimelineHud({
   overlayMode,
-  setOverlayMode,
+  mapState,
   targetDate,
   setTargetDate,
   stepUnit,
   setStepUnit,
   playing,
   setPlaying,
-  partnerId,
-  setPartnerId,
   charts,
   currentId,
   overlayMeasure,
 }: TimelineHudProps) {
-  const isTimeMode =
-    overlayMode === 'transits' ||
-    overlayMode === 'progressed' ||
-    overlayMode === 'solar-arc';
-  const isSynastry = overlayMode === 'synastry';
-
   const current = charts.find((c) => c.id === currentId) ?? null;
   const birthMs = current
     ? Date.UTC(current.year, current.month - 1, current.day)
@@ -227,45 +237,109 @@ export function TimelineHud({
       : birthMs + 100 * YEAR_MS;
 
   const clamp = (ms: number) => Math.min(Math.max(ms, sliderMin), sliderMax);
-  // Step buttons move by one minor notch (mini-notch) of the current unit.
-  const step = (dir: 1 | -1) =>
-    setTargetDate(clamp(targetDate + dir * minorStepMs(stepUnit)));
 
-  const otherCharts = charts
-    .filter((c) => c.id !== currentId)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Step increment: defaults to the scale's mini-notch (count × baseMs), but the
+  // user can override the count in the box next to the step buttons. Reset to the
+  // unit's default whenever the scale changes. The override only affects the step
+  // amount — the ruler still draws its fixed mini-notches.
+  const stepBase = STEP_UNIT[stepUnit];
+  const [stepCount, setStepCount] = useState(stepBase.count);
+  useEffect(() => {
+    setStepCount(STEP_UNIT[stepUnit].count);
+  }, [stepUnit]);
+  const stepMs =
+    Number.isFinite(stepCount) && stepCount > 0
+      ? stepCount * stepBase.baseMs
+      : minorStepMs(stepUnit);
+  const step = (dir: 1 | -1) => setTargetDate(clamp(targetDate + dir * stepMs));
 
-  // The readout shows only the dynamic measure (Age / arc°). Transits & synastry
-  // pass null — their state is already clear from the date field / partner picker.
+  // The readout shows only the dynamic measure (Age / arc°). Transits passes null
+  // — its state is already clear from the date field.
   const readout = overlayMeasure;
   const minorDesc = MINOR_LABEL[stepUnit];
 
   return (
-    <div className="timeline-hud" data-mode={overlayMode}>
-      {isTimeMode && (
-        <TimeRuler
-          value={clamp(targetDate)}
-          min={sliderMin}
-          max={sliderMax}
-          unit={stepUnit}
-          onChange={setTargetDate}
-          onDragStart={() => playing && setPlaying(false)}
-        />
-      )}
+    <div className="timeline-hud" data-mode={overlayMode} data-mapstate={mapState}>
+      {/* Progressed / solar-arc surface their dynamic measure (Age / Angle) as a
+          prominent pill above the bar. Transits passes null. */}
+      {readout && <div className="thud-measure">{readout}</div>}
+
+      <TimeRuler
+        value={clamp(targetDate)}
+        min={sliderMin}
+        max={sliderMax}
+        unit={stepUnit}
+        onChange={setTargetDate}
+        onDragStart={() => playing && setPlaying(false)}
+      />
 
       <div className="thud-row">
-        <label className="thud-mode">
-          {overlayMode === 'off' && (
-            <span className="thud-mode-label">Overlay</span>
-          )}
+        <div className="thud-transport">
+          <button
+            type="button"
+            className="thud-step-btn"
+            onClick={() => step(-1)}
+            title={`Step back ${stepCount} ${stepBase.label}`}
+            aria-label="Step back"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className={`thud-play ${playing ? 'on' : ''}`}
+            onClick={() => setPlaying(!playing)}
+            title={playing ? 'Pause' : 'Play'}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? '❚❚' : '▶'}
+          </button>
+          <button
+            type="button"
+            className="thud-step-btn"
+            onClick={() => step(1)}
+            title={`Step forward ${stepCount} ${stepBase.label}`}
+            aria-label="Step forward"
+          >
+            ›
+          </button>
+          <span
+            className="thud-stepsize"
+            title={`Step amount, in ${stepBase.label}`}
+          >
+            <input
+              type="number"
+              className="thud-stepinput"
+              min={1}
+              step={1}
+              value={Number.isFinite(stepCount) ? stepCount : ''}
+              onChange={(e) => setStepCount(e.target.valueAsNumber)}
+              aria-label={`Step amount in ${stepBase.label}`}
+            />
+            <span className="thud-stepunit">{stepBase.label}</span>
+          </span>
+        </div>
+
+        <span className="thud-datewrap">
+          <input
+            type="datetime-local"
+            className="thud-date"
+            value={toDatetimeLocalUTC(targetDate)}
+            onChange={(e) => setTargetDate(fromDatetimeLocalUTC(e.target.value))}
+          />
+          <span className="thud-utc">UTC</span>
+        </span>
+
+        <label className="thud-mode thud-unit">
+          <span className="thud-mode-label">Scale</span>
           <span className="thud-select-wrap">
             <select
               className="thud-select"
-              value={overlayMode}
-              onChange={(e) => setOverlayMode(e.target.value as OverlayMode)}
+              value={stepUnit}
+              onChange={(e) => setStepUnit(e.target.value as TimeUnit)}
+              title={`Notch = 1 ${stepUnit}; mini-notch = ${minorDesc}`}
             >
-              {OVERLAY_MODES.map(({ mode, label }) => (
-                <option key={mode} value={mode}>
+              {UNIT_OPTIONS.map(({ unit, label }) => (
+                <option key={unit} value={unit}>
                   {label}
                 </option>
               ))}
@@ -273,103 +347,6 @@ export function TimelineHud({
             <span className="thud-select-caret">▾</span>
           </span>
         </label>
-
-        {isTimeMode && (
-          <>
-            <span className="thud-divider" />
-
-            <div className="thud-transport">
-              <button
-                type="button"
-                className="thud-step-btn"
-                onClick={() => step(-1)}
-                title={`Step back ${minorDesc}`}
-                aria-label="Step back"
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                className={`thud-play ${playing ? 'on' : ''}`}
-                onClick={() => setPlaying(!playing)}
-                title={playing ? 'Pause' : 'Play'}
-                aria-label={playing ? 'Pause' : 'Play'}
-              >
-                {playing ? '❚❚' : '▶'}
-              </button>
-              <button
-                type="button"
-                className="thud-step-btn"
-                onClick={() => step(1)}
-                title={`Step forward ${minorDesc}`}
-                aria-label="Step forward"
-              >
-                ›
-              </button>
-            </div>
-
-            <span className="thud-datewrap">
-              <input
-                type="datetime-local"
-                className="thud-date"
-                value={toDatetimeLocalUTC(targetDate)}
-                onChange={(e) =>
-                  setTargetDate(fromDatetimeLocalUTC(e.target.value))
-                }
-              />
-              <span className="thud-utc">UTC</span>
-            </span>
-
-            <label className="thud-mode thud-unit">
-              <span className="thud-mode-label">Scale</span>
-              <span className="thud-select-wrap">
-                <select
-                  className="thud-select"
-                  value={stepUnit}
-                  onChange={(e) => setStepUnit(e.target.value as TimeUnit)}
-                  title={`Notch = 1 ${stepUnit}; step = ${minorDesc}`}
-                >
-                  {UNIT_OPTIONS.map(({ unit, label }) => (
-                    <option key={unit} value={unit}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                <span className="thud-select-caret">▾</span>
-              </span>
-            </label>
-
-            {readout && <span className="thud-readout">{readout}</span>}
-          </>
-        )}
-
-        {isSynastry && (
-          <>
-            <span className="thud-divider" />
-            {otherCharts.length === 0 ? (
-              <span className="thud-hint">Add another chart to overlay it</span>
-            ) : (
-              <label className="thud-mode thud-partner">
-                <span className="thud-mode-label">Partner</span>
-                <span className="thud-select-wrap">
-                  <select
-                    className="thud-select"
-                    value={partnerId ?? ''}
-                    onChange={(e) => setPartnerId(e.target.value || null)}
-                  >
-                    <option value="">Select chart…</option>
-                    {otherCharts.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="thud-select-caret">▾</span>
-                </span>
-              </label>
-            )}
-          </>
-        )}
       </div>
     </div>
   );

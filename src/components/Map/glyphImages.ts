@@ -10,13 +10,23 @@ import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
 
-// Logical size of the inline glyph (px); RATIO renders it at 2× for crispness.
-const LOGICAL = 15;
+// Logical size of the inline glyph BOX (px); RATIO renders it at 2× for
+// crispness. The box is roomy so the glyph can be nudged well down without
+// clipping; the glyph itself is sized by FONT_PX (≈ the same on-map size as
+// before — the extra box is transparent margin).
+const LOGICAL = 24;
 const RATIO = 2;
 const PX = LOGICAL * RATIO;
-// Font size within the box — a little under PX so the glyph keeps a margin.
-const FONT_PX = Math.round(PX * 0.82);
+// Glyph font size within the box — leaves generous margin for the downward
+// nudge + halo.
+const FONT_PX = Math.round(PX * 0.84);
 const FONT_FAMILY = "'Noto Sans Symbols'";
+// Baked outline width (canvas px ≈ 1.5 logical) — the image analogue of the text
+// labels' halo, so glyphs read on pale basemaps.
+const HALO_PX = 3;
+// Nudge the glyph down within its box (~20%) so it sits on the text baseline
+// instead of riding high next to the angle code.
+const Y_OFFSET = Math.round(PX * 0.3);
 
 // Load the symbol font once before any rasterization, so fillText() draws the
 // real glyph rather than a fallback box. Memoized.
@@ -31,31 +41,46 @@ function ensureFontLoaded(): Promise<unknown> {
   return fontReady;
 }
 
-function rasterize(planet: PlanetName, color: string): ImageData | null {
+function rasterize(planet: PlanetName, color: string, halo: string): ImageData | null {
   const canvas = document.createElement('canvas');
   canvas.width = PX;
   canvas.height = PX;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   ctx.font = `${FONT_PX}px ${FONT_FAMILY}`;
-  ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(PLANET_GLYPHS[planet], PX / 2, PX / 2 + 1);
+  const ch = PLANET_GLYPHS[planet];
+  const x = PX / 2;
+  const y = PX / 2 + Y_OFFSET;
+  // Halo first (a rounded stroke behind), then the colored glyph on top. An
+  // empty halo (dark theme) skips the outline — the glyph already reads on the
+  // dark basemap.
+  if (halo) {
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = HALO_PX;
+    ctx.strokeStyle = halo;
+    ctx.strokeText(ch, x, y);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(ch, x, y);
   return ctx.getImageData(0, 0, PX, PX);
 }
 
-// Add any missing planet-glyph images to the map. Idempotent, so it's safe to
-// call again after a style reload (which clears images). Awaited before the
-// custom layers are added so the `['image', …]` references resolve immediately.
-export async function ensureGlyphImages(map: MlMap): Promise<void> {
+// (Re)bake the planet-glyph images onto the map, each at its planet color with
+// the theme's `halo` outline. Always re-bakes rather than skipping existing
+// images: a theme change keeps the same image ids but needs the new halo (none
+// in dark, dark in vintage, white in glass/light), so we remove and re-add to
+// pick it up. Awaited before the custom layers are added so the `['image', …]`
+// references resolve immediately.
+export async function ensureGlyphImages(map: MlMap, halo: string): Promise<void> {
   await ensureFontLoaded();
   for (const p of PLANET_NAMES) {
     const id = `${GLYPH_IMAGE_PREFIX}${p}`;
-    if (map.hasImage(id)) continue;
-    const data = rasterize(p, PLANET_COLORS[p]);
-    if (data && !map.hasImage(id)) {
-      map.addImage(id, data, { pixelRatio: RATIO });
-    }
+    const data = rasterize(p, PLANET_COLORS[p], halo);
+    if (!data) continue;
+    if (map.hasImage(id)) map.removeImage(id);
+    map.addImage(id, data, { pixelRatio: RATIO });
   }
 }
