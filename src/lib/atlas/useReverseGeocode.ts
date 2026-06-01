@@ -16,15 +16,17 @@ const cellKey = (lat: number, lng: number) =>
 const cache = new Map<string, string | null>();
 
 /**
- * Reverse-geocode the active map point (pin or hover) to a "City, Region,
- * Country" label. Hover fires per pixel and unthrottled, so the lookup is
- * debounced (~400 ms) and abortable, and results are cached per ~110 m cell
- * (known cells resolve instantly). The label is kept sticky while the cursor is
- * moving, updating once it settles, so the readout doesn't flicker. Returns
- * null when there is no active point.
+ * Reverse-geocode the active map point (a placed pin) to a "City, Region,
+ * Country" label, offline-first: the nearest bundled GeoNames city resolves the
+ * vast majority of points with no network, and only a miss (open ocean, remote
+ * wilderness) falls through to the online provider. The lookup is debounced
+ * (~400 ms) and abortable so a live drag-relocation doesn't hammer either path,
+ * and results are cached per ~110 m cell (known cells resolve instantly). The
+ * label is kept sticky while the point is moving, updating once it settles, so
+ * the readout doesn't flicker. Returns null when there is no active point.
  *
  * Every setLabel runs inside the timer/promise callback (never synchronously in
- * the effect body) so it doesn't cascade renders on each hover tick.
+ * the effect body) so it doesn't cascade renders on each tick.
  */
 export function useReverseGeocode(point: Pt | null): string | null {
   const [label, setLabel] = useState<string | null>(null);
@@ -45,13 +47,20 @@ export function useReverseGeocode(point: Pt | null): string | null {
           setLabel(cache.get(key) ?? null);
           return;
         }
-        reverseGeocode(point.lat, point.lng, ctrl.signal)
-          .then((name) => {
+        // Offline-first: try the nearest bundled city (no network); fall back to
+        // the online provider only when no city lies within range of the point.
+        import('./cityLookup')
+          .then(async ({ nearestCity }) => {
+            if (ctrl.signal.aborted) return;
+            const hit = nearestCity(point.lat, point.lng);
+            const name = hit
+              ? hit.label
+              : await reverseGeocode(point.lat, point.lng, ctrl.signal);
             cache.set(key, name);
             if (!ctrl.signal.aborted) setLabel(name);
           })
           .catch(() => {
-            /* aborted or network error — keep the last (sticky) label */
+            /* aborted, chunk-load, or network error — keep the last label */
           });
       },
       cached ? 0 : 400,

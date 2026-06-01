@@ -3,6 +3,10 @@
 // Lives under functions/_shared so the leading underscore keeps it out of
 // Pages routing. Uses only universal fetch APIs (no DOM- or Worker-specific
 // globals) so it type-checks under the Node project too.
+//
+// This module is the single geocoding-provider seam: the rest of the app talks
+// to /api/geocode + /api/reverse-geocode and never to a provider directly, so
+// swapping or adding a provider later is a change confined to this one file.
 
 export interface GeocodeResult {
   label: string;

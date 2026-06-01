@@ -19,7 +19,7 @@ We now use **Swiss Ephemeris** (Astrodienst's port of JPL data) compiled to WebA
 
 ### 2. Atlas: tzdb-based, not ACS-grade historical curation
 
-Birthplace search uses OpenStreetMap (Nominatim, proxied and edge-cached through a Cloudflare Pages Function), and the timezone / UTC offset is resolved with `tz-lookup` + the IANA `tzdb` via luxon. That stack is excellent for **post-1970** dates and **for North America and Europe**. The app already flags pre-1970 births outside those regions as "uncertain" so the user knows to spot-check.
+Birthplace search and the map's place-name readout resolve **offline-first** from a bundled GeoNames cities dataset (~31k places ≥ 15,000 population, CC-BY); only a miss — a small/rural locality, or a point far from any city — falls through to OpenStreetMap (Nominatim, proxied and edge-cached through a Cloudflare Pages Function). The timezone / UTC offset is resolved with `tz-lookup` + the IANA `tzdb` via luxon. That stack is excellent for **post-1970** dates and **for North America and Europe**. The app already flags pre-1970 births outside those regions as "uncertain" so the user knows to spot-check.
 
 **Practical impact:**
 - For pre-1970 births, especially outside North America and Western Europe, historical DST and local mean time records get spotty. Edge cases: WWII-era European DST changes, 19th-century US births before standard time zones (1883), pre-1949 Chinese local times, etc.
@@ -88,7 +88,7 @@ No install, no Windows-only restriction, no "Mac users open Astro Gold, PC users
 
 ### 2. Live drag-relocation with the relocated wheel inline
 
-Astro Gold pioneered live drag-relocation on the map — it's their headline feature. We match it, plus we show the **relocated chart wheel updating in real time next to the map**. In the desktop tools, viewing the relocated wheel requires switching to a separate window (or opening Solar Fire). Eliminating that switch is one of the main goals of this product. As you move the point, its **place name** is surfaced in the top bar too — the country resolves instantly offline while you hover (bundled boundary polygons, no network), and a placed pin reverse-geocodes to the full *city · region · country* — so it's always clear where on Earth the relocated chart is being cast.
+Astro Gold pioneered live drag-relocation on the map — it's their headline feature. We match it, plus we show the **relocated chart wheel updating in real time next to the map**. In the desktop tools, viewing the relocated wheel requires switching to a separate window (or opening Solar Fire). Eliminating that switch is one of the main goals of this product. As you move the point, its **place name** is surfaced in the top bar too — the country resolves instantly offline while you hover (bundled boundary polygons, no network), and a placed pin resolves to its full *city · region · country* from a bundled GeoNames city index (also offline; the online geocoder is touched only when no nearby city is in the set) — so it's always clear where on Earth the relocated chart is being cast.
 
 ### 3. Modern visual design
 

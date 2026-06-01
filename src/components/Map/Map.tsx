@@ -645,7 +645,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     zoomOutBtn?.setAttribute('title', 'Zoom out (-)');
     zoomOutBtn?.setAttribute('aria-label', 'Zoom out (-)');
     map.addControl(
-      new maplibregl.AttributionControl({ compact: false }),
+      new maplibregl.AttributionControl({
+        compact: false,
+        // The basemap style already credits OpenStreetMap (which also covers
+        // the OSM-derived Nominatim geocoding). This adds the one credit the
+        // basemap doesn't: GeoNames, for the bundled offline place-name / city
+        // data. The CC BY 4.0 licence is surfaced as a hover tooltip (`title`)
+        // rather than inline text, to keep the chip compact; the always-visible
+        // GeoNames link to geonames.org (which states the licence) satisfies the
+        // CC BY attribution on its own, and `title` stays in the DOM regardless.
+        customAttribution: [
+          'Places &copy; <a href="https://www.geonames.org" target="_blank" rel="noopener noreferrer" title="GeoNames place-name data — licensed CC BY 4.0">GeoNames</a>',
+        ],
+      }),
       'bottom-right',
     );
 

@@ -149,19 +149,27 @@ export function BirthDataForm({
       return;
     }
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => {
+    debounceRef.current = window.setTimeout(async () => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setSearching(true);
-      geocode(locationQuery, ctrl.signal)
-        .then((results) => {
+      try {
+        // Offline-first: resolve birthplaces from the bundled GeoNames cities;
+        // the online provider is queried only when the local set has no match.
+        const { searchCity } = await import('../../lib/atlas/cityLookup');
+        if (ctrl.signal.aborted) return;
+        const offline = searchCity(locationQuery, 8);
+        const results = offline.length
+          ? offline
+          : await geocode(locationQuery, ctrl.signal);
+        if (!ctrl.signal.aborted) {
           setSuggestions(results);
           setSearching(false);
-        })
-        .catch((e) => {
-          if (e.name !== 'AbortError') setSearching(false);
-        });
+        }
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setSearching(false);
+      }
     }, 500);
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);

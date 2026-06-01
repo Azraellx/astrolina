@@ -17,6 +17,7 @@ import { BirthDataForm } from './components/BirthDataForm/BirthDataForm';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { SEED_BIRTHS } from './lib/birthData';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
+import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { countryOf } from './lib/atlas/countryOf';
 import {
   birthDataToJD,
@@ -499,13 +500,16 @@ export default function App() {
         : 'natal';
 
   // Top-nav location readout — place names only (coordinates live in the optional
-  // CoordReadout, top-left):
-  //  • NON-NATAL PIN → the offline COUNTRY shows instantly, then the network
-  //    "City, Region, Country" fades in once it resolves. `fadeLocation` gates the
-  //    fade to exactly this "waiting on the address" case.
+  // CoordReadout, top-left). Everything here resolves OFFLINE from the bundled
+  // GeoNames data; the network geocoder is only ever touched for a PINNED point
+  // with no nearby city (open ocean / remote wilderness):
+  //  • NON-NATAL PIN → the offline COUNTRY shows instantly, then the offline
+  //    nearest "City, Region, Country" (or, on a miss, the network result) fades
+  //    in. `fadeLocation` gates the fade to exactly this "refining the label" case.
   //  • NATAL PIN → the birthplace we already know (no fetch, no fade).
   //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
-  //  • HOVER → the offline country, real-time and snappy; nothing over ocean.
+  //  • HOVER → the offline nearest CITY (no network), falling back to the offline
+  //    country when no city is in range; real-time and snappy, nothing over ocean.
   //  Suppressed while measuring.
   const pinnedLabel = useReverseGeocode(
     mapTool === 'measure' || isNatalPin ? null : pinned,
@@ -514,6 +518,7 @@ export default function App() {
     () => (pinned ? countryOf(pinned.lat, pinned.lng) : null),
     [pinned],
   );
+  const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useMemo(
     () => (hover ? countryOf(hover.lat, hover.lng) : null),
     [hover],
@@ -526,7 +531,7 @@ export default function App() {
           ? (current?.birthplace.label ?? null)
           : (pinnedLabel ?? pinCountry)
         : hover
-          ? hoverCountry
+          ? (hoverCity ?? hoverCountry)
           : null;
   const fadeLocation = !!pinned && !isNatalPin;
 
