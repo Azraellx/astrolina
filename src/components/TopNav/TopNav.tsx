@@ -259,52 +259,56 @@ export function TopNav({
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
       <div className="timeline-hud topnav" data-mapstate={mapState}>
         <div className="topnav-row">
-          {/* Left: client name + add-person (the chart switcher). Fades out when
-              the expanded sidebar — which shows the same name + DOB — is open. */}
+          {/* Left: client name + add-person (the chart switcher), then the chart-
+              sidebar "Bar" toggle. Both collapse away while the expanded sidebar is
+              open — it has its own close button, and on small screens this side sits
+              under the panel anyway — leaving the bar flush with the centre pill. */}
           <div className="topnav-left">
-            <ChartSwitcher
-              current={current}
-              charts={charts}
-              onSelect={onSelectChart}
-              onNew={onNewChart}
-              onEdit={onEditChart}
-              onDelete={onDeleteChart}
-              compact
-            />
+            <div className="topnav-chart">
+              <ChartSwitcher
+                current={current}
+                charts={charts}
+                onSelect={onSelectChart}
+                onNew={onNewChart}
+                onEdit={onEditChart}
+                onDelete={onDeleteChart}
+                compact
+              />
+            </div>
+            {!chartExpanded && (
+              <button
+                type="button"
+                className="topnav-expand"
+                onClick={onToggleExpand}
+                disabled={!current}
+                title="Show sidebar chart (B)"
+                aria-label="Show chart sidebar"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                  {/* Chevron points out of the panel — the open-sidebar convention. */}
+                  <path d="m14 9 3 3-3 3" />
+                </svg>
+                <span>Bar</span>
+              </button>
+            )}
           </div>
 
-          {/* Center: expand/collapse + separator + the fixed-width status pill
-              (reserves the widest "NATAL PIN" label so the bar never resizes). */}
+          {/* Center: the fixed-width status pill (reserves the widest "NATAL PIN"
+              label so the bar never resizes). The 1fr/auto/1fr row keeps this on the
+              bar's true centre, flush under the readout island below it. */}
           <div className="topnav-center">
-            <button
-              type="button"
-              className={`topnav-expand ${chartExpanded ? 'active' : ''}`}
-              onClick={onToggleExpand}
-              disabled={!current}
-              title={chartExpanded ? 'Hide sidebar chart (B)' : 'Show sidebar chart (B)'}
-              aria-label="Toggle chart sidebar"
-              aria-pressed={chartExpanded}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 3v18" />
-                {/* Chevron points into the panel to close, out to open — the
-                    traditional sidebar-toggle convention. */}
-                <path d={chartExpanded ? 'm16 15-3-3 3-3' : 'm14 9 3 3-3 3'} />
-              </svg>
-              <span>Sidebar</span>
-            </button>
-            <span className="topnav-divider" />
             {pinned ? (
               <button
                 type="button"
@@ -427,7 +431,7 @@ export function TopNav({
               </div>
             ) : (
               <span className="topnav-toolbar-hint">
-                Click and drag on the map to measure
+                Click and drag on the map to measure · snaps to nearby lines
               </span>
             )
           ) : pinned ? (

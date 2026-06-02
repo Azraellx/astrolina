@@ -6,7 +6,9 @@ export const THEME_LABELS: Record<Theme, string> = {
   glass: 'Glass',
   light: 'Light',
   dark: 'Dark',
-  vintage: 'Vintage',
+  // Internal id stays 'vintage' (persisted prefs + [data-theme] selectors); only the
+  // display label changed to "Earth".
+  vintage: 'Earth',
 };
 
 const STORAGE_KEY = 'astro:theme:v1';
@@ -31,7 +33,9 @@ export const BASEMAP_STYLE_URLS: Record<Theme, string> = {
   glass: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
   light: 'https://tiles.openfreemap.org/styles/positron',
-  vintage: 'https://tiles.openfreemap.org/styles/liberty',
+  // Vintage uses a self-hosted MapTiler-Basic style (BSD-3-Clause) retiled onto
+  // OpenFreeMap's free OpenMapTiles vector tiles. See public/basemaps/README.md.
+  vintage: `${import.meta.env.BASE_URL}basemaps/maptiler-basic.json`,
 };
 
 export const LABEL_HALO_COLORS: Record<Theme, string> = {

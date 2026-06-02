@@ -175,19 +175,26 @@ export default function App() {
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
   );
+  // Basemap detail layers default to shown; the "Details" section toggles them
+  // off. (`!== '0'` so a brand-new visitor with no saved value gets them on.)
   const [showRoads, setShowRoads] = useState(
-    () => localStorage.getItem('astro:show-roads:v1') === '1',
+    () => localStorage.getItem('astro:show-roads:v2') !== '0',
   );
   const [showRivers, setShowRivers] = useState(
-    () => localStorage.getItem('astro:show-rivers:v1') === '1',
+    () => localStorage.getItem('astro:show-rivers:v2') !== '0',
+  );
+  const [showLabels, setShowLabels] = useState(
+    () => localStorage.getItem('astro:show-labels:v1') !== '0',
   );
   const [hover, setHover] = useState<Point | null>(null);
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
 
-  // View toggles (driven by the top bar's View menu). Both default on. The chart
-  // panel shows compact or expanded per the last `wheelExpanded` choice.
+  // View toggles (driven by the top bar's View menu), all default on. "Minimap"
+  // (showChart) governs only the compact chart wheel; the expanded Sidebar opens
+  // from its own top-bar button (wheelExpanded) and stays reachable even when the
+  // minimap is hidden.
   const [showChart, setShowChart] = useState(
     () => localStorage.getItem('astro:view-chart:v1') !== '0',
   );
@@ -316,11 +323,14 @@ export default function App() {
     localStorage.setItem('astro:node-type:v1', nodeType);
   }, [nodeType]);
   useEffect(() => {
-    localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
+    localStorage.setItem('astro:show-roads:v2', showRoads ? '1' : '0');
   }, [showRoads]);
   useEffect(() => {
-    localStorage.setItem('astro:show-rivers:v1', showRivers ? '1' : '0');
+    localStorage.setItem('astro:show-rivers:v2', showRivers ? '1' : '0');
   }, [showRivers]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-labels:v1', showLabels ? '1' : '0');
+  }, [showLabels]);
   useEffect(() => {
     localStorage.setItem('astro:view-chart:v1', showChart ? '1' : '0');
   }, [showChart]);
@@ -392,17 +402,23 @@ export default function App() {
     () => generateParans(linePositions, gmst),
     [linePositions, gmst],
   );
+  // Local space radiates from the placed pin (relocated local space) — or the
+  // birthplace when nothing is pinned. Also the anchor for the LS ring labels.
+  const localSpaceOrigin = useMemo<Point | null>(
+    () => pinned ?? (current ? current.birthplace : null),
+    [pinned, current],
+  );
   const allLocalSpace = useMemo(
     () =>
-      current
+      localSpaceOrigin
         ? generateLocalSpace(
             linePositions,
             gmst,
-            current.birthplace.lat,
-            current.birthplace.lng,
+            localSpaceOrigin.lat,
+            localSpaceOrigin.lng,
           )
         : EMPTY_FC,
-    [linePositions, gmst, current],
+    [linePositions, gmst, localSpaceOrigin],
   );
   const allZenith = useMemo(
     () => generateZenithStamps(linePositions, gmst),
@@ -503,9 +519,10 @@ export default function App() {
   // CoordReadout, top-left). Everything here resolves OFFLINE from the bundled
   // GeoNames data; the network geocoder is only ever touched for a PINNED point
   // with no nearby city (open ocean / remote wilderness):
-  //  • NON-NATAL PIN → the offline COUNTRY shows instantly, then the offline
-  //    nearest "City, Region, Country" (or, on a miss, the network result) fades
-  //    in. `fadeLocation` gates the fade to exactly this "refining the label" case.
+  //  • NON-NATAL PIN → keeps the label you were hovering (the click lands on it, and
+  //    hover stays frozen there, so it's usually identical), then the pin's own
+  //    offline "City, Region, Country" (or, on a miss, the network result) fades in
+  //    if it differs. `fadeLocation` gates the fade. No country-name flash between.
   //  • NATAL PIN → the birthplace we already know (no fetch, no fade).
   //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
   //  • HOVER → the offline nearest CITY (no network), falling back to the offline
@@ -514,25 +531,24 @@ export default function App() {
   const pinnedLabel = useReverseGeocode(
     mapTool === 'measure' || isNatalPin ? null : pinned,
   );
-  const pinCountry = useMemo(
-    () => (pinned ? countryOf(pinned.lat, pinned.lng) : null),
-    [pinned],
-  );
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useMemo(
     () => (hover ? countryOf(hover.lat, hover.lng) : null),
     [hover],
   );
+  // Once pinned, hover stays frozen on the clicked point (onHover/onLeave are gated
+  // on !pinned), so this hovered-point label doubles as the pin's placeholder while
+  // the reverse-geocode loads.
+  const hoverLabel =
+    mapTool === 'measure' || !hover ? null : (hoverCity ?? hoverCountry);
   const locationLabel =
     mapTool === 'measure'
       ? null
       : pinned
         ? isNatalPin
           ? (current?.birthplace.label ?? null)
-          : (pinnedLabel ?? pinCountry)
-        : hover
-          ? (hoverCity ?? hoverCountry)
-          : null;
+          : (pinnedLabel ?? hoverLabel)
+        : hoverLabel;
   const fadeLocation = !!pinned && !isNatalPin;
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
@@ -658,6 +674,7 @@ export default function App() {
         lines={lines}
         parans={parans}
         localSpace={localSpace}
+        localSpaceOrigin={showLocalSpace ? localSpaceOrigin : null}
         zenith={zenith}
         overlay={overlay}
         pin={pinned}
@@ -665,6 +682,7 @@ export default function App() {
         theme={theme}
         showRoads={showRoads}
         showRivers={showRivers}
+        showLabels={showLabels}
         measureActive={mapTool === 'measure'}
         measureColor={measureColor}
         onMeasure={setMeasure}
@@ -711,6 +729,8 @@ export default function App() {
           setShowRoads={setShowRoads}
           showRivers={showRivers}
           setShowRivers={setShowRivers}
+          showLabels={showLabels}
+          setShowLabels={setShowLabels}
         />
       )}
       <TopNav
@@ -763,27 +783,30 @@ export default function App() {
           onSelectPartner={setPartnerId}
         />
       )}
-      {showChart &&
-        (wheelExpanded ? (
-          <ExpandedChartSidebar
-            chart={current}
-            charts={charts}
-            point={activePoint}
-            pinned={pinned != null}
-            isNatalPin={isNatalPin}
-            angles={angles}
-            planets={ecliptic}
-            overlayPlanets={overlayEcliptic}
-            overlayLabel={overlayLayer?.labelFull ?? null}
-            visiblePlanets={visiblePlanets}
-            onClose={() => setWheelExpanded(false)}
-            onResizingChange={onResizing}
-            onSelectChart={(id) => setCurrentId(id)}
-            onNewChart={() => setCreating(true)}
-            onEditChart={(id) => setEditingId(id)}
-            onDeleteChart={handleDelete}
-          />
-        ) : (
+      {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and
+          must stay reachable even when the compact Minimap (showChart) is hidden —
+          so only the compact wheel is gated by showChart. */}
+      {wheelExpanded ? (
+        <ExpandedChartSidebar
+          chart={current}
+          charts={charts}
+          point={activePoint}
+          pinned={pinned != null}
+          isNatalPin={isNatalPin}
+          angles={angles}
+          planets={ecliptic}
+          overlayPlanets={overlayEcliptic}
+          overlayLabel={overlayLayer?.labelFull ?? null}
+          visiblePlanets={visiblePlanets}
+          onClose={() => setWheelExpanded(false)}
+          onResizingChange={onResizing}
+          onSelectChart={(id) => setCurrentId(id)}
+          onNewChart={() => setCreating(true)}
+          onEditChart={(id) => setEditingId(id)}
+          onDeleteChart={handleDelete}
+        />
+      ) : (
+        showChart && (
           <ChartWheel
             point={activePoint}
             pinned={pinned != null}
@@ -792,7 +815,8 @@ export default function App() {
             planets={ecliptic}
             visiblePlanets={visiblePlanets}
           />
-        ))}
+        )
+      )}
       {(creating || editingChart) && (
         <BirthDataForm
           initial={editingChart}

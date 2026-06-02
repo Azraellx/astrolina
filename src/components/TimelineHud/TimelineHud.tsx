@@ -38,6 +38,16 @@ const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
   { unit: 'year', label: 'Year' },
 ];
 
+// Midnight-UTC epoch ms of a chart's civil birth date — the timeline's birth
+// anchor. Built via setUTCFullYear because Date.UTC()/new Date() remap years
+// 0–99 to 1900–1999, which would fling an ancient chart (year 1+) ~1900 years
+// forward and break the slider range, the age readout, and the directed chart.
+function birthDateUTCms(c: { year: number; month: number; day: number }): number {
+  const d = new Date(Date.UTC(2000, c.month - 1, c.day));
+  d.setUTCFullYear(c.year);
+  return d.getTime();
+}
+
 // Per-minor-notch pixel spacing (UI tuning). Major spacing = px × subdiv.
 const RULER_PX: Record<TimeUnit, number> = {
   minute: 14,
@@ -226,9 +236,7 @@ export function TimelineHud({
   overlayMeasure,
 }: TimelineHudProps) {
   const current = charts.find((c) => c.id === currentId) ?? null;
-  const birthMs = current
-    ? Date.UTC(current.year, current.month - 1, current.day)
-    : Date.now();
+  const birthMs = current ? birthDateUTCms(current) : Date.now();
   const sliderMin =
     overlayMode === 'transits' ? Date.now() - 50 * YEAR_MS : birthMs;
   const sliderMax =

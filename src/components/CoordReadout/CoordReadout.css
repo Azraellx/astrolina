@@ -42,7 +42,7 @@
 }
 
 .show-more-btn:hover {
-  color: var(--accent);
+  color: var(--text-strong);
 }
 
 .show-more-chevron {

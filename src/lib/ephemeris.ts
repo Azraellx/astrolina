@@ -347,26 +347,39 @@ interface BodySample {
 
 // Sample one body in both the ecliptic and equatorial frames, plus its speed —
 // everything downstream needs, straight from Swiss. Two calc calls per body.
-function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample {
+// Returns null when the body has no ephemeris data for this date, so callers can
+// drop it instead of crashing the whole chart (see the try/catch below).
+function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample | null {
   if (name === 'SouthNode') {
     // The south node is the antipode of the north node (on the ecliptic, lat 0).
     const nn = sampleBody(jd, 'NorthNode', nodeType);
+    if (!nn) return null;
     const lon = norm2pi(nn.lon + Math.PI);
     const eps = obliquity(jd);
     const { ra, dec } = eclipticToRaDec(lon, 0, eps);
     return { name, ra, dec, lon, lat: 0, speed: nn.speed };
   }
   const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
-  const ecl = eph().calculatePosition(jd, id, FLAG_ECL); // lon/lat + speed
-  const equ = eph().calculatePosition(jd, id, FLAG_EQ); // RA in .longitude, dec in .latitude
-  return {
-    name,
-    ra: norm2pi(equ.longitude * DEG2RAD),
-    dec: equ.latitude * DEG2RAD,
-    lon: norm2pi(ecl.longitude * DEG2RAD),
-    lat: ecl.latitude * DEG2RAD,
-    speed: ecl.longitudeSpeed,
-  };
+  try {
+    const ecl = eph().calculatePosition(jd, id, FLAG_ECL); // lon/lat + speed
+    const equ = eph().calculatePosition(jd, id, FLAG_EQ); // RA in .longitude, dec in .latitude
+    return {
+      name,
+      ra: norm2pi(equ.longitude * DEG2RAD),
+      dec: equ.latitude * DEG2RAD,
+      lon: norm2pi(ecl.longitude * DEG2RAD),
+      lat: ecl.latitude * DEG2RAD,
+      speed: ecl.longitudeSpeed,
+    };
+  } catch {
+    // No data for this body+date: the bundled asteroid file (seas_18.se1) only
+    // covers 1800+, and Chiron is JD-restricted, so the five asteroids throw for
+    // pre-1800 charts (e.g. the year-1452 default). The Sun/Moon/planets/nodes/
+    // Lilith fall back to Moshier and only reach here on truly out-of-range dates.
+    // Dropping the body keeps the rest of the chart intact rather than unmounting
+    // the app (these calls run in a render useMemo with no error boundary).
+    return null;
+  }
 }
 
 // A body is "stationary" when its instantaneous ecliptic-longitude speed is near
@@ -386,7 +399,23 @@ export function birthDataToJD(b: BirthData): number {
   // JD at 0h UT of the civil date, then add the fractional UT hour. Going via
   // 0h keeps the hour argument in range and stays exact for any tz offset
   // (including negative / >24h UT hours from large east/west offsets).
-  const jd0 = eph().julianDay(b.year, b.month, b.day, 0, CalendarType.Gregorian);
+  //
+  // Dates before the Gregorian reform are historically Julian — Julian 4 Oct 1582
+  // was followed by Gregorian 15 Oct 1582 — so cast pre-reform dates on the Julian
+  // calendar. Otherwise a pre-1582 birth (e.g. Leonardo da Vinci, 15 Apr 1452)
+  // lands ~10 days off, dragging the Sun a whole sign. The 10 skipped days
+  // (5–14 Oct 1582) never existed; such inputs fall to Julian here, the
+  // conventional handling.
+  const reformed =
+    b.year > 1582 ||
+    (b.year === 1582 && (b.month > 10 || (b.month === 10 && b.day >= 15)));
+  const jd0 = eph().julianDay(
+    b.year,
+    b.month,
+    b.day,
+    0,
+    reformed ? CalendarType.Gregorian : CalendarType.Julian,
+  );
   return jd0 + (b.hour + b.minute / 60 - b.tzOffset) / 24;
 }
 
@@ -405,8 +434,8 @@ export function getPlanetPositions(
 ): PlanetPosition[] {
   return PLANET_NAMES.map((name) => {
     const s = sampleBody(jd, name, nodeType);
-    return { name, ra: s.ra, dec: s.dec };
-  });
+    return s ? { name, ra: s.ra, dec: s.dec } : null;
+  }).filter((p): p is PlanetPosition => p !== null);
 }
 
 // Ecliptic positions for the chart wheel, straight from Swiss — exact longitude,
@@ -415,9 +444,11 @@ export function getEclipticPositions(
   jd: number,
   nodeType: NodeType = 'mean',
 ): EclipticPosition[] {
-  return PLANET_NAMES.map((name) => {
+  const out: EclipticPosition[] = [];
+  for (const name of PLANET_NAMES) {
     const s = sampleBody(jd, name, nodeType);
-    return {
+    if (!s) continue;
+    out.push({
       name,
       lon: s.lon,
       lat: s.lat,
@@ -425,8 +456,9 @@ export function getEclipticPositions(
       speed: s.speed,
       retrograde: s.speed < 0,
       stationary: stationaryFlag(s.speed, name),
-    };
-  });
+    });
+  }
+  return out;
 }
 
 // Ecliptic longitude/latitude for DERIVED positions (solar-arc shifts, overlay

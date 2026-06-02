@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RelocatedAngles } from '../../lib/ephemeris';
+import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import './CoordReadout.css';
 
@@ -15,32 +16,18 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function fmtDms(absDeg: number): { d: number; m: number; s: number } {
-  const d = Math.floor(absDeg);
-  const minFull = (absDeg - d) * 60;
-  const m = Math.floor(minFull);
-  let s = Math.round((minFull - m) * 60);
-  if (s === 60) return { d, m: m + 1, s: 0 };
-  return { d, m, s };
-}
-
-function fmtLat(latDeg: number): string {
-  const dir = latDeg >= 0 ? 'N' : 'S';
-  const { d, m, s } = fmtDms(Math.abs(latDeg));
-  return `${d}°${dir}${pad2(m)}'${pad2(s)}"`;
-}
-
-function fmtLng(lngDeg: number): string {
-  const dir = lngDeg >= 0 ? 'E' : 'W';
-  const { d, m, s } = fmtDms(Math.abs(lngDeg));
-  return `${d}°${dir}${pad2(m)}'${pad2(s)}"`;
-}
-
 function fmtAngle(lonRad: number): { deg: string; signIdx: number; ms: string } {
   const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
   const signIdx = Math.floor(lonDeg / 30);
   const inSign = lonDeg % 30;
-  const { d, m, s } = fmtDms(inSign);
+  const d = Math.floor(inSign);
+  const minFull = (inSign - d) * 60;
+  let m = Math.floor(minFull);
+  let s = Math.round((minFull - m) * 60);
+  if (s === 60) {
+    s = 0;
+    m += 1;
+  }
   return { deg: pad2(d), signIdx, ms: `${pad2(m)}'${pad2(s)}"` };
 }
 

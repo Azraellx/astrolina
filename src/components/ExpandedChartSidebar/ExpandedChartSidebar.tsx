@@ -7,6 +7,7 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
@@ -88,6 +89,12 @@ const ADVANCED_KEY = 'astro:advanced:v1';
 const SHOW_ANGLES_KEY = 'astro:coord-show-angles:v1';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
+// The drag handle won't take the panel past ~70% of the viewport (leaving the map
+// usable), and never beyond 1200px — the chart wheel has stopped growing by then,
+// so extra width just wastes space.
+function maxSidebarWidth(): number {
+  return Math.min(window.innerWidth * 0.7, 1200);
+}
 
 // Wheel sizing. The diameter fits the panel width, with MIN_WHEEL keeping it
 // legible (never squished) even on narrow panels and MAX_WHEEL stopping it
@@ -174,7 +181,9 @@ export function ExpandedChartSidebar({
 }: ExpandedChartSidebarProps) {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
-    return saved && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH;
+    const base = saved && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH;
+    // Rein in a width saved under the old (wider) cap, and fit a narrower viewport.
+    return Math.max(MIN_WIDTH, Math.min(base, maxSidebarWidth()));
   });
 
   useEffect(() => {
@@ -257,7 +266,7 @@ export function ExpandedChartSidebar({
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!draggingRef.current) return;
-      const maxWidth = Math.min(window.innerWidth - 120, 1200);
+      const maxWidth = maxSidebarWidth();
       const newWidth = Math.max(
         MIN_WIDTH,
         Math.min(maxWidth, e.clientX + dragOffsetRef.current),
@@ -398,8 +407,7 @@ export function ExpandedChartSidebar({
           return (
             <div className={`es-relocated ${stateClass}`}>
               <span className="es-relocated-text">
-                {label} {displayPoint.lat.toFixed(3)}°,{' '}
-                {displayPoint.lng.toFixed(3)}°
+                {label} {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
               </span>
             </div>
           );

@@ -97,7 +97,7 @@
 
 .synastry-hud-trigger:hover .synastry-hud-name,
 .synastry-hud-trigger.open .synastry-hud-name {
-  color: var(--accent);
+  color: var(--text-strong);
 }
 
 .synastry-hud-trigger:hover .synastry-hud-icon,

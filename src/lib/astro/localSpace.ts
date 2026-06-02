@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import { PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
+import { splitOnDateline } from './dateline';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -8,8 +9,15 @@ const HALF_EARTH_KM = Math.PI * EARTH_R_KM;
 
 export interface LocalSpaceProps {
   planet: PlanetName;
+  /** Degrees clockwise from north toward the planet (the 'out' half's bearing). */
   azimuth: number;
   color: string;
+  /** 'out' = the half running toward the planet; 'in' = the opposite half. */
+  direction: 'out' | 'in';
+  /** The planet's zenith (sub-planetary) point — on its MC line, and on this
+   *  line (the azimuth is the bearing to it). The LS label's click-to-fly target. */
+  zenithLng: number;
+  zenithLat: number;
 }
 
 function azimuthFromNorth(
@@ -59,20 +67,6 @@ function greatCircleArc(
   return coords;
 }
 
-function splitOnDateline(
-  coords: [number, number][],
-): [number, number][][] {
-  const segs: [number, number][][] = [[]];
-  for (const cur of coords) {
-    const seg = segs[segs.length - 1];
-    if (seg.length > 0 && Math.abs(cur[0] - seg[seg.length - 1][0]) > 180) {
-      segs.push([]);
-    }
-    segs[segs.length - 1].push(cur);
-  }
-  return segs.filter((s) => s.length >= 2);
-}
-
 export function generateLocalSpace(
   positions: PlanetPosition[],
   gmst: number,
@@ -86,7 +80,13 @@ export function generateLocalSpace(
 
   for (const p of positions) {
     const az = azimuthFromNorth(p.ra, p.dec, lst, latRad);
-    for (const bearing of [az, (az + Math.PI) % (2 * Math.PI)]) {
+    const zenithLng = normLng((p.ra - gmst) * RAD2DEG);
+    const zenithLat = p.dec * RAD2DEG;
+    const halves: { bearing: number; direction: 'out' | 'in' }[] = [
+      { bearing: az, direction: 'out' },
+      { bearing: (az + Math.PI) % (2 * Math.PI), direction: 'in' },
+    ];
+    for (const { bearing, direction } of halves) {
       const arc = greatCircleArc(
         birthLat,
         birthLng,
@@ -101,6 +101,9 @@ export function generateLocalSpace(
             planet: p.name,
             azimuth: az * RAD2DEG,
             color: PLANET_COLORS[p.name],
+            direction,
+            zenithLng,
+            zenithLat,
           },
           geometry: { type: 'LineString', coordinates: seg },
         });

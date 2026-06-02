@@ -5,6 +5,17 @@ import type { Map as MlMap, LayerSpecification } from 'maplibre-gl';
 
 const ROAD_RE = /(highway|motorway|trunk|primary|secondary|street|road|transport|bridge|tunnel)/i;
 const RIVER_RE = /(waterway|river|stream|canal)/i;
+// Place / POI / water-name label layers — the basemap text that competes with the
+// chart lines. (Road-name labels are source-layer transportation_name, so they
+// toggle with Roads, not here.)
+const LABEL_SOURCE_LAYERS = new Set([
+  'place',
+  'poi',
+  'water_name',
+  'mountain_peak',
+  'aerodrome_label',
+  'housenumber',
+]);
 
 function safe(fn: () => void): void {
   try {
@@ -32,9 +43,14 @@ function isRiverLayer(l: LayerSpecification): boolean {
   return sl === 'waterway' || RIVER_RE.test(l.id);
 }
 
+function isLabelLayer(l: LayerSpecification): boolean {
+  return l.type === 'symbol' && LABEL_SOURCE_LAYERS.has(sourceLayer(l));
+}
+
 export interface DetailToggles {
   showRoads: boolean;
   showRivers: boolean;
+  showLabels: boolean;
 }
 
 // Show/hide road and river layers across any theme. Rivers are checked first so
@@ -49,6 +65,10 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
     } else if (isRoadLayer(l)) {
       safe(() =>
         map.setLayoutProperty(l.id, 'visibility', t.showRoads ? 'visible' : 'none'),
+      );
+    } else if (isLabelLayer(l)) {
+      safe(() =>
+        map.setLayoutProperty(l.id, 'visibility', t.showLabels ? 'visible' : 'none'),
       );
     }
   }

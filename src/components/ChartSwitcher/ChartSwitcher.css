@@ -51,7 +51,7 @@
 }
 
 .switcher-trigger:hover strong {
-  color: var(--accent);
+  color: var(--text-strong);
 }
 
 .switcher-trigger:hover .switcher-icon {

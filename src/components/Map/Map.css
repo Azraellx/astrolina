@@ -42,6 +42,77 @@
   letter-spacing: 0.02em;
 }
 
+/* The "×" between the two bodies of a paran badge — quieter than the codes. */
+.paran-badge-x {
+  margin: 0 1px;
+  font-weight: 600;
+  opacity: 0.55;
+}
+
+/* Clickable badges (LS + paran labels) are <button>s — opt back into pointer events
+   inside the otherwise pass-through badge layer, reset the native button chrome, and
+   lift slightly on hover. The rest of the look comes from .acg-badge. */
+.acg-badge-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.acg-badge-btn:hover {
+  filter: brightness(1.08);
+  transform: translate(-50%, -50%) scale(1.07);
+}
+
+/* The LS direction tag ("IN" / "OUT"). */
+.ls-dir {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+/* The bundled symbol font sits a touch low; nudge badge glyphs up ~10% to optically
+   centre them (matching the SVG-mode glyph in the chart wheel). */
+.acg-badge .astro-glyph {
+  transform: translateY(-10%);
+}
+
+/* ── Zenith hover tooltip ────────────────────────────────────────────
+   A small themed popup over a planet's zenith stamp, explaining what it is.
+   pointer-events:none so it never steals the hover/click from the stamp. */
+.zenith-popup {
+  pointer-events: none;
+}
+.zenith-popup .maplibregl-popup-content {
+  padding: 6px 10px;
+  background: rgb(var(--bg-menu));
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
+}
+.zenith-popup .maplibregl-popup-tip {
+  display: none;
+}
+.zenith-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: center;
+}
+.zenith-tip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.zenith-tip-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .map-pin {
   position: relative;
   width: 22px;

@@ -126,15 +126,15 @@
 }
 
 .theme-option .swatch-vintage {
-  background: linear-gradient(135deg, #2a2017 0%, #5a4030 50%, #f5b83d 50%, #f0e2c0 100%);
+  background: linear-gradient(135deg, #4f9a4a 0%, #8fc789 50%, #5fa6d6 50%, #a9d6ef 100%);
 }
 
 .theme-option .swatch-dark {
-  background: linear-gradient(135deg, #0a0a0f 0%, #2a2a36 50%, #f5b83d 50%, #e7e7ea 100%);
+  background: linear-gradient(135deg, #000000 0%, #000000 58%, #2b2b35 100%);
 }
 
 .theme-option .swatch-light {
-  background: linear-gradient(135deg, #f4f5f8 0%, #d8dae0 50%, #c97b1a 50%, #1a1a22 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #ffffff 58%, #d6dbe4 100%);
 }
 
 .theme-option .swatch-glass {
@@ -206,6 +206,18 @@
 .tech-toggle.on {
   border-color: rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.08);
+}
+
+/* Eye marker for the "Hide details" toggles: accent + open when the layer is
+   shown, faint + closed (eye-off) when hidden. */
+.tech-toggle .eye-icon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: color 0.12s;
+}
+
+.tech-toggle.on .eye-icon {
+  color: var(--accent);
 }
 
 .tech-toggle .check {

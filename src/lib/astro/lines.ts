@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
+import { splitOnDateline } from './dateline';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -17,23 +18,6 @@ function normLng(lng: number): number {
   let x = ((lng + 180) % 360 + 360) % 360 - 180;
   if (x === -180) x = 180;
   return x;
-}
-
-function splitOnDateline(
-  coords: [number, number][],
-): [number, number][][] {
-  const segs: [number, number][][] = [[]];
-  for (const cur of coords) {
-    const seg = segs[segs.length - 1];
-    if (seg.length > 0) {
-      const prev = seg[seg.length - 1];
-      if (Math.abs(cur[0] - prev[0]) > 180) {
-        segs.push([]);
-      }
-    }
-    segs[segs.length - 1].push(cur);
-  }
-  return segs.filter((s) => s.length >= 2);
 }
 
 function makeFeature(
@@ -105,6 +89,8 @@ export function generateZenithStamps(
 ): FeatureCollection<Point, ZenithProps> {
   const features: Feature<Point, ZenithProps>[] = positions.map((p) => ({
     type: 'Feature',
+    // Stable per-body id so the map can drive a hover feature-state on each stamp.
+    id: p.name,
     properties: { planet: p.name, color: PLANET_COLORS[p.name] },
     geometry: {
       type: 'Point',

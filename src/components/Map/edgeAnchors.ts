@@ -70,8 +70,39 @@ function clipSeg(a: Pt, b: Pt, r: Rect): { t0: number; t1: number } | null {
   return { t0, t1 };
 }
 
-// Up to two badges per feature: the two ends of the line's on-screen portion —
-// either viewport-edge crossings or a geometric endpoint lying inside the view.
+// The two screen points farthest apart in a small set — the visual "ends" of a
+// line's on-screen presence once its fragments are pooled together.
+function farthestPair(pts: Pt[]): Pt[] {
+  if (pts.length <= 2) return pts;
+  let best: Pt[] = [pts[0], pts[1]];
+  let bestD = -1;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const dx = pts[i].x - pts[j].x;
+      const dy = pts[i].y - pts[j].y;
+      const d = dx * dx + dy * dy;
+      if (d > bestD) {
+        bestD = d;
+        best = [pts[i], pts[j]];
+      }
+    }
+  }
+  return best;
+}
+
+interface LineGroup {
+  color: string;
+  planet: PlanetName;
+  lineType: LineType;
+  prefix: string;
+  ends: Pt[];
+}
+
+// Up to two badges per LOGICAL line: the two ends of its on-screen portion. A
+// horizon curve that crosses the dateline arrives split into several features
+// sharing planet+lineType — we pool their on-screen ends and label the overall
+// extremes, so one line reads as one pair of labels rather than a pair per
+// fragment (which matters now badges show at every zoom, world view included).
 export function computeLineBadges(
   map: MlMap,
   features: Feature<LineString, LineProps>[],
@@ -84,9 +115,9 @@ export function computeLineBadges(
   const rect: Rect = { minX: inset, minY: inset, maxX: w - inset, maxY: h - inset };
   if (rect.maxX <= rect.minX || rect.maxY <= rect.minY) return [];
 
-  const out: LineBadge[] = [];
+  const groups = new Map<string, LineGroup>();
 
-  features.forEach((f, fi) => {
+  features.forEach((f) => {
     const coords = f.geometry.coordinates;
     if (coords.length < 2) return;
     // Horizon curves are dense (0.5° steps); every 3rd point is plenty to find
@@ -125,18 +156,32 @@ export function computeLineBadges(
 
     const { planet, lineType, color, label } = f.properties;
     const prefix = isOverlay ? label : '';
-    const ends = anchors.length === 1 ? [anchors[0]] : [anchors[0], anchors[anchors.length - 1]];
-    ends.forEach((pt, ei) => {
+    const key = `${planet}|${lineType}|${prefix}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { color, planet, lineType, prefix, ends: [] };
+      groups.set(key, g);
+    }
+    // This fragment contributes its own on-screen ends to the pool.
+    g.ends.push(anchors[0]);
+    if (anchors.length > 1) g.ends.push(anchors[anchors.length - 1]);
+  });
+
+  const out: LineBadge[] = [];
+  let gi = 0;
+  groups.forEach((g) => {
+    farthestPair(g.ends).forEach((pt, ei) => {
       out.push({
-        key: `${isOverlay ? 'ov' : 'n'}-${fi}-${ei}`,
+        key: `${isOverlay ? 'ov' : 'n'}-${gi}-${ei}`,
         x: pt.x,
         y: pt.y,
-        color,
-        planet,
-        lineType,
-        prefix,
+        color: g.color,
+        planet: g.planet,
+        lineType: g.lineType,
+        prefix: g.prefix,
       });
     });
+    gi++;
   });
 
   return out;

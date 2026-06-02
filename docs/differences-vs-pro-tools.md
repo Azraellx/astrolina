@@ -58,6 +58,7 @@ Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta) now read fr
 
 **Practical impact:**
 - Accurate to ~1 arcsecond, including for Chiron's chaotic centaur orbit, where the old static-orbital-element model drifted several tenths of a degree on older charts. A side-by-side with Solar Fire now matches.
+- The bundled asteroid data is the **1800–2399 AD** block only; charts outside that window keep their planets/nodes/Lilith but omit the asteroids (see §8).
 
 ### 6. Not implemented: fixed stars, Transpluto, other hypotheticals
 
@@ -75,6 +76,16 @@ These are in the roadmap but intentionally out of scope for the prototype:
 - **Vedic / sidereal mode** — tropical only at the moment. Vedic astrocartography is barely served by any tool, which is a real opportunity.
 - **Embeddable widgets** — so an astrologer can drop a map into their own website.
 - **Server-side PDF rendering** — export currently relies on the browser, fine for prototype but limited for branded high-quality exports at scale.
+
+### 8. Date range: 1800–2399 AD, a deliberate web-weight tradeoff
+
+The birth-data form accepts years **1800–2200**, and the bundled Swiss Ephemeris data covers **1800–2399 AD**. This is a download-size choice, not an engine limit: Swiss Ephemeris itself spans roughly **13201 BC – 17191 AD**, and the desktop tools ship the full data set on disk (they have no download budget to worry about).
+
+The weight is in the data files. Planets and the Moon fall back automatically to Swiss's built-in **Moshier** model outside 1800–2399, so Sun–Pluto, the lunar nodes, and Lilith resolve for *any* date. The **asteroids have no such fallback** — each 600-year block (Chiron, Ceres, Pallas, Juno, Vesta) is a separate ~0.2 MB `.se1` file, so covering, say, 1 AD onward means bundling three more blocks (~0.65 MB) on top of the ~2.6 MB the app already loads before it's usable. For a browser tool that should start fast, that isn't worth it for the occasional pre-1800 chart.
+
+**What a pro might catch:** you can't *enter* a pre-1800 birth in the form. A chart **imported** with a pre-1800 date still works — its planets, nodes, and Lilith compute (via Moshier), and the calendar is handled correctly (pre-1582 dates are cast on the Julian calendar) — but its asteroids are silently omitted, since their data isn't bundled. The desktop tools handle antiquity because their ephemeris is installed locally.
+
+**Path to fix:** ship the extra `.se1` blocks in a "pro / extended" build, or **lazy-load** them only when a pre-1800 chart is opened — keeping the base download light while the capability appears for those who need it. The calc layer is already built for this: it casts pre-1582 dates on the Julian calendar and drops any body whose data is absent for a given date rather than erroring, so widening the range is purely a matter of bundling files.
 
 ---
 

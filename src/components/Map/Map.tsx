@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -17,7 +18,7 @@ import {
   ZENITH_DISC_COLORS,
   type Theme,
 } from '../../lib/theme';
-import { ensureGlyphImages, GLYPH_IMAGE_PREFIX, ZENITH_GLYPH_PREFIX } from './glyphImages';
+import { ensureGlyphImages, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import {
   computeLineBadges,
@@ -26,7 +27,9 @@ import {
   type LineBadge,
 } from './edgeAnchors';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { LocalHorizonWheel, type HorizonPlanet } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
+import { PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -35,47 +38,8 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   features: [],
 });
 
-// Inline the planet glyph (a baked image, keyed glyph-<planet>) ahead of the
-// angle code in each line label, instead of a two-letter code. Angles read
-// MC / IC / As / Ds. The text portion is colored by the layer's text-color.
-const planetGlyph = (planetProp: string): ExpressionSpecification =>
-  ['image', ['concat', GLYPH_IMAGE_PREFIX, ['get', planetProp]]] as unknown as ExpressionSpecification;
-
-const PARAN_LABEL_FIELD = [
-  'format',
-  planetGlyph('planetA'),
-  {},
-  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-  ' × ',
-  {},
-  planetGlyph('planetB'),
-  {},
-  ['match', ['get', 'angleB'], 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-] as unknown as ExpressionSpecification;
-
-// Overlay variants prepend the overlay tag (Tr / Sp / Sa / Sy, stamped onto the
-// feature `label`) so overlay lines read e.g. "Tr ♂ MC".
-const PARAN_OV_LABEL_FIELD = [
-  'format',
-  ['get', 'label'],
-  {},
-  ' ',
-  {},
-  planetGlyph('planetA'),
-  {},
-  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-  ' × ',
-  {},
-  planetGlyph('planetB'),
-  {},
-  ['match', ['get', 'angleB'], 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-] as unknown as ExpressionSpecification;
-
-// Angle code shown in each edge badge (As/Ds match the wheel's shorthand).
+// Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
+// Covers all four angles — a paran's body A may sit on the MC/IC or the horizon.
 const ANGLE_CODE: Record<LineType, string> = {
   MC: 'MC',
   IC: 'IC',
@@ -86,10 +50,6 @@ const ANGLE_CODE: Record<LineType, string> = {
 // How far inside the viewport edge the badges anchor (px). Small, since badges
 // then dodge the HUD panels rather than relying on a wide margin.
 const BADGE_INSET = 16;
-// Below this zoom the whole-world view packs every planet's lines together, so the
-// edge badges just stack up and read as noise — hide them until zoomed in enough
-// for the lines (and their labels) to be distinguishable.
-const BADGE_MIN_ZOOM = 3;
 
 // HUD panels the edge badges should slide clear of, so a label is never hidden.
 const HUD_SELECTORS = [
@@ -121,17 +81,125 @@ function readHudRects(map: maplibregl.Map): AvoidRect[] {
   return out;
 }
 
-// Pick dark or white text for a badge from the line color's luminance, so the
-// glyph/code stays legible on both pale (e.g. Moon) and dark planet colors.
-function badgeTextColor(hex: string): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return '#fff';
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
+// Pick dark or white text for a badge from its fill luminance, so the glyph/code
+// stays legible on pale (e.g. Moon) or dark planet colors and on the themed paran
+// fill. Accepts #rrggbb or rgb()/rgba().
+function badgeTextColor(fill: string): string {
+  let r: number;
+  let g: number;
+  let b: number;
+  const hex = /^#?([0-9a-f]{6})$/i.exec(fill.trim());
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    r = (n >> 16) & 255;
+    g = (n >> 8) & 255;
+    b = n & 255;
+  } else {
+    const rgb = /rgba?\(\s*([0-9.]+)[,\s]+([0-9.]+)[,\s]+([0-9.]+)/i.exec(fill);
+    if (!rgb) return '#fff';
+    r = parseFloat(rgb[1]);
+    g = parseFloat(rgb[2]);
+    b = parseFloat(rgb[3]);
+  }
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return lum > 0.62 ? '#1a1c22' : '#fff';
+}
+
+// One badge per paran, parked at the horizontal centre of the screen on the line's
+// latitude row (replaces the old repeated along-the-line labels).
+interface ParanBadge {
+  key: string;
+  x: number;
+  y: number;
+  planetA: ParanProps['planetA'];
+  angleA: ParanProps['angleA'];
+  planetB: ParanProps['planetB'];
+  angleB: ParanProps['angleB'];
+  prefix: string;
+  /** Click-to-fly target: the paran's intersection point. */
+  targetLng: number;
+  targetLat: number;
+}
+
+// One badge per local-space line ("LS" + planet glyph), parked on a ring around
+// the origin point at the planet's azimuth. North is up and Mercator is conformal,
+// so the screen angle matches the bearing — the label lands on its own line. The
+// ring radius grows from the base up to 4× as you zoom in toward street level
+// (~where minor roads appear), so the labels spread apart as the map gains detail.
+// The "zoomed in close" threshold: at this zoom the LS label ring reaches its max
+// radius AND the local-horizon compass pops in — a single zoomed-in-enough mark.
+const CLOSE_ZOOM = 10;
+// The horizon compass starts fading in once zoomed in this far — well before the LS
+// labels finish spreading, so it shows up quickly.
+const COMPASS_ZOOM = 4;
+// Diameter (px) of the local-horizon compass at full (CLOSE_ZOOM) size.
+const HORIZON_WHEEL_SIZE = 480;
+// It starts 20% smaller and grows to full across COMPASS_ZOOM→CLOSE_ZOOM (alongside
+// the LS labels), while fading to full opacity over the first quarter of that range.
+const COMPASS_MIN_SCALE = 0.5;
+const COMPASS_FADE_FRACTION = 0.25;
+const COMPASS_MAX_OPACITY = 0.92;
+const LS_BADGE_RADIUS_PX = 74;
+const LS_RADIUS_ZOOM_MIN = 2;
+const LS_RADIUS_MAX_SCALE = 4;
+function lsBadgeRadius(zoom: number): number {
+  const t = Math.max(
+    0,
+    Math.min(1, (zoom - LS_RADIUS_ZOOM_MIN) / (CLOSE_ZOOM - LS_RADIUS_ZOOM_MIN)),
+  );
+  return LS_BADGE_RADIUS_PX * (1 + (LS_RADIUS_MAX_SCALE - 1) * t);
+}
+// Rough half-extents of an LS pill, used to keep the ring's labels from colliding.
+const LS_BADGE_HALF_W = 34;
+const LS_BADGE_HALF_H = 11;
+interface LocalSpaceBadge {
+  key: string;
+  x: number;
+  y: number;
+  planet: LocalSpaceProps['planet'];
+  color: string;
+  /** 'OUT' (toward the planet) or 'IN' (toward the nadir). */
+  dir: string;
+  /** Click-to-fly target: where this half meets the chart — the planet's zenith
+   *  ('out', on its MC line) or nadir ('in', on its IC line). */
+  targetLng: number;
+  targetLat: number;
+}
+
+// Spread overlapping badges apart — a few passes of AABB separation along the axis
+// of least overlap — so the LS labels stay readable/clickable when their azimuths
+// crowd. Mutates x/y in place.
+function deOverlapBadges(
+  items: { x: number; y: number }[],
+  halfW: number,
+  halfH: number,
+  iterations: number,
+): void {
+  for (let iter = 0; iter < iterations; iter++) {
+    let moved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const ox = 2 * halfW - Math.abs(dx);
+        const oy = 2 * halfH - Math.abs(dy);
+        if (ox <= 0 || oy <= 0) continue;
+        moved = true;
+        if (ox < oy) {
+          const push = (ox / 2 + 0.5) * (dx < 0 ? -1 : 1);
+          a.x -= push;
+          b.x += push;
+        } else {
+          const push = (oy / 2 + 0.5) * (dy < 0 ? -1 : 1);
+          a.y -= push;
+          b.y += push;
+        }
+      }
+    }
+    if (!moved) break;
+  }
 }
 
 export interface OverlayData {
@@ -178,10 +246,165 @@ function measureBetween(a: LatLng, b: LatLng): MeasureInfo {
   };
 }
 
+// ── Measure-tool line snapping ────────────────────────────────────────────────
+// While the measure tool is dragged, the endpoint auto-snaps to the nearest
+// rendered chart line whenever the cursor comes within SNAP_RADIUS_PX of one. We
+// query whatever line layers are actually drawn (so it honours planet / overlay /
+// paran / local-space visibility), then take the closest point on those polylines
+// in screen space. Approximate by design — close enough to grab a line without
+// fiddly precision.
+const SNAP_LINE_LAYERS = [
+  'acg-lines-meridian',
+  'acg-lines-horizon',
+  'acg-lines-ov-meridian',
+  'acg-lines-ov-horizon',
+  'parans-layer',
+  'parans-ov-layer',
+  'local-space-layer',
+  'local-space-ov-layer',
+];
+// Cursor-to-line distance (px) within which the measure endpoint snaps. Small, so
+// it grabs a line you're aiming at without hijacking nearby free-space measuring.
+const SNAP_RADIUS_PX = 12;
+
+interface ScreenPt {
+  x: number;
+  y: number;
+}
+
+// Closest point on segment a→b to p, all in screen px; returns the point + distance.
+function closestPointOnSegment(p: ScreenPt, a: ScreenPt, b: ScreenPt): ScreenPt & { d: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const x = a.x + t * dx;
+  const y = a.y + t * dy;
+  return { x, y, d: Math.hypot(p.x - x, p.y - y) };
+}
+
+// Nearest point (lng/lat) on any rendered chart line within SNAP_RADIUS_PX of the
+// screen point, or null if nothing is close enough.
+function snapToNearestLine(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+): { lng: number; lat: number } | null {
+  const layers = SNAP_LINE_LAYERS.filter((id) => map.getLayer(id));
+  if (layers.length === 0) return null;
+  const feats = map.queryRenderedFeatures(
+    [
+      [pt.x - SNAP_RADIUS_PX, pt.y - SNAP_RADIUS_PX],
+      [pt.x + SNAP_RADIUS_PX, pt.y + SNAP_RADIUS_PX],
+    ],
+    { layers },
+  );
+  let bx = 0;
+  let by = 0;
+  let best = Infinity;
+  for (const f of feats) {
+    const g = f.geometry;
+    const parts =
+      g.type === 'LineString'
+        ? [g.coordinates]
+        : g.type === 'MultiLineString'
+          ? g.coordinates
+          : [];
+    for (const line of parts) {
+      if (line.length < 2) continue;
+      let prev = map.project(line[0] as [number, number]);
+      for (let i = 1; i < line.length; i++) {
+        const cur = map.project(line[i] as [number, number]);
+        const c = closestPointOnSegment(pt, prev, cur);
+        if (c.d < best) {
+          best = c.d;
+          bx = c.x;
+          by = c.y;
+        }
+        prev = cur;
+      }
+    }
+  }
+  if (best === Infinity) return null;
+  const ll = map.unproject([bx, by]);
+  return { lng: ll.lng, lat: ll.lat };
+}
+
+// ── Paran click-to-fly ────────────────────────────────────────────────────────
+// Paran lines are thin and faint, so a pixel-exact click is hard. A click within
+// PARAN_CLICK_TOLERANCE_PX of a rendered paran counts as a hit, and the caller
+// flies to that paran's intersection point. When parans are hidden the source is
+// empty, so this returns null and normal click-to-relocate stands.
+const PARAN_CLICK_LAYERS = ['parans-layer', 'parans-ov-layer'];
+const PARAN_CLICK_TOLERANCE_PX = 10;
+
+function paranAtPoint(map: maplibregl.Map, pt: ScreenPt): ParanProps | null {
+  const layers = PARAN_CLICK_LAYERS.filter((id) => map.getLayer(id));
+  if (layers.length === 0) return null;
+  const t = PARAN_CLICK_TOLERANCE_PX;
+  const feats = map.queryRenderedFeatures(
+    [
+      [pt.x - t, pt.y - t],
+      [pt.x + t, pt.y + t],
+    ],
+    { layers },
+  );
+  let best: ParanProps | null = null;
+  let bestD = Infinity;
+  for (const f of feats) {
+    if (!f.properties) continue;
+    const props = f.properties as unknown as ParanProps;
+    // Parans are horizontal (constant latitude), so the nearest point on one is
+    // directly above/below the click — rank candidates by vertical screen gap.
+    const rowY = map.project([props.intersectionLng, props.latitude]).y;
+    const d = Math.abs(rowY - pt.y);
+    if (d < bestD) {
+      bestD = d;
+      best = props;
+    }
+  }
+  return best;
+}
+
+// ── Zenith hover / click ────────────────────────────────────────────────────────
+// The sub-planetary stamps are small, so a query within a few px of the cursor
+// counts as a hit. Hovering one animates it + shows a tooltip; clicking flies to it
+// (the same place a planet's ACG line labels fly to).
+const ZENITH_HIT_LAYER = 'acg-zenith-disc';
+const ZENITH_HIT_TOLERANCE_PX = 4;
+
+interface ZenithHit {
+  id: string;
+  planet: PlanetName;
+  lng: number;
+  lat: number;
+}
+
+function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
+  if (!map.getLayer(ZENITH_HIT_LAYER)) return null;
+  const t = ZENITH_HIT_TOLERANCE_PX;
+  const feats = map.queryRenderedFeatures(
+    [
+      [pt.x - t, pt.y - t],
+      [pt.x + t, pt.y + t],
+    ],
+    { layers: [ZENITH_HIT_LAYER] },
+  );
+  const f = feats[0];
+  if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
+    return null;
+  }
+  const [lng, lat] = f.geometry.coordinates as [number, number];
+  return { id: String(f.id), planet: f.properties.planet as PlanetName, lng, lat };
+}
+
 interface MapProps {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  /** Origin the local-space lines radiate from (pin or birthplace) — the centre of
+   *  the LS label ring. Null when local space is hidden. */
+  localSpaceOrigin?: { lat: number; lng: number } | null;
   /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
   zenith: FeatureCollection<Point, ZenithProps>;
   /** Second, time/relationship overlay rendered dashed + dimmed over the base. */
@@ -189,9 +412,10 @@ interface MapProps {
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
-  /** Basemap detail toggles (Theme tab). Default-off keeps the chart uncluttered. */
+  /** Basemap detail toggles (the Theme tab's "Hide details" section). Default-on. */
   showRoads?: boolean;
   showRivers?: boolean;
+  showLabels?: boolean;
   /** When true, click-drag on the map measures great-circle distance (and map
    *  panning is suspended for the duration). */
   measureActive?: boolean;
@@ -210,6 +434,7 @@ interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  localSpaceOrigin?: { lat: number; lng: number } | null;
   zenith: FeatureCollection<Point, ZenithProps>;
   overlay?: OverlayData | null;
 }
@@ -221,29 +446,30 @@ export interface MapHandle {
   zoomOut: () => void;
 }
 
-// Directional arrows chained ALONG a horizon (ASC/DSC) line — '→→→' that follow
-// the line's bearing (map rotation, keep-upright off so the true direction is
-// preserved). ASC arrows ('→') flow one way along the line and DSC ('←') the
-// opposite, so the two are distinguishable without dashes. Tight spacing makes
-// them read as one connected arrowed line. `text-ignore-placement` keeps them
-// purely decorative so they never suppress the planet labels.
-function addHorizonArrows(
+// Directional arrows chained ALONG a line — '→→→' that follow the line's bearing
+// (map rotation, keep-upright off so the true direction is preserved). The glyph
+// + filter decide direction: horizon lines use '→' for ASC and '←' for DSC; local
+// space uses '→' on the outward (toward-planet) half and '←' on the inward half,
+// so each axis reads as energy flowing out toward the planet and back in. Tight
+// spacing reads as one connected arrowed line; `text-ignore-placement` keeps them
+// decorative so they never suppress the planet labels.
+function addArrowLayer(
   map: maplibregl.Map,
   id: string,
   source: string,
-  lineType: 'ASC' | 'DSC',
+  filter: ExpressionSpecification,
   glyph: string,
 ) {
   map.addLayer({
     id,
     source,
     type: 'symbol',
-    filter: ['==', ['get', 'lineType'], lineType],
+    filter,
     layout: {
       'text-field': glyph,
       'symbol-placement': 'line',
-      // Spaced out so the solid base line shows through as the shaft between
-      // arrowheads — reads as ———→———→ rather than a dense →→→ run.
+      // Spaced out so the base line shows through as the shaft between arrowheads
+      // — reads as ———→———→ rather than a dense →→→ run.
       'symbol-spacing': 64,
       'text-size': 15,
       'text-font': ['Noto Sans Regular'],
@@ -259,6 +485,12 @@ function addHorizonArrows(
     },
   });
 }
+
+// Filter expression for one direction-tagged local-space half.
+const lsDir = (d: 'out' | 'in'): ExpressionSpecification =>
+  ['==', ['get', 'direction'], d] as unknown as ExpressionSpecification;
+const lineTypeIs = (t: 'ASC' | 'DSC'): ExpressionSpecification =>
+  ['==', ['get', 'lineType'], t] as unknown as ExpressionSpecification;
 
 function setupCustomLayers(
   map: maplibregl.Map,
@@ -277,29 +509,8 @@ function setupCustomLayers(
       'line-opacity': 0.45,
     },
   });
-  map.addLayer({
-    id: 'parans-labels',
-    source: 'parans',
-    type: 'symbol',
-    layout: {
-      'text-field': PARAN_LABEL_FIELD,
-      'symbol-placement': 'line',
-      'symbol-spacing': 320,
-      'text-size': 10,
-      'text-font': ['Noto Sans Regular'],
-      'text-rotation-alignment': 'viewport',
-      'text-pitch-alignment': 'viewport',
-      'text-keep-upright': true,
-      'text-padding': 3,
-      'text-letter-spacing': 0.04,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': haloColor,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5,
-    },
-  });
+  // Paran labels are drawn as centred DOM badges (see the paran-badge overlay in
+  // the Map component), not repeated along the line.
 
   map.addSource('local-space', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
@@ -313,6 +524,10 @@ function setupCustomLayers(
       'line-dasharray': [2, 2],
     },
   });
+  // Outward ('→', toward the planet) and inward ('←', back toward the origin)
+  // arrows distinguish the two halves of each local-space axis.
+  addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→');
+  addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
   map.addSource('acg-lines', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
@@ -350,8 +565,8 @@ function setupCustomLayers(
       'line-opacity': 0.85,
     },
   });
-  addHorizonArrows(map, 'acg-lines-arrows-asc', 'acg-lines', 'ASC', '→');
-  addHorizonArrows(map, 'acg-lines-arrows-dsc', 'acg-lines', 'DSC', '←');
+  addArrowLayer(map, 'acg-lines-arrows-asc', 'acg-lines', lineTypeIs('ASC'), '→');
+  addArrowLayer(map, 'acg-lines-arrows-dsc', 'acg-lines', lineTypeIs('DSC'), '←');
   // The glyph + angle label is no longer drawn along the line — it's rendered as
   // a colored edge badge (see the edge-badge overlay in the Map component).
 
@@ -371,6 +586,8 @@ function setupCustomLayers(
       'line-dasharray': [1, 3],
     },
   });
+  addArrowLayer(map, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
+  addArrowLayer(map, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
 
   map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
@@ -384,29 +601,7 @@ function setupCustomLayers(
       'line-dasharray': [2, 3],
     },
   });
-  map.addLayer({
-    id: 'parans-ov-labels',
-    source: 'parans-ov',
-    type: 'symbol',
-    layout: {
-      'text-field': PARAN_OV_LABEL_FIELD,
-      'symbol-placement': 'line',
-      'symbol-spacing': 320,
-      'text-size': 9,
-      'text-font': ['Noto Sans Regular'],
-      'text-rotation-alignment': 'viewport',
-      'text-pitch-alignment': 'viewport',
-      'text-keep-upright': true,
-      'text-padding': 3,
-      'text-letter-spacing': 0.04,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': haloColor,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5,
-    },
-  });
+  // Overlay paran labels are also centred DOM badges, not drawn along the line.
 
   map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
@@ -435,8 +630,8 @@ function setupCustomLayers(
       'line-dasharray': [2, 3],
     },
   });
-  addHorizonArrows(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', 'ASC', '→');
-  addHorizonArrows(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', 'DSC', '←');
+  addArrowLayer(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', lineTypeIs('ASC'), '→');
+  addArrowLayer(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', lineTypeIs('DSC'), '←');
   // Overlay glyph + angle labels are also drawn as edge badges, not along the line.
 
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
@@ -451,10 +646,24 @@ function setupCustomLayers(
     source: 'acg-zenith',
     type: 'circle',
     paint: {
-      'circle-radius': 13,
+      // Grows + thickens its ring while hovered (a feature-state set on mouseover),
+      // mirroring the badge hover lift. The transitions animate the change.
+      'circle-radius': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        18,
+        13,
+      ],
+      'circle-radius-transition': { duration: 150, delay: 0 },
       'circle-color': zenithFill,
       'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': 1.5,
+      'circle-stroke-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2.75,
+        1.5,
+      ],
+      'circle-stroke-width-transition': { duration: 150, delay: 0 },
     },
   });
   map.addLayer({
@@ -526,13 +735,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   parans,
   localSpace,
+  localSpaceOrigin,
   zenith,
   overlay,
   pin,
   pinType,
   theme,
-  showRoads = false,
-  showRivers = false,
+  showRoads = true,
+  showRivers = true,
+  showLabels = true,
   measureActive,
   measureColor,
   onMeasure,
@@ -572,29 +783,65 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
-  const dataRef = useRef<MapData>({ lines, parans, localSpace, zenith, overlay });
-  dataRef.current = { lines, parans, localSpace, zenith, overlay };
+  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, overlay });
+  dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, overlay };
   const themeRef = useRef(theme);
   // Read inside the (once-bound) load/style.load handlers so they always paint
   // the measure layers with the latest map-state accent.
   const measureColorRef = useRef(measureColor);
   measureColorRef.current = measureColor;
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
-  const detailRef = useRef({ showRoads, showRivers });
-  detailRef.current = { showRoads, showRivers };
+  const detailRef = useRef({ showRoads, showRivers, showLabels });
+  detailRef.current = { showRoads, showRivers, showLabels };
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
   // the viewport. Recomputed (rAF-throttled) on every map move + when data changes.
   const [badges, setBadges] = useState<LineBadge[]>([]);
+  const [paranBadges, setParanBadges] = useState<ParanBadge[]>([]);
+  const [localSpaceBadges, setLocalSpaceBadges] = useState<LocalSpaceBadge[]>([]);
+  // Current map zoom — gates the local-horizon compass and drives its scale + fade.
+  const [zoom, setZoom] = useState(0);
+  // Screen position of the local-space origin — the centre of the horizon compass.
+  const [originScreen, setOriginScreen] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const badgeRafRef = useRef(0);
+
+  // Per-planet azimuths for the horizon wheel — one row per visible body (the
+  // 'out' half carries the bearing toward the planet). Static across pan/zoom.
+  const horizonPlanets = useMemo<HorizonPlanet[]>(() => {
+    const seen = new Set<string>();
+    const out: HorizonPlanet[] = [];
+    for (const f of localSpace.features) {
+      const p = f.properties;
+      if (p.direction !== 'out' || seen.has(p.planet)) continue;
+      seen.add(p.planet);
+      out.push({ planet: p.planet, azimuth: p.azimuth, color: p.color });
+    }
+    return out;
+  }, [localSpace]);
+
+  // Ease the map to a lng/lat, keeping the target clear of the left-docked expanded
+  // sidebar (same offset as the recenter button). Used by paran + LS label clicks.
+  const flyToPoint = useCallback((lng: number, lat: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const esWidth =
+      parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
+      ) || 0;
+    map.flyTo({
+      center: [lng, lat],
+      zoom: Math.max(map.getZoom(), 4),
+      offset: [esWidth / 4, 0],
+      essential: true,
+    });
+  }, []);
+
   const computeBadges = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    // Zoomed-out world view crams every line together — skip the badges there.
-    if (map.getZoom() < BADGE_MIN_ZOOM) {
-      setBadges((prev) => (prev.length ? [] : prev));
-      return;
-    }
+    setZoom(map.getZoom());
     const data = dataRef.current;
     const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
     const ov = data.overlay?.lines
@@ -609,6 +856,76 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       BADGE_INSET,
     );
     setBadges(dodged);
+
+    // Paran centre badges: one per visible paran, parked at the horizontal centre
+    // of the screen on its latitude row (parans whose row is off-screen are skipped).
+    const centerX = cont.clientWidth / 2;
+    const h = cont.clientHeight;
+    const pbadges: ParanBadge[] = [];
+    const pushParans = (
+      fc: FeatureCollection<LineString, ParanProps>,
+      overlay: boolean,
+    ) => {
+      fc.features.forEach((f, i) => {
+        const p = f.properties;
+        const y = map.project([p.intersectionLng, p.latitude]).y;
+        if (y < 0 || y > h) return;
+        pbadges.push({
+          key: `${overlay ? 'pov' : 'pn'}-${i}`,
+          x: centerX,
+          y,
+          planetA: p.planetA,
+          angleA: p.angleA,
+          planetB: p.planetB,
+          angleB: p.angleB,
+          prefix: overlay ? p.label : '',
+          targetLng: p.intersectionLng,
+          targetLat: p.latitude,
+        });
+      });
+    };
+    pushParans(data.parans, false);
+    if (data.overlay?.parans) pushParans(data.overlay.parans, true);
+    setParanBadges(pbadges);
+
+    // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
+    // the origin at the outward (toward-planet) azimuth.
+    const lsbadges: LocalSpaceBadge[] = [];
+    const origin = data.localSpaceOrigin;
+    if (origin && data.localSpace.features.length) {
+      const oc = map.project([origin.lng, origin.lat]);
+      setOriginScreen({ x: oc.x, y: oc.y });
+      const r = lsBadgeRadius(map.getZoom());
+      const seen = new Set<string>();
+      for (const f of data.localSpace.features) {
+        const lp = f.properties;
+        const k = `${lp.planet}-${lp.direction}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const out = lp.direction === 'out';
+        // 'out' runs toward the planet (→, flies to its zenith / MC point); 'in' is
+        // the opposite half (←, flies to the nadir = antipode of the zenith / IC).
+        const angle = (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
+        lsbadges.push({
+          key: k,
+          x: oc.x + r * Math.sin(angle),
+          y: oc.y - r * Math.cos(angle),
+          planet: lp.planet,
+          color: lp.color,
+          dir: out ? 'OUT' : 'IN',
+          targetLng: out
+            ? lp.zenithLng
+            : lp.zenithLng + 180 > 180
+              ? lp.zenithLng - 180
+              : lp.zenithLng + 180,
+          targetLat: out ? lp.zenithLat : -lp.zenithLat,
+        });
+      }
+      deOverlapBadges(lsbadges, LS_BADGE_HALF_W, LS_BADGE_HALF_H, 16);
+    } else {
+      setOriginScreen(null);
+    }
+    setLocalSpaceBadges(lsbadges);
   }, []);
   const scheduleBadges = useCallback(() => {
     if (badgeRafRef.current) return;
@@ -735,15 +1052,73 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // The hovered zenith stamp (drives its grow/brighten feature-state) + a themed
+    // tooltip explaining what it is. Kept across moves; cleared on leave/teardown.
+    let hoveredZenith: string | null = null;
+    const zenithPopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 22, // clear the stamp even at its enlarged hover size
+      className: 'zenith-popup',
+    });
+    const clearZenith = () => {
+      if (hoveredZenith !== null) {
+        map.setFeatureState({ source: 'acg-zenith', id: hoveredZenith }, { hover: false });
+        hoveredZenith = null;
+      }
+      zenithPopup.remove();
+    };
+    const showZenith = (zen: ZenithHit) => {
+      if (hoveredZenith !== null && hoveredZenith !== zen.id) {
+        map.setFeatureState({ source: 'acg-zenith', id: hoveredZenith }, { hover: false });
+      }
+      hoveredZenith = zen.id;
+      map.setFeatureState({ source: 'acg-zenith', id: zen.id }, { hover: true });
+      const name = PLANET_DISPLAY[zen.planet] ?? zen.planet;
+      zenithPopup
+        .setLngLat([zen.lng, zen.lat])
+        .setHTML(
+          `<div class="zenith-tip"><span class="zenith-tip-title">${name} zenith</span>` +
+            `<span class="zenith-tip-sub">where ${name} is directly overhead</span></div>`,
+        );
+      // Add once, then just reposition/retitle on subsequent moves (no DOM churn).
+      if (!zenithPopup.isOpen()) zenithPopup.addTo(map);
+    };
+
     // While the measurement tool is active, the map's pointer drives the ruler,
     // so suppress hover-relocation / pin interactions.
     const handleMove = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
+      // A zenith stamp under the cursor wins: animate it + show the tooltip. Else
+      // hint that parans are clickable; otherwise the map's CSS grab cursor.
+      const zen = zenithAtPoint(map, e.point);
+      if (zen) {
+        map.getCanvas().style.cursor = 'pointer';
+        showZenith(zen);
+      } else {
+        clearZenith();
+        map.getCanvas().style.cursor = paranAtPoint(map, e.point) ? 'pointer' : '';
+      }
       onHover?.(e.lngLat.lat, e.lngLat.lng);
     };
-    const handleLeave = () => onLeave?.();
+    const handleLeave = () => {
+      clearZenith();
+      onLeave?.();
+    };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
+      // A click on (or near) a zenith stamp or a paran flies to it rather than
+      // relocating the chart.
+      const zen = zenithAtPoint(map, e.point);
+      if (zen) {
+        flyToPoint(zen.lng, zen.lat);
+        return;
+      }
+      const paran = paranAtPoint(map, e.point);
+      if (paran) {
+        flyToPoint(paran.intersectionLng, paran.latitude);
+        return;
+      }
       onClick?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleContext = (e: maplibregl.MapMouseEvent) => {
@@ -760,8 +1135,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.off('mouseout', handleLeave);
       map.off('click', handleClick);
       map.off('contextmenu', handleContext);
+      clearZenith();
     };
-  }, [onHover, onLeave, onClick, onPinNatal, measureActive]);
+  }, [onHover, onLeave, onClick, onPinNatal, measureActive, flyToPoint]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -805,17 +1181,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       });
     };
 
+    // The endpoint auto-snaps to the nearest rendered chart line when the cursor is
+    // close to one (snapToNearestLine returns null when nothing is within range);
+    // otherwise it tracks the raw cursor.
+    const pointFor = (e: maplibregl.MapMouseEvent): { lng: number; lat: number } =>
+      snapToNearestLine(map, e.point) ?? { lng: e.lngLat.lng, lat: e.lngLat.lat };
+
     let origin: { lng: number; lat: number } | null = null;
     const onDown = (e: maplibregl.MapMouseEvent) => {
       // Left button only — right-click is reserved for cancelling the tool.
       if (e.originalEvent.button !== 0) return;
-      origin = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      // Leave Shift+drag to MapLibre's box-zoom rather than starting a measurement.
+      if (e.originalEvent.shiftKey) return;
+      origin = pointFor(e);
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
     };
     const onMove = (e: maplibregl.MapMouseEvent) => {
       if (!origin) return;
-      const cur = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      const cur = pointFor(e);
       setSegment(origin, cur);
       onMeasure?.(measureBetween(origin, cur));
     };
@@ -863,15 +1247,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, parans, localSpace, zenith, overlay, computeBadges]);
+  }, [lines, parans, localSpace, localSpaceOrigin, zenith, overlay, computeBadges]);
 
-  // Toggle basemap road / river visibility live (theme reloads reapply via the
-  // style.load handler above).
+  // Toggle basemap road / river / foliage visibility live (theme reloads reapply
+  // via the style.load handler above).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
-    applyDetailToggles(map, { showRoads, showRivers });
-  }, [showRoads, showRivers]);
+    applyDetailToggles(map, { showRoads, showRivers, showLabels });
+  }, [showRoads, showRivers, showLabels]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -910,25 +1294,109 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         : 'Pinned location (click to unpin)';
   }, [pin, pinType]);
 
+  const zenithFill = ZENITH_DISC_COLORS[theme];
+  const paranText = badgeTextColor(zenithFill);
+  // Compass progress through COMPASS_ZOOM→CLOSE_ZOOM (null until it appears): drives
+  // its scale (80%→full, alongside the LS labels) and fade (to full over the first
+  // quarter of that range).
+  const compassP =
+    originScreen && horizonPlanets.length > 0 && zoom >= COMPASS_ZOOM
+      ? Math.min(1, (zoom - COMPASS_ZOOM) / (CLOSE_ZOOM - COMPASS_ZOOM))
+      : null;
+  // Natal ACG line labels fly to that planet's zenith on click — build the lookup.
+  // (Overlay lines carry no zenith stamp, so their badges stay non-interactive.)
+  // A plain object, not a Map — `Map` is this component's own name here.
+  const zenithByPlanet: Record<string, [number, number]> = {};
+  for (const f of zenith.features) {
+    const c = f.geometry.coordinates;
+    zenithByPlanet[f.properties.planet] = [c[0], c[1]];
+  }
   return (
     <>
       <div ref={containerRef} className="map-container" />
       <div className="acg-edge-badges" aria-hidden="true">
         {badges.map((b) => {
           const text = badgeTextColor(b.color);
-          return (
+          const zenithTarget =
+            b.prefix === '' ? zenithByPlanet[b.planet] : undefined;
+          const inner = (
+            <>
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+            </>
+          );
+          // Natal labels fly to the planet's zenith (a clickable, hover-lifting
+          // button); overlay labels stay plain, non-interactive spans.
+          return zenithTarget ? (
+            <button
+              type="button"
+              key={b.key}
+              tabIndex={-1}
+              className="acg-badge acg-badge-btn"
+              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
+              title={`Fly to ${PLANET_DISPLAY[b.planet]}'s zenith`}
+            >
+              {inner}
+            </button>
+          ) : (
             <span
               key={b.key}
               className="acg-badge"
               style={{ left: b.x, top: b.y, background: b.color, color: text }}
             >
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
-              <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              {inner}
             </span>
           );
         })}
+        {paranBadges.map((b) => (
+          <button
+            type="button"
+            key={b.key}
+            tabIndex={-1}
+            className="acg-badge paran-badge acg-badge-btn"
+            style={{ left: b.x, top: b.y, background: zenithFill, color: paranText }}
+            onClick={() => flyToPoint(b.targetLng, b.targetLat)}
+            title="Fly to this paran's intersection"
+          >
+            {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+            <PlanetGlyph planet={b.planetA} size={11} color={paranText} />
+            <span className="acg-badge-code">{ANGLE_CODE[b.angleA]}</span>
+            <span className="paran-badge-x">×</span>
+            <PlanetGlyph planet={b.planetB} size={11} color={paranText} />
+            <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
+          </button>
+        ))}
+        {localSpaceBadges.map((b) => {
+          const text = badgeTextColor(b.color);
+          return (
+            <button
+              type="button"
+              key={b.key}
+              tabIndex={-1}
+              className="acg-badge acg-badge-btn"
+              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              onClick={() => flyToPoint(b.targetLng, b.targetLat)}
+              title="Fly to where this local-space line meets the chart"
+            >
+              <span className="acg-badge-prefix">LS</span>
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <span className="ls-dir">{b.dir}</span>
+            </button>
+          );
+        })}
       </div>
+      {compassP !== null && originScreen && (
+        <LocalHorizonWheel
+          cx={originScreen.x}
+          cy={originScreen.y}
+          size={HORIZON_WHEEL_SIZE}
+          scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
+          opacity={COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)}
+          planets={horizonPlanets}
+        />
+      )}
     </>
   );
 });

@@ -34,6 +34,8 @@ interface SidebarProps {
   setShowRoads: (v: boolean) => void;
   showRivers: boolean;
   setShowRivers: (v: boolean) => void;
+  showLabels: boolean;
+  setShowLabels: (v: boolean) => void;
 }
 
 const LINE_TYPES: { type: LineType; label: string; full: string }[] = [
@@ -69,6 +71,36 @@ const NODE_TYPES: { value: NodeType; label: string; hint: string }[] = [
 type SidebarSection = 'theme' | 'filters' | 'calc';
 const SECTION_KEY = 'astro:sidebar-section:v1';
 
+// Eye (shown) / eye-off (hidden) marker for the "Hide details" toggles.
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      className="eye-icon"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {open ? (
+        <>
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      ) : (
+        <>
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function Sidebar({
   visiblePlanets,
   togglePlanet,
@@ -90,6 +122,8 @@ export function Sidebar({
   setShowRoads,
   showRivers,
   setShowRivers,
+  showLabels,
+  setShowLabels,
 }: SidebarProps) {
   const [openSection, setOpenSection] = useState<SidebarSection | null>(() => {
     const v = localStorage.getItem(SECTION_KEY);
@@ -138,28 +172,28 @@ export function Sidebar({
           </ul>
 
           <div className="theme-detail">
-            <h2>Map detail</h2>
+            <h2>Details</h2>
             <ul className="technique-list">
-              <li>
-                <button
-                  type="button"
-                  className={`tech-toggle ${showRoads ? 'on' : 'off'}`}
-                  onClick={() => setShowRoads(!showRoads)}
-                >
-                  <span className="check">{showRoads ? '✓' : ''}</span>
-                  <span className="name">Roads</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className={`tech-toggle ${showRivers ? 'on' : 'off'}`}
-                  onClick={() => setShowRivers(!showRivers)}
-                >
-                  <span className="check">{showRivers ? '✓' : ''}</span>
-                  <span className="name">Rivers</span>
-                </button>
-              </li>
+              {(
+                [
+                  ['Roads', showRoads, setShowRoads],
+                  ['Rivers', showRivers, setShowRivers],
+                  ['Labels', showLabels, setShowLabels],
+                ] as const
+              ).map(([label, shown, setShown]) => (
+                <li key={label}>
+                  <button
+                    type="button"
+                    className={`tech-toggle ${shown ? 'on' : 'off'}`}
+                    onClick={() => setShown(!shown)}
+                    aria-pressed={shown}
+                    title={`${label} ${shown ? 'shown — click to hide' : 'hidden — click to show'}`}
+                  >
+                    <EyeIcon open={shown} />
+                    <span className="name">{label}</span>
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -235,8 +269,10 @@ export function Sidebar({
                 type="button"
                 className={`tech-toggle ${showParans ? 'on' : 'off'}`}
                 onClick={() => setShowParans(!showParans)}
+                aria-pressed={showParans}
+                title={`Parans ${showParans ? 'shown — click to hide' : 'hidden — click to show'}`}
               >
-                <span className="check">{showParans ? '✓' : ''}</span>
+                <EyeIcon open={showParans} />
                 <span className="name">Parans</span>
               </button>
             </li>
@@ -245,8 +281,10 @@ export function Sidebar({
                 type="button"
                 className={`tech-toggle ${showLocalSpace ? 'on' : 'off'}`}
                 onClick={() => setShowLocalSpace(!showLocalSpace)}
+                aria-pressed={showLocalSpace}
+                title={`Local space ${showLocalSpace ? 'shown — click to hide' : 'hidden — click to show'}`}
               >
-                <span className="check">{showLocalSpace ? '✓' : ''}</span>
+                <EyeIcon open={showLocalSpace} />
                 <span className="name">Local Space</span>
               </button>
             </li>

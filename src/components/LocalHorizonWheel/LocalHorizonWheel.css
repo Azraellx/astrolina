@@ -1,0 +1,97 @@
+/* Local-horizon compass — centred on the local-space origin (so the lines radiate
+   through it), transparent so the map shows through. Positioned by inline left/top
+   at the origin's screen point; pointer-events: none so it never blocks the map. */
+.local-horizon-wheel {
+  position: absolute;
+  /* transform (translate -50% + scale) and opacity are set inline so the dial can
+     grow + fade in with zoom. transform-origin stays centred so it scales in place. */
+  transform-origin: center;
+  z-index: 7;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.lhw-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* A faint disc so the dial reads over busy map detail without hiding it. */
+.lhw-disc {
+  fill: rgba(var(--bg-panel), 0.26);
+}
+.lhw-ring {
+  fill: none;
+  stroke: rgba(var(--tint), 0.45);
+  stroke-width: 0.5;
+}
+.lhw-ring-inner {
+  fill: none;
+  stroke: rgba(var(--tint), 0.18);
+  stroke-width: 0.35;
+}
+.lhw-tick {
+  stroke: rgba(var(--tint), 0.32);
+  stroke-width: 0.4;
+}
+.lhw-tick-major {
+  stroke: rgba(var(--tint), 0.6);
+  stroke-width: 0.7;
+}
+.lhw-axis {
+  stroke: rgba(var(--tint), 0.16);
+  stroke-width: 0.35;
+}
+.lhw-center {
+  fill: var(--text-muted);
+}
+
+/* Cardinal letters (N/E/S/W), just outside the ring. Haloed for legibility. */
+.lhw-card {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-shadow:
+    0 0 3px rgba(var(--bg-panel), 0.95),
+    0 0 6px rgba(var(--bg-panel), 0.8);
+}
+
+/* Degree numbers — one per notch, inside the dial. Outlined with a stroke painted
+   behind the fill in the theme's panel color, so each stays crisp over busy map
+   detail (the fill keeps the theme text color). */
+.lhw-deg {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  paint-order: stroke fill;
+  -webkit-text-stroke: 1.6px rgba(var(--bg-panel), 0.92);
+  text-shadow: 0 0 2px rgba(var(--bg-panel), 0.7);
+}
+/* 30° notches: bigger and bolder. */
+.lhw-deg-med {
+  font-size: 10px;
+  font-weight: 700;
+}
+/* 15° notches between them: smaller, quieter, thinner outline. */
+.lhw-deg-min {
+  font-size: 7.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  -webkit-text-stroke-width: 1px;
+  opacity: 0.92;
+}
+
+.lhw-planet {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  filter: drop-shadow(0 0 2px rgba(var(--bg-panel), 0.95));
+}
