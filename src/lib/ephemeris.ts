@@ -315,9 +315,9 @@ function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
 }
 
 // Ecliptic spherical (lon, lat) → equatorial RA/dec for a given obliquity.
-// Used by the south-node antipode, the zodiaco projection, and the solar-arc
-// round-trip (one consistent `eps` in both directions).
-function eclipticToRaDec(
+// Used by the south-node antipode, the zodiaco projection, the solar-arc
+// round-trip (one consistent `eps` in both directions), and the map ecliptic line.
+export function eclipticToRaDec(
   lon: number,
   lat: number,
   eps: number,

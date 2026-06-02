@@ -57,8 +57,9 @@ export const minorStepMs = (u: TimeUnit): number =>
 
 export interface OverlayLayer {
   kind: OverlayKind;
-  /** Label shown in the timeline bar's nub: "Transits" / "Age 32.0" /
-   *  "Sun 30.2°". null for synastry, which has no timeline bar. */
+  /** Dynamic readout shown in the timeline nub next to the mode name: "Age 32.0"
+   *  / "30.2°". null for transits (the mode name alone says it) and synastry
+   *  (which has no timeline bar). */
   measure: string | null;
   /** Full spelled-out label for the roomy expanded-view caption, e.g.
    *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 UTC". */
@@ -115,7 +116,8 @@ export function buildOverlay(
       const jd = epochMsToJD(targetDate);
       return {
         kind: mode,
-        measure: 'Transits',
+        // The nub already shows "Transits" as the mode name — no readout needed.
+        measure: null,
         labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
         jd,
         positions: getPlanetPositions(jd, nodeType),
@@ -163,7 +165,8 @@ export function buildOverlay(
       const positions = natal.map((p) => shiftEclipticLongitude(p, arc, eps));
       return {
         kind: mode,
-        measure: `Sun ${((arc * 180) / Math.PI).toFixed(1)}°`,
+        // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
+        measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
         labelFull: `Solar Arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
         jd: birthJD,
         positions,

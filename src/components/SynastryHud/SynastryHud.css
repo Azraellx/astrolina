@@ -25,7 +25,18 @@
   backdrop-filter: blur(7px);
 }
 
+/* No position transition while dragging, so the bar tracks the pointer 1:1. */
+.synastry-hud.dragging {
+  transition: none;
+}
+
+/* The tag is also the drag handle: grip + "Synastry", grabbable. position:relative
+   so its "Drag to move" hint (.hud-move-hint) anchors above it. */
 .synastry-hud-tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -34,6 +45,20 @@
   flex-shrink: 0;
   padding-right: 14px;
   border-right: 1px solid rgba(var(--map-accent-rgb), 0.28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.synastry-hud-tag:active,
+.synastry-hud.dragging .synastry-hud-tag {
+  cursor: grabbing;
+}
+.synastry-hud-tag:hover .hud-move-hint {
+  opacity: 1;
+}
+.synastry-hud.dragging .hud-move-hint {
+  opacity: 0 !important;
 }
 
 .synastry-hud-picker {

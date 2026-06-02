@@ -1,6 +1,9 @@
+import { useState, type CSSProperties } from 'react';
 import {
   PLANET_COLORS,
+  PLANET_DISPLAY,
   type EclipticPosition,
+  type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
@@ -11,6 +14,98 @@ export const SIGNS = [
   'Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir',
   'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis',
 ];
+
+// Full sign names + a one-line novice hint (element · modality · keyword), shown
+// when hovering a sign in the outer rim of the interactive (sidebar) wheel.
+const SIGN_NAMES = [
+  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
+  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
+];
+const SIGN_MEANINGS = [
+  'Fire · Cardinal · initiative',
+  'Earth · Fixed · stability',
+  'Air · Mutable · curiosity',
+  'Water · Cardinal · nurture',
+  'Fire · Fixed · self-expression',
+  'Earth · Mutable · precision',
+  'Air · Cardinal · balance',
+  'Water · Fixed · intensity',
+  'Fire · Mutable · adventure',
+  'Earth · Cardinal · ambition',
+  'Air · Fixed · innovation',
+  'Water · Mutable · imagination',
+];
+
+// A short, standard keyword gloss per body — the novice hint shown when hovering
+// a planet disc. Kept terse so the tag stays compact.
+const PLANET_MEANINGS: Record<PlanetName, string> = {
+  Sun: 'Identity · vitality · ego',
+  Moon: 'Emotions · instinct · needs',
+  Mercury: 'Mind · communication',
+  Venus: 'Love · beauty · values',
+  Mars: 'Drive · energy · action',
+  Jupiter: 'Growth · luck · expansion',
+  Saturn: 'Discipline · structure · limits',
+  Uranus: 'Change · freedom · insight',
+  Neptune: 'Dreams · intuition · spirit',
+  Pluto: 'Power · transformation',
+  NorthNode: "Soul's path · growth",
+  SouthNode: 'Past · innate gifts',
+  Lilith: 'Shadow · raw instinct',
+  Chiron: 'The wounded healer',
+  Ceres: 'Nurture · cycles',
+  Pallas: 'Wisdom · strategy',
+  Juno: 'Commitment · partnership',
+  Vesta: 'Focus · devotion',
+};
+
+// The four chart angles, keyed by the two-letter label drawn on the wheel.
+const ANGLE_HINTS: { key: 'As' | 'Ds' | 'Mc' | 'Ic'; title: string; sub: string }[] = [
+  { key: 'As', title: 'Ascendant', sub: 'Rising sign — the self & first impressions' },
+  { key: 'Ds', title: 'Descendant', sub: 'Relationships & the "other"' },
+  { key: 'Mc', title: 'Midheaven (Medium Coeli)', sub: 'Career, reputation & public life' },
+  { key: 'Ic', title: 'Imum Coeli', sub: 'Home, roots & private life' },
+];
+
+// A hovered hint: the SVG anchor (px = user units, since the viewBox is 1:1), the
+// element's radius (for the tag's standoff), and the tag's text + accent color.
+interface HoverTip {
+  x: number;
+  y: number;
+  r: number;
+  title: string;
+  sub?: string;
+  color?: string;
+}
+
+// Tag layout constants. The tag is centered on its anchor's x and clamped so a
+// max-width box never spills past the wheel edges (the scroll pane clips
+// overflow); near the top it flips below the anchor instead of above.
+const TIP_MAX = 188;
+const TIP_HALF = TIP_MAX / 2;
+const TIP_FLIP_Y = 72;
+
+// The floating hint tag, anchored to a wheel element. Reuses the shared .ui-tip
+// chrome (index.css) so it matches the map's zenith popup + the timeline nub.
+function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
+  const placement = tip.y < TIP_FLIP_Y ? 'below' : 'above';
+  const offset = tip.r + 9;
+  const top = placement === 'below' ? tip.y + offset : tip.y - offset;
+  const left = Math.min(Math.max(tip.x, TIP_HALF + 4), size - TIP_HALF - 4);
+  return (
+    <div
+      className="wheel-tip ui-tip-box ui-tip"
+      data-placement={placement}
+      style={{ left, top, maxWidth: TIP_MAX, '--tip-dot': tip.color ?? 'var(--accent)' } as CSSProperties}
+    >
+      <span className="ui-tip-title wheel-tip-title">
+        <span className="wheel-tip-dot" />
+        {tip.title}
+      </span>
+      {tip.sub && <span className="ui-tip-sub">{tip.sub}</span>}
+    </div>
+  );
+}
 
 export type AspectCategory = 'harmonious' | 'hard' | 'conjunction';
 
@@ -109,6 +204,31 @@ function svgPos(
   return { x: cx + r * Math.cos(theta), y: cy + r * Math.sin(theta) };
 }
 
+// Closed path for one 30° annular sector of the zodiac band (sign `i`), sampled
+// as a polygon so we don't have to reason about SVG arc sweep flags — the wheel
+// already draws long lines as dense polylines for the same reason. Used as the
+// (invisible) hover target for each rim sign in the interactive wheel.
+function signSectorPath(
+  signIdx: number,
+  rIn: number,
+  rOut: number,
+  ascRad: number,
+  cx: number,
+  cy: number,
+): string {
+  const lon0 = (signIdx * 30 * Math.PI) / 180;
+  const lon1 = ((signIdx + 1) * 30 * Math.PI) / 180;
+  const STEPS = 10;
+  const pts: { x: number; y: number }[] = [];
+  for (let s = 0; s <= STEPS; s++) {
+    pts.push(svgPos(lon0 + ((lon1 - lon0) * s) / STEPS, ascRad, rOut, cx, cy));
+  }
+  for (let s = 0; s <= STEPS; s++) {
+    pts.push(svgPos(lon1 - ((lon1 - lon0) * s) / STEPS, ascRad, rIn, cx, cy));
+  }
+  return `M ${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`;
+}
+
 // Spread overlapping planets along a ring so their glyphs don't collide. Two
 // relaxation passes (forward then backward) enforce a min angular separation
 // sized to give ~16px of arc at the given ring radius. Returns display
@@ -174,6 +294,12 @@ interface WheelSvgProps {
    */
   overlayPlanets?: EclipticPosition[] | null;
   visibleAspects?: Set<AspectCategory>;
+  /**
+   * Enable novice hover hints: a responsive scale on the planet discs + rim
+   * signs, the four angle labels (As/Ds/Mc/Ic), and a floating tag naming each
+   * one. Opt-in so the minimap stays static — only the expanded sidebar sets it.
+   */
+  interactive?: boolean;
 }
 
 export function WheelSvg({
@@ -184,7 +310,13 @@ export function WheelSvg({
   advanced = false,
   overlayPlanets,
   visibleAspects,
+  interactive = false,
 }: WheelSvgProps) {
+  // Hovered hint (interactive mode only). Hooks run unconditionally; when the
+  // wheel isn't interactive no handler ever sets it, so it stays null.
+  const [tip, setTip] = useState<HoverTip | null>(null);
+  const clearTip = () => setTip(null);
+
   const cx = size / 2;
   const cy = size / 2;
   // The expanded wheel draws everything inside the outer ring; Advanced mode
@@ -325,9 +457,9 @@ export function WheelSvg({
   const overlayLonFor = (p: EclipticPosition) =>
     overlayDisplay?.get(p.name) ?? p.lon;
 
-  return (
+  const svg = (
     <svg
-      className="wheel-svg"
+      className={`wheel-svg${interactive ? ' interactive' : ''}`}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
@@ -394,6 +526,27 @@ export function WheelSvg({
           );
         })}
 
+      {/* Per-sign hover zones over the zodiac band (interactive wheel only): a
+          generous 30° target that names the sign on hover and faintly tints its
+          slice. Drawn BEFORE the glyphs so the tint sits behind them; the glyphs
+          are pointer-transparent (.sign-rim), so the whole slice stays hot. */}
+      {detailed &&
+        interactive &&
+        Array.from({ length: 12 }).map((_, i) => (
+          <path
+            key={`sign-hit-${i}`}
+            className="sign-hit"
+            d={signSectorPath(i, rZodiacInner, rOuter, angles.asc, cx, cy)}
+            onMouseEnter={() => {
+              const lon = ((i * 30 + 15) * Math.PI) / 180;
+              const pos = svgPos(lon, angles.asc, (rZodiacInner + rOuter) / 2, cx, cy);
+              setTip({ x: pos.x, y: pos.y, r: 14, title: SIGN_NAMES[i], sub: SIGN_MEANINGS[i] });
+            }}
+            onMouseLeave={clearTip}
+            aria-label={SIGN_NAMES[i]}
+          />
+        ))}
+
       {detailed &&
         Array.from({ length: 12 }).map((_, i) => {
           const lon = ((i * 30 + 15) * Math.PI) / 180;
@@ -406,6 +559,7 @@ export function WheelSvg({
               x={pos.x}
               y={pos.y}
               size={22}
+              className="sign-rim"
             />
           );
         })}
@@ -634,25 +788,48 @@ export function WheelSvg({
         // The non-detailed minimap draws larger planet discs/glyphs (they're the
         // only thing on that simplified wheel, so there's room).
         const r = detailed ? 11 : 13;
+        // Interactive wheel: the whole group is a hover target (a transparent hit
+        // disc widens it past the glyph) that scales the disc + names the planet.
+        const markProps = interactive
+          ? {
+              className: 'planet-mark',
+              onMouseEnter: () =>
+                setTip({
+                  x: pos.x,
+                  y: pos.y,
+                  r,
+                  title: PLANET_DISPLAY[p.name],
+                  sub: PLANET_MEANINGS[p.name],
+                  color: PLANET_COLORS[p.name],
+                }),
+              onMouseLeave: clearTip,
+              'aria-label': PLANET_DISPLAY[p.name],
+            }
+          : {};
         // The planet glyph/disc always keep the planet's own color — only its
         // readout (sign · degree · minute) flags Rx/station.
         return (
-          <g key={p.name}>
-            <circle
-              cx={pos.x}
-              cy={pos.y}
-              r={r}
-              className="planet-disc-fill"
-              stroke={PLANET_COLORS[p.name]}
-              strokeWidth={1.3}
-            />
-            <PlanetGlyph
-              planet={p.name}
-              x={pos.x}
-              y={pos.y}
-              size={detailed ? 16 : 19.5}
-              color={PLANET_COLORS[p.name]}
-            />
+          <g key={p.name} {...markProps}>
+            {interactive && (
+              <circle cx={pos.x} cy={pos.y} r={r + 6} className="planet-hit" />
+            )}
+            <g className="planet-mark-visual">
+              <circle
+                cx={pos.x}
+                cy={pos.y}
+                r={r}
+                className="planet-disc-fill"
+                stroke={PLANET_COLORS[p.name]}
+                strokeWidth={1.3}
+              />
+              <PlanetGlyph
+                planet={p.name}
+                x={pos.x}
+                y={pos.y}
+                size={detailed ? 16 : 19.5}
+                color={PLANET_COLORS[p.name]}
+              />
+            </g>
           </g>
         );
       })}
@@ -686,22 +863,62 @@ export function WheelSvg({
                   stroke={PLANET_COLORS[p.name]}
                   strokeWidth={1.2}
                 />
-                <circle
-                  cx={glyphPos.x}
-                  cy={glyphPos.y}
-                  r={9}
-                  className="planet-disc-fill"
-                  stroke={PLANET_COLORS[p.name]}
-                  strokeWidth={1.1}
-                  strokeDasharray="2 1.5"
-                />
-                <PlanetGlyph
-                  planet={p.name}
-                  x={glyphPos.x}
-                  y={glyphPos.y}
-                  size={13}
-                  color={PLANET_COLORS[p.name]}
-                />
+                {interactive ? (
+                  <g
+                    className="planet-mark"
+                    onMouseEnter={() =>
+                      setTip({
+                        x: glyphPos.x,
+                        y: glyphPos.y,
+                        r: 9,
+                        title: PLANET_DISPLAY[p.name],
+                        sub: PLANET_MEANINGS[p.name],
+                        color: PLANET_COLORS[p.name],
+                      })
+                    }
+                    onMouseLeave={clearTip}
+                    aria-label={PLANET_DISPLAY[p.name]}
+                  >
+                    <circle cx={glyphPos.x} cy={glyphPos.y} r={15} className="planet-hit" />
+                    <g className="planet-mark-visual">
+                      <circle
+                        cx={glyphPos.x}
+                        cy={glyphPos.y}
+                        r={9}
+                        className="planet-disc-fill"
+                        stroke={PLANET_COLORS[p.name]}
+                        strokeWidth={1.1}
+                        strokeDasharray="2 1.5"
+                      />
+                      <PlanetGlyph
+                        planet={p.name}
+                        x={glyphPos.x}
+                        y={glyphPos.y}
+                        size={13}
+                        color={PLANET_COLORS[p.name]}
+                      />
+                    </g>
+                  </g>
+                ) : (
+                  <>
+                    <circle
+                      cx={glyphPos.x}
+                      cy={glyphPos.y}
+                      r={9}
+                      className="planet-disc-fill"
+                      stroke={PLANET_COLORS[p.name]}
+                      strokeWidth={1.1}
+                      strokeDasharray="2 1.5"
+                    />
+                    <PlanetGlyph
+                      planet={p.name}
+                      x={glyphPos.x}
+                      y={glyphPos.y}
+                      size={13}
+                      color={PLANET_COLORS[p.name]}
+                    />
+                  </>
+                )}
               </g>
             );
           })}
@@ -799,6 +1016,59 @@ export function WheelSvg({
             </g>
           );
         })}
+
+      {/* The four chart angles labelled at the rim of the interactive (sidebar)
+          wheel — As/Ds on the horizon axis (accent), Mc/Ic on the meridian
+          (cool). Each names itself on hover. Placed just inside the zodiac band
+          with a halo so they read over the spokes/lines. */}
+      {interactive &&
+        detailed &&
+        ANGLE_HINTS.map(({ key, title, sub }) => {
+          const lon =
+            key === 'As'
+              ? angles.asc
+              : key === 'Ds'
+                ? angles.dsc
+                : key === 'Mc'
+                  ? angles.mc
+                  : angles.ic;
+          if (!Number.isFinite(lon)) return null;
+          const pos = svgPos(lon, angles.asc, rZodiacInner - 12, cx, cy);
+          const color = key === 'As' || key === 'Ds' ? 'var(--accent)' : 'var(--cool)';
+          return (
+            <g
+              key={`angle-${key}`}
+              className="wheel-angle"
+              onMouseEnter={() => setTip({ x: pos.x, y: pos.y, r: 12, title, sub, color })}
+              onMouseLeave={clearTip}
+              aria-label={title}
+            >
+              <circle cx={pos.x} cy={pos.y} r={13} className="planet-hit" />
+              <g className="wheel-angle-visual">
+                <text
+                  x={pos.x}
+                  y={pos.y + 3.5}
+                  textAnchor="middle"
+                  className="wheel-angle-label"
+                  style={{ fill: color } as CSSProperties}
+                >
+                  {key}
+                </text>
+              </g>
+            </g>
+          );
+        })}
     </svg>
+  );
+
+  if (!interactive) return svg;
+
+  // Interactive wheel: wrap the SVG so the hint tag can be an absolutely-
+  // positioned HTML element over it (SVG user units map 1:1 to px here).
+  return (
+    <div className="wheel-svg-wrap">
+      {svg}
+      {tip && <WheelTip tip={tip} size={size} />}
+    </div>
   );
 }

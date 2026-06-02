@@ -54,8 +54,8 @@ const COORD_SYSTEMS: { value: CoordSystem; label: string; hint: string }[] = [
 ];
 
 const PROJECTIONS: { value: MapProjectionMode; label: string; hint: string }[] = [
-  { value: '2d', label: 'Flat (2D)', hint: 'Classic flat Web-Mercator map' },
-  { value: '3d', label: 'Globe (3D)', hint: 'Rotatable 3D globe — drag to spin & tilt' },
+  { value: '2d', label: 'Flat', hint: 'Classic flat Web-Mercator map' },
+  { value: '3d', label: 'Globe', hint: 'Rotatable 3D globe — drag to spin & tilt' },
 ];
 
 const HOUSE_SYSTEMS: { value: HouseSystem; label: string; hint: string }[] = [
@@ -182,25 +182,6 @@ export function Sidebar({
           </ul>
 
           <div className="theme-detail">
-            <h2>Projection</h2>
-            <ul className="theme-list">
-              {PROJECTIONS.map(({ value, label, hint }) => (
-                <li key={value}>
-                  <button
-                    type="button"
-                    className={`theme-option ${projection === value ? 'active' : ''}`}
-                    onClick={() => setProjection(value)}
-                    title={hint}
-                  >
-                    <span className="radio">{projection === value ? '●' : '○'}</span>
-                    <span className="label">{label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="theme-detail">
             <h2>Details</h2>
             <ul className="technique-list">
               {(
@@ -220,6 +201,25 @@ export function Sidebar({
                   >
                     <EyeIcon open={shown} />
                     <span className="name">{label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="theme-detail">
+            <h2>Projection</h2>
+            <ul className="theme-list">
+              {PROJECTIONS.map(({ value, label, hint }) => (
+                <li key={value}>
+                  <button
+                    type="button"
+                    className={`theme-option ${projection === value ? 'active' : ''}`}
+                    onClick={() => setProjection(value)}
+                    title={hint}
+                  >
+                    <span className="radio">{projection === value ? '●' : '○'}</span>
+                    <span className="label">{label}</span>
                   </button>
                 </li>
               ))}

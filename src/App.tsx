@@ -34,6 +34,7 @@ import {
   type PlanetName,
 } from './lib/ephemeris';
 import {
+  generateEcliptic,
   generateLines,
   generateZenithStamps,
   type LineProps,
@@ -435,6 +436,10 @@ export default function App() {
     () => generateZenithStamps(linePositions, gmst),
     [linePositions, gmst],
   );
+  // The ecliptic great circle for the chart instant — a fixed reference (passes
+  // through the Sun's zenith), independent of planet visibility, so not filtered.
+  // (Named *Line to avoid colliding with the `ecliptic` projection-mode variable.)
+  const eclipticLine = useMemo(() => generateEcliptic(jd, gmst), [jd, gmst]);
 
   const lines = useMemo(
     () => filterLines(allLines, visiblePlanets, visibleLineTypes),
@@ -687,6 +692,7 @@ export default function App() {
         localSpace={localSpace}
         localSpaceOrigin={showLocalSpace ? localSpaceOrigin : null}
         zenith={zenith}
+        ecliptic={eclipticLine}
         overlay={overlay}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}

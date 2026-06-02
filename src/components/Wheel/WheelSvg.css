@@ -121,3 +121,127 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Interactive hover hints (expanded-sidebar wheel only) ──────────────────
+   Opt-in via the `interactive` class on the SVG. The minimap never sets it, so
+   none of these rules apply there and it stays static. */
+
+/* The SVG is wrapped so the floating hint tag can be an absolutely-positioned
+   HTML sibling over it. */
+.wheel-svg-wrap {
+  position: relative;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.wheel-svg.interactive .planet-mark,
+.wheel-svg.interactive .sign-hit,
+.wheel-svg.interactive .wheel-angle {
+  cursor: help;
+}
+
+/* Transparent, generously-sized hit disc so the hover target reaches past the
+   glyph (and the rim signs' whole 30° slice is hot). */
+.wheel-svg .planet-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+/* Responsive lift on the disc / angle label — mirrors the map line-label badge
+   hover (scale + brightness). transform-box:fill-box scales each mark around
+   its own centre. */
+.wheel-svg.interactive .planet-mark-visual,
+.wheel-svg.interactive .wheel-angle-visual {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.wheel-svg.interactive .planet-mark:hover .planet-mark-visual,
+.wheel-svg.interactive .wheel-angle:hover .wheel-angle-visual {
+  transform: scale(1.16);
+  filter: brightness(1.12);
+}
+.wheel-svg.interactive .planet-mark:hover .planet-disc-fill {
+  stroke-width: 2;
+}
+
+/* Rim sign glyphs are pointer-transparent so the sector hit zone behind them
+   catches the hover across the whole slice (and its tint sits behind the glyph). */
+.wheel-svg .sign-rim {
+  pointer-events: none;
+}
+.wheel-svg.interactive .sign-hit {
+  fill: rgba(var(--accent-rgb), 0);
+  pointer-events: all;
+  transition: fill 0.14s ease;
+}
+.wheel-svg.interactive .sign-hit:hover {
+  fill: rgba(var(--accent-rgb), 0.12);
+}
+
+/* The four angle labels (As/Ds/Mc/Ic). A panel-colored halo (paint-order:stroke
+   keeps it behind the fill) lets them read over the house spokes + aspect lines. */
+.wheel-svg .wheel-angle-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: rgba(var(--bg-panel), 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* The floating hint tag. Box chrome + title/sub text come from the shared
+   .ui-tip-box / .ui-tip classes (index.css); this adds the anchoring, the
+   above/below placement, and a quick fade-in. */
+.wheel-tip {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: wheel-tip-in 0.12s ease-out;
+}
+.wheel-tip[data-placement='above'] {
+  transform: translate(-50%, -100%);
+}
+.wheel-tip[data-placement='below'] {
+  transform: translate(-50%, 0);
+}
+.wheel-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.wheel-tip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tip-dot);
+  flex-shrink: 0;
+}
+.wheel-tip .ui-tip-sub {
+  white-space: normal;
+}
+
+@keyframes wheel-tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-svg.interactive .planet-mark-visual,
+  .wheel-svg.interactive .wheel-angle-visual {
+    transition: none;
+  }
+  .wheel-svg.interactive .planet-mark:hover .planet-mark-visual,
+  .wheel-svg.interactive .wheel-angle:hover .wheel-angle-visual {
+    transform: none;
+  }
+  .wheel-tip {
+    animation: none;
+  }
+}

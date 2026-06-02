@@ -3,7 +3,6 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -29,11 +28,12 @@ import { applyDetailToggles } from './basemapStyle';
 import {
   computeLineBadges,
   dodgeBadges,
+  clipSegmentToView,
   type AvoidRect,
   type LineBadge,
 } from './edgeAnchors';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import { LocalHorizonWheel, type HorizonPlanet } from '../LocalHorizonWheel/LocalHorizonWheel';
+import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -67,6 +67,8 @@ const BADGE_INSET = 16;
 // HUD panels the edge badges should slide clear of, so a label is never hidden.
 const HUD_SELECTORS = [
   '.timeline-hud', // top nav bar(s) + bottom timeline
+  '.thud-measure', // the timeline's overlay-mode nub (protrudes above the bar)
+  '.synastry-hud', // bottom synastry bar (same slot as the timeline; its tag is inline)
   '.sidebar',
   '.app-header',
   '.chart-wheel',
@@ -142,6 +144,9 @@ interface ParanBadge {
 // The "zoomed in close" threshold: at this zoom the LS label ring reaches its max
 // radius AND the local-horizon compass pops in — a single zoomed-in-enough mark.
 const CLOSE_ZOOM = 10;
+// Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
+// escape button appears; clicking it eases back to this wide overview in one step.
+const ZOOM_OUT_TARGET = 3;
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
 const COMPASS_ZOOM = 4;
@@ -171,12 +176,10 @@ interface LocalSpaceBadge {
   y: number;
   planet: LocalSpaceProps['planet'];
   color: string;
-  /** 'OUT' (toward the planet) or 'IN' (toward the nadir). */
-  dir: string;
-  /** Click-to-fly target: where this half meets the chart — the planet's zenith
-   *  ('out', on its MC line) or nadir ('in', on its IC line). */
-  targetLng: number;
-  targetLat: number;
+  /** This half's bearing in the E=0 / N=90 dial convention (static). */
+  azDeg: number;
+  /** Screen rotation (deg, clockwise from up) of the in/out direction arrow. */
+  arrowDeg: number;
 }
 
 // Spread overlapping badges apart — a few passes of AABB separation along the axis
@@ -352,44 +355,6 @@ function snapToNearestLine(
   return { lng: ll.lng, lat: ll.lat };
 }
 
-// ── Paran click-to-fly ────────────────────────────────────────────────────────
-// Paran lines are thin and faint, so a pixel-exact click is hard. A click within
-// PARAN_CLICK_TOLERANCE_PX of a rendered paran counts as a hit, and the caller
-// flies to that paran's intersection point. When parans are hidden the source is
-// empty, so this returns null and normal click-to-relocate stands.
-const PARAN_CLICK_LAYERS = ['parans-layer', 'parans-ov-layer'];
-const PARAN_CLICK_TOLERANCE_PX = 10;
-
-function paranAtPoint(map: maplibregl.Map, pt: ScreenPt): ParanProps | null {
-  const layers = PARAN_CLICK_LAYERS.filter((id) => map.getLayer(id));
-  if (layers.length === 0) return null;
-  const t = PARAN_CLICK_TOLERANCE_PX;
-  const feats = map.queryRenderedFeatures(
-    [
-      [pt.x - t, pt.y - t],
-      [pt.x + t, pt.y + t],
-    ],
-    { layers },
-  );
-  let best: ParanProps | null = null;
-  let bestD = Infinity;
-  const centerLng = map.getCenter().lng;
-  for (const f of feats) {
-    if (!f.properties) continue;
-    const props = f.properties as unknown as ParanProps;
-    // Rank candidates by screen distance to the paran's row at the map-centre
-    // longitude (where its badge sits) — and skip rows on the globe's far side.
-    const rp = projectVisible(map, centerLng, props.latitude);
-    if (!rp) continue;
-    const d = Math.hypot(rp.x - pt.x, rp.y - pt.y);
-    if (d < bestD) {
-      bestD = d;
-      best = props;
-    }
-  }
-  return best;
-}
-
 // ── Zenith hover / click ────────────────────────────────────────────────────────
 // The sub-planetary stamps are small, so a query within a few px of the cursor
 // counts as a hit. Hovering one animates it + shows a tooltip; clicking flies to it
@@ -451,6 +416,9 @@ interface MapProps {
   localSpaceOrigin?: { lat: number; lng: number } | null;
   /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
   zenith: FeatureCollection<Point, ZenithProps>;
+  /** The ecliptic great circle (zodiac) projected to its sub-points — a subtle
+   *  bright-yellow reference line that threads through the Sun's zenith. */
+  ecliptic?: FeatureCollection<LineString> | null;
   /** Second, time/relationship overlay rendered dashed + dimmed over the base. */
   overlay?: OverlayData | null;
   pin?: { lat: number; lng: number } | null;
@@ -482,6 +450,7 @@ interface MapData {
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   localSpaceOrigin?: { lat: number; lng: number } | null;
   zenith: FeatureCollection<Point, ZenithProps>;
+  ecliptic?: FeatureCollection<LineString> | null;
   overlay?: OverlayData | null;
 }
 
@@ -544,6 +513,22 @@ function setupCustomLayers(
   measureColor: string,
   zenithFill: string,
 ) {
+  // The ecliptic (zodiac great circle) projected to its sub-points — a subtle
+  // bright-yellow reference threading through the Sun's zenith. Added first so it
+  // sits beneath the ACG lines, parans, and stamps.
+  map.addSource('ecliptic', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'ecliptic-layer',
+    source: 'ecliptic',
+    type: 'line',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ffe14d',
+      'line-width': 1.6,
+      'line-opacity': 0.45,
+    },
+  });
+
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-layer',
@@ -628,7 +613,9 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.0,
-      'line-opacity': 0.75,
+      // Overlay lines are dashed, so they read as "derived" without dimming —
+      // keep them at full opacity (dash pattern alone distinguishes them).
+      'line-opacity': 1,
       'line-dasharray': [1, 3],
     },
   });
@@ -643,7 +630,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 0.7,
-      'line-opacity': 0.45,
+      'line-opacity': 1,
       'line-dasharray': [2, 3],
     },
   });
@@ -658,7 +645,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.5, 0.8],
-      'line-opacity': ['case', ['==', ['get', 'lineType'], 'MC'], 0.95, 0.7],
+      'line-opacity': 1,
       'line-dasharray': [3, 3],
     },
   });
@@ -672,7 +659,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.1,
-      'line-opacity': 0.85,
+      'line-opacity': 1,
       'line-dasharray': [2, 3],
     },
   });
@@ -757,10 +744,12 @@ function pushData(map: maplibregl.Map, data: MapData) {
   const par = map.getSource('parans') as maplibregl.GeoJSONSource | undefined;
   const ls = map.getSource('local-space') as maplibregl.GeoJSONSource | undefined;
   const zen = map.getSource('acg-zenith') as maplibregl.GeoJSONSource | undefined;
+  const ecl = map.getSource('ecliptic') as maplibregl.GeoJSONSource | undefined;
   if (acg) acg.setData(data.lines);
   if (par) par.setData(data.parans);
   if (ls) ls.setData(data.localSpace);
   if (zen) zen.setData(data.zenith);
+  if (ecl) ecl.setData(data.ecliptic ?? EMPTY_FC());
 
   const acgOv = map.getSource('acg-lines-ov') as
     | maplibregl.GeoJSONSource
@@ -783,6 +772,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   localSpace,
   localSpaceOrigin,
   zenith,
+  ecliptic,
   overlay,
   pin,
   pinType,
@@ -830,8 +820,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
-  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, overlay });
-  dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, overlay };
+  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay });
+  dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay };
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -859,20 +849,6 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // globe; rotates the horizon compass dial so it stays aligned with the lines.
   const [originNorthDeg, setOriginNorthDeg] = useState(0);
   const badgeRafRef = useRef(0);
-
-  // Per-planet azimuths for the horizon wheel — one row per visible body (the
-  // 'out' half carries the bearing toward the planet). Static across pan/zoom.
-  const horizonPlanets = useMemo<HorizonPlanet[]>(() => {
-    const seen = new Set<string>();
-    const out: HorizonPlanet[] = [];
-    for (const f of localSpace.features) {
-      const p = f.properties;
-      if (p.direction !== 'out' || seen.has(p.planet)) continue;
-      seen.add(p.planet);
-      out.push({ planet: p.planet, azimuth: p.azimuth, color: p.color });
-    }
-    return out;
-  }, [localSpace]);
 
   // Ease the map to a lng/lat, keeping the target clear of the left-docked expanded
   // sidebar (same offset as the recenter button). Used by paran + LS label clicks.
@@ -959,6 +935,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const north = screenAngleOfNorth(map, origin.lng, origin.lat);
       setOriginNorthDeg((north * 180) / Math.PI);
       const r = lsBadgeRadius(map.getZoom());
+      // Anchor an off-screen LS label on its ACTUAL projected arc (a great circle that
+      // curves away from a straight ring ray the farther out it runs): walk from the
+      // pin outward and return where the line first enters the view — its pin-ward end.
+      const lsPinwardEntry = (coords: number[][]): { x: number; y: number } | null => {
+        let prev: { x: number; y: number } | null = null;
+        for (let i = 0; i < coords.length; i++) {
+          const c = coords[i];
+          const cur = isOccluded(map, c[0], c[1]) ? null : map.project([c[0], c[1]]);
+          if (prev && cur) {
+            const seg = clipSegmentToView(prev, cur, w, h, BADGE_INSET);
+            if (seg) return seg.near; // first crossing from the pin = pin-ward edge
+          }
+          prev = cur;
+        }
+        return null;
+      };
       const seen = new Set<string>();
       for (const f of data.localSpace.features) {
         const lp = f.properties;
@@ -966,25 +958,59 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         if (seen.has(k)) continue;
         seen.add(k);
         const out = lp.direction === 'out';
-        // 'out' runs toward the planet (→, flies to its zenith / MC point); 'in' is
-        // the opposite half (←, flies to the nadir = antipode of the zenith / IC).
+        // 'out' runs toward the planet; 'in' is the opposite (nadir) half. The badge
+        // sits at this screen bearing from the origin.
         const angle = north + (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
+        // This half's bearing (clockwise from north): out = toward the planet, in =
+        // the reciprocal. Labelled in the E=0 / N=90 convention (matches the dial).
+        const bearingAzN = out ? lp.azimuth : (lp.azimuth + 180) % 360;
+        const azDeg = Math.round((90 - bearingAzN + 360) % 360) % 360;
+        // Direction arrow points along the axis: away from the pin ('out', toward
+        // the planet) or back toward it ('in').
+        const arrowDeg = ((out ? angle : angle + Math.PI) * 180) / Math.PI;
+        // Keep the label on screen. At rest it sits at the ring point. Once that's off
+        // screen we hug the edge where the line exits — but WHICH end depends on the
+        // pin: while the pin is still visible, hug the planet-ward exit; once the pin
+        // is ALSO off screen, hug the PIN-ward end instead, so the label sits nearer
+        // the (off-screen) pin and slides back toward the ring as you pan to it. Same
+        // viewport clip the ACG line labels use.
+        const ringPt = { x: oc.x + r * Math.sin(angle), y: oc.y - r * Math.cos(angle) };
+        const inView = (p: { x: number; y: number }) =>
+          p.x >= BADGE_INSET &&
+          p.x <= w - BADGE_INSET &&
+          p.y >= BADGE_INSET &&
+          p.y <= h - BADGE_INSET;
+        let placed: { x: number; y: number } | null;
+        if (inView(ringPt)) {
+          placed = ringPt;
+        } else if (inView(oc)) {
+          const seg = clipSegmentToView(oc, ringPt, w, h, BADGE_INSET);
+          placed = seg ? seg.far : null;
+        } else {
+          // Both off screen: anchor on the real projected arc at its pin-ward entry,
+          // so the label sits ON the (curved) line rather than along a straight ray
+          // that drifts off it the farther out the line goes.
+          placed = lsPinwardEntry(f.geometry.coordinates);
+        }
+        if (!placed) continue; // line entirely off-screen
         lsbadges.push({
           key: k,
-          x: oc.x + r * Math.sin(angle),
-          y: oc.y - r * Math.cos(angle),
+          x: placed.x,
+          y: placed.y,
           planet: lp.planet,
           color: lp.color,
-          dir: out ? 'OUT' : 'IN',
-          targetLng: out
-            ? lp.zenithLng
-            : lp.zenithLng + 180 > 180
-              ? lp.zenithLng - 180
-              : lp.zenithLng + 180,
-          targetLat: out ? lp.zenithLat : -lp.zenithLat,
+          azDeg,
+          arrowDeg,
         });
       }
       deOverlapBadges(lsbadges, LS_BADGE_HALF_W, LS_BADGE_HALF_H, 16);
+      // deOverlapBadges has no viewport clamp of its own, and edge-hugged labels sit
+      // right at the inset — so clamp every pill fully back on screen afterward
+      // (accounting for its half-extents), matching the ACG badges' final clamp.
+      for (const b of lsbadges) {
+        b.x = Math.min(Math.max(b.x, BADGE_INSET + LS_BADGE_HALF_W), w - BADGE_INSET - LS_BADGE_HALF_W);
+        b.y = Math.min(Math.max(b.y, BADGE_INSET + LS_BADGE_HALF_H), h - BADGE_INSET - LS_BADGE_HALF_H);
+      }
     } else {
       setOriginScreen(null);
     }
@@ -1086,11 +1112,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Re-anchor the edge badges on every pan/zoom (throttled to one rAF/frame).
     map.on('move', scheduleBadges);
     map.on('moveend', computeBadges);
+    // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
+    // when it moves, so re-dodge the labels off its new rect right away rather
+    // than waiting for the next pan/zoom.
+    window.addEventListener('astro:hud-moved', scheduleBadges);
 
     mapRef.current = map;
 
     return () => {
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
+      window.removeEventListener('astro:hud-moved', scheduleBadges);
       markerRef.current?.remove();
       markerRef.current = null;
       map.remove();
@@ -1166,8 +1197,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       zenithPopup
         .setLngLat([zen.lng, zen.lat])
         .setHTML(
-          `<div class="zenith-tip"><span class="zenith-tip-title">${name} zenith</span>` +
-            `<span class="zenith-tip-sub">where ${name} is directly overhead</span></div>`,
+          `<div class="ui-tip"><span class="ui-tip-title">${name} zenith</span>` +
+            `<span class="ui-tip-sub">where ${name} is directly overhead</span></div>`,
         );
       // Add once, then just reposition/retitle on subsequent moves (no DOM churn).
       if (!zenithPopup.isOpen()) zenithPopup.addTo(map);
@@ -1177,15 +1208,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // so suppress hover-relocation / pin interactions.
     const handleMove = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
-      // A zenith stamp under the cursor wins: animate it + show the tooltip. Else
-      // hint that parans are clickable; otherwise the map's CSS grab cursor.
+      // A zenith stamp under the cursor wins: animate it + show the tooltip;
+      // otherwise fall back to the map's CSS grab cursor.
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
         map.getCanvas().style.cursor = 'pointer';
         showZenith(zen);
       } else {
         clearZenith();
-        map.getCanvas().style.cursor = paranAtPoint(map, e.point) ? 'pointer' : '';
+        map.getCanvas().style.cursor = '';
       }
       onHover?.(e.lngLat.lat, e.lngLat.lng);
     };
@@ -1195,18 +1226,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
-      // A click on (or near) a zenith stamp or a paran flies to it rather than
-      // relocating the chart.
+      // A click on (or near) a zenith stamp flies to it rather than relocating.
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
         flyToPoint(zen.lng, zen.lat);
         return;
       }
-      const paran = paranAtPoint(map, e.point);
-      if (paran) {
-        flyToPoint(paran.intersectionLng, paran.latitude);
-        return;
-      }
+      // Paran LINES are intentionally NOT click-to-fly — they're easy to hit by
+      // accident. Use the paran's label badge (below), which flies to the
+      // intersection; a click on the line just relocates the chart like anywhere.
       onClick?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleContext = (e: maplibregl.MapMouseEvent) => {
@@ -1327,7 +1355,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, parans, localSpace, zenith, overlay });
+      pushData(map, { lines, parans, localSpace, zenith, ecliptic, overlay });
       computeBadges();
     } else {
       map.once('load', () => {
@@ -1335,7 +1363,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, parans, localSpace, localSpaceOrigin, zenith, overlay, computeBadges]);
+  }, [lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay, computeBadges]);
 
   // Toggle basemap road / river / foliage visibility live (theme reloads reapply
   // via the style.load handler above).
@@ -1388,7 +1416,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // its scale (80%→full, alongside the LS labels) and fade (to full over the first
   // quarter of that range).
   const compassP =
-    originScreen && horizonPlanets.length > 0 && zoom >= COMPASS_ZOOM
+    originScreen && localSpace.features.length > 0 && zoom >= COMPASS_ZOOM
       ? Math.min(1, (zoom - COMPASS_ZOOM) / (CLOSE_ZOOM - COMPASS_ZOOM))
       : null;
   // Natal ACG line labels fly to that planet's zenith on click — build the lookup.
@@ -1459,19 +1487,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {localSpaceBadges.map((b) => {
           const text = badgeTextColor(b.color);
           return (
-            <button
-              type="button"
+            // Non-interactive label (LS lines aren't click-to-fly): glyph + azimuth,
+            // with a color-matched arrow pointing outward (to the planet) or inward
+            // (to the pin) along the line.
+            <span
               key={b.key}
-              tabIndex={-1}
-              className="acg-badge acg-badge-btn"
+              className="acg-badge"
               style={{ left: b.x, top: b.y, background: b.color, color: text }}
-              onClick={() => flyToPoint(b.targetLng, b.targetLat)}
-              title="Fly to where this local-space line meets the chart"
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="ls-dir">{b.dir}</span>
-            </button>
+              <span className="ls-deg">{b.azDeg}°</span>
+              <span
+                className="ls-arrow"
+                style={{ color: b.color, transform: `rotate(${b.arrowDeg}deg)` }}
+                aria-hidden="true"
+              >
+                <span className="ls-arrow-shaft" />
+                <span className="ls-arrow-head" />
+              </span>
+            </span>
           );
         })}
       </div>
@@ -1483,8 +1518,36 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
           opacity={COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)}
           bearing={originNorthDeg}
-          planets={horizonPlanets}
         />
+      )}
+      {/* Subtle escape hatch once deeply zoomed in (LS labels at full radius): a
+          low-opacity pill, brighter on hover, that eases back to a wide overview. */}
+      {zoom >= CLOSE_ZOOM && (
+        <button
+          type="button"
+          className="map-zoom-out"
+          onClick={() =>
+            mapRef.current?.easeTo({ zoom: ZOOM_OUT_TARGET, duration: 600 })
+          }
+          aria-label="Zoom out to a wide view"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.35-4.35" />
+            <path d="M8 11h6" />
+          </svg>
+          <span>Zoom out</span>
+        </button>
       )}
     </>
   );

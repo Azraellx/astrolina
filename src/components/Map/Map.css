@@ -23,14 +23,60 @@
 
 /* ── ACG line edge badges ──────────────────────────────────────────
    Glyph + angle code in a line-colored pill, anchored where each line exits
-   the viewport. Sits above the map + edge glow (z 4) and below the HUD (z 12).
+   the viewport. Sits above the map + edge glow (z 4) AND the local-horizon compass
+   (z 7), and below the HUD (z 12), so the line labels are never hidden by the dial.
    pointer-events: none so the map stays interactive through them. */
 .acg-edge-badges {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 8;
   pointer-events: none;
   overflow: hidden;
+}
+
+/* Subtle "Zoom out" escape button — bottom-centre, sitting just above where the
+   docked timeline bar lives (a fixed bottom offset, so it stays the same distance
+   from the bottom on any screen height; if no bar is shown it just floats there).
+   Shown only when deeply zoomed in (LS labels at full radius). Low opacity at rest
+   so it stays out of the way; clears up on hover/focus. Above the map + badges
+   (z 6), below the HUD bars (z 12). */
+.map-zoom-out {
+  position: absolute;
+  left: 50%;
+  bottom: 160px;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: rgba(var(--bg-panel), 0.7);
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 999px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.42;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+.map-zoom-out svg {
+  flex-shrink: 0;
+}
+.map-zoom-out:hover,
+.map-zoom-out:focus-visible {
+  opacity: 1;
+  background: rgba(var(--bg-panel), 0.92);
+  border-color: rgba(var(--tint), 0.3);
+}
+.map-zoom-out:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 .acg-badge {
@@ -83,12 +129,50 @@
   transform: translate(-50%, -50%) scale(1.07);
 }
 
-/* The LS direction tag ("IN" / "OUT"). */
-.ls-dir {
+/* The LS azimuth degree (E=0 / N=90), shown in place of the old IN/OUT text. */
+.ls-deg {
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* In/out direction arrow — a shaft (rectangle) + head (triangle) in the badge's own
+   color, rising from the badge centre outward along the line so it points outward
+   (toward the planet) or back inward (toward the pin). A 0×0 anchor at the badge
+   centre, rotated inline; the badge's transform gives it a stacking context, so
+   z-index:-1 tucks the whole arrow BEHIND the label text (and behind the same-color
+   pill background, where it blends) — only the part past the pill edge shows. */
+.ls-arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* color is set inline to the badge color; the shaft/head inherit it. */
+}
+.ls-arrow-shaft {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 7px;
+  height: 28px;
+  background: currentColor;
+}
+.ls-arrow-head {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-bottom: 18px solid currentColor;
 }
 
 /* The bundled symbol font sits a touch low; nudge badge glyphs up ~10% to optically
@@ -113,36 +197,35 @@
 .zenith-popup .maplibregl-popup-tip {
   display: none;
 }
-.zenith-tip {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+/* The zenith popup reuses the shared .ui-tip text styles (index.css); only its
+   centered alignment is map-specific. The box chrome stays on the maplibre
+   popup-content wrapper above. */
+.zenith-popup .ui-tip {
   text-align: center;
 }
-.zenith-tip-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-.zenith-tip-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-}
 
+/* The placed-location marker. Scaled up ~2.5× from its original 22px so it's easy
+   to spot on a busy map (anchor stays centered on the point via the marker's
+   'center' anchor). The dot + ring borders / shadows scale with it. */
 .map-pin {
   position: relative;
-  width: 22px;
-  height: 22px;
-  cursor: pointer;
+  width: 55px;
+  height: 55px;
+  /* Only the dot captures clicks (they bubble to the marker's click handler); the
+     transparent ring area stays click-through, so the bigger pin doesn't create a
+     wide dead-zone over the map. */
+  pointer-events: none;
 }
 
 .map-pin-dot {
   position: absolute;
-  inset: 7px;
+  inset: 18px;
   background: var(--accent);
   border: 2px solid var(--pin-stroke);
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.6);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.6);
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .map-pin-ring {
@@ -156,12 +239,12 @@
 
 .map-pin:hover .map-pin-dot {
   background: var(--accent-hover);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.8);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.8);
 }
 
 .map-pin.natal .map-pin-dot {
   background: var(--success);
-  box-shadow: 0 0 0 1px rgba(var(--success-rgb), 0.6);
+  box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.6);
 }
 
 .map-pin.natal .map-pin-ring {
@@ -169,7 +252,7 @@
 }
 
 .map-pin.natal:hover .map-pin-dot {
-  box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.85);
+  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.85);
 }
 
 @keyframes map-pin-pulse {

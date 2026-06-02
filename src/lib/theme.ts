@@ -5,8 +5,8 @@ export const THEMES: Theme[] = ['glass', 'dark', 'vintage'];
 export const THEME_LABELS: Record<Theme, string> = {
   glass: 'Glass',
   // Internal ids stay 'dark'/'vintage' (persisted prefs + [data-theme] selectors);
-  // only the display labels changed to "Night" / "Earth".
-  dark: 'Night',
+  // only the display labels differ ("Earth" for vintage).
+  dark: 'Dark',
   vintage: 'Earth',
 };
 

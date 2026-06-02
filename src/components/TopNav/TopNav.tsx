@@ -374,13 +374,25 @@ export function TopNav({
             <NavMenu label="Overlay" active={overlayActive}>
               {(close) => (
                 <>
+                  {/* Explicit "None" row (selected whenever no overlay is shown) is
+                      clearer than the old click-the-active-one-to-hide toggle, so
+                      the mode rows now just select their mode — re-picking the
+                      active one is a no-op. */}
+                  <RadioItem
+                    label="None"
+                    checked={overlayMode === 'off'}
+                    onSelect={() => {
+                      setOverlayMode('off');
+                      close();
+                    }}
+                  />
                   {OVERLAY_MODES.map(({ mode, label }) => (
                     <RadioItem
                       key={mode}
                       label={label}
                       checked={overlayMode === mode}
                       onSelect={() => {
-                        setOverlayMode(overlayMode === mode ? 'off' : mode);
+                        setOverlayMode(mode);
                         close();
                       }}
                     />

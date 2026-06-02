@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { useMovableHud } from '../../lib/useMovableHud';
 import './SynastryHud.css';
 
 const MONTHS = [
@@ -53,6 +54,9 @@ export function SynastryHud({
 }: SynastryHudProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Shares its movable position with the timeline bar (same bottom slot) so the
+  // overlay bar stays where the user dragged it across mode switches.
+  const { pos, dragging, handleProps } = useMovableHud(ref);
 
   useEffect(() => {
     if (!open) return;
@@ -68,8 +72,25 @@ export function SynastryHud({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="synastry-hud" ref={ref}>
-      <span className="synastry-hud-tag">Synastry</span>
+    <div
+      className={`synastry-hud${dragging ? ' dragging' : ''}`}
+      ref={ref}
+      style={
+        pos
+          ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
+          : undefined
+      }
+    >
+      {/* The tag doubles as the move handle (grip + label); drag to float the bar,
+          release near the dock to snap home, double-click to dock. */}
+      <span className="synastry-hud-tag" {...handleProps}>
+        <span className="hud-grip" aria-hidden="true" />
+        Synastry
+        <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
+          <span className="ui-tip-title">Drag to move</span>
+          <span className="ui-tip-sub">Double-click to dock · snaps to centre</span>
+        </span>
+      </span>
       <div className="synastry-hud-picker">
         <button
           type="button"

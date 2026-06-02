@@ -513,6 +513,7 @@ export function ExpandedChartSidebar({
               advanced={advanced}
               overlayPlanets={shownOverlay}
               visibleAspects={visibleAspects}
+              interactive
             />
           ) : (
             <div className="es-empty">No chart selected</div>

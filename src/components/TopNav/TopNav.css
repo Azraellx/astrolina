@@ -36,6 +36,11 @@
   /* Content-sized: the controls sit together with small uniform gaps, so the bar
      is no wider than it needs to be (no slack between the name/status/menus). */
   width: max-content;
+  /* Sit above the secondary toolbar below it. Both bars carry backdrop-filter, so
+     each is its own stacking context; without this the later-in-DOM toolbar paints
+     OVER this bar's open dropdown panels (which can't escape this bar's context),
+     making the Overlay/View options unclickable where they overlap the readout. */
+  z-index: 2;
 }
 
 /* Secondary tool bar below the main bar — compact, its own little island. */
@@ -45,6 +50,8 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
   display: flex;
   align-items: center;
+  /* Below the main bar so its open dropdowns overlay this readout, not vice-versa. */
+  z-index: 1;
 }
 .topnav-toolbar-hint {
   font-size: 11px;

@@ -29,20 +29,25 @@ export const TEST_BIRTH: BirthData = {
 };
 
 // The charts a fresh install starts with, in display order; the first is the
-// selected one. Einstein doubles as a ready-made synastry partner.
+// selected one. Jim Lewis — who invented Astro*Carto*Graphy — is a fitting
+// default; Einstein doubles as a ready-made synastry partner.
+//
+// Birth date + place are documented (Wikipedia / Astro-Databank); the 09:30
+// birth time is the commonly-cited record (Astro-Seek). New York City observed
+// daylight saving in summer 1941, so the zone is EDT (UTC−4).
 export const SEED_BIRTHS: BirthData[] = [
   {
-    name: 'Leonardo DiCaprio',
-    year: 1974,
-    month: 11,
-    day: 11,
-    hour: 2,
-    minute: 47,
-    tzOffset: -8,
+    name: 'Jim Lewis',
+    year: 1941,
+    month: 6,
+    day: 5,
+    hour: 9,
+    minute: 30,
+    tzOffset: -4,
     birthplace: {
-      label: 'Los Angeles, California, United States',
-      lat: 34.0522,
-      lng: -118.2437,
+      label: 'Yonkers, New York, United States',
+      lat: 40.9312,
+      lng: -73.8988,
     },
   },
   TEST_BIRTH,

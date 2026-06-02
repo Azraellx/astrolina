@@ -47,7 +47,10 @@
   bottom: calc(100% - 1px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 3px 18px 5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 14px 5px;
   background: rgba(var(--bg-panel), 0.94);
   border-radius: 9px 9px 0 0;
   color: var(--accent);
@@ -56,6 +59,33 @@
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.thud-measure:active,
+.thud-dragging .thud-measure {
+  cursor: grabbing;
+}
+
+.thud-measure-label {
+  font-weight: 700;
+}
+
+/* The dynamic measure (Age / Angle) trailing the mode name — a touch dimmer. */
+.thud-measure-value {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* The nub's "Drag to move" hint is the shared .hud-move-hint (index.css);
+   reveal on hover, hide while dragging. */
+.thud-measure:hover .hud-move-hint {
+  opacity: 1;
+}
+.thud-dragging .hud-move-hint {
+  opacity: 0 !important;
 }
 .thud-measure::before,
 .thud-measure::after {

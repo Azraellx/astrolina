@@ -6,6 +6,7 @@ import {
   type TimeUnit,
 } from '../../lib/astro/timeline';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { useMovableHud } from '../../lib/useMovableHud';
 import './TimelineHud.css';
 
 // Active map location state, shared with the map edge-glow — drives the HUD
@@ -37,6 +38,13 @@ const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
   { unit: 'month', label: 'Month' },
   { unit: 'year', label: 'Year' },
 ];
+
+// Name shown on the draggable nub for each time-overlay mode.
+const MODE_LABEL: Partial<Record<OverlayMode, string>> = {
+  transits: 'Transits',
+  progressed: 'Progressed',
+  'solar-arc': 'Solar Arc',
+};
 
 // Midnight-UTC epoch ms of a chart's civil birth date — the timeline's birth
 // anchor. Built via setUTCFullYear because Date.UTC()/new Date() remap years
@@ -265,12 +273,43 @@ export function TimelineHud({
   // — its state is already clear from the date field.
   const readout = overlayMeasure;
   const minorDesc = MINOR_LABEL[stepUnit];
+  const modeLabel = MODE_LABEL[overlayMode] ?? 'Overlay';
+
+  // ── Draggable bar ──────────────────────────────────────────────────────
+  // The nub is the move handle. Position is shared with the synastry bar (same
+  // bottom slot) via useMovableHud, so flipping overlay modes keeps the bar
+  // wherever it was dragged.
+  const hudRef = useRef<HTMLDivElement>(null);
+  const { pos, dragging, handleProps } = useMovableHud(hudRef);
 
   return (
-    <div className="timeline-hud" data-mode={overlayMode} data-mapstate={mapState}>
-      {/* Progressed / solar-arc surface their dynamic measure (Age / Angle) as a
-          prominent pill above the bar. Transits passes null. */}
-      {readout && <div className="thud-measure">{readout}</div>}
+    <div
+      className={`timeline-hud${dragging ? ' thud-dragging' : ''}`}
+      data-mode={overlayMode}
+      data-mapstate={mapState}
+      ref={hudRef}
+      style={
+        pos
+          ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
+          : undefined
+      }
+    >
+      {/* The overlay-mode nub protrudes from the top of the bar. It names the
+          active mode (and shows its dynamic measure, if any) and is the move
+          handle: grab to float the bar, release near home to snap back. */}
+      {/* Not a button: drag/dock is a sighted-only pointer convenience (the
+          overlay mode is independently set/shown in the top bar), so we leave the
+          element's accessible name as its visible readout — "Transits", "Age 32.0"
+          — rather than overriding it with a drag instruction AT users can't act on. */}
+      <div className="thud-measure" {...handleProps}>
+        <span className="hud-grip" aria-hidden="true" />
+        <span className="thud-measure-label">{modeLabel}</span>
+        {readout && <span className="thud-measure-value">{readout}</span>}
+        <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
+          <span className="ui-tip-title">Drag to move</span>
+          <span className="ui-tip-sub">Double-click to dock · snaps to centre</span>
+        </span>
+      </div>
 
       <TimeRuler
         value={clamp(targetDate)}
@@ -332,7 +371,16 @@ export function TimelineHud({
             type="datetime-local"
             className="thud-date"
             value={toDatetimeLocalUTC(targetDate)}
-            onChange={(e) => setTargetDate(fromDatetimeLocalUTC(e.target.value))}
+            onChange={(e) => {
+              // A datetime-local input reports an empty value string until EVERY
+              // segment is filled. While the user types a date by hand the value
+              // is briefly "", so skip those blanks — otherwise the target snapped
+              // back to "now", overwriting their input and making manual typing
+              // impossible (only the calendar picker, which fills all segments at
+              // once, used to work).
+              const v = e.target.value;
+              if (v) setTargetDate(fromDatetimeLocalUTC(v));
+            }}
           />
           <span className="thud-utc">UTC</span>
         </span>

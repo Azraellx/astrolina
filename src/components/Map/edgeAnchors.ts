@@ -71,6 +71,27 @@ function clipSeg(a: Pt, b: Pt, r: Rect): { t0: number; t1: number } | null {
   return { t0, t1 };
 }
 
+// The on-screen portion of segment a→b, clipped to the (inset) viewport: its `near`
+// end (closer to a) and `far` end (closer to b), or null if the segment misses the
+// screen entirely. Lets a radial LS label stay visible by anchoring to whichever end
+// fits — the pin-ward `near` end when the origin is off-screen (so it slides back to
+// the ring as you pan toward the pin), or the planet-ward `far` end otherwise — using
+// the same clip the ACG badges use.
+export function clipSegmentToView(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  w: number,
+  h: number,
+  inset: number,
+): { near: { x: number; y: number }; far: { x: number; y: number } } | null {
+  const r: Rect = { minX: inset, minY: inset, maxX: w - inset, maxY: h - inset };
+  if (r.maxX <= r.minX || r.maxY <= r.minY) return null;
+  const c = clipSeg(a, b, r);
+  if (!c) return null;
+  const at = (t: number) => ({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+  return { near: at(c.t0), far: at(c.t1) };
+}
+
 // The two screen points farthest apart in a small set — the visual "ends" of a
 // line's on-screen presence once its fragments are pooled together.
 function farthestPair(pts: Pt[]): Pt[] {

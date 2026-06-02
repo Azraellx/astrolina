@@ -1,5 +1,12 @@
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
-import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
+import {
+  PLANET_CODES,
+  PLANET_COLORS,
+  eclipticToRaDec,
+  obliquity,
+  type PlanetName,
+  type PlanetPosition,
+} from '../ephemeris';
 import { unwrapLongitudes } from './dateline';
 
 const RAD2DEG = 180 / Math.PI;
@@ -192,5 +199,34 @@ export function generateZenithStamps(
     },
   }));
   return { type: 'FeatureCollection', features };
+}
+
+// The ecliptic (the Sun's apparent path / the zodiac great circle) projected onto
+// Earth: the locus of zenith points of the ecliptic at this instant. Each ecliptic
+// longitude λ (ecliptic latitude 0) maps to equatorial (RA, dec) via the obliquity
+// ε, then to its sub-point with the SAME lng = RA − GMST, lat = dec convention as
+// the zenith stamps — so the curve threads exactly through the Sun's zenith (the
+// Sun rides the ecliptic) and near every other body's. Sampled densely and
+// longitude-unwrapped so it bends onto the 3D globe instead of chording through it.
+export function generateEcliptic(
+  jd: number,
+  gmst: number,
+): FeatureCollection<LineString> {
+  const eps = obliquity(jd);
+  const coords: [number, number][] = [];
+  for (let lonDeg = 0; lonDeg <= 360; lonDeg += GLOBE_STEP_DEG) {
+    const { ra, dec } = eclipticToRaDec(lonDeg * DEG2RAD, 0, eps);
+    coords.push([normLng((ra - gmst) * RAD2DEG), dec * RAD2DEG]);
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: unwrapLongitudes(coords) },
+      },
+    ],
+  };
 }
 

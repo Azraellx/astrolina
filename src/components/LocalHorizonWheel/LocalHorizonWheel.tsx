@@ -1,14 +1,4 @@
-import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import type { PlanetName } from '../../lib/ephemeris';
 import './LocalHorizonWheel.css';
-
-// One body's compass bearing from the local-space origin (the same azimuths that
-// drive the LS lines/labels), for plotting around the horizon dial.
-export interface HorizonPlanet {
-  planet: PlanetName;
-  azimuth: number; // degrees clockwise from north
-  color: string;
-}
 
 interface Props {
   // Screen position of the local-space origin (the dial's centre) + full diameter
@@ -22,7 +12,6 @@ interface Props {
   /** On-screen rotation (deg) of north at the origin — 0 in 2D, non-zero on a
    *  rotated/tilted globe — so the dial stays aligned with the lines. */
   bearing: number;
-  planets: HorizonPlanet[];
 }
 
 const RAD = Math.PI / 180;
@@ -42,7 +31,6 @@ export function LocalHorizonWheel({
   scale,
   opacity,
   bearing,
-  planets,
 }: Props) {
   return (
     <div
@@ -98,36 +86,25 @@ export function LocalHorizonWheel({
         );
       })}
 
-      {/* Degree numbers, one per notch, inside the dial — bigger on the 30° notches,
-          smaller/quieter on the 15° notches. The cardinals show N/E/S/W instead. */}
+      {/* Degree numbers on the 30° notches only (the 15° ones were too small to
+          read, so they're dropped). The cardinals show N/E/S/W instead. Each notch
+          sits at its geographic position (clockwise from north) but is LABELLED in
+          the local-space convention: East = 0°, North = 90° (counter-clockwise from
+          east), so the numbers run 0 at E up to 90 at N. */}
       {TICKS.map((i) => {
-        if (i % 6 === 0) return null;
-        const deg = i * 15;
-        const a = deg * RAD;
+        if (i % 6 === 0 || i % 2 !== 0) return null;
+        const azN = i * 15; // geographic position, clockwise from north
+        const a = azN * RAD;
         const x = 50 + DEG_RADIUS * Math.sin(a);
         const y = 50 - DEG_RADIUS * Math.cos(a);
+        const label = (90 - azN + 360) % 360; // East = 0°, North = 90°
         return (
           <span
-            key={deg}
-            className={`lhw-deg ${i % 2 === 0 ? 'lhw-deg-med' : 'lhw-deg-min'}`}
+            key={azN}
+            className="lhw-deg lhw-deg-med"
             style={{ left: `${x}%`, top: `${y}%` }}
           >
-            {deg}
-          </span>
-        );
-      })}
-
-      {planets.map((p) => {
-        const a = p.azimuth * RAD;
-        const x = 50 + 38 * Math.sin(a);
-        const y = 50 - 38 * Math.cos(a);
-        return (
-          <span
-            key={p.planet}
-            className="lhw-planet"
-            style={{ left: `${x}%`, top: `${y}%` }}
-          >
-            <PlanetGlyph planet={p.planet} size={13} color={p.color} />
+            {label}
           </span>
         );
       })}
