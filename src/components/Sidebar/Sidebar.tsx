@@ -10,6 +10,10 @@ import {
   type PlanetName,
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
+import type {
+  AngleProgression,
+  PrimaryRate,
+} from '../../lib/astro/timeline';
 import { THEMES, THEME_LABELS, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
@@ -32,6 +36,12 @@ interface SidebarProps {
   setHouseSystem: (h: HouseSystem) => void;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
+  angleProgression: AngleProgression;
+  setAngleProgression: (a: AngleProgression) => void;
+  primaryRate: PrimaryRate;
+  setPrimaryRate: (r: PrimaryRate) => void;
+  userPrimaryRate: number;
+  setUserPrimaryRate: (deg: number) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   projection: MapProjectionMode;
@@ -82,6 +92,26 @@ const HOUSE_SYSTEMS: { value: HouseSystem; label: string; hint: string }[] = [
 const NODE_TYPES: { value: NodeType; label: string; hint: string }[] = [
   { value: 'true', label: 'True Node', hint: 'Osculating node — the Moon’s instantaneous orbit (desktop-tool default)' },
   { value: 'mean', label: 'Mean Node', hint: 'Smoothed long-term average node position' },
+];
+
+// "Progs/Dirns" — how a directed/progressed chart's angles advance (Solar Arc +
+// Progressed overlays), and the time-key for the Primary Directions overlay.
+const ANGLE_PROGRESSIONS: { value: AngleProgression; label: string; hint: string }[] = [
+  { value: 'sa-long', label: 'SA in Longitude', hint: 'Solar arc in ecliptic longitude (the classic solar-arc default).' },
+  { value: 'sa-ra', label: 'SA in RA', hint: 'Solar arc measured in right ascension.' },
+  { value: 'naibod-long', label: 'Naibod in Long', hint: 'Mean solar rate 0.9856°/yr, applied in longitude.' },
+  { value: 'naibod-ra', label: 'Naibod in RA', hint: 'Mean solar rate 0.9856°/yr, applied in right ascension.' },
+  { value: 'mean-quotidian', label: 'Mean Quotidian', hint: 'Quotidian progressed angle (one day per year); on Solar Arc it matches SA in Longitude.' },
+];
+
+const PRIMARY_RATES: { value: PrimaryRate; label: string; hint: string }[] = [
+  { value: 'ptolemy', label: 'Ptolemy (1°/yr)', hint: 'One year per degree.' },
+  { value: 'naibod', label: 'Naibod (59′08″/yr)', hint: '0.985647° per year — the Sun’s mean motion.' },
+  { value: 'cardan', label: 'Cardan (59′12″/yr)', hint: '0.986667° per year.' },
+  { value: 'kepler-ra', label: 'Kepler — natal solar RA', hint: 'Natal Sun’s daily motion in right ascension × years.' },
+  { value: 'solar-long', label: 'Natal solar — longitude', hint: 'Natal Sun’s daily motion in ecliptic longitude × years.' },
+  { value: 'placidus-ra', label: 'Placidus — true SA in RA', hint: 'True secondary-progressed solar arc in RA (nonlinear).' },
+  { value: 'user', label: 'User rate', hint: 'Enter your own degrees-per-year below.' },
 ];
 
 // Sidebar sections behave as an accordion — at most one open at a time — so the
@@ -136,6 +166,12 @@ export function Sidebar({
   setHouseSystem,
   nodeType,
   setNodeType,
+  angleProgression,
+  setAngleProgression,
+  primaryRate,
+  setPrimaryRate,
+  userPrimaryRate,
+  setUserPrimaryRate,
   theme,
   setTheme,
   projection,
@@ -439,6 +475,60 @@ export function Sidebar({
           <p className="calc-hint">
             {HOUSE_SYSTEMS.find((h) => h.value === houseSystem)?.hint}
           </p>
+
+          <h2>Chart angle progression</h2>
+          <span className="thud-select-wrap calc-select">
+            <select
+              className="thud-select"
+              value={angleProgression}
+              onChange={(e) =>
+                setAngleProgression(e.target.value as AngleProgression)
+              }
+            >
+              {ANGLE_PROGRESSIONS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="thud-select-caret">▾</span>
+          </span>
+          <p className="calc-hint">
+            {ANGLE_PROGRESSIONS.find((a) => a.value === angleProgression)?.hint}{' '}
+            Drives the Solar Arc and Progressed overlays.
+          </p>
+
+          <h2>Primary directions rate</h2>
+          <span className="thud-select-wrap calc-select">
+            <select
+              className="thud-select"
+              value={primaryRate}
+              onChange={(e) => setPrimaryRate(e.target.value as PrimaryRate)}
+            >
+              {PRIMARY_RATES.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="thud-select-caret">▾</span>
+          </span>
+          <p className="calc-hint">
+            {PRIMARY_RATES.find((r) => r.value === primaryRate)?.hint}
+          </p>
+          {primaryRate === 'user' && (
+            <span className="thud-select-wrap calc-select">
+              <input
+                type="number"
+                className="thud-select"
+                step="0.01"
+                min={0}
+                value={Number.isFinite(userPrimaryRate) ? userPrimaryRate : ''}
+                onChange={(e) => setUserPrimaryRate(e.target.valueAsNumber)}
+                aria-label="User direction rate, degrees per year"
+              />
+            </span>
+          )}
         </div>
       )}
     </aside>

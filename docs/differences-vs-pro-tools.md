@@ -73,7 +73,7 @@ Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta) now read fr
 These are in the roadmap but intentionally out of scope for the prototype:
 
 - **Composite and midpoint maps** — Davison or composite chart projected as ACG lines. (Synastry — two charts overlaid — already ships; see "What we already do better" below.)
-- **Vedic / sidereal mode** — tropical only at the moment. Vedic astrocartography is barely served by any tool, which is a real opportunity.
+- **Vedic / sidereal mode** — tropical only at the moment. Vedic astrocartography is thinly served compared with the tropical tooling, which is a real opportunity.
 - **Embeddable widgets** — so an astrologer can drop a map into their own website.
 - **Server-side PDF rendering** — export currently relies on the browser, fine for prototype but limited for branded high-quality exports at scale.
 
@@ -87,6 +87,18 @@ The weight is in the data files. Planets and the Moon fall back automatically to
 
 **Path to fix:** ship the extra `.se1` blocks in a "pro / extended" build, or **lazy-load** them only when a pre-1800 chart is opened — keeping the base download light while the capability appears for those who need it. The calc layer is already built for this: it casts pre-1582 dates on the Julian calendar and drops any body whose data is absent for a given date rather than erroring, so widening the range is purely a matter of bundling files.
 
+### 9. Directions: angle-only on the map, not a full primary-directions engine
+
+The map now draws **solar-arc** and **secondary-progressed** lines with a choice of angle method (Solar Arc in longitude/RA, Naibod in longitude/RA, Mean Quotidian), plus a **Primary Directions** overlay that advances the chart's angles by a chosen time-key (Ptolemy, Naibod, Cardan, the natal solar rate in RA or longitude, the true solar arc in RA, or a user rate). These are an **angle-only** treatment built for a map. For **Primary Directions** the bodies stay at their natal places and the directed angles — and with them the whole set of planetary lines — rotate rigidly by the chosen time-key, forward in time; **Solar Arc** advances each body by the arc, and **Progressed** re-derives the day-for-a-year positions — both also forward in time. All three animate over a lifetime on the timeline.
+
+**What we don't compute:** classical **primary directions** in the Solar Fire / Janus sense — individual promissor-to-significator directions carrying each body's latitude, Placidian (or Regiomontanus / Topocentric) semi-arc proportions, and **converse** as well as direct motion, output as a dated list of perfections for one location. That's a different deliverable from directed lines on a map.
+
+**Practical impact:**
+- For mapping *where* a chart's directed angles fall across a life, the overlay is complete and animatable.
+- **What a pro might catch:** a primary-directions specialist (Solar Fire, Janus, or Morinus user) will note there's no latitude / semi-arc / converse engine and no event-list output — only forward-directed angles drawn on the map.
+
+**Path to fix:** the standard time-keys and the day-for-a-year framework are already in place; full semi-arc primary directions with latitude (and converse motion) are a calc-layer extension, and a dated event list is a separate report surface.
+
 ---
 
 ## What we already do better than the incumbents
@@ -95,7 +107,7 @@ These are the things a pro will notice immediately in the other direction — th
 
 ### 1. Platform-agnostic and instant
 
-No install, no Windows-only restriction, no "Mac users open Astro Gold, PC users open Matrix Horizons." A URL works on any device — phone, tablet, client's laptop during a reading. Solar Fire is Windows-only and looks it. Astro Gold is Mac/iOS only. AstroZeus is desktop-bound.
+No install, no Windows-only restriction, no "Mac users open Astro Gold, PC users open Matrix Horizons." A URL works on any device — phone, tablet, client's laptop during a reading. Solar Fire is Windows-only. Astro Gold is Mac/iOS only. AstroZeus is desktop-bound.
 
 ### 2. Live drag-relocation with the relocated wheel inline
 
@@ -103,11 +115,13 @@ Astro Gold pioneered live drag-relocation on the map — it's their headline fea
 
 ### 3. Modern visual design
 
-Dark, minimal basemap. Planet lines do the talking. Color-coded by planet, dashed patterns to distinguish ASC/DSC/MC/IC, faint parans that don't overwhelm. The desktop tools render maps that look like 1998. A clean look is itself a feature — astrologers screenshot maps to share with clients, and a screenshot from this tool will look professionally credible in a way Solar Maps' won't.
+Dark, minimal basemap. Planet lines do the talking. Color-coded by planet, dashed patterns to distinguish ASC/DSC/MC/IC, faint parans that don't overwhelm. The desktop tools render maps that look like 1998. A clean look is itself a feature — astrologers screenshot maps to share with clients, and a clean screenshot from this tool reads as more contemporary than the desktop tools' output.
 
 ### 4. Toggleable techniques without modal dialogs
 
 Show / hide parans, local space, individual planets — all from one sidebar, instant feedback. In the desktop tools, changing what's shown often involves a multi-tab settings dialog and a re-render.
+
+The same sidebar also exposes the **calculation conventions** as live toggles, each re-rendering the map instantly: **Celestial vs Geodetic ("Mundane")** line placement — the latter being Sepharial's geodetic equivalents, anchoring each angle to Earth longitude through the zodiac (Greenwich = 0° Aries), independent of birth time; Solar Maps offers the same geodetic technique (under both the Sepharial and Johndro conventions). Alongside it: **In Mundo vs In Zodiaco**, the house system, the lunar-node type, and the progression / direction method (see "Time-based overlays" below). In the desktop tools these live behind preference dialogs that require a recalculation step.
 
 ### 5. Built for sharing and embedding (path)
 
@@ -119,12 +133,12 @@ Paste an AstroDataBank-style text block (the format astro.com and many tools exp
 
 ### 7. Time-based overlays and relationship maps in one view
 
-A single overlay slot sits on top of the natal map and can show **transits**, **secondary progressions**, or **solar-arc directions** — with a date scrubber and a play/pause animation that sweeps the lines across the map over time (cyclocartography). The same slot does **relationship maps**: overlay a second chart's lines, with a bi-wheel and natal↔overlay cross-aspects in the expanded view. Overlay lines reuse the per-planet colors but render dashed so they're never confused with the base chart. Solar Maps is the benchmark for the timed-line work and a separate tool (Maphrodite) for the relationship maps; having both in one interactive web view, sharing the same toggles, is the differentiator.
+A single overlay slot sits on top of the natal map and can show **transits**, **secondary progressions**, **solar-arc directions**, or **primary directions** — with a date scrubber and a play/pause animation that sweeps the lines across the map over time (cyclocartography). The directed modes are method-aware: **Chart Angle Progression** is selectable between **Solar Arc in longitude or in RA**, **Naibod in longitude or in RA**, and **Mean Quotidian** (driving both the solar-arc and progressed angles), and the **Primary Directions** overlay offers the classic time-keys — **Ptolemy** (1°/yr), **Naibod**, **Cardan**, the **natal solar rate in RA or in longitude**, the **true solar arc in RA**, or a **user-defined rate**. The same slot does **relationship maps**: overlay a second chart's lines, with a bi-wheel and natal↔overlay cross-aspects in the expanded view. Overlay lines reuse the per-planet colors but render dashed so they're never confused with the base chart. Solar Maps is the benchmark for the timed-line work and a separate tool (Maphrodite) for the relationship maps; having all of this in one interactive web view, sharing the same toggles, is the differentiator. (The directions here are an angle-only map treatment, not Solar Fire's full primary-directions engine — see "What we don't do yet" §9.)
 
 ---
 
 ## Honest summary for a pro audience
 
-> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus the lunar nodes (mean or true, your choice), Black Moon Lilith, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta) — all with Swiss Ephemeris (the same JPL-derived engine as Solar Fire / Astro Gold), running in the browser under AGPL. You can overlay transits, secondary progressions, and solar-arc directions on the map, scrub or animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco. We don't yet have fixed stars (or fixed-star parans) or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
+> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus the lunar nodes (mean or true, your choice), Black Moon Lilith, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta) — all with Swiss Ephemeris (the same JPL-derived engine as Solar Fire / Astro Gold), running in the browser under AGPL. You can overlay transits, secondary progressions, solar-arc directions, and primary directions on the map — with the standard method choices (solar arc or Naibod, in longitude or RA; Ptolemy / Naibod / Cardan and solar-rate keys for the primaries) — scrub or animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco or between standard (celestial) and geodetic (Mundane) equivalents. We don't yet have fixed stars (or fixed-star parans), a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records), or a full primary-directions engine — the map's directions are angle-only, without latitude / semi-arc / converse or dated event lists. Those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
 
 Concrete, specific, and doesn't oversell.

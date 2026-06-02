@@ -1,12 +1,21 @@
 // localStorage persistence for the timeline/overlay controls, mirroring the
 // load/save shape of theme.ts and chartLibrary.ts.
-import type { OverlayMode, TimeUnit } from './astro/timeline';
+import type {
+  AngleProgression,
+  OverlayMode,
+  PrimaryRate,
+  TimeUnit,
+} from './astro/timeline';
 
 const MODE_KEY = 'astro:overlay-mode:v1';
 const DATE_KEY = 'astro:overlay-date:v1';
 const PARTNER_KEY = 'astro:overlay-partner:v1';
 // v2: stores a time-unit name (hour/day/week/month/year) rather than a day count.
 const STEP_KEY = 'astro:overlay-step:v2';
+// Progressions & Directions ("Progs/Dirns") settings.
+const ANGLE_PROG_KEY = 'astro:angle-progression:v1';
+const PRIMARY_RATE_KEY = 'astro:primary-rate:v1';
+const USER_PRIM_RATE_KEY = 'astro:user-primary-rate:v1';
 
 const UNITS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
 
@@ -15,7 +24,26 @@ const MODES: OverlayMode[] = [
   'transits',
   'progressed',
   'solar-arc',
+  'primary-directions',
   'synastry',
+];
+
+const ANGLE_PROGS: AngleProgression[] = [
+  'sa-long',
+  'sa-ra',
+  'naibod-long',
+  'naibod-ra',
+  'mean-quotidian',
+];
+
+const PRIMARY_RATES: PrimaryRate[] = [
+  'ptolemy',
+  'naibod',
+  'cardan',
+  'kepler-ra',
+  'solar-long',
+  'placidus-ra',
+  'user',
 ];
 
 export function loadOverlayMode(): OverlayMode {
@@ -48,4 +76,34 @@ export function loadOverlayStep(): TimeUnit {
 }
 export function saveOverlayStep(unit: TimeUnit) {
   localStorage.setItem(STEP_KEY, unit);
+}
+
+// Default 'mean-quotidian': a no-op for both existing directed overlays (Solar Arc
+// stays SA-in-longitude, Progressed keeps the progressed-RAMC angle).
+export function loadAngleProgression(): AngleProgression {
+  const v = localStorage.getItem(ANGLE_PROG_KEY);
+  return v && (ANGLE_PROGS as string[]).includes(v)
+    ? (v as AngleProgression)
+    : 'mean-quotidian';
+}
+export function saveAngleProgression(a: AngleProgression) {
+  localStorage.setItem(ANGLE_PROG_KEY, a);
+}
+
+export function loadPrimaryRate(): PrimaryRate {
+  const v = localStorage.getItem(PRIMARY_RATE_KEY);
+  return v && (PRIMARY_RATES as string[]).includes(v)
+    ? (v as PrimaryRate)
+    : 'ptolemy';
+}
+export function savePrimaryRate(r: PrimaryRate) {
+  localStorage.setItem(PRIMARY_RATE_KEY, r);
+}
+
+export function loadUserPrimaryRate(): number {
+  const v = Number(localStorage.getItem(USER_PRIM_RATE_KEY));
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
+export function saveUserPrimaryRate(deg: number) {
+  localStorage.setItem(USER_PRIM_RATE_KEY, String(deg));
 }

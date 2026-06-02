@@ -362,6 +362,40 @@ export function shiftEclipticLongitude(
   return { name: p.name, ra, dec };
 }
 
+// Shift a body's RIGHT ASCENSION directly (declination unchanged) — the defining
+// operation of the "in RA" directions (solar arc / Naibod in RA) and of primary
+// directions advancing the RAMC frame. Unlike shiftEclipticLongitude (which
+// round-trips through the ecliptic), this is a pure RA increment, which is exactly
+// what those methods call for.
+export function shiftRightAscension(
+  p: PlanetPosition,
+  deltaRaRad: number,
+): PlanetPosition {
+  return { name: p.name, ra: norm2pi(p.ra + deltaRaRad), dec: p.dec };
+}
+
+// The Sun's instantaneous daily motion in ECLIPTIC LONGITUDE (degrees/day) straight
+// from Swiss — the "Natal Solar Rate in Longitude" primary-direction key. Sun is
+// index 0 of PLANET_NAMES.
+export function solarDailyMotionLong(
+  jd: number,
+  nodeType: NodeType = 'mean',
+): number {
+  return getEclipticPositions(jd, nodeType)[0].speed ?? 0;
+}
+
+// The Sun's instantaneous daily motion in RIGHT ASCENSION (degrees/day) — the
+// Kepler ("Natal Solar Rate in RA") key. Swiss has no RA-speed field, so take a
+// centered finite difference over ±0.5 day, unwrapping the 0/2π seam.
+export function solarDailyMotionRA(jd: number): number {
+  const ra0 = getPlanetPositions(jd - 0.5)[0].ra;
+  const ra1 = getPlanetPositions(jd + 0.5)[0].ra;
+  let d = ra1 - ra0;
+  if (d > Math.PI) d -= TWO_PI;
+  if (d < -Math.PI) d += TWO_PI;
+  return (d * 180) / Math.PI; // over a 1-day baseline → degrees/day
+}
+
 // Which convention the astrocartography lines use:
 //  - 'mundo'   — each body's actual position in the sky (RA/dec as computed).
 //  - 'zodiaco' — each body projected onto the ecliptic plane (latitude → 0)

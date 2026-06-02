@@ -44,6 +44,7 @@ const MODE_LABEL: Partial<Record<OverlayMode, string>> = {
   transits: 'Transits',
   progressed: 'Progressed',
   'solar-arc': 'Solar Arc',
+  'primary-directions': 'Primary',
 };
 
 // Midnight-UTC epoch ms of a chart's civil birth date — the timeline's birth

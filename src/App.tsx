@@ -52,18 +52,26 @@ import {
   minorStepMs,
   OVERLAY_LABEL_PREFIX,
   tagLabels,
+  type AngleProgression,
   type OverlayMode,
+  type PrimaryRate,
   type TimeUnit,
 } from './lib/astro/timeline';
 import {
+  loadAngleProgression,
   loadOverlayDate,
   loadOverlayMode,
   loadOverlayPartner,
   loadOverlayStep,
+  loadPrimaryRate,
+  loadUserPrimaryRate,
+  saveAngleProgression,
   saveOverlayDate,
   saveOverlayMode,
   saveOverlayPartner,
   saveOverlayStep,
+  savePrimaryRate,
+  saveUserPrimaryRate,
 } from './lib/overlayPrefs';
 import {
   loadCharts,
@@ -231,6 +239,16 @@ export default function App() {
   );
   const [stepUnit, setStepUnit] = useState<TimeUnit>(() => loadOverlayStep());
   const [playing, setPlaying] = useState(false);
+  // Progressions & Directions ("Progs/Dirns") settings — drive the directed overlays.
+  const [angleProgression, setAngleProgression] = useState<AngleProgression>(() =>
+    loadAngleProgression(),
+  );
+  const [primaryRate, setPrimaryRate] = useState<PrimaryRate>(() =>
+    loadPrimaryRate(),
+  );
+  const [userPrimaryRate, setUserPrimaryRate] = useState<number>(() =>
+    loadUserPrimaryRate(),
+  );
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
@@ -257,7 +275,7 @@ export default function App() {
   // so it keeps its native activation behavior there.
   useEffect(() => {
     const overlayCycle: OverlayMode[] = [
-      'off', 'transits', 'progressed', 'solar-arc', 'synastry',
+      'off', 'transits', 'progressed', 'solar-arc', 'primary-directions', 'synastry',
     ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
@@ -369,6 +387,9 @@ export default function App() {
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
   useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
+  useEffect(() => saveAngleProgression(angleProgression), [angleProgression]);
+  useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
+  useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
 
   // Animation: advance the target date one minor notch per tick while playing.
   // setData is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps
@@ -384,7 +405,8 @@ export default function App() {
   const isTimeMode =
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
-    overlayMode === 'solar-arc';
+    overlayMode === 'solar-arc' ||
+    overlayMode === 'primary-directions';
   useEffect(() => {
     if (!isTimeMode && playing) setPlaying(false);
   }, [isTimeMode, playing]);
@@ -499,8 +521,26 @@ export default function App() {
   );
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
-    return buildOverlay(current, overlayMode, targetDate, partner, nodeType);
-  }, [overlayMode, current, targetDate, partner, nodeType]);
+    return buildOverlay(
+      current,
+      overlayMode,
+      targetDate,
+      partner,
+      nodeType,
+      angleProgression,
+      primaryRate,
+      userPrimaryRate,
+    );
+  }, [
+    overlayMode,
+    current,
+    targetDate,
+    partner,
+    nodeType,
+    angleProgression,
+    primaryRate,
+    userPrimaryRate,
+  ]);
 
   const overlay = useMemo<OverlayData | null>(() => {
     if (!overlayLayer) return null;
@@ -775,6 +815,12 @@ export default function App() {
           setHouseSystem={setHouseSystem}
           nodeType={nodeType}
           setNodeType={setNodeType}
+          angleProgression={angleProgression}
+          setAngleProgression={setAngleProgression}
+          primaryRate={primaryRate}
+          setPrimaryRate={setPrimaryRate}
+          userPrimaryRate={userPrimaryRate}
+          setUserPrimaryRate={setUserPrimaryRate}
           theme={theme}
           setTheme={setTheme}
           projection={projection}

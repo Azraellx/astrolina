@@ -7,11 +7,16 @@
 import type { FeatureCollection, LineString } from 'geojson';
 import {
   birthDataToJD,
+  eclipticLonOfRA,
+  eclipticToRaDec,
   getPlanetPositions,
   gmstRadians,
   obliquity,
   raDecToEclipticLon,
   shiftEclipticLongitude,
+  shiftRightAscension,
+  solarDailyMotionLong,
+  solarDailyMotionRA,
   type NodeType,
   type PlanetPosition,
 } from '../ephemeris';
@@ -22,9 +27,36 @@ export type OverlayMode =
   | 'transits'
   | 'progressed'
   | 'solar-arc'
+  | 'primary-directions'
   | 'synastry';
 
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
+
+// ── Progressions & Directions settings (Solar Fire "Progs/Dirns") ────────────
+// Group A — how a directed/progressed chart's ANGLES advance. Drives both the
+// Solar Arc and the Progressed overlays. In this angle-only ACG app this resolves
+// to either a per-body (ra,dec) shift (solar arc) or a gmst/RAMC offset
+// (progressed); see buildOverlay.
+export type AngleProgression =
+  | 'sa-long'        // solar arc, applied in ecliptic longitude (classic default)
+  | 'sa-ra'          // solar arc, applied in right ascension
+  | 'naibod-long'    // Naibod mean rate, applied in longitude
+  | 'naibod-ra'      // Naibod mean rate, applied in right ascension
+  | 'mean-quotidian'; // quotidian progressed angle (one day per year)
+
+// Group B — the time-key (arc per year) for the Primary Directions overlay.
+export type PrimaryRate =
+  | 'ptolemy'      // 1° per year
+  | 'naibod'       // 0°59′08.33″ per year
+  | 'cardan'       // 0°59′12″ per year
+  | 'kepler-ra'    // natal Sun's daily motion in RA, per year
+  | 'solar-long'   // natal Sun's daily motion in longitude, per year
+  | 'placidus-ra'  // true secondary-progressed solar arc in RA (nonlinear)
+  | 'user';        // user-entered degrees per year
+
+// Mean solar motion keys (degrees/year of life), per their classical definitions.
+const NAIBOD_DEG_PER_YR = 0.985647; // 0°59′08.33″
+const CARDAN_DEG_PER_YR = 0.986667; // 0°59′12″
 
 // Timeline granularity. Each unit defines the MAJOR (labeled) notch interval on
 // the ruler and how many sub-segments it splits into; the minor notch — and the
@@ -71,14 +103,6 @@ export interface OverlayLayer {
   originLng: number;
 }
 
-// Which sidereal time drives the PROGRESSED angles/lines. Documented, swappable:
-//  - 'progressed-ramc': cast the progressed chart at the progressed instant
-//    (one gmst drives both planets and angles — the honest secondary sky).
-//  - 'natal-anchored': keep the natal RAMC so only the planets progress.
-// Default is the progressed instant; flip this constant to compare.
-export const PROGRESSED_ANGLE_MODE: 'progressed-ramc' | 'natal-anchored' =
-  'progressed-ramc';
-
 const TROPICAL_YEAR_DAYS = 365.2422;
 const UNIX_EPOCH_JD = 2440587.5;
 
@@ -104,12 +128,50 @@ function fmtDateTimeUTC(ms: number): string {
   return `${fmtDateUTC(ms)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
+// Normalize a radian angle to [0, 2π) — matches gmstRadians' range, so a directed
+// gmst stays interchangeable with a measured one downstream.
+const norm2pi = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
+// Quantities shared by the three directed overlays (solar-arc, progressed,
+// primary-directions). The arc closures are lazy — each does a progressed-Sun
+// lookup, so only the chosen method pays for it.
+function directionContext(
+  chart: StoredChart,
+  targetDate: number,
+  nodeType: NodeType,
+) {
+  const birthJD = birthDataToJD(chart);
+  const eps = obliquity(birthJD);
+  const natal = getPlanetPositions(birthJD, nodeType);
+  const years = (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
+  const progressedJD = birthJD + years;
+  const natalGMST = gmstRadians(birthJD);
+  // Solar arc measured in ecliptic longitude vs in right ascension.
+  const arcLong = () => {
+    const s = getPlanetPositions(progressedJD, nodeType)[0];
+    return normalizeAngle(
+      raDecToEclipticLon(s.ra, s.dec, eps) -
+        raDecToEclipticLon(natal[0].ra, natal[0].dec, eps),
+    );
+  };
+  const arcRA = () =>
+    normalizeAngle(getPlanetPositions(progressedJD, nodeType)[0].ra - natal[0].ra);
+  // Advance the MC's ecliptic longitude by Δλ and return the matching RAMC (gmst).
+  // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST.
+  const ramcOfLong = (dLon: number) =>
+    eclipticToRaDec(eclipticLonOfRA(natalGMST, eps) + dLon, 0, eps).ra;
+  return { birthJD, eps, natal, years, progressedJD, natalGMST, arcLong, arcRA, ramcOfLong };
+}
+
 export function buildOverlay(
   chart: StoredChart,
   mode: OverlayKind,
   targetDate: number, // epoch ms UTC; ignored for synastry
   partner: StoredChart | null,
   nodeType: NodeType = 'mean',
+  angleProgression: AngleProgression = 'mean-quotidian',
+  primaryRate: PrimaryRate = 'ptolemy',
+  userPrimaryRate = 1,
 ): OverlayLayer | null {
   switch (mode) {
     case 'transits': {
@@ -127,50 +189,122 @@ export function buildOverlay(
       };
     }
     case 'progressed': {
-      const birthJD = birthDataToJD(chart);
-      const yearsElapsed =
-        (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
-      const progressedJD = birthJD + yearsElapsed;
-      const gmst =
-        PROGRESSED_ANGLE_MODE === 'progressed-ramc'
-          ? gmstRadians(progressedJD)
-          : gmstRadians(birthJD);
+      const c = directionContext(chart, targetDate, nodeType);
+      const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
+      // The planets progress via day-for-a-year; the angle method only chooses how
+      // the RAMC (gmst) advances. Mean Quotidian = the honest progressed sidereal
+      // time (the prior default); the others offset the natal RAMC by the arc.
+      let gmst: number;
+      switch (angleProgression) {
+        case 'naibod-ra':
+          gmst = norm2pi(c.natalGMST + naibodArc);
+          break;
+        case 'sa-ra':
+          gmst = norm2pi(c.natalGMST + c.arcRA());
+          break;
+        case 'sa-long':
+          gmst = c.ramcOfLong(c.arcLong());
+          break;
+        case 'naibod-long':
+          gmst = c.ramcOfLong(naibodArc);
+          break;
+        case 'mean-quotidian':
+        default:
+          gmst = gmstRadians(c.progressedJD);
+          break;
+      }
       return {
         kind: mode,
-        measure: `Age ${yearsElapsed.toFixed(1)}`,
-        labelFull: `Secondary Progressions · age ${yearsElapsed.toFixed(1)}`,
-        jd: progressedJD,
-        positions: getPlanetPositions(progressedJD, nodeType),
+        measure: `Age ${c.years.toFixed(1)}`,
+        labelFull: `Secondary Progressions · age ${c.years.toFixed(1)}`,
+        jd: c.progressedJD,
+        positions: getPlanetPositions(c.progressedJD, nodeType),
         gmst,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };
     }
     case 'solar-arc': {
-      const birthJD = birthDataToJD(chart);
-      const eps = obliquity(birthJD);
-      const natal = getPlanetPositions(birthJD, nodeType);
-      const yearsElapsed =
-        (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
-      const progressedJD = birthJD + yearsElapsed;
-      // Solar arc = how far the secondary-progressed Sun has moved in ecliptic
-      // longitude from its natal place (≈ 0.9856°/yr ≈ the native's age).
-      const natalSunLon = raDecToEclipticLon(natal[0].ra, natal[0].dec, eps);
-      const progSun = getPlanetPositions(progressedJD, nodeType)[0];
-      const arc = normalizeAngle(
-        raDecToEclipticLon(progSun.ra, progSun.dec, eps) - natalSunLon,
-      );
-      // Advance every natal body — and, via natal gmst, the angles too — by the
-      // arc, so the directed MC = natal MC + arc (the standard result).
-      const positions = natal.map((p) => shiftEclipticLongitude(p, arc, eps));
+      const c = directionContext(chart, targetDate, nodeType);
+      const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
+      // Every natal body is advanced by the arc (and, via the natal gmst, the
+      // angles too), so directed MC = natal MC + arc. The method picks the arc's
+      // source (true solar arc vs Naibod's mean rate) and frame (longitude vs RA).
+      // Mean Quotidian has no native solar-arc form → falls back to SA in longitude.
+      let arc: number;
+      let positions: PlanetPosition[];
+      switch (angleProgression) {
+        case 'sa-ra':
+          arc = c.arcRA();
+          positions = c.natal.map((p) => shiftRightAscension(p, arc));
+          break;
+        case 'naibod-long':
+          arc = naibodArc;
+          positions = c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
+          break;
+        case 'naibod-ra':
+          arc = naibodArc;
+          positions = c.natal.map((p) => shiftRightAscension(p, arc));
+          break;
+        case 'sa-long':
+        case 'mean-quotidian':
+        default:
+          arc = c.arcLong();
+          positions = c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
+          break;
+      }
       return {
         kind: mode,
         // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
         measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
         labelFull: `Solar Arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
-        jd: birthJD,
+        jd: c.birthJD,
         positions,
-        gmst: gmstRadians(birthJD),
+        gmst: c.natalGMST,
+        originLat: chart.birthplace.lat,
+        originLng: chart.birthplace.lng,
+      };
+    }
+    case 'primary-directions': {
+      const c = directionContext(chart, targetDate, nodeType);
+      const perYear = (degPerYr: number) => (degPerYr * c.years * Math.PI) / 180;
+      // Primary directions advance the diurnal (RA) frame by the arc, bodies stay
+      // at their natal RA/dec — so every line rigidly rotates with the RAMC. The
+      // rate is the time-key (arc per year); positive arc directs forward (gmst
+      // increases ⇒ lines shift west).
+      let arc: number;
+      switch (primaryRate) {
+        case 'naibod':
+          arc = perYear(NAIBOD_DEG_PER_YR);
+          break;
+        case 'cardan':
+          arc = perYear(CARDAN_DEG_PER_YR);
+          break;
+        case 'kepler-ra':
+          arc = perYear(solarDailyMotionRA(c.birthJD));
+          break;
+        case 'solar-long':
+          arc = perYear(solarDailyMotionLong(c.birthJD, nodeType));
+          break;
+        case 'placidus-ra':
+          arc = c.arcRA(); // true secondary-progressed solar arc in RA (nonlinear)
+          break;
+        case 'user':
+          arc = perYear(Number.isFinite(userPrimaryRate) ? userPrimaryRate : 0);
+          break;
+        case 'ptolemy':
+        default:
+          arc = perYear(1);
+          break;
+      }
+      const arcDeg = ((arc * 180) / Math.PI).toFixed(1);
+      return {
+        kind: mode,
+        measure: `${arcDeg}°`,
+        labelFull: `Primary Directions · ${arcDeg}°`,
+        jd: c.birthJD,
+        positions: c.natal,
+        gmst: norm2pi(c.natalGMST + arc),
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };
@@ -199,6 +333,7 @@ export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   transits: 'Tr',
   progressed: 'Sp',
   'solar-arc': 'Sa',
+  'primary-directions': 'Pd',
   synastry: 'Sy',
 };
 

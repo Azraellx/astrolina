@@ -68,6 +68,7 @@ const OVERLAY_MODES: { mode: Exclude<OverlayMode, 'off'>; label: string }[] = [
   { mode: 'transits', label: 'Transits' },
   { mode: 'progressed', label: 'Progressed' },
   { mode: 'solar-arc', label: 'Solar Arc' },
+  { mode: 'primary-directions', label: 'Primary Directions' },
   { mode: 'synastry', label: 'Synastry' },
 ];
 
