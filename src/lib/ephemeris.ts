@@ -308,6 +308,16 @@ export function raDecToEclipticLon(ra: number, dec: number, eps: number): number
   return norm2pi(lon);
 }
 
+// The ecliptic longitude (at latitude 0) whose right ascension is `ra` — i.e. the
+// inverse of RA(λ, 0). Used by the geodetic line mode: with Greenwich = 0° Aries,
+// this IS the geographic longitude of the meridian whose RAMC equals `ra`.
+// NOTE: this is NOT raDecToEclipticLon(ra, 0, eps) — that formula needs the body's
+// true dec and gives the wrong value at dec 0 (it would compute tanλ = sinα·cosε/cosα
+// instead of the correct tanλ = sinα/(cosα·cosε)).
+export function eclipticLonOfRA(ra: number, eps: number): number {
+  return norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * Math.cos(eps)));
+}
+
 function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
   return Math.asin(
     Math.sin(dec) * Math.cos(eps) - Math.cos(dec) * Math.sin(eps) * Math.sin(ra),
@@ -358,6 +368,11 @@ export function shiftEclipticLongitude(
 //                before the line is drawn.
 // They diverge most for high-latitude bodies (Pluto up to ~17°, Moon up to ~5°).
 export type CoordSystem = 'mundo' | 'zodiaco';
+
+// Celestial = standard ACG (lines placed by sidereal time, RA − GMST). Geodetic =
+// Sepharial "geodetic equivalents": each angle is anchored to geographic longitude
+// via the zodiac (Greenwich = 0° Aries), independent of sidereal time.
+export type LineSystem = 'celestial' | 'geodetic';
 
 // Project bodies onto the ecliptic (set ecliptic latitude to 0) and convert back
 // to RA/dec — the "in zodiaco" line convention. Longitude is unchanged, so the

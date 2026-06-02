@@ -176,9 +176,12 @@ interface LocalSpaceBadge {
   y: number;
   planet: LocalSpaceProps['planet'];
   color: string;
-  /** This half's bearing in the E=0 / N=90 dial convention (static). */
-  azDeg: number;
-  /** Screen rotation (deg, clockwise from up) of the in/out direction arrow. */
+  /** This half's bearing in the E=0 / N=90 convention, as degrees + arcminutes
+   *  (e.g. "45°23'"). Static. */
+  azLabel: string;
+  /** True for the outgoing (toward-planet) half — only it shows the direction arrow. */
+  out: boolean;
+  /** Screen rotation (deg, clockwise from up) of the direction arrow. */
   arrowDeg: number;
 }
 
@@ -964,7 +967,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // This half's bearing (clockwise from north): out = toward the planet, in =
         // the reciprocal. Labelled in the E=0 / N=90 convention (matches the dial).
         const bearingAzN = out ? lp.azimuth : (lp.azimuth + 180) % 360;
-        const azDeg = Math.round((90 - bearingAzN + 360) % 360) % 360;
+        // Bearing in the E=0 / N=90 convention, formatted as degrees + arcminutes.
+        const azE = (90 - bearingAzN + 360) % 360;
+        let azWhole = Math.floor(azE);
+        let azMin = Math.round((azE - azWhole) * 60);
+        if (azMin === 60) {
+          azMin = 0;
+          azWhole = (azWhole + 1) % 360;
+        }
+        const azLabel = `${azWhole}°${String(azMin).padStart(2, '0')}'`;
         // Direction arrow points along the axis: away from the pin ('out', toward
         // the planet) or back toward it ('in').
         const arrowDeg = ((out ? angle : angle + Math.PI) * 180) / Math.PI;
@@ -999,7 +1010,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           y: placed.y,
           planet: lp.planet,
           color: lp.color,
-          azDeg,
+          azLabel,
+          out,
           arrowDeg,
         });
       }
@@ -1487,26 +1499,45 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {localSpaceBadges.map((b) => {
           const text = badgeTextColor(b.color);
           return (
-            // Non-interactive label (LS lines aren't click-to-fly): glyph + azimuth,
-            // with a color-matched arrow pointing outward (to the planet) or inward
-            // (to the pin) along the line.
-            <span
+            // Clicking an LS label flies to the local-space origin — where the lines
+            // converge (the pin). Shows LS + glyph + azimuth; only the outgoing
+            // (toward-planet) half carries an outline direction arrow.
+            <button
+              type="button"
               key={b.key}
-              className="acg-badge"
+              tabIndex={-1}
+              className="acg-badge acg-badge-btn"
               style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              onClick={() =>
+                localSpaceOrigin &&
+                flyToPoint(localSpaceOrigin.lng, localSpaceOrigin.lat)
+              }
+              title="Fly to the local-space origin (the pin)"
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="ls-deg">{b.azDeg}°</span>
-              <span
-                className="ls-arrow"
-                style={{ color: b.color, transform: `rotate(${b.arrowDeg}deg)` }}
-                aria-hidden="true"
-              >
-                <span className="ls-arrow-shaft" />
-                <span className="ls-arrow-head" />
-              </span>
-            </span>
+              <span className="ls-deg">{b.azLabel}</span>
+              {b.out && (
+                <span
+                  className="ls-arrow"
+                  style={{ color: b.color, transform: `rotate(${b.arrowDeg}deg)` }}
+                  aria-hidden="true"
+                >
+                  <svg
+                    width="20"
+                    height="58"
+                    viewBox="0 0 20 58"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M10 58 V15 M3 25 L10 11 L17 25" />
+                  </svg>
+                </span>
+              )}
+            </button>
           );
         })}
       </div>

@@ -14,6 +14,11 @@ const DEG2RAD = Math.PI / 180;
 
 export type LineType = 'MC' | 'IC' | 'ASC' | 'DSC';
 
+// Maps a meridian's right ascension (radians) to its geographic longitude (degrees,
+// before normLng). Celestial: raM → (raM − GMST)·deg. Geodetic: raM →
+// eclipticLonOfRA(raM)·deg. Injected so one set of generators serves both systems.
+export type MeridianLng = (raRad: number) => number;
+
 export interface LineProps {
   planet: PlanetName;
   lineType: LineType;
@@ -70,7 +75,7 @@ function pushHorizonPoint(
 // have no high-latitude turning point to streak/break.
 function horizonByLatitude(
   p: PlanetPosition,
-  gmst: number,
+  meridianLng: MeridianLng,
   sign: -1 | 1,
 ): [number, number][] {
   const coords: [number, number][] = [];
@@ -79,7 +84,7 @@ function horizonByLatitude(
     const x = -Math.tan(phi) * Math.tan(p.dec);
     if (x < -1 || x > 1) continue;
     const H = sign * Math.acos(x);
-    coords.push([normLng((p.ra + H - gmst) * RAD2DEG), lat]);
+    coords.push([normLng(meridianLng(p.ra + H)), lat]);
   }
   return coords;
 }
@@ -95,20 +100,20 @@ function horizonByLatitude(
 // monotonic in latitude, so clipping to ±85° leaves one contiguous on-map run.
 function horizonLine(
   p: PlanetPosition,
-  gmst: number,
+  meridianLng: MeridianLng,
   side: 'ASC' | 'DSC',
 ): Feature<LineString, LineProps>[] {
   const tanDec = Math.tan(p.dec);
   if (Math.abs(tanDec) < DEC_EPS) {
     const sign = side === 'ASC' ? -1 : 1;
     return [
-      makeFeature(unwrapLongitudes(horizonByLatitude(p, gmst, sign)), p.name, side),
+      makeFeature(unwrapLongitudes(horizonByLatitude(p, meridianLng, sign)), p.name, side),
     ];
   }
 
   const hDir = side === 'ASC' ? -1 : 1; // sweep H from 0 toward ∓π
   const latAt = (H: number) => Math.atan(-Math.cos(H) / tanDec) * RAD2DEG;
-  const lngAt = (H: number) => (p.ra + H - gmst) * RAD2DEG;
+  const lngAt = (H: number) => meridianLng(p.ra + H);
 
   // Hour-angle magnitudes 0 … π, always including the exact apex endpoint π.
   const mags: number[] = [0];
@@ -158,17 +163,19 @@ function meridianCoords(lng: number): [number, number][] {
 
 export function generateLines(
   positions: PlanetPosition[],
-  gmst: number,
+  meridianLng: MeridianLng,
 ): FeatureCollection<LineString, LineProps> {
   const features: Feature<LineString, LineProps>[] = [];
 
   for (const p of positions) {
-    const lngMC = normLng((p.ra - gmst) * RAD2DEG);
+    // Celestial: meridianLng(ra) = ra − GMST. Geodetic: = the body's zodiacal
+    // longitude (eclipticLonOfRA). IC = MC + 180 holds in both (antipode-preserving).
+    const lngMC = normLng(meridianLng(p.ra));
     const lngIC = normLng(lngMC + 180);
     features.push(makeFeature(meridianCoords(lngMC), p.name, 'MC'));
     features.push(makeFeature(meridianCoords(lngIC), p.name, 'IC'));
-    features.push(...horizonLine(p, gmst, 'ASC'));
-    features.push(...horizonLine(p, gmst, 'DSC'));
+    features.push(...horizonLine(p, meridianLng, 'ASC'));
+    features.push(...horizonLine(p, meridianLng, 'DSC'));
   }
 
   return { type: 'FeatureCollection', features };
@@ -186,7 +193,7 @@ export interface ZenithProps {
 // body, rendered as the planet glyph on the map.
 export function generateZenithStamps(
   positions: PlanetPosition[],
-  gmst: number,
+  meridianLng: MeridianLng,
 ): FeatureCollection<Point, ZenithProps> {
   const features: Feature<Point, ZenithProps>[] = positions.map((p) => ({
     type: 'Feature',
@@ -195,28 +202,29 @@ export function generateZenithStamps(
     properties: { planet: p.name, color: PLANET_COLORS[p.name] },
     geometry: {
       type: 'Point',
-      coordinates: [normLng((p.ra - gmst) * RAD2DEG), p.dec * RAD2DEG],
+      coordinates: [normLng(meridianLng(p.ra)), p.dec * RAD2DEG],
     },
   }));
   return { type: 'FeatureCollection', features };
 }
 
 // The ecliptic (the Sun's apparent path / the zodiac great circle) projected onto
-// Earth: the locus of zenith points of the ecliptic at this instant. Each ecliptic
+// Earth: the locus of sub-points of the ecliptic at this instant. Each ecliptic
 // longitude λ (ecliptic latitude 0) maps to equatorial (RA, dec) via the obliquity
-// ε, then to its sub-point with the SAME lng = RA − GMST, lat = dec convention as
-// the zenith stamps — so the curve threads exactly through the Sun's zenith (the
-// Sun rides the ecliptic) and near every other body's. Sampled densely and
-// longitude-unwrapped so it bends onto the 3D globe instead of chording through it.
+// ε, then to its sub-point via the SAME `meridianLng` mapping as the lines/zenith
+// stamps — so the curve threads through the Sun's zenith (the Sun rides the
+// ecliptic) and near every other body's in BOTH systems (celestial: lng = RA − GMST;
+// geodetic: lng = the zodiacal longitude). Sampled densely + longitude-unwrapped so
+// it bends onto the 3D globe instead of chording through it.
 export function generateEcliptic(
   jd: number,
-  gmst: number,
+  meridianLng: MeridianLng,
 ): FeatureCollection<LineString> {
   const eps = obliquity(jd);
   const coords: [number, number][] = [];
   for (let lonDeg = 0; lonDeg <= 360; lonDeg += GLOBE_STEP_DEG) {
     const { ra, dec } = eclipticToRaDec(lonDeg * DEG2RAD, 0, eps);
-    coords.push([normLng((ra - gmst) * RAD2DEG), dec * RAD2DEG]);
+    coords.push([normLng(meridianLng(ra)), dec * RAD2DEG]);
   }
   return {
     type: 'FeatureCollection',

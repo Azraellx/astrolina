@@ -138,12 +138,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* In/out direction arrow — a shaft (rectangle) + head (triangle) in the badge's own
-   color, rising from the badge centre outward along the line so it points outward
-   (toward the planet) or back inward (toward the pin). A 0×0 anchor at the badge
+/* Outgoing-line direction arrow — an OUTLINE (stroked SVG, no fill) in the badge's own
+   color, rising from the badge centre outward along the line. A 0×0 anchor at the badge
    centre, rotated inline; the badge's transform gives it a stacking context, so
-   z-index:-1 tucks the whole arrow BEHIND the label text (and behind the same-color
-   pill background, where it blends) — only the part past the pill edge shows. */
+   z-index:-1 tucks it BEHIND the label text (and the same-color pill), leaving the
+   outlined head/shaft showing past the pill edge. */
 .ls-arrow {
   position: absolute;
   left: 50%;
@@ -152,27 +151,14 @@
   height: 0;
   z-index: -1;
   pointer-events: none;
-  /* color is set inline to the badge color; the shaft/head inherit it. */
+  /* color (the stroke) is set inline to the badge color. */
 }
-.ls-arrow-shaft {
+.ls-arrow svg {
   position: absolute;
   left: 50%;
   bottom: 0;
   transform: translateX(-50%);
-  width: 7px;
-  height: 28px;
-  background: currentColor;
-}
-.ls-arrow-head {
-  position: absolute;
-  left: 50%;
-  bottom: 28px;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 12px solid transparent;
-  border-right: 12px solid transparent;
-  border-bottom: 18px solid currentColor;
+  overflow: visible;
 }
 
 /* The bundled symbol font sits a touch low; nudge badge glyphs up ~10% to optically

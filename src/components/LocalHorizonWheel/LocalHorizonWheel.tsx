@@ -17,9 +17,9 @@ interface Props {
 const RAD = Math.PI / 180;
 const CARDINAL: Record<number, string> = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
 const TICKS = Array.from({ length: 24 }, (_, i) => i); // notches every 15°
-// N/E/S/W sit just outside the ring; the degree numbers sit inside the dial.
 const CARD_RADIUS = 49;
-const DEG_RADIUS = 36;
+// The degree scale sits just outside the ring, near the cardinal letters.
+const DEG_RADIUS = 48;
 
 // Local-horizon compass, centred on the local-space origin so the lines radiate
 // straight through it and each one's azimuth reads off the dial. Transparent (just

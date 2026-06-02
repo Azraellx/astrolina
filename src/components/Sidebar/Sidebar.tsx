@@ -5,6 +5,7 @@ import {
   PLANET_NAMES,
   type CoordSystem,
   type HouseSystem,
+  type LineSystem,
   type NodeType,
   type PlanetName,
 } from '../../lib/ephemeris';
@@ -23,6 +24,8 @@ interface SidebarProps {
   setShowParans: (v: boolean) => void;
   showLocalSpace: boolean;
   setShowLocalSpace: (v: boolean) => void;
+  lineSystem: LineSystem;
+  setLineSystem: (s: LineSystem) => void;
   coordSystem: CoordSystem;
   setCoordSystem: (c: CoordSystem) => void;
   houseSystem: HouseSystem;
@@ -51,6 +54,13 @@ const LINE_TYPES: { type: LineType; label: string; full: string }[] = [
 const COORD_SYSTEMS: { value: CoordSystem; label: string; hint: string }[] = [
   { value: 'mundo', label: 'In Mundo', hint: 'True sky position (RA / dec)' },
   { value: 'zodiaco', label: 'In Zodiaco', hint: 'Projected onto the ecliptic' },
+];
+
+// Internal ids stay 'celestial'/'geodetic'; the astrologer-facing labels are
+// "Celestial" / "Mundane" (geodetic is named in the hover hint + description).
+const LINE_SYSTEMS: { value: LineSystem; label: string; hint: string }[] = [
+  { value: 'celestial', label: 'Celestial', hint: 'Standard astrocartography — angles placed by the sky (sidereal time)' },
+  { value: 'geodetic', label: 'Mundane', hint: "Geodetic mapping — the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries), independent of birth time" },
 ];
 
 const PROJECTIONS: { value: MapProjectionMode; label: string; hint: string }[] = [
@@ -118,6 +128,8 @@ export function Sidebar({
   setShowParans,
   showLocalSpace,
   setShowLocalSpace,
+  lineSystem,
+  setLineSystem,
   coordSystem,
   setCoordSystem,
   houseSystem,
@@ -333,29 +345,59 @@ export function Sidebar({
 
       {openSection === 'calc' && (
         <div className="sidebar-section">
-          <h2>Line projection</h2>
+          {/* Primary paradigm: Celestial (standard ACG, by the sky) vs Mundane
+              (geodetic, by Earth longitude). Title-less. The In-Mundo/In-Zodiaco
+              "Line projection" below is a Celestial-only refinement, so it shows
+              ONLY in Celestial — which also keeps "In Mundo" from ever appearing
+              next to "Mundane". */}
           <ul className="theme-list">
-            {COORD_SYSTEMS.map(({ value, label, hint }) => (
+            {LINE_SYSTEMS.map(({ value, label, hint }) => (
               <li key={value}>
                 <button
                   type="button"
-                  className={`theme-option ${coordSystem === value ? 'active' : ''}`}
-                  onClick={() => setCoordSystem(value)}
+                  className={`theme-option ${lineSystem === value ? 'active' : ''}`}
+                  onClick={() => setLineSystem(value)}
                   title={hint}
                 >
-                  <span className="radio">
-                    {coordSystem === value ? '●' : '○'}
-                  </span>
+                  <span className="radio">{lineSystem === value ? '●' : '○'}</span>
                   <span className="label">{label}</span>
                 </button>
               </li>
             ))}
           </ul>
           <p className="calc-hint">
-            {coordSystem === 'mundo'
-              ? 'Lines use each body’s true position in the sky. Most affects Pluto and the Moon.'
-              : 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).'}
+            {lineSystem === 'celestial'
+              ? 'Standard astrocartography — angles placed by the sky (sidereal time).'
+              : 'Mundane / geodetic — the zodiac mapped onto Earth’s longitudes (Greenwich = 0° Aries), independent of birth time.'}
           </p>
+
+          {lineSystem === 'celestial' && (
+            <>
+              <h2>Line projection</h2>
+              <ul className="theme-list">
+                {COORD_SYSTEMS.map(({ value, label, hint }) => (
+                  <li key={value}>
+                    <button
+                      type="button"
+                      className={`theme-option ${coordSystem === value ? 'active' : ''}`}
+                      onClick={() => setCoordSystem(value)}
+                      title={hint}
+                    >
+                      <span className="radio">
+                        {coordSystem === value ? '●' : '○'}
+                      </span>
+                      <span className="label">{label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="calc-hint">
+                {coordSystem === 'mundo'
+                  ? 'Lines use each body’s true position in the sky. Most affects Pluto and the Moon.'
+                  : 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).'}
+              </p>
+            </>
+          )}
 
           <h2>Lunar node</h2>
           <ul className="theme-list">

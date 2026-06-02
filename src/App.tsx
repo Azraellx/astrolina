@@ -21,15 +21,18 @@ import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { countryOf } from './lib/atlas/countryOf';
 import {
   birthDataToJD,
+  eclipticLonOfRA,
   getEclipticPositions,
   getPlanetPositions,
   gmstRadians,
+  obliquity,
   projectOntoEcliptic,
   relocate,
   toEclipticPositions,
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
+  type LineSystem,
   type NodeType,
   type PlanetName,
 } from './lib/ephemeris';
@@ -39,6 +42,7 @@ import {
   generateZenithStamps,
   type LineProps,
   type LineType,
+  type MeridianLng,
   type ZenithProps,
 } from './lib/astro/lines';
 import { generateParans, type ParanProps } from './lib/astro/parans';
@@ -180,6 +184,11 @@ export default function App() {
   });
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
+  );
+  const [lineSystem, setLineSystem] = useState<LineSystem>(() =>
+    localStorage.getItem('astro:line-system:v1') === 'geodetic'
+      ? 'geodetic'
+      : 'celestial',
   );
   // Basemap detail layers default to shown; the "Details" section toggles them
   // off. (`!== '0'` so a brand-new visitor with no saved value gets them on.)
@@ -335,6 +344,9 @@ export default function App() {
     localStorage.setItem('astro:node-type:v1', nodeType);
   }, [nodeType]);
   useEffect(() => {
+    localStorage.setItem('astro:line-system:v1', lineSystem);
+  }, [lineSystem]);
+  useEffect(() => {
     localStorage.setItem('astro:show-roads:v2', showRoads ? '1' : '0');
   }, [showRoads]);
   useEffect(() => {
@@ -397,18 +409,34 @@ export default function App() {
     [current, jd, nodeType],
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
+  const eps = useMemo(() => obliquity(jd), [jd]);
 
-  // Positions feeding the map LINES: in-zodiaco projects each body onto the
-  // ecliptic first; in-mundo uses the true sky positions. The wheel keeps using
-  // `positions`/`ecliptic` (longitude is identical either way).
+  // Positions feeding the map LINES. Geodetic mode and In-Zodiaco both project each
+  // body onto the ecliptic first (geodetic needs the true zodiacal longitude even
+  // for off-ecliptic bodies); In-Mundo keeps true sky positions. The wheel keeps
+  // using `positions`/`ecliptic` (longitude is identical either way).
   const linePositions = useMemo(
-    () => (coordSystem === 'zodiaco' ? projectOntoEcliptic(positions, jd) : positions),
-    [coordSystem, positions, jd],
+    () =>
+      lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+        ? projectOntoEcliptic(positions, jd)
+        : positions,
+    [lineSystem, coordSystem, positions, jd],
+  );
+
+  // Maps a meridian's RA to a geographic longitude (deg). Celestial: RA − GMST
+  // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
+  // independent of time. Injected into the line/zenith generators.
+  const meridianLng = useMemo<MeridianLng>(
+    () =>
+      lineSystem === 'geodetic'
+        ? (raM) => (eclipticLonOfRA(raM, eps) * 180) / Math.PI
+        : (raM) => ((raM - gmst) * 180) / Math.PI,
+    [lineSystem, eps, gmst],
   );
 
   const allLines = useMemo(
-    () => generateLines(linePositions, gmst),
-    [linePositions, gmst],
+    () => generateLines(linePositions, meridianLng),
+    [linePositions, meridianLng],
   );
   const allParans = useMemo(
     () => generateParans(linePositions, gmst),
@@ -433,13 +461,13 @@ export default function App() {
     [linePositions, gmst, localSpaceOrigin],
   );
   const allZenith = useMemo(
-    () => generateZenithStamps(linePositions, gmst),
-    [linePositions, gmst],
+    () => generateZenithStamps(linePositions, meridianLng),
+    [linePositions, meridianLng],
   );
   // The ecliptic great circle for the chart instant — a fixed reference (passes
   // through the Sun's zenith), independent of planet visibility, so not filtered.
   // (Named *Line to avoid colliding with the `ecliptic` projection-mode variable.)
-  const eclipticLine = useMemo(() => generateEcliptic(jd, gmst), [jd, gmst]);
+  const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
 
   const lines = useMemo(
     () => filterLines(allLines, visiblePlanets, visibleLineTypes),
@@ -478,12 +506,16 @@ export default function App() {
     if (!overlayLayer) return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     const ovPositions =
-      coordSystem === 'zodiaco'
+      lineSystem === 'geodetic' || coordSystem === 'zodiaco'
         ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
         : overlayLayer.positions;
+    const ovMeridianLng: MeridianLng =
+      lineSystem === 'geodetic'
+        ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
+        : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
     return {
       lines: filterLines(
-        tagLabels(generateLines(ovPositions, overlayLayer.gmst), prefix),
+        tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
         visiblePlanets,
         visibleLineTypes,
       ),
@@ -505,7 +537,7 @@ export default function App() {
           )
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem, lineSystem]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -735,6 +767,8 @@ export default function App() {
           setShowParans={setShowParans}
           showLocalSpace={showLocalSpace}
           setShowLocalSpace={setShowLocalSpace}
+          lineSystem={lineSystem}
+          setLineSystem={setLineSystem}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
           houseSystem={houseSystem}
