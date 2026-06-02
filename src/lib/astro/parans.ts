@@ -29,6 +29,22 @@ function normLng(lng: number): number {
   return x;
 }
 
+// A paran is a full line of latitude (it holds at every longitude). The globe
+// projection draws each line segment as a straight chord through the sphere, so a
+// 2-point parallel from −180 to 180 would cut through the globe — and since those
+// endpoints are the SAME point on the sphere, it can collapse entirely. Densifying
+// into many short segments makes it wrap the globe as a true parallel, and renders
+// as the same full-width horizontal line in flat 2D.
+const PARALLEL_LNG_STEP_DEG = 3;
+
+function parallelCoords(latDeg: number): [number, number][] {
+  const coords: [number, number][] = [];
+  for (let lng = -180; lng <= 180; lng += PARALLEL_LNG_STEP_DEG) {
+    coords.push([lng, latDeg]);
+  }
+  return coords;
+}
+
 function paranLat(
   raA: number,
   raB: number,
@@ -124,10 +140,7 @@ export function generateParans(
           },
           geometry: {
             type: 'LineString',
-            coordinates: [
-              [-180, lat],
-              [180, lat],
-            ],
+            coordinates: parallelCoords(lat),
           },
         });
       }
@@ -157,10 +170,7 @@ export function generateParans(
           },
           geometry: {
             type: 'LineString',
-            coordinates: [
-              [-180, sol.lat],
-              [180, sol.lat],
-            ],
+            coordinates: parallelCoords(sol.lat),
           },
         });
       }

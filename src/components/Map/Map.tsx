@@ -18,6 +18,12 @@ import {
   ZENITH_DISC_COLORS,
   type Theme,
 } from '../../lib/theme';
+import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
+import {
+  isOccluded,
+  projectVisible,
+  screenAngleOfNorth,
+} from '../../lib/mapProjection';
 import { ensureGlyphImages, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import {
@@ -37,6 +43,13 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   type: 'FeatureCollection',
   features: [],
 });
+
+// Tile options for the line / paran / zenith sources. A maximal buffer makes
+// neighbouring tiles overlap so an antimeridian-crossing line has no hairline seam
+// at the ±180° world boundary (geojson-vt wraps the out-of-range longitudes into the
+// adjacent world copy; the overlap hides the join), and tolerance:0 keeps the lines
+// un-simplified — so the crossing stays precise even when zoomed all the way out.
+const LINE_SOURCE_OPTS = { buffer: 512, tolerance: 0 } as const;
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
 // Covers all four angles — a paran's body A may sit on the MC/IC or the horizon.
@@ -315,11 +328,20 @@ function snapToNearestLine(
       let prev = map.project(line[0] as [number, number]);
       for (let i = 1; i < line.length; i++) {
         const cur = map.project(line[i] as [number, number]);
-        const c = closestPointOnSegment(pt, prev, cur);
-        if (c.d < best) {
-          best = c.d;
-          bx = c.x;
-          by = c.y;
+        // Only measure against segments whose endpoints both project to finite
+        // pixels (a globe segment can run behind the camera / off the sphere).
+        if (
+          Number.isFinite(prev.x) &&
+          Number.isFinite(prev.y) &&
+          Number.isFinite(cur.x) &&
+          Number.isFinite(cur.y)
+        ) {
+          const c = closestPointOnSegment(pt, prev, cur);
+          if (c.d < best) {
+            best = c.d;
+            bx = c.x;
+            by = c.y;
+          }
         }
         prev = cur;
       }
@@ -351,13 +373,15 @@ function paranAtPoint(map: maplibregl.Map, pt: ScreenPt): ParanProps | null {
   );
   let best: ParanProps | null = null;
   let bestD = Infinity;
+  const centerLng = map.getCenter().lng;
   for (const f of feats) {
     if (!f.properties) continue;
     const props = f.properties as unknown as ParanProps;
-    // Parans are horizontal (constant latitude), so the nearest point on one is
-    // directly above/below the click — rank candidates by vertical screen gap.
-    const rowY = map.project([props.intersectionLng, props.latitude]).y;
-    const d = Math.abs(rowY - pt.y);
+    // Rank candidates by screen distance to the paran's row at the map-centre
+    // longitude (where its badge sits) — and skip rows on the globe's far side.
+    const rp = projectVisible(map, centerLng, props.latitude);
+    if (!rp) continue;
+    const d = Math.hypot(rp.x - pt.x, rp.y - pt.y);
     if (d < bestD) {
       bestD = d;
       best = props;
@@ -398,6 +422,26 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   return { id: String(f.id), planet: f.properties.planet as PlanetName, lng, lat };
 }
 
+// Apply a projection mode to the live map: swap mercator↔globe, gate rotate/tilt
+// (3D only), and in 2D snap back to flat north-up. Must be re-run after every
+// setStyle (which resets the projection). The `proj-2d` container class lets CSS
+// hide the compass button in flat mode.
+function applyProjection(map: maplibregl.Map, mode: MapProjectionMode): void {
+  map.setProjection({ type: PROJECTION_SPEC[mode] });
+  map.getContainer().classList.toggle('proj-2d', mode === '2d');
+  if (mode === '3d') {
+    map.dragRotate.enable();
+    map.touchPitch.enable();
+    map.touchZoomRotate.enableRotation();
+  } else {
+    map.dragRotate.disable();
+    map.touchPitch.disable();
+    map.touchZoomRotate.disableRotation();
+    map.setBearing(0);
+    map.setPitch(0);
+  }
+}
+
 interface MapProps {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
@@ -412,6 +456,8 @@ interface MapProps {
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
+  /** Flat Mercator ('2d') or 3D globe ('3d'). */
+  projection: MapProjectionMode;
   /** Basemap detail toggles (the Theme tab's "Hide details" section). Default-on. */
   showRoads?: boolean;
   showRivers?: boolean;
@@ -498,7 +544,7 @@ function setupCustomLayers(
   measureColor: string,
   zenithFill: string,
 ) {
-  map.addSource('parans', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-layer',
     source: 'parans',
@@ -512,7 +558,7 @@ function setupCustomLayers(
   // Paran labels are drawn as centred DOM badges (see the paran-badge overlay in
   // the Map component), not repeated along the line.
 
-  map.addSource('local-space', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('local-space', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'local-space-layer',
     source: 'local-space',
@@ -529,7 +575,7 @@ function setupCustomLayers(
   addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→');
   addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
-  map.addSource('acg-lines', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('acg-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'acg-lines-meridian',
     source: 'acg-lines',
@@ -574,7 +620,7 @@ function setupCustomLayers(
   // overlay (transits / progressed / solar-arc / synastry). Same per-planet
   // colors as the base, but dashed and dimmed so it reads as "derived". Labels
   // carry a baked-in prefix (t/p/d/s) so the text-field expression is unchanged.
-  map.addSource('local-space-ov', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('local-space-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'local-space-ov-layer',
     source: 'local-space-ov',
@@ -589,7 +635,7 @@ function setupCustomLayers(
   addArrowLayer(map, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
   addArrowLayer(map, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
 
-  map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-ov-layer',
     source: 'parans-ov',
@@ -603,7 +649,7 @@ function setupCustomLayers(
   });
   // Overlay paran labels are also centred DOM badges, not drawn along the line.
 
-  map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'acg-lines-ov-meridian',
     source: 'acg-lines-ov',
@@ -637,7 +683,7 @@ function setupCustomLayers(
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
-  map.addSource('acg-zenith', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('acg-zenith', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   // A ring around each stamp, bordered in the planet's color, over an inner fill
   // that matches the glyph's halo/glow (a themed disc color) so the glyph reads
   // on any basemap. Drawn under the glyph.
@@ -680,7 +726,7 @@ function setupCustomLayers(
 
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
-  map.addSource('measure', { type: 'geojson', data: EMPTY_FC() });
+  map.addSource('measure', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'measure-line',
     source: 'measure',
@@ -741,6 +787,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   pin,
   pinType,
   theme,
+  projection,
   showRoads = true,
   showRivers = true,
   showLabels = true,
@@ -786,6 +833,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, overlay });
   dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, overlay };
   const themeRef = useRef(theme);
+  // Current projection mode, read inside the once-bound load/style.load handlers
+  // (setStyle resets projection, so it must be re-applied after each style load).
+  const projectionRef = useRef(projection);
   // Read inside the (once-bound) load/style.load handlers so they always paint
   // the measure layers with the latest map-state accent.
   const measureColorRef = useRef(measureColor);
@@ -805,6 +855,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [originScreen, setOriginScreen] = useState<{ x: number; y: number } | null>(
     null,
   );
+  // On-screen angle (deg) of north at the origin — 0 in 2D, non-zero on a rotated
+  // globe; rotates the horizon compass dial so it stays aligned with the lines.
+  const [originNorthDeg, setOriginNorthDeg] = useState(0);
   const badgeRafRef = useRef(0);
 
   // Per-planet azimuths for the horizon wheel — one row per visible body (the
@@ -857,9 +910,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     );
     setBadges(dodged);
 
-    // Paran centre badges: one per visible paran, parked at the horizontal centre
-    // of the screen on its latitude row (parans whose row is off-screen are skipped).
-    const centerX = cont.clientWidth / 2;
+    // Paran centre badges: one per visible paran, parked on its latitude row at the
+    // map's centre longitude (the visible meridian arc). In 2D that's screen-centre;
+    // on a globe it tracks the curved row and is culled when it's on the far side.
+    const centerLng = map.getCenter().lng;
+    const w = cont.clientWidth;
     const h = cont.clientHeight;
     const pbadges: ParanBadge[] = [];
     const pushParans = (
@@ -868,12 +923,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     ) => {
       fc.features.forEach((f, i) => {
         const p = f.properties;
-        const y = map.project([p.intersectionLng, p.latitude]).y;
-        if (y < 0 || y > h) return;
+        const sp = projectVisible(map, centerLng, p.latitude);
+        if (!sp || sp.x < 0 || sp.x > w || sp.y < 0 || sp.y > h) return;
         pbadges.push({
           key: `${overlay ? 'pov' : 'pn'}-${i}`,
-          x: centerX,
-          y,
+          x: sp.x,
+          y: sp.y,
           planetA: p.planetA,
           angleA: p.angleA,
           planetB: p.planetB,
@@ -889,12 +944,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     setParanBadges(pbadges);
 
     // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
-    // the origin at the outward (toward-planet) azimuth.
+    // the origin at the outward (toward-planet) azimuth — measured from the on-screen
+    // north direction so it stays correct under rotation/tilt. Hidden when the origin
+    // is on the globe's far side.
     const lsbadges: LocalSpaceBadge[] = [];
     const origin = data.localSpaceOrigin;
-    if (origin && data.localSpace.features.length) {
+    if (
+      origin &&
+      data.localSpace.features.length &&
+      !isOccluded(map, origin.lng, origin.lat)
+    ) {
       const oc = map.project([origin.lng, origin.lat]);
       setOriginScreen({ x: oc.x, y: oc.y });
+      const north = screenAngleOfNorth(map, origin.lng, origin.lat);
+      setOriginNorthDeg((north * 180) / Math.PI);
       const r = lsBadgeRadius(map.getZoom());
       const seen = new Set<string>();
       for (const f of data.localSpace.features) {
@@ -905,7 +968,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         const out = lp.direction === 'out';
         // 'out' runs toward the planet (→, flies to its zenith / MC point); 'in' is
         // the opposite half (←, flies to the nadir = antipode of the zenith / IC).
-        const angle = (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
+        const angle = north + (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
         lsbadges.push({
           key: k,
           x: oc.x + r * Math.sin(angle),
@@ -951,16 +1014,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
 
     map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
+      // The compass (resets bearing + tilt) stacks under +/−. It's hidden via CSS
+      // in 2D (the `.proj-2d` container class) where the map is locked north-up.
+      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
       'top-right',
     );
-    // Surface the +/− zoom hotkeys in the nav buttons' hover tooltips.
-    const zoomInBtn = map.getContainer().querySelector('.maplibregl-ctrl-zoom-in');
-    const zoomOutBtn = map.getContainer().querySelector('.maplibregl-ctrl-zoom-out');
+    // Surface the +/− zoom hotkeys and the compass action in hover tooltips.
+    const ctrlRoot = map.getContainer();
+    const zoomInBtn = ctrlRoot.querySelector('.maplibregl-ctrl-zoom-in');
+    const zoomOutBtn = ctrlRoot.querySelector('.maplibregl-ctrl-zoom-out');
+    const compassBtn = ctrlRoot.querySelector('.maplibregl-ctrl-compass');
     zoomInBtn?.setAttribute('title', 'Zoom in (+)');
     zoomInBtn?.setAttribute('aria-label', 'Zoom in (+)');
     zoomOutBtn?.setAttribute('title', 'Zoom out (-)');
     zoomOutBtn?.setAttribute('aria-label', 'Zoom out (-)');
+    compassBtn?.setAttribute('title', 'Reset bearing & tilt');
+    compassBtn?.setAttribute('aria-label', 'Reset bearing & tilt');
     map.addControl(
       new maplibregl.AttributionControl({
         compact: false,
@@ -978,8 +1047,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       'bottom-right',
     );
 
-    // No right-click rotate / pitch — keeps the map flat and removes the need
-    // for a compass reset.
+    // Start locked flat north-up. applyProjection() (in the load handler) sets the
+    // real projection + interaction state once the style is loaded — setProjection
+    // throws before then. Keeps 2D identical to before; 3D switches on load.
     map.dragRotate.disable();
     map.touchPitch.disable();
     map.touchZoomRotate.disableRotation();
@@ -994,6 +1064,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
 
     map.on('load', async () => {
+      // Apply the persisted projection first (before the async glyph load) so a
+      // 3D reload doesn't briefly flash the flat map.
+      applyProjection(map, projectionRef.current);
       await ensureGlyphImages(
         map,
         themeRef.current === 'dark' ? '' : LABEL_HALO_COLORS[themeRef.current],
@@ -1032,6 +1105,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     themeRef.current = theme;
     map.setStyle(BASEMAP_STYLE_URLS[theme]);
     map.once('style.load', async () => {
+      applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme]);
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme]);
@@ -1039,6 +1113,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       computeBadges();
     });
   }, [theme, computeBadges]);
+
+  // Switch projection on demand (2D ↔ 3D). To 2D snaps flat north-up; to 3D leaves
+  // the camera where it is (free rotate/tilt). Overlays recompute for the new view.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || projectionRef.current === projection) return;
+    projectionRef.current = projection;
+    // Guard against a toggle before the first style load (setProjection throws):
+    // the load handler will apply projectionRef.current once it's ready.
+    if (map.isStyleLoaded()) {
+      applyProjection(map, projection);
+      scheduleBadges();
+    }
+  }, [projection, scheduleBadges]);
 
   // Repaint the measure layers when the map-state accent changes (e.g. pinning a
   // location) without needing a full style reload.
@@ -1394,6 +1482,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           size={HORIZON_WHEEL_SIZE}
           scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
           opacity={COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)}
+          bearing={originNorthDeg}
           planets={horizonPlanets}
         />
       )}

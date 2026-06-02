@@ -32,10 +32,21 @@ export interface ParseResult {
   errors: string[];
 }
 
+// The bundled Swiss Ephemeris data covers 1800–2399 (see public/ephe/README.md).
+// Outside it the engine silently drops the asteroids and falls back to the
+// lower-accuracy Moshier model, so reject out-of-range years here rather than let
+// an import produce a degraded chart with no warning.
+const MIN_YEAR = 1800;
+const MAX_YEAR = 2399;
+
 const MONTHS3 = [
   'jan', 'feb', 'mar', 'apr', 'may', 'jun',
   'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
 ];
+
+function yearOutOfRangeMsg(year: number): string {
+  return `birth year ${year} is outside the supported range ${MIN_YEAR}–${MAX_YEAR}.`;
+}
 
 function monthNum(s: string): number | null {
   const i = MONTHS3.indexOf(s.slice(0, 3).toLowerCase());
@@ -174,6 +185,10 @@ function parseCsv(text: string): ParseResult {
       errors.push(`${rowLabel}: missing name, date, or coordinates.`);
       return;
     }
+    if (date.year < MIN_YEAR || date.year > MAX_YEAR) {
+      errors.push(`${rowLabel}: ${yearOutOfRangeMsg(date.year)}`);
+      return;
+    }
     const city = at(cols.city).trim();
     const region = at(cols.region).trim();
     const label = [city, region].filter(Boolean).join(', ') || name;
@@ -209,6 +224,9 @@ function parseTextBlock(block: string, idx: number): ParsedChart | string {
   const dtLine = lines.find((l) => parseDate(l));
   const date = dtLine ? parseDate(dtLine) : null;
   if (!date) return `${name || `Block ${idx + 1}`}: couldn't find a date.`;
+  if (date.year < MIN_YEAR || date.year > MAX_YEAR) {
+    return `${name || `Block ${idx + 1}`}: ${yearOutOfRangeMsg(date.year)}`;
+  }
 
   // Expected order: "date, time, zone".
   const segs = (dtLine ?? '').split(',').map((s) => s.trim());

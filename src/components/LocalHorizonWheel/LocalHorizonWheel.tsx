@@ -19,6 +19,9 @@ interface Props {
   size: number;
   scale: number;
   opacity: number;
+  /** On-screen rotation (deg) of north at the origin — 0 in 2D, non-zero on a
+   *  rotated/tilted globe — so the dial stays aligned with the lines. */
+  bearing: number;
   planets: HorizonPlanet[];
 }
 
@@ -38,6 +41,7 @@ export function LocalHorizonWheel({
   size,
   scale,
   opacity,
+  bearing,
   planets,
 }: Props) {
   return (
@@ -48,7 +52,7 @@ export function LocalHorizonWheel({
         top: cy,
         width: size,
         height: size,
-        transform: `translate(-50%, -50%) scale(${scale})`,
+        transform: `translate(-50%, -50%) rotate(${bearing}deg) scale(${scale})`,
         opacity,
       }}
       aria-hidden="true"

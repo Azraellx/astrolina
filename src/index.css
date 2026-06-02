@@ -73,38 +73,6 @@ span.astro-glyph {
   background: var(--bg-page);
 }
 
-:root[data-theme='light'] {
-  color-scheme: light;
-
-  --bg-page: #eef0f4;
-  --bg-panel: 255, 255, 255;
-  --bg-menu: 252, 252, 254;
-  /* Tint stays "neutral darker" but we step it down a hair so borders/dividers
-     feel like a light-gray scheme rather than pen-on-paper black. */
-  --tint: 40, 44, 56;
-
-  --text-strong: #4a4e5a;
-  --text: #5e6270;
-  --text-muted: #7a7e8a;
-  --text-dim: #989ca6;
-  --text-faint: #b4b7c0;
-
-  --accent: #c97b1a;
-  --accent-rgb: 201, 123, 26;
-  --accent-hover: #a96514;
-  --cool: #3a9ac0;
-  --cool-rgb: 58, 154, 192;
-  --danger: #d04a3a;
-  --success: #3aa965;
-  --success-rgb: 58, 169, 101;
-
-  --scrim: rgba(74, 78, 90, 0.4);
-  --scrim-strong: rgba(74, 78, 90, 0.55);
-
-  --pin-stroke: #ffffff;
-  --label-halo: rgba(255, 255, 255, 0.95);
-}
-
 :root[data-theme='vintage'] {
   color-scheme: dark;
 
@@ -226,6 +194,30 @@ span.astro-glyph {
 :root[data-theme='glass'] .line-toggle:not(.on) {
   background: rgba(255, 255, 255, 0.42);
   border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Earth: a lighter touch of the same frosting ──────────────────
+   The same blurred, translucent panels as Glass but warmer and more opaque, so the
+   dark-parchment UI keeps its legibility over a busy map while gaining a hint of the
+   glassy depth. Inset highlight is warm (parchment) rather than white. */
+:root[data-theme='vintage'] .app-header,
+:root[data-theme='vintage'] .chart-info-panel,
+:root[data-theme='vintage'] .timeline-hud,
+:root[data-theme='vintage'] .sidebar,
+:root[data-theme='vintage'] .chart-wheel {
+  background: rgba(var(--bg-panel), 0.72);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(240, 226, 192, 0.12);
+}
+
+:root[data-theme='vintage'] .expanded-sidebar {
+  background: rgba(var(--bg-panel), 0.82);
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  box-shadow: inset 0 1px 0 rgba(240, 226, 192, 0.1);
 }
 
 * {

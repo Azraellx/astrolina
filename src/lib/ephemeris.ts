@@ -170,6 +170,10 @@ export interface RelocatedAngles {
 // because the promise is cached. After this resolves, every calc below is sync.
 let swe: SwissEphemeris | null = null;
 let initPromise: Promise<void> | null = null;
+// Set true once the .se1 files verify as actually loaded (see
+// ephemerisReadsSwissData). Stays false until initEphemeris resolves, or if the
+// engine silently fell back to Moshier. Exposed via isEphemerisDataVerified().
+let dataFilesVerified = false;
 
 // JPL-grade Swiss data we self-host under public/ephe/ (covers 1800–2399 AD):
 // planets (sepl), Moon (semo), and the main-belt asteroids incl. Chiron (seas).
@@ -196,6 +200,16 @@ export function initEphemeris(
       onStage?.('asteroids');
       await inst.loadEphemerisFiles([EPHE_FILES[2]]); // seas — asteroids
       swe = inst;
+      // Confirm the engine is actually reading the .se1 files and not silently
+      // on Moshier (a failed file load throws nothing). See ephemerisReadsSwissData.
+      dataFilesVerified = ephemerisReadsSwissData(inst);
+      if (!dataFilesVerified) {
+        console.warn(
+          '[ephemeris] Swiss Ephemeris .se1 data files did not load — positions ' +
+            'have silently fallen back to the lower-accuracy Moshier model. Check ' +
+            'that public/ephe/*.se1 are reachable at the deployed base URL.',
+        );
+      }
     })();
   }
   return initPromise;
@@ -217,6 +231,32 @@ const TWO_PI = 2 * Math.PI;
 // flag so the position comes back as RA/dec in the longitude/latitude fields.
 const FLAG_ECL = CalculationFlag.SwissEphemeris | CalculationFlag.Speed;
 const FLAG_EQ = FLAG_ECL | CalculationFlag.Equatorial;
+
+// Startup self-check: confirm the engine is reading the Swiss .se1 data files
+// rather than silently falling back to the built-in Moshier model. A failed file
+// load (404, renamed asset, CDN miss, FS write failure) throws NO error —
+// calculatePosition just returns a Moshier result — so without this probe the app
+// would draw subtly-wrong lines with no signal. We assert the returned method
+// FLAGS, not the value: Moshier's Sun is within ~1e-6° of Swiss at J2000, so a
+// value comparison would pass even on a full fallback. One extra calc, once.
+function ephemerisReadsSwissData(inst: SwissEphemeris): boolean {
+  try {
+    const jdJ2000 = inst.julianDay(2000, 1, 1, 12, CalendarType.Gregorian);
+    const sun = inst.calculatePosition(jdJ2000, Planet.Sun, FLAG_ECL);
+    return (
+      (sun.flags & CalculationFlag.SwissEphemeris) !== 0 &&
+      (sun.flags & CalculationFlag.MoshierEphemeris) === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Whether the .se1 data files verified as loaded at startup. UI may read this to
+// warn that positions are approximate (Moshier) when the data files are missing.
+export function isEphemerisDataVerified(): boolean {
+  return dataFilesVerified;
+}
 
 // Lunar node convention: the smoothed long-term average ('mean') or the
 // instantaneous osculating node ('true', which oscillates ±~1.5° around the
@@ -382,15 +422,45 @@ function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySampl
   }
 }
 
-// A body is "stationary" when its instantaneous ecliptic-longitude speed is near
-// zero (within ~a day of a station). The luminaries and the nodes never station,
-// so they are excluded (the mean node's steady ~0.05°/day retrograde would
-// otherwise trip the threshold).
-function stationaryFlag(speed: number, name: PlanetName): boolean {
+// Just the ecliptic-longitude speed (deg/day) of one body at an instant — a
+// single Swiss call, used to bracket a station without sampleBody's full two-frame
+// work. Returns null if the body has no data here (edge of coverage).
+function longitudeSpeedAt(jd: number, name: PlanetName, nodeType: NodeType): number | null {
+  if (name === 'SouthNode') return longitudeSpeedAt(jd, 'NorthNode', nodeType);
+  const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
+  try {
+    return eph().calculatePosition(jd, id, FLAG_ECL).longitudeSpeed;
+  } catch {
+    return null;
+  }
+}
+
+// A body is "stationary" when its ecliptic-longitude motion reverses direction
+// within ~a day on either side — i.e. it sits at a retrograde/direct station,
+// appearing motionless. We detect the reversal by a SIGN CHANGE of the longitude
+// speed across a ±1-day bracket, not by an absolute speed cutoff: the outer
+// planets' entire geocentric speed range is only a few hundredths of a degree/day
+// (Neptune/Pluto peak ~0.038°/day), so any fixed threshold near that scale would
+// read them as "stationary" year-round and hide their genuine retrograde. A sign
+// change is self-scaling and correct for every body. The luminaries and the nodes
+// never reverse, so they are excluded outright.
+const STATION_BRACKET_DAYS = 1;
+
+function stationaryFlag(
+  jd: number,
+  name: PlanetName,
+  nodeType: NodeType,
+  speed: number,
+): boolean {
   if (name === 'Sun' || name === 'Moon' || name === 'NorthNode' || name === 'SouthNode') {
     return false;
   }
-  return Math.abs(speed) < 0.05; // degrees/day
+  const before = longitudeSpeedAt(jd - STATION_BRACKET_DAYS, name, nodeType);
+  const after = longitudeSpeedAt(jd + STATION_BRACKET_DAYS, name, nodeType);
+  // At the very edge of ephemeris coverage a neighbor may be unavailable; fall
+  // back to a tight near-zero instantaneous-speed test (real stations only).
+  if (before === null || after === null) return Math.abs(speed) < 0.002;
+  return Math.sign(before) !== Math.sign(after);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -455,7 +525,7 @@ export function getEclipticPositions(
       dec: s.dec,
       speed: s.speed,
       retrograde: s.speed < 0,
-      stationary: stationaryFlag(s.speed, name),
+      stationary: stationaryFlag(jd, name, nodeType, s.speed),
     });
   }
   return out;

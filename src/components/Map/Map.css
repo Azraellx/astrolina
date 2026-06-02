@@ -5,6 +5,22 @@
   height: 100%;
 }
 
+/* 3D-globe "space" — the void behind the globe. MapLibre's globe has no native
+   background color: the deep void is the transparent map canvas, so we paint it from
+   here. Scoped to the globe (`:not(.proj-2d)`) so flat 2D is byte-for-byte unchanged.
+   Dark/Earth read as deep space (the "old Google Earth" look), Glass as a softer
+   twilight blue, Light as a pale daytime sky. Pairs with each theme's
+   `atmosphere-blend` (see SKY_SPECS) for the rim glow that hugs the globe. */
+:root[data-theme='dark'] .map-container:not(.proj-2d) {
+  background-color: #04050b;
+}
+:root[data-theme='vintage'] .map-container:not(.proj-2d) {
+  background-color: #585a67;
+}
+:root[data-theme='glass'] .map-container:not(.proj-2d) {
+  background-color: #d6e4f4;
+}
+
 /* ── ACG line edge badges ──────────────────────────────────────────
    Glyph + angle code in a line-colored pill, anchored where each line exits
    the viewport. Sits above the map + edge glow (z 4) and below the HUD (z 12).
@@ -179,6 +195,13 @@
   margin: 0 !important;
 }
 
+/* The compass (reset bearing/tilt) only makes sense on the rotatable 3D globe;
+   hide it in flat 2D, where the map is locked north-up (the `.proj-2d` class is
+   toggled on the map container by applyProjection). */
+.map-container.proj-2d .maplibregl-ctrl-compass {
+  display: none !important;
+}
+
 /* Bottom-right is now just the attribution chip */
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl {
   margin: 0 16px 16px 0 !important;
@@ -256,9 +279,4 @@
 
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   filter: invert(var(--mapctrl-invert, 1)) brightness(var(--mapctrl-brightness, 0.85));
-}
-
-:root[data-theme='light'] {
-  --mapctrl-invert: 0;
-  --mapctrl-brightness: 0.4;
 }

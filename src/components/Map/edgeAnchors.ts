@@ -7,6 +7,7 @@ import type { Map as MlMap } from 'maplibre-gl';
 import type { Feature, LineString } from 'geojson';
 import type { LineProps, LineType } from '../../lib/astro/lines';
 import type { PlanetName } from '../../lib/ephemeris';
+import { isOccluded } from '../../lib/mapProjection';
 
 export interface LineBadge {
   key: string;
@@ -98,6 +99,45 @@ interface LineGroup {
   ends: Pt[];
 }
 
+// Pool one contiguous, fully-visible run's on-screen ends into its line group: the
+// leading vertex if it's already inside the rect, each viewport entry/exit crossing
+// (Liang–Barsky), and the trailing vertex if inside — i.e. the ends of the part of
+// this run that's actually on screen.
+function addRunEnds(
+  pts: Pt[],
+  rect: Rect,
+  groups: Map<string, LineGroup>,
+  key: string,
+  color: string,
+  planet: PlanetName,
+  lineType: LineType,
+  prefix: string,
+): void {
+  if (pts.length === 0) return;
+  const anchors: Pt[] = [];
+  if (inRect(pts[0], rect)) anchors.push(pts[0]);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const c = clipSeg(a, b, rect);
+    if (!c) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (c.t0 > 0) anchors.push({ x: a.x + c.t0 * dx, y: a.y + c.t0 * dy });
+    if (c.t1 < 1) anchors.push({ x: a.x + c.t1 * dx, y: a.y + c.t1 * dy });
+  }
+  const last = pts[pts.length - 1];
+  if (inRect(last, rect)) anchors.push(last);
+  if (anchors.length === 0) return;
+  let g = groups.get(key);
+  if (!g) {
+    g = { color, planet, lineType, prefix, ends: [] };
+    groups.set(key, g);
+  }
+  g.ends.push(anchors[0]);
+  if (anchors.length > 1) g.ends.push(anchors[anchors.length - 1]);
+}
+
 // Up to two badges per LOGICAL line: the two ends of its on-screen portion. A
 // horizon curve that crosses the dateline arrives split into several features
 // sharing planet+lineType — we pool their on-screen ends and label the overall
@@ -120,51 +160,41 @@ export function computeLineBadges(
   features.forEach((f) => {
     const coords = f.geometry.coordinates;
     if (coords.length < 2) return;
-    // Horizon curves are dense (0.5° steps); every 3rd point is plenty to find
-    // edge crossings and keeps the per-move cost low. Meridians are 2 points.
+    // Lines are dense polylines (horizon curves at 0.5° steps, meridians at 2°);
+    // every 3rd point is plenty to find edge crossings and keeps the per-move cost
+    // low. Anything short (a stray fragment) is walked point-by-point.
     const step = coords.length > 20 ? 3 : 1;
-    const pts: Pt[] = [];
-    for (let i = 0; i < coords.length; i += step) {
-      const c = coords[i];
-      const p = map.project([c[0], c[1]]);
-      pts.push({ x: p.x, y: p.y });
-    }
-    // Ensure the true last coord is included.
-    const lastC = coords[coords.length - 1];
-    const lastP = map.project([lastC[0], lastC[1]]);
-    if (pts.length === 0 || pts[pts.length - 1].x !== lastP.x || pts[pts.length - 1].y !== lastP.y) {
-      pts.push({ x: lastP.x, y: lastP.y });
-    }
-
-    // Anchors = the on-screen portion's ends, in line order: a leading vertex if
-    // it's already inside, then each boundary entry/exit crossing.
-    const anchors: Pt[] = [];
-    if (inRect(pts[0], rect)) anchors.push(pts[0]);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
-      const c = clipSeg(a, b, rect);
-      if (!c) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      if (c.t0 > 0) anchors.push({ x: a.x + c.t0 * dx, y: a.y + c.t0 * dy });
-      if (c.t1 < 1) anchors.push({ x: a.x + c.t1 * dx, y: a.y + c.t1 * dy });
-    }
-    const last = pts[pts.length - 1];
-    if (inRect(last, rect)) anchors.push(last);
-    if (anchors.length === 0) return;
-
     const { planet, lineType, color, label } = f.properties;
     const prefix = isOverlay ? label : '';
     const key = `${planet}|${lineType}|${prefix}`;
-    let g = groups.get(key);
-    if (!g) {
-      g = { color, planet, lineType, prefix, ends: [] };
-      groups.set(key, g);
-    }
-    // This fragment contributes its own on-screen ends to the pool.
-    g.ends.push(anchors[0]);
-    if (anchors.length > 1) g.ends.push(anchors[anchors.length - 1]);
+
+    // Split the projected polyline into contiguous runs of VISIBLE vertices. On a
+    // globe, occluded / behind-camera points project to bogus pixels, so we break
+    // the run at any such vertex rather than connecting a front point to a far-side
+    // one — each run pools its own on-screen ends, so a label hugs the visible
+    // terminator and never anchors to the back of the globe. In 2D nothing is
+    // occluded and every point projects finitely ⇒ one run ⇒ identical to before.
+    let run: Pt[] = [];
+    const flushRun = () => {
+      addRunEnds(run, rect, groups, key, color, planet, lineType, prefix);
+      run = [];
+    };
+    const pushCoord = (c: number[]) => {
+      if (isOccluded(map, c[0], c[1])) {
+        flushRun();
+        return;
+      }
+      const p = map.project([c[0], c[1]]);
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+        flushRun();
+        return;
+      }
+      run.push({ x: p.x, y: p.y });
+    };
+
+    for (let i = 0; i < coords.length; i += step) pushCoord(coords[i]);
+    pushCoord(coords[coords.length - 1]); // ensure the true last coord is included
+    flushRun();
   });
 
   const out: LineBadge[] = [];

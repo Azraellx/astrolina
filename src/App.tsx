@@ -69,6 +69,11 @@ import {
   type StoredChart,
 } from './lib/chartLibrary';
 import { applyTheme, loadTheme, saveTheme, type Theme } from './lib/theme';
+import {
+  loadProjection,
+  saveProjection,
+  type MapProjectionMode,
+} from './lib/projection';
 
 interface Point {
   lat: number;
@@ -190,6 +195,8 @@ export default function App() {
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
+  const [projection, setProjection] = useState<MapProjectionMode>(loadProjection);
 
   // View toggles (driven by the top bar's View menu), all default on. "Minimap"
   // (showChart) governs only the compact chart wheel; the expanded Sidebar opens
@@ -228,6 +235,10 @@ export default function App() {
     applyTheme(theme);
     saveTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    saveProjection(projection);
+  }, [projection]);
 
   // Global keyboard shortcuts. Space centers the map on the active pin (or drops
   // a natal pin and centers if none is set); 'b' toggles the chart sidebar; the
@@ -680,6 +691,7 @@ export default function App() {
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
+        projection={projection}
         showRoads={showRoads}
         showRivers={showRivers}
         showLabels={showLabels}
@@ -725,6 +737,8 @@ export default function App() {
           setNodeType={setNodeType}
           theme={theme}
           setTheme={setTheme}
+          projection={projection}
+          setProjection={setProjection}
           showRoads={showRoads}
           setShowRoads={setShowRoads}
           showRivers={showRivers}

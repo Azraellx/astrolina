@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import { PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
-import { splitOnDateline } from './dateline';
+import { unwrapLongitudes } from './dateline';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -94,20 +94,19 @@ export function generateLocalSpace(
         HALF_EARTH_KM * 0.995,
         80,
       );
-      for (const seg of splitOnDateline(arc)) {
-        features.push({
-          type: 'Feature',
-          properties: {
-            planet: p.name,
-            azimuth: az * RAD2DEG,
-            color: PLANET_COLORS[p.name],
-            direction,
-            zenithLng,
-            zenithLat,
-          },
-          geometry: { type: 'LineString', coordinates: seg },
-        });
-      }
+      // One continuous feature (longitudes may run past ±180 across the seam).
+      features.push({
+        type: 'Feature',
+        properties: {
+          planet: p.name,
+          azimuth: az * RAD2DEG,
+          color: PLANET_COLORS[p.name],
+          direction,
+          zenithLng,
+          zenithLat,
+        },
+        geometry: { type: 'LineString', coordinates: unwrapLongitudes(arc) },
+      });
     }
   }
 
