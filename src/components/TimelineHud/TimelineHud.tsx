@@ -6,6 +6,11 @@ import {
   type TimeUnit,
 } from '../../lib/astro/timeline';
 import type { StoredChart } from '../../lib/chartLibrary';
+import {
+  formatUtcOffset,
+  offsetHoursAt,
+  zoneLabelAt,
+} from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
 import './TimelineHud.css';
 
@@ -28,6 +33,8 @@ interface TimelineHudProps {
   currentId: string | null;
   /** Dynamic measure for the readout ("Age 32.0" / "30.2°"); null hides it. */
   overlayMeasure: string | null;
+  /** When false, collapse to just the draggable nub (no ruler / transport). */
+  showTimeline: boolean;
 }
 
 const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
@@ -245,6 +252,7 @@ export function TimelineHud({
   charts,
   currentId,
   overlayMeasure,
+  showTimeline,
 }: TimelineHudProps) {
   const current = charts.find((c) => c.id === currentId) ?? null;
   // Read "now" once at mount: calling Date.now() during render makes render
@@ -259,6 +267,23 @@ export function TimelineHud({
       : birthMs + 100 * YEAR_MS;
 
   const clamp = (ms: number) => Math.min(Math.max(ms, sliderMin), sliderMax);
+
+  // Show the bar in the ACTIVE chart's time zone (targetDate itself stays the UTC
+  // instant — this is display-only). DST-aware via the chart's IANA zone at the
+  // shown moment; a manual offset is used fixed, exactly as the user set it. No
+  // chart → UTC. offsetMs shifts the ruler/field into local wall-clock and back.
+  const tzInstant = clamp(targetDate);
+  const tzHours = !current
+    ? 0
+    : current.tzManual || !current.tzIana
+      ? current.tzOffset
+      : offsetHoursAt(current.tzIana, tzInstant);
+  const offsetMs = tzHours * 3_600_000;
+  const tzLabel = !current
+    ? 'UTC'
+    : current.tzManual || !current.tzIana
+      ? formatUtcOffset(tzHours)
+      : zoneLabelAt(current.tzIana, tzInstant);
 
   // Step increment: defaults to the scale's mini-notch (count × baseMs), but the
   // user can override the count in the box next to the step buttons. Reset to the
@@ -295,7 +320,9 @@ export function TimelineHud({
 
   return (
     <div
-      className={`timeline-hud${dragging ? ' thud-dragging' : ''}`}
+      className={`timeline-hud${dragging ? ' thud-dragging' : ''}${
+        showTimeline ? '' : ' thud-collapsed'
+      }`}
       data-mode={overlayMode}
       data-mapstate={mapState}
       ref={hudRef}
@@ -322,12 +349,16 @@ export function TimelineHud({
         </span>
       </div>
 
+      {/* Ruler + transport: hidden when Display ▸ Timeline is off (only the nub
+          stays). */}
+      {showTimeline && (
+        <>
       <TimeRuler
-        value={clamp(targetDate)}
-        min={sliderMin}
-        max={sliderMax}
+        value={clamp(targetDate) + offsetMs}
+        min={sliderMin + offsetMs}
+        max={sliderMax + offsetMs}
         unit={stepUnit}
-        onChange={setTargetDate}
+        onChange={(disp) => setTargetDate(disp - offsetMs)}
         onDragStart={() => playing && setPlaying(false)}
       />
 
@@ -378,23 +409,44 @@ export function TimelineHud({
         </div>
 
         <span className="thud-datewrap">
+          {/* The browser renders this field in its own format (12h/24h, date order),
+              but its VALUE is always ISO (YYYY-MM-DDTHH:MM). So we never parse the
+              display — the toDatetimeLocalUTC / fromDatetimeLocalUTC pair is the single
+              source of truth for the field <-> instant round-trip, with offsetMs the
+              only zone shift (the active chart's zone). Correctness is format-agnostic. */}
           <input
             type="datetime-local"
             className="thud-date"
-            value={toDatetimeLocalUTC(targetDate)}
+            value={toDatetimeLocalUTC(targetDate + offsetMs)}
             onChange={(e) => {
               // A datetime-local input reports an empty value string until EVERY
               // segment is filled. While the user types a date by hand the value
               // is briefly "", so skip those blanks — otherwise the target snapped
               // back to "now", overwriting their input and making manual typing
               // impossible (only the calendar picker, which fills all segments at
-              // once, used to work).
+              // once, used to work). The field is in the chart's zone, so subtract
+              // the offset back to the stored UTC instant.
               const v = e.target.value;
-              if (v) setTargetDate(fromDatetimeLocalUTC(v));
+              if (v) setTargetDate(fromDatetimeLocalUTC(v) - offsetMs);
             }}
           />
-          <span className="thud-utc" title="Transit / progressed moment, in UTC">
-            UTC
+          <button
+            type="button"
+            className="thud-now"
+            onClick={() => setTargetDate(clamp(Date.now()))}
+            title="Set to the current moment"
+          >
+            Now
+          </button>
+          <span
+            className="thud-utc"
+            title={
+              current
+                ? `Transit / progressed moment, in the chart’s time zone`
+                : 'Transit / progressed moment, in UTC'
+            }
+          >
+            {tzLabel}
           </span>
         </span>
 
@@ -417,6 +469,8 @@ export function TimelineHud({
           </span>
         </label>
       </div>
+        </>
+      )}
     </div>
   );
 }

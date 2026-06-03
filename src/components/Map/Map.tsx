@@ -77,6 +77,7 @@ const HUD_SELECTORS = [
   '.expanded-sidebar',
   '.maplibregl-ctrl-top-right',
   '.maplibregl-ctrl-bottom-right',
+  '.info-bar', // active-systems chip (bottom-right, above the attribution)
 ];
 
 // Current screen rects of the HUD panels, in map-container coordinates.
@@ -305,14 +306,48 @@ function closestPointOnSegment(p: ScreenPt, a: ScreenPt, b: ScreenPt): ScreenPt 
   return { x, y, d: Math.hypot(p.x - x, p.y - y) };
 }
 
-// Nearest point (lng/lat) on any rendered chart line within SNAP_RADIUS_PX of the
-// screen point, or null if nothing is close enough.
-function snapToNearestLine(
+// Closest screen-space point on one feature's polylines to `target`, with its pixel
+// distance — shared by the cursor snap and the shift-constrain. Skips segments with
+// a non-finite projection (a globe segment behind the camera / off the sphere).
+// Null if no usable segment exists.
+function closestScreenPointOnParts(
   map: maplibregl.Map,
-  pt: ScreenPt,
-): { lng: number; lat: number } | null {
+  parts: number[][][],
+  target: ScreenPt,
+): (ScreenPt & { d: number }) | null {
+  let bx = 0;
+  let by = 0;
+  let best = Infinity;
+  for (const line of parts) {
+    if (line.length < 2) continue;
+    let prev = map.project(line[0] as [number, number]);
+    for (let i = 1; i < line.length; i++) {
+      const cur = map.project(line[i] as [number, number]);
+      if (
+        Number.isFinite(prev.x) &&
+        Number.isFinite(prev.y) &&
+        Number.isFinite(cur.x) &&
+        Number.isFinite(cur.y)
+      ) {
+        const c = closestPointOnSegment(target, prev, cur);
+        if (c.d < best) {
+          best = c.d;
+          bx = c.x;
+          by = c.y;
+        }
+      }
+      prev = cur;
+    }
+  }
+  return best === Infinity ? null : { x: bx, y: by, d: best };
+}
+
+// Rendered chart lines within SNAP_RADIUS_PX of a screen point, each as its array
+// of polylines (honours planet / overlay / paran / local-space visibility, since we
+// only query layers that are actually drawn).
+function lineFeaturesNear(map: maplibregl.Map, pt: ScreenPt): number[][][][] {
   const layers = SNAP_LINE_LAYERS.filter((id) => map.getLayer(id));
-  if (layers.length === 0) return null;
+  if (layers.length === 0) return [];
   const feats = map.queryRenderedFeatures(
     [
       [pt.x - SNAP_RADIUS_PX, pt.y - SNAP_RADIUS_PX],
@@ -320,43 +355,61 @@ function snapToNearestLine(
     ],
     { layers },
   );
+  return feats.map((f): number[][][] => {
+    const g = f.geometry;
+    return g.type === 'LineString'
+      ? [g.coordinates]
+      : g.type === 'MultiLineString'
+        ? g.coordinates
+        : [];
+  });
+}
+
+// Nearest point (lng/lat) on any rendered chart line within SNAP_RADIUS_PX of the
+// screen point, or null if nothing is close enough.
+function snapToNearestLine(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+): { lng: number; lat: number } | null {
   let bx = 0;
   let by = 0;
   let best = Infinity;
-  for (const f of feats) {
-    const g = f.geometry;
-    const parts =
-      g.type === 'LineString'
-        ? [g.coordinates]
-        : g.type === 'MultiLineString'
-          ? g.coordinates
-          : [];
-    for (const line of parts) {
-      if (line.length < 2) continue;
-      let prev = map.project(line[0] as [number, number]);
-      for (let i = 1; i < line.length; i++) {
-        const cur = map.project(line[i] as [number, number]);
-        // Only measure against segments whose endpoints both project to finite
-        // pixels (a globe segment can run behind the camera / off the sphere).
-        if (
-          Number.isFinite(prev.x) &&
-          Number.isFinite(prev.y) &&
-          Number.isFinite(cur.x) &&
-          Number.isFinite(cur.y)
-        ) {
-          const c = closestPointOnSegment(pt, prev, cur);
-          if (c.d < best) {
-            best = c.d;
-            bx = c.x;
-            by = c.y;
-          }
-        }
-        prev = cur;
-      }
+  for (const parts of lineFeaturesNear(map, pt)) {
+    const c = closestScreenPointOnParts(map, parts, pt);
+    if (c && c.d < best) {
+      best = c.d;
+      bx = c.x;
+      by = c.y;
     }
   }
   if (best === Infinity) return null;
   const ll = map.unproject([bx, by]);
+  return { lng: ll.lng, lat: ll.lat };
+}
+
+// Shift-constrain (measure tool): of the chart lines under the cursor, pick the one
+// the cursor is hovering (its polyline passes closest to the cursor), then return the
+// point ON THAT line nearest the measure `origin` — the shortest hop from the first
+// point to the line. Null when no line is within range of the cursor.
+function constrainToHoveredLine(
+  map: maplibregl.Map,
+  cursor: ScreenPt,
+  origin: { lng: number; lat: number },
+): { lng: number; lat: number } | null {
+  let hovered: number[][][] | null = null;
+  let bestCursor = Infinity;
+  for (const parts of lineFeaturesNear(map, cursor)) {
+    const c = closestScreenPointOnParts(map, parts, cursor);
+    if (c && c.d < bestCursor) {
+      bestCursor = c.d;
+      hovered = parts;
+    }
+  }
+  if (!hovered) return null;
+  const op = map.project([origin.lng, origin.lat] as [number, number]);
+  const c = closestScreenPointOnParts(map, hovered, op);
+  if (!c) return null;
+  const ll = map.unproject([c.x, c.y]);
   return { lng: ll.lng, lat: ll.lat };
 }
 
@@ -447,6 +500,10 @@ interface MapProps {
   onLeave?: () => void;
   onClick?: (lat: number, lng: number) => void;
   onPinNatal?: () => void;
+  /** Fires when the map crosses the "detail" zoom (CLOSE_ZOOM — the level where the
+   *  Zoom-out button appears): true once zoomed in past it. Lets the app gate the
+   *  network reverse-geocoder to zooms where the exact town actually matters. */
+  onDetailZoomChange?: (detail: boolean) => void;
 }
 
 interface MapData {
@@ -794,6 +851,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onLeave,
   onClick,
   onPinNatal,
+  onDetailZoomChange,
 }: MapProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -876,6 +934,47 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       essential: true,
     });
   }, []);
+
+  // Clicking a paran badge flies to that paran's intersection; clicking the SAME
+  // badge again returns to wherever you were when you first clicked it (a toggle).
+  // Keyed by the paran's content so it survives the index-based badge recomputes.
+  const paranReturnRef = useRef<{
+    id: string;
+    center: [number, number];
+    zoom: number;
+    bearing: number;
+    pitch: number;
+  } | null>(null);
+  const onParanClick = useCallback(
+    (b: ParanBadge) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const id = `${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}`;
+      const saved = paranReturnRef.current;
+      if (saved && saved.id === id) {
+        // Second click on the same paran — fly back to the saved view.
+        paranReturnRef.current = null;
+        map.flyTo({
+          center: saved.center,
+          zoom: saved.zoom,
+          bearing: saved.bearing,
+          pitch: saved.pitch,
+          essential: true,
+        });
+        return;
+      }
+      const c = map.getCenter();
+      paranReturnRef.current = {
+        id,
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      };
+      flyToPoint(b.targetLng, b.targetLat);
+    },
+    [flyToPoint],
+  );
 
   const computeBadges = useCallback(() => {
     const map = mapRef.current;
@@ -1363,7 +1462,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const onMove = (e: maplibregl.MapMouseEvent) => {
       if (!origin) return;
-      const cur = pointFor(e);
+      // Hold Shift while dragging over a line to lock the moving endpoint to the
+      // point on that hovered line CLOSEST to the first point — i.e. the shortest
+      // hop from your origin to the line (the distance-to-this-line you usually
+      // want in ACG). Falls back to the normal cursor / snap when no line is under
+      // the cursor.
+      const cur =
+        e.originalEvent.shiftKey
+          ? (constrainToHoveredLine(map, e.point, origin) ?? pointFor(e))
+          : pointFor(e);
       setSegment(origin, cur);
       onMeasure?.(measureBetween(origin, cur));
     };
@@ -1432,8 +1539,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!markerRef.current) {
       const el = document.createElement('div');
       el.className = 'map-pin';
+      // Platinum glossy pin (public/pin.svg). The aura is the location color glowing
+      // out from the pin's centre (the inverted edge-glow); the ring pulses from the
+      // tip; only the pin glyph is clickable (transparent gaps stay click-through).
       el.innerHTML =
-        '<div class="map-pin-ring"></div><div class="map-pin-dot"></div>';
+        '<span class="map-pin-aura"></span>' +
+        '<span class="map-pin-glow"></span>' +
+        '<img class="map-pin-img" src="/pin.svg" alt="" draggable="false" />';
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         const m = markerRef.current;
@@ -1443,7 +1555,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       });
       markerRef.current = new maplibregl.Marker({
         element: el,
-        anchor: 'center',
+        // Anchor the tip on the point; nudge down so the very tip (not the SVG's
+        // bottom padding) lands on the coordinate.
+        anchor: 'bottom',
+        offset: [0, 2],
       })
         .setLngLat([pin.lng, pin.lat])
         .addTo(map);
@@ -1457,6 +1572,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ? 'Natal birth location (click to unpin)'
         : 'Pinned location (click to unpin)';
   }, [pin, pinType]);
+
+  // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
+  // button appears), so it can gate the network reverse-geocoder to where town-level
+  // precision matters. setState identity is stable, so this only re-runs on a zoom
+  // change.
+  useEffect(() => {
+    onDetailZoomChange?.(zoom >= CLOSE_ZOOM);
+  }, [zoom, onDetailZoomChange]);
 
   const zenithFill = ZENITH_DISC_COLORS[theme];
   const paranText = badgeTextColor(zenithFill);
@@ -1527,8 +1650,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             tabIndex={-1}
             className="acg-badge paran-badge acg-badge-btn"
             style={{ left: b.x, top: b.y, background: zenithFill, color: paranText }}
-            onClick={() => flyToPoint(b.targetLng, b.targetLat)}
-            title="Fly to this paran's intersection"
+            onClick={() => onParanClick(b)}
+            title="Fly to this paran's intersection (click again to return)"
           >
             {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
             <PlanetGlyph planet={b.planetA} size={11} color={paranText} />

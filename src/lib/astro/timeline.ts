@@ -54,6 +54,18 @@ export type PrimaryRate =
   | 'placidus-ra'  // true secondary-progressed solar arc in RA (nonlinear)
   | 'user';        // user-entered degrees per year
 
+// How the TRANSIT overlay's angle lines are framed:
+//  - 'relative-to-natal' (default): hold the natal chart's RAMC fixed and let the
+//    transiting planets fall through it — the lines reflect the planets' zodiacal
+//    (secondary) motion, drifting slowly day to day. This is the radix-relative map
+//    (the Solar Maps-style transit map this app's astrologers work with).
+//  - 'transit-moment': the standard Jim Lewis transit astrocartography — the
+//    transiting planets angular at the transit instant itself, driven by that
+//    moment's sidereal time (the diurnal/primary placement; lines sweep ~15°/hour).
+// (Solar Arc and Primary Directions are already natal-RAMC framed; Progressed has
+// its own angle-progression setting.)
+export type TransitFrame = 'relative-to-natal' | 'transit-moment';
+
 // Mean solar motion keys (degrees/year of life), per their classical definitions.
 const NAIBOD_DEG_PER_YR = 0.985647; // 0°59′08.33″
 const CARDAN_DEG_PER_YR = 0.986667; // 0°59′12″
@@ -172,10 +184,20 @@ export function buildOverlay(
   angleProgression: AngleProgression = 'mean-quotidian',
   primaryRate: PrimaryRate = 'ptolemy',
   userPrimaryRate = 1,
+  transitFrame: TransitFrame = 'relative-to-natal',
 ): OverlayLayer | null {
   switch (mode) {
     case 'transits': {
       const jd = epochMsToJD(targetDate);
+      // Default 'relative-to-natal': frame the transiting planets against the NATAL
+      // RAMC (the birth chart's angular framework), so the lines move only with the
+      // planets' zodiacal motion. 'transit-moment' uses the transit instant's own
+      // sidereal time (standard transit ACG). See TransitFrame. Positions are always
+      // the real transiting positions at the target date.
+      const gmst =
+        transitFrame === 'relative-to-natal'
+          ? gmstRadians(birthDataToJD(chart))
+          : gmstRadians(jd);
       return {
         kind: mode,
         // The nub already shows "Transits" as the mode name — no readout needed.
@@ -183,7 +205,7 @@ export function buildOverlay(
         labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
         jd,
         positions: getPlanetPositions(jd, nodeType),
-        gmst: gmstRadians(jd),
+        gmst,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };
@@ -191,9 +213,12 @@ export function buildOverlay(
     case 'progressed': {
       const c = directionContext(chart, targetDate, nodeType);
       const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
-      // The planets progress via day-for-a-year; the angle method only chooses how
-      // the RAMC (gmst) advances. Mean Quotidian = the honest progressed sidereal
-      // time (the prior default); the others offset the natal RAMC by the arc.
+      // The planets progress via day-for-a-year; the angle method chooses how the
+      // RAMC (gmst) is framed. DEFAULT is relative-to-natal: the progressed planets
+      // plotted against the NATAL RAMC (consistent with the transit / solar-arc /
+      // primary overlays). The sa-/naibod- options instead advance the natal RAMC by
+      // the arc; the true quotidian progressed sidereal time — gmstRadians(progressedJD)
+      // — can be re-exposed as its own option when the angle-frame UI toggle is built.
       let gmst: number;
       switch (angleProgression) {
         case 'naibod-ra':
@@ -210,7 +235,7 @@ export function buildOverlay(
           break;
         case 'mean-quotidian':
         default:
-          gmst = gmstRadians(c.progressedJD);
+          gmst = c.natalGMST; // relative-to-natal (default)
           break;
       }
       return {

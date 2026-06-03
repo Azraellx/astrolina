@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 88" width="64" height="88" fill="none" role="img" aria-label="Location pin">
+  <defs>
+    <!-- Glass body: cool + translucent, bright at the crown fading to a deeper
+         steel-blue base (same platinum tones, now see-through). -->
+    <linearGradient id="glassBody" x1="16" y1="2" x2="48" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".95"/>
+      <stop offset=".28" stop-color="#e6ecf4" stop-opacity=".55"/>
+      <stop offset=".62" stop-color="#b7c2d2" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#8b97a8" stop-opacity=".72"/>
+    </linearGradient>
+    <!-- Specular bloom: the upper-left catchlight that sells glass. -->
+    <radialGradient id="glassGloss" cx=".36" cy=".24" r=".5">
+      <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Cool refraction glow low in the bulb (the look-through tint). -->
+    <radialGradient id="glassRefract" cx=".5" cy=".72" r=".55">
+      <stop offset="0" stop-color="#bcd4ec" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#bcd4ec" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Glassy socket around the gem (light, translucent). -->
+    <linearGradient id="glassBevel" x1="32" y1="17" x2="32" y2="43" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9aa6b6" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#f4f8fd" stop-opacity=".92"/>
+    </linearGradient>
+    <!-- Gold gem (kept saturated as the focal accent), lit from the upper-left. -->
+    <radialGradient id="gem" cx=".38" cy=".3" r=".8">
+      <stop offset="0" stop-color="#ffeab2"/>
+      <stop offset=".42" stop-color="#f8c64b"/>
+      <stop offset=".8" stop-color="#e89a23"/>
+      <stop offset="1" stop-color="#c4790f"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Glass teardrop: translucent fill + a thin cool rim for silhouette. -->
+  <path d="M32 4C16.5 4 4 16.5 4 31c0 11 10 23 28 53 18-30 28-42 28-53C60 16.5 47.5 4 32 4Z"
+        fill="url(#glassBody)" stroke="#6a7585" stroke-opacity=".5" stroke-width="1"/>
+  <!-- Cool refraction glow, then the bright upper-left bloom (both clipped to the
+       silhouette by reusing the path). -->
+  <path d="M32 4C16.5 4 4 16.5 4 31c0 11 10 23 28 53 18-30 28-42 28-53C60 16.5 47.5 4 32 4Z"
+        fill="url(#glassRefract)"/>
+  <path d="M32 4C16.5 4 4 16.5 4 31c0 11 10 23 28 53 18-30 28-42 28-53C60 16.5 47.5 4 32 4Z"
+        fill="url(#glassGloss)"/>
+  <!-- Bright glass edge highlight along the polished upper-left rim. -->
+  <path d="M12.5 18.5C16.5 12 24 8 31 7.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-opacity=".7"/>
+  <!-- Faint rim light catching the lower-right edge. -->
+  <path d="M57 35C55.5 43 49 53 39 70" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".25"/>
+
+  <!-- Glass socket + gold gem -->
+  <circle cx="32" cy="30" r="13.5" fill="url(#glassBevel)"/>
+  <circle cx="32" cy="30" r="13.5" fill="none" stroke="#5f6876" stroke-width=".6" stroke-opacity=".4"/>
+  <circle cx="32" cy="30" r="10" fill="url(#gem)"/>
+  <circle cx="32" cy="30" r="10" fill="none" stroke="#a9690c" stroke-width=".6" stroke-opacity=".5"/>
+  <!-- Gem gloss: soft dome bloom + one crisp astro sparkle glint. -->
+  <ellipse cx="29" cy="25.6" rx="5" ry="3.4" fill="#fff" fill-opacity=".3"/>
+  <path d="M29 23.2 29.71 25.69 32.2 26.4 29.71 27.11 29 29.6 28.29 27.11 25.8 26.4 28.29 25.69Z" fill="#fff" fill-opacity=".95"/>
+</svg>

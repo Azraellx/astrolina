@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import type { StoredChart } from '../../lib/chartLibrary';
-import { TipButton } from '../ui/HoverTip';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  chartRecency,
+  displayName,
+  type StoredChart,
+} from '../../lib/chartLibrary';
 import './ChartSwitcher.css';
+
+// The dropdown is a quick-switch shortlist; the full searchable list lives in the
+// ChartManager that "Search + Add Name" opens.
+const RECENT_COUNT = 5;
 
 interface ChartSwitcherProps {
   current: StoredChart | null;
@@ -45,19 +52,31 @@ export function ChartSwitcher({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  // Just the most-recently-used handful — the rest are reachable via search.
+  const recentCharts = useMemo(
+    () =>
+      [...charts]
+        .sort((a, b) => chartRecency(b) - chartRecency(a))
+        .slice(0, RECENT_COUNT),
+    [charts],
+  );
+
   return (
     <div className="chart-switcher" ref={ref}>
-      <TipButton
+      {/* Plain button (no hover .ui-tip): the rich tip popped open on hover and
+          covered the quick-select dropdown that opens just below. A native title
+          keeps the hint without an overlay. */}
+      <button
         type="button"
         className="switcher-trigger"
         onClick={() => setOpen((v) => !v)}
-        tip="Switch, edit, or add a chart"
-        hotkey="A"
-        placement="bottom-start"
+        title="Switch, edit, or add a chart (A)"
       >
         <span className="label">
           <span className="name-row">
-            <strong>{current ? current.name : 'No chart selected'}</strong>
+            <strong title={current?.name}>
+              {current ? displayName(current.name) : 'No chart selected'}
+            </strong>
             {!compact && (
               <svg
                 className="switcher-icon"
@@ -89,7 +108,7 @@ export function ChartSwitcher({
             </span>
           )}
         </span>
-      </TipButton>
+      </button>
 
       {open && (
         <div className="switcher-menu">
@@ -97,7 +116,7 @@ export function ChartSwitcher({
             {charts.length === 0 && (
               <li className="empty">No saved charts yet.</li>
             )}
-            {charts.map((c) => (
+            {recentCharts.map((c) => (
               <li
                 key={c.id}
                 className={c.id === current?.id ? 'active' : ''}
@@ -110,7 +129,9 @@ export function ChartSwitcher({
                     setOpen(false);
                   }}
                 >
-                  <span className="chart-name">{c.name}</span>
+                  <span className="chart-name" title={c.name}>
+                    {displayName(c.name)}
+                  </span>
                   <span className="chart-meta">
                     {fmtBirthDate(c)} · {c.birthplace.label.split(',')[0]}
                   </span>
@@ -150,9 +171,9 @@ export function ChartSwitcher({
               onNew();
               setOpen(false);
             }}
-            title="Add a new chart (A)"
+            title="Search all charts or add a new one (A)"
           >
-            + New chart
+            Search + Add Name
           </button>
         </div>
       )}

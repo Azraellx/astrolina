@@ -243,6 +243,20 @@ export function ExpandedChartSidebar({
   const shownOverlay =
     overlayPlanets?.filter((p) => visiblePlanets.has(p.name)) ?? null;
 
+  // Bold state title for the wheel's top-left corner (always shown when a chart is
+  // up). Coloured by the live map state via --map-accent — neutral natal, blue
+  // hover, gold pinned, green natal-pin — so it tracks the same palette as the pin.
+  const wheelTitle = isNatalPin
+    ? 'NATAL CHART'
+    : pinned
+      ? 'PINNED CHART'
+      : point
+        ? 'HOVER CHART'
+        : 'NATAL CHART';
+  // Just the overlay's name for the wheel's top-right corner (the full label
+  // "Name · details" lives in the timeline bar); the rest after the separator drops.
+  const overlayName = overlayLabel ? overlayLabel.split('·')[0].trim() : null;
+
   const toggleAspect = (cat: AspectCategory) => {
     setVisibleAspects((prev) => {
       const next = new Set(prev);
@@ -414,16 +428,34 @@ export function ExpandedChartSidebar({
               : point
                 ? ''
                 : 'natal';
+          const hasPin = isNatalPin || pinned;
           const label = isNatalPin
-            ? '📌 Pinned at natal'
+            ? 'Pinned at natal'
             : pinned
-              ? '📌 Pinned at'
+              ? 'Pinned at'
               : point
                 ? 'Relocated to'
                 : 'Located at natal';
           return (
             <div className={`es-relocated ${stateClass}`}>
               <span className="es-relocated-text">
+                {hasPin && (
+                  <svg
+                    className="es-pin-icon"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                )}
                 {label} {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
               </span>
             </div>
@@ -443,22 +475,30 @@ export function ExpandedChartSidebar({
             </button>
             {anglesOpen && (
               <ul className="es-angle-list">
-                <li>
-                  <span className="es-name">As</span>
-                  <span className="es-lon"><Longitude lon={angles.asc} advanced={advanced} /></span>
-                </li>
-                <li>
-                  <span className="es-name">MC</span>
-                  <span className="es-lon"><Longitude lon={angles.mc} advanced={advanced} /></span>
-                </li>
-                <li>
-                  <span className="es-name">Ds</span>
-                  <span className="es-lon"><Longitude lon={angles.dsc} advanced={advanced} /></span>
-                </li>
-                <li>
-                  <span className="es-name">IC</span>
-                  <span className="es-lon"><Longitude lon={angles.ic} advanced={advanced} /></span>
-                </li>
+                {/* Each angle gets the planet-row treatment: a colored code marker
+                    (matching the wheel/map angle colours — As/Ds gold, Mc/Ic blue),
+                    its full name, then the degree·sign longitude. */}
+                {/* Two per row to save space: MC/IC on top, As/Ds below. */}
+                {(
+                  [
+                    { code: 'MC', name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
+                    { code: 'IC', name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
+                    { code: 'As', name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
+                    { code: 'Ds', name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
+                  ] as const
+                ).map(({ code, name, lon, color }) => (
+                  <li key={code}>
+                    <div className="es-row-main">
+                      <span className="es-glyph es-angle-code" style={{ color }}>
+                        {code}
+                      </span>
+                      <span className="es-name">{name}</span>
+                      <span className="es-lon">
+                        <Longitude lon={lon} advanced={advanced} />
+                      </span>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -513,10 +553,19 @@ export function ExpandedChartSidebar({
       })()}
 
       <section className="es-section es-section-wheel">
-        {angles && overlayLabel && (
-          <div className="es-overlay-bar">
-            <span className="es-overlay-caption">
-              <span className="es-overlay-dot" /> {overlayLabel}
+        {/* Use the wheel's empty top corners: the chart-state title (left, always)
+            and, when an overlay is on, its caption (right). */}
+        {angles && (
+          <div className="es-wheel-corner es-wheel-corner-left">
+            <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
+              {wheelTitle}
+            </span>
+          </div>
+        )}
+        {angles && overlayName && (
+          <div className="es-wheel-corner es-wheel-corner-right">
+            <span className="es-overlay-caption es-overlay-dashed">
+              {overlayName}
             </span>
           </div>
         )}

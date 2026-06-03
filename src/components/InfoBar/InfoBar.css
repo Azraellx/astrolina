@@ -1,0 +1,35 @@
+/* Active-systems status chip, parked just above the map's attribution at the
+   bottom-right (matches its chrome). Clickable — opens the Calculation settings. */
+.info-bar {
+  position: fixed;
+  right: 16px;
+  bottom: 44px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(var(--bg-panel), 0.78);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+/* Each value highlights on its own hover (not the whole button). */
+.info-bar-item {
+  transition: color 0.15s ease;
+}
+
+.info-bar-item:hover {
+  color: var(--text-strong);
+}
+
+.info-bar-dot {
+  color: var(--text-faint);
+}

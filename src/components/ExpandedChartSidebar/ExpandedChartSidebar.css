@@ -93,6 +93,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Plain line-style pin (replaces the 📌 emoji) — inherits the row's state color. */
+.es-pin-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
 .es-relocated {
   display: flex;
   align-items: center;
@@ -328,8 +335,9 @@
   background: rgba(var(--accent-rgb), 0.7);
 }
 
-/* Angles list inside the header dropdown — two per row, flush with the
-   panel edges. */
+/* Angles list inside the header dropdown — the same row treatment as the planet
+   list (colored code marker + name + longitude), two per row to save space:
+   MC/IC on top, As/Ds below. */
 .es-angle-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -338,10 +346,8 @@
 }
 
 .es-angle-list li {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
   padding: 3px 0;
   font-size: 11px;
   border-bottom: 1px solid rgba(var(--tint), 0.04);
@@ -351,10 +357,17 @@
   border-bottom: none;
 }
 
-/* Drop the bottom border on the last cell of each angle column (ASC/MC
-   in a 2-up layout means the last row is DSC/IC). */
+/* The 2-up grid's last row is its final two cells (As / Ds). */
 .es-angle-list li:nth-last-child(-n + 2) {
   border-bottom: none;
+}
+
+/* The two-letter angle code sits in the glyph slot, colored like the wheel/map
+   angle labels (As/Ds gold, Mc/Ic blue) — set inline per row. */
+.es-angle-code {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .es-glyph {
@@ -559,30 +572,52 @@
   transition: background 0.12s;
 }
 
-/* Centered bar above the wheel: overlay caption + Bi-ring toggle. */
-.es-overlay-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0 0 8px;
+/* Wheel-section corner overlays — tucked into the circular wheel's empty corners:
+   the bold chart-state title (top-left, always) and the overlay caption (top-right,
+   when an overlay is active). pointer-events: none so the wheel stays interactive. */
+.es-wheel-corner {
+  position: absolute;
+  top: 4px;
+  z-index: 1;
+  max-width: 44%;
+  pointer-events: none;
+}
+
+/* Flush with the rest of the sidebar's text (.es-section padding is 18px). */
+.es-wheel-corner-left {
+  left: 18px;
+  text-align: left;
+}
+
+.es-wheel-corner-right {
+  right: 18px;
+  text-align: right;
+}
+
+.es-wheel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  /* colour set inline from --map-accent (per chart state) */
 }
 
 .es-overlay-caption {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.es-overlay-dot {
-  display: inline-block;
-  width: 14px;
-  height: 0;
-  border-top: 1.5px dashed var(--map-accent);
-  flex-shrink: 0;
+/* Dashed/dotted underline so the overlay name reads as a reference to the dashed
+   overlay lines on the map. */
+.es-overlay-dashed {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--map-accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
 }
 
 .es-section-cross h3 {

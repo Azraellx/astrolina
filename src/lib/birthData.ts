@@ -13,24 +13,9 @@ export interface BirthData {
   };
 }
 
-export const TEST_BIRTH: BirthData = {
-  name: 'Albert Einstein',
-  year: 1879,
-  month: 3,
-  day: 14,
-  hour: 11,
-  minute: 30,
-  tzOffset: 0.6166666666666667,
-  birthplace: {
-    label: 'Ulm, Germany',
-    lat: 48.4011,
-    lng: 9.9876,
-  },
-};
-
 // The charts a fresh install starts with, in display order; the first is the
-// selected one. Jim Lewis — who invented Astro*Carto*Graphy — is a fitting
-// default; Einstein doubles as a ready-made synastry partner.
+// selected one. Jim Lewis — who invented Astro*Carto*Graphy — is the lone, fitting
+// default; with no second chart, the synastry bar offers an "Add person" prompt.
 //
 // Birth date + place are documented (Wikipedia / Astro-Databank); the 09:30
 // birth time is the commonly-cited record (Astro-Seek). New York City observed
@@ -50,5 +35,4 @@ export const SEED_BIRTHS: BirthData[] = [
       lng: -73.8988,
     },
   },
-  TEST_BIRTH,
 ];

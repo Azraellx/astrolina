@@ -5,6 +5,7 @@ import type {
   OverlayMode,
   PrimaryRate,
   TimeUnit,
+  TransitFrame,
 } from './astro/timeline';
 
 const MODE_KEY = 'astro:overlay-mode:v1';
@@ -106,4 +107,17 @@ export function loadUserPrimaryRate(): number {
 }
 export function saveUserPrimaryRate(deg: number) {
   localStorage.setItem(USER_PRIM_RATE_KEY, String(deg));
+}
+
+// Overlay positioning (relative-to-natal vs the moment's own sidereal time).
+const TRANSIT_FRAME_KEY = 'astro:transit-frame:v1';
+const TRANSIT_FRAMES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
+export function loadTransitFrame(): TransitFrame {
+  const v = localStorage.getItem(TRANSIT_FRAME_KEY);
+  return v && (TRANSIT_FRAMES as string[]).includes(v)
+    ? (v as TransitFrame)
+    : 'relative-to-natal';
+}
+export function saveTransitFrame(f: TransitFrame) {
+  localStorage.setItem(TRANSIT_FRAME_KEY, f);
 }

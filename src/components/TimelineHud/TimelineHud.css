@@ -104,6 +104,31 @@
   background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.94) 9.5px);
 }
 
+/* Collapsed (Display ▸ Timeline off): no ruler/transport, so the bar reduces to just
+   its draggable nub. Strip the bar's own chrome and turn the nub into a standalone,
+   fully-rounded pill (drop the protruding position + side fillets). */
+.timeline-hud.thud-collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.timeline-hud.thud-collapsed .thud-measure {
+  position: static;
+  transform: none;
+  padding: 5px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--map-accent-rgb), 0.55);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.timeline-hud.thud-collapsed .thud-measure::before,
+.timeline-hud.thud-collapsed .thud-measure::after {
+  display: none;
+}
+
 .thud-row {
   display: flex;
   align-items: center;
@@ -357,6 +382,10 @@
 }
 
 .thud-date {
+  /* Size to the rendered content so the box fits whatever format the browser shows
+     (12h/24h, any date order) with no fixed-width clip or empty gap. (field-sizing is
+     a no-op on older engines, which fall back to the intrinsic width.) */
+  field-sizing: content;
   padding: 5px 6px;
   background: rgba(var(--tint), 0.05);
   border: 1px solid rgba(var(--tint), 0.12);
@@ -365,22 +394,12 @@
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  /* color-scheme is inherited from :root per theme (light → dark calendar icon,
-     dark/vintage → light icon), so the native picker glyph stays legible. */
 }
 
-/* Pull the native calendar glyph in tight against the time fields — Chromium
-   leaves a wide default margin there, which read as dead space between the AM/PM
-   and the icon. */
+/* Hide the native calendar picker entirely (icon + popup) — the date is typed in
+   place, and the "Now" button covers quick resets. */
 .thud-date::-webkit-calendar-picker-indicator {
-  margin-left: 2px;
-  padding: 0;
-}
-
-/* Vintage's dark color-scheme makes the native calendar glyph stark white,
-   which clashes with the warm palette — warm it to a muted parchment/gold. */
-:root[data-theme='vintage'] .thud-date::-webkit-calendar-picker-indicator {
-  filter: sepia(0.8) saturate(2.2) brightness(0.82);
+  display: none;
 }
 
 .thud-utc {
@@ -389,6 +408,27 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
   text-transform: uppercase;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Now" button — to the right of the zone label; jumps the moment to current time. */
+.thud-now {
+  padding: 5px 9px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.thud-now:hover {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 /* ── Live label / hints ────────────────────────────────────────── */

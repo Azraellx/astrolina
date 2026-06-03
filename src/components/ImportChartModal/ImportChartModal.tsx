@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getIanaTimezone } from '../../lib/atlas/timezone';
-import { newChartId, type StoredChart } from '../../lib/chartLibrary';
+import { displayName, newChartId, type StoredChart } from '../../lib/chartLibrary';
 import { parseImport, type ParsedChart } from '../../lib/importCharts';
 import './ImportChartModal.css';
 
@@ -158,7 +158,9 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
               <ul className="import-list">
                 {charts.map((c, i) => (
                   <li key={i}>
-                    <span className="import-name">{c.name}</span>
+                    <span className="import-name" title={c.name}>
+                      {displayName(c.name)}
+                    </span>
                     <span className="import-detail">{fmtSummary(c)}</span>
                   </li>
                 ))}

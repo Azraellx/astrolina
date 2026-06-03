@@ -36,6 +36,9 @@
   /* Content-sized: the controls sit together with small uniform gaps, so the bar
      is no wider than it needs to be (no slack between the name/status/menus). */
   width: max-content;
+  /* TopNav shifts this (translateX) to re-center the status pill on screen when the
+     left/right sides differ in width; ease it so switching names glides. */
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   /* Sit above the secondary toolbar below it. Both bars carry backdrop-filter, so
      each is its own stacking context; without this the later-in-DOM toolbar paints
      OVER this bar's open dropdown panels (which can't escape this bar's context),
@@ -129,11 +132,13 @@
    all adjacent with small uniform gaps — no slack between sections. Generous side
    padding gives the far-left/right controls breathing room from the edges. */
 .topnav-row {
-  /* Three columns: the two 1fr side tracks resolve equal (each to the wider side's
-     content) under the bar's shrink-to-fit width, so the centre auto column — the
-     status pill — sits on the bar's true centre, flush under the readout below it. */
+  /* Each column hugs its content (no forcing the right to match a long left name),
+     so the left side can be wider than the right. TopNav then shifts the whole bar
+     by half the left/right width difference so the centre status pill still lands on
+     the true screen centre (see the recenter effect). The chart-expanded rule below
+     overrides this. */
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 7px 28px;

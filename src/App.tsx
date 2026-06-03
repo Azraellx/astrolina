@@ -6,14 +6,15 @@ import {
   type MeasureInfo,
   type OverlayData,
 } from './components/Map/Map';
-import { Sidebar } from './components/Sidebar/Sidebar';
+import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
-import { BirthDataForm } from './components/BirthDataForm/BirthDataForm';
+import { InfoBar } from './components/InfoBar/InfoBar';
+import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { SEED_BIRTHS } from './lib/birthData';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
@@ -29,6 +30,7 @@ import {
   projectOntoEcliptic,
   relocate,
   toEclipticPositions,
+  PLANET_NAMES,
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
@@ -56,6 +58,7 @@ import {
   type OverlayMode,
   type PrimaryRate,
   type TimeUnit,
+  type TransitFrame,
 } from './lib/astro/timeline';
 import {
   loadAngleProgression,
@@ -64,6 +67,7 @@ import {
   loadOverlayPartner,
   loadOverlayStep,
   loadPrimaryRate,
+  loadTransitFrame,
   loadUserPrimaryRate,
   saveAngleProgression,
   saveOverlayDate,
@@ -71,6 +75,7 @@ import {
   saveOverlayPartner,
   saveOverlayStep,
   savePrimaryRate,
+  saveTransitFrame,
   saveUserPrimaryRate,
 } from './lib/overlayPrefs';
 import {
@@ -229,6 +234,25 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(
     () => localStorage.getItem('astro:view-settings:v1') !== '0',
   );
+  // The active-systems status chip (View ▸ Info), above the map attribution.
+  const [showInfo, setShowInfo] = useState(
+    () => localStorage.getItem('astro:view-info:v1') !== '0',
+  );
+  // Overlay ▸ Display ▸ Timeline: when off, the bottom timeline collapses to just
+  // its draggable nub (no ruler/transport).
+  const [showTimeline, setShowTimeline] = useState(
+    () => localStorage.getItem('astro:show-timeline:v1') !== '0',
+  );
+  // Which sidebar accordion section is open (owned here so the Info chip can open the
+  // Calculation tab). Persisted; defaults to Map Filters.
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection | null>(() => {
+    const v = localStorage.getItem('astro:sidebar-section:v1');
+    if (v === 'theme' || v === 'filters' || v === 'calc' || v === 'overlay') {
+      return v;
+    }
+    if (v === 'none') return null;
+    return 'filters';
+  });
 
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() =>
     loadOverlayMode(),
@@ -249,6 +273,10 @@ export default function App() {
   const [userPrimaryRate, setUserPrimaryRate] = useState<number>(() =>
     loadUserPrimaryRate(),
   );
+  // Overlay positioning: 'relative-to-natal' (default) vs 'transit-moment'.
+  const [transitFrame, setTransitFrame] = useState<TransitFrame>(() =>
+    loadTransitFrame(),
+  );
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
@@ -256,6 +284,10 @@ export default function App() {
   // The current map-pin-state accent resolved to a concrete color, for the WebGL
   // measure layers (which can't read CSS vars). Kept in sync below.
   const [measureColor, setMeasureColor] = useState('#8b909c');
+  // True once zoomed in to "detail" level (where the Map's Zoom-out button appears).
+  // Gates the network reverse-geocoder to zooms where the exact town actually
+  // matters, so most points resolve from the bundled city data with no request.
+  const [detailZoom, setDetailZoom] = useState(false);
 
   const mapRef = useRef<MapHandle>(null);
 
@@ -337,6 +369,7 @@ export default function App() {
         case 'm': setShowChart((v) => !v); break;
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
+        case 'i': setShowInfo((v) => !v); break;
         case 'o':
           setOverlayMode(
             (mode) =>
@@ -344,6 +377,8 @@ export default function App() {
           );
           break;
         case 'n': setOverlayMode('off'); break;
+        case 'p': setShowParans((v) => !v); break;
+        case 'l': setShowLocalSpace((v) => !v); break;
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
@@ -385,6 +420,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:view-settings:v1', showSettings ? '1' : '0');
   }, [showSettings]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-info:v1', showInfo ? '1' : '0');
+  }, [showInfo]);
+  useEffect(() => {
+    localStorage.setItem('astro:sidebar-section:v1', sidebarSection ?? 'none');
+  }, [sidebarSection]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-timeline:v1', showTimeline ? '1' : '0');
+  }, [showTimeline]);
 
   useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
@@ -393,6 +437,7 @@ export default function App() {
   useEffect(() => saveAngleProgression(angleProgression), [angleProgression]);
   useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
+  useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
 
   // Animation: advance the target date one minor notch per tick while playing.
   // setData is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps
@@ -518,9 +563,14 @@ export default function App() {
   // progressions, solar-arc directions, or a synastry partner) derived from the
   // current chart via buildOverlay, then run through the SAME generators and
   // visibility filters as the base.
+  // A chart can't be its own synastry partner, so a partner that matches the active
+  // chart resolves to none (the effect below also clears the stale selection).
   const partner = useMemo(
-    () => (partnerId ? (charts.find((c) => c.id === partnerId) ?? null) : null),
-    [charts, partnerId],
+    () =>
+      partnerId && partnerId !== current?.id
+        ? (charts.find((c) => c.id === partnerId) ?? null)
+        : null,
+    [charts, partnerId, current],
   );
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
@@ -533,6 +583,7 @@ export default function App() {
       angleProgression,
       primaryRate,
       userPrimaryRate,
+      transitFrame,
     );
   }, [
     overlayMode,
@@ -543,6 +594,7 @@ export default function App() {
     angleProgression,
     primaryRate,
     userPrimaryRate,
+    transitFrame,
   ]);
 
   const overlay = useMemo<OverlayData | null>(() => {
@@ -621,6 +673,7 @@ export default function App() {
   //  Suppressed while measuring.
   const pinnedLabel = useReverseGeocode(
     mapTool === 'measure' || isNatalPin ? null : pinned,
+    detailZoom,
   );
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useMemo(
@@ -640,7 +693,12 @@ export default function App() {
           ? (current?.birthplace.label ?? null)
           : (pinnedLabel ?? hoverLabel)
         : hoverLabel;
-  const fadeLocation = !!pinned && !isNatalPin;
+  // Fade the readout text only when a non-natal pin's reverse-geocode RESOLVES to a
+  // place that differs from the label already on screen (the frozen hover label). If
+  // the pin lands on the same text the cursor was already showing, nothing changes,
+  // so we skip the fade and let it stay put.
+  const fadeLocation =
+    !!pinned && !isNatalPin && pinnedLabel != null && pinnedLabel !== hoverLabel;
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
@@ -688,6 +746,18 @@ export default function App() {
     });
   }, []);
 
+  // Shift+click a planet / line toggle to apply that click to ALL of them at once
+  // (show everything, or hide everything) — based on the state the clicked one
+  // would flip to.
+  const setAllPlanets = useCallback((visible: boolean) => {
+    setVisiblePlanets(visible ? new Set(PLANET_NAMES) : new Set());
+  }, []);
+  const setAllLineTypes = useCallback((visible: boolean) => {
+    setVisibleLineTypes(
+      visible ? new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']) : new Set(),
+    );
+  }, []);
+
   // True while the expanded sidebar is being drag-resized — pauses map hover so
   // the cursor sweeping over the map mid-drag doesn't flicker the hover state.
   const resizingRef = useRef(false);
@@ -727,14 +797,28 @@ export default function App() {
   // re-render during a drag.
   const stopMeasure = useCallback(() => setMapTool('off'), []);
 
+  // Switch the active chart. If you switch TO the chart currently being compared in
+  // synastry, drop it as the partner — you can't compare someone to themselves, and
+  // the bar would otherwise show them as both the subject and the partner.
+  const selectChart = useCallback((id: string) => {
+    setCurrentId(id);
+    setPartnerId((p) => (p === id ? null : p));
+    // Bump recency so the chart switcher's "recent" shortlist tracks real usage.
+    setCharts((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, lastUsedAt: Date.now() } : c)),
+    );
+  }, []);
+
   const handleSaveChart = (chart: StoredChart) => {
+    // The saved chart becomes active — stamp its recency.
+    const stamped = { ...chart, lastUsedAt: Date.now() };
     setCharts((prev) => {
-      const exists = prev.some((c) => c.id === chart.id);
+      const exists = prev.some((c) => c.id === stamped.id);
       return exists
-        ? prev.map((c) => (c.id === chart.id ? chart : c))
-        : [...prev, chart];
+        ? prev.map((c) => (c.id === stamped.id ? stamped : c))
+        : [...prev, stamped];
     });
-    setCurrentId(chart.id);
+    setCurrentId(stamped.id);
     setEditingId(null);
     setCreating(false);
     setPinned(null);
@@ -744,13 +828,19 @@ export default function App() {
   const handleImport = (imported: StoredChart[]) => {
     setImporting(false);
     if (imported.length === 0) return;
-    setCharts((prev) => [...prev, ...imported]);
-    setCurrentId(imported[0].id);
+    // The first imported chart becomes active — stamp its recency.
+    const stamped = imported.map((c, i) =>
+      i === 0 ? { ...c, lastUsedAt: Date.now() } : c,
+    );
+    setCharts((prev) => [...prev, ...stamped]);
+    setCurrentId(stamped[0].id);
     setPinned(null);
     setHover(null);
   };
 
   const handleDelete = (id: string) => {
+    // Drop the comparison partner if it's the chart being deleted.
+    setPartnerId((p) => (p === id ? null : p));
     setCharts((prev) => {
       const next = prev.filter((c) => c.id !== id);
       if (currentId === id) setCurrentId(next[0]?.id ?? null);
@@ -758,8 +848,10 @@ export default function App() {
     });
   };
 
-  const editingChart =
-    editingId != null ? (charts.find((c) => c.id === editingId) ?? null) : null;
+  const closeManager = () => {
+    setCreating(false);
+    setEditingId(null);
+  };
 
   return (
     <>
@@ -787,6 +879,7 @@ export default function App() {
         onLeave={onLeave}
         onClick={onClick}
         onPinNatal={onPinNatal}
+        onDetailZoomChange={setDetailZoom}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
       {!wheelExpanded && showCoords && (
@@ -807,8 +900,10 @@ export default function App() {
         <Sidebar
           visiblePlanets={visiblePlanets}
           togglePlanet={togglePlanet}
+          setAllPlanets={setAllPlanets}
           visibleLineTypes={visibleLineTypes}
           toggleLineType={toggleLineType}
+          setAllLineTypes={setAllLineTypes}
           showParans={showParans}
           setShowParans={setShowParans}
           showLocalSpace={showLocalSpace}
@@ -822,6 +917,10 @@ export default function App() {
           nodeType={nodeType}
           setNodeType={setNodeType}
           overlayMode={overlayMode}
+          transitFrame={transitFrame}
+          setTransitFrame={setTransitFrame}
+          showTimeline={showTimeline}
+          setShowTimeline={setShowTimeline}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}
@@ -838,6 +937,8 @@ export default function App() {
           setShowRivers={setShowRivers}
           showLabels={showLabels}
           setShowLabels={setShowLabels}
+          openSection={sidebarSection}
+          setOpenSection={setSidebarSection}
         />
       )}
       <TopNav
@@ -847,7 +948,7 @@ export default function App() {
         onPinNatal={onPinNatal}
         current={current}
         charts={charts}
-        onSelectChart={(id) => setCurrentId(id)}
+        onSelectChart={selectChart}
         onNewChart={() => setCreating(true)}
         onEditChart={(id) => setEditingId(id)}
         onDeleteChart={handleDelete}
@@ -866,7 +967,21 @@ export default function App() {
         setShowCoords={setShowCoords}
         showSettings={showSettings}
         setShowSettings={setShowSettings}
+        showInfo={showInfo}
+        setShowInfo={setShowInfo}
       />
+      {showInfo && (
+        <InfoBar
+          lineSystem={lineSystem}
+          coordSystem={coordSystem}
+          houseSystem={houseSystem}
+          nodeType={nodeType}
+          onClick={() => {
+            setShowSettings(true);
+            setSidebarSection('calc');
+          }}
+        />
+      )}
       {isTimeMode && (
         <TimelineHud
           overlayMode={overlayMode}
@@ -880,6 +995,7 @@ export default function App() {
           charts={charts}
           currentId={current?.id ?? null}
           overlayMeasure={overlayLayer?.measure ?? null}
+          showTimeline={showTimeline}
         />
       )}
       {overlayMode === 'synastry' && (
@@ -888,6 +1004,7 @@ export default function App() {
           charts={charts}
           currentId={current?.id ?? null}
           onSelectPartner={setPartnerId}
+          onAddPerson={() => setCreating(true)}
         />
       )}
       {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and
@@ -907,7 +1024,7 @@ export default function App() {
           visiblePlanets={visiblePlanets}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
-          onSelectChart={(id) => setCurrentId(id)}
+          onSelectChart={selectChart}
           onNewChart={() => setCreating(true)}
           onEditChart={(id) => setEditingId(id)}
           onDeleteChart={handleDelete}
@@ -924,18 +1041,22 @@ export default function App() {
           />
         )
       )}
-      {(creating || editingChart) && (
-        <BirthDataForm
-          initial={editingChart}
-          onSubmit={handleSaveChart}
-          onCancel={() => {
-            setCreating(false);
-            setEditingId(null);
+      {(creating || editingId != null) && (
+        <ChartManager
+          charts={charts}
+          currentId={current?.id ?? null}
+          initialEditId={editingId}
+          onSelect={(id) => {
+            selectChart(id);
+            closeManager();
           }}
+          onSave={handleSaveChart}
+          onDelete={handleDelete}
           onImport={() => {
-            setCreating(false);
+            closeManager();
             setImporting(true);
           }}
+          onClose={closeManager}
         />
       )}
       {importing && (

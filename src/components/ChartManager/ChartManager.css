@@ -1,0 +1,311 @@
+/* Unified chart browser + add/edit. Reuses .modal-backdrop and the .birth-form
+   field styles (from BirthDataForm.css); this file adds the two-pane shell, the
+   search list, and neutralises the nested form's standalone-card chrome. */
+.chart-manager {
+  width: 100%;
+  max-width: 740px;
+  min-height: 420px;
+  max-height: 86vh;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(var(--tint), 0.08);
+}
+
+.cm-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.cm-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.cm-close:hover {
+  color: var(--text-strong);
+}
+
+.cm-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Left: search + list ───────────────────────────────────────────────────── */
+.cm-list-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 268px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(var(--tint), 0.08);
+  min-height: 0;
+}
+
+.cm-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 12px 12px 8px;
+}
+
+.cm-search-icon {
+  position: absolute;
+  left: 21px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.cm-search-input {
+  flex: 1;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  padding: 8px 26px 8px 32px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+
+.cm-search-input:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.cm-search-clear {
+  position: absolute;
+  right: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.cm-search-clear:hover {
+  color: var(--text-strong);
+}
+
+/* The list lives in this flex-filling wrapper, but the <ul> inside is absolutely
+   positioned — so the (potentially long) list contributes NO intrinsic height to the
+   row. The right-hand form therefore defines the window height, and the list just
+   scrolls within it instead of stretching the window taller as names are added. */
+.cm-list-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.cm-list {
+  position: absolute;
+  inset: 0;
+  list-style: none;
+  margin: 0;
+  /* A little top padding so the first row's selected/editing outline isn't clipped
+     by the scroll edge or tucked under the search bar; extra bottom room so the last
+     row clears the fade overlay. The full list scrolls (no cap). */
+  padding: 4px 6px 14px;
+  overflow-y: auto;
+  /* Scrollbar styling is global (see index.css) so every panel matches. */
+}
+
+.cm-list-empty {
+  padding: 14px 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* Soft fade at the bottom of the list, shown only while more names lie below
+   (ChartManager toggles its opacity on scroll). Fades to the panel bg → theme-aware. */
+.cm-list-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--bg-menu), 0),
+    rgba(var(--bg-menu), 0.98)
+  );
+}
+
+.cm-list li {
+  display: flex;
+  align-items: stretch;
+  border-radius: 6px;
+  margin-bottom: 1px;
+}
+
+.cm-list li.current .cm-row {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.cm-list li.editing {
+  outline: 1px solid rgba(var(--accent-rgb), 0.4);
+}
+
+.cm-row {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px 0 0 6px;
+  min-width: 0;
+}
+
+.cm-row:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.cm-row-name {
+  font-size: 13px;
+  color: var(--text-strong);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-row-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-row-actions {
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.cm-list li:hover .cm-row-actions,
+.cm-list li.editing .cm-row-actions {
+  opacity: 1;
+}
+
+.cm-act {
+  background: transparent;
+  border: none;
+  padding: 0 7px;
+  color: var(--text-faint);
+  font-size: 13px;
+  cursor: pointer;
+  height: 100%;
+}
+
+.cm-act:hover {
+  color: var(--text-strong);
+}
+
+.cm-act.danger:hover {
+  color: var(--danger);
+}
+
+.cm-add-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px dashed rgba(var(--accent-rgb), 0.4);
+  border-radius: 6px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 4px;
+}
+
+.cm-add-row:hover {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+.cm-add-plus {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ── Right: the add/edit form ──────────────────────────────────────────────── */
+.cm-form-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px 16px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.cm-form-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* Strip the form's standalone-card chrome so it sits flush in the right pane. */
+.cm-form-pane .birth-form {
+  max-width: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+/* Stack the panes on narrow viewports. */
+@media (max-width: 600px) {
+  .cm-body {
+    flex-direction: column;
+  }
+  .cm-list-pane {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(var(--tint), 0.08);
+    max-height: 38vh;
+  }
+}

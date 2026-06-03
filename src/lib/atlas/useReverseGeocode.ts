@@ -27,8 +27,18 @@ const cache = new Map<string, string | null>();
  *
  * Every setLabel runs inside the timer/promise callback (never synchronously in
  * the effect body) so it doesn't cascade renders on each tick.
+ *
+ * `allowNetwork` gates ONLY the online fallback: the offline city lookup always
+ * runs, but a miss (open ocean / remote wilderness) only escalates to the network
+ * provider when the map is zoomed in far enough that the exact town matters (the
+ * caller passes the map's detail-zoom state). At wider zooms a miss resolves to
+ * null and is NOT cached, so a later zoomed-in attempt at the same cell can still
+ * fetch the precise place.
  */
-export function useReverseGeocode(point: Pt | null): string | null {
+export function useReverseGeocode(
+  point: Pt | null,
+  allowNetwork: boolean,
+): string | null {
   const [label, setLabel] = useState<string | null>(null);
   const key = point ? cellKey(point.lat, point.lng) : null;
 
@@ -48,14 +58,25 @@ export function useReverseGeocode(point: Pt | null): string | null {
           return;
         }
         // Offline-first: try the nearest bundled city (no network); fall back to
-        // the online provider only when no city lies within range of the point.
+        // the online provider only when no city is in range AND we're zoomed in
+        // enough for town-level precision to matter.
         import('./cityLookup')
           .then(async ({ nearestCity }) => {
             if (ctrl.signal.aborted) return;
             const hit = nearestCity(point.lat, point.lng);
-            const name = hit
-              ? hit.label
-              : await reverseGeocode(point.lat, point.lng, ctrl.signal);
+            if (hit) {
+              cache.set(key, hit.label);
+              if (!ctrl.signal.aborted) setLabel(hit.label);
+              return;
+            }
+            if (!allowNetwork) {
+              // Zoomed out: skip the request and lean on local data. Don't cache —
+              // re-runs (this effect depends on allowNetwork) so zooming in later
+              // can still resolve the exact place.
+              if (!ctrl.signal.aborted) setLabel(null);
+              return;
+            }
+            const name = await reverseGeocode(point.lat, point.lng, ctrl.signal);
             cache.set(key, name);
             if (!ctrl.signal.aborted) setLabel(name);
           })
@@ -69,7 +90,7 @@ export function useReverseGeocode(point: Pt | null): string | null {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [key, point]);
+  }, [key, point, allowNetwork]);
 
   return label;
 }

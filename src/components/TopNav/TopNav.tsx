@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -62,6 +63,8 @@ interface TopNavProps {
   setShowCoords: (v: boolean) => void;
   showSettings: boolean;
   setShowSettings: (v: boolean) => void;
+  showInfo: boolean;
+  setShowInfo: (v: boolean) => void;
 }
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
@@ -266,13 +269,17 @@ export function TopNav({
   setShowCoords,
   showSettings,
   setShowSettings,
+  showInfo,
+  setShowInfo,
 }: TopNavProps) {
   const overlayActive = overlayMode !== 'off';
 
   const measuring = tool === 'measure';
   const locationText = locationLabel ?? undefined;
-  // Fade only while waiting on a non-natal pin's full address — keying the span
-  // by the text replays the fade on each change; everything else swaps instantly.
+  // Fade only while a non-natal pin upgrades to a NEW, more accurate address (App
+  // sets `fadeLocation` only when the resolved label differs from the text already
+  // shown). Keying the span by the text replays the fade on that change; same-text
+  // resolves and plain hover swaps stay instant.
   const locationContent =
     fadeLocation && locationText ? (
       <span className="topnav-location-fade" key={locationText}>
@@ -282,9 +289,37 @@ export function TopNav({
       locationText
     );
 
+  // Keep the centre status pill on the true screen centre even when the left side
+  // (the chart name) is wider than the right. The row hugs its content, so we shift
+  // the whole bar by half the left/right width difference (grid gaps cancel out).
+  // Disabled while the sidebar is expanded — that layout is left-anchored, not centred.
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const left = bar.querySelector<HTMLElement>('.topnav-left');
+    const right = bar.querySelector<HTMLElement>('.topnav-right');
+    if (!left || !right) return;
+    const recenter = () => {
+      if (chartExpanded) {
+        bar.style.transform = '';
+        return;
+      }
+      const d =
+        (right.getBoundingClientRect().width - left.getBoundingClientRect().width) /
+        2;
+      bar.style.transform = `translateX(${d}px)`;
+    };
+    recenter();
+    const ro = new ResizeObserver(recenter);
+    ro.observe(left);
+    ro.observe(right);
+    return () => ro.disconnect();
+  }, [chartExpanded]);
+
   return (
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
-      <div className="timeline-hud topnav" data-mapstate={mapState}>
+      <div ref={barRef} className="timeline-hud topnav" data-mapstate={mapState}>
         <div className="topnav-row">
           {/* Left: client name (the chart switcher) then the sidebar toggle, pinned
               flush-right against the centre pill. While the expanded sidebar is open
@@ -309,7 +344,7 @@ export function TopNav({
               disabled={!current}
               aria-label={chartExpanded ? 'Hide chart sidebar' : 'Show chart sidebar'}
               aria-pressed={chartExpanded}
-              tip={chartExpanded ? 'Hide sidebar chart' : 'Show sidebar chart'}
+              tip={chartExpanded ? 'Hide sidebar' : 'Show sidebar chart'}
               hotkey="B"
             >
               <svg
@@ -452,6 +487,12 @@ export function TopNav({
                 hotkey="S"
                 checked={showSettings}
                 onToggle={() => setShowSettings(!showSettings)}
+              />
+              <CheckItem
+                label="Info"
+                hotkey="I"
+                checked={showInfo}
+                onToggle={() => setShowInfo(!showInfo)}
               />
             </NavMenu>
           </div>

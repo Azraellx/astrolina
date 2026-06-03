@@ -15,6 +15,7 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
+  TransitFrame,
 } from '../../lib/astro/timeline';
 import { THEMES, THEME_LABELS, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
@@ -47,8 +48,10 @@ const PLANET_THEMES: Record<PlanetName, string> = {
 interface SidebarProps {
   visiblePlanets: Set<PlanetName>;
   togglePlanet: (p: PlanetName) => void;
+  setAllPlanets: (visible: boolean) => void;
   visibleLineTypes: Set<LineType>;
   toggleLineType: (t: LineType) => void;
+  setAllLineTypes: (visible: boolean) => void;
   showParans: boolean;
   setShowParans: (v: boolean) => void;
   showLocalSpace: boolean;
@@ -62,6 +65,10 @@ interface SidebarProps {
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
   overlayMode: OverlayMode;
+  transitFrame: TransitFrame;
+  setTransitFrame: (f: TransitFrame) => void;
+  showTimeline: boolean;
+  setShowTimeline: (v: boolean) => void;
   angleProgression: AngleProgression;
   setAngleProgression: (a: AngleProgression) => void;
   primaryRate: PrimaryRate;
@@ -78,6 +85,9 @@ interface SidebarProps {
   setShowRivers: (v: boolean) => void;
   showLabels: boolean;
   setShowLabels: (v: boolean) => void;
+  /** Which accordion section is open (owned by App), and its setter. */
+  openSection: SidebarSection | null;
+  setOpenSection: (s: SidebarSection | null) => void;
 }
 
 const LINE_TYPES: { type: LineType; label: string; full: string }[] = [
@@ -120,6 +130,14 @@ const NODE_TYPES: { value: NodeType; label: string; hint: string }[] = [
   { value: 'mean', label: 'Mean Node', hint: 'The smoothed long-term average; always moves retrograde at a steady rate.' },
 ];
 
+// How an overlay's angle lines are framed. "Relative" holds the natal angles fixed
+// (radix-relative), "Absolute" uses the overlay moment's own sidereal time. Mainly
+// shapes the Transits map (the directed overlays use Chart Angle below).
+const POSITIONINGS: { value: TransitFrame; label: string; hint: string }[] = [
+  { value: 'relative-to-natal', label: 'Relative', hint: 'Frame the overlay against your natal chart’s angles (radix-relative); the lines drift slowly with the planets’ own motion. The default most astrologers work with.' },
+  { value: 'transit-moment', label: 'Absolute', hint: 'Place the overlay at its own moment in the sky (that instant’s sidereal time); the lines sweep about 15° per hour with Earth’s rotation. Standard transit astrocartography.' },
+];
+
 // "Progs/Dirns" — how a directed/progressed chart's angles advance (Solar Arc +
 // Progressed overlays), and the time-key for the Primary Directions overlay.
 const ANGLE_PROGRESSIONS: { value: AngleProgression; label: string; hint: string }[] = [
@@ -141,9 +159,9 @@ const PRIMARY_RATES: { value: PrimaryRate; label: string; hint: string }[] = [
 ];
 
 // Sidebar sections behave as an accordion — at most one open at a time — so the
-// panel never grows into a tall stack of expanded sections.
-type SidebarSection = 'theme' | 'filters' | 'calc' | 'progression';
-const SECTION_KEY = 'astro:sidebar-section:v1';
+// panel never grows into a tall stack of expanded sections. The open section is
+// owned by App (so the Info chip can open the Calculation tab from outside).
+export type SidebarSection = 'theme' | 'filters' | 'calc' | 'overlay';
 
 // Where a hover/focus hint pops, relative to its trigger. The sidebar is docked
 // at the screen's right edge, so the card pops left onto the open map, centred on
@@ -166,10 +184,12 @@ function ChoiceTip({
   pos,
   title,
   hint,
+  hotkey,
 }: {
   pos: { left: number; top: number } | null;
   title: ReactNode;
   hint: string;
+  hotkey?: string;
 }) {
   if (!pos) return null;
   return createPortal(
@@ -178,7 +198,16 @@ function ChoiceTip({
       style={{ left: pos.left, top: pos.top }}
       aria-hidden="true"
     >
-      <span className="ui-tip-title">{title}</span>
+      {hotkey ? (
+        // Title + the shared yellow hotkey pill (.ui-tip-hotkey, see HoverTip.css)
+        // share one row; the hint wraps below.
+        <span className="ui-tip-headline">
+          <span className="ui-tip-title">{title}</span>
+          <span className="ui-tip-hotkey">{hotkey}</span>
+        </span>
+      ) : (
+        <span className="ui-tip-title">{title}</span>
+      )}
       <span className="ui-tip-sub">{hint}</span>
     </span>,
     document.body,
@@ -190,15 +219,21 @@ function ChoiceTip({
 function TipToggle({
   className,
   onClick,
+  onShiftClick,
   title,
   hint,
+  hotkey,
   ariaPressed,
   children,
 }: {
   className: string;
   onClick: () => void;
+  /** Shift+click handler — used by the line filters for "toggle all". */
+  onShiftClick?: () => void;
   title: string;
   hint: string;
+  /** Optional keyboard shortcut, shown as the yellow pill in the tip. */
+  hotkey?: string;
   ariaPressed?: boolean;
   children: ReactNode;
 }) {
@@ -209,7 +244,7 @@ function TipToggle({
         ref={ref}
         type="button"
         className={className}
-        onClick={onClick}
+        onClick={(e) => (e.shiftKey && onShiftClick ? onShiftClick() : onClick())}
         aria-pressed={ariaPressed}
         onMouseEnter={show}
         onMouseLeave={hide}
@@ -218,7 +253,7 @@ function TipToggle({
       >
         {children}
       </button>
-      <ChoiceTip pos={pos} title={title} hint={hint} />
+      <ChoiceTip pos={pos} title={title} hint={hint} hotkey={hotkey} />
     </li>
   );
 }
@@ -449,10 +484,13 @@ function PlanetToggle({
   planet,
   on,
   onToggle,
+  onShiftClick,
 }: {
   planet: PlanetName;
   on: boolean;
   onToggle: () => void;
+  /** Shift+click handler — used for "show / hide all planets". */
+  onShiftClick?: () => void;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   return (
@@ -461,7 +499,7 @@ function PlanetToggle({
         ref={ref}
         type="button"
         className={`planet-toggle ${on ? 'on' : 'off'}`}
-        onClick={onToggle}
+        onClick={(e) => (e.shiftKey && onShiftClick ? onShiftClick() : onToggle())}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}
@@ -522,8 +560,10 @@ function EyeIcon({ open }: { open: boolean }) {
 export function Sidebar({
   visiblePlanets,
   togglePlanet,
+  setAllPlanets,
   visibleLineTypes,
   toggleLineType,
+  setAllLineTypes,
   showParans,
   setShowParans,
   showLocalSpace,
@@ -537,6 +577,10 @@ export function Sidebar({
   nodeType,
   setNodeType,
   overlayMode,
+  transitFrame,
+  setTransitFrame,
+  showTimeline,
+  setShowTimeline,
   angleProgression,
   setAngleProgression,
   primaryRate,
@@ -553,28 +597,25 @@ export function Sidebar({
   setShowRivers,
   showLabels,
   setShowLabels,
+  openSection,
+  setOpenSection,
 }: SidebarProps) {
-  const [openSection, setOpenSection] = useState<SidebarSection | null>(() => {
-    const v = localStorage.getItem(SECTION_KEY);
-    if (v === 'theme' || v === 'filters' || v === 'calc' || v === 'progression') {
-      return v;
-    }
-    if (v === 'none') return null;
-    return 'filters'; // default: Map Filters open
-  });
-
-  useEffect(() => {
-    localStorage.setItem(SECTION_KEY, openSection ?? 'none');
-  }, [openSection]);
-
   const toggleSection = (s: SidebarSection) =>
-    setOpenSection((prev) => (prev === s ? null : s));
+    setOpenSection(openSection === s ? null : s);
 
-  // The Progression tab only exists while a directed-angle overlay (secondary
-  // progressions or solar arc) is active; otherwise its header simply isn't
-  // rendered (and any saved open-state for it just reads as "nothing open").
-  const showProgression =
+  // The Overlay tab exists while ANY overlay is active; otherwise its header simply
+  // isn't rendered (and any saved open-state for it just reads as "nothing open").
+  // The Chart Angle control within it is for the directed overlays only.
+  const showOverlayTab = overlayMode !== 'off';
+  const showChartAngle =
     overlayMode === 'progressed' || overlayMode === 'solar-arc';
+  // The bottom timeline only exists for the time-scrub overlays (not synastry), so
+  // the Display ▸ Timeline toggle is shown only then.
+  const isTimeMode =
+    overlayMode === 'transits' ||
+    overlayMode === 'progressed' ||
+    overlayMode === 'solar-arc' ||
+    overlayMode === 'primary-directions';
 
   return (
     <aside className="sidebar">
@@ -669,6 +710,7 @@ export function Sidebar({
                 planet={p}
                 on={visiblePlanets.has(p)}
                 onToggle={() => togglePlanet(p)}
+                onShiftClick={() => setAllPlanets(!visiblePlanets.has(p))}
               />
             ))}
           </ul>
@@ -682,6 +724,7 @@ export function Sidebar({
                   key={type}
                   className={`line-toggle ${type.toLowerCase()} ${on ? 'on' : 'off'}`}
                   onClick={() => toggleLineType(type)}
+                  onShiftClick={() => setAllLineTypes(!on)}
                   title={label}
                   hint={full}
                 >
@@ -705,6 +748,7 @@ export function Sidebar({
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
               title="Parans"
+              hotkey="P"
               hint="Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map."
             >
               <EyeIcon open={showParans} />
@@ -715,6 +759,7 @@ export function Sidebar({
               onClick={() => setShowLocalSpace(!showLocalSpace)}
               ariaPressed={showLocalSpace}
               title="Local Space"
+              hotkey="L"
               hint="Directional lines radiating from the birthplace, each pointing to a planet’s compass bearing in the local sky."
             >
               <EyeIcon open={showLocalSpace} />
@@ -803,33 +848,69 @@ export function Sidebar({
         </div>
       )}
 
-      {showProgression && (
+      {showOverlayTab && (
         <>
           <button
             type="button"
             className="sidebar-header"
-            onClick={() => toggleSection('progression')}
-            aria-expanded={openSection === 'progression'}
+            onClick={() => toggleSection('overlay')}
+            aria-expanded={openSection === 'overlay'}
           >
-            <span className="sidebar-title">Progression</span>
+            <span className="sidebar-title">Overlay</span>
             <span className="sidebar-chevron">
-              {openSection === 'progression' ? '▾' : '▸'}
+              {openSection === 'overlay' ? '▾' : '▸'}
             </span>
           </button>
-          {openSection === 'progression' && (
+          {openSection === 'overlay' && (
             <div className="sidebar-section">
-              <h2>Chart Angle</h2>
+              {isTimeMode && (
+                <>
+                  <h2>Display</h2>
+                  <ul className="technique-list">
+                    <li>
+                      <button
+                        type="button"
+                        className={`tech-toggle ${showTimeline ? 'on' : 'off'}`}
+                        onClick={() => setShowTimeline(!showTimeline)}
+                        aria-pressed={showTimeline}
+                      >
+                        <EyeIcon open={showTimeline} />
+                        <span className="name">Timeline bar</span>
+                      </button>
+                    </li>
+                  </ul>
+                </>
+              )}
+
+              <h2>Positioning</h2>
               <ul className="theme-list">
-                {ANGLE_PROGRESSIONS.map(({ value, label, hint }) => (
+                {POSITIONINGS.map(({ value, label, hint }) => (
                   <HintOption
                     key={value}
-                    selected={angleProgression === value}
-                    onSelect={() => setAngleProgression(value)}
+                    selected={transitFrame === value}
+                    onSelect={() => setTransitFrame(value)}
                     label={label}
                     hint={hint}
                   />
                 ))}
               </ul>
+
+              {showChartAngle && (
+                <>
+                  <h2>Chart Angle</h2>
+                  <ul className="theme-list">
+                    {ANGLE_PROGRESSIONS.map(({ value, label, hint }) => (
+                      <HintOption
+                        key={value}
+                        selected={angleProgression === value}
+                        onSelect={() => setAngleProgression(value)}
+                        label={label}
+                        hint={hint}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
         </>

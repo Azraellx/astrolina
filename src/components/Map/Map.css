@@ -190,65 +190,130 @@
   text-align: center;
 }
 
-/* The placed-location marker. Scaled up ~2.5× from its original 22px so it's easy
-   to spot on a busy map (anchor stays centered on the point via the marker's
-   'center' anchor). The dot + ring borders / shadows scale with it. */
+/* The placed-location marker: a platinum glossy pin (public/pin.svg). The pin tip
+   marks the exact point (marker anchored 'bottom'); a state-colored ring pulses
+   behind the head — gold for a pinned location, green for the natal birthplace.
+   `color` drives the ring + hover aura so the .natal variant only flips one prop. */
 .map-pin {
   position: relative;
-  width: 55px;
-  height: 55px;
-  /* Only the dot captures clicks (they bubble to the marker's click handler); the
-     transparent ring area stays click-through, so the bigger pin doesn't create a
-     wide dead-zone over the map. */
+  width: 38px;
+  height: 52px;
+  color: var(--accent);
+  /* Only the pin glyph captures clicks (they bubble to the marker's click
+     handler); transparent gaps stay click-through, so the marker doesn't create a
+     dead-zone over the map. */
   pointer-events: none;
 }
 
-.map-pin-dot {
-  position: absolute;
-  inset: 18px;
-  background: var(--accent);
-  border: 2px solid var(--pin-stroke);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.6);
-  pointer-events: auto;
-  cursor: pointer;
+.map-pin.natal {
+  color: var(--success);
 }
 
-.map-pin-ring {
+.map-pin-img {
   position: absolute;
   inset: 0;
-  border: 2px solid rgba(var(--accent-rgb), 0.7);
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: pointer;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4));
+  transition: filter 0.15s ease, transform 0.15s ease;
+  animation: map-pin-drop 0.34s cubic-bezier(0.22, 1.2, 0.4, 1);
+}
+
+.map-pin:hover .map-pin-img {
+  transform: translateY(-1px) scale(1.04);
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 0 5px rgba(var(--accent-rgb), 0.7));
+}
+
+.map-pin.natal:hover .map-pin-img {
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 0 5px rgba(var(--success-rgb), 0.7));
+}
+
+/* Location-color aura radiating from the pin's centre, dissipating outward — the
+   inverted edge-glow: once a pin is placed the screen-edge vignette gives way to
+   this, concentrated on the pin. currentColor tracks the .natal state (gold for a
+   pinned spot, green for the natal pin), matching the old edge glow's per-state hue. */
+.map-pin-aura {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: 340px;
+  height: 340px;
+  margin: -170px 0 0 -170px;
   border-radius: 50%;
-  animation: map-pin-pulse 1.8s ease-out infinite;
+  background: radial-gradient(circle closest-side, currentColor, transparent 72%);
+  opacity: 0.2;
   pointer-events: none;
+  animation: map-pin-aura-pulse 5.2s ease-in-out infinite;
 }
 
-.map-pin:hover .map-pin-dot {
-  background: var(--accent-hover);
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.8);
+@keyframes map-pin-aura-pulse {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.26;
+  }
 }
 
-.map-pin.natal .map-pin-dot {
-  background: var(--success);
-  box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.6);
-}
-
-.map-pin.natal .map-pin-ring {
-  border-color: rgba(var(--success-rgb), 0.7);
-}
-
-.map-pin.natal:hover .map-pin-dot {
-  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.85);
+/* Pulse ring centered on the pin TIP — the actual point on the map — so it pings
+   out from the exact location, not the icon's middle. currentColor tracks the
+   .natal state set on .map-pin. (84/88 of the viewBox height ≈ the tip.) */
+.map-pin-glow {
+  position: absolute;
+  left: 50%;
+  top: 95.5%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: map-pin-pulse 1.8s ease-out infinite;
 }
 
 @keyframes map-pin-pulse {
   0% {
-    transform: scale(0.55);
+    transform: scale(0.5);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes map-pin-drop {
+  0% {
+    transform: translateY(-9px) scale(0.8);
+    opacity: 0;
+  }
+  60% {
     opacity: 1;
   }
   100% {
-    transform: scale(1.7);
-    opacity: 0;
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-pin-img {
+    animation: none;
+  }
+  .map-pin-glow {
+    animation: none;
+    opacity: 0.5;
+  }
+  .map-pin-aura {
+    animation: none;
+    opacity: 0.18;
   }
 }
 

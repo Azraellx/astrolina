@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { StoredChart } from '../../lib/chartLibrary';
+import { displayName, type StoredChart } from '../../lib/chartLibrary';
 import { useMovableHud } from '../../lib/useMovableHud';
 import './SynastryHud.css';
 
@@ -37,6 +37,8 @@ interface SynastryHudProps {
   currentId: string | null;
   /** Choose (or clear) the comparison partner. */
   onSelectPartner: (id: string | null) => void;
+  /** Open the add-person flow — used when there are no other charts to compare. */
+  onAddPerson: () => void;
 }
 
 /**
@@ -45,12 +47,17 @@ interface SynastryHudProps {
  * birth-line (with an inline add-person icon) is one clickable trigger that opens
  * an upward picker of the other saved charts — mirroring the chart switcher in
  * the expanded sidebar. (The Overlay top-nav menu only toggles the mode.)
+ *
+ * With no other charts to compare against, the picker would be empty, so the bar
+ * instead becomes a plain "Add person" prompt (add-person icon, no birth-line) that
+ * opens the add-chart flow directly.
  */
 export function SynastryHud({
   partner,
   charts,
   currentId,
   onSelectPartner,
+  onAddPerson,
 }: SynastryHudProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -92,77 +99,112 @@ export function SynastryHud({
         </span>
       </span>
       <div className="synastry-hud-picker">
-        <button
-          type="button"
-          className={`synastry-hud-trigger ${open ? 'open' : ''}`}
-          onClick={() => setOpen((v) => !v)}
-          title="Choose comparison chart"
-          aria-label="Choose comparison chart"
-          aria-expanded={open}
-        >
-          <span className="synastry-hud-label">
-            <span className="synastry-hud-name-row">
-              <span
-                className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
-              >
-                {partner ? partner.name : 'Choose a chart to compare'}
+        {candidates.length === 0 ? (
+          // Nothing to select — the only chart is the active one — so the bar is a
+          // direct "Add person" prompt (no birth-line) that opens the add-chart flow.
+          <button
+            type="button"
+            className="synastry-hud-trigger synastry-hud-add"
+            onClick={onAddPerson}
+            title="Add a person to compare"
+            aria-label="Add a person to compare"
+          >
+            <span className="synastry-hud-label">
+              <span className="synastry-hud-name-row">
+                <span className="synastry-hud-name is-prompt">Add person</span>
+                <svg
+                  className="synastry-hud-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {/* add-person (person + plus), reused from the chart switcher */}
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9.5" cy="7" r="4" />
+                  <path d="M22 11h-6" />
+                  <path d="M19 8v6" />
+                </svg>
               </span>
-              <svg
-                className="synastry-hud-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                {/* closed chart directory — book + ruled lines */}
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
-                <path d="M8 7h8" />
-                <path d="M8 11h8" />
-              </svg>
             </span>
-            {partner && (
-              <span className="synastry-hud-meta">
-                {fmtDate(partner)} · {partner.birthplace.label}
-              </span>
-            )}
-          </span>
-        </button>
-        {open && (
-          <div className="synastry-hud-menu">
-            {candidates.length === 0 ? (
-              <div className="synastry-hud-empty">
-                Add another chart (top-left) to compare it here.
-              </div>
-            ) : (
-              <ul>
-                {candidates.map((c) => (
-                  <li
-                    key={c.id}
-                    className={c.id === partner?.id ? 'active' : ''}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className={`synastry-hud-trigger ${open ? 'open' : ''}`}
+              onClick={() => setOpen((v) => !v)}
+              title="Choose comparison chart"
+              aria-label="Choose comparison chart"
+              aria-expanded={open}
+            >
+              <span className="synastry-hud-label">
+                <span className="synastry-hud-name-row">
+                  <span
+                    className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
+                    title={partner?.name}
                   >
-                    <button
-                      type="button"
-                      className="synastry-hud-row"
-                      onClick={() => {
-                        onSelectPartner(c.id);
-                        setOpen(false);
-                      }}
+                    {partner ? displayName(partner.name) : 'Choose a chart to compare'}
+                  </span>
+                  <svg
+                    className="synastry-hud-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    {/* closed chart directory — book + ruled lines */}
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
+                    <path d="M8 7h8" />
+                    <path d="M8 11h8" />
+                  </svg>
+                </span>
+                {partner && (
+                  <span className="synastry-hud-meta">
+                    {fmtDate(partner)} · {partner.birthplace.label}
+                  </span>
+                )}
+              </span>
+            </button>
+            {open && (
+              <div className="synastry-hud-menu">
+                <ul>
+                  {candidates.map((c) => (
+                    <li
+                      key={c.id}
+                      className={c.id === partner?.id ? 'active' : ''}
                     >
-                      <span className="synastry-hud-row-name">{c.name}</span>
-                      <span className="synastry-hud-row-meta">
-                        {fmtShort(c)} · {c.birthplace.label.split(',')[0]}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                      <button
+                        type="button"
+                        className="synastry-hud-row"
+                        onClick={() => {
+                          onSelectPartner(c.id);
+                          setOpen(false);
+                        }}
+                      >
+                        <span className="synastry-hud-row-name">
+                          {displayName(c.name)}
+                        </span>
+                        <span className="synastry-hud-row-meta">
+                          {fmtShort(c)} · {c.birthplace.label.split(',')[0]}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>

@@ -1,13 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
-import { resolveBirthTimezone } from '../../lib/atlas/timezone';
-import { newChartId, type StoredChart } from '../../lib/chartLibrary';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  geocode,
+  reverseGeocode,
+  type GeocodeResult,
+} from '../../lib/atlas/geocode';
+import { formatUtcOffset, resolveBirthTimezone } from '../../lib/atlas/timezone';
+import {
+  NAME_HARD_LIMIT,
+  NAME_SOFT_LIMIT,
+  newChartId,
+  type StoredChart,
+} from '../../lib/chartLibrary';
 import './BirthDataForm.css';
 
-interface BirthDataFormProps {
+const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
+const validLat = (n: number) => Number.isFinite(n) && n >= -90 && n <= 90;
+const validLng = (n: number) => Number.isFinite(n) && n >= -180 && n <= 180;
+
+interface BirthDataFieldsProps {
+  /** Chart being edited, or null/undefined to create a new one. */
   initial?: StoredChart | null;
+  /** Initial name for a NEW chart (e.g. carried over from the search box). */
+  nameSeed?: string;
+  /** Submit-button label, e.g. "Add chart" / "Save changes". */
+  submitLabel: string;
   onSubmit: (chart: StoredChart) => void;
-  onCancel: () => void;
   /** Opens the import flow; only shown when creating (not editing). */
   onImport?: () => void;
 }
@@ -101,14 +118,18 @@ function SpinInput({
   );
 }
 
-export function BirthDataForm({
+// The birth-details form body (name, date/time, birthplace), without modal chrome,
+// so it can live inside the ChartManager's right pane for both add and edit. Owns
+// its own field state; calls onSubmit with the built StoredChart.
+export function BirthDataFields({
   initial,
+  nameSeed,
+  submitLabel,
   onSubmit,
-  onCancel,
   onImport,
-}: BirthDataFormProps) {
+}: BirthDataFieldsProps) {
   const now = new Date();
-  const [name, setName] = useState(initial?.name ?? '');
+  const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
   const [year, setYear] = useState(initial?.year ?? now.getFullYear());
   const [month, setMonth] = useState(initial?.month ?? now.getMonth() + 1);
   const [day, setDay] = useState(initial?.day ?? now.getDate());
@@ -141,6 +162,84 @@ export function BirthDataForm({
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
+
+  // Manual coordinate drafts (kept as text so partial typing works). Editing them
+  // reverse-geocodes a label and re-detects the zone, so a chart can be entered by
+  // raw lat/lng — the way many birth records / rectified charts are kept.
+  const [latText, setLatText] = useState(
+    initial ? String(initial.birthplace.lat) : '',
+  );
+  const [lngText, setLngText] = useState(
+    initial ? String(initial.birthplace.lng) : '',
+  );
+
+  // Timezone: null = auto (the offset detected from coords + date, DST-aware); a
+  // number = a manual UTC offset (hours, east-positive) the user set, which is then
+  // authoritative and round-trips untouched. Accuracy here is load-bearing — it's
+  // exactly what birthDataToJD subtracts to get the UT birth instant.
+  const [offsetOverride, setOffsetOverride] = useState<number | null>(
+    initial?.tzManual ? (initial.tzOffset ?? null) : null,
+  );
+  const detected = useMemo(
+    () =>
+      selectedPlace
+        ? resolveBirthTimezone(
+            selectedPlace.lat,
+            selectedPlace.lng,
+            year,
+            month,
+            day,
+            hour,
+            minute,
+          )
+        : null,
+    [selectedPlace, year, month, day, hour, minute],
+  );
+  const effectiveOffset = offsetOverride ?? detected?.offsetHours ?? 0;
+  const stepOffset = (delta: number) =>
+    setOffsetOverride(
+      Math.max(-12, Math.min(14, Math.round((effectiveOffset + delta) * 4) / 4)),
+    );
+
+  // Manual lat/lng → reverse-geocode a label (offline-first, online on a miss).
+  // Skips when the coords already match the selected place (e.g. just after a
+  // forward-search pick) so it never loops or fires redundant lookups.
+  useEffect(() => {
+    const lat = parseFloat(latText);
+    const lng = parseFloat(lngText);
+    if (!validLat(lat) || !validLng(lng)) return;
+    if (
+      selectedPlace &&
+      approxEq(selectedPlace.lat, lat) &&
+      approxEq(selectedPlace.lng, lng)
+    ) {
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = window.setTimeout(async () => {
+      let label: string | null = null;
+      try {
+        const { nearestCity } = await import('../../lib/atlas/cityLookup');
+        if (ctrl.signal.aborted) return;
+        label = nearestCity(lat, lng)?.label ?? null;
+        if (!label) label = await reverseGeocode(lat, lng, ctrl.signal);
+      } catch {
+        /* offline miss / aborted — fall back to the bare coordinates */
+      }
+      if (ctrl.signal.aborted) return;
+      const place = {
+        label: label ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        lat,
+        lng,
+      };
+      setSelectedPlace(place);
+      setLocationQuery(place.label);
+    }, 500);
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [latText, lngText, selectedPlace]);
 
   useEffect(() => {
     if (selectedPlace && locationQuery === selectedPlace.label) return;
@@ -190,15 +289,9 @@ export function BirthDataForm({
       setError('Add a name.');
       return;
     }
-    const tz = resolveBirthTimezone(
-      selectedPlace.lat,
-      selectedPlace.lng,
-      year,
-      month,
-      day,
-      hour,
-      minute,
-    );
+    // tzOffset is the single value the chart math uses — either the user's manual
+    // offset (authoritative, never re-derived) or the DST-aware detection.
+    const manual = offsetOverride != null;
     const chart: StoredChart = {
       id: initial?.id ?? newChartId(),
       createdAt: initial?.createdAt ?? Date.now(),
@@ -208,9 +301,10 @@ export function BirthDataForm({
       day,
       hour,
       minute,
-      tzOffset: tz.offsetHours,
-      tzIana: tz.iana,
-      tzUncertain: tz.uncertain,
+      tzOffset: effectiveOffset,
+      tzIana: detected?.iana,
+      tzManual: manual,
+      tzUncertain: manual ? false : (detected?.uncertain ?? false),
       birthplace: selectedPlace,
     };
     onSubmit(chart);
@@ -219,41 +313,35 @@ export function BirthDataForm({
   const pickSuggestion = (s: GeocodeResult) => {
     setSelectedPlace(s);
     setLocationQuery(s.label);
+    setLatText(String(s.lat));
+    setLngText(String(s.lng));
     setSuggestions([]);
   };
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <form
-        className="birth-form"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
-      >
-        <header>
-          <h2>{initial ? 'Edit chart' : 'New chart'}</h2>
-          <button
-            type="button"
-            className="close"
-            onClick={onCancel}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </header>
-
+    <form className="birth-form birth-fields" onSubmit={handleSubmit}>
         <label>
           <span>Name</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Client or chart name"
-            autoFocus
-          />
+          <div className="name-field">
+            <input
+              type="text"
+              value={name}
+              maxLength={NAME_HARD_LIMIT}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter a chart name"
+            />
+            {/* Count appears only as you near the cap, faint and right-aligned. */}
+            {name.length >= NAME_SOFT_LIMIT && (
+              <span className="name-count" aria-hidden="true">
+                {name.length}/{NAME_HARD_LIMIT}
+              </span>
+            )}
+          </div>
         </label>
 
-        <div className="row">
-          <label>
+        {/* The birth moment, grouped together: date → time → zone. */}
+        <div className="moment-row">
+          <label className="moment-date">
             <span>Date (Y / M / D)</span>
             <div className="spin-group">
               <SpinInput
@@ -287,7 +375,9 @@ export function BirthDataForm({
               />
             </div>
           </label>
-          <label>
+          {/* Time + Zone stay glued on one row (Zone to the right of Time). */}
+          <div className="moment-tz-pair">
+          <label className="moment-time">
             <span>Time (local, 24h)</span>
             <div className="spin-group">
               <SpinInput
@@ -311,10 +401,55 @@ export function BirthDataForm({
               />
             </div>
           </label>
+          <label className="moment-zone tz-field">
+            <span>Time zone</span>
+            <div className="tz-control-row">
+            <div className="tz-control">
+              <button
+                type="button"
+                className="tz-step"
+                onClick={() => stepOffset(-0.25)}
+                aria-label="Decrease offset 15 minutes"
+              >
+                −
+              </button>
+              <span className="tz-offset">{formatUtcOffset(effectiveOffset)}</span>
+              <button
+                type="button"
+                className="tz-step"
+                onClick={() => stepOffset(0.25)}
+                aria-label="Increase offset 15 minutes"
+              >
+                +
+              </button>
+            </div>
+            <p className="tz-note">
+              {offsetOverride != null ? (
+                detected ? (
+                  <>
+                    Manual ·{' '}
+                    <button
+                      type="button"
+                      className="tz-reset-link"
+                      onClick={() => setOffsetOverride(null)}
+                      title={`Use detected ${detected.iana}`}
+                    >
+                      use detected
+                    </button>
+                  </>
+                ) : (
+                  'Manual offset'
+                )
+              ) : detected ? (
+                `Auto · ${detected.iana}${detected.uncertain ? ' · verify DST' : ''}`
+              ) : (
+                'Set a place to detect'
+              )}
+            </p>
+            </div>
+          </label>
+          </div>
         </div>
-        <p className="spin-hint">
-          Scroll, type, or use ↑↓ (Shift+↑↓ for ±10).
-        </p>
 
         <label className="location-field">
           <span>Birthplace</span>
@@ -344,12 +479,34 @@ export function BirthDataForm({
             </ul>
           )}
           {selectedPlace && (
-            <p className="resolved">
-              ✓ {selectedPlace.lat.toFixed(3)}°,{' '}
-              {selectedPlace.lng.toFixed(3)}°
-            </p>
+            <p className="resolved">✓ {selectedPlace.label}</p>
           )}
         </label>
+
+        <div className="row">
+          <label>
+            <span>Latitude</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={latText}
+              onChange={(e) => setLatText(e.target.value)}
+              placeholder="48.4011"
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            <span>Longitude</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={lngText}
+              onChange={(e) => setLngText(e.target.value)}
+              placeholder="9.9876"
+              autoComplete="off"
+            />
+          </label>
+        </div>
 
         {error && <p className="form-error">{error}</p>}
 
@@ -362,15 +519,11 @@ export function BirthDataForm({
             )}
           </div>
           <div className="footer-actions">
-            <button type="button" className="secondary" onClick={onCancel}>
-              Cancel
-            </button>
             <button type="submit" className="primary">
-              {initial ? 'Save' : 'Create chart'}
+              {submitLabel}
             </button>
           </div>
         </footer>
-      </form>
-    </div>
+    </form>
   );
 }
