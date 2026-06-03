@@ -787,7 +787,7 @@ export default function App() {
         <header className="app-header">
           {current?.tzUncertain && (
             <p className="tz-warning">
-              ⚠ Pre-1970 timezone outside US/EU — verify DST against an atlas
+              ⚠ Pre-1970 timezone outside US/EU: verify DST against an atlas
             </p>
           )}
           <CoordReadout
@@ -815,6 +815,7 @@ export default function App() {
           setHouseSystem={setHouseSystem}
           nodeType={nodeType}
           setNodeType={setNodeType}
+          overlayMode={overlayMode}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}

@@ -278,7 +278,7 @@
 
 .maplibregl-ctrl-attrib {
   background: rgba(var(--bg-panel), 0.78) !important;
-  color: var(--text-faint) !important;
+  color: var(--text-muted) !important;
   font-size: 10px !important;
   padding: 2px 8px !important;
   border-radius: 4px !important;

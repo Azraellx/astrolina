@@ -1,0 +1,77 @@
+/* Shared hover/focus tip card. Reuses the .ui-tip-box / .ui-tip chrome from
+   index.css; this file only adds positioning (fixed + portaled to <body> so the
+   sidebar / HUD overflow can't clip it), the placement transforms, the fade-in,
+   and the yellow hotkey pill. */
+.hover-tip {
+  position: fixed;
+  max-width: 240px;
+  white-space: normal;
+  pointer-events: none;
+  z-index: 1000;
+  animation: hover-tip-in 0.12s ease-out;
+}
+
+/* 'left' anchors the card's right edge 8px left of the trigger, centred on it;
+   'bottom' anchors its top edge 8px below, centred horizontally. */
+.hover-tip-left {
+  transform: translate(-100%, -50%);
+}
+
+.hover-tip-bottom {
+  transform: translate(-50%, 0);
+}
+
+/* Like 'bottom', but the card's left edge aligns to the trigger's (so a
+   top-left-corner trigger's tip doesn't spill off the left edge). */
+.hover-tip-bottom-start {
+  transform: translate(0, 0);
+}
+
+.hover-tip-right {
+  transform: translate(0, -50%);
+}
+
+@keyframes hover-tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-tip {
+    animation: none;
+  }
+}
+
+/* Title + hotkey share one row; a hint (if any) wraps on its own line below. */
+.ui-tip-headline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Keep tip titles on one line (so e.g. "Zoom in" + its hotkey never wrap; the
+   card just grows to fit). */
+.hover-tip .ui-tip-title {
+  white-space: nowrap;
+}
+
+/* A title with no hint beneath it isn't bolded — there's nothing to set it apart
+   from, and the lighter weight reads more easily. */
+.hover-tip .ui-tip-title-plain {
+  font-weight: 400;
+}
+
+/* Keyboard-shortcut key, inline on the title row: a small yellow (accent) badge. */
+.ui-tip-hotkey {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}

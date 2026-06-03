@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { TipButton } from '../ui/HoverTip';
 import './ChartSwitcher.css';
 
 interface ChartSwitcherProps {
@@ -46,11 +47,13 @@ export function ChartSwitcher({
 
   return (
     <div className="chart-switcher" ref={ref}>
-      <button
+      <TipButton
         type="button"
         className="switcher-trigger"
         onClick={() => setOpen((v) => !v)}
-        title="Switch, edit, or add a chart"
+        tip="Switch, edit, or add a chart"
+        hotkey="A"
+        placement="bottom-start"
       >
         <span className="label">
           <span className="name-row">
@@ -79,14 +82,14 @@ export function ChartSwitcher({
             <span className="meta">
               {fmtBirthDate(current)} · {current.birthplace.label.split(',')[0]}
               {current.tzUncertain && (
-                <span className="uncertain" title="Pre-1970 outside US/EU — verify DST">
+                <span className="uncertain" title="Pre-1970 outside US/EU: verify DST">
                   ⚠
                 </span>
               )}
             </span>
           )}
         </span>
-      </button>
+      </TipButton>
 
       {open && (
         <div className="switcher-menu">

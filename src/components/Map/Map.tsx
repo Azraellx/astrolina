@@ -25,6 +25,8 @@ import {
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
+import { HoverTip } from '../ui/HoverTip';
+import { tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
   computeLineBadges,
   dodgeBadges,
@@ -1036,6 +1038,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
   }, [computeBadges]);
 
+  // Hover/focus tip for the MapLibre-rendered zoom + compass buttons (plain DOM,
+  // so the portaled HoverTip is driven imperatively from the init effect below).
+  const [ctrlTip, setCtrlTip] = useState<
+    { pos: TipPos; title: string; hotkey?: string } | null
+  >(null);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -1057,29 +1065,50 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
       'top-right',
     );
-    // Surface the +/− zoom hotkeys and the compass action in hover tooltips.
+    // The +/− zoom and compass buttons are MapLibre-rendered DOM. Give them the
+    // shared HoverTip (with +/− hotkey callouts) instead of a native title: drop
+    // `title`, keep `aria-label` as the accessible name, and drive the tip from
+    // hover/focus listeners (torn down with the map in this effect's cleanup).
     const ctrlRoot = map.getContainer();
-    const zoomInBtn = ctrlRoot.querySelector('.maplibregl-ctrl-zoom-in');
-    const zoomOutBtn = ctrlRoot.querySelector('.maplibregl-ctrl-zoom-out');
-    const compassBtn = ctrlRoot.querySelector('.maplibregl-ctrl-compass');
-    zoomInBtn?.setAttribute('title', 'Zoom in (+)');
-    zoomInBtn?.setAttribute('aria-label', 'Zoom in (+)');
-    zoomOutBtn?.setAttribute('title', 'Zoom out (-)');
-    zoomOutBtn?.setAttribute('aria-label', 'Zoom out (-)');
-    compassBtn?.setAttribute('title', 'Reset bearing & tilt');
-    compassBtn?.setAttribute('aria-label', 'Reset bearing & tilt');
+    const ctrlTipDefs: { sel: string; label: string; hotkey?: string }[] = [
+      { sel: '.maplibregl-ctrl-zoom-in', label: 'Zoom in', hotkey: '+' },
+      { sel: '.maplibregl-ctrl-zoom-out', label: 'Zoom out', hotkey: '−' },
+      { sel: '.maplibregl-ctrl-compass', label: 'Reset bearing & tilt' },
+    ];
+    const ctrlTipCleanups: (() => void)[] = [];
+    for (const def of ctrlTipDefs) {
+      const el = ctrlRoot.querySelector(def.sel);
+      if (!el) continue;
+      el.removeAttribute('title');
+      el.setAttribute('aria-label', def.label);
+      const enter = () =>
+        setCtrlTip({
+          pos: tipPosFor(el.getBoundingClientRect(), 'left'),
+          title: def.label,
+          hotkey: def.hotkey,
+        });
+      const leave = () => setCtrlTip(null);
+      el.addEventListener('mouseenter', enter);
+      el.addEventListener('mouseleave', leave);
+      el.addEventListener('focus', enter);
+      el.addEventListener('blur', leave);
+      ctrlTipCleanups.push(() => {
+        el.removeEventListener('mouseenter', enter);
+        el.removeEventListener('mouseleave', leave);
+        el.removeEventListener('focus', enter);
+        el.removeEventListener('blur', leave);
+      });
+    }
     map.addControl(
       new maplibregl.AttributionControl({
         compact: false,
         // The basemap style already credits OpenStreetMap (which also covers
         // the OSM-derived Nominatim geocoding). This adds the one credit the
         // basemap doesn't: GeoNames, for the bundled offline place-name / city
-        // data. The CC BY 4.0 licence is surfaced as a hover tooltip (`title`)
-        // rather than inline text, to keep the chip compact; the always-visible
-        // GeoNames link to geonames.org (which states the licence) satisfies the
-        // CC BY attribution on its own, and `title` stays in the DOM regardless.
+        // data. The visible link to geonames.org — which itself states the
+        // CC BY 4.0 licence — satisfies the attribution, so no tooltip is needed.
         customAttribution: [
-          'Places &copy; <a href="https://www.geonames.org" target="_blank" rel="noopener noreferrer" title="GeoNames place-name data — licensed CC BY 4.0">GeoNames</a>',
+          'Places &copy; <a href="https://www.geonames.org" target="_blank" rel="noopener noreferrer">GeoNames</a>',
         ],
       }),
       'bottom-right',
@@ -1134,6 +1163,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     return () => {
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
       window.removeEventListener('astro:hud-moved', scheduleBadges);
+      ctrlTipCleanups.forEach((fn) => fn());
+      setCtrlTip(null);
       markerRef.current?.remove();
       markerRef.current = null;
       map.remove();
@@ -1442,6 +1473,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   return (
     <>
       <div ref={containerRef} className="map-container" />
+      <HoverTip
+        pos={ctrlTip?.pos ?? null}
+        placement="left"
+        title={ctrlTip?.title ?? ''}
+        hotkey={ctrlTip?.hotkey}
+      />
       <div className="acg-edge-badges" aria-hidden="true">
         {badges.map((b) => {
           const text = badgeTextColor(b.color);

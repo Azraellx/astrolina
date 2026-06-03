@@ -55,7 +55,7 @@
 }
 .topnav-toolbar-hint {
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -182,20 +182,19 @@
 
 /* Chart-sidebar toggle — icon + an "Open"/"Close" label, sitting just right of the
    client name in the left zone. */
+/* Icon-only square toggle, the same 28px height as the centre status pill so the
+   two line up across the bar. */
 .topnav-expand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 28px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0;
   background: rgba(var(--tint), 0.05);
   border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 6px;
   color: var(--text-strong);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
@@ -319,6 +318,8 @@ button.topnav-status:hover {
 .navmenu-caret {
   font-size: 9px;
   color: var(--text-faint);
+  display: inline-block;
+  transform: scale(1.3);
 }
 .navmenu-trigger.open .navmenu-caret,
 .navmenu-trigger.active .navmenu-caret {
@@ -382,13 +383,17 @@ button.topnav-status:hover {
   color: var(--text-strong);
 }
 
-/* Single-key shortcut hint, right-aligned in a menu item. */
+/* Single-key shortcut, right-aligned in a menu item — the same yellow accent
+   badge the hover tips use. */
 .navmenu-key {
   margin-left: auto;
-  padding-left: 16px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--accent);
   font-size: 10px;
-  font-weight: 600;
-  color: var(--text-faint);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .navmenu-marker {
@@ -399,6 +404,8 @@ button.topnav-status:hover {
 }
 .navmenu-marker.check {
   font-size: 11px;
+  /* Thicken the check glyph so it reads bolder at this small size. */
+  -webkit-text-stroke: 0.6px currentColor;
 }
 .navmenu-item:not(.on) .navmenu-marker {
   color: var(--text-faint);

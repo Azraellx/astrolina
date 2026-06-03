@@ -219,6 +219,13 @@
   background: var(--tip-dot);
   flex-shrink: 0;
 }
+
+/* Planet / sign glyph markers sit cleanly on the title row. */
+.wheel-tip-title .astro-glyph {
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .wheel-tip .ui-tip-sub {
   white-space: normal;
 }

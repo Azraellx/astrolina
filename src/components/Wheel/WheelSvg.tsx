@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   PLANET_COLORS,
   PLANET_DISPLAY,
@@ -61,7 +61,7 @@ const PLANET_MEANINGS: Record<PlanetName, string> = {
 
 // The four chart angles, keyed by the two-letter label drawn on the wheel.
 const ANGLE_HINTS: { key: 'As' | 'Ds' | 'Mc' | 'Ic'; title: string; sub: string }[] = [
-  { key: 'As', title: 'Ascendant', sub: 'Rising sign — the self & first impressions' },
+  { key: 'As', title: 'Ascendant', sub: 'Rising sign, the self & first impressions' },
   { key: 'Ds', title: 'Descendant', sub: 'Relationships & the "other"' },
   { key: 'Mc', title: 'Midheaven (Medium Coeli)', sub: 'Career, reputation & public life' },
   { key: 'Ic', title: 'Imum Coeli', sub: 'Home, roots & private life' },
@@ -76,6 +76,10 @@ interface HoverTip {
   title: string;
   sub?: string;
   color?: string;
+  /** Glyph shown before the title — the hovered body or sign. */
+  marker?: ReactNode;
+  /** Colour applied to the title text itself (used for the angle hints). */
+  titleColor?: string;
 }
 
 // Tag layout constants. The tag is centered on its anchor's x and clamped so a
@@ -96,10 +100,13 @@ function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
     <div
       className="wheel-tip ui-tip-box ui-tip"
       data-placement={placement}
-      style={{ left, top, maxWidth: TIP_MAX, '--tip-dot': tip.color ?? 'var(--accent)' } as CSSProperties}
+      style={{ left, top, maxWidth: TIP_MAX }}
     >
-      <span className="ui-tip-title wheel-tip-title">
-        <span className="wheel-tip-dot" />
+      <span
+        className="ui-tip-title wheel-tip-title"
+        style={tip.titleColor ? { color: tip.titleColor } : undefined}
+      >
+        {tip.marker}
         {tip.title}
       </span>
       {tip.sub && <span className="ui-tip-sub">{tip.sub}</span>}
@@ -540,7 +547,14 @@ export function WheelSvg({
             onMouseEnter={() => {
               const lon = ((i * 30 + 15) * Math.PI) / 180;
               const pos = svgPos(lon, angles.asc, (rZodiacInner + rOuter) / 2, cx, cy);
-              setTip({ x: pos.x, y: pos.y, r: 14, title: SIGN_NAMES[i], sub: SIGN_MEANINGS[i] });
+              setTip({
+                x: pos.x,
+                y: pos.y,
+                r: 14,
+                title: SIGN_NAMES[i],
+                sub: SIGN_MEANINGS[i],
+                marker: <ZodiacGlyph sign={i} size={14} />,
+              });
             }}
             onMouseLeave={clearTip}
             aria-label={SIGN_NAMES[i]}
@@ -801,6 +815,13 @@ export function WheelSvg({
                   title: PLANET_DISPLAY[p.name],
                   sub: PLANET_MEANINGS[p.name],
                   color: PLANET_COLORS[p.name],
+                  marker: (
+                    <PlanetGlyph
+                      planet={p.name}
+                      size={14}
+                      color={PLANET_COLORS[p.name]}
+                    />
+                  ),
                 }),
               onMouseLeave: clearTip,
               'aria-label': PLANET_DISPLAY[p.name],
@@ -874,6 +895,13 @@ export function WheelSvg({
                         title: PLANET_DISPLAY[p.name],
                         sub: PLANET_MEANINGS[p.name],
                         color: PLANET_COLORS[p.name],
+                        marker: (
+                          <PlanetGlyph
+                            planet={p.name}
+                            size={14}
+                            color={PLANET_COLORS[p.name]}
+                          />
+                        ),
                       })
                     }
                     onMouseLeave={clearTip}
@@ -1039,7 +1067,16 @@ export function WheelSvg({
             <g
               key={`angle-${key}`}
               className="wheel-angle"
-              onMouseEnter={() => setTip({ x: pos.x, y: pos.y, r: 12, title, sub, color })}
+              onMouseEnter={() =>
+                setTip({
+                  x: pos.x,
+                  y: pos.y,
+                  r: 12,
+                  title,
+                  sub,
+                  titleColor: color,
+                })
+              }
               onMouseLeave={clearTip}
               aria-label={title}
             >

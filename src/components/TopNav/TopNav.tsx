@@ -9,6 +9,8 @@ import type { MapState } from '../TimelineHud/TimelineHud';
 import type { OverlayMode } from '../../lib/astro/timeline';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -64,12 +66,16 @@ interface TopNavProps {
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
 // clears it back to 'off'. Single-select.
-const OVERLAY_MODES: { mode: Exclude<OverlayMode, 'off'>; label: string }[] = [
-  { mode: 'transits', label: 'Transits' },
-  { mode: 'progressed', label: 'Progressed' },
-  { mode: 'solar-arc', label: 'Solar Arc' },
-  { mode: 'primary-directions', label: 'Primary Directions' },
-  { mode: 'synastry', label: 'Synastry' },
+const OVERLAY_MODES: {
+  mode: Exclude<OverlayMode, 'off'>;
+  label: string;
+  desc: string;
+}[] = [
+  { mode: 'transits', label: 'Transits', desc: 'Where the planets are right now, over your natal chart.' },
+  { mode: 'progressed', label: 'Progressed', desc: 'Secondary progressions: a symbolic day-for-a-year unfolding.' },
+  { mode: 'solar-arc', label: 'Solar Arc', desc: 'Every point advanced by the Sun’s one-degree-per-year arc.' },
+  { mode: 'primary-directions', label: 'Primary Directions', desc: 'An ancient timing method driven by the sky’s rotation.' },
+  { mode: 'synastry', label: 'Synastry', desc: 'Another person’s chart laid over yours, for relationships.' },
 ];
 
 const STATUS_LABEL: Record<MapState, string> = {
@@ -162,42 +168,62 @@ function NavMenu({
   );
 }
 
-// A single-select row (radio dot).
+// A single-select row (radio dot). Its description + shortcut surface in a hover
+// .ui-tip; the (longer) shortcut sits on its own row beneath the description.
 function RadioItem({
   label,
   checked,
   onSelect,
+  hint,
+  hotkey,
 }: {
   label: string;
   checked: boolean;
   onSelect: () => void;
+  hint?: string;
+  hotkey?: string;
 }) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   return (
-    <button
-      type="button"
-      className={`navmenu-item ${checked ? 'on' : ''}`}
-      role="menuitemradio"
-      aria-checked={checked}
-      onClick={onSelect}
-    >
-      <span className="navmenu-marker">{checked ? '●' : '○'}</span>
-      <span>{label}</span>
-    </button>
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={`navmenu-item ${checked ? 'on' : ''}`}
+        role="menuitemradio"
+        aria-checked={checked}
+        onClick={onSelect}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <span className="navmenu-marker">{checked ? '●' : '○'}</span>
+        <span>{label}</span>
+      </button>
+      <HoverTip
+        pos={pos}
+        placement="left"
+        title={label}
+        hint={hint}
+        hotkey={hotkey}
+      />
+    </>
   );
 }
 
-// A toggle row (checkmark).
+// A toggle row (checkmark) with its single-key shortcut printed inline, as the
+// yellow .navmenu-key badge (the same accent styling the hover tips use).
 function CheckItem({
   label,
   checked,
   onToggle,
-  hint,
+  hotkey,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
-  /** Single-key shortcut shown on the right for discoverability. */
-  hint?: string;
+  hotkey?: string;
 }) {
   return (
     <button
@@ -209,7 +235,7 @@ function CheckItem({
     >
       <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
       <span>{label}</span>
-      {hint && <span className="navmenu-key">{hint}</span>}
+      {hotkey && <span className="navmenu-key">{hotkey}</span>}
     </button>
   );
 }
@@ -277,13 +303,14 @@ export function TopNav({
               />
             </div>
             {!chartExpanded && (
-              <button
+              <TipButton
                 type="button"
                 className="topnav-expand"
                 onClick={onToggleExpand}
                 disabled={!current}
-                title="Show sidebar chart (B)"
                 aria-label="Show chart sidebar"
+                tip="Show sidebar chart"
+                hotkey="B"
               >
                 <svg
                   width="14"
@@ -301,8 +328,7 @@ export function TopNav({
                   {/* Chevron points out of the panel — the open-sidebar convention. */}
                   <path d="m14 9 3 3-3 3" />
                 </svg>
-                <span>Bar</span>
-              </button>
+              </TipButton>
             )}
           </div>
 
@@ -311,11 +337,12 @@ export function TopNav({
               bar's true centre, flush under the readout island below it. */}
           <div className="topnav-center">
             {pinned ? (
-              <button
+              <TipButton
                 type="button"
                 className="topnav-status pinned"
                 onClick={onRecenterPin}
-                title="Center map on pin (Space)"
+                tip="Center map on pin"
+                hotkey="Space"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
@@ -327,16 +354,17 @@ export function TopNav({
                   />
                 </svg>
                 <span>{STATUS_LABEL[mapState]}</span>
-              </button>
+              </TipButton>
             ) : mapState === 'natal' ? (
-              <button
+              <TipButton
                 type="button"
                 className="topnav-status"
                 onClick={onPinNatal}
-                title="Pin the natal location"
+                tip="Pin the natal location"
+                hotkey="Space"
               >
                 {STATUS_LABEL[mapState]}
-              </button>
+              </TipButton>
             ) : (
               <span className="topnav-status">{STATUS_LABEL[mapState]}</span>
             )}
@@ -345,13 +373,14 @@ export function TopNav({
           {/* Right: the command controls. Tools is a single toggle for now (one
               tool); its contents live in the secondary bar below. */}
           <div className="topnav-right">
-            <button
+            <TipButton
               type="button"
               className={`navmenu-trigger topnav-tool ${measuring ? 'active' : ''}`}
               onClick={() => setTool(measuring ? 'off' : 'measure')}
-              title="Measure distance (T)"
               aria-label="Measure distance"
               aria-pressed={measuring}
+              tip="Measure distance"
+              hotkey="T"
             >
               <svg
                 width="15"
@@ -370,7 +399,7 @@ export function TopNav({
                 <path d="m8.5 6.5 2-2" />
                 <path d="m17.5 15.5 2-2" />
               </svg>
-            </button>
+            </TipButton>
 
             <NavMenu label="Overlay" active={overlayActive}>
               {(close) => (
@@ -381,16 +410,20 @@ export function TopNav({
                       active one is a no-op. */}
                   <RadioItem
                     label="None"
+                    hint="Just the natal chart, with no time technique applied."
+                    hotkey="O"
                     checked={overlayMode === 'off'}
                     onSelect={() => {
                       setOverlayMode('off');
                       close();
                     }}
                   />
-                  {OVERLAY_MODES.map(({ mode, label }) => (
+                  {OVERLAY_MODES.map(({ mode, label, desc }) => (
                     <RadioItem
                       key={mode}
                       label={label}
+                      hint={desc}
+                      hotkey="O"
                       checked={overlayMode === mode}
                       onSelect={() => {
                         setOverlayMode(mode);
@@ -405,19 +438,19 @@ export function TopNav({
             <NavMenu label="View" className="navmenu-steady">
               <CheckItem
                 label="Coordinates"
-                hint="C"
+                hotkey="C"
                 checked={showCoords}
                 onToggle={() => setShowCoords(!showCoords)}
               />
               <CheckItem
                 label="Minimap"
-                hint="M"
+                hotkey="M"
                 checked={showChart}
                 onToggle={() => setShowChart(!showChart)}
               />
               <CheckItem
                 label="Settings"
-                hint="S"
+                hotkey="S"
                 checked={showSettings}
                 onToggle={() => setShowSettings(!showSettings)}
               />
@@ -448,17 +481,18 @@ export function TopNav({
               </span>
             )
           ) : pinned ? (
-            <button
+            <TipButton
               type="button"
               className="topnav-location topnav-location-btn"
-              title="Center map on pin (Space)"
               onClick={onRecenterPin}
+              tip="Center map on pin"
+              hotkey="Space"
             >
               <span className="topnav-dot" />
               <span className="topnav-location-text">
                 {locationContent}
               </span>
-            </button>
+            </TipButton>
           ) : (
             <span className="topnav-location" title={locationText}>
               <span className="topnav-dot" />

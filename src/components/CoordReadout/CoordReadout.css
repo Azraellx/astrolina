@@ -32,7 +32,7 @@
   padding: 0;
   background: transparent;
   border: none;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font: inherit;
   font-size: 10px;
   letter-spacing: 0.04em;
@@ -48,6 +48,11 @@
 .show-more-chevron {
   font-size: 11px;
   line-height: 1;
+  display: inline-block;
+  transform: scale(1.3);
+  /* The bigger glyph reads heavier than the 10px "Angles" label beside it, so
+     drop its opacity to bring its visual weight back in line. */
+  opacity: 0.6;
 }
 
 .angle-list {

@@ -17,6 +17,8 @@ import {
   computeCrossAspects,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import './ExpandedChartSidebar.css';
 
 const SIGN_NAMES = [
@@ -155,10 +157,11 @@ const ASPECT_TOGGLES: {
   key: AspectCategory;
   label: string;
   cssClass: string;
+  desc: string;
 }[] = [
-  { key: 'harmonious', label: 'Trine / Sextile', cssClass: 'trine' },
-  { key: 'hard', label: 'Square / Opp', cssClass: 'square' },
-  { key: 'conjunction', label: 'Conj', cssClass: 'conj' },
+  { key: 'harmonious', label: 'Trine / Sextile', cssClass: 'trine', desc: 'Flowing, supportive aspects: ease, talent, and opportunity.' },
+  { key: 'hard', label: 'Square / Opp', cssClass: 'square', desc: 'Tense aspects: friction, challenge, and the drive to grow.' },
+  { key: 'conjunction', label: 'Conj', cssClass: 'conj', desc: 'Two bodies fused at the same point, blending their energies.' },
 ];
 
 export function ExpandedChartSidebar({
@@ -318,6 +321,13 @@ export function ExpandedChartSidebar({
     document.body.style.userSelect = 'none';
   };
 
+  const {
+    ref: resizeTipRef,
+    pos: resizeTipPos,
+    show: showResizeTip,
+    hide: hideResizeTip,
+  } = useHoverTip<HTMLDivElement>('right');
+
   return (
     <aside
       className={`expanded-sidebar ${dragging ? 'dragging' : ''}`}
@@ -338,26 +348,30 @@ export function ExpandedChartSidebar({
           </div>
           <div className="es-header-actions">
             {angles && (
-              <button
+              <TipButton
                 type="button"
                 className={`es-advanced-toggle ${advanced ? 'on' : 'off'}`}
                 onClick={() => setAdvanced((v) => !v)}
-                title="Toggle detailed natal data (dec, speed, ℞, exact orbs, aspect grid)"
                 role="switch"
                 aria-checked={advanced}
+                placement="bottom"
+                tip="Advanced"
+                hint="Detailed natal data: declination, speed, retrograde, exact orbs, and the aspect grid."
               >
                 <span className="es-toggle-label">Advanced</span>
                 <span className="es-toggle-track">
                   <span className="es-toggle-thumb" />
                 </span>
-              </button>
+              </TipButton>
             )}
-            <button
+            <TipButton
               type="button"
               className="es-close-btn"
               onClick={onClose}
-              title="Hide (B)"
               aria-label="Hide expanded view"
+              placement="bottom"
+              tip="Hide sidebar"
+              hotkey="B"
             >
               <svg
                 width="14"
@@ -375,7 +389,7 @@ export function ExpandedChartSidebar({
                 <path d="M16 15l-3-3 3-3" />
               </svg>
               <span>Hide</span>
-            </button>
+            </TipButton>
           </div>
         </div>
         {chart && (
@@ -524,16 +538,18 @@ export function ExpandedChartSidebar({
             {ASPECT_TOGGLES.map((t) => {
               const on = visibleAspects.has(t.key);
               return (
-                <button
+                <TipButton
                   key={t.key}
                   type="button"
                   className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
                   onClick={() => toggleAspect(t.key)}
-                  title={`Toggle ${t.label}`}
+                  placement="right"
+                  tip={t.label}
+                  hint={t.desc}
                 >
                   <span className="es-asp-swatch" />
                   <span className="es-asp-label">{t.label}</span>
-                </button>
+                </TipButton>
               );
             })}
           </div>
@@ -616,14 +632,17 @@ export function ExpandedChartSidebar({
       </div>
 
       <div
+        ref={resizeTipRef}
         className="es-drag-handle"
         onMouseDown={beginDrag}
+        onMouseEnter={showResizeTip}
+        onMouseLeave={hideResizeTip}
         role="separator"
         aria-orientation="vertical"
-        title="Drag to resize"
       >
         <div className="es-drag-grip" />
       </div>
+      <HoverTip pos={resizeTipPos} placement="right" title="Drag to resize" />
     </aside>
   );
 }

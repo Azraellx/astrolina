@@ -46,8 +46,8 @@ span.astro-glyph {
   --danger: #e85a4f;
   --success: #8de0a3;
   --success-rgb: 141, 224, 163;
-  --neutral: #8b909c;
-  --neutral-rgb: 139, 144, 156;
+  --neutral: #d8d8d8;
+  --neutral-rgb: 216, 216, 216;
 
   /* Map-pin-state accent — the single source for the gray/blue/orange/green that
      the map chrome (HUD bars, minimap, edge glow, measure line) follows. It is
@@ -88,7 +88,7 @@ span.astro-glyph {
   --text: #dac9a4;
   --text-muted: #b8a07c;
   --text-dim: #8e7a5e;
-  --text-faint: #6e5d48;
+  --text-faint: #978259;
 
   --accent: #f5b83d;
   --accent-rgb: 245, 184, 61;
@@ -132,6 +132,10 @@ span.astro-glyph {
   --danger: #d04a3a;
   --success: #3aa965;
   --success-rgb: 58, 169, 101;
+  /* Keep the natal (neutral) accent a darker gray than the dark themes' lighter
+     #d8d8d8, so it stays legible on glass's light panels. */
+  --neutral: #8b909c;
+  --neutral-rgb: 139, 144, 156;
 
   --scrim: rgba(70, 78, 96, 0.42);
   --scrim-strong: rgba(70, 78, 96, 0.58);

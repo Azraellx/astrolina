@@ -43,7 +43,7 @@
   background: rgba(var(--tint), 0.06);
   border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }

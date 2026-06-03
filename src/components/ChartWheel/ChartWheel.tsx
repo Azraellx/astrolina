@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
+import { HoverTip } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import './ChartWheel.css';
 
 interface Point {
@@ -45,6 +47,8 @@ export function ChartWheel({
   visiblePlanets,
 }: ChartWheelProps) {
   const [enlarged, setEnlarged] = useState(false);
+  const { ref: resizeRef, pos: resizeTipPos, show: showResizeTip, hide: hideResizeTip } =
+    useHoverTip<HTMLButtonElement>();
   const shownPlanets = planets.filter((p) => visiblePlanets.has(p.name));
   const wheelClass = isNatalPin
     ? 'natal-pinned'
@@ -57,28 +61,38 @@ export function ChartWheel({
   return (
     <aside className={`chart-wheel ${wheelClass} ${enlarged ? 'enlarged' : ''}`}>
       {angles && (
-        <button
-          type="button"
-          className="chart-wheel-resize"
-          onClick={() => setEnlarged((v) => !v)}
-          title={enlarged ? 'Shrink wheel' : 'Enlarge wheel'}
-          aria-label="Toggle wheel size"
-          aria-pressed={enlarged}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        <>
+          <button
+            ref={resizeRef}
+            type="button"
+            className="chart-wheel-resize"
+            onClick={() => setEnlarged((v) => !v)}
+            onMouseEnter={showResizeTip}
+            onMouseLeave={hideResizeTip}
+            onFocus={showResizeTip}
+            onBlur={hideResizeTip}
+            aria-label="Toggle wheel size"
+            aria-pressed={enlarged}
           >
-            <path d={enlarged ? SHRINK_ICON : ENLARGE_ICON} />
-          </svg>
-        </button>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d={enlarged ? SHRINK_ICON : ENLARGE_ICON} />
+            </svg>
+          </button>
+          <HoverTip
+            pos={resizeTipPos}
+            title={enlarged ? 'Shrink wheel' : 'Enlarge wheel'}
+          />
+        </>
       )}
       {angles ? (
         <div className="chart-wheel-svg-wrap">

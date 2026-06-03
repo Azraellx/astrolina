@@ -54,6 +54,10 @@
 .sidebar-chevron {
   color: var(--text-faint);
   font-size: 11px;
+  /* Enlarge the glyph ~30% visually without growing the header's line box
+     (scaling is post-layout, so the button keeps its height). */
+  display: inline-block;
+  transform: scale(1.3);
 }
 
 .sidebar-section {
@@ -63,13 +67,13 @@
 }
 
 .theme-section {
-  padding: 4px 6px 4px;
+  padding: 4px 14px 4px;
 }
 
 /* "Map detail" toggles (roads / rivers) tucked under the theme list. */
 .theme-detail {
   margin-top: 4px;
-  padding: 4px 8px 6px;
+  padding: 4px 0 6px;
 }
 
 .theme-detail h2 {
@@ -91,6 +95,8 @@
   background: transparent;
   border: none;
   border-radius: 5px;
+  position: relative;
+  overflow: hidden;
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -157,12 +163,6 @@
   margin-top: 4px;
 }
 
-/* A title-less first group (the Celestial / Mundane toggle in Calculation) gets the
-   top breathing room a heading would otherwise give it. */
-.sidebar-section:not(.theme-section) > .theme-list:first-child {
-  margin-top: 7px;
-}
-
 .sidebar ul {
   list-style: none;
   padding: 0;
@@ -196,6 +196,8 @@
   background: transparent;
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 5px;
+  position: relative;
+  overflow: hidden;
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -231,6 +233,101 @@
   text-align: center;
   font-weight: 700;
   color: var(--accent);
+}
+
+/* Hover shimmer — a subtle warm glint that sweeps across a choice once as the
+   pointer enters. Shared by the .theme-option chips and the .tech-toggle layer
+   switches. Accent-tinted on purpose: a --tint sweep would read as a light glint
+   on the dark themes but a dark shadow on the light/glass themes, whereas the
+   accent reads as a luminous glint everywhere and previews the colour a toggle
+   takes once it is enabled. The base rules above add position/overflow so the
+   sweep is clipped to the rounded chip; pointer-events:none keeps clicks live. */
+.theme-option::after,
+.tech-toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    105deg,
+    transparent -10%,
+    rgba(var(--accent-rgb), 0.075) 50%,
+    transparent 110%
+  );
+}
+
+.theme-option:not(.active):hover::after,
+.tech-toggle:not(.on):hover::after {
+  animation: choice-shimmer 0.35s ease-out;
+}
+
+/* A hidden layer about to be switched on — a touch brighter, to invite the click. */
+.tech-toggle.off:hover::after {
+  background: linear-gradient(
+    105deg,
+    transparent -10%,
+    rgba(var(--accent-rgb), 0.11) 50%,
+    transparent 110%
+  );
+}
+
+@keyframes choice-shimmer {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-option:not(.active):hover::after,
+  .tech-toggle:not(.on):hover::after {
+    animation: none;
+  }
+}
+
+/* Choice hint — projection / line-system / line-projection / lunar-node options
+   pop their hint as the shared .ui-tip card (see index.css) instead of a native
+   tooltip. Portaled to <body> so the sidebar's overflow can't clip it, pinned
+   just left of the row (sidebar is docked at the screen's right edge) and
+   vertically centred on it. Wraps, unlike the single-line timeline nub hint. */
+.choice-tip {
+  position: fixed;
+  transform: translate(-100%, -50%);
+  max-width: 220px;
+  white-space: normal;
+  pointer-events: none;
+  z-index: 1000;
+  animation: choice-tip-in 0.12s ease-out;
+}
+
+@keyframes choice-tip-in {
+  from {
+    opacity: 0;
+    transform: translate(calc(-100% + 4px), -50%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-100%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-tip {
+    animation: none;
+  }
 }
 
 
@@ -337,13 +434,6 @@
   flex-shrink: 0;
 }
 
-.calc-hint {
-  margin: 6px 2px 0;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-faint);
-}
-
 /* House-system dropdown (reuses the .thud-select look), full width in the panel. */
 .calc-select {
   display: flex;
@@ -352,4 +442,95 @@
 }
 .calc-select .thud-select {
   width: 100%;
+}
+
+/* Calc dropdown (HintMenu): a full-width trigger with the .thud-select look that
+   shows the current value + caret and opens the portaled .navmenu-panel. */
+.calc-menu-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 2px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calc-menu-value {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calc-menu-trigger.open {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.calc-menu-trigger.open .thud-select-caret {
+  color: var(--accent);
+}
+
+/* Glyph + name on a planet tip's title row. */
+.planet-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* "User rate" field under Primary directions: a small, left-aligned number input
+   with its unit spelled out to its left, set a little further below the dropdown. */
+.calc-user-rate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.calc-user-rate-label {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The input fills the row so the field + steppers run flush with the dropdown
+   above; the steppers sit just outside the box, on its right. */
+.calc-user-rate .calc-user-rate-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+}
+
+.calc-user-rate-steppers {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.calc-rate-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 13px;
+  padding: 0;
+  border: none;
+  background: rgba(var(--tint), 0.05);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.calc-rate-step + .calc-rate-step {
+  border-top: 1px solid rgba(var(--tint), 0.14);
+}
+
+.calc-rate-step:hover {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.16);
 }

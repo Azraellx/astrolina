@@ -61,6 +61,8 @@
   margin-left: auto;
   color: var(--text-faint);
   font-size: 11px;
+  display: inline-block;
+  transform: scale(1.3);
 }
 
 .cip-body {
