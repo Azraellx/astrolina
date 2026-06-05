@@ -433,15 +433,42 @@ export function WheelSvg({
     ? crossAspects.filter((a) => visibleAspects.has(a.category))
     : crossAspects;
 
+  // The four chart angles (As/Ds/Mc/Ic), drawn as ring marks alongside the
+  // planets in the interactive sidebar wheel so they read in the chart itself
+  // rather than a separate list. Each keeps its hover hint (ANGLE_HINTS) and its
+  // axis colour — As/Ds gold, Mc/Ic cool — and joins the planet spread below so
+  // an angle is never stacked on top of a planet it's conjunct.
+  const showAngleMarks = interactive && detailed;
+  const angleLonByKey: Record<'As' | 'Ds' | 'Mc' | 'Ic', number> = {
+    As: angles.asc,
+    Ds: angles.dsc,
+    Mc: angles.mc,
+    Ic: angles.ic,
+  };
+  const angleMarks = showAngleMarks
+    ? ANGLE_HINTS.filter(
+        (h) =>
+          Number.isFinite(angleLonByKey[h.key]) &&
+          (!visibleAngles || visibleAngles.has(h.key)),
+      ).map((h) => ({
+        ...h,
+        lon: angleLonByKey[h.key],
+        color: h.key === 'As' || h.key === 'Ds' ? 'var(--accent)' : 'var(--cool)',
+      }))
+    : [];
+
   // Spread overlapping planets along the ring so their glyphs and readouts
   // don't collide; the true position is still marked by a tick on the zodiac
-  // band. Aspect lines keep using the true longitudes.
+  // band. Aspect lines keep using the true longitudes. The angle marks ride in
+  // the same relaxation so they clear neighbouring planets too.
   const displayLon = new Map<string, number>();
   if (detailed) {
-    const arr = planets.map((p) => ({
-      name: p.name,
-      off: ((((p.lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360,
-    }));
+    const off = (lon: number) =>
+      ((((lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360;
+    const arr = [
+      ...planets.map((p) => ({ name: p.name as string, off: off(p.lon) })),
+      ...angleMarks.map((a) => ({ name: a.key as string, off: off(a.lon) })),
+    ];
     arr.sort((a, b) => a.off - b.off);
     // Min angular separation that yields ~16px of arc. When the readouts show,
     // the trio fans inward to rReadout − 16, so base the separation on that
@@ -462,6 +489,8 @@ export function WheelSvg({
     }
   }
   const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
+  const angleLonFor = (a: { key: string; lon: number }) =>
+    displayLon.get(a.key) ?? a.lon;
 
   // One spread for the overlay ring, shared by its glyphs and (when shown) its
   // readout trio so the two stay radially aligned. Sized to the innermost ring
@@ -474,6 +503,34 @@ export function WheelSvg({
     : null;
   const overlayLonFor = (p: EclipticPosition) =>
     overlayDisplay?.get(p.name) ?? p.lon;
+
+  // A sign glyph inside a body's readout that names itself on hover (interactive
+  // wheel only), exactly like the rim signs — so the sign attached to each planet
+  // reads the same way as the zodiac band. Non-interactive wheels just draw the
+  // glyph with no hit target.
+  const readoutSign = (signIdx: number, x: number, y: number, size: number) =>
+    interactive ? (
+      <g
+        className="sign-mark"
+        onMouseEnter={() =>
+          setTip({
+            x,
+            y,
+            r: 9,
+            title: SIGN_NAMES[signIdx],
+            sub: SIGN_MEANINGS[signIdx],
+            marker: <ZodiacGlyph sign={signIdx} size={14} />,
+          })
+        }
+        onMouseLeave={clearTip}
+        aria-label={SIGN_NAMES[signIdx]}
+      >
+        <circle cx={x} cy={y} r={9} className="planet-hit" />
+        <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
+      </g>
+    ) : (
+      <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
+    );
 
   const svg = (
     <svg
@@ -808,6 +865,39 @@ export function WheelSvg({
           );
         })}
 
+      {/* The four angles get the planets' connector + zodiac-band tick: a faint
+          line back to the true longitude (the spread may have nudged the disc)
+          and a bold tick marking the exact position. The group's `color` carries
+          the axis colour so currentColor resolves the CSS var on the strokes. */}
+      {showAngleMarks &&
+        angleMarks.map((a) => {
+          const truePos = svgPos(a.lon, angles.asc, rZodiacInner, cx, cy);
+          const glyphPos = svgPos(angleLonFor(a), angles.asc, rPlanets, cx, cy);
+          const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 8, cx, cy);
+          return (
+            <g key={`angle-mark-${a.key}`} style={{ color: a.color }}>
+              <line
+                x1={truePos.x}
+                y1={truePos.y}
+                x2={glyphPos.x}
+                y2={glyphPos.y}
+                stroke="currentColor"
+                strokeWidth={0.6}
+                opacity={0.4}
+              />
+              <line
+                x1={tickPos.x}
+                y1={tickPos.y}
+                x2={tipPos.x}
+                y2={tipPos.y}
+                stroke="currentColor"
+                strokeWidth={1.5}
+              />
+            </g>
+          );
+        })}
+
       {planets.map((p) => {
         const pos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
         // The non-detailed minimap draws larger planet discs/glyphs (they're the
@@ -865,6 +955,47 @@ export function WheelSvg({
           </g>
         );
       })}
+
+      {/* Angle marks: the two-letter code (As/Ds/Mc/Ic) as bare text on the
+          glyph ring — no disc, so they're not mistaken for the circled planets.
+          A panel-coloured halo (wheel-angle-label) keeps the code legible over
+          the spokes/lines, and the planet hover (lift + named tag) is reused via
+          a transparent hit target. */}
+      {showAngleMarks &&
+        angleMarks.map((a) => {
+          const pos = svgPos(angleLonFor(a), angles.asc, rPlanets, cx, cy);
+          return (
+            <g
+              key={`angle-disc-${a.key}`}
+              className="planet-mark"
+              onMouseEnter={() =>
+                setTip({
+                  x: pos.x,
+                  y: pos.y,
+                  r: 11,
+                  title: a.title,
+                  sub: a.sub,
+                  titleColor: a.color,
+                })
+              }
+              onMouseLeave={clearTip}
+              aria-label={a.title}
+            >
+              <circle cx={pos.x} cy={pos.y} r={14} className="planet-hit" />
+              <g className="planet-mark-visual">
+                <text
+                  x={pos.x}
+                  y={pos.y + 4}
+                  textAnchor="middle"
+                  className="wheel-angle-label"
+                  style={{ fill: a.color } as CSSProperties}
+                >
+                  {a.key}
+                </text>
+              </g>
+            </g>
+          );
+        })}
 
       {/* Bi-wheel: the overlay chart's planets in an outer ring, dashed and
           dimmed, with a tick on the zodiac band marking each true longitude. */}
@@ -995,7 +1126,7 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={readoutFont + 2} />
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 2)}
               <text
                 x={minPos.x}
                 y={minPos.y + 3}
@@ -1041,7 +1172,7 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={readoutFont + 3} />
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3)}
               <text
                 x={minPos.x}
                 y={minPos.y + 3}
@@ -1056,56 +1187,41 @@ export function WheelSvg({
           );
         })}
 
-      {/* The four chart angles labelled at the rim of the interactive (sidebar)
-          wheel — As/Ds on the horizon axis (accent), Mc/Ic on the meridian
-          (cool). Each names itself on hover. Placed just inside the zodiac band
-          with a halo so they read over the spokes/lines. */}
-      {interactive &&
-        detailed &&
-        ANGLE_HINTS.map(({ key, title, sub }) => {
-          // Honour the Map Filter's line-type toggles: hide an angle's label
-          // when its line is switched off (undefined set → show all four).
-          if (visibleAngles && !visibleAngles.has(key)) return null;
-          const lon =
-            key === 'As'
-              ? angles.asc
-              : key === 'Ds'
-                ? angles.dsc
-                : key === 'Mc'
-                  ? angles.mc
-                  : angles.ic;
-          if (!Number.isFinite(lon)) return null;
-          const pos = svgPos(lon, angles.asc, rZodiacInner - 12, cx, cy);
-          const color = key === 'As' || key === 'Ds' ? 'var(--accent)' : 'var(--cool)';
+      {/* Angle degree·sign·minute readout, fanned inward along the spoke exactly
+          like the planet readout (degree nearest the disc, then sign glyph, then
+          minutes) — so each angle reads e.g. 23° ♑ 17' right in the wheel. */}
+      {showReadouts &&
+        showAngleMarks &&
+        angleMarks.map((a) => {
+          const degPos = svgPos(angleLonFor(a), angles.asc, rReadout + readoutFan, cx, cy);
+          const signPos = svgPos(angleLonFor(a), angles.asc, rReadout, cx, cy);
+          const minPos = svgPos(angleLonFor(a), angles.asc, rReadout - readoutFan, cx, cy);
+          const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
+          const signIdx = Math.floor(lonDeg / 30);
+          const inSign = lonDeg % 30;
+          const deg = Math.floor(inSign);
+          const min = Math.floor((inSign - deg) * 60);
           return (
-            <g
-              key={`angle-${key}`}
-              className="wheel-angle"
-              onMouseEnter={() =>
-                setTip({
-                  x: pos.x,
-                  y: pos.y,
-                  r: 12,
-                  title,
-                  sub,
-                  titleColor: color,
-                })
-              }
-              onMouseLeave={clearTip}
-              aria-label={title}
-            >
-              <circle cx={pos.x} cy={pos.y} r={13} className="planet-hit" />
-              <g className="wheel-angle-visual">
-                <text
-                  x={pos.x}
-                  y={pos.y + 3.5}
-                  textAnchor="middle"
-                  className="wheel-angle-label"
-                  style={{ fill: color } as CSSProperties}
-                >
-                  {key}
-                </text>
-              </g>
+            <g key={`angle-rdo-${a.key}`} className="planet-readout">
+              <text
+                x={degPos.x}
+                y={degPos.y + 3}
+                textAnchor="middle"
+                className="readout-deg"
+                fontSize={readoutFont}
+              >
+                {deg}°
+              </text>
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3)}
+              <text
+                x={minPos.x}
+                y={minPos.y + 3}
+                textAnchor="middle"
+                className="readout-min"
+                fontSize={readoutFont}
+              >
+                {String(min).padStart(2, '0')}&#39;
+              </text>
             </g>
           );
         })}

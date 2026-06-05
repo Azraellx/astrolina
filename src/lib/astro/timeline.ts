@@ -241,7 +241,7 @@ export function buildOverlay(
       return {
         kind: mode,
         measure: `Age ${c.years.toFixed(1)}`,
-        labelFull: `Secondary Progressions · age ${c.years.toFixed(1)}`,
+        labelFull: `Progressed · age ${c.years.toFixed(1)}`,
         jd: c.progressedJD,
         positions: getPlanetPositions(c.progressedJD, nodeType),
         gmst,

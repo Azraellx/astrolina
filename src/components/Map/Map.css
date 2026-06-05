@@ -81,7 +81,11 @@
 
 .acg-badge {
   position: absolute;
-  transform: translate(-50%, -50%);
+  /* Anchored at the layer's origin and moved/centered by the inline `translate`
+     property (see badgePos) so panning updates it on the compositor, not via a
+     layout reflow. */
+  left: 0;
+  top: 0;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -121,12 +125,15 @@
   font-family: inherit;
   appearance: none;
   -webkit-appearance: none;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  /* Lift on hover via the independent `scale` property, so it never disturbs the
+     `translate` that positions the badge (and the position stays un-transitioned —
+     instant tracking while panning). */
+  transition: scale 0.12s ease, filter 0.12s ease;
 }
 
 .acg-badge-btn:hover {
   filter: brightness(1.08);
-  transform: translate(-50%, -50%) scale(1.07);
+  scale: 1.07;
 }
 
 /* The LS azimuth degree (E=0 / N=90), shown in place of the old IN/OUT text. */
@@ -136,29 +143,6 @@
   letter-spacing: 0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-/* Outgoing-line direction arrow — an OUTLINE (stroked SVG, no fill) in the badge's own
-   color, rising from the badge centre outward along the line. A 0×0 anchor at the badge
-   centre, rotated inline; the badge's transform gives it a stacking context, so
-   z-index:-1 tucks it BEHIND the label text (and the same-color pill), leaving the
-   outlined head/shaft showing past the pill edge. */
-.ls-arrow {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-  z-index: -1;
-  pointer-events: none;
-  /* color (the stroke) is set inline to the badge color. */
-}
-.ls-arrow svg {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  overflow: visible;
 }
 
 /* The bundled symbol font sits a touch low; nudge badge glyphs up ~10% to optically

@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   minorStepMs,
   TIME_UNITS,
@@ -12,6 +17,7 @@ import {
   zoneLabelAt,
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { TipButton, TipSpan } from '../ui/HoverTip';
 import './TimelineHud.css';
 
 // Active map location state, shared with the map edge-glow — drives the HUD
@@ -364,36 +370,40 @@ export function TimelineHud({
 
       <div className="thud-row">
         <div className="thud-transport">
-          <button
+          <TipButton
             type="button"
             className="thud-step-btn"
             onClick={() => step(-1)}
-            title={`Step back ${stepCount} ${stepBase.label}`}
             aria-label="Step back"
+            placement="top"
+            tip={`Step back ${stepCount} ${stepBase.label}`}
           >
             ‹
-          </button>
-          <button
+          </TipButton>
+          <TipButton
             type="button"
             className={`thud-play ${playing ? 'on' : ''}`}
             onClick={() => setPlaying(!playing)}
-            title={playing ? 'Pause' : 'Play'}
             aria-label={playing ? 'Pause' : 'Play'}
+            placement="top"
+            tip={playing ? 'Pause' : 'Play'}
           >
             {playing ? '❚❚' : '▶'}
-          </button>
-          <button
+          </TipButton>
+          <TipButton
             type="button"
             className="thud-step-btn"
             onClick={() => step(1)}
-            title={`Step forward ${stepCount} ${stepBase.label}`}
             aria-label="Step forward"
+            placement="top"
+            tip={`Step forward ${stepCount} ${stepBase.label}`}
           >
             ›
-          </button>
-          <span
+          </TipButton>
+          <TipSpan
             className="thud-stepsize"
-            title={`Step amount, in ${stepBase.label}`}
+            placement="top"
+            tip={`Step amount, in ${stepBase.label}`}
           >
             <input
               type="number"
@@ -405,7 +415,7 @@ export function TimelineHud({
               aria-label={`Step amount in ${stepBase.label}`}
             />
             <span className="thud-stepunit">{stepBase.label}</span>
-          </span>
+          </TipSpan>
         </div>
 
         <span className="thud-datewrap">
@@ -430,34 +440,39 @@ export function TimelineHud({
               if (v) setTargetDate(fromDatetimeLocalUTC(v) - offsetMs);
             }}
           />
-          <button
+          <TipButton
             type="button"
             className="thud-now"
             onClick={() => setTargetDate(clamp(Date.now()))}
-            title="Set to the current moment"
+            placement="top"
+            tip="Set to the current moment"
           >
             Now
-          </button>
-          <span
+          </TipButton>
+          <TipSpan
             className="thud-utc"
-            title={
+            placement="top"
+            tip={
               current
                 ? `Transit / progressed moment, in the chart’s time zone`
                 : 'Transit / progressed moment, in UTC'
             }
           >
             {tzLabel}
-          </span>
+          </TipSpan>
         </span>
 
         <label className="thud-mode thud-unit">
           <span className="thud-mode-label">Scale</span>
-          <span className="thud-select-wrap">
+          <TipSpan
+            className="thud-select-wrap"
+            placement="top"
+            tip={`Notch = 1 ${stepUnit}; mini-notch = ${minorDesc}`}
+          >
             <select
               className="thud-select"
               value={stepUnit}
               onChange={(e) => setStepUnit(e.target.value as TimeUnit)}
-              title={`Notch = 1 ${stepUnit}; mini-notch = ${minorDesc}`}
             >
               {UNIT_OPTIONS.map(({ unit, label }) => (
                 <option key={unit} value={unit}>
@@ -466,7 +481,7 @@ export function TimelineHud({
               ))}
             </select>
             <span className="thud-select-caret">▾</span>
-          </span>
+          </TipSpan>
         </label>
       </div>
         </>

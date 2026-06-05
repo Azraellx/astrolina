@@ -25,7 +25,7 @@ import {
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
-import { HoverTip } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
 import { tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
   computeLineBadges,
@@ -123,6 +123,16 @@ function badgeTextColor(fill: string): string {
   return lum > 0.62 ? '#1a1c22' : '#fff';
 }
 
+// Center-anchor a badge at screen (x, y) via the GPU `translate` property rather
+// than left/top. left/top changes force a layout reflow each frame while panning;
+// translate is handled on the compositor (no reflow), so the labels track the map
+// smoothly. The calc()s fold in the -50% / -50% centering (% is of the badge's own
+// size), and a non-none translate still makes each badge a stacking context (the LS
+// arrow's z-index:-1 relies on that).
+function badgePos(x: number, y: number): string {
+  return `calc(${x}px - 50%) calc(${y}px - 50%)`;
+}
+
 // One badge per paran, parked at the horizontal centre of the screen on the line's
 // latitude row (replaces the old repeated along-the-line labels).
 interface ParanBadge {
@@ -144,9 +154,12 @@ interface ParanBadge {
 // so the screen angle matches the bearing — the label lands on its own line. The
 // ring radius grows from the base up to 4× as you zoom in toward street level
 // (~where minor roads appear), so the labels spread apart as the map gains detail.
-// The "zoomed in close" threshold: at this zoom the LS label ring reaches its max
-// radius AND the local-horizon compass pops in — a single zoomed-in-enough mark.
-const CLOSE_ZOOM = 10;
+// The "zoomed in close" threshold: one shared "zoomed-in-enough" mark. At this
+// zoom the LS label ring reaches its max radius and the horizon compass its full
+// size, the map's "Zoom out" escape button appears, AND the pin's reverse-geocode
+// upgrades to the precise network lookup (App reads it via onDetailZoomChange →
+// detailZoom). Lower it to make all of those kick in a little earlier.
+const CLOSE_ZOOM = 8.5;
 // Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
 // escape button appears; clicking it eases back to this wide overview in one step.
 const ZOOM_OUT_TARGET = 3;
@@ -182,10 +195,6 @@ interface LocalSpaceBadge {
   /** This half's bearing in the E=0 / N=90 convention, as degrees + arcminutes
    *  (e.g. "45°23'"). Static. */
   azLabel: string;
-  /** True for the outgoing (toward-planet) half — only it shows the direction arrow. */
-  out: boolean;
-  /** Screen rotation (deg, clockwise from up) of the direction arrow. */
-  arrowDeg: number;
 }
 
 // Spread overlapping badges apart — a few passes of AABB separation along the axis
@@ -517,8 +526,10 @@ interface MapData {
 }
 
 export interface MapHandle {
-  /** Recenter the map on a coordinate, easing to a usable zoom if zoomed out. */
-  flyTo: (lat: number, lng: number) => void;
+  /** Recenter the map on a coordinate. Without `zoom`, eases to a usable zoom if
+   *  zoomed out (keeping the current zoom otherwise); with `zoom`, sets it exactly
+   *  (so Teleport can frame a country wide vs a city tight). */
+  flyTo: (lat: number, lng: number, zoom?: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
 }
@@ -536,6 +547,7 @@ function addArrowLayer(
   source: string,
   filter: ExpressionSpecification,
   glyph: string,
+  textSize = 15,
 ) {
   map.addLayer({
     id,
@@ -548,7 +560,7 @@ function addArrowLayer(
       // Spaced out so the base line shows through as the shaft between arrowheads
       // — reads as ———→———→ rather than a dense →→→ run.
       'symbol-spacing': 64,
-      'text-size': 15,
+      'text-size': textSize,
       'text-font': ['Noto Sans Regular'],
       'text-rotation-alignment': 'map',
       'text-pitch-alignment': 'map',
@@ -612,14 +624,18 @@ function setupCustomLayers(
     type: 'line',
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 1.2,
+      // The outgoing (toward-planet) half is drawn ~2× a normal ACG line, so the
+      // direction also reads from the line weight; the inward (nadir) half keeps the
+      // usual LS weight. Its '→' chevrons are oversized to match (see addArrowLayer).
+      'line-width': ['case', ['==', ['get', 'direction'], 'out'], 3.2, 1.2],
       'line-opacity': 0.75,
       'line-dasharray': [2, 2],
     },
   });
   // Outward ('→', toward the planet) and inward ('←', back toward the origin)
-  // arrows distinguish the two halves of each local-space axis.
-  addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→');
+  // arrows also mark the two halves of each local-space axis. The outward chevrons
+  // are oversized (2×) to match the bold outgoing line; the inward ones stay normal.
+  addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
   addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
   map.addSource('acg-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
@@ -857,7 +873,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const mapRef = useRef<maplibregl.Map | null>(null);
 
   useImperativeHandle(ref, () => ({
-    flyTo: (lat: number, lng: number) => {
+    flyTo: (lat: number, lng: number, zoom?: number) => {
       const map = mapRef.current;
       if (!map) return;
       // The expanded chart sidebar is left-docked and overlays the map; while
@@ -872,7 +888,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ) || 0;
       map.flyTo({
         center: [lng, lat],
-        zoom: Math.max(map.getZoom(), 4),
+        zoom: zoom ?? Math.max(map.getZoom(), 4),
         offset: [esWidth / 4, 0],
         essential: true,
       });
@@ -1082,9 +1098,6 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           azWhole = (azWhole + 1) % 360;
         }
         const azLabel = `${azWhole}°${String(azMin).padStart(2, '0')}'`;
-        // Direction arrow points along the axis: away from the pin ('out', toward
-        // the planet) or back toward it ('in').
-        const arrowDeg = ((out ? angle : angle + Math.PI) * 180) / Math.PI;
         // Keep the label on screen. At rest it sits at the ring point. Once that's off
         // screen we hug the edge where the line exits — but WHICH end depends on the
         // pin: while the pin is still visible, hug the planet-ward exit; once the pin
@@ -1117,8 +1130,6 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           planet: lp.planet,
           color: lp.color,
           azLabel,
-          out,
-          arrowDeg,
         });
       }
       deOverlapBadges(lsbadges, LS_BADGE_HALF_W, LS_BADGE_HALF_H, 16);
@@ -1622,36 +1633,38 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // Natal labels fly to the planet's zenith (a clickable, hover-lifting
           // button); overlay labels stay plain, non-interactive spans.
           return zenithTarget ? (
-            <button
+            <TipButton
               type="button"
               key={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
-              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
-              title={`Fly to ${PLANET_DISPLAY[b.planet]}'s zenith`}
+              placement="top"
+              tip={`Fly to ${PLANET_DISPLAY[b.planet]}'s zenith`}
             >
               {inner}
-            </button>
+            </TipButton>
           ) : (
             <span
               key={b.key}
               className="acg-badge"
-              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
             >
               {inner}
             </span>
           );
         })}
         {paranBadges.map((b) => (
-          <button
+          <TipButton
             type="button"
             key={b.key}
             tabIndex={-1}
             className="acg-badge paran-badge acg-badge-btn"
-            style={{ left: b.x, top: b.y, background: zenithFill, color: paranText }}
+            style={{ translate: badgePos(b.x, b.y), background: zenithFill, color: paranText }}
             onClick={() => onParanClick(b)}
-            title="Fly to this paran's intersection (click again to return)"
+            placement="top"
+            tip="Fly to this paran's intersection (click again to return)"
           >
             {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
             <PlanetGlyph planet={b.planetA} size={11} color={paranText} />
@@ -1659,7 +1672,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <span className="paran-badge-x">×</span>
             <PlanetGlyph planet={b.planetB} size={11} color={paranText} />
             <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
-          </button>
+          </TipButton>
         ))}
         {localSpaceBadges.map((b) => {
           const text = badgeTextColor(b.color);
@@ -1667,42 +1680,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             // Clicking an LS label flies to the local-space origin — where the lines
             // converge (the pin). Shows LS + glyph + azimuth; only the outgoing
             // (toward-planet) half carries an outline direction arrow.
-            <button
+            <TipButton
               type="button"
               key={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
-              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() =>
                 localSpaceOrigin &&
                 flyToPoint(localSpaceOrigin.lng, localSpaceOrigin.lat)
               }
-              title="Fly to the local-space origin (the pin)"
+              placement="top"
+              tip="Fly to the local-space origin (the pin)"
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
               <span className="ls-deg">{b.azLabel}</span>
-              {b.out && (
-                <span
-                  className="ls-arrow"
-                  style={{ color: b.color, transform: `rotate(${b.arrowDeg}deg)` }}
-                  aria-hidden="true"
-                >
-                  <svg
-                    width="20"
-                    height="58"
-                    viewBox="0 0 20 58"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10 58 V15 M3 25 L10 11 L17 25" />
-                  </svg>
-                </span>
-              )}
-            </button>
+            </TipButton>
           );
         })}
       </div>

@@ -136,8 +136,23 @@
 
 .wheel-svg.interactive .planet-mark,
 .wheel-svg.interactive .sign-hit,
-.wheel-svg.interactive .wheel-angle {
+.wheel-svg.interactive .sign-mark {
   cursor: help;
+}
+
+/* The sign glyph inside a body's readout brightens on hover, echoing the planet
+   discs' lift — a small affordance that it names itself. */
+.wheel-svg.interactive .sign-mark {
+  transition: filter 0.12s ease;
+}
+.wheel-svg.interactive .sign-mark:hover {
+  filter: brightness(1.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-svg.interactive .sign-mark {
+    transition: none;
+  }
 }
 
 /* Transparent, generously-sized hit disc so the hover target reaches past the
@@ -150,14 +165,12 @@
 /* Responsive lift on the disc / angle label — mirrors the map line-label badge
    hover (scale + brightness). transform-box:fill-box scales each mark around
    its own centre. */
-.wheel-svg.interactive .planet-mark-visual,
-.wheel-svg.interactive .wheel-angle-visual {
+.wheel-svg.interactive .planet-mark-visual {
   transform-box: fill-box;
   transform-origin: center;
   transition: transform 0.12s ease, filter 0.12s ease;
 }
-.wheel-svg.interactive .planet-mark:hover .planet-mark-visual,
-.wheel-svg.interactive .wheel-angle:hover .wheel-angle-visual {
+.wheel-svg.interactive .planet-mark:hover .planet-mark-visual {
   transform: scale(1.16);
   filter: brightness(1.12);
 }
@@ -179,10 +192,12 @@
   fill: rgba(var(--accent-rgb), 0.12);
 }
 
-/* The four angle labels (As/Ds/Mc/Ic). A panel-colored halo (paint-order:stroke
-   keeps it behind the fill) lets them read over the house spokes + aspect lines. */
+/* The four angle codes (As/Ds/Mc/Ic), bare text on the glyph ring (no disc, so
+   they don't read as planets) — a touch larger to hold their own without one. A
+   panel-colored halo (paint-order:stroke keeps it behind the fill) keeps the
+   code crisp over whichever spoke / aspect line it sits on. */
 .wheel-svg .wheel-angle-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
   paint-order: stroke;
@@ -240,12 +255,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wheel-svg.interactive .planet-mark-visual,
-  .wheel-svg.interactive .wheel-angle-visual {
+  .wheel-svg.interactive .planet-mark-visual {
     transition: none;
   }
-  .wheel-svg.interactive .planet-mark:hover .planet-mark-visual,
-  .wheel-svg.interactive .wheel-angle:hover .wheel-angle-visual {
+  .wheel-svg.interactive .planet-mark:hover .planet-mark-visual {
     transform: none;
   }
   .wheel-tip {

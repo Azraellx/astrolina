@@ -41,6 +41,9 @@
 
 .es-section-header {
   flex-shrink: 0;
+  /* Sole source of the gap above the wheel — the wheel section drops its own
+     top padding (below), so the header→wheel spacing lives here only. */
+  padding-bottom: 5px;
 }
 
 .es-header-row {
@@ -204,12 +207,9 @@
   color: var(--text-muted);
 }
 
-/* "Angles" sits under the planet list — a hairline + breathing room separate the
-   two groups (only spaced when planets precede it). */
-.es-planet-cols + .es-angles-h3 {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(var(--tint), 0.06);
+/* A heading that carries a hover .ui-tip explaining its section. */
+.es-h3-tip {
+  cursor: help;
 }
 
 .es-planet-list {
@@ -243,15 +243,17 @@
   gap: 6px;
 }
 
-/* Declination, colored by the out-of-bounds line (the Sun's 23°26' max): past
-   it reads pink (the notable case); within it reads a darker pink. */
+/* Declination, flagged only when out of bounds (beyond the Sun's 23°26' max),
+   north or south alike. One colour: dark pink on the Dark/Earth themes, swapped
+   to the brighter pink under Glass (below) where dark pink reads muddy over the
+   frosted-light panels. Within bounds the value keeps the default text colour. */
 .es-dec-oob {
-  color: #ff8ad1;
+  color: #b5638b;
   font-weight: 600;
 }
 
-.es-dec-in {
-  color: #b5638b;
+:root[data-theme='glass'] .es-dec-oob {
+  color: #ff8ad1;
 }
 
 .es-rx {
@@ -272,13 +274,20 @@
    tabular figures carry the alignment. Scrolls sideways if the panel is too
    narrow to fit all eight columns. */
 .es-adv-scroll {
+  /* Horizontal scroll only as a last-resort safety (the column count is trimmed
+     in JS to fit). overflow-y is pinned to hidden so a horizontal scrollbar can
+     never eat height and spawn a phantom vertical scrollbar — and so the default
+     overflow-x:auto doesn't compute overflow-y to auto. */
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .es-adv-table {
-  /* Shrink-wrap to content so the numeric columns stay snug (a full-width table
-     would scatter them with big gaps); .es-adv-scroll handles narrow panels. */
-  width: auto;
+  /* Fill the available width so the columns spread to use the panel as it's
+     dragged wider, rather than shrink-wrapping snug to the left. The JS column
+     trim (advExtraCols) drops the last two columns before this could ever need to
+     scroll, so 100% always fits the visible set. */
+  width: 100%;
   border-collapse: collapse;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -304,7 +313,12 @@
 /* Column spacing without vertical rules: pad the left of every cell past the first. */
 .es-adv-table th + th,
 .es-adv-table td + td {
-  padding-left: 14px;
+  padding-left: 20px;
+}
+
+/* The coordinate-column headers carry a hover .ui-tip explaining each one. */
+.es-adv-table th.es-adv-num {
+  cursor: help;
 }
 
 .es-adv-num {
@@ -396,12 +410,29 @@
   border-bottom: none;
 }
 
-/* The two-letter angle code sits in the glyph slot, colored like the wheel/map
-   angle labels (As/Ds gold, Mc/Ic blue) — set inline per row. */
+/* The two-letter angle code (Mc/Ic/As/Ds) sitting in a list row's glyph slot,
+   coloured inline like the wheel/map angle (As/Ds gold, Mc/Ic blue). */
 .es-angle-code {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+/* Glyph/code + name on one row inside a below-wheel .ui-tip (icon-naming tips). */
+.es-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Small colour swatch standing in for the out-of-bounds declination's "icon" in
+   its hover tip — the es-dec-oob class beside it supplies the theme-aware colour. */
+.es-dec-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .es-glyph {
@@ -492,7 +523,9 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 10px 12px 14px;
+  /* No top padding: the header's reduced bottom padding owns the gap, and the
+     absolutely-positioned wheel title (top: 4px) overlays the wheel's empty corner. */
+  padding: 0 12px 14px;
   gap: 10px;
 }
 

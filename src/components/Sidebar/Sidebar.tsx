@@ -97,6 +97,27 @@ const LINE_TYPES: { type: LineType; label: string; full: string }[] = [
   { type: 'DSC', label: 'Ds', full: 'Descendant (relationships)' },
 ];
 
+// The Shift+click affordance shown as the hotkey tag on each planet / line filter
+// tip: "Shift" + a cursor/tap glyph. Shift+click toggles every item in the group at
+// once (show vs hide follows the hovered one's state — the user infers it).
+function ShiftTapTag() {
+  return (
+    <span className="shift-tap-tag">
+      Shift
+      <svg
+        className="shift-tap-icon"
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+      </svg>
+    </span>
+  );
+}
+
 const COORD_SYSTEMS: { value: CoordSystem; label: string; hint: string }[] = [
   { value: 'mundo', label: 'In Mundo', hint: 'Lines use each body’s true position in the sky (RA / dec). Most affects Pluto and the Moon.' },
   { value: 'zodiaco', label: 'In Zodiaco', hint: 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).' },
@@ -189,7 +210,7 @@ function ChoiceTip({
   pos: { left: number; top: number } | null;
   title: ReactNode;
   hint: string;
-  hotkey?: string;
+  hotkey?: ReactNode;
 }) {
   if (!pos) return null;
   return createPortal(
@@ -233,7 +254,7 @@ function TipToggle({
   title: string;
   hint: string;
   /** Optional keyboard shortcut, shown as the yellow pill in the tip. */
-  hotkey?: string;
+  hotkey?: ReactNode;
   ariaPressed?: boolean;
   children: ReactNode;
 }) {
@@ -522,6 +543,7 @@ function PlanetToggle({
           </span>
         }
         hint={PLANET_THEMES[planet]}
+        hotkey={<ShiftTapTag />}
       />
     </li>
   );
@@ -603,12 +625,12 @@ export function Sidebar({
   const toggleSection = (s: SidebarSection) =>
     setOpenSection(openSection === s ? null : s);
 
-  // The Overlay tab exists while ANY overlay is active; otherwise its header simply
-  // isn't rendered (and any saved open-state for it just reads as "nothing open").
-  // The Chart Angle control within it is for the directed overlays only.
-  const showOverlayTab = overlayMode !== 'off';
-  const showChartAngle =
-    overlayMode === 'progressed' || overlayMode === 'solar-arc';
+  // The settings groups the active overlay exposes in its Overlay tab. Each is its
+  // own flag, and the tab is shown only when at least one is on — so an overlay
+  // with nothing to configure (Synastry today) simply gets no tab, with no
+  // per-mode special-casing. If Synastry gains a setting later, flip its flag and
+  // the tab returns on its own.
+
   // The bottom timeline only exists for the time-scrub overlays (not synastry), so
   // the Display ▸ Timeline toggle is shown only then.
   const isTimeMode =
@@ -616,6 +638,17 @@ export function Sidebar({
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions';
+  // Positioning (radix-relative vs the overlay moment's own sidereal time) shapes
+  // where the overlaid angle lines fall — meaningful for every overlay except
+  // Synastry, whose partner chart has no single moment to frame against.
+  const showPositioning = overlayMode !== 'off' && overlayMode !== 'synastry';
+  // The Chart Angle control is for the directed overlays only.
+  const showChartAngle =
+    overlayMode === 'progressed' || overlayMode === 'solar-arc';
+  // Show the Overlay tab only when the active overlay actually has a setting to
+  // toggle; otherwise its header isn't rendered (and any saved open-state for it
+  // just reads as "nothing open").
+  const showOverlayTab = isTimeMode || showPositioning || showChartAngle;
 
   return (
     <aside className="sidebar">
@@ -727,6 +760,7 @@ export function Sidebar({
                   onShiftClick={() => setAllLineTypes(!on)}
                   title={label}
                   hint={full}
+                  hotkey={<ShiftTapTag />}
                 >
                   {type === 'ASC' ? (
                     <span className="line-arrow-swatch">→</span>
@@ -882,18 +916,22 @@ export function Sidebar({
                 </>
               )}
 
-              <h2>Positioning</h2>
-              <ul className="theme-list">
-                {POSITIONINGS.map(({ value, label, hint }) => (
-                  <HintOption
-                    key={value}
-                    selected={transitFrame === value}
-                    onSelect={() => setTransitFrame(value)}
-                    label={label}
-                    hint={hint}
-                  />
-                ))}
-              </ul>
+              {showPositioning && (
+                <>
+                  <h2>Positioning</h2>
+                  <ul className="theme-list">
+                    {POSITIONINGS.map(({ value, label, hint }) => (
+                      <HintOption
+                        key={value}
+                        selected={transitFrame === value}
+                        onSelect={() => setTransitFrame(value)}
+                        label={label}
+                        hint={hint}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
 
               {showChartAngle && (
                 <>

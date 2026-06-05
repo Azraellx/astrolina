@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getIanaTimezone } from '../../lib/atlas/timezone';
 import { displayName, newChartId, type StoredChart } from '../../lib/chartLibrary';
 import { parseImport, type ParsedChart } from '../../lib/importCharts';
+import { TipSpan } from '../ui/HoverTip';
 import './ImportChartModal.css';
 
 interface ImportChartModalProps {
@@ -158,9 +159,9 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
               <ul className="import-list">
                 {charts.map((c, i) => (
                   <li key={i}>
-                    <span className="import-name" title={c.name}>
+                    <TipSpan className="import-name" placement="top" tip={c.name}>
                       {displayName(c.name)}
-                    </span>
+                    </TipSpan>
                     <span className="import-detail">{fmtSummary(c)}</span>
                   </li>
                 ))}

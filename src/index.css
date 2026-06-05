@@ -257,6 +257,30 @@ span.astro-glyph {
   box-shadow: inset 0 1px 0 rgba(240, 226, 192, 0.1);
 }
 
+/* The small map controls (zoom group) and the two bottom-center HUD bars (the
+   timeline nub + its fillets, and the synastry bar) hardcode a heavier 0.94–0.96
+   panel fill. On Earth's dark-parchment --bg-panel that reads much darker than the
+   rest of the (0.72 + blur) Earth chrome, so bring them in line. Glass is near-
+   white and Dark is already dark, so the difference is invisible there — hence
+   this is Earth-only. */
+:root[data-theme='vintage'] .maplibregl-ctrl-group {
+  background: rgba(var(--bg-panel), 0.72) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+:root[data-theme='vintage'] .thud-measure {
+  background: rgba(var(--bg-panel), 0.72);
+}
+:root[data-theme='vintage'] .thud-measure::before {
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.72) 9.5px);
+}
+:root[data-theme='vintage'] .thud-measure::after {
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.72) 9.5px);
+}
+:root[data-theme='vintage'] .synastry-hud {
+  background: rgba(var(--bg-panel), 0.72);
+}
+
 * {
   box-sizing: border-box;
 }

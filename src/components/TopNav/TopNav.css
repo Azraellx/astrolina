@@ -1,3 +1,13 @@
+/* "[cycle] O" tag inside the overlay-mode tips' hotkey pill: glyph + letter. */
+.cycle-hotkey {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cycle-hotkey-icon {
+  flex-shrink: 0;
+}
+
 /* The top command bar reuses the overlay bar's chrome (.timeline-hud — theme +
    accent + mapstate-driven border), but docks at the top center as an inset
    island whose lower corners sweep down. */

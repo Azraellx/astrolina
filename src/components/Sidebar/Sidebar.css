@@ -303,6 +303,16 @@
    tooltip. Portaled to <body> so the sidebar's overflow can't clip it, pinned
    just left of the row (sidebar is docked at the screen's right edge) and
    vertically centred on it. Wraps, unlike the single-line timeline nub hint. */
+/* "Shift [cursor]" tag inside a filter tip's hotkey pill: word + small cursor glyph. */
+.shift-tap-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.shift-tap-icon {
+  flex-shrink: 0;
+}
+
 .choice-tip {
   position: fixed;
   transform: translate(-100%, -50%);

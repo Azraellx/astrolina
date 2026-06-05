@@ -1,0 +1,177 @@
+/* Teleport: a movable search window that flies the map to any place. Reuses the
+   .timeline-hud frosted-panel chrome (and its per-theme overrides); here we only
+   resize it, fix it to the viewport (positioned by useMovableHud's inline
+   left/top), and lay out the header / search / results. */
+.teleport-hud {
+  position: fixed;
+  z-index: 22;
+  width: 320px;
+  max-width: 320px;
+  padding: 0;
+  cursor: default;
+  overflow: hidden;
+}
+
+.teleport-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 11px;
+  border-bottom: 1px solid rgba(var(--tint), 0.08);
+}
+
+/* The grip (dots + title) is the drag handle. The close button sits outside it,
+   so clicking close never starts a drag. No hover styling on the bar itself —
+   the grip dots + grab cursor already signal it's draggable. */
+.teleport-grip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.teleport-grip:active {
+  cursor: grabbing;
+}
+
+.teleport-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.teleport-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.teleport-close:hover {
+  background: rgba(var(--tint), 0.1);
+  color: var(--text-strong);
+}
+
+.teleport-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+}
+
+.teleport-search-icon {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.teleport-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+.teleport-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Spinning ring while a search is in flight. */
+.teleport-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(var(--tint), 0.25);
+  border-top-color: var(--accent);
+  animation: teleport-spin 0.7s linear infinite;
+}
+@keyframes teleport-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .teleport-spinner {
+    animation-duration: 2s;
+  }
+}
+
+.teleport-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 244px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+}
+
+.teleport-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.teleport-result.active,
+.teleport-result:hover {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+.teleport-result-main {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+}
+
+.teleport-result-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Precision tag (city / region / country) — signals which zoom the jump uses. */
+.teleport-kind {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(var(--tint), 0.1);
+  color: var(--text-faint);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.teleport-result-coord {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}

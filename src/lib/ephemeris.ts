@@ -639,6 +639,49 @@ export function getHorizontalCoords(
   return out;
 }
 
+export interface AngleCoords {
+  lat: number;  // ecliptic latitude, radians — 0, since an angle is an ecliptic point
+  ra: number;   // right ascension, radians
+  dec: number;  // declination, radians
+  az: number;   // azimuth from north, radians
+  alt: number;  // altitude above the horizon, radians
+}
+
+// Equatorial + horizontal coordinates for the four chart angles, for the Advanced
+// table. Each angle (ASC/MC/DSC/IC) is a point ON the ecliptic — latitude 0 — at
+// its known longitude, so it runs through the same ecliptic → equatorial →
+// horizontal conversion as the planets in getHorizontalCoords. By construction the
+// ASC/DSC fall on the horizon (alt ≈ 0) and the MC/IC sit on the meridian.
+export function getAngleCoords(
+  angles: RelocatedAngles,
+  gmst: number,
+  eps: number,
+  obsLatDeg: number,
+  obsLngDeg: number,
+): Record<'asc' | 'mc' | 'dsc' | 'ic', AngleCoords> {
+  const lst = norm2pi(gmst + obsLngDeg * DEG2RAD);
+  const phi = obsLatDeg * DEG2RAD;
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  const at = (lon: number): AngleCoords => {
+    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+    const H = lst - ra; // local hour angle
+    const alt = Math.asin(
+      sinPhi * Math.sin(dec) + cosPhi * Math.cos(dec) * Math.cos(H),
+    );
+    const az = norm2pi(
+      Math.atan2(-Math.sin(H), Math.tan(dec) * cosPhi - Math.cos(H) * sinPhi),
+    );
+    return { lat: 0, ra, dec, az, alt };
+  };
+  return {
+    asc: at(angles.asc),
+    mc: at(angles.mc),
+    dsc: at(angles.dsc),
+    ic: at(angles.ic),
+  };
+}
+
 // House-division systems offered in the wheel. The four angles (ASC/MC/DSC/IC)
 // are identical across systems; only the intermediate cusps differ. All are
 // computed natively by Swiss Ephemeris.

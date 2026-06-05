@@ -1,6 +1,7 @@
 export type Theme = 'glass' | 'dark' | 'vintage';
 
-export const THEMES: Theme[] = ['glass', 'dark', 'vintage'];
+// Earth (vintage) leads the list and is the default; Glass and Dark follow.
+export const THEMES: Theme[] = ['vintage', 'glass', 'dark'];
 
 export const THEME_LABELS: Record<Theme, string> = {
   glass: 'Glass',
@@ -15,7 +16,7 @@ const STORAGE_KEY = 'astro:theme:v1';
 export function loadTheme(): Theme {
   const v = localStorage.getItem(STORAGE_KEY);
   if (v === 'glass' || v === 'dark' || v === 'vintage') return v;
-  return 'glass';
+  return 'vintage';
 }
 
 export function saveTheme(theme: Theme) {

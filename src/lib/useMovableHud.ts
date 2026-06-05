@@ -51,10 +51,28 @@ export interface MovableHud {
   };
 }
 
-export function useMovableHud(barRef: RefObject<HTMLElement | null>): MovableHud {
+export interface MovableHudOptions {
+  /** localStorage key for the saved position. Default: the shared bottom-bar key
+   *  (timeline + synastry occupy one slot, so they share it). */
+  posKey?: string;
+  /** A free-floating window (e.g. Teleport) rather than a bottom-docked bar: it
+   *  always carries an explicit position (starting from `initial`), never snaps to
+   *  a CSS dock, and double-click re-centres it instead of docking. */
+  floating?: boolean;
+  /** Starting top-left for a floating window when nothing is saved. */
+  initial?: () => { x: number; y: number };
+}
+
+export function useMovableHud(
+  barRef: RefObject<HTMLElement | null>,
+  opts: MovableHudOptions = {},
+): MovableHud {
+  const posKey = opts.posKey ?? POS_KEY;
+  const homePos = () =>
+    opts.floating && opts.initial ? opts.initial() : null;
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
     try {
-      const raw = localStorage.getItem(POS_KEY);
+      const raw = localStorage.getItem(posKey);
       if (raw) {
         const p = JSON.parse(raw);
         if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
@@ -62,18 +80,18 @@ export function useMovableHud(barRef: RefObject<HTMLElement | null>): MovableHud
     } catch {
       /* ignore */
     }
-    return null;
+    return homePos();
   });
   const dragRef = useRef<{ offX: number; offY: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (pos) localStorage.setItem(POS_KEY, JSON.stringify(pos));
-    else localStorage.removeItem(POS_KEY);
+    if (pos) localStorage.setItem(posKey, JSON.stringify(pos));
+    else localStorage.removeItem(posKey);
     // Nudge the map to re-dodge its edge labels off the bar's new rect (it only
     // recomputes them on pan/zoom otherwise, so a drag would leave them stale).
     window.dispatchEvent(new Event('astro:hud-moved'));
-  }, [pos]);
+  }, [pos, posKey]);
 
   // Keep a floated bar on-screen — clamped against the CURRENT viewport on mount
   // (a position saved on a larger/other screen may now be off-screen, and the grip
@@ -123,6 +141,7 @@ export function useMovableHud(barRef: RefObject<HTMLElement | null>): MovableHud
     if (!d) return;
     const el = barRef.current;
     if (!el) return;
+    if (opts.floating) return; // free-floating windows stay put — no dock/snap
     // Snap home if released near the docked bottom-centre.
     const r = el.getBoundingClientRect();
     const nearX = Math.abs(r.left + r.width / 2 - dockCenterX()) < SNAP_DIST;
@@ -138,7 +157,8 @@ export function useMovableHud(barRef: RefObject<HTMLElement | null>): MovableHud
       onPointerMove,
       onPointerUp,
       onPointerCancel: onPointerUp,
-      onDoubleClick: () => setPos(null),
+      // Bottom bars re-dock (null); a floating window re-centres to its home spot.
+      onDoubleClick: () => setPos(homePos()),
     },
   };
 }

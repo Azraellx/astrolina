@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { displayName, type StoredChart } from '../../lib/chartLibrary';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
 
 const MONTHS = [
@@ -64,6 +66,14 @@ export function SynastryHud({
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
   const { pos, dragging, handleProps } = useMovableHud(ref);
+  // The picker trigger's hover tip — points up (the bar is bottom-docked) and is
+  // suppressed while the upward picker menu is open so it never overlaps it.
+  const {
+    ref: tipRef,
+    pos: tipPos,
+    show: showTip,
+    hide: hideTip,
+  } = useHoverTip<HTMLButtonElement>('top');
 
   useEffect(() => {
     if (!open) return;
@@ -102,11 +112,12 @@ export function SynastryHud({
         {candidates.length === 0 ? (
           // Nothing to select — the only chart is the active one — so the bar is a
           // direct "Add person" prompt (no birth-line) that opens the add-chart flow.
-          <button
+          <TipButton
             type="button"
             className="synastry-hud-trigger synastry-hud-add"
             onClick={onAddPerson}
-            title="Add a person to compare"
+            placement="top"
+            tip="Add a person to compare"
             aria-label="Add a person to compare"
           >
             <span className="synastry-hud-label">
@@ -132,14 +143,25 @@ export function SynastryHud({
                 </svg>
               </span>
             </span>
-          </button>
+          </TipButton>
         ) : (
           <>
             <button
+              ref={tipRef}
               type="button"
               className={`synastry-hud-trigger ${open ? 'open' : ''}`}
-              onClick={() => setOpen((v) => !v)}
-              title="Choose comparison chart"
+              onClick={() => {
+                setOpen((v) => !v);
+                hideTip();
+              }}
+              onMouseEnter={() => {
+                if (!open) showTip();
+              }}
+              onMouseLeave={hideTip}
+              onFocus={() => {
+                if (!open) showTip();
+              }}
+              onBlur={hideTip}
               aria-label="Choose comparison chart"
               aria-expanded={open}
             >
@@ -147,7 +169,6 @@ export function SynastryHud({
                 <span className="synastry-hud-name-row">
                   <span
                     className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
-                    title={partner?.name}
                   >
                     {partner ? displayName(partner.name) : 'Choose a chart to compare'}
                   </span>
@@ -176,6 +197,7 @@ export function SynastryHud({
                 )}
               </span>
             </button>
+            <HoverTip pos={tipPos} placement="top" title="Choose comparison chart" />
             {open && (
               <div className="synastry-hud-menu">
                 <ul>

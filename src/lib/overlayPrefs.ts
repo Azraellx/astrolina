@@ -11,8 +11,8 @@ import type {
 const MODE_KEY = 'astro:overlay-mode:v1';
 const DATE_KEY = 'astro:overlay-date:v1';
 const PARTNER_KEY = 'astro:overlay-partner:v1';
-// v2: stores a time-unit name (hour/day/week/month/year) rather than a day count.
-const STEP_KEY = 'astro:overlay-step:v2';
+// Stores a time-unit name (hour/day/week/month/year).
+const STEP_KEY = 'astro:overlay-step:v1';
 // Progressions & Directions ("Progs/Dirns") settings.
 const ANGLE_PROG_KEY = 'astro:angle-progression:v1';
 const PRIMARY_RATE_KEY = 'astro:primary-rate:v1';

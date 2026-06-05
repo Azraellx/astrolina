@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import {
   PLANET_COLORS,
   PLANET_DISPLAY,
+  type AngleCoords,
   type EclipticPosition,
   type HorizontalCoords,
   type PlanetName,
@@ -42,14 +49,14 @@ function planetRank(name: PlanetName): number {
   return i === -1 ? PLANET_ORDER.length : i;
 }
 
-// The Sun's maximum declination (Earth's obliquity, 23°26'). A body past this on
-// either side is "out of bounds" — astrologically notable, so the readout flags
-// it (pink past the limit, dark pink within).
+// The Sun's maximum declination (Earth's obliquity, 23°26'). A body past it on
+// either side is "out of bounds" — astrologically notable — so the readout flags
+// it in a single colour (the Glass theme paints it pink, the others dark pink;
+// see the CSS). Within the limit the declination is unremarkable, so it keeps
+// the default text colour.
 const OOB_DEC_DEG = 23 + 26 / 60;
 function decClass(decRad: number): string {
-  return Math.abs((decRad * 180) / Math.PI) > OOB_DEC_DEG
-    ? 'es-dec-oob'
-    : 'es-dec-in';
+  return Math.abs((decRad * 180) / Math.PI) > OOB_DEC_DEG ? 'es-dec-oob' : '';
 }
 
 const RAD2DEG = 180 / Math.PI;
@@ -135,6 +142,8 @@ interface ExpandedChartSidebarProps {
   visibleLineTypes: Set<LineType>;
   /** Per-body RA + azimuth/altitude for the Advanced table, keyed by planet. */
   advancedCoords: Map<PlanetName, HorizontalCoords>;
+  /** RA + declination + azimuth/altitude for the four angles (ecliptic points). */
+  angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic', AngleCoords> | null;
   onClose: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
@@ -170,6 +179,151 @@ const ASPECT_GLYPHS: Record<string, string> = {
   sextile: '⚹',
 };
 
+// Per-aspect tip copy for the Advanced aspect lists: the symbol can be cryptic to
+// a newcomer, so hovering it names the aspect, its exact angle, and what it means.
+const ASPECT_INFO: Record<
+  string,
+  { name: string; angle: string; desc: string }
+> = {
+  conjunction: { name: 'Conjunction', angle: '0°', desc: 'Two bodies fused at the same point, blending their energies.' },
+  opposition: { name: 'Opposition', angle: '180°', desc: 'Bodies face off across the chart: a tension of opposites seeking balance.' },
+  trine: { name: 'Trine', angle: '120°', desc: 'An easy, harmonious flow of energy and natural talent.' },
+  square: { name: 'Square', angle: '90°', desc: 'Friction and challenge that pushes you to grow.' },
+  sextile: { name: 'Sextile', angle: '60°', desc: 'A supportive opportunity that rewards a little effort.' },
+};
+
+// A glyph in the Advanced aspect lists that reveals an explanation as the shared
+// .ui-tip on hover — portaled, so the sidebar's overflow can't clip it, and popped
+// to the right onto the open map. Used for the aspect symbols and the overlay mark.
+function TipGlyph({
+  className,
+  color,
+  title,
+  hint,
+  children,
+}: {
+  className?: string;
+  color?: string;
+  title: ReactNode;
+  hint?: string;
+  children: ReactNode;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right');
+  return (
+    <>
+      <span
+        ref={ref}
+        className={className}
+        style={color ? { color } : undefined}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+      >
+        {children}
+      </span>
+      <HoverTip pos={pos} placement="right" title={title} hint={hint} />
+    </>
+  );
+}
+
+// The aspect symbol (☌ ☍ △ □ ⚹) plus its hover tip: the symbol + name (with the
+// exact angle), and the description beneath.
+function AspectGlyph({ type, color }: { type: string; color: string }) {
+  const info = ASPECT_INFO[type];
+  const glyph = ASPECT_GLYPHS[type] ?? type;
+  return (
+    <TipGlyph
+      className="asp-glyph"
+      color={color}
+      title={
+        <span className="es-tip-title">
+          <span style={{ color }}>{glyph}</span>
+          {info ? `${info.name} (${info.angle})` : type}
+        </span>
+      }
+      hint={info?.desc}
+    >
+      {glyph}
+    </TipGlyph>
+  );
+}
+
+// A planet glyph below the wheel (list, table, or aspect rows) that names itself
+// as a .ui-tip on hover: the glyph + display name, plus an optional suffix such as
+// "(overlay)". No description — the name is the whole point.
+function PlanetTipGlyph({
+  planet,
+  size = 13,
+  className = 'es-glyph',
+  suffix,
+}: {
+  planet: PlanetName;
+  size?: number;
+  className?: string;
+  suffix?: string;
+}) {
+  return (
+    <TipGlyph
+      className={className}
+      color={PLANET_COLORS[planet]}
+      title={
+        <span className="es-tip-title">
+          <PlanetGlyph planet={planet} size={14} color={PLANET_COLORS[planet]} />
+          {PLANET_DISPLAY[planet]}
+          {suffix ? ` ${suffix}` : ''}
+        </span>
+      }
+    >
+      <PlanetGlyph planet={planet} size={size} />
+    </TipGlyph>
+  );
+}
+
+// A coordinate-column header that explains itself as the shared .ui-tip on hover —
+// the abbreviations (Rt.Asc., Decl., Azi…) aren't obvious to a newcomer.
+function AdvHeader({ label, hint }: { label: string; hint: string }) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right');
+  return (
+    <th
+      ref={ref}
+      className="es-adv-num"
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      {label}
+      <HoverTip pos={pos} placement="right" title={label} hint={hint} />
+    </th>
+  );
+}
+
+// A section heading (Aspects, Overlay aspects) that explains the section as the
+// shared .ui-tip on hover. The ref sits on an inline span hugging the text — not
+// the full-width <h3> — so the tip anchors beside the heading rather than out at
+// the section's right edge (where the drag handle is).
+function TipHeading({
+  tip,
+  hint,
+  children,
+}: {
+  tip: ReactNode;
+  hint: string;
+  children: ReactNode;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right');
+  return (
+    <h3>
+      <span
+        ref={ref}
+        className="es-h3-tip"
+        onMouseEnter={show}
+        onMouseLeave={hide}
+      >
+        {children}
+      </span>
+      <HoverTip pos={pos} placement="right" title={tip} hint={hint} />
+    </h3>
+  );
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -185,13 +339,16 @@ function fmtOrb(orbDeg: number): string {
 
 const ASPECT_TOGGLES: {
   key: AspectCategory;
+  /** Compact text shown on the pill toggle. */
   label: string;
+  /** Full, unabbreviated names for the hover tip (e.g. "Conj" → "Conjunction"). */
+  tipLabel: string;
   cssClass: string;
   desc: string;
 }[] = [
-  { key: 'harmonious', label: 'Trine / Sextile', cssClass: 'trine', desc: 'Flowing, supportive aspects: ease, talent, and opportunity.' },
-  { key: 'hard', label: 'Square / Opp', cssClass: 'square', desc: 'Tense aspects: friction, challenge, and the drive to grow.' },
-  { key: 'conjunction', label: 'Conj', cssClass: 'conj', desc: 'Two bodies fused at the same point, blending their energies.' },
+  { key: 'harmonious', label: 'Trine / Sextile', tipLabel: 'Trine / Sextile', cssClass: 'trine', desc: 'Flowing, supportive aspects: ease, talent, and opportunity.' },
+  { key: 'hard', label: 'Square / Opp', tipLabel: 'Square / Opposition', cssClass: 'square', desc: 'Tense aspects: friction, challenge, and the drive to grow.' },
+  { key: 'conjunction', label: 'Conj', tipLabel: 'Conjunction', cssClass: 'conj', desc: 'Two bodies fused at the same point, blending their energies.' },
 ];
 
 export function ExpandedChartSidebar({
@@ -207,6 +364,7 @@ export function ExpandedChartSidebar({
   visiblePlanets,
   visibleLineTypes,
   advancedCoords,
+  angleCoords,
   onClose,
   onResizingChange,
   onSelectChart,
@@ -269,20 +427,30 @@ export function ExpandedChartSidebar({
   const shownOverlay =
     overlayPlanets?.filter((p) => visiblePlanets.has(p.name)) ?? null;
 
-  // The four chart angles, gated by the Map Filter's line-type toggles. Same set
-  // feeds the wheel labels (visibleAngles) and the data list below it (shownAngles).
+  // The four chart angles, gated by the Map Filter's line-type toggles. Drives
+  // which angle marks (As/Ds/Mc/Ic) the wheel draws.
   const visibleAngles = new Set<'As' | 'Ds' | 'Mc' | 'Ic'>();
   if (visibleLineTypes.has('ASC')) visibleAngles.add('As');
   if (visibleLineTypes.has('DSC')) visibleAngles.add('Ds');
   if (visibleLineTypes.has('MC')) visibleAngles.add('Mc');
   if (visibleLineTypes.has('IC')) visibleAngles.add('Ic');
-  const shownAngles = angles
-    ? ([
-        { type: 'MC', code: 'Mc', name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
-        { type: 'IC', code: 'Ic', name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
-        { type: 'ASC', code: 'As', name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
-        { type: 'DSC', code: 'Ds', name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
-      ] as const).filter((a) => visibleLineTypes.has(a.type))
+
+  // The same visible angles as list rows, in the conventional Mc, Ic, As, Ds
+  // order. They tack onto the end of the planet list below (no separate heading),
+  // so the readout still lists them even though they now also live in the wheel.
+  const shownAngleRows: {
+    code: 'Mc' | 'Ic' | 'As' | 'Ds';
+    key: 'asc' | 'mc' | 'dsc' | 'ic';
+    name: string;
+    lon: number;
+    color: string;
+  }[] = angles
+    ? [
+        { code: 'Mc' as const, key: 'mc' as const, name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
+        { code: 'Ic' as const, key: 'ic' as const, name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
+        { code: 'As' as const, key: 'asc' as const, name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
+        { code: 'Ds' as const, key: 'dsc' as const, name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
+      ].filter((a) => visibleAngles.has(a.code))
     : [];
 
   // Bold state title for the wheel's top-left corner (always shown when a chart is
@@ -457,12 +625,17 @@ export function ExpandedChartSidebar({
               {fmtChartDate(chart)}
               <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
               {chart.tzUncertain && (
-                <span
+                <TipGlyph
                   className="es-meta-warn"
-                  title="Pre-1970 timezone outside US/EU: verify DST against an atlas"
+                  title={
+                    <span className="es-tip-title">
+                      <span className="es-meta-warn">⚠</span> Timezone uncertain
+                    </span>
+                  }
+                  hint="Pre-1970 timezone outside US/EU: verify DST against an atlas"
                 >
                   ⚠
-                </span>
+                </TipGlyph>
               )}
             </span>
             <span className="es-meta-where">{chart.birthplace.label}</span>
@@ -558,7 +731,7 @@ export function ExpandedChartSidebar({
                   className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
                   onClick={() => toggleAspect(t.key)}
                   placement="right"
-                  tip={t.label}
+                  tip={t.tipLabel}
                   hint={t.desc}
                 >
                   <span className="es-asp-swatch" />
@@ -570,33 +743,58 @@ export function ExpandedChartSidebar({
         )}
       </section>
 
-      {/* Planets, now below the wheel. */}
-      {angles && (shownPlanets.length > 0 || shownAngles.length > 0) && (() => {
-        // Simple view: two columns, row-by-row (even left, odd right).
-        const leftCol = shownPlanets.filter((_, i) => i % 2 === 0);
-        const rightCol = shownPlanets.filter((_, i) => i % 2 === 1);
-        const renderRow = (p: EclipticPosition) => (
-          <li key={p.name}>
-            <div className="es-row-main">
-              <span
-                className="es-glyph"
-                style={{ color: PLANET_COLORS[p.name] }}
-              >
-                <PlanetGlyph planet={p.name} size={13} />
-              </span>
-              <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
-              <span className="es-lon">
-                <Longitude lon={p.lon} advanced={advanced} />
-              </span>
-            </div>
-          </li>
-        );
+      {/* Planet + angle readout below the wheel — no heading. Planets come
+          first, then the visible angles (Mc, Ic, As, Ds) tack onto the end of
+          the same list. The angles also render in the wheel above. */}
+      {angles && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (() => {
+        // Simple view: planets then angles in one row-by-row two-column grid
+        // (even index → left, odd → right), so the angles flow straight on from
+        // the last planet.
+        const planetItems = shownPlanets.map((p) => ({ kind: 'planet' as const, p }));
+        const angleItems = shownAngleRows.map((a) => ({ kind: 'angle' as const, ...a }));
+        const rows = [...planetItems, ...angleItems];
+        const leftCol = rows.filter((_, i) => i % 2 === 0);
+        const rightCol = rows.filter((_, i) => i % 2 === 1);
+        const renderRow = (row: (typeof rows)[number]) =>
+          row.kind === 'planet' ? (
+            <li key={`p-${row.p.name}`}>
+              <div className="es-row-main">
+                <span className="es-glyph" style={{ color: PLANET_COLORS[row.p.name] }}>
+                  <PlanetGlyph planet={row.p.name} size={13} />
+                </span>
+                <span className="es-name">{PLANET_DISPLAY[row.p.name]}</span>
+                <span className="es-lon">
+                  <Longitude lon={row.p.lon} advanced={advanced} />
+                </span>
+              </div>
+            </li>
+          ) : (
+            <li key={`a-${row.code}`}>
+              <div className="es-row-main">
+                <span className="es-glyph es-angle-code" style={{ color: row.color }}>
+                  {row.code}
+                </span>
+                <span className="es-name">{row.name}</span>
+                <span className="es-lon">
+                  <Longitude lon={row.lon} advanced={advanced} />
+                </span>
+              </div>
+            </li>
+          );
+        // Two width-driven cutoffs keep the table fitting (it fills the panel, so
+        // it must never need to scroll). Past the first, the Longitude column shows
+        // the full sign name (e.g. "21°38' ♉ Taurus") instead of the compact glyph
+        // form; past the second, the Azimuth + Altitude columns also fit. Below a
+        // cutoff the heavier content drops back so a narrow panel still fits.
+        const advFullSign = width >= 530;
+        const advExtraCols = width >= 640;
         // Advanced view: one planet per row across labelled coordinate columns.
         // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
         // from advancedCoords (computed for the relocated observer).
         const renderAdvRow = (p: EclipticPosition) => {
           const hc = advancedCoords.get(p.name);
           const decCls = p.dec !== undefined ? decClass(p.dec) : '';
+          const dec = p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—';
           return (
             <tr key={p.name}>
               <td className="es-adv-point">
@@ -605,13 +803,37 @@ export function ExpandedChartSidebar({
                 </span>
                 <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
                 {p.stationary ? (
-                  <span className="es-station" title="Stationary">S</span>
+                  <TipGlyph
+                    className="es-station"
+                    title={
+                      <span className="es-tip-title">
+                        <span style={{ color: '#c79a17' }}>S</span> Stationary
+                      </span>
+                    }
+                    hint="Briefly motionless against the stars as it turns between direct and retrograde, so its themes feel concentrated and pivotal."
+                  >
+                    S
+                  </TipGlyph>
                 ) : p.retrograde ? (
-                  <span className="es-rx" title="Retrograde">℞</span>
+                  <TipGlyph
+                    className="es-rx"
+                    title={
+                      <span className="es-tip-title">
+                        <span style={{ color: 'var(--danger)' }}>℞</span> Retrograde
+                      </span>
+                    }
+                    hint="Appears to move backward through the zodiac from Earth’s vantage; its themes turn inward, revisited or replayed."
+                  >
+                    ℞
+                  </TipGlyph>
                 ) : null}
               </td>
               <td className="es-adv-num es-adv-lon">
-                <SignLon lon={p.lon} />
+                {advFullSign ? (
+                  <Longitude lon={p.lon} advanced={false} />
+                ) : (
+                  <SignLon lon={p.lon} />
+                )}
               </td>
               <td className="es-adv-num">
                 {p.speed !== undefined ? fmtDM(p.speed, true) : '—'}
@@ -620,88 +842,104 @@ export function ExpandedChartSidebar({
                 {p.lat !== undefined ? fmtDM(p.lat * RAD2DEG, true) : '—'}
               </td>
               <td className="es-adv-num">{hc ? fmtDM(hc.ra * RAD2DEG) : '—'}</td>
-              <td
-                className={`es-adv-num ${decCls}`}
-                title={
-                  decCls === 'es-dec-oob'
-                    ? 'Out of bounds: beyond the Sun’s 23°26′ declination'
-                    : undefined
-                }
-              >
-                {p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—'}
+              <td className={`es-adv-num ${decCls}`}>
+                {decCls ? (
+                  <TipGlyph
+                    title={
+                      <span className="es-tip-title">
+                        <span className="es-dec-oob es-dec-dot" />
+                        Out of bounds {(p.dec ?? 0) > 0 ? 'north' : 'south'}
+                      </span>
+                    }
+                    hint="Declination beyond the Sun’s maximum (23°26′), past the zodiac’s normal latitude band, an astrologically notable extreme."
+                  >
+                    {dec}
+                  </TipGlyph>
+                ) : (
+                  dec
+                )}
               </td>
-              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
-              <td className="es-adv-num">
-                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+              {advExtraCols && (
+                <>
+                  <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+                  <td className="es-adv-num">
+                    {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+                  </td>
+                </>
+              )}
+            </tr>
+          );
+        };
+        // Advanced mode lists the angles in the same table, right after the
+        // planets. Each angle is an ecliptic point, so latitude is 0 and RA / Decl
+        // / Azimuth / Altitude come from angleCoords (same observer as the planets);
+        // Speed has no meaning for an angle, so that cell stays an em-dash.
+        const renderAdvAngleRow = (a: (typeof shownAngleRows)[number]) => {
+          const ac = angleCoords?.[a.key];
+          return (
+            <tr key={`a-${a.code}`}>
+              <td className="es-adv-point">
+                <span className="es-glyph es-angle-code" style={{ color: a.color }}>
+                  {a.code}
+                </span>
+                <span className="es-name">{a.name}</span>
               </td>
+              <td className="es-adv-num es-adv-lon">
+                {advFullSign ? (
+                  <Longitude lon={a.lon} advanced={false} />
+                ) : (
+                  <SignLon lon={a.lon} />
+                )}
+              </td>
+              <td className="es-adv-num">—</td>
+              <td className="es-adv-num">{ac ? fmtDM(ac.lat * RAD2DEG, true) : '—'}</td>
+              <td className="es-adv-num">{ac ? fmtDM(ac.ra * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">{ac ? fmtDM(ac.dec * RAD2DEG, true) : '—'}</td>
+              {advExtraCols && (
+                <>
+                  <td className="es-adv-num">{ac ? fmtDM(ac.az * RAD2DEG) : '—'}</td>
+                  <td className="es-adv-num">{ac ? fmtDM(ac.alt * RAD2DEG, true) : '—'}</td>
+                </>
+              )}
             </tr>
           );
         };
         return (
           <section className="es-section es-section-details">
             <div className="es-planets-col">
-              {shownPlanets.length > 0 && (
-                <>
-                  <h3>Planets</h3>
-                  {advanced ? (
-                    <div className="es-adv-scroll">
-                      <table className="es-adv-table">
-                        <thead>
-                          <tr>
-                            <th className="es-adv-point">Point</th>
-                            <th className="es-adv-num">Longitude</th>
-                            <th className="es-adv-num">Speed</th>
-                            <th className="es-adv-num">Latitude</th>
-                            <th className="es-adv-num">Rt.Asc.</th>
-                            <th className="es-adv-num">Decl.</th>
-                            <th className="es-adv-num">Azi(0°N)</th>
-                            <th className="es-adv-num">Alti.</th>
-                          </tr>
-                        </thead>
-                        <tbody>{shownPlanets.map(renderAdvRow)}</tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="es-planet-cols">
-                      <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
-                      {rightCol.length > 0 && (
-                        <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
-                      )}
-                    </div>
+              {advanced ? (
+                <div className="es-adv-scroll">
+                  <table className="es-adv-table">
+                    <thead>
+                      <tr>
+                        <th className="es-adv-point">Point</th>
+                        <AdvHeader label="Longitude" hint="Zodiacal longitude: the body’s degree, sign, and arcminute along the ecliptic." />
+                        <AdvHeader label="Speed" hint="Daily motion in ecliptic longitude; a negative value means retrograde." />
+                        <AdvHeader label="Latitude" hint="Ecliptic latitude: angular distance north or south of the ecliptic (positive is north)." />
+                        <AdvHeader label="Rt.Asc." hint="Right ascension: position along the celestial equator from 0° to 360°, the sky’s east/west coordinate." />
+                        <AdvHeader label="Decl." hint="Declination: angular distance north or south of the celestial equator; past 23°26′ the body is ‘out of bounds’." />
+                        {advExtraCols && (
+                          <>
+                            <AdvHeader label="Azi(0°N)" hint="Azimuth: the body’s compass bearing at the relocated place, measured clockwise from due north (0°)." />
+                            <AdvHeader label="Alti." hint="Altitude: the body’s angular height above the horizon at the relocated place (negative means below it)." />
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shownPlanets.map(renderAdvRow)}
+                      {shownAngleRows.map(renderAdvAngleRow)}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="es-planet-cols">
+                  <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
+                  {rightCol.length > 0 && (
+                    <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
                   )}
-                </>
+                </div>
               )}
-              {/* The chart angles get the same treatment as the planets —
-                  acronym, name + longitude, two per row (Mc/Ic, As/Ds) — gated
-                  by the line-type filter. */}
-              {shownAngles.length > 0 && (() => {
-                const aLeft = shownAngles.filter((_, i) => i % 2 === 0);
-                const aRight = shownAngles.filter((_, i) => i % 2 === 1);
-                const renderAngle = ({ code, name, lon, color }: (typeof shownAngles)[number]) => (
-                  <li key={code} className={advanced ? 'advanced' : ''}>
-                    <div className="es-row-main">
-                      <span className="es-glyph es-angle-code" style={{ color }}>
-                        {code}
-                      </span>
-                      <span className="es-name">{name}</span>
-                      <span className="es-lon">
-                        <Longitude lon={lon} advanced={advanced} />
-                      </span>
-                    </div>
-                  </li>
-                );
-                return (
-                  <>
-                    <h3 className="es-angles-h3">Angles</h3>
-                    <div className="es-planet-cols">
-                      <ul className="es-planet-list">{aLeft.map(renderAngle)}</ul>
-                      {aRight.length > 0 && (
-                        <ul className="es-planet-list">{aRight.map(renderAngle)}</ul>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
             </div>
           </section>
         );
@@ -714,25 +952,26 @@ export function ExpandedChartSidebar({
         if (aspects.length === 0) return null;
         return (
           <section className="es-section es-section-aspects">
-            <h3>Aspects ({aspects.length})</h3>
+            <TipHeading
+              tip="Aspects"
+              hint="Angular relationships between two bodies by ecliptic longitude (conjunction, sextile, square, trine, opposition) that shape how their energies interact."
+            >
+              Aspects ({aspects.length})
+            </TipHeading>
             <ul className="es-aspect-list">
               {aspects.map((a, i) => (
                 <li key={i} className={`asp asp-${a.category}`}>
-                  <span
+                  <PlanetTipGlyph
+                    planet={a.a as PlanetName}
+                    size={12}
                     className="asp-planet"
-                    style={{ color: PLANET_COLORS[a.a as PlanetName] }}
-                  >
-                    <PlanetGlyph planet={a.a as PlanetName} size={12} />
-                  </span>
-                  <span className="asp-glyph" style={{ color: a.color }}>
-                    {ASPECT_GLYPHS[a.type] ?? a.type}
-                  </span>
-                  <span
+                  />
+                  <AspectGlyph type={a.type} color={a.color} />
+                  <PlanetTipGlyph
+                    planet={a.b as PlanetName}
+                    size={12}
                     className="asp-planet"
-                    style={{ color: PLANET_COLORS[a.b as PlanetName] }}
-                  >
-                    <PlanetGlyph planet={a.b as PlanetName} size={12} />
-                  </span>
+                  />
                   <span className="asp-type">{a.type}</span>
                   <span className="asp-orb">{fmtOrb(a.orb)}</span>
                 </li>
@@ -752,26 +991,27 @@ export function ExpandedChartSidebar({
         if (cross.length === 0) return null;
         return (
           <section className="es-section es-section-aspects es-section-cross">
-            <h3>Overlay aspects ({cross.length})</h3>
+            <TipHeading
+              tip="Overlay aspects"
+              hint="Aspects between the overlay chart’s bodies and your natal ones (e.g. a transiting planet to a natal planet), showing how the overlay activates the chart."
+            >
+              Overlay aspects ({cross.length})
+            </TipHeading>
             <ul className="es-aspect-list">
               {cross.map((a, i) => (
                 <li key={i} className={`asp asp-${a.category}`}>
-                  <span
+                  <PlanetTipGlyph
+                    planet={a.a as PlanetName}
+                    size={12}
                     className="asp-planet asp-planet-overlay"
-                    style={{ color: PLANET_COLORS[a.a as PlanetName] }}
-                    title="Overlay body"
-                  >
-                    <PlanetGlyph planet={a.a as PlanetName} size={12} />
-                  </span>
-                  <span className="asp-glyph" style={{ color: a.color }}>
-                    {ASPECT_GLYPHS[a.type] ?? a.type}
-                  </span>
-                  <span
+                    suffix="(overlay)"
+                  />
+                  <AspectGlyph type={a.type} color={a.color} />
+                  <PlanetTipGlyph
+                    planet={a.b as PlanetName}
+                    size={12}
                     className="asp-planet"
-                    style={{ color: PLANET_COLORS[a.b as PlanetName] }}
-                  >
-                    <PlanetGlyph planet={a.b as PlanetName} size={12} />
-                  </span>
+                  />
                   <span className="asp-type">{a.type}</span>
                   <span className="asp-orb">{fmtOrb(a.orb)}</span>
                 </li>

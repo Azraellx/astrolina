@@ -9,6 +9,7 @@ import {
 import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
+import { TeleportHud } from './components/TeleportHud/TeleportHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
@@ -23,6 +24,7 @@ import { countryOf } from './lib/atlas/countryOf';
 import {
   birthDataToJD,
   eclipticLonOfRA,
+  getAngleCoords,
   getEclipticPositions,
   getHorizontalCoords,
   getPlanetPositions,
@@ -207,10 +209,10 @@ export default function App() {
   // Basemap detail layers default to shown; the "Details" section toggles them
   // off. (`!== '0'` so a brand-new visitor with no saved value gets them on.)
   const [showRoads, setShowRoads] = useState(
-    () => localStorage.getItem('astro:show-roads:v2') !== '0',
+    () => localStorage.getItem('astro:show-roads:v1') !== '0',
   );
   const [showRivers, setShowRivers] = useState(
-    () => localStorage.getItem('astro:show-rivers:v2') !== '0',
+    () => localStorage.getItem('astro:show-rivers:v1') !== '0',
   );
   const [showLabels, setShowLabels] = useState(
     () => localStorage.getItem('astro:show-labels:v1') !== '0',
@@ -236,8 +238,14 @@ export default function App() {
     () => localStorage.getItem('astro:view-settings:v1') !== '0',
   );
   // The active-systems status chip (View ▸ Info), above the map attribution.
+  // Off by default (like Teleport) — an opt-in detail, not always-on chrome.
   const [showInfo, setShowInfo] = useState(
-    () => localStorage.getItem('astro:view-info:v1') !== '0',
+    () => localStorage.getItem('astro:view-info:v1') === '1',
+  );
+  // The movable Teleport search window (View ▸ Teleport) — an on-demand tool, so
+  // it defaults OFF (unlike the always-on readouts above).
+  const [showTeleport, setShowTeleport] = useState(
+    () => localStorage.getItem('astro:view-teleport:v1') === '1',
   );
   // Overlay ▸ Display ▸ Timeline: when off, the bottom timeline collapses to just
   // its draggable nub (no ruler/transport).
@@ -371,6 +379,7 @@ export default function App() {
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
         case 'i': setShowInfo((v) => !v); break;
+        case 'g': setShowTeleport((v) => !v); break;
         case 'o':
           setOverlayMode(
             (mode) =>
@@ -404,10 +413,10 @@ export default function App() {
     localStorage.setItem('astro:line-system:v1', lineSystem);
   }, [lineSystem]);
   useEffect(() => {
-    localStorage.setItem('astro:show-roads:v2', showRoads ? '1' : '0');
+    localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
   }, [showRoads]);
   useEffect(() => {
-    localStorage.setItem('astro:show-rivers:v2', showRivers ? '1' : '0');
+    localStorage.setItem('astro:show-rivers:v1', showRivers ? '1' : '0');
   }, [showRivers]);
   useEffect(() => {
     localStorage.setItem('astro:show-labels:v1', showLabels ? '1' : '0');
@@ -424,6 +433,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:view-info:v1', showInfo ? '1' : '0');
   }, [showInfo]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-teleport:v1', showTeleport ? '1' : '0');
+  }, [showTeleport]);
   useEffect(() => {
     localStorage.setItem('astro:sidebar-section:v1', sidebarSection ?? 'none');
   }, [sidebarSection]);
@@ -738,6 +750,14 @@ export default function App() {
     return getHorizontalCoords(obs ? ecliptic : [], gmst, eps, obs?.lat ?? 0, obs?.lng ?? 0);
   }, [activePoint, current, ecliptic, gmst, eps]);
 
+  // The same RA + declination + azimuth/altitude for the four chart angles (each
+  // an ecliptic point), so the Advanced table can show real data instead of dashes.
+  const angleCoords = useMemo(() => {
+    const obs = activePoint ?? current?.birthplace;
+    if (!angles || !obs) return null;
+    return getAngleCoords(angles, gmst, eps, obs.lat, obs.lng);
+  }, [angles, activePoint, current, gmst, eps]);
+
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
       const next = new Set(prev);
@@ -979,6 +999,8 @@ export default function App() {
         setShowSettings={setShowSettings}
         showInfo={showInfo}
         setShowInfo={setShowInfo}
+        showTeleport={showTeleport}
+        setShowTeleport={setShowTeleport}
       />
       {showInfo && (
         <InfoBar
@@ -1017,6 +1039,12 @@ export default function App() {
           onAddPerson={() => setCreating(true)}
         />
       )}
+      {showTeleport && (
+        <TeleportHud
+          onFlyTo={(lat, lng, zoom) => mapRef.current?.flyTo(lat, lng, zoom)}
+          onClose={() => setShowTeleport(false)}
+        />
+      )}
       {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and
           must stay reachable even when the compact Minimap (showChart) is hidden —
           so only the compact wheel is gated by showChart. */}
@@ -1034,6 +1062,7 @@ export default function App() {
           visiblePlanets={visiblePlanets}
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
+          angleCoords={angleCoords}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
           onSelectChart={selectChart}

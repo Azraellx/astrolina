@@ -1,4 +1,8 @@
-import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import {
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useHoverTip, type TipPlacement, type TipPos } from './useHoverTip';
 import './HoverTip.css';
@@ -18,7 +22,7 @@ export function HoverTip({
   placement?: TipPlacement;
   title: ReactNode;
   hint?: ReactNode;
-  hotkey?: string;
+  hotkey?: ReactNode;
 }) {
   if (!pos) return null;
   const hasHint = hint != null && hint !== '';
@@ -71,6 +75,47 @@ export function TipButton({
       >
         {children}
       </button>
+      <HoverTip
+        pos={pos}
+        placement={placement}
+        title={tip}
+        hint={hint}
+        hotkey={hotkey}
+      />
+    </>
+  );
+}
+
+// The non-button counterpart to TipButton: any inline element that reveals the
+// shared HoverTip on hover/focus — a drop-in for a native title= on a <span>
+// (truncated names, plain labels). Defaults to a 'bottom' tip.
+export function TipSpan({
+  tip,
+  hint,
+  hotkey,
+  placement = 'bottom',
+  children,
+  ...rest
+}: {
+  tip: ReactNode;
+  hint?: ReactNode;
+  hotkey?: ReactNode;
+  placement?: TipPlacement;
+  children?: ReactNode;
+} & HTMLAttributes<HTMLSpanElement>) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>(placement);
+  return (
+    <>
+      <span
+        {...rest}
+        ref={ref}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        {children}
+      </span>
       <HoverTip
         pos={pos}
         placement={placement}

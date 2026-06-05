@@ -4,6 +4,8 @@ import {
   displayName,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import './ChartSwitcher.css';
 
 // The dropdown is a quick-switch shortlist; the full searchable list lives in the
@@ -42,6 +44,18 @@ export function ChartSwitcher({
 }: ChartSwitcherProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // The trigger's hover tip. Suppressed while the menu is open so the rich card
+  // never overlays the quick-select dropdown that opens just below it. In the
+  // expanded sidebar the trigger hugs the screen's left edge, so the tip is
+  // left-aligned ('bottom-start') there to keep it off the edge; the roomier top
+  // bar centres it ('bottom').
+  const tipPlacement = compact ? 'bottom' : 'bottom-start';
+  const {
+    ref: tipRef,
+    pos: tipPos,
+    show: showTip,
+    hide: hideTip,
+  } = useHoverTip<HTMLButtonElement>(tipPlacement);
 
   useEffect(() => {
     if (!open) return;
@@ -63,18 +77,29 @@ export function ChartSwitcher({
 
   return (
     <div className="chart-switcher" ref={ref}>
-      {/* Plain button (no hover .ui-tip): the rich tip popped open on hover and
-          covered the quick-select dropdown that opens just below. A native title
-          keeps the hint without an overlay. */}
+      {/* The whole name + birth line is one trigger: hovering anywhere on it
+          (name, date, place, add-person icon) shows the shared .ui-tip, which is
+          hidden while the menu is open so it never covers the dropdown below. */}
       <button
+        ref={tipRef}
         type="button"
         className="switcher-trigger"
-        onClick={() => setOpen((v) => !v)}
-        title="Switch, edit, or add a chart (A)"
+        onClick={() => {
+          setOpen((v) => !v);
+          hideTip();
+        }}
+        onMouseEnter={() => {
+          if (!open) showTip();
+        }}
+        onMouseLeave={hideTip}
+        onFocus={() => {
+          if (!open) showTip();
+        }}
+        onBlur={hideTip}
       >
         <span className="label">
           <span className="name-row">
-            <strong title={current?.name}>
+            <strong>
               {current ? displayName(current.name) : 'No chart selected'}
             </strong>
             {!compact && (
@@ -100,15 +125,17 @@ export function ChartSwitcher({
           {current && (
             <span className="meta">
               {fmtBirthDate(current)} · {current.birthplace.label.split(',')[0]}
-              {current.tzUncertain && (
-                <span className="uncertain" title="Pre-1970 outside US/EU: verify DST">
-                  ⚠
-                </span>
-              )}
+              {current.tzUncertain && <span className="uncertain">⚠</span>}
             </span>
           )}
         </span>
       </button>
+      <HoverTip
+        pos={tipPos}
+        placement={tipPlacement}
+        title="Switch, edit, or add a chart"
+        hotkey="A"
+      />
 
       {open && (
         <div className="switcher-menu">
@@ -129,15 +156,15 @@ export function ChartSwitcher({
                     setOpen(false);
                   }}
                 >
-                  <span className="chart-name" title={c.name}>
+                  <TipSpan className="chart-name" placement="top" tip={c.name}>
                     {displayName(c.name)}
-                  </span>
+                  </TipSpan>
                   <span className="chart-meta">
                     {fmtBirthDate(c)} · {c.birthplace.label.split(',')[0]}
                   </span>
                 </button>
                 <div className="chart-actions">
-                  <button
+                  <TipButton
                     type="button"
                     className="action"
                     onClick={(e) => {
@@ -145,36 +172,40 @@ export function ChartSwitcher({
                       onEdit(c.id);
                       setOpen(false);
                     }}
-                    title="Edit"
+                    placement="top"
+                    tip="Edit"
                   >
                     ✎
-                  </button>
-                  <button
+                  </TipButton>
+                  <TipButton
                     type="button"
                     className="action danger"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm(`Delete "${c.name}"?`)) onDelete(c.id);
                     }}
-                    title="Delete"
+                    placement="top"
+                    tip="Delete"
                   >
                     ×
-                  </button>
+                  </TipButton>
                 </div>
               </li>
             ))}
           </ul>
-          <button
+          <TipButton
             type="button"
             className="new-chart"
             onClick={() => {
               onNew();
               setOpen(false);
             }}
-            title="Search all charts or add a new one (A)"
+            placement="top"
+            tip="Search all charts or add a new one"
+            hotkey="A"
           >
             Search + Add Name
-          </button>
+          </TipButton>
         </div>
       )}
     </div>

@@ -5,6 +5,8 @@ import {
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import './ChartManager.css';
 
 const MONTHS = [
@@ -59,6 +61,13 @@ export function ChartManager({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // Reveals the full chart name on the editing header (which truncates).
+  const {
+    ref: formHeadRef,
+    pos: formHeadPos,
+    show: showFormHead,
+    hide: hideFormHead,
+  } = useHoverTip<HTMLDivElement>('bottom');
   const fadeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -219,34 +228,37 @@ export function ChartManager({
                     .filter(Boolean)
                     .join(' ')}
                 >
-                  <button
+                  <TipButton
                     type="button"
                     className="cm-row"
                     onClick={() => onSelect(c.id)}
-                    title={`Use ${c.name}`}
+                    placement="top"
+                    tip={`Use ${c.name}`}
                   >
                     <span className="cm-row-name">{displayName(c.name)}</span>
                     <span className="cm-row-meta">
                       {fmtBirth(c)} · {c.birthplace.label.split(',')[0]}
                     </span>
-                  </button>
+                  </TipButton>
                   <div className="cm-row-actions">
-                    <button
+                    <TipButton
                       type="button"
                       className="cm-act"
                       onClick={() => editExisting(c)}
-                      title="Edit"
+                      placement="top"
+                      tip="Edit"
                     >
                       ✎
-                    </button>
-                    <button
+                    </TipButton>
+                    <TipButton
                       type="button"
                       className="cm-act danger"
                       onClick={() => handleDelete(c)}
-                      title="Delete"
+                      placement="top"
+                      tip="Delete"
                     >
                       ×
-                    </button>
+                    </TipButton>
                   </div>
                 </li>
               ))}
@@ -259,9 +271,21 @@ export function ChartManager({
           {/* Right: add / edit the birth details. */}
           <div className="cm-form-pane">
             {editing && (
-              <div className="cm-form-head" title={editing.name}>
-                Editing {displayName(editing.name)}
-              </div>
+              <>
+                <div
+                  ref={formHeadRef}
+                  className="cm-form-head"
+                  onMouseEnter={showFormHead}
+                  onMouseLeave={hideFormHead}
+                >
+                  Editing {displayName(editing.name)}
+                </div>
+                <HoverTip
+                  pos={formHeadPos}
+                  placement="bottom"
+                  title={editing.name}
+                />
+              </>
             )}
             <BirthDataFields
               key={formKey}

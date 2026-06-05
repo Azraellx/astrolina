@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-export type TipPlacement = 'left' | 'bottom' | 'bottom-start' | 'right';
+export type TipPlacement = 'left' | 'top' | 'bottom' | 'bottom-start' | 'right';
 
 export interface TipPos {
   left: number;
@@ -21,6 +21,9 @@ export function tipPosFor(r: DOMRect, placement: TipPlacement): TipPos {
   }
   if (placement === 'right') {
     return { left: r.right + 8, top: r.top + r.height / 2 };
+  }
+  if (placement === 'top') {
+    return { left: r.left + r.width / 2, top: r.top - 8 };
   }
   return { left: r.left - 8, top: r.top + r.height / 2 };
 }

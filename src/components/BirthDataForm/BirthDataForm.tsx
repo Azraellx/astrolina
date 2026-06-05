@@ -11,6 +11,7 @@ import {
   newChartId,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { TipButton } from '../ui/HoverTip';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
@@ -428,14 +429,15 @@ export function BirthDataFields({
                 detected ? (
                   <>
                     Manual ·{' '}
-                    <button
+                    <TipButton
                       type="button"
                       className="tz-reset-link"
                       onClick={() => setOffsetOverride(null)}
-                      title={`Use detected ${detected.iana}`}
+                      placement="top"
+                      tip={`Use detected ${detected.iana}`}
                     >
                       use detected
-                    </button>
+                    </TipButton>
                   </>
                 ) : (
                   'Manual offset'
