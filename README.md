@@ -1,5 +1,18 @@
 # AstroLina
 
+<p align="center">
+  <a href="https://astrolina.org">
+    <img src="assets/astrolina-banner-v1.webp" alt="AstroLina: astrocartography for curious minds" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://maps.astrolina.org"><img alt="Live app" src="https://img.shields.io/badge/launch-maps.astrolina.org-22c55e"></a>
+  <a href="https://astrolina.org"><img alt="Website" src="https://img.shields.io/badge/website-astrolina.org-6d28d9"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-2563eb"></a>
+  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-db2777"></a>
+</p>
+
 **A modern, web-based astrocartography tool for curious minds.** Plot a natal
 chart's planetary lines on an interactive world map and drag to relocate with the
 chart wheel updating live. It features planet-to-planet parans and local space,
@@ -12,7 +25,7 @@ Deployed as a static site on Cloudflare Pages, with two edge functions for
 geocoding.
 
 <!-- TEMP: accuracy disclaimer. Remove once outputs are corroborated against other tools. -->
-> **⚠️ Early access (temporary): accuracy is still being verified.** AstroLina
+> **⚠️ Early access: accuracy is still being verified.** AstroLina
 > uses the same astronomical datasets as the professional tools (Swiss Ephemeris
 > / JPL DE441), but its output is still being cross-checked against established
 > software, and display bugs could currently misplace a line or other element.
