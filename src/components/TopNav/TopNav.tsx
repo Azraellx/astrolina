@@ -536,8 +536,10 @@ export function TopNav({
 
       {/* Secondary bar: the active tool's readout while a tool is on, otherwise
           the place name under the active map point (pin/hover), falling back to
-          the chart's birth location. One reused island. */}
-      {(measuring || locationLabel) && (
+          the chart's birth location. One reused island. The place name is hidden
+          here while the Coordinates view is open — it moves into that window
+          instead — but the measure readout always shows. */}
+      {(measuring || (locationLabel && !showCoords)) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
           {measuring ? (
             measure ? (

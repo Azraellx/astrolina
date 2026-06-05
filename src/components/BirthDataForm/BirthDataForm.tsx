@@ -202,18 +202,25 @@ export function BirthDataFields({
       Math.max(-12, Math.min(14, Math.round((effectiveOffset + delta) * 4) / 4)),
     );
 
+  // Latest selected place, read by the reverse-geocode effect below WITHOUT being
+  // one of its triggers (declared first so it syncs before that effect runs).
+  const selectedPlaceRef = useRef(selectedPlace);
+  useEffect(() => {
+    selectedPlaceRef.current = selectedPlace;
+  }, [selectedPlace]);
+
   // Manual lat/lng → reverse-geocode a label (offline-first, online on a miss).
-  // Skips when the coords already match the selected place (e.g. just after a
-  // forward-search pick) so it never loops or fires redundant lookups.
+  // Keys ONLY off the coordinate text: clearing the place (e.g. typing a fresh
+  // birthplace into the field) must NOT reverse-geocode the still-stale coords and
+  // overwrite what's being typed. Skips when the coords already match the selected
+  // place (e.g. just after a forward-search pick) so it never loops or fires
+  // redundant lookups.
   useEffect(() => {
     const lat = parseFloat(latText);
     const lng = parseFloat(lngText);
     if (!validLat(lat) || !validLng(lng)) return;
-    if (
-      selectedPlace &&
-      approxEq(selectedPlace.lat, lat) &&
-      approxEq(selectedPlace.lng, lng)
-    ) {
+    const current = selectedPlaceRef.current;
+    if (current && approxEq(current.lat, lat) && approxEq(current.lng, lng)) {
       return;
     }
     const ctrl = new AbortController();
@@ -240,7 +247,7 @@ export function BirthDataFields({
       window.clearTimeout(t);
       ctrl.abort();
     };
-  }, [latText, lngText, selectedPlace]);
+  }, [latText, lngText]);
 
   useEffect(() => {
     if (selectedPlace && locationQuery === selectedPlace.label) return;

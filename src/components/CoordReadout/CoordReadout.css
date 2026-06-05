@@ -2,10 +2,52 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Place-name headline: while the Coordinates view is on, the active point's place
+   name moves here from the top readout. Its dot is colour-coded by source, like
+   .coord-line. */
+.coord-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+.coord-location-text {
+  min-width: 0;
+}
+.coord-location-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.coord-readout.source-hover .coord-location-dot {
+  background: var(--cool);
+}
+.coord-readout.source-pinned .coord-location-dot {
+  background: var(--accent);
+}
+.coord-readout.source-natal-pinned .coord-location-dot {
+  background: var(--success);
+}
+.coord-location-fade {
+  animation: coord-loc-fade 220ms ease;
+}
+@keyframes coord-loc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .coord-line {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   font-size: 10px;
   color: var(--text-strong);
   font-weight: 500;

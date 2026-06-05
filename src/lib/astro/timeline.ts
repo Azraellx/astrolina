@@ -293,10 +293,13 @@ export function buildOverlay(
     case 'primary-directions': {
       const c = directionContext(chart, targetDate, nodeType);
       const perYear = (degPerYr: number) => (degPerYr * c.years * Math.PI) / 180;
-      // Primary directions advance the diurnal (RA) frame by the arc, bodies stay
-      // at their natal RA/dec — so every line rigidly rotates with the RAMC. The
-      // rate is the time-key (arc per year); positive arc directs forward (gmst
-      // increases ⇒ lines shift west).
+      // Primary directions rotate the chart rigidly by the arc. We direct the bodies
+      // in RA (−arc, declination unchanged) against the natal frame: this draws the
+      // SAME swept lines as advancing the RAMC by +arc would (the hour angle is
+      // unchanged), and ALSO gives the bi-wheel real directed positions — advancing
+      // only the frame left `positions` = natal, so the overlay ring mirrored the
+      // natal one. The rate is the time-key (arc per year); positive arc directs
+      // forward.
       let arc: number;
       switch (primaryRate) {
         case 'naibod':
@@ -328,8 +331,8 @@ export function buildOverlay(
         measure: `${arcDeg}°`,
         labelFull: `Primary Directions · ${arcDeg}°`,
         jd: c.birthJD,
-        positions: c.natal,
-        gmst: norm2pi(c.natalGMST + arc),
+        positions: c.natal.map((p) => shiftRightAscension(p, -arc)),
+        gmst: c.natalGMST,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };

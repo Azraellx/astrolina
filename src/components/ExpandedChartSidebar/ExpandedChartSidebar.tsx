@@ -135,6 +135,7 @@ interface ExpandedChartSidebarProps {
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
   overlayPlanets?: EclipticPosition[] | null;
+  overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
@@ -279,8 +280,17 @@ function PlanetTipGlyph({
 }
 
 // A coordinate-column header that explains itself as the shared .ui-tip on hover —
-// the abbreviations (Rt.Asc., Decl., Azi…) aren't obvious to a newcomer.
-function AdvHeader({ label, hint }: { label: string; hint: string }) {
+// the abbreviations (Rt.Asc., Decl., Azi…) aren't obvious to a newcomer, so the
+// tip's title spells out the full word (`title`), defaulting to the column label.
+function AdvHeader({
+  label,
+  title,
+  hint,
+}: {
+  label: string;
+  title?: string;
+  hint: string;
+}) {
   const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right');
   return (
     <th
@@ -290,7 +300,7 @@ function AdvHeader({ label, hint }: { label: string; hint: string }) {
       onMouseLeave={hide}
     >
       {label}
-      <HoverTip pos={pos} placement="right" title={label} hint={hint} />
+      <HoverTip pos={pos} placement="right" title={title ?? label} hint={hint} />
     </th>
   );
 }
@@ -360,6 +370,7 @@ export function ExpandedChartSidebar({
   angles,
   planets,
   overlayPlanets,
+  overlayAngles,
   overlayLabel,
   visiblePlanets,
   visibleLineTypes,
@@ -712,6 +723,7 @@ export function ExpandedChartSidebar({
               detailed={true}
               advanced={advanced}
               overlayPlanets={shownOverlay}
+              overlayAngles={overlayAngles}
               visibleAspects={visibleAspects}
               visibleAngles={visibleAngles}
               interactive
@@ -916,12 +928,12 @@ export function ExpandedChartSidebar({
                         <AdvHeader label="Longitude" hint="Zodiacal longitude: the body’s degree, sign, and arcminute along the ecliptic." />
                         <AdvHeader label="Speed" hint="Daily motion in ecliptic longitude; a negative value means retrograde." />
                         <AdvHeader label="Latitude" hint="Ecliptic latitude: angular distance north or south of the ecliptic (positive is north)." />
-                        <AdvHeader label="Rt.Asc." hint="Right ascension: position along the celestial equator from 0° to 360°, the sky’s east/west coordinate." />
-                        <AdvHeader label="Decl." hint="Declination: angular distance north or south of the celestial equator; past 23°26′ the body is ‘out of bounds’." />
+                        <AdvHeader label="Rt.Asc." title="Right Ascension" hint="Position along the celestial equator from 0° to 360°, the sky’s east/west coordinate." />
+                        <AdvHeader label="Decl." title="Declination" hint="Angular distance north or south of the celestial equator; past 23°26′ the body is ‘out of bounds’." />
                         {advExtraCols && (
                           <>
-                            <AdvHeader label="Azi(0°N)" hint="Azimuth: the body’s compass bearing at the relocated place, measured clockwise from due north (0°)." />
-                            <AdvHeader label="Alti." hint="Altitude: the body’s angular height above the horizon at the relocated place (negative means below it)." />
+                            <AdvHeader label="Azi(0°N)" title="Azimuth" hint="The body’s compass bearing at the relocated place, measured clockwise from due north (0°)." />
+                            <AdvHeader label="Alti." title="Altitude" hint="The body’s angular height above the horizon at the relocated place (negative means below it)." />
                           </>
                         )}
                       </tr>

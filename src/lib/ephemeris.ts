@@ -56,16 +56,22 @@ export const TRADITIONAL_PLANETS: PlanetName[] = [
   'Pluto',
 ];
 
-export const EXTRA_BODIES: PlanetName[] = [
-  'NorthNode',
-  'SouthNode',
-  'Lilith',
+// Lunar nodes — points, grouped with the planets (not the asteroids) in the UI.
+export const NODE_NAMES: PlanetName[] = ['NorthNode', 'SouthNode'];
+
+// Asteroids, plus Black Moon Lilith (a lunar apogee, grouped here with the
+// asteroids for display and listed LAST). Shown as their own "Asteroids" filter
+// section; this is also the canonical display order everywhere bodies are listed.
+export const ASTEROID_NAMES: PlanetName[] = [
   'Chiron',
   'Ceres',
   'Pallas',
   'Juno',
   'Vesta',
+  'Lilith',
 ];
+
+export const EXTRA_BODIES: PlanetName[] = [...NODE_NAMES, ...ASTEROID_NAMES];
 
 export const PLANET_NAMES: PlanetName[] = [...TRADITIONAL_PLANETS, ...EXTRA_BODIES];
 

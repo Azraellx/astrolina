@@ -362,6 +362,16 @@
   background: rgba(var(--tint), 0.05);
 }
 
+/* Shift-clicking a toggle (show/hide all) makes the browser treat the click as a
+   keyboard interaction and draw a :focus-visible ring. Suppress it on these filter
+   chips — the hover/focus .ui-tip already signals the target. */
+.planet-toggle:focus,
+.planet-toggle:focus-visible,
+.line-toggle:focus,
+.line-toggle:focus-visible {
+  outline: none;
+}
+
 .planet-toggle.off {
   opacity: 0.35;
 }

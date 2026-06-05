@@ -175,3 +175,39 @@
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* "Go back / forward" toggle, shown once a jump has happened — flips the camera
+   between the current spot and the one from before the last jump. */
+.teleport-actions {
+  display: flex;
+  padding: 8px 12px 10px;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+}
+
+.teleport-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  background: rgba(var(--tint), 0.06);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.teleport-back-btn:hover {
+  background: rgba(var(--tint), 0.1);
+  border-color: rgba(var(--tint), 0.24);
+  color: var(--text-strong);
+}
+.teleport-back-btn svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.teleport-back-btn:hover svg {
+  color: var(--text-strong);
+}

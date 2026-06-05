@@ -1,9 +1,11 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  ASTEROID_NAMES,
+  NODE_NAMES,
   PLANET_COLORS,
   PLANET_DISPLAY,
-  PLANET_NAMES,
+  TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
   type LineSystem,
@@ -45,10 +47,14 @@ const PLANET_THEMES: Record<PlanetName, string> = {
   Vesta: 'Devotion, focus, and the inner flame you keep sacred.',
 };
 
+// The "Planets" filter group: the ten bodies + the two lunar nodes. Asteroids get
+// their own section (and their own independent show/hide-all).
+const PLANET_FILTERS: PlanetName[] = [...TRADITIONAL_PLANETS, ...NODE_NAMES];
+
 interface SidebarProps {
   visiblePlanets: Set<PlanetName>;
   togglePlanet: (p: PlanetName) => void;
-  setAllPlanets: (visible: boolean) => void;
+  setAllPlanets: (bodies: PlanetName[], visible: boolean) => void;
   visibleLineTypes: Set<LineType>;
   toggleLineType: (t: LineType) => void;
   setAllLineTypes: (visible: boolean) => void;
@@ -737,13 +743,30 @@ export function Sidebar({
         <div className="sidebar-section">
           <h2>Planets</h2>
           <ul className="planet-grid">
-            {PLANET_NAMES.map((p) => (
+            {PLANET_FILTERS.map((p) => (
               <PlanetToggle
                 key={p}
                 planet={p}
                 on={visiblePlanets.has(p)}
                 onToggle={() => togglePlanet(p)}
-                onShiftClick={() => setAllPlanets(!visiblePlanets.has(p))}
+                onShiftClick={() =>
+                  setAllPlanets(PLANET_FILTERS, !visiblePlanets.has(p))
+                }
+              />
+            ))}
+          </ul>
+
+          <h2>Asteroids</h2>
+          <ul className="planet-grid">
+            {ASTEROID_NAMES.map((p) => (
+              <PlanetToggle
+                key={p}
+                planet={p}
+                on={visiblePlanets.has(p)}
+                onToggle={() => togglePlanet(p)}
+                onShiftClick={() =>
+                  setAllPlanets(ASTEROID_NAMES, !visiblePlanets.has(p))
+                }
               />
             ))}
           </ul>

@@ -11,6 +11,7 @@ import type { FeatureCollection, LineString, Point } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import type { ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
+import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
@@ -37,7 +38,8 @@ import {
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
-import { PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
+import { PLANET_COLORS, PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
+import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -237,6 +239,9 @@ export interface OverlayData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  /** Sub-planetary (zenith) point per overlay body, so overlay labels can fly to
+   *  it on click just like natal ones. No stamps are drawn for overlays. */
+  zenith: FeatureCollection<Point, ZenithProps>;
 }
 
 // Live result of the on-map measurement tool: great-circle separation between
@@ -291,7 +296,8 @@ const SNAP_LINE_LAYERS = [
   'acg-lines-ov-horizon',
   'parans-layer',
   'parans-ov-layer',
-  'local-space-layer',
+  'local-space-layer-out',
+  'local-space-layer-in',
   'local-space-ov-layer',
 ];
 // Cursor-to-line distance (px) within which the measure endpoint snaps. Small, so
@@ -454,6 +460,128 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   return { id: String(f.id), planet: f.properties.planet as PlanetName, lng, lat };
 }
 
+// ── Local-space × birth-chart crossing hover ────────────────────────────────────
+// The crossing dots are small, so a query within a few px of the cursor counts as a
+// hit; hovering one grows it + shows a .ui-tip explaining the crossing.
+const CROSS_HIT_LAYER = 'acg-ls-cross-layer';
+const CROSS_HIT_TOLERANCE_PX = 5;
+
+interface CrossHit {
+  id: number;
+  lng: number;
+  lat: number;
+  lsPlanet: PlanetName;
+  lsColor: string;
+  acgPlanet: PlanetName;
+  acgColor: string;
+  acgLineType: LineType;
+}
+
+function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
+  if (!map.getLayer(CROSS_HIT_LAYER)) return null;
+  const t = CROSS_HIT_TOLERANCE_PX;
+  const feats = map.queryRenderedFeatures(
+    [
+      [pt.x - t, pt.y - t],
+      [pt.x + t, pt.y + t],
+    ],
+    { layers: [CROSS_HIT_LAYER] },
+  );
+  const f = feats[0];
+  if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
+    return null;
+  }
+  const [lng, lat] = f.geometry.coordinates as [number, number];
+  return {
+    id: Number(f.id),
+    lng,
+    lat,
+    lsPlanet: f.properties.lsPlanet as PlanetName,
+    lsColor: f.properties.lsColor as string,
+    acgPlanet: f.properties.acgPlanet as PlanetName,
+    acgColor: f.properties.acgColor as string,
+    acgLineType: f.properties.acgLineType as LineType,
+  };
+}
+
+// ── Plain line hover ────────────────────────────────────────────────────────────
+// Hovering a bare line (not a stamp/dot/badge) shows a .ui-tip naming it — the same
+// label its edge badge carries: planet glyph + name + angle (ACG), "LS" + body
+// (local space), the two-body crossing (parans), or "Ecliptic".
+const LINE_HIT_LAYERS = [
+  'acg-lines-meridian',
+  'acg-lines-horizon',
+  'acg-lines-ov-meridian',
+  'acg-lines-ov-horizon',
+  'parans-layer',
+  'parans-ov-layer',
+  'local-space-layer-out',
+  'local-space-layer-in',
+  'local-space-ov-layer',
+  'ecliptic-layer',
+];
+const LINE_HIT_TOLERANCE_PX = 3;
+
+function glyphHtml(planet: PlanetName, color: string): string {
+  return `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${PLANET_GLYPHS[planet]}</span>`;
+}
+function tagHtml(t: string): string {
+  return `<span class="cross-tip-tag">${t}</span>`;
+}
+
+function lineLabelHtml(layerId: string, props: Record<string, unknown>): string | null {
+  const isOv = layerId.includes('-ov');
+  // Overlay lines carry a tagged label ("Tr Ve MC"); lift the prefix off it.
+  const pre =
+    isOv && typeof props.label === 'string' ? tagHtml(props.label.split(' ')[0]) : '';
+  let row: string | null = null;
+  if (layerId.startsWith('acg-lines')) {
+    const planet = props.planet as PlanetName;
+    row =
+      pre +
+      glyphHtml(planet, props.color as string) +
+      `${PLANET_DISPLAY[planet]} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+  } else if (layerId.startsWith('local-space')) {
+    const planet = props.planet as PlanetName;
+    row = tagHtml('LS') + glyphHtml(planet, props.color as string) + PLANET_DISPLAY[planet];
+  } else if (layerId.startsWith('parans')) {
+    const pa = props.planetA as PlanetName;
+    const pb = props.planetB as PlanetName;
+    row =
+      pre +
+      glyphHtml(pa, PLANET_COLORS[pa]) +
+      `${PLANET_DISPLAY[pa]} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
+      `<span class="cross-tip-x">×</span>` +
+      glyphHtml(pb, PLANET_COLORS[pb]) +
+      `${PLANET_DISPLAY[pb]} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
+  } else if (layerId === 'ecliptic-layer') {
+    row = 'Ecliptic';
+  }
+  return row ? `<div class="ui-tip"><span class="cross-tip-row">${row}</span></div>` : null;
+}
+
+function lineAtPoint(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+): { id: string; html: string } | null {
+  const layers = LINE_HIT_LAYERS.filter((l) => map.getLayer(l));
+  if (!layers.length) return null;
+  const t = LINE_HIT_TOLERANCE_PX;
+  const feats = map.queryRenderedFeatures(
+    [
+      [pt.x - t, pt.y - t],
+      [pt.x + t, pt.y + t],
+    ],
+    { layers },
+  );
+  const f = feats[0];
+  if (!f || !f.properties) return null;
+  const html = lineLabelHtml(f.layer.id, f.properties);
+  if (!html) return null;
+  // Stable id so the popup HTML is only re-set when the hovered line changes.
+  return { id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}`, html };
+}
+
 // Apply a projection mode to the live map: swap mercator↔globe, gate rotate/tilt
 // (3D only), and in 2D snap back to flat north-up. Must be re-run after every
 // setStyle (which resets the projection). The `proj-2d` container class lets CSS
@@ -478,6 +606,8 @@ interface MapProps {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  /** Dots where local-space lines cross birth-chart lines (empty when LS hidden). */
+  localSpaceCross: FeatureCollection<Point, CrossingProps>;
   /** Origin the local-space lines radiate from (pin or birthplace) — the centre of
    *  the LS label ring. Null when local space is hidden. */
   localSpaceOrigin?: { lat: number; lng: number } | null;
@@ -519,6 +649,7 @@ interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  localSpaceCross: FeatureCollection<Point, CrossingProps>;
   localSpaceOrigin?: { lat: number; lng: number } | null;
   zenith: FeatureCollection<Point, ZenithProps>;
   ecliptic?: FeatureCollection<LineString> | null;
@@ -530,8 +661,54 @@ export interface MapHandle {
    *  zoomed out (keeping the current zoom otherwise); with `zoom`, sets it exactly
    *  (so Teleport can frame a country wide vs a city tight). */
   flyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Like flyTo, but first stashes the current view as the Teleport "go back"
+   *  target (so a search jump can be undone). */
+  teleportTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Fly to the stashed "go back" view, swapping it for the current one — so the
+   *  same control toggles between the two locations (two-deep back/forward). */
+  teleportBack: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+}
+
+// A saved camera view (for one-slot back/forward toggles).
+interface SavedView {
+  center: [number, number];
+  zoom: number;
+  bearing: number;
+  pitch: number;
+}
+function snapshotView(map: maplibregl.Map): SavedView {
+  const c = map.getCenter();
+  return {
+    center: [c.lng, c.lat],
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+}
+
+// Fly the camera to lng/lat at `zoom`, nudged clear of the left-docked expanded
+// sidebar (its width is published as --es-width on <html>): shift right by a
+// quarter-width so the target lands where the centered nav/timeline bars sit
+// rather than behind the panel. Shared by flyTo / teleportTo and the paran / LS /
+// zenith label clicks.
+function flyWithSidebarOffset(
+  map: maplibregl.Map,
+  lng: number,
+  lat: number,
+  zoom: number,
+) {
+  const esWidth =
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
+    ) || 0;
+  map.flyTo({
+    center: [lng, lat],
+    zoom,
+    offset: [esWidth / 4, 0],
+    essential: true,
+  });
 }
 
 // Directional arrows chained ALONG a line — '→→→' that follow the line's bearing
@@ -618,23 +795,36 @@ function setupCustomLayers(
   // the Map component), not repeated along the line.
 
   map.addSource('local-space', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // Both halves at the normal LS weight; direction reads from the dash pattern (and
+  // the → / ← chevrons): the outgoing (toward-planet) half is solid, the inward
+  // (nadir) half dashed. Split into two layers because line-dasharray can't be a
+  // data-driven ('get direction') expression in MapLibre.
   map.addLayer({
-    id: 'local-space-layer',
+    id: 'local-space-layer-out',
     source: 'local-space',
     type: 'line',
+    filter: lsDir('out'),
     paint: {
       'line-color': ['get', 'color'],
-      // The outgoing (toward-planet) half is drawn ~2× a normal ACG line, so the
-      // direction also reads from the line weight; the inward (nadir) half keeps the
-      // usual LS weight. Its '→' chevrons are oversized to match (see addArrowLayer).
-      'line-width': ['case', ['==', ['get', 'direction'], 'out'], 3.2, 1.2],
+      'line-width': 1.2,
+      'line-opacity': 0.75,
+    },
+  });
+  map.addLayer({
+    id: 'local-space-layer-in',
+    source: 'local-space',
+    type: 'line',
+    filter: lsDir('in'),
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1.2,
       'line-opacity': 0.75,
       'line-dasharray': [2, 2],
     },
   });
   // Outward ('→', toward the planet) and inward ('←', back toward the origin)
-  // arrows also mark the two halves of each local-space axis. The outward chevrons
-  // are oversized (2×) to match the bold outgoing line; the inward ones stay normal.
+  // arrows mark the two halves of each local-space axis. The outward chevrons are
+  // oversized (2×) for emphasis; the inward ones stay normal.
   addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
   addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
@@ -745,6 +935,29 @@ function setupCustomLayers(
   addArrowLayer(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', lineTypeIs('DSC'), '←');
   // Overlay glyph + angle labels are also drawn as edge badges, not along the line.
 
+  // ── Local-space × birth-chart crossings: a small dot wherever a local-space line
+  // meets an ACG line, filled with a blend of the two line colors. Drawn above the
+  // lines (below the zenith stamps); grows a touch on hover, where a .ui-tip explains
+  // it.
+  map.addSource('acg-ls-cross', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'acg-ls-cross-layer',
+    source: 'acg-ls-cross',
+    type: 'circle',
+    paint: {
+      'circle-radius': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        6,
+        4,
+      ],
+      'circle-radius-transition': { duration: 150, delay: 0 },
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': haloColor || 'rgba(0,0,0,0.4)',
+      'circle-stroke-width': 1.25,
+    },
+  });
+
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
@@ -821,11 +1034,13 @@ function pushData(map: maplibregl.Map, data: MapData) {
   const acg = map.getSource('acg-lines') as maplibregl.GeoJSONSource | undefined;
   const par = map.getSource('parans') as maplibregl.GeoJSONSource | undefined;
   const ls = map.getSource('local-space') as maplibregl.GeoJSONSource | undefined;
+  const lsx = map.getSource('acg-ls-cross') as maplibregl.GeoJSONSource | undefined;
   const zen = map.getSource('acg-zenith') as maplibregl.GeoJSONSource | undefined;
   const ecl = map.getSource('ecliptic') as maplibregl.GeoJSONSource | undefined;
   if (acg) acg.setData(data.lines);
   if (par) par.setData(data.parans);
   if (ls) ls.setData(data.localSpace);
+  if (lsx) lsx.setData(data.localSpaceCross);
   if (zen) zen.setData(data.zenith);
   if (ecl) ecl.setData(data.ecliptic ?? EMPTY_FC());
 
@@ -848,6 +1063,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   parans,
   localSpace,
+  localSpaceCross,
   localSpaceOrigin,
   zenith,
   ecliptic,
@@ -871,25 +1087,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 }: MapProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // One-slot "go back" view for the Teleport window: teleportTo() stashes the
+  // pre-jump camera here; teleportBack() swaps current<->saved so the same button
+  // toggles between the two locations (two-deep, like browser back/forward).
+  const teleportBackRef = useRef<SavedView | null>(null);
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat: number, lng: number, zoom?: number) => {
       const map = mapRef.current;
       if (!map) return;
-      // The expanded chart sidebar is left-docked and overlays the map; while
-      // open it publishes its width as --es-width on <html>. Shift the target
-      // right so the pin lands where the nav/timeline bars center
-      // (left: calc(50% + --es-width/4)) instead of behind the panel.
-      const esWidth =
-        parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            '--es-width',
-          ),
-        ) || 0;
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+    },
+    teleportTo: (lat: number, lng: number, zoom?: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      // Remember where we are so "Go back" can return here.
+      teleportBackRef.current = snapshotView(map);
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+    },
+    teleportBack: () => {
+      const map = mapRef.current;
+      const saved = teleportBackRef.current;
+      if (!map || !saved) return;
+      // Swap: stash the current view so a second press goes forward again.
+      teleportBackRef.current = snapshotView(map);
       map.flyTo({
-        center: [lng, lat],
-        zoom: zoom ?? Math.max(map.getZoom(), 4),
-        offset: [esWidth / 4, 0],
+        center: saved.center,
+        zoom: saved.zoom,
+        bearing: saved.bearing,
+        pitch: saved.pitch,
         essential: true,
       });
     },
@@ -898,7 +1124,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
-  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -913,7 +1139,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // handlers always read the latest props.
   useEffect(() => {
     onClickRef.current = onClick;
-    dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay };
+    dataRef.current = { lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay };
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
   });
@@ -939,28 +1165,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const flyToPoint = useCallback((lng: number, lat: number) => {
     const map = mapRef.current;
     if (!map) return;
-    const esWidth =
-      parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
-      ) || 0;
-    map.flyTo({
-      center: [lng, lat],
-      zoom: Math.max(map.getZoom(), 4),
-      offset: [esWidth / 4, 0],
-      essential: true,
-    });
+    flyWithSidebarOffset(map, lng, lat, Math.max(map.getZoom(), 4));
   }, []);
 
   // Clicking a paran badge flies to that paran's intersection; clicking the SAME
   // badge again returns to wherever you were when you first clicked it (a toggle).
   // Keyed by the paran's content so it survives the index-based badge recomputes.
-  const paranReturnRef = useRef<{
-    id: string;
-    center: [number, number];
-    zoom: number;
-    bearing: number;
-    pitch: number;
-  } | null>(null);
+  const paranReturnRef = useRef<(SavedView & { id: string }) | null>(null);
   const onParanClick = useCallback(
     (b: ParanBadge) => {
       const map = mapRef.current;
@@ -979,14 +1190,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         });
         return;
       }
-      const c = map.getCenter();
-      paranReturnRef.current = {
-        id,
-        center: [c.lng, c.lat],
-        zoom: map.getZoom(),
-        bearing: map.getBearing(),
-        pitch: map.getPitch(),
-      };
+      paranReturnRef.current = { id, ...snapshotView(map) };
       flyToPoint(b.targetLng, b.targetLat);
     },
     [flyToPoint],
@@ -1345,6 +1549,69 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       zenithPopup.remove();
     };
+    // The hovered crossing dot (grow feature-state) + its .ui-tip.
+    let hoveredCross: number | null = null;
+    const crossPopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 14,
+      className: 'zenith-popup',
+    });
+    const clearCross = () => {
+      if (hoveredCross !== null) {
+        map.setFeatureState({ source: 'acg-ls-cross', id: hoveredCross }, { hover: false });
+        hoveredCross = null;
+      }
+      crossPopup.remove();
+    };
+    const showCross = (cross: CrossHit) => {
+      if (hoveredCross !== null && hoveredCross !== cross.id) {
+        map.setFeatureState({ source: 'acg-ls-cross', id: hoveredCross }, { hover: false });
+      }
+      hoveredCross = cross.id;
+      map.setFeatureState({ source: 'acg-ls-cross', id: cross.id }, { hover: true });
+      const lsName = PLANET_DISPLAY[cross.lsPlanet] ?? cross.lsPlanet;
+      const acgName = PLANET_DISPLAY[cross.acgPlanet] ?? cross.acgPlanet;
+      // Stacked, like the line badges: "LS <glyph> Mars" / "×" / "Ds <glyph> Venus".
+      const row = (tag: string, glyph: string, color: string, name: string) =>
+        `<span class="cross-tip-row"><span class="cross-tip-tag">${tag}</span>` +
+        `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${glyph}</span>${name}</span>`;
+      crossPopup
+        .setLngLat([cross.lng, cross.lat])
+        .setHTML(
+          `<div class="ui-tip cross-tip">` +
+            row('LS', PLANET_GLYPHS[cross.lsPlanet], cross.lsColor, lsName) +
+            `<span class="cross-tip-x">×</span>` +
+            row(
+              ANGLE_CODE[cross.acgLineType],
+              PLANET_GLYPHS[cross.acgPlanet],
+              cross.acgColor,
+              acgName,
+            ) +
+          `</div>`,
+        );
+      if (!crossPopup.isOpen()) crossPopup.addTo(map);
+    };
+    // The hovered bare line's .ui-tip (label only). Follows the cursor along the line.
+    let hoveredLine: string | null = null;
+    const linePopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+      className: 'zenith-popup',
+    });
+    const clearLine = () => {
+      hoveredLine = null;
+      linePopup.remove();
+    };
+    const showLine = (hit: { id: string; html: string }, at: maplibregl.LngLat) => {
+      linePopup.setLngLat(at);
+      if (hoveredLine !== hit.id) {
+        hoveredLine = hit.id;
+        linePopup.setHTML(hit.html);
+      }
+      if (!linePopup.isOpen()) linePopup.addTo(map);
+    };
     const showZenith = (zen: ZenithHit) => {
       if (hoveredZenith !== null && hoveredZenith !== zen.id) {
         map.setFeatureState({ source: 'acg-zenith', id: hoveredZenith }, { hover: false });
@@ -1370,16 +1637,39 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // otherwise fall back to the map's CSS grab cursor.
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
+        clearCross();
+        clearLine();
         map.getCanvas().style.cursor = 'pointer';
         showZenith(zen);
       } else {
-        clearZenith();
-        map.getCanvas().style.cursor = '';
+        const cross = crossAtPoint(map, e.point);
+        if (cross) {
+          clearZenith();
+          clearLine();
+          map.getCanvas().style.cursor = 'pointer';
+          showCross(cross);
+        } else {
+          // A bare line under the cursor names itself; clicking it still relocates,
+          // so the cursor stays the map's default (no pointer).
+          const line = lineAtPoint(map, e.point);
+          if (line) {
+            clearZenith();
+            clearCross();
+            showLine(line, e.lngLat);
+          } else {
+            clearZenith();
+            clearCross();
+            clearLine();
+          }
+          map.getCanvas().style.cursor = '';
+        }
       }
       onHover?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleLeave = () => {
       clearZenith();
+      clearCross();
+      clearLine();
       onLeave?.();
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
@@ -1410,6 +1700,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.off('click', handleClick);
       map.off('contextmenu', handleContext);
       clearZenith();
+      clearCross();
+      clearLine();
     };
   }, [onHover, onLeave, onClick, onPinNatal, measureActive, flyToPoint]);
 
@@ -1521,7 +1813,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, parans, localSpace, zenith, ecliptic, overlay });
+      pushData(map, { lines, parans, localSpace, localSpaceCross, zenith, ecliptic, overlay });
       computeBadges();
     } else {
       map.once('load', () => {
@@ -1529,7 +1821,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay, computeBadges]);
+  }, [lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, computeBadges]);
 
   // Toggle basemap road / river / foliage visibility live (theme reloads reapply
   // via the style.load handler above).
@@ -1601,13 +1893,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     originScreen && localSpace.features.length > 0 && zoom >= COMPASS_ZOOM
       ? Math.min(1, (zoom - COMPASS_ZOOM) / (CLOSE_ZOOM - COMPASS_ZOOM))
       : null;
-  // Natal ACG line labels fly to that planet's zenith on click — build the lookup.
-  // (Overlay lines carry no zenith stamp, so their badges stay non-interactive.)
-  // A plain object, not a Map — `Map` is this component's own name here.
+  // ACG line labels fly to that body's zenith on click — build the lookup. Natal
+  // labels read the natal zenith stamps; overlay labels read the overlay's own
+  // zenith points (computed but not drawn as stamps). Plain objects, not a Map —
+  // `Map` is this component's own name here.
   const zenithByPlanet: Record<string, [number, number]> = {};
   for (const f of zenith.features) {
     const c = f.geometry.coordinates;
     zenithByPlanet[f.properties.planet] = [c[0], c[1]];
+  }
+  const zenithByOverlayPlanet: Record<string, [number, number]> = {};
+  for (const f of overlay?.zenith.features ?? []) {
+    const c = f.geometry.coordinates;
+    zenithByOverlayPlanet[f.properties.planet] = [c[0], c[1]];
   }
   return (
     <>
@@ -1622,7 +1920,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {badges.map((b) => {
           const text = badgeTextColor(b.color);
           const zenithTarget =
-            b.prefix === '' ? zenithByPlanet[b.planet] : undefined;
+            b.prefix === ''
+              ? zenithByPlanet[b.planet]
+              : zenithByOverlayPlanet[b.planet];
           const inner = (
             <>
               {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
@@ -1630,8 +1930,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
             </>
           );
-          // Natal labels fly to the planet's zenith (a clickable, hover-lifting
-          // button); overlay labels stay plain, non-interactive spans.
+          // Natal AND overlay labels fly to their body's zenith (a clickable,
+          // hover-lifting button); only labels without a zenith (e.g. the nodes, or
+          // when MC is hidden) stay plain, non-interactive spans.
           return zenithTarget ? (
             <TipButton
               type="button"
@@ -1641,7 +1942,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
               placement="top"
-              tip={`Fly to ${PLANET_DISPLAY[b.planet]}'s zenith`}
+              tip={`Fly to ${b.prefix ? `${b.prefix} ` : ''}${PLANET_DISPLAY[b.planet]}'s zenith`}
             >
               {inner}
             </TipButton>

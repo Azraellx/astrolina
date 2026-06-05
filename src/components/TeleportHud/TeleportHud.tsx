@@ -13,6 +13,10 @@ const POS_KEY = 'astro:teleport-pos:v1';
 interface TeleportHudProps {
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
   onFlyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Toggle between the current spot and the one before the last jump. */
+  onGoBack: () => void;
+  /** Whether (and which way) the back/forward toggle points: 'none' hides it. */
+  backState: 'none' | 'back' | 'forward';
   onClose: () => void;
 }
 
@@ -21,7 +25,12 @@ interface TeleportHudProps {
 // Fully offline: it searches the bundled GeoNames set only (no third-party API), and
 // zooms by precision — a country frames wide, a city tight. Camera-only: it doesn't
 // move the pin/chart.
-export function TeleportHud({ onFlyTo, onClose }: TeleportHudProps) {
+export function TeleportHud({
+  onFlyTo,
+  onGoBack,
+  backState,
+  onClose,
+}: TeleportHudProps) {
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -192,6 +201,35 @@ export function TeleportHud({ onFlyTo, onClose }: TeleportHudProps) {
             </li>
           ))}
         </ul>
+      )}
+
+      {backState !== 'none' && (
+        <div className="teleport-actions">
+          <button
+            type="button"
+            className="teleport-back-btn"
+            onClick={onGoBack}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {backState === 'forward' ? (
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              ) : (
+                <path d="M19 12H5M11 6l-6 6 6 6" />
+              )}
+            </svg>
+            <span>{backState === 'forward' ? 'Go forward' : 'Go back'}</span>
+          </button>
+        </div>
       )}
     </div>
   );

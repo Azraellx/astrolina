@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Regenerate the astrological-glyph font subset from the full Noto Sans Symbols
-# variable font. Run this after adding or removing a glyph in
-# src/lib/astro/glyphChars.ts, then commit the updated .woff2.
+# Regenerate the astrological-glyph font subset. Most glyphs come from Noto Sans
+# Symbols, but Pluto Form Two (U+2BD3) lives only in Noto Sans Symbols 2 — so we
+# subset BOTH fonts and merge them into one woff2. Both are 1000 units-per-em, so
+# the merge needs no rescaling and the glyphs stay metrically consistent.
+# Run this after adding or removing a glyph in src/lib/astro/glyphChars.ts, then
+# commit the updated .woff2.
 #
 # Prereq (one-time): python -m pip install fonttools brotli
 #
@@ -10,27 +13,43 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SRC="src/fonts/NotoSansSymbols-VariableFont_wght.ttf"
+SYM="src/fonts/NotoSansSymbols/NotoSansSymbols-VariableFont_wght.ttf"
+SYM2="src/fonts/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf"
 OUT="src/fonts/subset-NotoSansSymbols-Regular.woff2"
 
-# Codepoints the app actually draws: PLANET_GLYPHS + the 12 SIGN_GLYPHS
-# (U+2648–U+2653). Note: U+2609 (Sun ☉) and U+FE0E (text variation selector)
+# Codepoints drawn from Noto Sans Symbols: PLANET_GLYPHS (minus Pluto) + the 12
+# SIGN_GLYPHS (U+2648–U+2653). U+2609 (Sun ☉) and U+FE0E (text variation selector)
 # are NOT in this font — the Sun falls back to the OS symbol font — so the
 # subsetter silently ignores them; they're listed here for documentation.
-UNICODES="2609,260A,260B,263D,263F,2640-2647,2648-2653,26B3-26B8,FE0E"
+SYM_UNICODES="2609,260A,260B,263D,263F,2640-2646,2648-2653,26B3-26B8,FE0E"
+# Pluto Form Two — only in Noto Sans Symbols 2.
+SYM2_UNICODES="2BD3"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Pin the weight axis to Regular (400) so the subset is a small static font,
-# then subset to woff2.
-python -m fontTools.varLib.instancer "$SRC" wght=400 -o "$TMP/regular.ttf" >/dev/null
-# --name-IDs='*' retains the 'name' table records — copyright (ID 0), license
-# (ID 13), license URL (ID 14) — which fontTools drops by default when
-# subsetting. This carries the OFL notice inside the woff2 binary too, per SIL
-# OFL §2 / FAQ 2.4 (belt-and-suspenders with public/fonts/OFL.txt).
-python -m fontTools.subset "$TMP/regular.ttf" \
-  --unicodes="$UNICODES" \
+# Pin the Symbols weight axis to Regular (400) → a small static font, then subset.
+python -m fontTools.varLib.instancer "$SYM" wght=400 -o "$TMP/sym-reg.ttf" >/dev/null
+python -m fontTools.subset "$TMP/sym-reg.ttf" \
+  --unicodes="$SYM_UNICODES" \
+  --name-IDs='*' \
+  --output-file="$TMP/sym-sub.ttf"
+
+# Noto Sans Symbols 2 is already a static Regular — subset to just Pluto Form Two.
+python -m fontTools.subset "$SYM2" \
+  --unicodes="$SYM2_UNICODES" \
+  --name-IDs='*' \
+  --output-file="$TMP/sym2-sub.ttf"
+
+# Merge the two subsets (their cmaps are disjoint) into one font, then flavor as
+# woff2. --name-IDs='*' retains the 'name' table records — copyright (ID 0),
+# license (ID 13), license URL (ID 14) — so the OFL notice rides inside the woff2
+# binary too (SIL OFL §2 / FAQ 2.4; belt-and-suspenders with public/fonts/OFL.txt).
+python -m fontTools.merge \
+  "$TMP/sym-sub.ttf" "$TMP/sym2-sub.ttf" \
+  --output-file="$TMP/merged.ttf" >/dev/null
+python -m fontTools.subset "$TMP/merged.ttf" \
+  --unicodes='*' \
   --name-IDs='*' \
   --flavor=woff2 \
   --output-file="$OUT"

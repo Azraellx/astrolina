@@ -103,6 +103,14 @@ The default is **Ptolemy (1°/yr)**. Choosing **User rate** reveals a number fie
 
 All three settings are remembered between sessions.
 
+### Bi-wheel angle marks & the directed-overlay representation
+
+With an overlay active, the expanded chart wheel becomes a bi-wheel (natal inner ring, overlay outer ring). Two implementation notes from this layer:
+
+- **Overlay MC/IC/AS/DS marks.** The outer ring marks the overlay chart's own four angles, gated by the same MC/IC/ASC/DSC filter toggles as the natal angles. These are drawn for the **time-based** overlays — **Transits, Progressed, Synastry** — whose second moment is a real Julian Day, so the angles come straight from `relocate(jd, …)`. They are **deliberately not drawn for Solar Arc or Primary Directions**: those advance the RAMC *frame* rather than sitting at a second JD, and the bundled Swiss-Ephemeris wrapper exposes only JD-based house calculation (no `houses_armc`), so converting their directed RAMC into MC/ASC angles isn't available. Drawing the *natal* angles there would be misleading, so they're omitted rather than approximated.
+
+- **Primary Directions in the bi-wheel.** On the *map*, primary directions are described above as the RAMC advancing while the bodies hold their natal RA/dec (a rigid westward rotation of the line-set). The bi-wheel uses the mathematically-equivalent view — the bodies carry the arc in right ascension (declination unchanged) against the natal frame — which draws the **identical** lines (the hour angle is unchanged) but lets the overlay ring show the bodies at their **directed** zodiac positions instead of duplicating the natal ring. Both are the same rigid rotation; only the chosen frame differs.
+
 ### ✔ Points to confirm
 
 - **Mean-Quotidian default on Solar Arc.** Because it is the default and has no distinct solar-arc form, it gives SA-in-longitude on Solar Arc. Confirm this default pairing (SA-in-longitude on Solar Arc, progressed-angle on Progressed) is what you want out of the box.
@@ -112,6 +120,7 @@ All three settings are remembered between sessions.
 - **"Placidus — true SA in RA" naming.** This rate is the true secondary-progressed solar arc in RA — *not* a Placidian semi-arc/mundane primary direction. Confirm the label won't be mistaken for classical Placidus directions.
 - **Day-for-a-year constant.** The year length used is 365.2422 days (the tropical year), which sets both the progressed date and every per-year rate. Confirm this is the desired constant (vs 365.25 or a true solar-return interval).
 - **Naibod precision wording.** The Naibod rate reads 0.985647°/yr (59′08″) throughout this note; in the app it appears as 0.985647°/yr in the Primary-rate hint but as 0.9856°/yr in the angle-progression hint. Confirm whether the in-app rounding/wording should be unified.
+- **Directed-overlay bi-wheel.** Solar Arc / Primary Directions draw **no** second-ring angle marks (the ephemeris wrapper has no ARMC-based houses to direct them); Transits / Progressed / Synastry do. And the Primary-Directions bi-wheel shows the bodies at their **directed** RA positions, not the classical fixed-bodies / moving-angles view. Confirm both choices are acceptable, or flag if Solar Arc / Primary angles should be approximated instead of omitted.
 
 ## Glossary
 

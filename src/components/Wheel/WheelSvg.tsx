@@ -305,6 +305,9 @@ interface WheelSvgProps {
    * enough to fit the extra ring.
    */
   overlayPlanets?: EclipticPosition[] | null;
+  /** The overlay chart's own MC/IC/AS/DS, marked in the outer ring (gated by the
+   *  same visibleAngles toggles as the natal angles). */
+  overlayAngles?: RelocatedAngles | null;
   visibleAspects?: Set<AspectCategory>;
   /**
    * Which of the four angle labels (As/Ds/Mc/Ic) to draw, mirroring the Map
@@ -326,6 +329,7 @@ export function WheelSvg({
   detailed,
   advanced = false,
   overlayPlanets,
+  overlayAngles,
   visibleAspects,
   visibleAngles,
   interactive = false,
@@ -445,6 +449,8 @@ export function WheelSvg({
     Mc: angles.mc,
     Ic: angles.ic,
   };
+  const angleColor = (key: 'As' | 'Ds' | 'Mc' | 'Ic') =>
+    key === 'As' || key === 'Ds' ? 'var(--accent)' : 'var(--cool)';
   const angleMarks = showAngleMarks
     ? ANGLE_HINTS.filter(
         (h) =>
@@ -453,9 +459,26 @@ export function WheelSvg({
       ).map((h) => ({
         ...h,
         lon: angleLonByKey[h.key],
-        color: h.key === 'As' || h.key === 'Ds' ? 'var(--accent)' : 'var(--cool)',
+        color: angleColor(h.key),
       }))
     : [];
+  // The overlay chart's angles, marked in the outer (overlay) ring — same toggles.
+  const overlayAngleLonByKey: Record<'As' | 'Ds' | 'Mc' | 'Ic', number> | null =
+    overlayAngles
+      ? { As: overlayAngles.asc, Ds: overlayAngles.dsc, Mc: overlayAngles.mc, Ic: overlayAngles.ic }
+      : null;
+  const overlayAngleMarks =
+    showAngleMarks && overlayAngleLonByKey
+      ? ANGLE_HINTS.filter(
+          (h) =>
+            Number.isFinite(overlayAngleLonByKey[h.key]) &&
+            (!visibleAngles || visibleAngles.has(h.key)),
+        ).map((h) => ({
+          ...h,
+          lon: overlayAngleLonByKey[h.key],
+          color: angleColor(h.key),
+        }))
+      : [];
 
   // Spread overlapping planets along the ring so their glyphs and readouts
   // don't collide; the true position is still marked by a tick on the zodiac
@@ -1094,6 +1117,67 @@ export function WheelSvg({
           })}
         </g>
       )}
+
+      {/* The overlay chart's angles (As/Ds/Mc/Ic) in the outer ring — dashed
+          connector + zodiac-band tick, same colours and toggles as the natal angle
+          marks, so the bi-wheel shows the overlay's angles too. */}
+      {hasOverlay &&
+        overlayAngleMarks.map((a) => {
+          const truePos = svgPos(a.lon, angles.asc, rZodiacInner, cx, cy);
+          const glyphPos = svgPos(a.lon, angles.asc, rOverlay, cx, cy);
+          const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 7, cx, cy);
+          return (
+            <g
+              key={`ov-angle-${a.key}`}
+              className="planet-mark"
+              style={{ color: a.color }}
+              onMouseEnter={() =>
+                setTip({
+                  x: glyphPos.x,
+                  y: glyphPos.y,
+                  r: 11,
+                  title: a.title,
+                  sub: a.sub,
+                  titleColor: a.color,
+                })
+              }
+              onMouseLeave={clearTip}
+              aria-label={a.title}
+            >
+              <line
+                x1={truePos.x}
+                y1={truePos.y}
+                x2={glyphPos.x}
+                y2={glyphPos.y}
+                stroke="currentColor"
+                strokeWidth={0.6}
+                strokeDasharray="2 2"
+                opacity={0.45}
+              />
+              <line
+                x1={tickPos.x}
+                y1={tickPos.y}
+                x2={tipPos.x}
+                y2={tipPos.y}
+                stroke="currentColor"
+                strokeWidth={1.2}
+              />
+              <circle cx={glyphPos.x} cy={glyphPos.y} r={14} className="planet-hit" />
+              <g className="planet-mark-visual">
+                <text
+                  x={glyphPos.x}
+                  y={glyphPos.y + 4}
+                  textAnchor="middle"
+                  className="wheel-angle-label"
+                  style={{ fill: a.color } as CSSProperties}
+                >
+                  {a.key}
+                </text>
+              </g>
+            </g>
+          );
+        })}
 
       {/* Bi-ring detail: the overlay planets' degree·sign·minute readout, laid out
           fanned along the spoke just inside the overlay glyphs (degree nearest the

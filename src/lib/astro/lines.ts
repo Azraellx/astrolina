@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import {
+  NODE_NAMES,
   PLANET_CODES,
   PLANET_COLORS,
   eclipticToRaDec,
@@ -195,16 +196,20 @@ export function generateZenithStamps(
   positions: PlanetPosition[],
   meridianLng: MeridianLng,
 ): FeatureCollection<Point, ZenithProps> {
-  const features: Feature<Point, ZenithProps>[] = positions.map((p) => ({
-    type: 'Feature',
-    // Stable per-body id so the map can drive a hover feature-state on each stamp.
-    id: p.name,
-    properties: { planet: p.name, color: PLANET_COLORS[p.name] },
-    geometry: {
-      type: 'Point',
-      coordinates: [normLng(meridianLng(p.ra)), p.dec * RAD2DEG],
-    },
-  }));
+  const features: Feature<Point, ZenithProps>[] = positions
+    // The lunar nodes are abstract ecliptic points, not bodies that stand overhead
+    // anywhere, so they get no zenith (sub-planetary) stamp.
+    .filter((p) => !NODE_NAMES.includes(p.name))
+    .map((p) => ({
+      type: 'Feature',
+      // Stable per-body id so the map can drive a hover feature-state on each stamp.
+      id: p.name,
+      properties: { planet: p.name, color: PLANET_COLORS[p.name] },
+      geometry: {
+        type: 'Point',
+        coordinates: [normLng(meridianLng(p.ra)), p.dec * RAD2DEG],
+      },
+    }));
   return { type: 'FeatureCollection', features };
 }
 

@@ -4,7 +4,7 @@ import {
   displayName,
   type StoredChart,
 } from '../../lib/chartLibrary';
-import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import './ChartSwitcher.css';
 
@@ -156,9 +156,7 @@ export function ChartSwitcher({
                     setOpen(false);
                   }}
                 >
-                  <TipSpan className="chart-name" placement="top" tip={c.name}>
-                    {displayName(c.name)}
-                  </TipSpan>
+                  <span className="chart-name">{displayName(c.name)}</span>
                   <span className="chart-meta">
                     {fmtBirthDate(c)} · {c.birthplace.label.split(',')[0]}
                   </span>
@@ -193,19 +191,16 @@ export function ChartSwitcher({
               </li>
             ))}
           </ul>
-          <TipButton
+          <button
             type="button"
             className="new-chart"
             onClick={() => {
               onNew();
               setOpen(false);
             }}
-            placement="top"
-            tip="Search all charts or add a new one"
-            hotkey="A"
           >
             Search + Add Name
-          </TipButton>
+          </button>
         </div>
       )}
     </div>

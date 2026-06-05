@@ -150,7 +150,7 @@ export function ChartManager({
         aria-label="Charts"
       >
         <header className="cm-header">
-          <h2>Birth charts</h2>
+          <h2>My Charts</h2>
           <button
             type="button"
             className="cm-close"
@@ -228,18 +228,16 @@ export function ChartManager({
                     .filter(Boolean)
                     .join(' ')}
                 >
-                  <TipButton
+                  <button
                     type="button"
                     className="cm-row"
                     onClick={() => onSelect(c.id)}
-                    placement="top"
-                    tip={`Use ${c.name}`}
                   >
                     <span className="cm-row-name">{displayName(c.name)}</span>
                     <span className="cm-row-meta">
                       {fmtBirth(c)} · {c.birthplace.label.split(',')[0]}
                     </span>
-                  </TipButton>
+                  </button>
                   <div className="cm-row-actions">
                     <TipButton
                       type="button"

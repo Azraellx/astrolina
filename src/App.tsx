@@ -33,7 +33,6 @@ import {
   projectOntoEcliptic,
   relocate,
   toEclipticPositions,
-  PLANET_NAMES,
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
@@ -52,6 +51,7 @@ import {
 } from './lib/astro/lines';
 import { generateParans, type ParanProps } from './lib/astro/parans';
 import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
+import { generateLocalSpaceCrossings } from './lib/astro/localSpaceCrossings';
 import {
   buildOverlay,
   minorStepMs,
@@ -102,6 +102,25 @@ interface Point {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+
+// The Earth/Glass basemaps are light, so the Moon's pale gray line barely shows. On
+// those themes only, swap it for a darker slate. The line color is the single source
+// the edge badges, hover tip, and crossing-dot blends all read, so they follow suit.
+const MOON_LINE_DARK = '#5b6480';
+function withDarkMoon<P extends { planet: PlanetName; color: string }>(
+  fc: FeatureCollection<LineString, P>,
+  theme: Theme,
+): FeatureCollection<LineString, P> {
+  if (theme === 'dark') return fc;
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f) =>
+      f.properties.planet === 'Moon'
+        ? { ...f, properties: { ...f.properties, color: MOON_LINE_DARK } }
+        : f,
+    ),
+  };
+}
 
 // Pure filter helpers shared by the base chart and the overlay, so the two
 // can't drift apart in what the visibility toggles do.
@@ -246,6 +265,12 @@ export default function App() {
   // it defaults OFF (unlike the always-on readouts above).
   const [showTeleport, setShowTeleport] = useState(
     () => localStorage.getItem('astro:view-teleport:v1') === '1',
+  );
+  // Teleport "Go back" toggle state: 'none' until the first jump, then 'back'
+  // (next press returns to where you were) <-> 'forward' (returns to the place you
+  // jumped to). Held here so it survives the window closing/reopening.
+  const [teleportReturn, setTeleportReturn] = useState<'none' | 'back' | 'forward'>(
+    'none',
   );
   // Overlay ▸ Display ▸ Timeline: when off, the bottom timeline collapses to just
   // its draggable nub (no ruler/transport).
@@ -553,8 +578,8 @@ export default function App() {
   const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
 
   const lines = useMemo(
-    () => filterLines(allLines, visiblePlanets, visibleLineTypes),
-    [allLines, visiblePlanets, visibleLineTypes],
+    () => withDarkMoon(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
+    [allLines, visiblePlanets, visibleLineTypes, theme],
   );
 
   const parans = useMemo(
@@ -564,8 +589,17 @@ export default function App() {
 
   const localSpace = useMemo(
     () =>
-      showLocalSpace ? filterLocalSpace(allLocalSpace, visiblePlanets) : EMPTY_FC,
-    [allLocalSpace, visiblePlanets, showLocalSpace],
+      showLocalSpace
+        ? withDarkMoon(filterLocalSpace(allLocalSpace, visiblePlanets), theme)
+        : EMPTY_FC,
+    [allLocalSpace, visiblePlanets, showLocalSpace, theme],
+  );
+  // Dots where the (visible) local-space lines cross the (visible) birth-chart
+  // lines — only while local space is shown.
+  const localSpaceCross = useMemo(
+    () =>
+      showLocalSpace ? generateLocalSpaceCrossings(localSpace, lines) : EMPTY_FC,
+    [showLocalSpace, localSpace, lines],
   );
   const zenith = useMemo(
     () => filterZenith(allZenith, visiblePlanets, visibleLineTypes),
@@ -622,10 +656,13 @@ export default function App() {
         ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
         : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
     return {
-      lines: filterLines(
-        tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
-        visiblePlanets,
-        visibleLineTypes,
+      lines: withDarkMoon(
+        filterLines(
+          tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+          visiblePlanets,
+          visibleLineTypes,
+        ),
+        theme,
       ),
       parans: showParans
         ? filterParans(
@@ -634,18 +671,28 @@ export default function App() {
           )
         : EMPTY_FC,
       localSpace: showLocalSpace
-        ? filterLocalSpace(
-            generateLocalSpace(
-              ovPositions,
-              overlayLayer.gmst,
-              overlayLayer.originLat,
-              overlayLayer.originLng,
+        ? withDarkMoon(
+            filterLocalSpace(
+              generateLocalSpace(
+                ovPositions,
+                overlayLayer.gmst,
+                overlayLayer.originLat,
+                overlayLayer.originLng,
+              ),
+              visiblePlanets,
             ),
-            visiblePlanets,
+            theme,
           )
         : EMPTY_FC,
+      // Zenith points for the overlay bodies — not drawn as stamps, only used so an
+      // overlay label flies to its zenith on click (same gating as natal: needs MC).
+      zenith: filterZenith(
+        generateZenithStamps(ovPositions, ovMeridianLng),
+        visiblePlanets,
+        visibleLineTypes,
+      ),
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem, lineSystem]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem, lineSystem, theme]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -682,7 +729,7 @@ export default function App() {
   //  • NATAL PIN → the birthplace we already know (no fetch, no fade).
   //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
   //  • HOVER → the offline nearest CITY (no network), falling back to the offline
-  //    country when no city is in range; real-time and snappy, nothing over ocean.
+  //    country when no city is in range, then "Ocean" over open water; real-time.
   //  Suppressed while measuring.
   const pinnedLabel = useReverseGeocode(
     mapTool === 'measure' || isNatalPin ? null : pinned,
@@ -696,8 +743,11 @@ export default function App() {
   // Once pinned, hover stays frozen on the clicked point (onHover/onLeave are gated
   // on !pinned), so this hovered-point label doubles as the pin's placeholder while
   // the reverse-geocode loads.
+  // Over water there's no city and no country, so fall back to a plain "Ocean".
   const hoverLabel =
-    mapTool === 'measure' || !hover ? null : (hoverCity ?? hoverCountry);
+    mapTool === 'measure' || !hover
+      ? null
+      : (hoverCity ?? hoverCountry ?? 'Ocean');
   const locationLabel =
     mapTool === 'measure'
       ? null
@@ -712,6 +762,12 @@ export default function App() {
   // so we skip the fade and let it stay put.
   const fadeLocation =
     !!pinned && !isNatalPin && pinnedLabel != null && pinnedLabel !== hoverLabel;
+  // The Coordinates window names the active point. In the plain natal state (no
+  // pin/hover) the top readout shows nothing, but the window should still name the
+  // birthplace it's displaying — so fall back to it there.
+  const coordLocation =
+    locationLabel ??
+    (coordSource === 'natal' ? (current?.birthplace.label ?? null) : null);
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
@@ -740,6 +796,24 @@ export default function App() {
         : birthAngles,
     [jd, activePoint, current, birthAngles, houseSystem],
   );
+  // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the
+  // natal angles. Only the time-based overlays have a genuine second moment we can
+  // turn into angles via relocate(jd): the directed overlays (solar-arc, primary)
+  // advance the RAMC frame, which our ephemeris wrapper can't convert to angles (no
+  // ARMC-based houses), so we skip their marks rather than draw the natal ones.
+  // See docs/calculation-methods.md ("Directed-overlay angles").
+  const overlayAngles = useMemo(() => {
+    if (!overlayLayer || !current) return null;
+    if (
+      overlayLayer.kind === 'solar-arc' ||
+      overlayLayer.kind === 'primary-directions'
+    ) {
+      return null;
+    }
+    const lat = activePoint?.lat ?? current.birthplace.lat;
+    const lng = activePoint?.lng ?? current.birthplace.lng;
+    return relocate(overlayLayer.jd, lat, lng, houseSystem);
+  }, [overlayLayer, activePoint, current, houseSystem]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
   // the same observer location as the relocated angles (active point, else natal).
@@ -778,9 +852,17 @@ export default function App() {
 
   // Shift+click a planet / line toggle to apply that click to ALL of them at once
   // (show everything, or hide everything) — based on the state the clicked one
-  // would flip to.
-  const setAllPlanets = useCallback((visible: boolean) => {
-    setVisiblePlanets(visible ? new Set(PLANET_NAMES) : new Set());
+  // would flip to. Scoped to a body group (planets vs asteroids) so each filter
+  // section's "show/hide all" is independent; bodies outside the group are left as-is.
+  const setAllPlanets = useCallback((bodies: PlanetName[], visible: boolean) => {
+    setVisiblePlanets((prev) => {
+      const next = new Set(prev);
+      for (const b of bodies) {
+        if (visible) next.add(b);
+        else next.delete(b);
+      }
+      return next;
+    });
   }, []);
   const setAllLineTypes = useCallback((visible: boolean) => {
     setVisibleLineTypes(
@@ -858,6 +940,9 @@ export default function App() {
   const handleImport = (imported: StoredChart[]) => {
     setImporting(false);
     if (imported.length === 0) return;
+    // A real import is the end of the flow — close the chart manager too (it stays
+    // open behind the import modal so Cancel returns to it).
+    closeManager();
     // The first imported chart becomes active — stamp its recency.
     const stamped = imported.map((c, i) =>
       i === 0 ? { ...c, lastUsedAt: Date.now() } : c,
@@ -890,6 +975,7 @@ export default function App() {
         lines={lines}
         parans={parans}
         localSpace={localSpace}
+        localSpaceCross={localSpaceCross}
         localSpaceOrigin={showLocalSpace ? localSpaceOrigin : null}
         zenith={zenith}
         ecliptic={eclipticLine}
@@ -923,6 +1009,8 @@ export default function App() {
             point={activePoint ?? (current ? current.birthplace : null)}
             angles={angles}
             source={coordSource}
+            location={coordLocation}
+            fadeLocation={fadeLocation}
           />
         </header>
       )}
@@ -1041,7 +1129,15 @@ export default function App() {
       )}
       {showTeleport && (
         <TeleportHud
-          onFlyTo={(lat, lng, zoom) => mapRef.current?.flyTo(lat, lng, zoom)}
+          onFlyTo={(lat, lng, zoom) => {
+            mapRef.current?.teleportTo(lat, lng, zoom);
+            setTeleportReturn('back');
+          }}
+          onGoBack={() => {
+            mapRef.current?.teleportBack();
+            setTeleportReturn((d) => (d === 'forward' ? 'back' : 'forward'));
+          }}
+          backState={teleportReturn}
           onClose={() => setShowTeleport(false)}
         />
       )}
@@ -1058,6 +1154,7 @@ export default function App() {
           angles={angles}
           planets={ecliptic}
           overlayPlanets={overlayEcliptic}
+          overlayAngles={overlayAngles}
           overlayLabel={overlayLayer?.labelFull ?? null}
           visiblePlanets={visiblePlanets}
           visibleLineTypes={visibleLineTypes}
@@ -1093,10 +1190,7 @@ export default function App() {
           }}
           onSave={handleSaveChart}
           onDelete={handleDelete}
-          onImport={() => {
-            closeManager();
-            setImporting(true);
-          }}
+          onImport={() => setImporting(true)}
           onClose={closeManager}
         />
       )}

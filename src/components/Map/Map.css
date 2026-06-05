@@ -174,6 +174,39 @@
   text-align: center;
 }
 
+/* The local-space × birth-chart crossing tooltip stacks both lines with the cross
+   between them: "LS <glyph> Mars" / × / "Ds <glyph> Venus". */
+.cross-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.cross-tip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.cross-tip-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.cross-tip-glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+.cross-tip-x {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-faint);
+}
+
 /* The placed-location marker: a platinum glossy pin (public/pin.svg). The pin tip
    marks the exact point (marker anchored 'bottom'); a state-colored ring pulses
    behind the head — gold for a pinned location, green for the natal birthplace.

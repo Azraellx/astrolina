@@ -349,7 +349,9 @@ body,
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 8px;
   pointer-events: auto;
-  min-width: 180px;
+  /* A roomy floor so the window doesn't resize on every hover as the place name /
+     coordinate digits change width — it only grows past this for long names. */
+  min-width: 188px;
   max-width: 420px;
 }
 

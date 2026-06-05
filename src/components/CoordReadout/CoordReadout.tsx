@@ -8,6 +8,11 @@ interface CoordReadoutProps {
   point: { lat: number; lng: number } | null;
   angles: RelocatedAngles | null;
   source: 'natal' | 'hover' | 'pinned' | 'natal-pinned';
+  /** Active point's place name. While the Coordinates view is on it lives here
+   *  (the top readout hides it); null when there's nothing to name. */
+  location?: string | null;
+  /** Replay the fade-in when a pin upgrades to a more precise address. */
+  fadeLocation?: boolean;
 }
 
 const SHOW_ANGLES_KEY = 'astro:coord-show-angles:v1';
@@ -38,7 +43,13 @@ const ANGLE_ROWS: { key: string; label: string; pick: (a: RelocatedAngles) => nu
   { key: 'dsc', label: 'Ds', pick: (a) => a.dsc },
 ];
 
-export function CoordReadout({ point, angles, source }: CoordReadoutProps) {
+export function CoordReadout({
+  point,
+  angles,
+  source,
+  location,
+  fadeLocation,
+}: CoordReadoutProps) {
   const [open, setOpen] = useState<boolean>(
     () => localStorage.getItem(SHOW_ANGLES_KEY) === '1',
   );
@@ -47,10 +58,25 @@ export function CoordReadout({ point, angles, source }: CoordReadoutProps) {
     localStorage.setItem(SHOW_ANGLES_KEY, open ? '1' : '0');
   }, [open]);
 
-  if (!point && !angles) return null;
+  if (!point && !angles && !location) return null;
 
   return (
     <div className={`coord-readout source-${source}`}>
+      {location && (
+        <div className="coord-location">
+          <span className="coord-location-dot" />
+          <span className="coord-location-text">
+            {fadeLocation ? (
+              <span className="coord-location-fade" key={location}>
+                {location}
+              </span>
+            ) : (
+              location
+            )}
+          </span>
+        </div>
+      )}
+
       {point && (
         <div className="coord-line cursor">
           <span className="lat">{fmtLat(point.lat)}</span>
