@@ -1,3 +1,11 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
 .map-container {
   position: absolute;
   inset: 0;
@@ -207,47 +215,66 @@
   color: var(--text-faint);
 }
 
-/* The placed-location marker: a platinum glossy pin (public/pin.svg). The pin tip
-   marks the exact point (marker anchored 'bottom'); a state-colored ring pulses
-   behind the head — gold for a pinned location, green for the natal birthplace.
-   `color` drives the ring + hover aura so the .natal variant only flips one prop. */
+/* The placed-location marker: a frosted-glass teardrop (drawn in CSS, .map-pin-body).
+   The tip marks the exact point (marker anchored 'bottom'); a state-colored ring
+   pulses behind the head — gold for a pinned location, green for the natal
+   birthplace. --pin-rgb drives the rim + aura so the .natal variant flips one prop. */
 .map-pin {
   position: relative;
   width: 38px;
   height: 52px;
-  color: var(--accent);
-  /* Only the pin glyph captures clicks (they bubble to the marker's click
+  /* One source for the state color: gold when pinned, green for the natal pin.
+     Drives the glass rim, the aura, and the tip pulse (all via currentColor /
+     --pin-rgb), so the .natal variant only flips this one custom property. */
+  --pin-rgb: var(--accent-rgb);
+  color: rgb(var(--pin-rgb));
+  /* Only the glass head captures clicks (they bubble to the marker's click
      handler); transparent gaps stay click-through, so the marker doesn't create a
      dead-zone over the map. */
   pointer-events: none;
 }
 
 .map-pin.natal {
-  color: var(--success);
+  --pin-rgb: var(--success-rgb);
 }
 
-.map-pin-img {
+/* The pin head: a frosted-glass teardrop. Its translucent --bg-panel fill + the
+   backdrop blur let the map show through (so the inside reads as clear glass),
+   matching the app's glass panels; the only color is a soft state-tinted rim. A
+   45° rotation turns the square's one sharp corner into the downward tip. */
+.map-pin-body {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 50%;
+  top: 19px;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  transform-origin: center;
+  background: rgba(var(--bg-panel), 0.26);
+  backdrop-filter: blur(7px) saturate(150%);
+  -webkit-backdrop-filter: blur(7px) saturate(150%);
+  border: 1.5px solid rgba(var(--tint), 0.5);
+  box-shadow:
+    0 0 0 1.5px rgba(var(--pin-rgb), 0.5),
+    0 0 8px rgba(0, 0, 0, 0.32),
+    inset 0 0 7px rgba(255, 255, 255, 0.4),
+    inset 0 0 2px rgba(255, 255, 255, 0.7);
   pointer-events: auto;
   cursor: pointer;
-  transform-origin: 50% 100%;
-  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4));
-  transition: filter 0.15s ease, transform 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
   animation: map-pin-drop 0.34s cubic-bezier(0.22, 1.2, 0.4, 1);
 }
 
-.map-pin:hover .map-pin-img {
-  transform: translateY(-1px) scale(1.04);
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))
-    drop-shadow(0 0 5px rgba(var(--accent-rgb), 0.7));
-}
-
-.map-pin.natal:hover .map-pin-img {
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))
-    drop-shadow(0 0 5px rgba(var(--success-rgb), 0.7));
+.map-pin:hover .map-pin-body {
+  transform: translateY(-1px) rotate(-45deg) scale(1.07);
+  box-shadow:
+    0 0 0 1.5px rgba(var(--pin-rgb), 0.78),
+    0 0 11px rgba(var(--pin-rgb), 0.5),
+    0 0 12px rgba(0, 0, 0, 0.4),
+    inset 0 0 8px rgba(255, 255, 255, 0.5),
+    inset 0 0 2px rgba(255, 255, 255, 0.8);
 }
 
 /* Location-color aura radiating from the pin's centre, dissipating outward — the
@@ -307,21 +334,23 @@
 }
 
 @keyframes map-pin-drop {
+  /* translateY is listed first so it acts in screen space (a vertical drop); the
+     rotate keeps the teardrop's tip pointing down throughout. */
   0% {
-    transform: translateY(-9px) scale(0.8);
+    transform: translateY(-9px) rotate(-45deg) scale(0.8);
     opacity: 0;
   }
   60% {
     opacity: 1;
   }
   100% {
-    transform: translateY(0) scale(1);
+    transform: translateY(0) rotate(-45deg) scale(1);
     opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-pin-img {
+  .map-pin-body {
     animation: none;
   }
   .map-pin-glow {
@@ -373,6 +402,23 @@
 
 .maplibregl-ctrl-attrib a:hover {
   color: var(--accent) !important;
+}
+
+/* The "AstroLina" credits button reads as one of the attribution links (it opens
+   the credits/license dialog rather than navigating). */
+.maplibregl-ctrl-attrib .acg-credits-btn {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--text-muted) !important;
+  cursor: pointer;
+}
+
+.maplibregl-ctrl-attrib .acg-credits-btn:hover {
+  color: var(--accent) !important;
+  text-decoration: underline;
 }
 
 /* Hide the collapse (i) button — text is always visible so the toggle is redundant */

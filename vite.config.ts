@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import {
@@ -17,7 +23,9 @@ function geocodeDevApi(): Plugin {
           const q = url.searchParams.get('q') ?? '';
           const limit = Number(url.searchParams.get('limit') ?? '6');
           const results =
-            q.trim().length < 2 ? [] : await fetchGeocode(q, limit);
+            q.trim().length < 2
+              ? []
+              : await fetchGeocode(q, limit, undefined, process.env.GEOCODER_UA);
           res.setHeader('content-type', 'application/json');
           res.end(JSON.stringify(results));
         } catch {
@@ -42,7 +50,7 @@ function reverseGeocodeDevApi(): Plugin {
           const lng = Number(url.searchParams.get('lng'));
           const label =
             Number.isFinite(lat) && Number.isFinite(lng)
-              ? await fetchReverseGeocode(lat, lng)
+              ? await fetchReverseGeocode(lat, lng, undefined, process.env.GEOCODER_UA)
               : null;
           res.setHeader('content-type', 'application/json');
           res.end(JSON.stringify({ label }));

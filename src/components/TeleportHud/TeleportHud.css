@@ -1,3 +1,11 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
 /* Teleport: a movable search window that flies the map to any place. Reuses the
    .timeline-hud frosted-panel chrome (and its per-theme overrides); here we only
    resize it, fix it to the viewport (positioned by useMovableHud's inline

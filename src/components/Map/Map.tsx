@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import {
   forwardRef,
   useCallback,
@@ -40,6 +46,7 @@ import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { PLANET_COLORS, PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
+import { CreditsModal } from '../CreditsModal/CreditsModal';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -194,8 +201,11 @@ interface LocalSpaceBadge {
   y: number;
   planet: LocalSpaceProps['planet'];
   color: string;
+  /** The toward-planet ('out') half vs the reciprocal ('in') half. Only the
+   *  'out' badge prints its bearing — the 'in' half is just "LS + glyph". */
+  out: boolean;
   /** This half's bearing in the E=0 / N=90 convention, as degrees + arcminutes
-   *  (e.g. "45°23'"). Static. */
+   *  (e.g. "45°23'"). Static. Shown on the outgoing badge only. */
   azLabel: string;
 }
 
@@ -637,8 +647,10 @@ interface MapProps {
   onMeasureCancel?: () => void;
   onHover?: (lat: number, lng: number) => void;
   onLeave?: () => void;
-  onClick?: (lat: number, lng: number) => void;
-  onPinNatal?: () => void;
+  /** Double-tap the map to drop / move the pin. */
+  onPlacePin?: (lat: number, lng: number) => void;
+  /** Right-click: remove the pin, or — with none placed — drop the natal pin. */
+  onRightClick?: () => void;
   /** Fires when the map crosses the "detail" zoom (CLOSE_ZOOM — the level where the
    *  Zoom-out button appears): true once zoomed in past it. Lets the app gate the
    *  network reverse-geocoder to zooms where the exact town actually matters. */
@@ -1081,8 +1093,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onMeasureCancel,
   onHover,
   onLeave,
-  onClick,
-  onPinNatal,
+  onPlacePin,
+  onRightClick,
   onDetailZoomChange,
 }: MapProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1123,7 +1135,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     zoomOut: () => mapRef.current?.zoomOut(),
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
-  const onClickRef = useRef(onClick);
+  const onRightClickRef = useRef(onRightClick);
   const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
@@ -1138,7 +1150,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // refresh these refs after each commit (not during render) so those async
   // handlers always read the latest props.
   useEffect(() => {
-    onClickRef.current = onClick;
+    onRightClickRef.current = onRightClick;
     dataRef.current = { lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay };
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
@@ -1333,6 +1345,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           y: placed.y,
           planet: lp.planet,
           color: lp.color,
+          out,
           azLabel,
         });
       }
@@ -1362,6 +1375,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [ctrlTip, setCtrlTip] = useState<
     { pos: TipPos; title: string; hotkey?: string } | null
   >(null);
+  // The "AstroLina" entry in the map attribution bar opens this credits / license
+  // dialog (the secondary disclosures that needn't sit on the map at all times).
+  const [creditsOpen, setCreditsOpen] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1421,17 +1437,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.addControl(
       new maplibregl.AttributionControl({
         compact: false,
-        // The basemap style already credits OpenStreetMap (which also covers
-        // the OSM-derived Nominatim geocoding). This adds the one credit the
-        // basemap doesn't: GeoNames, for the bundled offline place-name / city
-        // data. The visible link to geonames.org — which itself states the
-        // CC BY 4.0 licence — satisfies the attribution, so no tooltip is needed.
+        // The basemap style already credits OpenStreetMap (the one credit that
+        // legally has to stay on the map, and which also covers the OSM-derived
+        // Nominatim geocoding). Everything else — GeoNames, Swiss Ephemeris, the
+        // fonts, the basemap style licence — needn't be on screen at all times,
+        // so it moves behind this "AstroLina" button, which opens the credits
+        // dialog (CreditsModal). The button is also where AstroLina's own
+        // copyright lives. Wired below via a delegated click on the map container
+        // so it survives the attribution being re-rendered on a theme/style swap.
         customAttribution: [
-          'Places &copy; <a href="https://www.geonames.org" target="_blank" rel="noopener noreferrer">GeoNames</a>',
+          '<button type="button" class="acg-credits-btn" aria-haspopup="dialog">AstroLina</button>',
         ],
       }),
       'bottom-right',
     );
+    const onCreditsClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.acg-credits-btn')) {
+        e.preventDefault();
+        setCreditsOpen(true);
+      }
+    };
+    ctrlRoot.addEventListener('click', onCreditsClick);
 
     // Start locked flat north-up. applyProjection() (in the load handler) sets the
     // real projection + interaction state once the style is loaded — setProjection
@@ -1439,6 +1466,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.dragRotate.disable();
     map.touchPitch.disable();
     map.touchZoomRotate.disableRotation();
+    // Double-tap drops a pin (handleDoubleClick), so suppress the default zoom-in.
+    // (applyProjection toggles rotate/pitch per mode but never touches this.)
+    map.doubleClickZoom.disable();
 
     map.on('styleimagemissing', (e) => {
       if (map.hasImage(e.id)) return;
@@ -1482,6 +1512,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     return () => {
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
       window.removeEventListener('astro:hud-moved', scheduleBadges);
+      ctrlRoot.removeEventListener('click', onCreditsClick);
       ctrlTipCleanups.forEach((fn) => fn());
       setCtrlTip(null);
       markerRef.current?.remove();
@@ -1649,8 +1680,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           map.getCanvas().style.cursor = 'pointer';
           showCross(cross);
         } else {
-          // A bare line under the cursor names itself; clicking it still relocates,
-          // so the cursor stays the map's default (no pointer).
+          // A bare line under the cursor just names itself (hover tip); it isn't a
+          // click target, so the cursor stays the map's default (no pointer).
           const line = lineAtPoint(map, e.point);
           if (line) {
             clearZenith();
@@ -1674,36 +1705,40 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
-      // A click on (or near) a zenith stamp flies to it rather than relocating.
+      // A click on (or near) a zenith stamp flies to it. Pin placement is a
+      // double-tap now, so a plain click no longer relocates the chart.
       const zen = zenithAtPoint(map, e.point);
-      if (zen) {
-        flyToPoint(zen.lng, zen.lat);
-        return;
-      }
-      // Paran LINES are intentionally NOT click-to-fly — they're easy to hit by
-      // accident. Use the paran's label badge (below), which flies to the
-      // intersection; a click on the line just relocates the chart like anywhere.
-      onClick?.(e.lngLat.lat, e.lngLat.lng);
+      if (zen) flyToPoint(zen.lng, zen.lat);
+    };
+    const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
+      if (measureActive) return;
+      // Double-tap drops / moves the pin — but not on a zenith stamp, whose single
+      // clicks already fly there, so the stamp stays a fly-to target.
+      if (zenithAtPoint(map, e.point)) return;
+      onPlacePin?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleContext = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
       if (measureActive) return;
-      onPinNatal?.();
+      // Remove the pin, or — with none placed — drop the natal pin.
+      onRightClick?.();
     };
     map.on('mousemove', handleMove);
     map.on('mouseout', handleLeave);
     map.on('click', handleClick);
+    map.on('dblclick', handleDoubleClick);
     map.on('contextmenu', handleContext);
     return () => {
       map.off('mousemove', handleMove);
       map.off('mouseout', handleLeave);
       map.off('click', handleClick);
+      map.off('dblclick', handleDoubleClick);
       map.off('contextmenu', handleContext);
       clearZenith();
       clearCross();
       clearLine();
     };
-  }, [onHover, onLeave, onClick, onPinNatal, measureActive, flyToPoint]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, measureActive, flyToPoint]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -1842,19 +1877,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!markerRef.current) {
       const el = document.createElement('div');
       el.className = 'map-pin';
-      // Platinum glossy pin (public/pin.svg). The aura is the location color glowing
-      // out from the pin's centre (the inverted edge-glow); the ring pulses from the
-      // tip; only the pin glyph is clickable (transparent gaps stay click-through).
+      // Frosted-glass teardrop pin (drawn in CSS, .map-pin-body) so it matches the
+      // app's glass panels and tints with the location-state color instead of the
+      // old fixed gold/grey artwork. The aura is that color glowing out from the
+      // pin's centre (the inverted edge-glow); the ring pulses from the tip; only the
+      // glass head is clickable (transparent gaps stay click-through).
       el.innerHTML =
         '<span class="map-pin-aura"></span>' +
         '<span class="map-pin-glow"></span>' +
-        '<img class="map-pin-img" src="/pin.svg" alt="" draggable="false" />';
-      el.addEventListener('click', (e) => {
+        '<span class="map-pin-body"></span>';
+      // Right-click the pin to remove it (matches the map's right-click-to-remove).
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        const m = markerRef.current;
-        if (!m) return;
-        const ll = m.getLngLat();
-        onClickRef.current?.(ll.lat, ll.lng);
+        onRightClickRef.current?.();
       });
       markerRef.current = new maplibregl.Marker({
         element: el,
@@ -1872,8 +1908,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     el.classList.toggle('natal', pinType === 'natal');
     el.title =
       pinType === 'natal'
-        ? 'Natal birth location (click to unpin)'
-        : 'Pinned location (click to unpin)';
+        ? 'Natal birth location (right-click to remove)'
+        : 'Pinned location (right-click to remove)';
   }, [pin, pinType]);
 
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
@@ -1910,6 +1946,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   return (
     <>
       <div ref={containerRef} className="map-container" />
+      {creditsOpen && <CreditsModal onClose={() => setCreditsOpen(false)} />}
       <HoverTip
         pos={ctrlTip?.pos ?? null}
         placement="left"
@@ -1979,8 +2016,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           const text = badgeTextColor(b.color);
           return (
             // Clicking an LS label flies to the local-space origin — where the lines
-            // converge (the pin). Shows LS + glyph + azimuth; only the outgoing
-            // (toward-planet) half carries an outline direction arrow.
+            // converge (the pin). Both halves show LS + glyph; only the outgoing
+            // (toward-planet) half also prints its bearing (degrees + arcminutes).
             <TipButton
               type="button"
               key={b.key}
@@ -1996,7 +2033,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="ls-deg">{b.azLabel}</span>
+              {b.out && <span className="ls-deg">{b.azLabel}</span>}
             </TipButton>
           );
         })}

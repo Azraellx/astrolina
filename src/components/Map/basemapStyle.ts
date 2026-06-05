@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Post-load adjustments to the remote vector basemap: global road / river layer
 // visibility toggles. We mutate the already-loaded style's layers rather than
 // shipping custom style JSON, so it tracks whatever OpenFreeMap serves.

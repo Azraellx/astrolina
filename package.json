@@ -1,9 +1,19 @@
 {
-  "name": "astrocartography",
+  "name": "astrolina",
   "private": true,
   "version": "1.0.0",
+  "description": "A modern, web-based astrocartography tool for curious minds.",
+  "homepage": "https://astrolina.org",
+  "author": "AstroLina",
+  "repository": {
+    "type": "git",
+    "url": "git+https://git.astrolina.org"
+  },
   "license": "AGPL-3.0-only",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -20,8 +30,6 @@
     "kdbush": "^4.1.0",
     "luxon": "^3.7.2",
     "maplibre-gl": "^5.24.0",
-    "pmtiles": "^4.4.1",
-    "protomaps-themes-base": "^4.5.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "topojson-client": "^3.1.0",

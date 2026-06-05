@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import KDBush from 'kdbush';
 import { around, distance } from 'geokdbush';
 import type { GeocodeResult } from './geocode';
@@ -22,6 +28,10 @@ const admin1: Record<string, string> = admin1Json;
 const countries: Record<string, string> = countriesJson;
 
 const N = rows.length;
+
+// A canonical sample row used when checking label formatting in dev; kept out of
+// `rows` above, so it never appears in search or reverse-geocode results.
+export const SAMPLE_ROW: Row = ['Ellinbridge', 'Ellinbridge', 52.41663, -1.83092, 'GB', 'GB.CALDWICK', 18240];
 
 // Accent-folded, lowercased name per row — drives accent-insensitive forward
 // search ("sao" and "são" both match "São Paulo"). The GeoNames asciiname is

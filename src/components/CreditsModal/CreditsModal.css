@@ -1,0 +1,178 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Credits & licenses dialog. Reuses the shared .modal-backdrop (BirthDataForm.css)
+   and mirrors the .import-modal panel chrome. */
+.credits-modal {
+  width: 100%;
+  max-width: 580px;
+  max-height: calc(100vh - 40px);
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.credits-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.credits-modal header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.credits-modal .close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.credits-modal .close:hover {
+  color: var(--text-strong);
+}
+
+.credits-intro {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* TEMP: accuracy disclaimer banner. Remove with the matching block in CreditsModal.tsx. */
+.credits-disclaimer {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  background: rgba(245, 184, 61, 0.1);
+  border: 1px solid rgba(245, 184, 61, 0.32);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.credits-disclaimer strong {
+  color: var(--text-strong);
+}
+
+.credits-groups {
+  columns: 2;
+  column-gap: 22px;
+}
+
+.credits-groups .credits-group {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 400px) {
+  .credits-groups {
+    columns: 1;
+  }
+}
+
+.credits-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.credits-group h3 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.credits-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.credits-group li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.credits-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.credits-line a,
+.credits-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.credits-line a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.credits-license {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  border: 1px solid rgba(var(--tint), 0.18);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.credits-note {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.credits-modal footer {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-top: 1px solid rgba(var(--tint), 0.1);
+  padding-top: 11px;
+}
+
+.credits-modal footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.credits-modal footer a:hover {
+  text-decoration: underline;
+}

@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import {
@@ -886,12 +892,10 @@ export default function App() {
   const onLeave = useCallback(() => {
     if (!pinned) setHover(null);
   }, [pinned]);
-  const onClick = useCallback((lat: number, lng: number) => {
-    setPinned((prev) =>
-      prev && Math.abs(prev.lat - lat) < 0.01 && Math.abs(prev.lng - lng) < 0.01
-        ? null
-        : { lat, lng },
-    );
+  // Double-tap the map to drop or move the pin. Removal is right-click now, so this
+  // always places (no same-spot toggle).
+  const onPlacePin = useCallback((lat: number, lng: number) => {
+    setPinned({ lat, lng });
     setHover({ lat, lng });
   }, []);
   const onRecenterPin = useCallback(() => {
@@ -905,6 +909,12 @@ export default function App() {
     });
     setHover(null);
   }, [current]);
+  // Right-click removes the pin if one is placed; with no pin it drops the green
+  // natal pin instead.
+  const onRightClick = useCallback(() => {
+    if (pinned) setPinned(null);
+    else onPinNatal();
+  }, [pinned, onPinNatal]);
   // Stable so the measure effect (which depends on it) isn't torn down on every
   // re-render during a drag.
   const stopMeasure = useCallback(() => setMapTool('off'), []);
@@ -993,8 +1003,8 @@ export default function App() {
         onMeasureCancel={stopMeasure}
         onHover={onHover}
         onLeave={onLeave}
-        onClick={onClick}
-        onPinNatal={onPinNatal}
+        onPlacePin={onPlacePin}
+        onRightClick={onRightClick}
         onDetailZoomChange={setDetailZoom}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />

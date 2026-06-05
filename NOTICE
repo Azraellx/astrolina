@@ -1,0 +1,68 @@
+AstroLina
+Copyright © 2026 AstroLina <https://astrolina.org>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See the LICENSE file for the full license text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+-------------------------------------------------------------------------------
+ADDITIONAL TERM UNDER SECTION 7(b) OF THE GNU AGPL v3 (ATTRIBUTION)
+-------------------------------------------------------------------------------
+
+As permitted by section 7(b) of the GNU Affero General Public License v3, the
+following attribution requirement applies to this program and to all copies,
+modified versions, and works that convey or make this program available over a
+network:
+
+  You must preserve, and may not remove or obscure, the "© AstroLina"
+  attribution that links to https://astrolina.org and is displayed in the
+  application's user interface (the map's attribution control). This is an
+  Appropriate Legal Notice within the meaning of the License.
+
+This is an additional term under section 7; it does not otherwise restrict the
+rights granted by the GNU AGPL v3, and the program as a whole remains licensed
+under the GNU AGPL v3.
+
+-------------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS AND DATA
+-------------------------------------------------------------------------------
+
+This product includes the open data and open-source software listed below; their
+respective licenses govern those components. The corresponding license texts are
+available in the project repository (and, where they ship with the app, under
+public/).
+
+Astronomy
+  - Swiss Ephemeris — planetary positions (JPL DE441 data).
+    © Astrodienst AG, via @swisseph/browser. Licensed AGPL-3.0.
+    https://www.astro.com/swisseph/
+
+Maps & places
+  - OpenStreetMap — base map data (also credited on the map itself).
+    © OpenStreetMap contributors, ODbL.
+    https://www.openstreetmap.org/copyright
+  - OpenFreeMap — free vector tiles, label fonts, and sprites.
+    https://openfreemap.org
+  - OpenMapTiles — vector tile schema.
+    https://openmaptiles.org
+  - MapTiler Basic style (the "Earth" theme) — BSD-3-Clause.
+    © MapTiler.com & OpenMapTiles contributors; © Mapbox.
+    https://github.com/openmaptiles/maptiler-basic-gl-style
+  - GeoNames — offline place-name search and city lookup. CC BY 4.0.
+    https://www.geonames.org
+  - Natural Earth (via the world-atlas package) — country boundaries.
+    Public domain. https://www.naturalearthdata.com
+
+Type & software
+  - Noto Sans Symbols & Noto Sans Symbols 2 — astrological glyphs.
+    SIL Open Font License 1.1. © 2022 The Noto Project Authors.
+    https://github.com/notofonts/symbols
+  - MapLibre GL JS — interactive map rendering. BSD-3-Clause.
+    https://maplibre.org
+  - React, Turf.js, Luxon, tz-lookup, and other dependencies — see package.json;
+    most are MIT-licensed.

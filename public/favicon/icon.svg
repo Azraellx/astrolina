@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- AstroLina favicon: the loading screen's glowing gold ring (.ls-orb), on a
+       transparent background. Gold #f5b83d. -->
+  <defs>
+    <radialGradient id="innerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="48%" stop-color="#f5b83d" stop-opacity="0" />
+      <stop offset="100%" stop-color="#f5b83d" stop-opacity="0.22" />
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" />
+    </filter>
+  </defs>
+
+  <!-- Soft outer gold glow around the ring. -->
+  <circle cx="32" cy="32" r="18.5" fill="none" stroke="#f5b83d"
+          stroke-width="6" opacity="0.45" filter="url(#soft)" />
+
+  <!-- Inner gold glow fading toward the transparent centre. -->
+  <circle cx="32" cy="32" r="15.5" fill="url(#innerGlow)" />
+
+  <!-- The crisp ring itself. -->
+  <circle cx="32" cy="32" r="18.5" fill="none" stroke="#f5b83d" stroke-width="4" />
+</svg>

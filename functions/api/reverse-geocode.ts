@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Cloudflare Pages Function — GET /api/reverse-geocode?lat=…&lng=…
 //
 // Reverse-geocodes a map point (pin/hover) to a "City, Region, Country" label,
@@ -19,6 +25,7 @@ declare const caches: {
 
 interface EventContext {
   request: Request;
+  env?: { GEOCODER_UA?: string };
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -44,7 +51,7 @@ export const onRequestGet = async (
   if (cached) return cached;
 
   try {
-    const label = await fetchReverseGeocode(Number(rlat), Number(rlng));
+    const label = await fetchReverseGeocode(Number(rlat), Number(rlng), undefined, context.env?.GEOCODER_UA);
     const resp = Response.json(
       { label },
       { headers: { 'cache-control': `public, max-age=${WEEK}` } },

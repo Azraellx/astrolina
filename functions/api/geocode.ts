@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Cloudflare Pages Function — GET /api/geocode?q=…&limit=…
 //
 // Proxies Nominatim from the edge with a policy-compliant User-Agent and
@@ -18,6 +24,7 @@ declare const caches: {
 
 interface EventContext {
   request: Request;
+  env?: { GEOCODER_UA?: string };
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -39,7 +46,7 @@ export const onRequestGet = async (
   if (cached) return cached;
 
   try {
-    const results = await fetchGeocode(q, limit);
+    const results = await fetchGeocode(q, limit, undefined, context.env?.GEOCODER_UA);
     const resp = Response.json(results, {
       headers: { 'cache-control': `public, max-age=${WEEK}` },
     });

@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -329,18 +335,47 @@ function HintMenu<V extends string>({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(
-    null,
-  );
+  // The portaled panel is positioned by its top and always clamped fully within
+  // the viewport (margins), capped to the room it has so it scrolls rather than
+  // spilling off — or, on a screen too short for either side, fills the viewport.
+  const [box, setBox] = useState<{
+    left: number;
+    width: number;
+    top: number;
+    maxHeight: number;
+  } | null>(null);
   const current = options.find((o) => o.value === value);
 
   useEffect(() => {
     if (!open) return;
     const place = () => {
       const r = triggerRef.current?.getBoundingClientRect();
-      if (r) setBox({ left: r.left, top: r.bottom + 6, width: r.width });
+      if (!r) return;
+      const margin = 8; // keep this clear of the viewport edges
+      const gap = 6; // gap between the trigger and the panel
+      const vh = window.innerHeight;
+      // Estimate before the panel mounts; once it has, use its true height (the
+      // rAF below re-runs this so the final position is exact).
+      const panelH = panelRef.current?.scrollHeight ?? 240;
+      // Never taller than the viewport (minus margins); it scrolls past that.
+      const height = Math.min(panelH, vh - margin * 2);
+      const spaceBelow = vh - r.bottom - gap - margin;
+      const spaceAbove = r.top - gap - margin;
+      let top: number;
+      if (height <= spaceBelow) {
+        top = r.bottom + gap; // fits below the trigger
+      } else if (height <= spaceAbove) {
+        top = r.top - gap - height; // flip: fits above the trigger
+      } else {
+        // Too tall for either side (a short screen): fill the viewport, hugging
+        // whichever side has more room, so the whole list stays reachable.
+        top = spaceAbove > spaceBelow ? margin : vh - margin - height;
+      }
+      setBox({ left: r.left, width: r.width, top, maxHeight: height });
     };
     place();
+    // Re-place once the panel has mounted so the flip uses its real height.
+    const raf = requestAnimationFrame(place);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
@@ -355,6 +390,7 @@ function HintMenu<V extends string>({
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('scroll', place, true);
       window.removeEventListener('resize', place);
       document.removeEventListener('mousedown', onDown);
@@ -389,6 +425,8 @@ function HintMenu<V extends string>({
               left: box.left,
               top: box.top,
               minWidth: box.width,
+              maxHeight: box.maxHeight,
+              overflowY: 'auto',
               zIndex: 900,
             }}
           >

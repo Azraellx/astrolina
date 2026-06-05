@@ -1,3 +1,11 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
 /* Shared hover/focus tip card. Reuses the .ui-tip-box / .ui-tip chrome from
    index.css; this file only adds positioning (fixed + portaled to <body> so the
    sidebar / HUD overflow can't clip it), the placement transforms, the fade-in,

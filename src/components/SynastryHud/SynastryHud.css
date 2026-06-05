@@ -1,3 +1,11 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
 /* Bottom-center bar for an active synastry overlay. Larger + more prominent than
    the other HUD readouts, and the place where the comparison partner is chosen:
    the whole name + birth-line (with an inline add-person icon) is one clickable

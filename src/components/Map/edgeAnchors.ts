@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Screen-space anchors for the ACG line labels: instead of repeating the glyph +
 // angle code down each line, we drop a colored badge where the line exits the
 // viewport (both ends). MapLibre has no "label at the viewport edge" placement,

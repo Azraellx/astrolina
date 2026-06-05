@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 /* This module co-locates a few pure helpers (aspect math, longitude formatting,
    sign labels) with the WheelSvg component. react-refresh would rather they live
    in their own file, but that only affects dev hot-reload (a full reload instead
@@ -39,6 +45,24 @@ const SIGN_MEANINGS = [
   'Earth · Cardinal · ambition',
   'Air · Fixed · innovation',
   'Water · Mutable · imagination',
+];
+
+// A one-line novice gloss per house (life area), shown when hovering a sector of
+// the dedicated house ring in the interactive wheel — the houses' twin of the
+// rim signs' hover hint.
+const HOUSE_MEANINGS = [
+  'Self · identity · first impressions',
+  'Money · possessions · self-worth',
+  'Communication · siblings · learning',
+  'Home · family · roots',
+  'Creativity · romance · children',
+  'Work · health · daily routine',
+  'Partnership · marriage · the "other"',
+  'Intimacy · shared resources · rebirth',
+  'Travel · philosophy · higher learning',
+  'Career · reputation · public life',
+  'Friends · community · hopes',
+  'Solitude · the unseen · spirituality',
 ];
 
 // A short, standard keyword gloss per body — the novice hint shown when hovering
@@ -83,6 +107,9 @@ interface HoverTip {
   color?: string;
   /** Glyph shown before the title — the hovered body or sign. */
   marker?: ReactNode;
+  /** A small mark appended after the title — e.g. the ℞ / S motion tag on a
+   *  retrograde / stationary body's readout sign. */
+  suffix?: ReactNode;
   /** Colour applied to the title text itself (used for the angle hints). */
   titleColor?: string;
 }
@@ -113,6 +140,7 @@ function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
       >
         {tip.marker}
         {tip.title}
+        {tip.suffix}
       </span>
       {tip.sub && <span className="ui-tip-sub">{tip.sub}</span>}
     </div>
@@ -216,10 +244,34 @@ function svgPos(
   return { x: cx + r * Math.cos(theta), y: cy + r * Math.sin(theta) };
 }
 
-// Closed path for one 30° annular sector of the zodiac band (sign `i`), sampled
-// as a polygon so we don't have to reason about SVG arc sweep flags — the wheel
-// already draws long lines as dense polylines for the same reason. Used as the
-// (invisible) hover target for each rim sign in the interactive wheel.
+// Closed path for an annular sector spanning lon0→lon1 (the forward arc, so it
+// wraps correctly past 0°), sampled as a polygon so we don't have to reason
+// about SVG arc sweep flags — the wheel already draws long lines as dense
+// polylines for the same reason. Used as the (invisible) hover target for each
+// rim sign and each house-ring sector in the interactive wheel.
+function annularSectorPath(
+  lon0: number,
+  lon1: number,
+  rIn: number,
+  rOut: number,
+  ascRad: number,
+  cx: number,
+  cy: number,
+): string {
+  const span = ((((lon1 - lon0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI));
+  // ~3° per segment so wide (Placidus) houses stay smooth, min 8 for tight ones.
+  const STEPS = Math.max(8, Math.ceil((span * 180) / Math.PI / 3));
+  const pts: { x: number; y: number }[] = [];
+  for (let s = 0; s <= STEPS; s++) {
+    pts.push(svgPos(lon0 + (span * s) / STEPS, ascRad, rOut, cx, cy));
+  }
+  for (let s = 0; s <= STEPS; s++) {
+    pts.push(svgPos(lon0 + span - (span * s) / STEPS, ascRad, rIn, cx, cy));
+  }
+  return `M ${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`;
+}
+
+// One 30° zodiac-band sector (sign `i`) — a fixed-span case of the above.
 function signSectorPath(
   signIdx: number,
   rIn: number,
@@ -230,15 +282,7 @@ function signSectorPath(
 ): string {
   const lon0 = (signIdx * 30 * Math.PI) / 180;
   const lon1 = ((signIdx + 1) * 30 * Math.PI) / 180;
-  const STEPS = 10;
-  const pts: { x: number; y: number }[] = [];
-  for (let s = 0; s <= STEPS; s++) {
-    pts.push(svgPos(lon0 + ((lon1 - lon0) * s) / STEPS, ascRad, rOut, cx, cy));
-  }
-  for (let s = 0; s <= STEPS; s++) {
-    pts.push(svgPos(lon1 - ((lon1 - lon0) * s) / STEPS, ascRad, rIn, cx, cy));
-  }
-  return `M ${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`;
+  return annularSectorPath(lon0, lon1, rIn, rOut, ascRad, cx, cy);
 }
 
 // Spread overlapping planets along a ring so their glyphs don't collide. Two
@@ -289,6 +333,22 @@ function statusColor(p: EclipticPosition): string | null {
   if (p.retrograde) return RETRO_COLOR;
   return null;
 }
+
+// The motion state appended as a tag to a readout sign's hover title — same
+// station-before-retrograde priority as statusColor, so the tag matches the
+// red / yellow coloring of the sign it's on. null for direct motion.
+type MotionTag = 'retrograde' | 'stationary';
+function motionTag(p: EclipticPosition): MotionTag | null {
+  if (p.stationary) return 'stationary';
+  if (p.retrograde) return 'retrograde';
+  return null;
+}
+// The mark + accent for each motion tag, mirroring the sidebar's ℞ / S markers
+// (ExpandedChartSidebar) so the wheel and the data table read the same.
+const MOTION_MARK: Record<MotionTag, { char: string; color: string; word: string }> = {
+  retrograde: { char: '℞', color: RETRO_COLOR, word: 'Retrograde' },
+  stationary: { char: 'S', color: STATION_COLOR, word: 'Stationary' },
+};
 
 interface WheelSvgProps {
   size: number;
@@ -529,10 +589,21 @@ export function WheelSvg({
 
   // A sign glyph inside a body's readout that names itself on hover (interactive
   // wheel only), exactly like the rim signs — so the sign attached to each planet
-  // reads the same way as the zodiac band. Non-interactive wheels just draw the
-  // glyph with no hit target.
-  const readoutSign = (signIdx: number, x: number, y: number, size: number) =>
-    interactive ? (
+  // reads the same way as the zodiac band. When the body is retrograde / stationary
+  // (the red / yellow readout, Advanced mode) its `status` appends the matching
+  // ℞ / S tag to the hover title. Non-interactive wheels just draw the glyph.
+  const readoutSign = (
+    signIdx: number,
+    x: number,
+    y: number,
+    size: number,
+    status?: MotionTag | null,
+  ) => {
+    if (!interactive) {
+      return <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />;
+    }
+    const mark = status ? MOTION_MARK[status] : null;
+    return (
       <g
         className="sign-mark"
         onMouseEnter={() =>
@@ -543,17 +614,25 @@ export function WheelSvg({
             title: SIGN_NAMES[signIdx],
             sub: SIGN_MEANINGS[signIdx],
             marker: <ZodiacGlyph sign={signIdx} size={14} />,
+            suffix: mark ? (
+              <span
+                className="wheel-tip-status"
+                style={{ color: mark.color }}
+                aria-label={mark.word}
+              >
+                {mark.char}
+              </span>
+            ) : undefined,
           })
         }
         onMouseLeave={clearTip}
-        aria-label={SIGN_NAMES[signIdx]}
+        aria-label={`${SIGN_NAMES[signIdx]}${mark ? ` (${mark.word})` : ''}`}
       >
         <circle cx={x} cy={y} r={9} className="planet-hit" />
         <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
       </g>
-    ) : (
-      <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
     );
+  };
 
   const svg = (
     <svg
@@ -712,6 +791,39 @@ export function WheelSvg({
             >
               {deg}°{String(min).padStart(2, '0')}&#39;
             </text>
+          );
+        })}
+
+      {/* Per-house hover zones over the dedicated house ring band (interactive
+          wheel only): a hit target spanning each cusp→next-cusp sector that
+          names the house and faintly tints it, echoing the rim signs. Drawn
+          BEFORE the cusp lines + numbers so the tint sits behind them. */}
+      {detailed &&
+        interactive &&
+        houseBand > 0 &&
+        angles.cusps.map((lon, idx) => {
+          const next = angles.cusps[(idx + 1) % 12];
+          if (!Number.isFinite(lon) || !Number.isFinite(next)) return null;
+          const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          const mid = lon + span / 2;
+          const pos = svgPos(mid, angles.asc, (houseRingInner + houseRingOuter) / 2, cx, cy);
+          return (
+            <path
+              key={`house-hit-${idx}`}
+              className="house-hit"
+              d={annularSectorPath(lon, next, houseRingInner, houseRingOuter, angles.asc, cx, cy)}
+              onMouseEnter={() =>
+                setTip({
+                  x: pos.x,
+                  y: pos.y,
+                  r: houseBand / 2 + 4,
+                  title: `House ${idx + 1}`,
+                  sub: HOUSE_MEANINGS[idx],
+                })
+              }
+              onMouseLeave={clearTip}
+              aria-label={`House ${idx + 1}`}
+            />
           );
         })}
 
@@ -1210,7 +1322,7 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 2)}
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 2, sc ? motionTag(p) : null)}
               <text
                 x={minPos.x}
                 y={minPos.y + 3}
@@ -1256,7 +1368,7 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3)}
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3, sc ? motionTag(p) : null)}
               <text
                 x={minPos.x}
                 y={minPos.y + 3}

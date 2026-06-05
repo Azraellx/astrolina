@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import {
   NODE_NAMES,
@@ -18,6 +24,7 @@ export type LineType = 'MC' | 'IC' | 'ASC' | 'DSC';
 // Maps a meridian's right ascension (radians) to its geographic longitude (degrees,
 // before normLng). Celestial: raM → (raM − GMST)·deg. Geodetic: raM →
 // eclipticLonOfRA(raM)·deg. Injected so one set of generators serves both systems.
+// (e.g. a body culminating over Vannford falls near 3.0°E.)
 export type MeridianLng = (raRad: number) => number;
 
 export interface LineProps {

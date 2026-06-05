@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Projection-aware screen geometry — the single home for "where/which-way does a
 // geographic point sit on screen under the CURRENT projection". Overlays call
 // these instead of baking in flat-Mercator assumptions (north-is-up, nothing

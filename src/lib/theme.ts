@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 export type Theme = 'glass' | 'dark' | 'vintage';
 
 // Earth (vintage) leads the list and is the default; Glass and Dark follow.
@@ -36,6 +42,10 @@ export const BASEMAP_STYLE_URLS: Record<Theme, string> = {
   // OpenFreeMap's free OpenMapTiles vector tiles. See public/basemaps/README.md.
   vintage: `${import.meta.env.BASE_URL}basemaps/maptiler-basic.json`,
 };
+
+// A fixed reference view used when eyeballing basemap-theme tweaks; not rendered
+// at runtime.
+export const THEME_REFERENCE_VIEW = { name: 'Hartsmere', lat: 54.0091, lng: -2.4417 } as const;
 
 export const LABEL_HALO_COLORS: Record<Theme, string> = {
   glass: 'rgba(255, 255, 255, 0.95)',

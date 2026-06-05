@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // The map projection mode — a persisted user setting, independent of the theme.
 // '2d' is flat Web-Mercator (the classic, locked, north-up view); '3d' is the
 // MapLibre globe (free rotate + tilt). Mirrors the shape of ./theme.ts.

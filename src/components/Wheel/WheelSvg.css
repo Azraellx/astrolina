@@ -1,3 +1,11 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
 /* Styles for the shared SVG wheel. Unscoped so they apply equally
    inside ChartWheel (mini) and ExpandedChartSidebar (detailed). */
 
@@ -38,11 +46,13 @@
 }
 
 
-/* Placidus intermediate house cusps — fainter than the four angle axes. */
+/* Placidus intermediate house cusps — fainter than the four angle axes. Drawn
+   over the house-ring hover band, so kept pointer-transparent to leave it hot. */
 .wheel-svg .house-cusp {
   stroke: rgba(var(--tint), 0.28);
   stroke-width: 1;
   stroke-dasharray: 2 3;
+  pointer-events: none;
 }
 
 /* Faint full-length house spokes spanning the inner rings out to the zodiac
@@ -136,6 +146,7 @@
 
 .wheel-svg.interactive .planet-mark,
 .wheel-svg.interactive .sign-hit,
+.wheel-svg.interactive .house-hit,
 .wheel-svg.interactive .sign-mark {
   cursor: help;
 }
@@ -192,6 +203,18 @@
   fill: rgba(var(--accent-rgb), 0.12);
 }
 
+/* House ring sectors: same tint-on-hover affordance as the rim signs. The cusp
+   lines + numbers are drawn on top but pointer-transparent, so the whole band
+   stays hot. */
+.wheel-svg.interactive .house-hit {
+  fill: rgba(var(--accent-rgb), 0);
+  pointer-events: all;
+  transition: fill 0.14s ease;
+}
+.wheel-svg.interactive .house-hit:hover {
+  fill: rgba(var(--accent-rgb), 0.12);
+}
+
 /* The four angle codes (As/Ds/Mc/Ic), bare text on the glyph ring (no disc, so
    they don't read as planets) — a touch larger to hold their own without one. A
    panel-colored halo (paint-order:stroke keeps it behind the fill) keeps the
@@ -226,6 +249,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The ℞ / S motion tag appended to a retrograde / stationary readout sign's
+   title — bold, in the matching highlight color (set inline). */
+.wheel-tip-status {
+  font-weight: 700;
+  line-height: 1;
 }
 .wheel-tip-dot {
   width: 7px;

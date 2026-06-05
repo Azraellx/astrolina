@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Astronomical engine — Swiss Ephemeris (JPL-grade), via the @swisseph/browser
 // WASM build. This module is the single source of truth for every celestial
 // quantity: planet/asteroid/node/Lilith positions, sidereal time, obliquity,

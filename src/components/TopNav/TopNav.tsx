@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 import {
   useEffect,
   useLayoutEffect,
@@ -74,10 +80,12 @@ interface TopNavProps {
 const OVERLAY_MODES: {
   mode: Exclude<OverlayMode, 'off'>;
   label: string;
+  /** Optional fuller name for the hover tip when the row label is abbreviated. */
+  tipTitle?: string;
   desc: string;
 }[] = [
   { mode: 'transits', label: 'Transits', desc: 'Where the planets are right now, over your natal chart.' },
-  { mode: 'progressed', label: 'Progressed', desc: 'Secondary progressions: a symbolic day-for-a-year unfolding.' },
+  { mode: 'progressed', label: 'Sec. Progressed', tipTitle: 'Secondary Progressions', desc: 'Secondary progressions: a symbolic day-for-a-year unfolding.' },
   { mode: 'solar-arc', label: 'Solar Arc', desc: 'Every point advanced by the Sun’s one-degree-per-year arc.' },
   { mode: 'primary-directions', label: 'Primary Directions', desc: 'An ancient timing method driven by the sky’s rotation.' },
   { mode: 'synastry', label: 'Synastry', desc: 'Another person’s chart laid over yours, for relationships.' },
@@ -89,6 +97,16 @@ const STATUS_LABEL: Record<MapState, string> = {
   pinned: 'PINNED',
   'natal-pinned': 'NATAL PIN',
 };
+
+// The map's pin gestures, listed in the centre status pill's hover tip (below that
+// pill's own click action), so the controls are discoverable from one place.
+const MAP_CONTROLS_HINT = (
+  <span className="topnav-controls-hint">
+    <span><b>Double-click</b> the map to place a pin</span>
+    <span><b>Right-click</b> to remove the pin</span>
+    <span><b>Right-click</b> with no pin drops the natal pin</span>
+  </span>
+);
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -202,12 +220,15 @@ function CycleHotkey() {
 // .ui-tip; the (longer) shortcut sits on its own row beneath the description.
 function RadioItem({
   label,
+  tipTitle,
   checked,
   onSelect,
   hint,
   hotkey,
 }: {
   label: string;
+  /** Fuller name shown as the hover-tip title when `label` is abbreviated. */
+  tipTitle?: string;
   checked: boolean;
   onSelect: () => void;
   hint?: string;
@@ -234,7 +255,7 @@ function RadioItem({
       <HoverTip
         pos={pos}
         placement="left"
-        title={label}
+        title={tipTitle ?? label}
         hint={hint}
         hotkey={hotkey}
       />
@@ -405,6 +426,7 @@ export function TopNav({
                 className="topnav-status pinned"
                 onClick={onRecenterPin}
                 tip="Center map on pin"
+                hint={MAP_CONTROLS_HINT}
                 hotkey="Space"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -424,12 +446,19 @@ export function TopNav({
                 className="topnav-status"
                 onClick={onPinNatal}
                 tip="Pin the natal location"
+                hint={MAP_CONTROLS_HINT}
                 hotkey="Space"
               >
                 {STATUS_LABEL[mapState]}
               </TipButton>
             ) : (
-              <span className="topnav-status">{STATUS_LABEL[mapState]}</span>
+              <TipSpan
+                className="topnav-status"
+                tip="Map pin controls"
+                hint={MAP_CONTROLS_HINT}
+              >
+                {STATUS_LABEL[mapState]}
+              </TipSpan>
             )}
           </div>
 
@@ -481,10 +510,11 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {OVERLAY_MODES.map(({ mode, label, desc }) => (
+                  {OVERLAY_MODES.map(({ mode, label, tipTitle, desc }) => (
                     <RadioItem
                       key={mode}
                       label={label}
+                      tipTitle={tipTitle}
                       hint={desc}
                       hotkey={<CycleHotkey />}
                       checked={overlayMode === mode}

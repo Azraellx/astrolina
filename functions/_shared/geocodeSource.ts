@@ -1,3 +1,9 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
 // Server-side Nominatim lookup, shared by the Cloudflare Pages Function
 // (functions/api/geocode.ts) and the Vite dev middleware (vite.config.ts).
 // Lives under functions/_shared so the leading underscore keeps it out of
@@ -16,9 +22,17 @@ export interface GeocodeResult {
 
 const ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 
-// Nominatim's usage policy requires an identifying User-Agent with contact
-// info. Update the contact before any heavy/production traffic.
-export const GEOCODER_UA = 'Astrolina/1.0.0 (contact@astrolina.ca)';
+// Nominatim's usage policy requires an identifying User-Agent naming the app and
+// a real contact, so OSM can reach the operator about abuse. The default below
+// uses the project URL rather than a personal email, so nothing private sits in
+// the public source; every real deployment (including the canonical one) should
+// set its OWN contact via the GEOCODER_UA environment variable (on the Cloudflare
+// Pages project, and locally for dev) so rate-limiting or abuse reports reach the
+// actual operator. Heavy users should self-host Nominatim or use a paid geocoder.
+export const DEFAULT_GEOCODER_UA = 'AstroLina/1.0.0 (+https://astrolina.org)';
+
+const resolveUa = (override?: string): string =>
+  override?.trim() || DEFAULT_GEOCODER_UA;
 
 interface NominatimItem {
   display_name: string;
@@ -45,6 +59,7 @@ export async function fetchGeocode(
   query: string,
   limit = 6,
   signal?: AbortSignal,
+  userAgent?: string,
 ): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -57,7 +72,7 @@ export async function fetchGeocode(
   });
   const res = await fetch(`${ENDPOINT}?${params.toString()}`, {
     signal,
-    headers: { 'User-Agent': GEOCODER_UA, 'Accept-Language': 'en' },
+    headers: { 'User-Agent': resolveUa(userAgent), 'Accept-Language': 'en' },
   });
   if (!res.ok) throw new Error(`Geocoder error: ${res.status}`);
   const json = (await res.json()) as NominatimItem[];
@@ -77,6 +92,7 @@ export async function fetchReverseGeocode(
   lat: number,
   lng: number,
   signal?: AbortSignal,
+  userAgent?: string,
 ): Promise<string | null> {
   const params = new URLSearchParams({
     format: 'jsonv2',
@@ -87,7 +103,7 @@ export async function fetchReverseGeocode(
   });
   const res = await fetch(`${REVERSE_ENDPOINT}?${params.toString()}`, {
     signal,
-    headers: { 'User-Agent': GEOCODER_UA, 'Accept-Language': 'en' },
+    headers: { 'User-Agent': resolveUa(userAgent), 'Accept-Language': 'en' },
   });
   if (!res.ok) throw new Error(`Reverse geocoder error: ${res.status}`);
   const item = (await res.json()) as NominatimItem & { error?: unknown };
