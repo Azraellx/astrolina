@@ -24,6 +24,7 @@ import {
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { useT } from '../../i18n';
 import './TimelineHud.css';
 
@@ -120,19 +121,6 @@ function fmtTick(
   if (unit === 'month')
     return `${monthAbbr(d.getUTCMonth() + 1)} ’${String(d.getUTCFullYear()).slice(2)}`;
   return `${d.getUTCDate()} ${monthAbbr(d.getUTCMonth() + 1)}`;
-}
-
-// datetime-local <-> epoch ms, interpreting the control's value as UTC (to match
-// buildOverlay, which treats the target moment as UTC). The transit/progressed
-// moment is entered and shown in UTC so it lines up 1:1 with the desktop tools when
-// they're set to UT/GMT — no zone conversion to get wrong.
-function toDatetimeLocalUTC(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
-}
-function fromDatetimeLocalUTC(s: string): number {
-  const ms = Date.parse(`${s}:00Z`);
-  return Number.isNaN(ms) ? Date.now() : ms;
 }
 
 // A compass-style ruler scrubber: a fixed center needle with a grid of notches
@@ -257,8 +245,9 @@ export function TimelineHud({
   overlayMeasure,
   showTimeline,
 }: TimelineHudProps) {
-  const { t } = useT();
+  const { t, fmt } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
+  const [pickerOpen, setPickerOpen] = useState(false);
   // Read "now" once at mount: calling Date.now() during render makes render
   // impure, and a ±50-year slider doesn't care about sub-second drift.
   const [nowMs] = useState(() => Date.now());
@@ -274,20 +263,32 @@ export function TimelineHud({
 
   // Show the bar in the ACTIVE chart's time zone (targetDate itself stays the UTC
   // instant — this is display-only). DST-aware via the chart's IANA zone at the
-  // shown moment; a manual offset is used fixed, exactly as the user set it. No
+  // shown moment; only a zone-less legacy chart falls back to its fixed offset. No
   // chart → UTC. offsetMs shifts the ruler/field into local wall-clock and back.
   const tzInstant = clamp(targetDate);
   const tzHours = !current
     ? 0
-    : current.tzManual || !current.tzIana
-      ? current.tzOffset
-      : offsetHoursAt(current.tzIana, tzInstant);
+    : current.tzIana
+      ? offsetHoursAt(current.tzIana, tzInstant)
+      : current.tzOffset;
   const offsetMs = tzHours * 3_600_000;
   const tzLabel = !current
     ? 'UTC'
-    : current.tzManual || !current.tzIana
-      ? formatUtcOffset(tzHours)
-      : zoneLabelAt(current.tzIana, tzInstant);
+    : current.tzIana
+      ? zoneLabelAt(current.tzIana, tzInstant)
+      : formatUtcOffset(current.tzOffset);
+
+  // The date button's readout, in the chart's zone (display ms = target + offset,
+  // read in UTC) — e.g. "5 Jun 1941, 09:30". The picker modal does the inverse.
+  const dispDate = new Date(targetDate + offsetMs);
+  const dateLabel = `${dispDate.getUTCDate()} ${fmt.monthAbbr(
+    dispDate.getUTCMonth() + 1,
+  )} ${dispDate.getUTCFullYear()}, ${pad2(dispDate.getUTCHours())}:${pad2(
+    dispDate.getUTCMinutes(),
+  )}`;
+  // Year clamp for the picker's spinner, from the slider's own range.
+  const yearMin = new Date(sliderMin).getUTCFullYear();
+  const yearMax = new Date(sliderMax).getUTCFullYear();
 
   // Step increment: defaults to the scale's mini-notch (count × baseMs), but the
   // user can override the count in the box next to the step buttons. Reset to the
@@ -426,27 +427,22 @@ export function TimelineHud({
         </div>
 
         <span className="thud-datewrap">
-          {/* The browser renders this field in its own format (12h/24h, date order),
-              but its VALUE is always ISO (YYYY-MM-DDTHH:MM). So we never parse the
-              display — the toDatetimeLocalUTC / fromDatetimeLocalUTC pair is the single
-              source of truth for the field <-> instant round-trip, with offsetMs the
-              only zone shift (the active chart's zone). Correctness is format-agnostic. */}
-          <input
-            type="datetime-local"
+          {/* The date is a button that opens the shared moment picker (same control as
+              My Charts), keeping date entry consistent across the app. The readout +
+              picker share the toDisplay/fromDisplay round-trip, with offsetMs the only
+              zone shift (the active chart's zone). */}
+          <TipButton
+            type="button"
             className="thud-date"
-            value={toDatetimeLocalUTC(targetDate + offsetMs)}
-            onChange={(e) => {
-              // A datetime-local input reports an empty value string until EVERY
-              // segment is filled. While the user types a date by hand the value
-              // is briefly "", so skip those blanks — otherwise the target snapped
-              // back to "now", overwriting their input and making manual typing
-              // impossible (only the calendar picker, which fills all segments at
-              // once, used to work). The field is in the chart's zone, so subtract
-              // the offset back to the stored UTC instant.
-              const v = e.target.value;
-              if (v) setTargetDate(fromDatetimeLocalUTC(v) - offsetMs);
+            onClick={() => {
+              if (playing) setPlaying(false);
+              setPickerOpen(true);
             }}
-          />
+            placement="top"
+            tip={t('timeline.datePicker.open')}
+          >
+            {dateLabel}
+          </TipButton>
           <TipButton
             type="button"
             className="thud-now"
@@ -494,6 +490,18 @@ export function TimelineHud({
           </TipSpan>
         </label>
       </div>
+
+      {pickerOpen && (
+        <TimelineDateModal
+          valueMs={targetDate}
+          offsetMs={offsetMs}
+          zoneLabel={tzLabel}
+          yearMin={yearMin}
+          yearMax={yearMax}
+          onApply={(ms) => setTargetDate(ms)}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
         </>
       )}
     </div>

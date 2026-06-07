@@ -65,6 +65,15 @@ export const timeline = {
     tipChartZone: 'Transit / progressed moment, in the chart’s time zone',
     tipUtc: 'Transit / progressed moment, in UTC',
   },
+  // The pop-up date/time picker (TimelineDateModal) — same moment editor as My Charts.
+  // The chart's zone shows next to the time; scrollKey is rendered as a hotkey pill.
+  datePicker: {
+    open: 'Edit date & time',
+    title: 'Set date & time',
+    scrollKey: 'Scroll',
+    scrollHint: 'to increase or decrease',
+    apply: 'Set',
+  },
 
   // Spelled-out overlay captions (from lib/astro/timeline.ts via the passed t()). The
   // date/number values are formatted by the caller and interpolated here.

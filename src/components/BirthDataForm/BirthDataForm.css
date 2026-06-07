@@ -71,10 +71,20 @@
   text-transform: uppercase;
 }
 
+/* Lat/Lng hold short numeric values, so the two boxes sit together on the left with
+   a small gap (not split across the row), each sized down to suit the content. */
 .birth-form .row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.birth-form .row label {
+  flex: 0 0 auto;
+}
+
+.birth-form .row input {
+  width: 119px;
 }
 
 .birth-form input {
@@ -120,65 +130,8 @@
   text-transform: none;
 }
 
-.spin-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.spin-group .sep {
-  color: var(--text-faint);
-  font-size: 13px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.spin-input {
-  background: rgba(var(--tint), 0.04);
-  border: 1px solid rgba(var(--tint), 0.12);
-  border-radius: 5px;
-  padding: 7px 6px;
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 13px;
-  text-transform: none;
-  letter-spacing: 0;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.spin-input::-webkit-outer-spin-button,
-.spin-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.spin-input:focus {
-  outline: 1px solid rgba(var(--accent-rgb), 0.6);
-  border-color: rgba(var(--accent-rgb), 0.6);
-}
-
-/* The birth moment, in one area: date · time · zone, wrapping as a group. */
-.birth-form .moment-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-  align-items: flex-start;
-}
-
-/* Time and its zone, glued side by side (Zone to the right of Time). As one
-   flex item in .moment-row, the pair wraps together under Date if space is tight. */
-.moment-tz-pair {
-  display: flex;
-  gap: 18px;
-  align-items: flex-start;
-}
-
-.moment-zone {
-  min-width: 132px;
-}
+/* The date/time moment editor (spin inputs + Date/Time layout) is the shared
+   DateTimeFields component; its styles live in DateTimeFields.css. */
 
 .location-field {
   position: relative;
@@ -262,70 +215,81 @@
   color: var(--danger);
 }
 
-/* Timezone offset control (compact stepper, sits beside Time) with its note to the
-   right of the stepper. */
+/* Time-zone picker: an IANA-zone dropdown with an "Auto" button that snaps back to
+   the zone detected from the birthplace. Both are disabled until a place is set. */
 .tz-control-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.tz-control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.tz-step {
-  width: 24px;
-  height: 28px;
-  flex-shrink: 0;
-  background: rgba(var(--tint), 0.06);
-  border: 1px solid rgba(var(--tint), 0.14);
+.tz-select {
+  flex: 1;
+  min-width: 0;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 5px;
+  padding: 7px 9px;
   color: var(--text-strong);
-  font-size: 15px;
-  line-height: 1;
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
   cursor: pointer;
 }
 
-.tz-step:hover {
+.tz-select:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
   border-color: rgba(var(--accent-rgb), 0.6);
-  color: var(--accent);
 }
 
-.tz-offset {
-  min-width: 74px;
-  text-align: center;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+.tz-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The native popup is OS-rendered; set readable colors where the engine honors them. */
+.tz-select option,
+.tz-select optgroup {
+  background: rgb(var(--bg-menu));
   color: var(--text-strong);
-  text-transform: none;
-  letter-spacing: 0;
+}
+
+.tz-auto {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.06);
+  border: 1px solid rgba(var(--tint), 0.14);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.tz-auto:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.tz-auto:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .tz-note {
   margin: 0;
-  max-width: 150px;
   line-height: 1.25;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-faint);
   text-transform: none;
   letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-.tz-reset-link {
-  background: none;
-  border: none;
-  padding: 0;
+.tz-warn {
   color: var(--accent);
-  font: inherit;
-  font-size: 10.5px;
-  text-transform: none;
-  letter-spacing: 0;
-  cursor: pointer;
-  text-decoration: underline;
 }
 
 .birth-form footer {

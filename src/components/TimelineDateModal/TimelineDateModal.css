@@ -1,0 +1,103 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Compact date/time modal for the timeline. Reuses the shared .modal-backdrop scrim
+   and mirrors the My Charts (.birth-form) card chrome so the two feel like one app. */
+.tdm-card {
+  width: 100%;
+  /* Wide enough to keep Date + Time (with its zone label) on one row. */
+  max-width: 380px;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  padding: 16px 18px 14px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tdm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tdm-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.tdm-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.tdm-close:hover {
+  color: var(--text-strong);
+}
+
+/* Interaction hint: a yellow "Scroll" hotkey pill (.ui-tip-hotkey, the shared hotkey
+   chip) followed by its description. */
+.tdm-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tdm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tdm-btn {
+  padding: 7px 14px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.tdm-btn.secondary {
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.14);
+  color: var(--text-muted);
+}
+
+.tdm-btn.secondary:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.24);
+}
+
+.tdm-btn.primary {
+  background: rgba(var(--accent-rgb), 0.92);
+  border: 1px solid transparent;
+  color: #0a0a0f;
+  font-weight: 600;
+}
+
+.tdm-btn.primary:hover {
+  background: var(--accent);
+}

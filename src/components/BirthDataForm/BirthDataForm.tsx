@@ -10,7 +10,12 @@ import {
   reverseGeocode,
   type GeocodeResult,
 } from '../../lib/atlas/geocode';
-import { formatUtcOffset, resolveBirthTimezone } from '../../lib/atlas/timezone';
+import {
+  formatUtcOffset,
+  listTimeZones,
+  resolveBirthTimezone,
+  resolveZoneInfo,
+} from '../../lib/atlas/timezone';
 import {
   NAME_HARD_LIMIT,
   NAME_SOFT_LIMIT,
@@ -18,12 +23,32 @@ import {
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { TipButton } from '../ui/HoverTip';
+import { DateTimeFields } from '../DateTimeFields/DateTimeFields';
 import { useT } from '../../i18n';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
 const validLat = (n: number) => Number.isFinite(n) && n >= -90 && n <= 90;
 const validLng = (n: number) => Number.isFinite(n) && n >= -180 && n <= 180;
+
+// IANA zones grouped by region (the part before the first "/") for the time-zone
+// <select>'s optgroups. Built once from the canonical list; sorted for a scannable
+// dropdown. A zone without a "/" (e.g. "UTC") lands in an "Other" group.
+const ZONE_GROUPS: { region: string; zones: string[] }[] = (() => {
+  const groups = new Map<string, string[]>();
+  for (const z of listTimeZones()) {
+    const region = z.includes('/') ? z.slice(0, z.indexOf('/')) : 'Other';
+    const bucket = groups.get(region);
+    if (bucket) bucket.push(z);
+    else groups.set(region, [z]);
+  }
+  return [...groups.entries()]
+    .map(([region, zones]) => ({ region, zones: zones.sort() }))
+    .sort((a, b) => a.region.localeCompare(b.region));
+})();
+
+const zoneInList = (iana: string) =>
+  ZONE_GROUPS.some((g) => g.zones.includes(iana));
 
 interface BirthDataFieldsProps {
   /** Chart being edited, or null/undefined to create a new one. */
@@ -35,95 +60,6 @@ interface BirthDataFieldsProps {
   onSubmit: (chart: StoredChart) => void;
   /** Opens the import flow; only shown when creating (not editing). */
   onImport?: () => void;
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-interface SpinInputProps {
-  value: number;
-  min: number;
-  max: number;
-  pad?: number;
-  width?: string;
-  ariaLabel: string;
-  onChange: (v: number) => void;
-}
-
-function SpinInput({
-  value,
-  min,
-  max,
-  pad = 0,
-  width,
-  ariaLabel,
-  onChange,
-}: SpinInputProps) {
-  const ref = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState<string | null>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      const step = e.shiftKey ? 10 : 1;
-      const delta = e.deltaY < 0 ? step : -step;
-      const next = Math.max(min, Math.min(max, value + delta));
-      if (next !== value) onChange(next);
-    };
-    el.addEventListener('wheel', handler, { passive: false });
-    return () => el.removeEventListener('wheel', handler);
-  }, [value, min, max, onChange]);
-
-  const commitDraft = () => {
-    if (draft == null) return;
-    const n = Number(draft);
-    if (!Number.isNaN(n) && draft.trim() !== '') {
-      onChange(Math.max(min, Math.min(max, n)));
-    }
-    setDraft(null);
-  };
-
-  return (
-    <input
-      ref={ref}
-      type="text"
-      inputMode="numeric"
-      className="spin-input"
-      style={width ? { width } : undefined}
-      aria-label={ariaLabel}
-      value={draft ?? (pad ? String(value).padStart(pad, '0') : String(value))}
-      onChange={(e) => {
-        const raw = e.target.value.replace(/[^\d]/g, '');
-        setDraft(raw);
-        if (raw.length >= (pad || String(max).length)) {
-          const n = Number(raw);
-          if (!Number.isNaN(n) && n >= min && n <= max) {
-            onChange(n);
-            setDraft(null);
-          }
-        }
-      }}
-      onBlur={commitDraft}
-      onKeyDown={(e) => {
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          const step = e.shiftKey ? 10 : 1;
-          onChange(Math.max(min, Math.min(max, value + step)));
-        } else if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          const step = e.shiftKey ? 10 : 1;
-          onChange(Math.max(min, Math.min(max, value - step)));
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          commitDraft();
-        }
-      }}
-      onFocus={(e) => e.currentTarget.select()}
-    />
-  );
 }
 
 // The birth-details form body (name, date/time, birthplace), without modal chrome,
@@ -144,11 +80,6 @@ export function BirthDataFields({
   const [day, setDay] = useState(initial?.day ?? now.getDate());
   const [hour, setHour] = useState(initial?.hour ?? 12);
   const [minute, setMinute] = useState(initial?.minute ?? 0);
-
-  const dayMax = daysInMonth(year, month);
-  // Clamp the day when a month/year change shrinks the month (e.g. Jan 31 → Feb).
-  // Done during render so an out-of-range day never reaches a paint.
-  if (day > dayMax) setDay(dayMax);
 
   const [locationQuery, setLocationQuery] = useState(
     initial?.birthplace.label ?? '',
@@ -182,12 +113,13 @@ export function BirthDataFields({
     initial ? String(initial.birthplace.lng) : '',
   );
 
-  // Timezone: null = auto (the offset detected from coords + date, DST-aware); a
-  // number = a manual UTC offset (hours, east-positive) the user set, which is then
-  // authoritative and round-trips untouched. Accuracy here is load-bearing — it's
-  // exactly what birthDataToJD subtracts to get the UT birth instant.
-  const [offsetOverride, setOffsetOverride] = useState<number | null>(
-    initial?.tzManual ? (initial.tzOffset ?? null) : null,
+  // Timezone: the user picks an IANA zone, which defaults to the one detected from
+  // the birthplace. zoneOverride = null means "follow the detected zone"; a string is
+  // a zone the user deliberately chose instead. Either way the offset we save is the
+  // chosen zone's DST-aware offset at the birth moment — exactly what birthDataToJD
+  // subtracts to get the UT birth instant, so accuracy here is load-bearing.
+  const [zoneOverride, setZoneOverride] = useState<string | null>(
+    initial?.tzManual ? (initial.tzIana ?? null) : null,
   );
   const detected = useMemo(
     () =>
@@ -204,11 +136,18 @@ export function BirthDataFields({
         : null,
     [selectedPlace, year, month, day, hour, minute],
   );
-  const effectiveOffset = offsetOverride ?? detected?.offsetHours ?? 0;
-  const stepOffset = (delta: number) =>
-    setOffsetOverride(
-      Math.max(-12, Math.min(14, Math.round((effectiveOffset + delta) * 4) / 4)),
-    );
+  // The zone actually in effect (override if set, else detected) and its resolved
+  // offset/DST-confidence. Recomputing the override here keeps it DST-aware as the
+  // date changes; on the detected path we reuse `detected` rather than resolve twice.
+  const effective = useMemo(
+    () =>
+      zoneOverride
+        ? resolveZoneInfo(zoneOverride, year, month, day, hour, minute)
+        : detected,
+    [zoneOverride, detected, year, month, day, hour, minute],
+  );
+  const effectiveZone = effective?.iana ?? null;
+  const effectiveOffset = effective?.offsetHours ?? 0;
 
   // Latest selected place, read by the reverse-geocode effect below WITHOUT being
   // one of its triggers (declared first so it syncs before that effect runs).
@@ -305,9 +244,10 @@ export function BirthDataFields({
       setError(t('chartForm.errorNoName'));
       return;
     }
-    // tzOffset is the single value the chart math uses — either the user's manual
-    // offset (authoritative, never re-derived) or the DST-aware detection.
-    const manual = offsetOverride != null;
+    // tzOffset is the single value the chart math uses: the DST-aware offset of the
+    // effective zone (detected, or the user's pick) at the birth moment. tzManual just
+    // records whether that zone was a deliberate override, so the editor reopens on it.
+    const manual = zoneOverride != null;
     const chart: StoredChart = {
       id: initial?.id ?? newChartId(),
       createdAt: initial?.createdAt ?? Date.now(),
@@ -318,9 +258,9 @@ export function BirthDataFields({
       hour,
       minute,
       tzOffset: effectiveOffset,
-      tzIana: detected?.iana,
+      tzIana: effectiveZone ?? undefined,
       tzManual: manual,
-      tzUncertain: manual ? false : (detected?.uncertain ?? false),
+      tzUncertain: effective?.uncertain ?? false,
       birthplace: selectedPlace,
     };
     onSubmit(chart);
@@ -355,120 +295,18 @@ export function BirthDataFields({
           </div>
         </label>
 
-        {/* The birth moment, grouped together: date → time → zone. */}
-        <div className="moment-row">
-          <label className="moment-date">
-            <span>{t('chartForm.dateLabel')}</span>
-            <div className="spin-group">
-              <SpinInput
-                value={year}
-                min={1800}
-                max={2200}
-                pad={4}
-                width="62px"
-                ariaLabel={t('chartForm.year')}
-                onChange={setYear}
-              />
-              <span className="sep">/</span>
-              <SpinInput
-                value={month}
-                min={1}
-                max={12}
-                pad={2}
-                width="40px"
-                ariaLabel={t('chartForm.month')}
-                onChange={setMonth}
-              />
-              <span className="sep">/</span>
-              <SpinInput
-                value={day}
-                min={1}
-                max={dayMax}
-                pad={2}
-                width="40px"
-                ariaLabel={t('chartForm.day')}
-                onChange={setDay}
-              />
-            </div>
-          </label>
-          {/* Time + Zone stay glued on one row (Zone to the right of Time). */}
-          <div className="moment-tz-pair">
-          <label className="moment-time">
-            <span>{t('chartForm.timeLabel')}</span>
-            <div className="spin-group">
-              <SpinInput
-                value={hour}
-                min={0}
-                max={23}
-                pad={2}
-                width="40px"
-                ariaLabel={t('chartForm.hour')}
-                onChange={setHour}
-              />
-              <span className="sep">:</span>
-              <SpinInput
-                value={minute}
-                min={0}
-                max={59}
-                pad={2}
-                width="40px"
-                ariaLabel={t('chartForm.minute')}
-                onChange={setMinute}
-              />
-            </div>
-          </label>
-          <label className="moment-zone tz-field">
-            <span>{t('chartForm.timeZone')}</span>
-            <div className="tz-control-row">
-            <div className="tz-control">
-              <button
-                type="button"
-                className="tz-step"
-                onClick={() => stepOffset(-0.25)}
-                aria-label={t('chartForm.decreaseOffset')}
-              >
-                −
-              </button>
-              <span className="tz-offset">{formatUtcOffset(effectiveOffset)}</span>
-              <button
-                type="button"
-                className="tz-step"
-                onClick={() => stepOffset(0.25)}
-                aria-label={t('chartForm.increaseOffset')}
-              >
-                +
-              </button>
-            </div>
-            <p className="tz-note">
-              {offsetOverride != null ? (
-                detected ? (
-                  <>
-                    {t('chartForm.tz.manualPrefix')}{' '}
-                    <TipButton
-                      type="button"
-                      className="tz-reset-link"
-                      onClick={() => setOffsetOverride(null)}
-                      placement="top"
-                      tip={t('chartForm.tz.useDetectedTip', { iana: detected.iana })}
-                    >
-                      {t('chartForm.tz.useDetected')}
-                    </TipButton>
-                  </>
-                ) : (
-                  t('chartForm.tz.manualOffset')
-                )
-              ) : detected ? (
-                detected.uncertain
-                  ? t('chartForm.tz.autoVerifyDst', { iana: detected.iana })
-                  : t('chartForm.tz.auto', { iana: detected.iana })
-              ) : (
-                t('chartForm.tz.setPlace')
-              )}
-            </p>
-            </div>
-          </label>
-          </div>
-        </div>
+        {/* The birth moment: date and time, side by side (shared with the timeline
+            date modal so the moment editor stays identical across the app). */}
+        <DateTimeFields
+          value={{ year, month, day, hour, minute }}
+          onChange={(v) => {
+            setYear(v.year);
+            setMonth(v.month);
+            setDay(v.day);
+            setHour(v.hour);
+            setMinute(v.minute);
+          }}
+        />
 
         <label className="location-field">
           <span>{t('chartForm.birthplace')}</span>
@@ -502,6 +340,68 @@ export function BirthDataFields({
           )}
         </label>
 
+        {/* Time zone: locked until a location is set, then defaults to the zone
+            detected from the birthplace. The dropdown lets you choose another zone;
+            "Auto" snaps back to the detected default. The offset shown is what the
+            chart math uses — DST-aware for the birth moment. */}
+        <label className="tz-field">
+          <span>{t('chartForm.timeZone')}</span>
+          <div className="tz-control-row">
+            <select
+              className="tz-select"
+              aria-label={t('chartForm.tz.selectLabel')}
+              disabled={!selectedPlace}
+              value={selectedPlace ? (effectiveZone ?? '') : ''}
+              onChange={(e) => setZoneOverride(e.target.value || null)}
+            >
+              {!selectedPlace && (
+                <option value="">{t('chartForm.tz.setPlace')}</option>
+              )}
+              {selectedPlace && effectiveZone && !zoneInList(effectiveZone) && (
+                <option value={effectiveZone}>{effectiveZone}</option>
+              )}
+              {selectedPlace &&
+                ZONE_GROUPS.map((g) => (
+                  <optgroup key={g.region} label={g.region}>
+                    {g.zones.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+            </select>
+            <TipButton
+              type="button"
+              className="tz-auto"
+              disabled={!selectedPlace || zoneOverride == null}
+              onClick={() => setZoneOverride(null)}
+              placement="top"
+              tip={
+                detected
+                  ? t('chartForm.tz.autoTip', { iana: detected.iana })
+                  : t('chartForm.tz.setPlace')
+              }
+            >
+              {t('chartForm.tz.auto')}
+            </TipButton>
+          </div>
+          <p className="tz-note">
+            {selectedPlace ? (
+              <>
+                {formatUtcOffset(effectiveOffset)}
+                {effective?.uncertain && (
+                  <span className="tz-warn"> · ⚠ {t('chartForm.tz.verifyDst')}</span>
+                )}
+              </>
+            ) : (
+              t('chartForm.tz.setPlace')
+            )}
+          </p>
+        </label>
+
+        {/* Precise coordinates — auto-filled from the birthplace, editable to enter a
+            chart by raw lat/lng (which reverse-geocodes a place + re-detects the zone). */}
         <div className="row">
           <label>
             <span>{t('chartForm.latitude')}</span>

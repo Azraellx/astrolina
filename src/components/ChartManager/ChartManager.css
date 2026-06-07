@@ -11,7 +11,9 @@
    search list, and neutralises the nested form's standalone-card chrome. */
 .chart-manager {
   width: 100%;
-  max-width: 740px;
+  /* The list pane is a fixed 268px, so trimming the window width comes entirely off
+     the form pane (the right half) — about five characters narrower. */
+  max-width: 705px;
   min-height: 420px;
   max-height: 86vh;
   background: rgba(var(--bg-menu), 0.98);

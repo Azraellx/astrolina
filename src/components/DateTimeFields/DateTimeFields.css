@@ -1,0 +1,83 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Shared date/time moment editor (DateTimeFields.tsx). Self-contained styling so it
+   looks identical inside the birth-details form and the timeline's date modal. */
+
+/* Date and time side by side (time wraps under date only on a very narrow host). */
+.moment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  align-items: flex-start;
+}
+
+.moment-date,
+.moment-time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.moment-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.spin-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spin-group .sep {
+  color: var(--text-faint);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Optional zone label sitting just after the minute box (timeSuffix). */
+.moment-tz {
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.spin-input {
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  padding: 7px 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.spin-input::-webkit-outer-spin-button,
+.spin-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.spin-input:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}

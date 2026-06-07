@@ -12,11 +12,12 @@ export interface StoredChart extends BirthData {
   /** Last time this chart was made the active chart — drives the "recent" list.
    *  Absent on charts saved before this existed; callers fall back to createdAt. */
   lastUsedAt?: number;
-  /** IANA zone detected from the birthplace (informational + drives DST in the
-   *  timeline readout for auto charts). */
+  /** The chart's IANA zone — the one detected from the birthplace, or the one the
+   *  user picked instead. Drives DST in the timeline readout; tzOffset is its
+   *  DST-aware offset at the birth moment. */
   tzIana?: string;
-  /** True when the user set tzOffset by hand: it's then authoritative and never
-   *  silently re-derived from the coordinates/date. */
+  /** True when the user picked a zone other than the one detected from the
+   *  birthplace (so the editor reopens on that choice rather than re-detecting). */
   tzManual?: boolean;
   tzUncertain?: boolean;
 }

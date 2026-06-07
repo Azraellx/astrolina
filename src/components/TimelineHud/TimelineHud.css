@@ -389,12 +389,10 @@
   flex-shrink: 0;
 }
 
+/* The date is a button that opens the shared moment picker (TimelineDateModal). Styled
+   to read like the old field but clickable, with an accent hover. */
 .thud-date {
-  /* Size to the rendered content so the box fits whatever format the browser shows
-     (12h/24h, any date order) with no fixed-width clip or empty gap. (field-sizing is
-     a no-op on older engines, which fall back to the intrinsic width.) */
-  field-sizing: content;
-  padding: 5px 6px;
+  padding: 5px 9px;
   background: rgba(var(--tint), 0.05);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
@@ -402,12 +400,14 @@
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
-/* Hide the native calendar picker entirely (icon + popup) — the date is typed in
-   place, and the "Now" button covers quick resets. */
-.thud-date::-webkit-calendar-picker-indicator {
-  display: none;
+.thud-date:hover {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 .thud-utc {

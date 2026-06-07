@@ -19,6 +19,30 @@ export interface TimezoneInfo {
 
 const HISTORICAL_DST_CONFIDENT_REGIONS = /^(America|Europe|Pacific\/Honolulu|US\/)/;
 
+// The offset (east-positive hours, DST-aware) and DST-confidence of an EXPLICIT IANA
+// zone for a wall-clock birth moment. This is the heart of timezone handling: the user
+// picks a zone (defaulting to the one detected from the birthplace) and we derive the
+// exact offset birthDataToJD subtracts to get the UT instant.
+export function resolveZoneInfo(
+  iana: string,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): TimezoneInfo {
+  const dt = DateTime.fromObject(
+    { year, month, day, hour, minute },
+    { zone: iana },
+  );
+  const offsetHours = dt.offset / 60;
+  const uncertain =
+    year < 1970 && !HISTORICAL_DST_CONFIDENT_REGIONS.test(iana);
+  return { iana, offsetHours, uncertain };
+}
+
+// resolveZoneInfo for the zone detected from coordinates — the default a fresh chart
+// starts from before any manual zone pick.
 export function resolveBirthTimezone(
   lat: number,
   lng: number,
@@ -28,15 +52,27 @@ export function resolveBirthTimezone(
   hour: number,
   minute: number,
 ): TimezoneInfo {
-  const iana = getIanaTimezone(lat, lng);
-  const dt = DateTime.fromObject(
-    { year, month, day, hour, minute },
-    { zone: iana },
-  );
-  const offsetHours = dt.offset / 60;
-  const uncertain =
-    year < 1970 && !HISTORICAL_DST_CONFIDENT_REGIONS.test(iana);
-  return { iana, offsetHours, uncertain };
+  return resolveZoneInfo(getIanaTimezone(lat, lng), year, month, day, hour, minute);
+}
+
+// The canonical IANA zone list (Intl Enumeration API), for the time-zone picker —
+// computed once and cached. Empty on the rare engine without supportedValuesOf, in
+// which case the picker falls back to just the detected zone.
+let cachedZones: string[] | null = null;
+export function listTimeZones(): string[] {
+  if (cachedZones) return cachedZones;
+  const intl = Intl as unknown as {
+    supportedValuesOf?: (key: 'timeZone') => string[];
+  };
+  try {
+    cachedZones =
+      typeof intl.supportedValuesOf === 'function'
+        ? intl.supportedValuesOf('timeZone')
+        : [];
+  } catch {
+    cachedZones = [];
+  }
+  return cachedZones;
 }
 
 // The IANA zone's UTC offset (hours, east-positive) AT a specific absolute instant

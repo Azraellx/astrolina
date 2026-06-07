@@ -74,9 +74,12 @@
 }
 
 /* A title with no hint beneath it isn't bolded — there's nothing to set it apart
-   from, and the lighter weight reads more easily. */
+   from, and the lighter weight reads more easily. It also carries the whole message
+   on its own, so (unlike a short headline paired with a hotkey/hint) it must wrap
+   inside the card instead of overflowing when the text runs long. */
 .hover-tip .ui-tip-title-plain {
   font-weight: 400;
+  white-space: normal;
 }
 
 /* Keyboard-shortcut key (or short action tag), inline on the title row: a small
