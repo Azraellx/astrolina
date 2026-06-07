@@ -31,5 +31,5 @@ export const map = {
   zenithSub: 'where {planet} is directly overhead',
   // Deep-zoom escape pill (appears once zoomed past the detail threshold).
   zoomOutToWide: 'Zoom out to a wide view',
-  zoomOut: 'Zoom out',
+  zoomOut: 'Zoom Out',
 } as const;

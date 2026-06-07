@@ -25,6 +25,7 @@ import {
   type Theme,
 } from '../../lib/theme';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
+import type { MissionEvent } from '../../lib/missions';
 import {
   isOccluded,
   projectVisible,
@@ -655,16 +656,26 @@ interface MapProps {
   onMeasure?: (m: MeasureInfo | null) => void;
   /** Right-click while measuring cancels (exits) the tool. */
   onMeasureCancel?: () => void;
+  /** Emits map-originated onboarding mission events (measure point/snap, zoom-out click,
+   *  box-zoom, perspective change). Must be STABLE — read inside long-lived map effects
+   *  (e.g. the measure drag) that would otherwise re-subscribe and drop their state. */
+  onMissionEvent?: (event: MissionEvent) => void;
   onHover?: (lat: number, lng: number) => void;
   onLeave?: () => void;
   /** Double-tap the map to drop / move the pin. */
   onPlacePin?: (lat: number, lng: number) => void;
   /** Right-click: remove the pin, or — with none placed — drop the natal pin. */
   onRightClick?: () => void;
+  /** A plain click anywhere on the map — used to surface onboarding missions. */
+  onMapClick?: () => void;
   /** Fires when the map crosses the "detail" zoom (CLOSE_ZOOM — the level where the
    *  Zoom-out button appears): true once zoomed in past it. Lets the app gate the
    *  network reverse-geocoder to zooms where the exact town actually matters. */
   onDetailZoomChange?: (detail: boolean) => void;
+  /** Force the "Zoom Out" escape pill to stay visible even below the detail zoom —
+   *  used while the zoom onboarding guide is open, so its click mission stays doable
+   *  after the user zooms back out. */
+  keepZoomOutVisible?: boolean;
 }
 
 interface MapData {
@@ -1101,10 +1112,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   measureColor,
   onMeasure,
   onMeasureCancel,
+  onMissionEvent,
+  keepZoomOutVisible,
   onHover,
   onLeave,
   onPlacePin,
   onRightClick,
+  onMapClick,
   onDetailZoomChange,
 }: MapProps, ref) {
   const { t, labels } = useT();
@@ -1719,6 +1733,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
+      // Any map click can surface onboarding missions (the handler itself decides
+      // whether anything is due).
+      onMapClick?.();
       // A click on (or near) a zenith stamp flies to it. Pin placement is a
       // double-tap now, so a plain click no longer relocates the chart.
       const zen = zenithAtPoint(map, e.point);
@@ -1752,7 +1769,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearCross();
       clearLine();
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, measureActive, flyToPoint, t, labels]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToPoint, t, labels]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -1811,6 +1828,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       origin = pointFor(e);
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
+      onMissionEvent?.('measure-point');
     };
     const onMove = (e: maplibregl.MapMouseEvent) => {
       if (!origin) return;
@@ -1819,10 +1837,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // hop from your origin to the line (the distance-to-this-line you usually
       // want in ACG). Falls back to the normal cursor / snap when no line is under
       // the cursor.
-      const cur =
-        e.originalEvent.shiftKey
-          ? (constrainToHoveredLine(map, e.point, origin) ?? pointFor(e))
-          : pointFor(e);
+      let cur: { lng: number; lat: number };
+      if (e.originalEvent.shiftKey) {
+        const snapped = constrainToHoveredLine(map, e.point, origin);
+        if (snapped) {
+          cur = snapped;
+          onMissionEvent?.('measure-snap'); // Shift actually locked onto a line
+        } else {
+          cur = pointFor(e);
+        }
+      } else {
+        cur = pointFor(e);
+      }
       setSegment(origin, cur);
       onMeasure?.(measureBetween(origin, cur));
     };
@@ -1856,7 +1882,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       src?.setData(EMPTY_FC());
       onMeasure?.(null);
     };
-  }, [measureActive, onMeasure, onMeasureCancel]);
+  }, [measureActive, onMeasure, onMeasureCancel, onMissionEvent]);
+
+  // Onboarding signals for the zoom/perspective guide: a Shift+drag box-zoom, and a
+  // USER drag-rotate (Ctrl/⌘+drag or right-drag, 3D only — dragRotate is disabled in
+  // 2D). The originalEvent guard skips programmatic camera moves (flyTo etc.).
+  // onMissionEvent is stable, so this binds once and never re-subscribes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onBoxZoom = () => onMissionEvent?.('box-zoom');
+    const onRotate = (e: { originalEvent?: unknown }) => {
+      if (e.originalEvent) onMissionEvent?.('pitch-rotate');
+    };
+    map.on('boxzoomend', onBoxZoom);
+    map.on('rotatestart', onRotate);
+    map.on('pitchstart', onRotate);
+    return () => {
+      map.off('boxzoomend', onBoxZoom);
+      map.off('rotatestart', onRotate);
+      map.off('pitchstart', onRotate);
+    };
+  }, [onMissionEvent]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2066,14 +2113,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         />
       )}
       {/* Subtle escape hatch once deeply zoomed in (LS labels at full radius): a
-          low-opacity pill, brighter on hover, that eases back to a wide overview. */}
-      {zoom >= CLOSE_ZOOM && (
+          low-opacity pill, brighter on hover, that eases back to a wide overview. Kept
+          visible while the zoom guide is open so its click mission stays completable. */}
+      {(zoom >= CLOSE_ZOOM || keepZoomOutVisible) && (
         <button
           type="button"
           className="map-zoom-out"
-          onClick={() =>
-            mapRef.current?.easeTo({ zoom: ZOOM_OUT_TARGET, duration: 600 })
-          }
+          onClick={() => {
+            mapRef.current?.easeTo({ zoom: ZOOM_OUT_TARGET, duration: 600 });
+            onMissionEvent?.('zoom-out-click');
+          }}
           aria-label={t('map.zoomOutToWide')}
         >
           <svg

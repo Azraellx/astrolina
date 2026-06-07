@@ -71,20 +71,57 @@
   text-transform: uppercase;
 }
 
-/* Lat/Lng hold short numeric values, so the two boxes sit together on the left with
-   a small gap (not split across the row), each sized down to suit the content. */
+/* Lat/Lng inputs (shown via "Enter manually"): two equal columns filling the row. */
 .birth-form .row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
-.birth-form .row label {
-  flex: 0 0 auto;
+/* Read-only coordinate summary (the default): the auto-chosen lat/lng plus the
+   "Enter manually" link that swaps in the inputs above. */
+.coord-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
-.birth-form .row input {
-  width: 119px;
+.coord-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.coord-summary-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.coord-summary-value {
+  font-size: 13px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.coord-edit-link {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.6;
+  transition: opacity 0.12s;
+}
+
+.coord-edit-link:hover {
+  opacity: 1;
 }
 
 .birth-form input {

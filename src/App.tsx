@@ -23,6 +23,8 @@ import { CoordReadout } from './components/CoordReadout/CoordReadout';
 import { InfoBar } from './components/InfoBar/InfoBar';
 import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
+import { MissionGuide } from './components/MissionGuide/MissionGuide';
+import { useMissions } from './lib/useMissions';
 import { SEED_BIRTHS } from './lib/birthData';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
 import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
@@ -896,12 +898,35 @@ export default function App() {
   const onLeave = useCallback(() => {
     if (!pinned) setHover(null);
   }, [pinned]);
+  // Gamified onboarding: the map gestures below double as "missions" the user clears
+  // (recordEvent), and any map gesture surfaces the guide (trigger).
+  const {
+    openSet: missionSet,
+    openProgress: missionProgress,
+    recordEvent: recordMission,
+    trigger: triggerMission,
+    close: closeMissionGuide,
+    complete: completeMission,
+  } = useMissions();
+
+  // Surface the onboarding guide on any map gesture (left/right/double click) — gated
+  // on an active chart, since the natal-pin mission can't complete without one (so a
+  // user who has deleted every chart isn't nagged by a guide that can never finish).
+  const surfaceMissions = useCallback(() => {
+    if (current) triggerMission('map-click');
+  }, [current, triggerMission]);
+
   // Double-tap the map to drop or move the pin. Removal is right-click now, so this
   // always places (no same-spot toggle).
-  const onPlacePin = useCallback((lat: number, lng: number) => {
-    setPinned({ lat, lng });
-    setHover({ lat, lng });
-  }, []);
+  const onPlacePin = useCallback(
+    (lat: number, lng: number) => {
+      surfaceMissions();
+      setPinned({ lat, lng });
+      setHover({ lat, lng });
+      recordMission('create-pin');
+    },
+    [surfaceMissions, recordMission],
+  );
   const onRecenterPin = useCallback(() => {
     if (pinned) mapRef.current?.flyTo(pinned.lat, pinned.lng);
   }, [pinned]);
@@ -914,14 +939,59 @@ export default function App() {
     setHover(null);
   }, [current]);
   // Right-click removes the pin if one is placed; with no pin it drops the green
-  // natal pin instead.
+  // natal pin instead. Each path also ticks off its onboarding mission, and the
+  // gesture surfaces the guide too (so a right-click-first user still sees it).
   const onRightClick = useCallback(() => {
-    if (pinned) setPinned(null);
-    else onPinNatal();
-  }, [pinned, onPinNatal]);
+    surfaceMissions();
+    if (pinned) {
+      setPinned(null);
+      recordMission('remove-pin');
+    } else if (current) {
+      onPinNatal();
+      recordMission('place-natal');
+    }
+  }, [surfaceMissions, pinned, current, onPinNatal, recordMission]);
   // Stable so the measure effect (which depends on it) isn't torn down on every
-  // re-render during a drag.
-  const stopMeasure = useCallback(() => setMapTool('off'), []);
+  // re-render during a drag. Right-click cancel also clears the measure mission.
+  const stopMeasure = useCallback(() => {
+    setMapTool('off');
+    recordMission('measure-cancel');
+  }, [recordMission]);
+  // Surface the measure-tool guide on the off→measure edge, but only when lines are
+  // actually rendered (the snap mission has nothing to snap to otherwise, which would
+  // nag forever). `replace` lets it show even if the map-basics guide is still open —
+  // the user just chose the measure tool, and map-basics re-surfaces on the next map
+  // gesture. Edge-only (prevMapToolRef) so toggling lines / switching charts mid-tool
+  // doesn't re-pop a guide the user already dismissed.
+  const prevMapToolRef = useRef<MapTool>(mapTool);
+  const canSnapLines = lines.features.length > 0;
+  useEffect(() => {
+    const wasMeasure = prevMapToolRef.current === 'measure';
+    prevMapToolRef.current = mapTool;
+    if (mapTool === 'measure' && !wasMeasure && canSnapLines) {
+      triggerMission('measure-tool', true);
+    }
+  }, [mapTool, canSnapLines, triggerMission]);
+
+  // Surface the zoom/perspective guide the first time the user zooms past the detail
+  // threshold (the "Zoom out" button appears → detailZoom true). `replace` shows it even
+  // if another guide is still open (it would otherwise be lost — detailZoom won't flip
+  // again until a zoom-out/in). The set re-surfaces on later zoom-in passes until done.
+  useEffect(() => {
+    if (detailZoom) triggerMission('zoom-threshold', true);
+  }, [detailZoom, triggerMission]);
+
+  // An only3d mission (e.g. "change perspective") is not applicable in 2D — it's never
+  // recorded there, just shown as already satisfied. So persist a set once every mission
+  // is either done OR not-applicable; the recordEvent path alone can't finish such a set.
+  const is3d = projection === '3d';
+  useEffect(() => {
+    if (!missionSet) return;
+    const allDone = missionSet.missions.every(
+      (m) => missionProgress.has(m.id) || (m.only3d && !is3d),
+    );
+    if (allDone) completeMission(missionSet.id);
+  }, [missionSet, missionProgress, is3d, completeMission]);
 
   // Switch the active chart. If you switch TO the chart currently being compared in
   // synastry, drop it as the partner — you can't compare someone to themselves, and
@@ -1005,10 +1075,13 @@ export default function App() {
         measureColor={measureColor}
         onMeasure={setMeasure}
         onMeasureCancel={stopMeasure}
+        onMissionEvent={recordMission}
+        keepZoomOutVisible={missionSet?.id === 'zoom-basics'}
         onHover={onHover}
         onLeave={onLeave}
         onPlacePin={onPlacePin}
         onRightClick={onRightClick}
+        onMapClick={surfaceMissions}
         onDetailZoomChange={setDetailZoom}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
@@ -1210,6 +1283,14 @@ export default function App() {
         <ImportChartModal
           onCancel={() => setImporting(false)}
           onImport={handleImport}
+        />
+      )}
+      {missionSet && (
+        <MissionGuide
+          set={missionSet}
+          completed={missionProgress}
+          is3d={is3d}
+          onClose={closeMissionGuide}
         />
       )}
     </>

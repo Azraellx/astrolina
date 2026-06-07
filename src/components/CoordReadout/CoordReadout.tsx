@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react';
 import type { RelocatedAngles } from '../../lib/ephemeris';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { HoverTip } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import './CoordReadout.css';
 
@@ -49,6 +51,35 @@ const ANGLE_ROWS: { key: string; label: string; pick: (a: RelocatedAngles) => nu
   { key: 'asc', label: 'As', pick: (a) => a.asc },
   { key: 'dsc', label: 'Ds', pick: (a) => a.dsc },
 ];
+
+// One angle row. Hovering it reveals a .ui-tip naming the sign (glyph + name) — the
+// same shared hover-tip plumbing the rest of the app uses — keeping the row itself
+// compact (just degrees · glyph · arcmin/sec).
+function AngleRow({ label, lonRad }: { label: string; lonRad: number }) {
+  const { labels } = useT();
+  const f = fmtAngle(lonRad);
+  const { ref, pos, show, hide } = useHoverTip<HTMLLIElement>('right');
+  return (
+    <li ref={ref} onMouseEnter={show} onMouseLeave={hide}>
+      <span className="angle-label">{label}</span>
+      <span className="angle-deg">{f.deg}°</span>
+      <span className="angle-sign">
+        <ZodiacGlyph sign={f.signIdx} size={12} />
+      </span>
+      <span className="angle-ms">{f.ms}</span>
+      <HoverTip
+        pos={pos}
+        placement="right"
+        title={
+          <span className="angle-tip">
+            <ZodiacGlyph sign={f.signIdx} size={14} className="angle-tip-glyph" />
+            {labels.sign(f.signIdx)}
+          </span>
+        }
+      />
+    </li>
+  );
+}
 
 export function CoordReadout({
   point,
@@ -106,19 +137,9 @@ export function CoordReadout({
 
           {open && (
             <ul className="angle-list">
-              {ANGLE_ROWS.map((r) => {
-                const f = fmtAngle(r.pick(angles));
-                return (
-                  <li key={r.key}>
-                    <span className="angle-label">{r.label}</span>
-                    <span className="angle-deg">{f.deg}°</span>
-                    <span className="angle-sign">
-                      <ZodiacGlyph sign={f.signIdx} size={12} />
-                    </span>
-                    <span className="angle-ms">{f.ms}</span>
-                  </li>
-                );
-              })}
+              {ANGLE_ROWS.map((r) => (
+                <AngleRow key={r.key} label={r.label} lonRad={r.pick(angles)} />
+              ))}
             </ul>
           )}
         </>

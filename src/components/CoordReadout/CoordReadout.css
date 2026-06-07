@@ -119,6 +119,9 @@
   font-size: 10px;
   padding: 1px 0;
   color: var(--text);
+  /* Shrink each row to its content so its right edge (where the hover tip anchors)
+     sits next to the figures, not at the far edge of the readout panel. */
+  width: fit-content;
 }
 
 .angle-list .angle-label {
@@ -143,4 +146,17 @@
 
 .angle-list .angle-ms {
   color: var(--text);
+}
+
+/* Hover-tip content for an angle row: the sign glyph + its name (portaled into the
+   shared .ui-tip card, so this lives at the document root, not inside .angle-list). */
+.angle-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.angle-tip-glyph {
+  color: var(--accent);
 }

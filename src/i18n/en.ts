@@ -31,6 +31,7 @@ import { creditsModal } from './en/creditsModal';
 import { expandedSidebar } from './en/expandedSidebar';
 import { importChartModal } from './en/importChartModal';
 import { map } from './en/map';
+import { missions } from './en/missions';
 import { synastryHud } from './en/synastryHud';
 import { teleportHud } from './en/teleportHud';
 import { wheel } from './en/wheel';
@@ -52,6 +53,7 @@ export const en = {
   expandedSidebar,
   importChartModal,
   map,
+  missions,
   synastryHud,
   teleportHud,
   wheel,

@@ -67,6 +67,10 @@ export interface MovableHudOptions {
   floating?: boolean;
   /** Starting top-left for a floating window when nothing is saved. */
   initial?: () => { x: number; y: number };
+  /** Persist the position to localStorage (default true). When false, the position is
+   *  in-memory only: every mount starts at `initial()` and dragging never survives a
+   *  reopen — so the window appears in a consistent spot each time. */
+  persist?: boolean;
 }
 
 export function useMovableHud(
@@ -74,17 +78,20 @@ export function useMovableHud(
   opts: MovableHudOptions = {},
 ): MovableHud {
   const posKey = opts.posKey ?? POS_KEY;
+  const persist = opts.persist ?? true;
   const homePos = () =>
     opts.floating && opts.initial ? opts.initial() : null;
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
-    try {
-      const raw = localStorage.getItem(posKey);
-      if (raw) {
-        const p = JSON.parse(raw);
-        if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
+    if (persist) {
+      try {
+        const raw = localStorage.getItem(posKey);
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
     return homePos();
   });
@@ -92,12 +99,14 @@ export function useMovableHud(
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (pos) localStorage.setItem(posKey, JSON.stringify(pos));
-    else localStorage.removeItem(posKey);
+    if (persist) {
+      if (pos) localStorage.setItem(posKey, JSON.stringify(pos));
+      else localStorage.removeItem(posKey);
+    }
     // Nudge the map to re-dodge its edge labels off the bar's new rect (it only
     // recomputes them on pan/zoom otherwise, so a drag would leave them stale).
     window.dispatchEvent(new Event('astro:hud-moved'));
-  }, [pos, posKey]);
+  }, [pos, posKey, persist]);
 
   // Keep a floated bar on-screen — clamped against the CURRENT viewport on mount
   // (a position saved on a larger/other screen may now be off-screen, and the grip

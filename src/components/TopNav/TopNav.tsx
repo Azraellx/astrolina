@@ -87,19 +87,6 @@ const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'synastry',
 ];
 
-// The map's pin gestures, listed in the centre status pill's hover tip (below that
-// pill's own click action), so the controls are discoverable from one place.
-function MapControlsHint() {
-  const { t } = useT();
-  return (
-    <span className="topnav-controls-hint">
-      <span><b>{t('topNav.controls.doubleClick')}</b> {t('topNav.controls.placePin')}</span>
-      <span><b>{t('topNav.controls.rightClick')}</b> {t('topNav.controls.removePin')}</span>
-      <span><b>{t('topNav.controls.rightClick')}</b> {t('topNav.controls.dropNatal')}</span>
-    </span>
-  );
-}
-
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -419,7 +406,6 @@ export function TopNav({
                 className="topnav-status pinned"
                 onClick={onRecenterPin}
                 tip={t('topNav.pin.centerTip')}
-                hint={<MapControlsHint />}
                 hotkey="Space"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -439,7 +425,6 @@ export function TopNav({
                 className="topnav-status"
                 onClick={onPinNatal}
                 tip={t('topNav.pin.pinNatalTip')}
-                hint={<MapControlsHint />}
                 hotkey="Space"
               >
                 {t(`topNav.status.${mapState}`)}
@@ -448,7 +433,6 @@ export function TopNav({
               <TipSpan
                 className="topnav-status"
                 tip={t('topNav.pin.controlsTip')}
-                hint={<MapControlsHint />}
               >
                 {t(`topNav.status.${mapState}`)}
               </TipSpan>

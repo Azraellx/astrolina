@@ -47,15 +47,6 @@ export const topNav = {
     'natal-pinned': 'NATAL PIN',
   },
 
-  // The map's pin gestures (rich text with <b> emphasis is assembled in the component).
-  controls: {
-    doubleClick: 'Double-click',
-    placePin: 'the map to place a pin',
-    rightClick: 'Right-click',
-    removePin: 'to remove the pin',
-    dropNatal: 'with no pin drops the natal pin',
-  },
-
   sidebarToggle: {
     showAria: 'Show chart sidebar',
     hideAria: 'Hide chart sidebar',

@@ -298,18 +298,6 @@ button.topnav-status:hover {
   flex-shrink: 0;
 }
 
-/* The pin-gesture list shown inside the centre pill's hover tip (.ui-tip-sub),
-   one control per line with its gesture emphasised. */
-.topnav-controls-hint {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.topnav-controls-hint b {
-  color: var(--text);
-  font-weight: 600;
-}
-
 /* ── Measure readout (inline beside Tools when Measure is active) ── */
 .topnav-readout {
   display: inline-flex;

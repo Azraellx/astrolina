@@ -31,6 +31,7 @@ export const chartForm = {
   resolved: '✓ {label}',
   latitude: 'Latitude',
   longitude: 'Longitude',
+  enterCoords: 'Enter manually',
   errorNoPlace: 'Choose a birthplace from the dropdown.',
   errorNoName: 'Add a name.',
   import: 'Import',

@@ -112,6 +112,9 @@ export function BirthDataFields({
   const [lngText, setLngText] = useState(
     initial ? String(initial.birthplace.lng) : '',
   );
+  // Coordinates default to a read-only summary of the auto-chosen lat/lng; "Enter
+  // manually" reveals the editable inputs (for raw-coordinate / rectified charts).
+  const [showCoordInputs, setShowCoordInputs] = useState(false);
 
   // Timezone: the user picks an IANA zone, which defaults to the one detected from
   // the birthplace. zoneOverride = null means "follow the detected zone"; a string is
@@ -400,32 +403,56 @@ export function BirthDataFields({
           </p>
         </label>
 
-        {/* Precise coordinates — auto-filled from the birthplace, editable to enter a
-            chart by raw lat/lng (which reverse-geocodes a place + re-detects the zone). */}
-        <div className="row">
-          <label>
-            <span>{t('chartForm.latitude')}</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={latText}
-              onChange={(e) => setLatText(e.target.value)}
-              placeholder="48.4011"
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            <span>{t('chartForm.longitude')}</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={lngText}
-              onChange={(e) => setLngText(e.target.value)}
-              placeholder="9.9876"
-              autoComplete="off"
-            />
-          </label>
-        </div>
+        {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default;
+            "Enter manually" reveals the inputs to enter a chart by raw lat/lng (which
+            reverse-geocodes a place + re-detects the zone). */}
+        {showCoordInputs ? (
+          <div className="row">
+            <label>
+              <span>{t('chartForm.latitude')}</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={latText}
+                onChange={(e) => setLatText(e.target.value)}
+                placeholder="48.4011"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              <span>{t('chartForm.longitude')}</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={lngText}
+                onChange={(e) => setLngText(e.target.value)}
+                placeholder="9.9876"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        ) : (
+          <div className="coord-summary">
+            <span className="coord-summary-item">
+              <span className="coord-summary-label">{t('chartForm.latitude')}</span>
+              <span className="coord-summary-value">{latText ? `${latText}°` : '—'}</span>
+            </span>
+            <span className="coord-summary-item">
+              <span className="coord-summary-label">{t('chartForm.longitude')}</span>
+              <span className="coord-summary-value">{lngText ? `${lngText}°` : '—'}</span>
+            </span>
+            {/* Only worth offering once there are auto-chosen coords to refine. */}
+            {latText.trim() !== '' && lngText.trim() !== '' && (
+              <button
+                type="button"
+                className="coord-edit-link"
+                onClick={() => setShowCoordInputs(true)}
+              >
+                {t('chartForm.enterCoords')}
+              </button>
+            )}
+          </div>
+        )}
 
         {error && <p className="form-error">{error}</p>}
 

@@ -1,0 +1,206 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* The onboarding "missions" card. A movable, floating panel (drag by the grip) that
+   first appears top-right; its top/left come from an inline style (useMovableHud). NO
+   backdrop, but it's a solid, opaque UI panel that captures pointer events like any
+   other HUD — so moving the cursor over it does NOT trigger the map's hover. Sits above
+   the HUDs (z 10–12) but below the real modals (z 100). */
+.mission-guide {
+  position: fixed;
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  /* Same translucent panel fill as the other HUDs (timeline / nav). */
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 12px;
+  padding: 12px 16px 14px;
+  color: var(--text-strong);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  font-family: inherit;
+}
+
+/* ── Header: drag handle (grip + title) on the left, skip × on the right ── */
+.mg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* The whole top row (everything except the ×) is the drag handle. */
+.mg-drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mg-dragging .mg-drag,
+.mg-drag:active {
+  cursor: grabbing;
+}
+
+.mission-guide .hud-grip {
+  color: var(--text-faint);
+}
+
+.mg-drag:hover .hud-grip {
+  color: var(--text-muted);
+}
+
+.mg-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-strong);
+}
+
+.mg-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.55;
+  transition: opacity 0.12s, color 0.12s;
+}
+
+.mg-close:hover {
+  opacity: 1;
+  color: var(--text-strong);
+}
+
+/* ── Subtitle: "Drop a [pin] pin" ── */
+.mg-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.mg-sub-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* ── Mission checklist ── */
+.mg-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mg-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 7px;
+  background: rgba(var(--tint), 0.03);
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.mg-item.done {
+  border-color: rgba(var(--cool-rgb), 0.5);
+  background: rgba(var(--cool-rgb), 0.12);
+  color: var(--text-strong);
+}
+
+/* Not-applicable (e.g. a 3D-only step while in 2D): already satisfied, but a neutral,
+   uncoloured "done" so it reads as "nothing to do here". */
+.mg-item.na {
+  border-color: rgba(var(--tint), 0.14);
+  background: rgba(var(--tint), 0.05);
+  color: var(--text-muted);
+}
+
+.mg-item.na .mg-check {
+  color: var(--text-faint);
+  font-weight: 700;
+}
+
+.mg-check {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.mg-item.done .mg-check {
+  color: var(--cool);
+  font-weight: 700;
+}
+
+.mg-label {
+  flex: 1;
+}
+
+/* The gesture hotkey pill ("Double 🖱" / "Right 🖱") reuses the shared .ui-tip-hotkey
+   chip; this just lays out its word + click icon inline. */
+.mg-gesture {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: baseline;
+}
+
+.mg-click-icon {
+  flex-shrink: 0;
+}
+
+/* ── Footer ── */
+.mg-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mg-ok {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(var(--accent-rgb), 0.92);
+  color: #0a0a0f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+}
+
+.mg-ok:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.mg-ok:disabled {
+  background: rgba(var(--tint), 0.08);
+  border-color: rgba(var(--tint), 0.14);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
