@@ -12,11 +12,12 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   PLANET_COLORS,
-  PLANET_DISPLAY,
   type EclipticPosition,
   type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
+import { useT } from '../../i18n';
+import type { MsgKey, TFn } from '../../i18n';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import './WheelSvg.css';
@@ -26,74 +27,35 @@ export const SIGNS = [
   'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis',
 ];
 
-// Full sign names + a one-line novice hint (element · modality · keyword), shown
-// when hovering a sign in the outer rim of the interactive (sidebar) wheel.
-const SIGN_NAMES = [
-  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
-  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
-];
-const SIGN_MEANINGS = [
-  'Fire · Cardinal · initiative',
-  'Earth · Fixed · stability',
-  'Air · Mutable · curiosity',
-  'Water · Cardinal · nurture',
-  'Fire · Fixed · self-expression',
-  'Earth · Mutable · precision',
-  'Air · Cardinal · balance',
-  'Water · Fixed · intensity',
-  'Fire · Mutable · adventure',
-  'Earth · Cardinal · ambition',
-  'Air · Fixed · innovation',
-  'Water · Mutable · imagination',
-];
+// Per-sign novice hint (element · modality · keyword), shown when hovering a sign
+// in the outer rim of the interactive (sidebar) wheel. Full sign names come from
+// labels.sign; this gloss is resolved by 0-based index via wheel.signMeanings.
+const SIGN_MEANING_KEYS = [
+  'aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo',
+  'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces',
+] as const;
+const signMeaning = (t: TFn, idx: number) =>
+  t(`wheel.signMeanings.${SIGN_MEANING_KEYS[idx] ?? 'aries'}` as MsgKey);
 
 // A one-line novice gloss per house (life area), shown when hovering a sector of
 // the dedicated house ring in the interactive wheel — the houses' twin of the
-// rim signs' hover hint.
-const HOUSE_MEANINGS = [
-  'Self · identity · first impressions',
-  'Money · possessions · self-worth',
-  'Communication · siblings · learning',
-  'Home · family · roots',
-  'Creativity · romance · children',
-  'Work · health · daily routine',
-  'Partnership · marriage · the "other"',
-  'Intimacy · shared resources · rebirth',
-  'Travel · philosophy · higher learning',
-  'Career · reputation · public life',
-  'Friends · community · hopes',
-  'Solitude · the unseen · spirituality',
-];
+// rim signs' hover hint. Resolved by 0-based index via wheel.houseMeanings.
+const houseMeaning = (t: TFn, idx: number) =>
+  t(`wheel.houseMeanings.h${idx + 1}` as MsgKey);
 
 // A short, standard keyword gloss per body — the novice hint shown when hovering
-// a planet disc. Kept terse so the tag stays compact.
-const PLANET_MEANINGS: Record<PlanetName, string> = {
-  Sun: 'Identity · vitality · ego',
-  Moon: 'Emotions · instinct · needs',
-  Mercury: 'Mind · communication',
-  Venus: 'Love · beauty · values',
-  Mars: 'Drive · energy · action',
-  Jupiter: 'Growth · luck · expansion',
-  Saturn: 'Discipline · structure · limits',
-  Uranus: 'Change · freedom · insight',
-  Neptune: 'Dreams · intuition · spirit',
-  Pluto: 'Power · transformation',
-  NorthNode: "Soul's path · growth",
-  SouthNode: 'Past · innate gifts',
-  Lilith: 'Shadow · raw instinct',
-  Chiron: 'The wounded healer',
-  Ceres: 'Nurture · cycles',
-  Pallas: 'Wisdom · strategy',
-  Juno: 'Commitment · partnership',
-  Vesta: 'Focus · devotion',
-};
+// a planet disc. Kept terse so the tag stays compact. Resolved via
+// wheel.planetMeanings, keyed by the PlanetName code.
+const planetMeaning = (t: TFn, p: PlanetName) =>
+  t(`wheel.planetMeanings.${p}` as MsgKey);
 
-// The four chart angles, keyed by the two-letter label drawn on the wheel.
-const ANGLE_HINTS: { key: 'As' | 'Ds' | 'Mc' | 'Ic'; title: string; sub: string }[] = [
-  { key: 'As', title: 'Ascendant', sub: 'Rising sign, the self & first impressions' },
-  { key: 'Ds', title: 'Descendant', sub: 'Relationships & the "other"' },
-  { key: 'Mc', title: 'Midheaven (Medium Coeli)', sub: 'Career, reputation & public life' },
-  { key: 'Ic', title: 'Imum Coeli', sub: 'Home, roots & private life' },
+// The four chart angles, keyed by the two-letter label drawn on the wheel. The
+// title + sub hint text is resolved via wheel.angles.<key> at render time.
+const ANGLE_HINTS: { key: 'As' | 'Ds' | 'Mc' | 'Ic' }[] = [
+  { key: 'As' },
+  { key: 'Ds' },
+  { key: 'Mc' },
+  { key: 'Ic' },
 ];
 
 // A hovered hint: the SVG anchor (px = user units, since the viewBox is 1:1), the
@@ -344,11 +306,14 @@ function motionTag(p: EclipticPosition): MotionTag | null {
   return null;
 }
 // The mark + accent for each motion tag, mirroring the sidebar's ℞ / S markers
-// (ExpandedChartSidebar) so the wheel and the data table read the same.
-const MOTION_MARK: Record<MotionTag, { char: string; color: string; word: string }> = {
-  retrograde: { char: '℞', color: RETRO_COLOR, word: 'Retrograde' },
-  stationary: { char: 'S', color: STATION_COLOR, word: 'Stationary' },
+// (ExpandedChartSidebar) so the wheel and the data table read the same. The ℞ / S
+// glyphs and colours stay language-neutral; the spelled-out word is resolved via
+// wheel.motion.<tag>.
+const MOTION_MARK: Record<MotionTag, { char: string; color: string }> = {
+  retrograde: { char: '℞', color: RETRO_COLOR },
+  stationary: { char: 'S', color: STATION_COLOR },
 };
+const motionWord = (t: TFn, tag: MotionTag) => t(`wheel.motion.${tag}` as MsgKey);
 
 interface WheelSvgProps {
   size: number;
@@ -394,6 +359,7 @@ export function WheelSvg({
   visibleAngles,
   interactive = false,
 }: WheelSvgProps) {
+  const { t, labels } = useT();
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
   // wheel isn't interactive no handler ever sets it, so it stays null.
   const [tip, setTip] = useState<HoverTip | null>(null);
@@ -518,6 +484,8 @@ export function WheelSvg({
           (!visibleAngles || visibleAngles.has(h.key)),
       ).map((h) => ({
         ...h,
+        title: t(`wheel.angles.${h.key}.title`),
+        sub: t(`wheel.angles.${h.key}.sub`),
         lon: angleLonByKey[h.key],
         color: angleColor(h.key),
       }))
@@ -535,6 +503,8 @@ export function WheelSvg({
             (!visibleAngles || visibleAngles.has(h.key)),
         ).map((h) => ({
           ...h,
+          title: t(`wheel.angles.${h.key}.title`),
+          sub: t(`wheel.angles.${h.key}.sub`),
           lon: overlayAngleLonByKey[h.key],
           color: angleColor(h.key),
         }))
@@ -603,6 +573,7 @@ export function WheelSvg({
       return <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />;
     }
     const mark = status ? MOTION_MARK[status] : null;
+    const markWord = status ? motionWord(t, status) : null;
     return (
       <g
         className="sign-mark"
@@ -611,14 +582,14 @@ export function WheelSvg({
             x,
             y,
             r: 9,
-            title: SIGN_NAMES[signIdx],
-            sub: SIGN_MEANINGS[signIdx],
+            title: labels.sign(signIdx),
+            sub: signMeaning(t, signIdx),
             marker: <ZodiacGlyph sign={signIdx} size={14} />,
             suffix: mark ? (
               <span
                 className="wheel-tip-status"
                 style={{ color: mark.color }}
-                aria-label={mark.word}
+                aria-label={markWord ?? undefined}
               >
                 {mark.char}
               </span>
@@ -626,7 +597,7 @@ export function WheelSvg({
           })
         }
         onMouseLeave={clearTip}
-        aria-label={`${SIGN_NAMES[signIdx]}${mark ? ` (${mark.word})` : ''}`}
+        aria-label={`${labels.sign(signIdx)}${markWord ? ` (${markWord})` : ''}`}
       >
         <circle cx={x} cy={y} r={9} className="planet-hit" />
         <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
@@ -721,13 +692,13 @@ export function WheelSvg({
                 x: pos.x,
                 y: pos.y,
                 r: 14,
-                title: SIGN_NAMES[i],
-                sub: SIGN_MEANINGS[i],
+                title: labels.sign(i),
+                sub: signMeaning(t, i),
                 marker: <ZodiacGlyph sign={i} size={14} />,
               });
             }}
             onMouseLeave={clearTip}
-            aria-label={SIGN_NAMES[i]}
+            aria-label={labels.sign(i)}
           />
         ))}
 
@@ -817,12 +788,12 @@ export function WheelSvg({
                   x: pos.x,
                   y: pos.y,
                   r: houseBand / 2 + 4,
-                  title: `House ${idx + 1}`,
-                  sub: HOUSE_MEANINGS[idx],
+                  title: t('wheel.house', { number: idx + 1 }),
+                  sub: houseMeaning(t, idx),
                 })
               }
               onMouseLeave={clearTip}
-              aria-label={`House ${idx + 1}`}
+              aria-label={t('wheel.house', { number: idx + 1 })}
             />
           );
         })}
@@ -1048,8 +1019,8 @@ export function WheelSvg({
                   x: pos.x,
                   y: pos.y,
                   r,
-                  title: PLANET_DISPLAY[p.name],
-                  sub: PLANET_MEANINGS[p.name],
+                  title: labels.planet(p.name),
+                  sub: planetMeaning(t, p.name),
                   color: PLANET_COLORS[p.name],
                   marker: (
                     <PlanetGlyph
@@ -1060,7 +1031,7 @@ export function WheelSvg({
                   ),
                 }),
               onMouseLeave: clearTip,
-              'aria-label': PLANET_DISPLAY[p.name],
+              'aria-label': labels.planet(p.name),
             }
           : {};
         // The planet glyph/disc always keep the planet's own color — only its
@@ -1169,8 +1140,8 @@ export function WheelSvg({
                         x: glyphPos.x,
                         y: glyphPos.y,
                         r: 9,
-                        title: PLANET_DISPLAY[p.name],
-                        sub: PLANET_MEANINGS[p.name],
+                        title: labels.planet(p.name),
+                        sub: planetMeaning(t, p.name),
                         color: PLANET_COLORS[p.name],
                         marker: (
                           <PlanetGlyph
@@ -1182,7 +1153,7 @@ export function WheelSvg({
                       })
                     }
                     onMouseLeave={clearTip}
-                    aria-label={PLANET_DISPLAY[p.name]}
+                    aria-label={labels.planet(p.name)}
                   >
                     <circle cx={glyphPos.x} cy={glyphPos.y} r={15} className="planet-hit" />
                     <g className="planet-mark-visual">

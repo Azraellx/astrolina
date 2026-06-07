@@ -9,6 +9,7 @@ import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ep
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useT } from '../../i18n';
 import './ChartWheel.css';
 
 interface Point {
@@ -52,6 +53,7 @@ export function ChartWheel({
   planets,
   visiblePlanets,
 }: ChartWheelProps) {
+  const { t } = useT();
   const [enlarged, setEnlarged] = useState(false);
   const { ref: resizeRef, pos: resizeTipPos, show: showResizeTip, hide: hideResizeTip } =
     useHoverTip<HTMLButtonElement>();
@@ -77,7 +79,7 @@ export function ChartWheel({
             onMouseLeave={hideResizeTip}
             onFocus={showResizeTip}
             onBlur={hideResizeTip}
-            aria-label="Toggle wheel size"
+            aria-label={t('chartWheel.resizeLabel')}
             aria-pressed={enlarged}
           >
             <svg
@@ -96,7 +98,7 @@ export function ChartWheel({
           </button>
           <HoverTip
             pos={resizeTipPos}
-            title={enlarged ? 'Shrink wheel' : 'Enlarge wheel'}
+            title={enlarged ? t('chartWheel.shrink') : t('chartWheel.enlarge')}
           />
         </>
       )}
@@ -111,7 +113,7 @@ export function ChartWheel({
           />
         </div>
       ) : (
-        <div className="chart-wheel-placeholder">No chart selected</div>
+        <div className="chart-wheel-placeholder">{t('chartWheel.placeholder')}</div>
       )}
     </aside>
   );

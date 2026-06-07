@@ -10,6 +10,8 @@ import {
   displayName,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import './ChartSwitcher.css';
@@ -29,14 +31,9 @@ interface ChartSwitcherProps {
   compact?: boolean;
 }
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 // "14 March 1990" — full birth date for the bar's chart label.
-function fmtBirthDate(c: StoredChart): string {
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+function fmtBirthDate(c: StoredChart, fmt: Formatters): string {
+  return `${c.day} ${fmt.monthName(c.month)} ${c.year}`;
 }
 
 export function ChartSwitcher({
@@ -48,6 +45,7 @@ export function ChartSwitcher({
   onDelete,
   compact = false,
 }: ChartSwitcherProps) {
+  const { t, fmt } = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // The trigger's hover tip. Suppressed while the menu is open so the rich card
@@ -106,7 +104,7 @@ export function ChartSwitcher({
         <span className="label">
           <span className="name-row">
             <strong>
-              {current ? displayName(current.name) : 'No chart selected'}
+              {current ? displayName(current.name) : t('chartSwitcher.noChart')}
             </strong>
             {!compact && (
               <svg
@@ -130,7 +128,8 @@ export function ChartSwitcher({
           </span>
           {current && (
             <span className="meta">
-              {fmtBirthDate(current)} · {current.birthplace.label.split(',')[0]}
+              {fmtBirthDate(current, fmt)} ·{' '}
+              {current.birthplace.label.split(',')[0]}
               {current.tzUncertain && <span className="uncertain">⚠</span>}
             </span>
           )}
@@ -139,7 +138,7 @@ export function ChartSwitcher({
       <HoverTip
         pos={tipPos}
         placement={tipPlacement}
-        title="Switch, edit, or add a chart"
+        title={t('chartSwitcher.tip')}
         hotkey="A"
       />
 
@@ -147,7 +146,7 @@ export function ChartSwitcher({
         <div className="switcher-menu">
           <ul>
             {charts.length === 0 && (
-              <li className="empty">No saved charts yet.</li>
+              <li className="empty">{t('chartSwitcher.empty')}</li>
             )}
             {recentCharts.map((c) => (
               <li
@@ -164,7 +163,7 @@ export function ChartSwitcher({
                 >
                   <span className="chart-name">{displayName(c.name)}</span>
                   <span className="chart-meta">
-                    {fmtBirthDate(c)} · {c.birthplace.label.split(',')[0]}
+                    {fmtBirthDate(c, fmt)} · {c.birthplace.label.split(',')[0]}
                   </span>
                 </button>
                 <div className="chart-actions">
@@ -177,7 +176,7 @@ export function ChartSwitcher({
                       setOpen(false);
                     }}
                     placement="top"
-                    tip="Edit"
+                    tip={t('common.edit')}
                   >
                     ✎
                   </TipButton>
@@ -186,10 +185,11 @@ export function ChartSwitcher({
                     className="action danger"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete "${c.name}"?`)) onDelete(c.id);
+                      if (confirm(t('chartSwitcher.deleteConfirm', { name: c.name })))
+                        onDelete(c.id);
                     }}
                     placement="top"
-                    tip="Delete"
+                    tip={t('common.delete')}
                   >
                     ×
                   </TipButton>
@@ -205,7 +205,7 @@ export function ChartSwitcher({
               setOpen(false);
             }}
           >
-            Search + Add Name
+            {t('chartSwitcher.searchAdd')}
           </button>
         </div>
       )}

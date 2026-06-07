@@ -114,7 +114,7 @@ npx wrangler pages dev dist     # serves dist/ + runs the API functions for real
 ### Deploy
 
 ```bash
-npm run deploy     # npm run build && wrangler pages deploy dist --project-name astrolina
+npm run deploy     # npm run build && wrangler pages deploy dist --project-name astrolina-maps
 ```
 
 `wrangler pages deploy` automatically discovers the `functions/` directory at the

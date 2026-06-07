@@ -7,33 +7,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { displayName, type StoredChart } from '../../lib/chartLibrary';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
 // Full date + time, e.g. "14 March 1879 · 11:30".
-function fmtDate(c: StoredChart): string {
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+function fmtDate(c: StoredChart, fmt: Formatters): string {
+  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
 }
 
 // Date only — for the compact picker rows.
-function fmtShort(c: StoredChart): string {
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+function fmtShort(c: StoredChart, fmt: Formatters): string {
+  return `${c.day} ${fmt.monthName(c.month)} ${c.year}`;
 }
 
 interface SynastryHudProps {
@@ -67,6 +54,7 @@ export function SynastryHud({
   onSelectPartner,
   onAddPerson,
 }: SynastryHudProps) {
+  const { t, fmt } = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // Shares its movable position with the timeline bar (same bottom slot) so the
@@ -108,10 +96,10 @@ export function SynastryHud({
           release near the dock to snap home, double-click to dock. */}
       <span className="synastry-hud-tag" {...handleProps}>
         <span className="hud-grip" aria-hidden="true" />
-        Synastry
+        {t('synastryHud.title')}
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
-          <span className="ui-tip-title">Drag to move</span>
-          <span className="ui-tip-sub">Double-click to dock · snaps to centre</span>
+          <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
+          <span className="ui-tip-sub">{t('common.hud.dockHint')}</span>
         </span>
       </span>
       <div className="synastry-hud-picker">
@@ -123,12 +111,14 @@ export function SynastryHud({
             className="synastry-hud-trigger synastry-hud-add"
             onClick={onAddPerson}
             placement="top"
-            tip="Add a person to compare"
-            aria-label="Add a person to compare"
+            tip={t('synastryHud.addPersonTip')}
+            aria-label={t('synastryHud.addPersonTip')}
           >
             <span className="synastry-hud-label">
               <span className="synastry-hud-name-row">
-                <span className="synastry-hud-name is-prompt">Add person</span>
+                <span className="synastry-hud-name is-prompt">
+                  {t('synastryHud.addPerson')}
+                </span>
                 <svg
                   className="synastry-hud-icon"
                   width="16"
@@ -168,7 +158,7 @@ export function SynastryHud({
                 if (!open) showTip();
               }}
               onBlur={hideTip}
-              aria-label="Choose comparison chart"
+              aria-label={t('synastryHud.chooseComparison')}
               aria-expanded={open}
             >
               <span className="synastry-hud-label">
@@ -176,7 +166,7 @@ export function SynastryHud({
                   <span
                     className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
                   >
-                    {partner ? displayName(partner.name) : 'Choose a chart to compare'}
+                    {partner ? displayName(partner.name) : t('synastryHud.choosePrompt')}
                   </span>
                   <svg
                     className="synastry-hud-icon"
@@ -198,12 +188,12 @@ export function SynastryHud({
                 </span>
                 {partner && (
                   <span className="synastry-hud-meta">
-                    {fmtDate(partner)} · {partner.birthplace.label}
+                    {fmtDate(partner, fmt)} · {partner.birthplace.label}
                   </span>
                 )}
               </span>
             </button>
-            <HoverTip pos={tipPos} placement="top" title="Choose comparison chart" />
+            <HoverTip pos={tipPos} placement="top" title={t('synastryHud.chooseComparison')} />
             {open && (
               <div className="synastry-hud-menu">
                 <ul>
@@ -224,7 +214,7 @@ export function SynastryHud({
                           {displayName(c.name)}
                         </span>
                         <span className="synastry-hud-row-meta">
-                          {fmtShort(c)} · {c.birthplace.label.split(',')[0]}
+                          {fmtShort(c, fmt)} · {c.birthplace.label.split(',')[0]}
                         </span>
                       </button>
                     </li>

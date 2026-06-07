@@ -18,6 +18,7 @@ import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useT } from '../../i18n';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -76,37 +77,28 @@ interface TopNavProps {
 }
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
-// clears it back to 'off'. Single-select.
-const OVERLAY_MODES: {
-  mode: Exclude<OverlayMode, 'off'>;
-  label: string;
-  /** Optional fuller name for the hover tip when the row label is abbreviated. */
-  tipTitle?: string;
-  desc: string;
-}[] = [
-  { mode: 'transits', label: 'Transits', desc: 'Where the planets are right now, over your natal chart.' },
-  { mode: 'progressed', label: 'Sec. Progressed', tipTitle: 'Secondary Progressions', desc: 'Secondary progressions: a symbolic day-for-a-year unfolding.' },
-  { mode: 'solar-arc', label: 'Solar Arc', desc: 'Every point advanced by the Sun’s one-degree-per-year arc.' },
-  { mode: 'primary-directions', label: 'Primary Directions', desc: 'An ancient timing method driven by the sky’s rotation.' },
-  { mode: 'synastry', label: 'Synastry', desc: 'Another person’s chart laid over yours, for relationships.' },
+// clears it back to 'off'. Single-select. Labels/descriptions live in the catalog
+// (topNav.overlay.modes.*); status labels and the map-controls hint likewise.
+const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
+  'transits',
+  'progressed',
+  'solar-arc',
+  'primary-directions',
+  'synastry',
 ];
-
-const STATUS_LABEL: Record<MapState, string> = {
-  natal: 'NATAL',
-  hover: 'HOVER',
-  pinned: 'PINNED',
-  'natal-pinned': 'NATAL PIN',
-};
 
 // The map's pin gestures, listed in the centre status pill's hover tip (below that
 // pill's own click action), so the controls are discoverable from one place.
-const MAP_CONTROLS_HINT = (
-  <span className="topnav-controls-hint">
-    <span><b>Double-click</b> the map to place a pin</span>
-    <span><b>Right-click</b> to remove the pin</span>
-    <span><b>Right-click</b> with no pin drops the natal pin</span>
-  </span>
-);
+function MapControlsHint() {
+  const { t } = useT();
+  return (
+    <span className="topnav-controls-hint">
+      <span><b>{t('topNav.controls.doubleClick')}</b> {t('topNav.controls.placePin')}</span>
+      <span><b>{t('topNav.controls.rightClick')}</b> {t('topNav.controls.removePin')}</span>
+      <span><b>{t('topNav.controls.rightClick')}</b> {t('topNav.controls.dropNatal')}</span>
+    </span>
+  );
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -322,6 +314,7 @@ export function TopNav({
   showTeleport,
   setShowTeleport,
 }: TopNavProps) {
+  const { t } = useT();
   const overlayActive = overlayMode !== 'off';
 
   const measuring = tool === 'measure';
@@ -392,9 +385,9 @@ export function TopNav({
               className={`topnav-expand ${chartExpanded ? 'active' : ''}`}
               onClick={onToggleExpand}
               disabled={!current}
-              aria-label={chartExpanded ? 'Hide chart sidebar' : 'Show chart sidebar'}
+              aria-label={chartExpanded ? t('topNav.sidebarToggle.hideAria') : t('topNav.sidebarToggle.showAria')}
               aria-pressed={chartExpanded}
-              tip={chartExpanded ? 'Hide sidebar' : 'Show sidebar chart'}
+              tip={chartExpanded ? t('topNav.sidebarToggle.hideTip') : t('topNav.sidebarToggle.showTip')}
               hotkey="B"
             >
               <svg
@@ -425,8 +418,8 @@ export function TopNav({
                 type="button"
                 className="topnav-status pinned"
                 onClick={onRecenterPin}
-                tip="Center map on pin"
-                hint={MAP_CONTROLS_HINT}
+                tip={t('topNav.pin.centerTip')}
+                hint={<MapControlsHint />}
                 hotkey="Space"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -438,26 +431,26 @@ export function TopNav({
                     strokeLinecap="round"
                   />
                 </svg>
-                <span>{STATUS_LABEL[mapState]}</span>
+                <span>{t(`topNav.status.${mapState}`)}</span>
               </TipButton>
             ) : mapState === 'natal' ? (
               <TipButton
                 type="button"
                 className="topnav-status"
                 onClick={onPinNatal}
-                tip="Pin the natal location"
-                hint={MAP_CONTROLS_HINT}
+                tip={t('topNav.pin.pinNatalTip')}
+                hint={<MapControlsHint />}
                 hotkey="Space"
               >
-                {STATUS_LABEL[mapState]}
+                {t(`topNav.status.${mapState}`)}
               </TipButton>
             ) : (
               <TipSpan
                 className="topnav-status"
-                tip="Map pin controls"
-                hint={MAP_CONTROLS_HINT}
+                tip={t('topNav.pin.controlsTip')}
+                hint={<MapControlsHint />}
               >
-                {STATUS_LABEL[mapState]}
+                {t(`topNav.status.${mapState}`)}
               </TipSpan>
             )}
           </div>
@@ -469,9 +462,9 @@ export function TopNav({
               type="button"
               className={`navmenu-trigger topnav-tool ${measuring ? 'active' : ''}`}
               onClick={() => setTool(measuring ? 'off' : 'measure')}
-              aria-label="Measure distance"
+              aria-label={t('topNav.tools.measure')}
               aria-pressed={measuring}
-              tip="Measure distance"
+              tip={t('topNav.tools.measure')}
               hotkey="T"
             >
               <svg
@@ -493,7 +486,7 @@ export function TopNav({
               </svg>
             </TipButton>
 
-            <NavMenu label="Overlay" active={overlayActive}>
+            <NavMenu label={t('topNav.overlay.menuLabel')} active={overlayActive}>
               {(close) => (
                 <>
                   {/* Explicit "None" row (selected whenever no overlay is shown) is
@@ -501,8 +494,8 @@ export function TopNav({
                       the mode rows now just select their mode — re-picking the
                       active one is a no-op. */}
                   <RadioItem
-                    label="None"
-                    hint="Just the natal chart, with no time technique applied."
+                    label={t('topNav.overlay.none.label')}
+                    hint={t('topNav.overlay.none.hint')}
                     hotkey="N"
                     checked={overlayMode === 'off'}
                     onSelect={() => {
@@ -510,12 +503,16 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {OVERLAY_MODES.map(({ mode, label, tipTitle, desc }) => (
+                  {OVERLAY_MODES.map((mode) => (
                     <RadioItem
                       key={mode}
-                      label={label}
-                      tipTitle={tipTitle}
-                      hint={desc}
+                      label={t(`topNav.overlay.modes.${mode}.label`)}
+                      tipTitle={
+                        mode === 'progressed'
+                          ? t('topNav.overlay.modes.progressed.tipTitle')
+                          : undefined
+                      }
+                      hint={t(`topNav.overlay.modes.${mode}.desc`)}
                       hotkey={<CycleHotkey />}
                       checked={overlayMode === mode}
                       onSelect={() => {
@@ -528,33 +525,33 @@ export function TopNav({
               )}
             </NavMenu>
 
-            <NavMenu label="View" className="navmenu-steady">
+            <NavMenu label={t('topNav.view.menuLabel')} className="navmenu-steady">
               <CheckItem
-                label="Coordinates"
+                label={t('topNav.view.coordinates')}
                 hotkey="C"
                 checked={showCoords}
                 onToggle={() => setShowCoords(!showCoords)}
               />
               <CheckItem
-                label="Minimap"
+                label={t('topNav.view.minimap')}
                 hotkey="M"
                 checked={showChart}
                 onToggle={() => setShowChart(!showChart)}
               />
               <CheckItem
-                label="Settings"
+                label={t('topNav.view.settings')}
                 hotkey="S"
                 checked={showSettings}
                 onToggle={() => setShowSettings(!showSettings)}
               />
               <CheckItem
-                label="Teleport"
+                label={t('topNav.view.teleport')}
                 hotkey="G"
                 checked={showTeleport}
                 onToggle={() => setShowTeleport(!showTeleport)}
               />
               <CheckItem
-                label="Info"
+                label={t('topNav.view.info')}
                 hotkey="I"
                 checked={showInfo}
                 onToggle={() => setShowInfo(!showInfo)}
@@ -584,7 +581,7 @@ export function TopNav({
               </div>
             ) : (
               <span className="topnav-toolbar-hint">
-                Click and drag on the map to measure · snaps to nearby lines
+                {t('topNav.tools.toolbarHint')}
               </span>
             )
           ) : pinned ? (
@@ -592,7 +589,7 @@ export function TopNav({
               type="button"
               className="topnav-location topnav-location-btn"
               onClick={onRecenterPin}
-              tip="Center map on pin"
+              tip={t('topNav.pin.centerTip')}
               hotkey="Space"
             >
               <span className="topnav-dot" />

@@ -27,6 +27,7 @@ import {
   type PlanetPosition,
 } from '../ephemeris';
 import type { StoredChart } from '../chartLibrary';
+import type { TFn } from '../../i18n';
 
 export type OverlayMode =
   | 'off'
@@ -191,6 +192,7 @@ export function buildOverlay(
   primaryRate: PrimaryRate = 'ptolemy',
   userPrimaryRate = 1,
   transitFrame: TransitFrame = 'relative-to-natal',
+  t: TFn,
 ): OverlayLayer | null {
   switch (mode) {
     case 'transits': {
@@ -208,7 +210,9 @@ export function buildOverlay(
         kind: mode,
         // The nub already shows "Transits" as the mode name — no readout needed.
         measure: null,
-        labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
+        labelFull: t('timeline.labelFull.transits', {
+          datetime: fmtDateTimeUTC(targetDate),
+        }),
         jd,
         positions: getPlanetPositions(jd, nodeType),
         gmst,
@@ -246,8 +250,8 @@ export function buildOverlay(
       }
       return {
         kind: mode,
-        measure: `Age ${c.years.toFixed(1)}`,
-        labelFull: `Sec. Progressed · age ${c.years.toFixed(1)}`,
+        measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
+        labelFull: t('timeline.labelFull.progressed', { years: c.years.toFixed(1) }),
         jd: c.progressedJD,
         positions: getPlanetPositions(c.progressedJD, nodeType),
         gmst,
@@ -288,7 +292,9 @@ export function buildOverlay(
         kind: mode,
         // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
         measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
-        labelFull: `Solar Arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
+        labelFull: t('timeline.labelFull.solar-arc', {
+          deg: ((arc * 180) / Math.PI).toFixed(1),
+        }),
         jd: c.birthJD,
         positions,
         gmst: c.natalGMST,
@@ -335,7 +341,7 @@ export function buildOverlay(
       return {
         kind: mode,
         measure: `${arcDeg}°`,
-        labelFull: `Primary Directions · ${arcDeg}°`,
+        labelFull: t('timeline.labelFull.primary-directions', { deg: arcDeg }),
         jd: c.birthJD,
         positions: c.natal.map((p) => shiftRightAscension(p, -arc)),
         gmst: c.natalGMST,
@@ -349,7 +355,7 @@ export function buildOverlay(
       return {
         kind: mode,
         measure: null,
-        labelFull: `Synastry · ${partner.name}`,
+        labelFull: t('timeline.labelFull.synastry', { partner: partner.name }),
         jd: pjd,
         positions: getPlanetPositions(pjd, nodeType),
         gmst: gmstRadians(pjd),

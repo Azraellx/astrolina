@@ -13,7 +13,6 @@ import {
 } from 'react';
 import {
   PLANET_COLORS,
-  PLANET_DISPLAY,
   type AngleCoords,
   type EclipticPosition,
   type HorizontalCoords,
@@ -35,12 +34,9 @@ import {
 } from '../Wheel/WheelSvg';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import './ExpandedChartSidebar.css';
-
-const SIGN_NAMES = [
-  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
-  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
-];
 
 // Astrology's conventional luminary-first ordering: Moon, Sun, then outward from
 // the Sun (Mercury → Pluto), with the calculated points last. Drives the planet
@@ -82,6 +78,7 @@ function fmtDM(deg: number, signed = false): string {
 // Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
 function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
+  const { labels } = useT();
   const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
   const signIdx = Math.floor(lonDeg / 30);
   const inSign = lonDeg % 30;
@@ -100,7 +97,7 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
     <>
       {dms}{' '}
       <span className="es-lon-sign">
-        <ZodiacGlyph sign={signIdx} size={12} /> {SIGN_NAMES[signIdx]}
+        <ZodiacGlyph sign={signIdx} size={12} /> {labels.sign(signIdx)}
       </span>
     </>
   );
@@ -123,13 +120,8 @@ function SignLon({ lon }: { lon: number }) {
   );
 }
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function fmtChartDate(c: StoredChart): string {
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+function fmtChartDate(c: StoredChart, fmt: Formatters): string {
+  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
 }
 
 interface ExpandedChartSidebarProps {
@@ -186,18 +178,16 @@ const ASPECT_GLYPHS: Record<string, string> = {
   sextile: '⚹',
 };
 
-// Per-aspect tip copy for the Advanced aspect lists: the symbol can be cryptic to
-// a newcomer, so hovering it names the aspect, its exact angle, and what it means.
-const ASPECT_INFO: Record<
-  string,
-  { name: string; angle: string; desc: string }
-> = {
-  conjunction: { name: 'Conjunction', angle: '0°', desc: 'Two bodies fused at the same point, blending their energies.' },
-  opposition: { name: 'Opposition', angle: '180°', desc: 'Bodies face off across the chart: a tension of opposites seeking balance.' },
-  trine: { name: 'Trine', angle: '120°', desc: 'An easy, harmonious flow of energy and natural talent.' },
-  square: { name: 'Square', angle: '90°', desc: 'Friction and challenge that pushes you to grow.' },
-  sextile: { name: 'Sextile', angle: '60°', desc: 'A supportive opportunity that rewards a little effort.' },
+// Per-aspect exact-angle for the Advanced aspect tips (language-neutral numeric).
+// The name + description copy is resolved from the catalog (expandedSidebar.aspect.*).
+const ASPECT_ANGLES: Record<string, string> = {
+  conjunction: '0°',
+  opposition: '180°',
+  trine: '120°',
+  square: '90°',
+  sextile: '60°',
 };
+const ASPECT_KEYS = new Set(['conjunction', 'opposition', 'trine', 'square', 'sextile']);
 
 // A glyph in the Advanced aspect lists that reveals an explanation as the shared
 // .ui-tip on hover — portaled, so the sidebar's overflow can't clip it, and popped
@@ -235,7 +225,8 @@ function TipGlyph({
 // The aspect symbol (☌ ☍ △ □ ⚹) plus its hover tip: the symbol + name (with the
 // exact angle), and the description beneath.
 function AspectGlyph({ type, color }: { type: string; color: string }) {
-  const info = ASPECT_INFO[type];
+  const { t } = useT();
+  const known = ASPECT_KEYS.has(type);
   const glyph = ASPECT_GLYPHS[type] ?? type;
   return (
     <TipGlyph
@@ -244,10 +235,12 @@ function AspectGlyph({ type, color }: { type: string; color: string }) {
       title={
         <span className="es-tip-title">
           <span style={{ color }}>{glyph}</span>
-          {info ? `${info.name} (${info.angle})` : type}
+          {known
+            ? `${t(`expandedSidebar.aspect.${type}.name` as 'expandedSidebar.aspect.conjunction.name')} (${ASPECT_ANGLES[type]})`
+            : type}
         </span>
       }
-      hint={info?.desc}
+      hint={known ? t(`expandedSidebar.aspect.${type}.desc` as 'expandedSidebar.aspect.conjunction.desc') : undefined}
     >
       {glyph}
     </TipGlyph>
@@ -268,6 +261,7 @@ function PlanetTipGlyph({
   className?: string;
   suffix?: string;
 }) {
+  const { labels } = useT();
   return (
     <TipGlyph
       className={className}
@@ -275,7 +269,7 @@ function PlanetTipGlyph({
       title={
         <span className="es-tip-title">
           <PlanetGlyph planet={planet} size={14} color={PLANET_COLORS[planet]} />
-          {PLANET_DISPLAY[planet]}
+          {labels.planet(planet)}
           {suffix ? ` ${suffix}` : ''}
         </span>
       }
@@ -353,18 +347,18 @@ function fmtOrb(orbDeg: number): string {
   return `${dd}°${pad2(m)}'`;
 }
 
+// The aspect-category pill toggles. The structural fields (catalog key, CSS class)
+// stay here; the compact label, full tip label, and description copy are resolved from
+// the catalog (expandedSidebar.toggle.<tipKey>.*) inside the component.
 const ASPECT_TOGGLES: {
   key: AspectCategory;
-  /** Compact text shown on the pill toggle. */
-  label: string;
-  /** Full, unabbreviated names for the hover tip (e.g. "Conj" → "Conjunction"). */
-  tipLabel: string;
+  /** Catalog sub-key under expandedSidebar.toggle for this toggle's copy. */
+  tipKey: 'harmonious' | 'hard' | 'conjunction';
   cssClass: string;
-  desc: string;
 }[] = [
-  { key: 'harmonious', label: 'Trine / Sextile', tipLabel: 'Trine / Sextile', cssClass: 'trine', desc: 'Flowing, supportive aspects: ease, talent, and opportunity.' },
-  { key: 'hard', label: 'Square / Opp', tipLabel: 'Square / Opposition', cssClass: 'square', desc: 'Tense aspects: friction, challenge, and the drive to grow.' },
-  { key: 'conjunction', label: 'Conj', tipLabel: 'Conjunction', cssClass: 'conj', desc: 'Two bodies fused at the same point, blending their energies.' },
+  { key: 'harmonious', tipKey: 'harmonious', cssClass: 'trine' },
+  { key: 'hard', tipKey: 'hard', cssClass: 'square' },
+  { key: 'conjunction', tipKey: 'conjunction', cssClass: 'conj' },
 ];
 
 export function ExpandedChartSidebar({
@@ -389,6 +383,7 @@ export function ExpandedChartSidebar({
   onEditChart,
   onDeleteChart,
 }: ExpandedChartSidebarProps) {
+  const { t, fmt, labels } = useT();
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
     const base = saved && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH;
@@ -463,10 +458,10 @@ export function ExpandedChartSidebar({
     color: string;
   }[] = angles
     ? [
-        { code: 'Mc' as const, key: 'mc' as const, name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
-        { code: 'Ic' as const, key: 'ic' as const, name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
-        { code: 'As' as const, key: 'asc' as const, name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
-        { code: 'Ds' as const, key: 'dsc' as const, name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
+        { code: 'Mc' as const, key: 'mc' as const, name: t('expandedSidebar.angle.midheaven'), lon: angles.mc, color: 'var(--cool)' },
+        { code: 'Ic' as const, key: 'ic' as const, name: t('expandedSidebar.angle.imumCoeli'), lon: angles.ic, color: 'var(--cool)' },
+        { code: 'As' as const, key: 'asc' as const, name: t('expandedSidebar.angle.ascendant'), lon: angles.asc, color: 'var(--accent)' },
+        { code: 'Ds' as const, key: 'dsc' as const, name: t('expandedSidebar.angle.descendant'), lon: angles.dsc, color: 'var(--accent)' },
       ].filter((a) => visibleAngles.has(a.code))
     : [];
 
@@ -474,12 +469,12 @@ export function ExpandedChartSidebar({
   // up). Coloured by the live map state via --map-accent — neutral natal, blue
   // hover, gold pinned, green natal-pin — so it tracks the same palette as the pin.
   const wheelTitle = isNatalPin
-    ? 'NATAL CHART'
+    ? t('expandedSidebar.wheelTitle.natal')
     : pinned
-      ? 'PINNED CHART'
+      ? t('expandedSidebar.wheelTitle.pinned')
       : point
-        ? 'HOVER CHART'
-        : 'NATAL CHART';
+        ? t('expandedSidebar.wheelTitle.hover')
+        : t('expandedSidebar.wheelTitle.natal');
   // Just the overlay's name for the wheel's top-right corner (the full label
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
   const overlayName = overlayLabel ? overlayLabel.split('·')[0].trim() : null;
@@ -599,10 +594,10 @@ export function ExpandedChartSidebar({
                 role="switch"
                 aria-checked={advanced}
                 placement="bottom"
-                tip="Advanced"
-                hint="Detailed natal data: declination, speed, retrograde, exact orbs, and the aspect grid."
+                tip={t('expandedSidebar.advanced.tip')}
+                hint={t('expandedSidebar.advanced.hint')}
               >
-                <span className="es-toggle-label">Advanced</span>
+                <span className="es-toggle-label">{t('expandedSidebar.advanced.label')}</span>
                 <span className="es-toggle-track">
                   <span className="es-toggle-thumb" />
                 </span>
@@ -612,9 +607,9 @@ export function ExpandedChartSidebar({
               type="button"
               className="es-close-btn"
               onClick={onClose}
-              aria-label="Hide expanded view"
+              aria-label={t('expandedSidebar.close.aria')}
               placement="bottom"
-              tip="Hide sidebar"
+              tip={t('expandedSidebar.close.tip')}
               hotkey="B"
             >
               <svg
@@ -632,24 +627,24 @@ export function ExpandedChartSidebar({
                 <path d="M9 3v18" />
                 <path d="M16 15l-3-3 3-3" />
               </svg>
-              <span>Hide</span>
+              <span>{t('expandedSidebar.close.label')}</span>
             </TipButton>
           </div>
         </div>
         {chart && (
           <div className="es-meta">
             <span className="es-meta-when">
-              {fmtChartDate(chart)}
+              {fmtChartDate(chart, fmt)}
               <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
               {chart.tzUncertain && (
                 <TipGlyph
                   className="es-meta-warn"
                   title={
                     <span className="es-tip-title">
-                      <span className="es-meta-warn">⚠</span> Timezone uncertain
+                      <span className="es-meta-warn">⚠</span> {t('expandedSidebar.tzUncertain')}
                     </span>
                   }
-                  hint="Pre-1970 timezone outside US/EU: verify DST against an atlas"
+                  hint={t('expandedSidebar.tzUncertainHint')}
                 >
                   ⚠
                 </TipGlyph>
@@ -735,25 +730,25 @@ export function ExpandedChartSidebar({
               interactive
             />
           ) : (
-            <div className="es-empty">No chart selected</div>
+            <div className="es-empty">{t('expandedSidebar.empty')}</div>
           )}
         </div>
         {angles && (
           <div className="es-aspect-toggles">
-            {ASPECT_TOGGLES.map((t) => {
-              const on = visibleAspects.has(t.key);
+            {ASPECT_TOGGLES.map((tg) => {
+              const on = visibleAspects.has(tg.key);
               return (
                 <TipButton
-                  key={t.key}
+                  key={tg.key}
                   type="button"
-                  className={`es-asp-toggle ${t.cssClass} ${on ? 'on' : 'off'}`}
-                  onClick={() => toggleAspect(t.key)}
+                  className={`es-asp-toggle ${tg.cssClass} ${on ? 'on' : 'off'}`}
+                  onClick={() => toggleAspect(tg.key)}
                   placement="right"
-                  tip={t.tipLabel}
-                  hint={t.desc}
+                  tip={t(`expandedSidebar.toggle.${tg.tipKey}.tipLabel` as 'expandedSidebar.toggle.harmonious.tipLabel')}
+                  hint={t(`expandedSidebar.toggle.${tg.tipKey}.desc` as 'expandedSidebar.toggle.harmonious.desc')}
                 >
                   <span className="es-asp-swatch" />
-                  <span className="es-asp-label">{t.label}</span>
+                  <span className="es-asp-label">{t(`expandedSidebar.toggle.${tg.tipKey}.label` as 'expandedSidebar.toggle.harmonious.label')}</span>
                 </TipButton>
               );
             })}
@@ -780,7 +775,7 @@ export function ExpandedChartSidebar({
                 <span className="es-glyph" style={{ color: PLANET_COLORS[row.p.name] }}>
                   <PlanetGlyph planet={row.p.name} size={13} />
                 </span>
-                <span className="es-name">{PLANET_DISPLAY[row.p.name]}</span>
+                <span className="es-name">{labels.planet(row.p.name)}</span>
                 <span className="es-lon">
                   <Longitude lon={row.p.lon} advanced={advanced} />
                 </span>
@@ -819,16 +814,16 @@ export function ExpandedChartSidebar({
                 <span className="es-glyph" style={{ color: PLANET_COLORS[p.name] }}>
                   <PlanetGlyph planet={p.name} size={13} />
                 </span>
-                <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
+                <span className="es-name">{labels.planet(p.name)}</span>
                 {p.stationary ? (
                   <TipGlyph
                     className="es-station"
                     title={
                       <span className="es-tip-title">
-                        <span style={{ color: '#c79a17' }}>S</span> Stationary
+                        <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
                       </span>
                     }
-                    hint="Briefly motionless against the stars as it turns between direct and retrograde, so its themes feel concentrated and pivotal."
+                    hint={t('expandedSidebar.stationaryHint')}
                   >
                     S
                   </TipGlyph>
@@ -837,10 +832,10 @@ export function ExpandedChartSidebar({
                     className="es-rx"
                     title={
                       <span className="es-tip-title">
-                        <span style={{ color: 'var(--danger)' }}>℞</span> Retrograde
+                        <span style={{ color: 'var(--danger)' }}>℞</span> {t('expandedSidebar.retrograde')}
                       </span>
                     }
-                    hint="Appears to move backward through the zodiac from Earth’s vantage; its themes turn inward, revisited or replayed."
+                    hint={t('expandedSidebar.retrogradeHint')}
                   >
                     ℞
                   </TipGlyph>
@@ -866,10 +861,12 @@ export function ExpandedChartSidebar({
                     title={
                       <span className="es-tip-title">
                         <span className="es-dec-oob es-dec-dot" />
-                        Out of bounds {(p.dec ?? 0) > 0 ? 'north' : 'south'}
+                        {t('expandedSidebar.outOfBounds', {
+                          dir: (p.dec ?? 0) > 0 ? t('expandedSidebar.north') : t('expandedSidebar.south'),
+                        })}
                       </span>
                     }
-                    hint="Declination beyond the Sun’s maximum (23°26′), past the zodiac’s normal latitude band, an astrologically notable extreme."
+                    hint={t('expandedSidebar.outOfBoundsHint')}
                   >
                     {dec}
                   </TipGlyph>
@@ -930,16 +927,16 @@ export function ExpandedChartSidebar({
                   <table className="es-adv-table">
                     <thead>
                       <tr>
-                        <th className="es-adv-point">Point</th>
-                        <AdvHeader label="Longitude" hint="Zodiacal longitude: the body’s degree, sign, and arcminute along the ecliptic." />
-                        <AdvHeader label="Speed" hint="Daily motion in ecliptic longitude; a negative value means retrograde." />
-                        <AdvHeader label="Latitude" hint="Ecliptic latitude: angular distance north or south of the ecliptic (positive is north)." />
-                        <AdvHeader label="Rt.Asc." title="Right Ascension" hint="Position along the celestial equator from 0° to 360°, the sky’s east/west coordinate." />
-                        <AdvHeader label="Decl." title="Declination" hint="Angular distance north or south of the celestial equator; past 23°26′ the body is ‘out of bounds’." />
+                        <th className="es-adv-point">{t('expandedSidebar.table.point')}</th>
+                        <AdvHeader label={t('expandedSidebar.table.longitude')} hint={t('expandedSidebar.table.longitudeHint')} />
+                        <AdvHeader label={t('expandedSidebar.table.speed')} hint={t('expandedSidebar.table.speedHint')} />
+                        <AdvHeader label={t('expandedSidebar.table.latitude')} hint={t('expandedSidebar.table.latitudeHint')} />
+                        <AdvHeader label={t('expandedSidebar.table.raLabel')} title={t('expandedSidebar.table.raTitle')} hint={t('expandedSidebar.table.raHint')} />
+                        <AdvHeader label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
                         {advExtraCols && (
                           <>
-                            <AdvHeader label="Azi(0°N)" title="Azimuth" hint="The body’s compass bearing at the relocated place, measured clockwise from due north (0°)." />
-                            <AdvHeader label="Alti." title="Altitude" hint="The body’s angular height above the horizon at the relocated place (negative means below it)." />
+                            <AdvHeader label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
+                            <AdvHeader label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
                           </>
                         )}
                       </tr>
@@ -971,10 +968,10 @@ export function ExpandedChartSidebar({
         return (
           <section className="es-section es-section-aspects">
             <TipHeading
-              tip="Aspects"
-              hint="Angular relationships between two bodies by ecliptic longitude (conjunction, sextile, square, trine, opposition) that shape how their energies interact."
+              tip={t('expandedSidebar.aspectsTip')}
+              hint={t('expandedSidebar.aspectsHint')}
             >
-              Aspects ({aspects.length})
+              {t('expandedSidebar.aspectsCount', { count: aspects.length })}
             </TipHeading>
             <ul className="es-aspect-list">
               {aspects.map((a, i) => (
@@ -1010,10 +1007,10 @@ export function ExpandedChartSidebar({
         return (
           <section className="es-section es-section-aspects es-section-cross">
             <TipHeading
-              tip="Overlay aspects"
-              hint="Aspects between the overlay chart’s bodies and your natal ones (e.g. a transiting planet to a natal planet), showing how the overlay activates the chart."
+              tip={t('expandedSidebar.overlayAspectsTip')}
+              hint={t('expandedSidebar.overlayAspectsHint')}
             >
-              Overlay aspects ({cross.length})
+              {t('expandedSidebar.overlayAspectsCount', { count: cross.length })}
             </TipHeading>
             <ul className="es-aspect-list">
               {cross.map((a, i) => (
@@ -1022,7 +1019,7 @@ export function ExpandedChartSidebar({
                     planet={a.a as PlanetName}
                     size={12}
                     className="asp-planet asp-planet-overlay"
-                    suffix="(overlay)"
+                    suffix={t('expandedSidebar.overlaySuffix')}
                   />
                   <AspectGlyph type={a.type} color={a.color} />
                   <PlanetTipGlyph
@@ -1051,7 +1048,7 @@ export function ExpandedChartSidebar({
       >
         <div className="es-drag-grip" />
       </div>
-      <HoverTip pos={resizeTipPos} placement="right" title="Drag to resize" />
+      <HoverTip pos={resizeTipPos} placement="right" title={t('expandedSidebar.resize')} />
     </aside>
   );
 }

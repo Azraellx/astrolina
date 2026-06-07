@@ -423,6 +423,16 @@ button.topnav-status:hover {
 .navmenu-item.on {
   color: var(--accent);
 }
+/* A listed-but-unavailable option (e.g. a language with no catalog yet): grayed and
+   non-interactive, but still hoverable so its "not available" tip can show. */
+.navmenu-item.disabled {
+  color: var(--text-faint);
+  opacity: 0.55;
+  cursor: default;
+}
+.navmenu-item.disabled:hover {
+  background: transparent;
+}
 /* Checkmark toggles (the View menu) keep normal text color when on — only the
    ✓ marker signals the state, not an accent tint. */
 .navmenu-item.navmenu-check.on {

@@ -1,0 +1,118 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
+// Expanded chart sidebar: the wheel state titles, the Advanced planet/angle table
+// (column headers + their hover tips), station/retrograde/out-of-bounds tips, the
+// aspect names/descriptions and toggles, and the section headings. Planet names come
+// from labels.planet, sign names from labels.sign, month names from fmt.monthName.
+export const expandedSidebar = {
+  // Bold state title in the wheel's top-left corner, tracking the live map state.
+  wheelTitle: {
+    natal: 'NATAL CHART',
+    pinned: 'PINNED CHART',
+    hover: 'HOVER CHART',
+  },
+  empty: 'No chart selected',
+
+  advanced: {
+    // The Advanced toggle: pill label, hover tip title, and explanation.
+    label: 'Advanced',
+    tip: 'Advanced',
+    hint: 'Detailed natal data: declination, speed, retrograde, exact orbs, and the aspect grid.',
+  },
+
+  close: {
+    aria: 'Hide expanded view',
+    tip: 'Hide sidebar',
+    label: 'Hide',
+  },
+
+  // Pre-1970 timezone DST caution glyph in the meta row.
+  tzUncertain: 'Timezone uncertain',
+  tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
+
+  // The four chart angles, listed in the planet/angle readout and Advanced table.
+  angle: {
+    midheaven: 'Midheaven',
+    imumCoeli: 'Imum Coeli',
+    ascendant: 'Ascendant',
+    descendant: 'Descendant',
+  },
+
+  // Advanced table column headers and their explanatory hover tips.
+  table: {
+    point: 'Point',
+    longitude: 'Longitude',
+    longitudeHint: 'Zodiacal longitude: the body’s degree, sign, and arcminute along the ecliptic.',
+    speed: 'Speed',
+    speedHint: 'Daily motion in ecliptic longitude; a negative value means retrograde.',
+    latitude: 'Latitude',
+    latitudeHint: 'Ecliptic latitude: angular distance north or south of the ecliptic (positive is north).',
+    raLabel: 'Rt.Asc.',
+    raTitle: 'Right Ascension',
+    raHint: 'Position along the celestial equator from 0° to 360°, the sky’s east/west coordinate.',
+    decLabel: 'Decl.',
+    decTitle: 'Declination',
+    decHint: 'Angular distance north or south of the celestial equator; past 23°26′ the body is ‘out of bounds’.',
+    aziLabel: 'Azi(0°N)',
+    aziTitle: 'Azimuth',
+    aziHint: 'The body’s compass bearing at the relocated place, measured clockwise from due north (0°).',
+    altLabel: 'Alti.',
+    altTitle: 'Altitude',
+    altHint: 'The body’s angular height above the horizon at the relocated place (negative means below it).',
+  },
+
+  // Per-body motion-state tips shown beside a planet in the Advanced table.
+  stationary: 'Stationary',
+  stationaryHint: 'Briefly motionless against the stars as it turns between direct and retrograde, so its themes feel concentrated and pivotal.',
+  retrograde: 'Retrograde',
+  retrogradeHint: 'Appears to move backward through the zodiac from Earth’s vantage; its themes turn inward, revisited or replayed.',
+  outOfBounds: 'Out of bounds {dir}',
+  north: 'north',
+  south: 'south',
+  outOfBoundsHint: 'Declination beyond the Sun’s maximum (23°26′), past the zodiac’s normal latitude band, an astrologically notable extreme.',
+
+  // Aspect names + descriptions for the Advanced aspect-symbol hover tips.
+  aspect: {
+    conjunction: { name: 'Conjunction', desc: 'Two bodies fused at the same point, blending their energies.' },
+    opposition: { name: 'Opposition', desc: 'Bodies face off across the chart: a tension of opposites seeking balance.' },
+    trine: { name: 'Trine', desc: 'An easy, harmonious flow of energy and natural talent.' },
+    square: { name: 'Square', desc: 'Friction and challenge that pushes you to grow.' },
+    sextile: { name: 'Sextile', desc: 'A supportive opportunity that rewards a little effort.' },
+  },
+
+  // Aspect-category pill toggles below the wheel: compact label, full tip label, desc.
+  toggle: {
+    harmonious: {
+      label: 'Trine / Sextile',
+      tipLabel: 'Trine / Sextile',
+      desc: 'Flowing, supportive aspects: ease, talent, and opportunity.',
+    },
+    hard: {
+      label: 'Square / Opp',
+      tipLabel: 'Square / Opposition',
+      desc: 'Tense aspects: friction, challenge, and the drive to grow.',
+    },
+    conjunction: {
+      label: 'Conj',
+      tipLabel: 'Conjunction',
+      desc: 'Two bodies fused at the same point, blending their energies.',
+    },
+  },
+
+  // Aspect section heading (counted) + its hover-tip title and explanation.
+  aspectsCount: '{count, plural, one {Aspects (#)} other {Aspects (#)}}',
+  aspectsTip: 'Aspects',
+  aspectsHint: 'Angular relationships between two bodies by ecliptic longitude (conjunction, sextile, square, trine, opposition) that shape how their energies interact.',
+
+  // Overlay-aspect section: the "(overlay)" planet suffix, counted heading, tip, hint.
+  overlaySuffix: '(overlay)',
+  overlayAspectsCount: '{count, plural, one {Overlay aspects (#)} other {Overlay aspects (#)}}',
+  overlayAspectsTip: 'Overlay aspects',
+  overlayAspectsHint: 'Aspects between the overlay chart’s bodies and your natal ones (e.g. a transiting planet to a natal planet), showing how the overlay activates the chart.',
+
+  resize: 'Drag to resize',
+} as const;

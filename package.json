@@ -1,5 +1,5 @@
 {
-  "name": "astrolina",
+  "name": "astrolina-maps",
   "private": true,
   "version": "1.0.0",
   "description": "A modern, web-based astrocartography tool for curious minds.",
@@ -19,8 +19,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name astrolina",
-    "deploy:preview": "npm run build && wrangler pages deploy dist --project-name astrolina --branch preview"
+    "deploy": "npm run build && wrangler pages deploy dist --project-name astrolina-maps",
+    "deploy:preview": "npm run build && wrangler pages deploy dist --project-name astrolina-maps --branch preview"
   },
   "dependencies": {
     "@swisseph/browser": "1.1.0",

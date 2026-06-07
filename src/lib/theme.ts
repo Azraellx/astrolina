@@ -9,13 +9,9 @@ export type Theme = 'glass' | 'dark' | 'vintage';
 // Earth (vintage) leads the list and is the default; Glass and Dark follow.
 export const THEMES: Theme[] = ['vintage', 'glass', 'dark'];
 
-export const THEME_LABELS: Record<Theme, string> = {
-  glass: 'Glass',
-  // Internal ids stay 'dark'/'vintage' (persisted prefs + [data-theme] selectors);
-  // only the display labels differ ("Earth" for vintage).
-  dark: 'Dark',
-  vintage: 'Earth',
-};
+// Theme display labels moved to the i18n catalog (settings.theme.*); resolve via
+// useT().labels.theme(theme). Internal ids stay 'glass'/'dark'/'vintage' (persisted
+// prefs + [data-theme] selectors); only the display label for vintage ("Earth") differs.
 
 const STORAGE_KEY = 'astro:theme:v1';
 

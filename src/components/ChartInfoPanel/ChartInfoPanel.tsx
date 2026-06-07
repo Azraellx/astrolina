@@ -7,10 +7,10 @@
 import { useState } from 'react';
 import {
   PLANET_COLORS,
-  PLANET_DISPLAY,
   type EclipticPosition,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
+import { useT } from '../../i18n';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import './ChartInfoPanel.css';
 
@@ -39,6 +39,7 @@ export function ChartInfoPanel({
   planets,
   isRelocated,
 }: ChartInfoPanelProps) {
+  const { t, labels } = useT();
   const [open, setOpen] = useState(false);
 
   return (
@@ -49,16 +50,16 @@ export function ChartInfoPanel({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <span className="cip-title">Chart Info</span>
+        <span className="cip-title">{t('chartInfoPanel.title')}</span>
         {isRelocated && open && (
-          <span className="cip-relocated-tag">relocated</span>
+          <span className="cip-relocated-tag">{t('chartInfoPanel.relocated')}</span>
         )}
         <span className="cip-chevron">{open ? '▾' : '▸'}</span>
       </button>
 
       {open && angles && (
         <div className="cip-body">
-          <h3>Planets</h3>
+          <h3>{t('chartInfoPanel.planets')}</h3>
           <ul className="cip-list">
             {planets.map((p) => (
               <li key={p.name}>
@@ -72,13 +73,13 @@ export function ChartInfoPanel({
                 >
                   <PlanetGlyph planet={p.name} size={14} />
                 </span>
-                <span className="cip-name">{PLANET_DISPLAY[p.name]}</span>
+                <span className="cip-name">{labels.planet(p.name)}</span>
                 <span className="cip-lon">{fmtLon(p.lon)}</span>
               </li>
             ))}
           </ul>
 
-          <h3>Angles</h3>
+          <h3>{t('chartInfoPanel.angles')}</h3>
           <ul className="cip-list cip-angles">
             <li>
               <span className="cip-name">As</span>
@@ -99,16 +100,19 @@ export function ChartInfoPanel({
           </ul>
 
           <p className="cip-aspect-legend">
-            <span className="cip-asp-swatch trine" /> trine / sextile&nbsp;&nbsp;
-            <span className="cip-asp-swatch square" /> square / opp&nbsp;&nbsp;
-            <span className="cip-asp-swatch conj" /> conj
+            <span className="cip-asp-swatch trine" />{' '}
+            {t('chartInfoPanel.legend.trineSextile')}&nbsp;&nbsp;
+            <span className="cip-asp-swatch square" />{' '}
+            {t('chartInfoPanel.legend.squareOpp')}&nbsp;&nbsp;
+            <span className="cip-asp-swatch conj" />{' '}
+            {t('chartInfoPanel.legend.conj')}
           </p>
         </div>
       )}
 
       {open && !angles && (
         <div className="cip-body">
-          <p className="cip-empty">No chart loaded.</p>
+          <p className="cip-empty">{t('chartInfoPanel.empty')}</p>
         </div>
       )}
     </aside>

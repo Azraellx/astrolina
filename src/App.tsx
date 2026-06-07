@@ -101,6 +101,7 @@ import {
   saveProjection,
   type MapProjectionMode,
 } from './lib/projection';
+import { useT } from './i18n';
 
 interface Point {
   lat: number;
@@ -186,6 +187,7 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 }));
 
 export default function App() {
+  const { t } = useT();
   const [charts, setCharts] = useState<StoredChart[]>(() => {
     const loaded = loadCharts();
     return loaded.length > 0 ? loaded : seedCharts;
@@ -637,6 +639,7 @@ export default function App() {
       primaryRate,
       userPrimaryRate,
       transitFrame,
+      t,
     );
   }, [
     overlayMode,
@@ -648,6 +651,7 @@ export default function App() {
     primaryRate,
     userPrimaryRate,
     transitFrame,
+    t,
   ]);
 
   const overlay = useMemo<OverlayData | null>(() => {
@@ -753,7 +757,7 @@ export default function App() {
   const hoverLabel =
     mapTool === 'measure' || !hover
       ? null
-      : (hoverCity ?? hoverCountry ?? 'Ocean');
+      : (hoverCity ?? hoverCountry ?? t('common.locationFallbackOcean'));
   const locationLabel =
     mapTool === 'measure'
       ? null
@@ -1011,9 +1015,7 @@ export default function App() {
       {!wheelExpanded && showCoords && (
         <header className="app-header">
           {current?.tzUncertain && (
-            <p className="tz-warning">
-              ⚠ Pre-1970 timezone outside US/EU: verify DST against an atlas
-            </p>
+            <p className="tz-warning">{t('common.tzWarning')}</p>
           )}
           <CoordReadout
             point={activePoint ?? (current ? current.birthplace : null)}

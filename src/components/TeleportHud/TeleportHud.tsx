@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlaceResult } from '../../lib/atlas/cityLookup';
+import { useT } from '../../i18n';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -37,6 +38,7 @@ export function TeleportHud({
   backState,
   onClose,
 }: TeleportHudProps) {
+  const { t } = useT();
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -142,19 +144,19 @@ export function TeleportHud({
           onMouseLeave={hideGripTip}
         >
           <span className="hud-grip" aria-hidden="true" />
-          <span className="teleport-title">Teleport</span>
+          <span className="teleport-title">{t('teleportHud.title')}</span>
         </div>
         <HoverTip
           pos={dragging ? null : gripTipPos}
           placement="top"
-          title="Drag to move"
-          hint="Double-click to recentre"
+          title={t('common.hud.dragToMove')}
+          hint={t('teleportHud.recentreHint')}
         />
         <button
           type="button"
           className="teleport-close"
           onClick={onClose}
-          aria-label="Close Teleport"
+          aria-label={t('teleportHud.closeAria')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
             <path d="M5 5l14 14M19 5L5 19" />
@@ -177,10 +179,10 @@ export function TeleportHud({
             setQuery(e.target.value);
           }}
           onKeyDown={onKeyDown}
-          placeholder="Jump to a place…"
+          placeholder={t('teleportHud.placeholder')}
           spellCheck={false}
           autoComplete="off"
-          aria-label="Search for a place to jump to"
+          aria-label={t('teleportHud.searchAria')}
         />
         {searching && <span className="teleport-spinner" aria-hidden="true" />}
       </div>
@@ -197,7 +199,7 @@ export function TeleportHud({
               >
                 <span className="teleport-result-main">
                   <span className="teleport-result-label">{r.label}</span>
-                  <span className={`teleport-kind teleport-kind-${r.kind}`}>{r.kind}</span>
+                  <span className={`teleport-kind teleport-kind-${r.kind}`}>{t(`teleportHud.kind.${r.kind}`)}</span>
                 </span>
                 <span className="teleport-result-coord">
                   {Math.abs(r.lat).toFixed(1)}°{r.lat >= 0 ? 'N' : 'S'}{' '}
@@ -233,7 +235,7 @@ export function TeleportHud({
                 <path d="M19 12H5M11 6l-6 6 6 6" />
               )}
             </svg>
-            <span>{backState === 'forward' ? 'Go forward' : 'Go back'}</span>
+            <span>{backState === 'forward' ? t('teleportHud.goForward') : t('teleportHud.goBack')}</span>
           </button>
         </div>
       )}

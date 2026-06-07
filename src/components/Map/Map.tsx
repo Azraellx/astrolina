@@ -44,7 +44,10 @@ import {
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
-import { PLANET_COLORS, PLANET_DISPLAY, type PlanetName } from '../../lib/ephemeris';
+import { PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
+import { useT } from '../../i18n';
+import type { EnumLabels } from '../../i18n';
+import type { TFn } from '../../i18n';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { CreditsModal } from '../CreditsModal/CreditsModal';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -539,7 +542,12 @@ function tagHtml(t: string): string {
   return `<span class="cross-tip-tag">${t}</span>`;
 }
 
-function lineLabelHtml(layerId: string, props: Record<string, unknown>): string | null {
+function lineLabelHtml(
+  layerId: string,
+  props: Record<string, unknown>,
+  t: TFn,
+  labels: EnumLabels,
+): string | null {
   const isOv = layerId.includes('-ov');
   // Overlay lines carry a tagged label ("Tr Ve MC"); lift the prefix off it.
   const pre =
@@ -550,22 +558,22 @@ function lineLabelHtml(layerId: string, props: Record<string, unknown>): string 
     row =
       pre +
       glyphHtml(planet, props.color as string) +
-      `${PLANET_DISPLAY[planet]} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+      `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
-    row = tagHtml('LS') + glyphHtml(planet, props.color as string) + PLANET_DISPLAY[planet];
+    row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
   } else if (layerId.startsWith('parans')) {
     const pa = props.planetA as PlanetName;
     const pb = props.planetB as PlanetName;
     row =
       pre +
       glyphHtml(pa, PLANET_COLORS[pa]) +
-      `${PLANET_DISPLAY[pa]} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
+      `${labels.planet(pa)} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
       `<span class="cross-tip-x">×</span>` +
       glyphHtml(pb, PLANET_COLORS[pb]) +
-      `${PLANET_DISPLAY[pb]} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
+      `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId === 'ecliptic-layer') {
-    row = 'Ecliptic';
+    row = t('map.ecliptic');
   }
   return row ? `<div class="ui-tip"><span class="cross-tip-row">${row}</span></div>` : null;
 }
@@ -573,20 +581,22 @@ function lineLabelHtml(layerId: string, props: Record<string, unknown>): string 
 function lineAtPoint(
   map: maplibregl.Map,
   pt: ScreenPt,
+  t: TFn,
+  labels: EnumLabels,
 ): { id: string; html: string } | null {
   const layers = LINE_HIT_LAYERS.filter((l) => map.getLayer(l));
   if (!layers.length) return null;
-  const t = LINE_HIT_TOLERANCE_PX;
+  const tol = LINE_HIT_TOLERANCE_PX;
   const feats = map.queryRenderedFeatures(
     [
-      [pt.x - t, pt.y - t],
-      [pt.x + t, pt.y + t],
+      [pt.x - tol, pt.y - tol],
+      [pt.x + tol, pt.y + tol],
     ],
     { layers },
   );
   const f = feats[0];
   if (!f || !f.properties) return null;
-  const html = lineLabelHtml(f.layer.id, f.properties);
+  const html = lineLabelHtml(f.layer.id, f.properties, t, labels);
   if (!html) return null;
   // Stable id so the popup HTML is only re-set when the hovered line changes.
   return { id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}`, html };
@@ -1097,6 +1107,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onRightClick,
   onDetailZoomChange,
 }: MapProps, ref) {
+  const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   // One-slot "go back" view for the Teleport window: teleportTo() stashes the
@@ -1406,9 +1417,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // hover/focus listeners (torn down with the map in this effect's cleanup).
     const ctrlRoot = map.getContainer();
     const ctrlTipDefs: { sel: string; label: string; hotkey?: string }[] = [
-      { sel: '.maplibregl-ctrl-zoom-in', label: 'Zoom in', hotkey: '+' },
-      { sel: '.maplibregl-ctrl-zoom-out', label: 'Zoom out', hotkey: '−' },
-      { sel: '.maplibregl-ctrl-compass', label: 'Reset bearing & tilt' },
+      { sel: '.maplibregl-ctrl-zoom-in', label: t('map.ctrl.zoomIn'), hotkey: '+' },
+      { sel: '.maplibregl-ctrl-zoom-out', label: t('map.ctrl.zoomOut'), hotkey: '−' },
+      { sel: '.maplibregl-ctrl-compass', label: t('map.ctrl.resetBearing') },
     ];
     const ctrlTipCleanups: (() => void)[] = [];
     for (const def of ctrlTipDefs) {
@@ -1520,6 +1531,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.remove();
       mapRef.current = null;
     };
+    // `t` is read once to label the bound-once nav-control tips; intentionally not a
+    // dep so a locale change never tears down and recreates the whole map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computeBadges, scheduleBadges]);
 
   useEffect(() => {
@@ -1601,8 +1615,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       hoveredCross = cross.id;
       map.setFeatureState({ source: 'acg-ls-cross', id: cross.id }, { hover: true });
-      const lsName = PLANET_DISPLAY[cross.lsPlanet] ?? cross.lsPlanet;
-      const acgName = PLANET_DISPLAY[cross.acgPlanet] ?? cross.acgPlanet;
+      const lsName = labels.planet(cross.lsPlanet) ?? cross.lsPlanet;
+      const acgName = labels.planet(cross.acgPlanet) ?? cross.acgPlanet;
       // Stacked, like the line badges: "LS <glyph> Mars" / "×" / "Ds <glyph> Venus".
       const row = (tag: string, glyph: string, color: string, name: string) =>
         `<span class="cross-tip-row"><span class="cross-tip-tag">${tag}</span>` +
@@ -1649,12 +1663,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       hoveredZenith = zen.id;
       map.setFeatureState({ source: 'acg-zenith', id: zen.id }, { hover: true });
-      const name = PLANET_DISPLAY[zen.planet] ?? zen.planet;
+      const name = labels.planet(zen.planet) ?? zen.planet;
       zenithPopup
         .setLngLat([zen.lng, zen.lat])
         .setHTML(
-          `<div class="ui-tip"><span class="ui-tip-title">${name} zenith</span>` +
-            `<span class="ui-tip-sub">where ${name} is directly overhead</span></div>`,
+          `<div class="ui-tip"><span class="ui-tip-title">${t('map.zenithTitle', { planet: name })}</span>` +
+            `<span class="ui-tip-sub">${t('map.zenithSub', { planet: name })}</span></div>`,
         );
       // Add once, then just reposition/retitle on subsequent moves (no DOM churn).
       if (!zenithPopup.isOpen()) zenithPopup.addTo(map);
@@ -1682,7 +1696,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         } else {
           // A bare line under the cursor just names itself (hover tip); it isn't a
           // click target, so the cursor stays the map's default (no pointer).
-          const line = lineAtPoint(map, e.point);
+          const line = lineAtPoint(map, e.point, t, labels);
           if (line) {
             clearZenith();
             clearCross();
@@ -1738,7 +1752,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearCross();
       clearLine();
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, measureActive, flyToPoint]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, measureActive, flyToPoint, t, labels]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -1908,9 +1922,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     el.classList.toggle('natal', pinType === 'natal');
     el.title =
       pinType === 'natal'
-        ? 'Natal birth location (right-click to remove)'
-        : 'Pinned location (right-click to remove)';
-  }, [pin, pinType]);
+        ? t('map.pin.natal')
+        : t('map.pin.custom');
+  }, [pin, pinType, t]);
 
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
@@ -1979,7 +1993,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
               placement="top"
-              tip={`Fly to ${b.prefix ? `${b.prefix} ` : ''}${PLANET_DISPLAY[b.planet]}'s zenith`}
+              tip={t('map.flyToZenith', {
+                prefix: b.prefix ? `${b.prefix} ` : '',
+                planet: labels.planet(b.planet),
+              })}
             >
               {inner}
             </TipButton>
@@ -2002,7 +2019,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             style={{ translate: badgePos(b.x, b.y), background: zenithFill, color: paranText }}
             onClick={() => onParanClick(b)}
             placement="top"
-            tip="Fly to this paran's intersection (click again to return)"
+            tip={t('map.flyToParan')}
           >
             {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
             <PlanetGlyph planet={b.planetA} size={11} color={paranText} />
@@ -2029,7 +2046,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 flyToPoint(localSpaceOrigin.lng, localSpaceOrigin.lat)
               }
               placement="top"
-              tip="Fly to the local-space origin (the pin)"
+              tip={t('map.flyToLocalSpaceOrigin')}
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
@@ -2057,7 +2074,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           onClick={() =>
             mapRef.current?.easeTo({ zoom: ZOOM_OUT_TARGET, duration: 600 })
           }
-          aria-label="Zoom out to a wide view"
+          aria-label={t('map.zoomOutToWide')}
         >
           <svg
             width="16"
@@ -2074,7 +2091,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <path d="M21 21l-4.35-4.35" />
             <path d="M8 11h6" />
           </svg>
-          <span>Zoom out</span>
+          <span>{t('map.zoomOut')}</span>
         </button>
       )}
     </>

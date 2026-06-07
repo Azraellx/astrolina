@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getIanaTimezone } from '../../lib/atlas/timezone';
 import { displayName, newChartId, type StoredChart } from '../../lib/chartLibrary';
 import { parseImport, type ParsedChart } from '../../lib/importCharts';
+import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import { TipSpan } from '../ui/HoverTip';
 import './ImportChartModal.css';
 
@@ -15,11 +17,6 @@ interface ImportChartModalProps {
   onCancel: () => void;
   onImport: (charts: StoredChart[]) => void;
 }
-
-const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
 
 const TEXT_EXAMPLE = `Mary Decker - Natal Chart
 4 Aug 1958, 2:59 am, EDT +4:00
@@ -29,8 +26,8 @@ Geocentric Tropical Zodiac`;
 const CSV_EXAMPLE = `"Name","Chart Type","Date","Time","Zone","City","Region","Latitude","Longitude","Zodiac"
 "Mary Decker","Natal","04 Aug 1958","02:59:00","-04:00","Raritan","New Jersey","40N34","074W38","Tropical"`;
 
-function fmtSummary(c: ParsedChart): string {
-  const date = `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+function fmtSummary(c: ParsedChart, fmt: Formatters): string {
+  const date = `${c.day} ${fmt.monthAbbr(c.month)} ${c.year}`;
   const time = `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
   const off = c.tzOffset >= 0 ? `+${c.tzOffset}` : `${c.tzOffset}`;
   return `${date} · ${time} (UTC${off}) · ${c.birthplace.label}`;
@@ -60,6 +57,7 @@ function toStoredChart(c: ParsedChart, i: number): StoredChart {
 }
 
 export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) {
+  const { t, fmt } = useT();
   const [raw, setRaw] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -79,12 +77,12 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
     setFileError(null);
     const ok = /\.(txt|csv)$/i.test(file.name) || file.type.startsWith('text');
     if (!ok) {
-      setFileError('Please drop a .txt or .csv file.');
+      setFileError(t('importChartModal.fileTypeError'));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => setRaw(String(reader.result ?? ''));
-    reader.onerror = () => setFileError('Could not read that file.');
+    reader.onerror = () => setFileError(t('importChartModal.fileReadError'));
     reader.readAsText(file);
   };
 
@@ -100,26 +98,24 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
         onClick={(e) => e.stopPropagation()}
       >
         <header>
-          <h2>Import charts</h2>
+          <h2>{t('importChartModal.title')}</h2>
           <button
             type="button"
             className="close"
             onClick={onCancel}
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             ×
           </button>
         </header>
 
-        <p className="import-intro">
-          Paste a chart or drop in a file (multiple charts are supported).
-        </p>
+        <p className="import-intro">{t('importChartModal.intro')}</p>
 
         <textarea
           className="import-textarea"
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          placeholder={`${TEXT_EXAMPLE}\n\n— or —\n\n${CSV_EXAMPLE}`}
+          placeholder={`${TEXT_EXAMPLE}\n\n${t('importChartModal.orSeparator')}\n\n${CSV_EXAMPLE}`}
           spellCheck={false}
           autoFocus
         />
@@ -153,8 +149,11 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
             }}
           />
           <span>
-            Drag &amp; drop a <strong>.txt</strong> or <strong>.csv</strong>, or
-            click to choose a file
+            {t('importChartModal.dropzonePrefix')}
+            <strong>.txt</strong>
+            {t('importChartModal.dropzoneOr')}
+            <strong>.csv</strong>
+            {t('importChartModal.dropzoneSuffix')}
           </span>
         </div>
         {fileError && <p className="import-file-error">{fileError}</p>}
@@ -168,7 +167,7 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
                     <TipSpan className="import-name" placement="top" tip={c.name}>
                       {displayName(c.name)}
                     </TipSpan>
-                    <span className="import-detail">{fmtSummary(c)}</span>
+                    <span className="import-detail">{fmtSummary(c, fmt)}</span>
                   </li>
                 ))}
               </ul>
@@ -176,7 +175,7 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
             {errors.length > 0 && (
               <ul className="import-errors">
                 {errors.map((er, i) => (
-                  <li key={i}>⚠ {er}</li>
+                  <li key={i}>{t('importChartModal.parseError', { er })}</li>
                 ))}
               </ul>
             )}
@@ -185,7 +184,7 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
 
         <footer>
           <button type="button" className="secondary" onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -194,8 +193,8 @@ export function ImportChartModal({ onCancel, onImport }: ImportChartModalProps) 
             disabled={charts.length === 0}
           >
             {charts.length > 0
-              ? `Import ${charts.length} chart${charts.length > 1 ? 's' : ''}`
-              : 'Import'}
+              ? t('importChartModal.importButton', { count: charts.length })
+              : t('importChartModal.importEmpty')}
           </button>
         </footer>
       </div>

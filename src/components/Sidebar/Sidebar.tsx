@@ -4,13 +4,12 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ASTEROID_NAMES,
   NODE_NAMES,
   PLANET_COLORS,
-  PLANET_DISPLAY,
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type HouseSystem,
@@ -25,36 +24,16 @@ import type {
   PrimaryRate,
   TransitFrame,
 } from '../../lib/astro/timeline';
-import { THEMES, THEME_LABELS, type Theme } from '../../lib/theme';
+import { THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { useT, LANGUAGES } from '../../i18n';
+import type { Locale } from '../../i18n';
 import './Sidebar.css';
 
-// One-sentence astrological theme per body, for the Map-filters planet tips
-// (novice-friendly flavour; purely descriptive, not used in any calculation).
-const PLANET_THEMES: Record<PlanetName, string> = {
-  Sun: 'Your core identity, vitality, and where you shine.',
-  Moon: 'Emotions, instinct, and what makes you feel at home.',
-  Mercury: 'The mind: how you think, learn, and communicate.',
-  Venus: 'Love, beauty, pleasure, and what you value.',
-  Mars: 'Drive, courage, and how you assert yourself and act.',
-  Jupiter: 'Growth, luck, and where life expands and feels generous.',
-  Saturn: 'Discipline, limits, and the hard-won lessons of maturity.',
-  Uranus: 'Sudden change, freedom, and your spark of rebellion.',
-  Neptune: 'Dreams, intuition, spirituality, and beautiful illusion.',
-  Pluto: 'Power, intensity, and profound transformation and rebirth.',
-  NorthNode: 'Your soul’s growth path and where you’re headed this life.',
-  SouthNode: 'Familiar past-life gifts and patterns to grow beyond.',
-  Lilith: 'Raw, untamed instinct and where you refuse to be tamed.',
-  Chiron: 'The wounded healer: healing through your own deepest hurt.',
-  Ceres: 'Nurturing, nourishment, and how you give and receive care.',
-  Pallas: 'Wisdom, strategy, and bright creative problem-solving.',
-  Juno: 'Commitment, partnership, and what you seek in a soulmate.',
-  Vesta: 'Devotion, focus, and the inner flame you keep sacred.',
-};
-
 // The "Planets" filter group: the ten bodies + the two lunar nodes. Asteroids get
-// their own section (and their own independent show/hide-all).
+// their own section (and their own independent show/hide-all). The per-body display
+// name + one-line theme now resolve from the catalog (planets.* via labels.*).
 const PLANET_FILTERS: PlanetName[] = [...TRADITIONAL_PLANETS, ...NODE_NAMES];
 
 interface SidebarProps {
@@ -102,20 +81,23 @@ interface SidebarProps {
   setOpenSection: (s: SidebarSection | null) => void;
 }
 
-const LINE_TYPES: { type: LineType; label: string; full: string }[] = [
-  { type: 'MC', label: 'MC', full: 'Midheaven (career, public)' },
-  { type: 'IC', label: 'IC', full: 'Imum Coeli (home, roots)' },
-  { type: 'ASC', label: 'As', full: 'Ascendant (self, identity)' },
-  { type: 'DSC', label: 'Ds', full: 'Descendant (relationships)' },
+// Angle codes (As/Ds/MC/IC) are language-neutral button labels; the spelled-out
+// tooltip resolves from the catalog (settings.lineType.*.hint via labels.lineTypeHint).
+const LINE_TYPES: { type: LineType; label: string }[] = [
+  { type: 'MC', label: 'MC' },
+  { type: 'IC', label: 'IC' },
+  { type: 'ASC', label: 'As' },
+  { type: 'DSC', label: 'Ds' },
 ];
 
 // The Shift+click affordance shown as the hotkey tag on each planet / line filter
 // tip: "Shift" + a cursor/tap glyph. Shift+click toggles every item in the group at
 // once (show vs hide follows the hovered one's state — the user infers it).
 function ShiftTapTag() {
+  const { t } = useT();
   return (
     <span className="shift-tap-tag">
-      Shift
+      {t('settings.shiftTag')}
       <svg
         className="shift-tap-icon"
         width="11"
@@ -130,65 +112,29 @@ function ShiftTapTag() {
   );
 }
 
-const COORD_SYSTEMS: { value: CoordSystem; label: string; hint: string }[] = [
-  { value: 'mundo', label: 'In Mundo', hint: 'Lines use each body’s true position in the sky (RA / dec). Most affects Pluto and the Moon.' },
-  { value: 'zodiaco', label: 'In Zodiaco', hint: 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).' },
+// Option VALUES only; each control resolves its label + hint from the shared
+// settings.* catalog (via makeEnumLabels), the same maps the InfoBar chip reads. The
+// arrays preserve display order. Proper-noun house eponyms stay verbatim in the catalog.
+const COORD_SYSTEM_VALUES: CoordSystem[] = ['mundo', 'zodiaco'];
+
+const LINE_SYSTEM_VALUES: LineSystem[] = ['celestial', 'geodetic'];
+
+const PROJECTION_VALUES: MapProjectionMode[] = ['2d', '3d'];
+
+const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
+  'placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus', 'whole', 'equal',
 ];
 
-// Internal ids stay 'celestial'/'geodetic'; the astrologer-facing labels are
-// "Celestial" / "Mundane" (geodetic is named in the hover hint + description).
-const LINE_SYSTEMS: { value: LineSystem; label: string; hint: string }[] = [
-  { value: 'celestial', label: 'Celestial', hint: 'Standard astrocartography: angles placed by the sky (sidereal time)' },
-  { value: 'geodetic', label: 'Mundane', hint: "Geodetic mapping: the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries), independent of birth time" },
+const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
+
+const POSITIONING_VALUES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
+
+const ANGLE_PROGRESSION_VALUES: AngleProgression[] = [
+  'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra', 'mean-quotidian',
 ];
 
-const PROJECTIONS: { value: MapProjectionMode; label: string; hint: string }[] = [
-  { value: '2d', label: 'Flat', hint: 'Classic Web-Mercator map' },
-  { value: '3d', label: 'Globe', hint: 'Rotatable 3D globe' },
-];
-
-const HOUSE_SYSTEMS: { value: HouseSystem; label: string; hint: string }[] = [
-  { value: 'placidus', label: 'Placidus', hint: 'Semi-arc time division (the common modern default)' },
-  { value: 'koch', label: 'Koch', hint: 'Semi-arc on the birth latitude (GOH)' },
-  { value: 'regiomontanus', label: 'Regiomontanus', hint: 'Equal divisions of the celestial equator' },
-  { value: 'campanus', label: 'Campanus', hint: 'Equal divisions of the prime vertical' },
-  { value: 'porphyry', label: 'Porphyry', hint: 'Each quadrant trisected in ecliptic longitude' },
-  { value: 'alcabitus', label: 'Alcabitus', hint: 'Ancient semi-arc on the diurnal / nocturnal arcs' },
-  { value: 'whole', label: 'Whole Sign', hint: 'Each house is a whole sign from the rising sign' },
-  { value: 'equal', label: 'Equal', hint: '30° houses measured from the Ascendant' },
-];
-
-const NODE_TYPES: { value: NodeType; label: string; hint: string }[] = [
-  { value: 'true', label: 'True Node', hint: 'True (osculating) node follows the Moon’s instantaneous orbit; oscillates ±~1.5° around the mean and can briefly turn direct (desktop-tool default).' },
-  { value: 'mean', label: 'Mean Node', hint: 'The smoothed long-term average; always moves retrograde at a steady rate.' },
-];
-
-// How an overlay's angle lines are framed. "Relative" holds the natal angles fixed
-// (radix-relative), "Absolute" uses the overlay moment's own sidereal time. Mainly
-// shapes the Transits map (the directed overlays use Chart Angle below).
-const POSITIONINGS: { value: TransitFrame; label: string; hint: string }[] = [
-  { value: 'relative-to-natal', label: 'Relative', hint: 'Frame the overlay against your natal chart’s angles (radix-relative); the lines drift slowly with the planets’ own motion. The default most astrologers work with.' },
-  { value: 'transit-moment', label: 'Absolute', hint: 'Place the overlay at its own moment in the sky (that instant’s sidereal time); the lines sweep about 15° per hour with Earth’s rotation. Standard transit astrocartography.' },
-];
-
-// "Progs/Dirns" — how a directed/progressed chart's angles advance (Solar Arc +
-// Progressed overlays), and the time-key for the Primary Directions overlay.
-const ANGLE_PROGRESSIONS: { value: AngleProgression; label: string; hint: string }[] = [
-  { value: 'sa-long', label: 'SA in Longitude', hint: 'Solar arc in ecliptic longitude (the classic solar-arc default).' },
-  { value: 'sa-ra', label: 'SA in RA', hint: 'Solar arc measured in right ascension.' },
-  { value: 'naibod-long', label: 'Naibod in Long', hint: 'Mean solar rate 0.9856°/yr, applied in longitude.' },
-  { value: 'naibod-ra', label: 'Naibod in RA', hint: 'Mean solar rate 0.9856°/yr, applied in right ascension.' },
-  { value: 'mean-quotidian', label: 'Mean Quotidian', hint: 'Quotidian progressed angle (one day per year); on Solar Arc it matches SA in Longitude.' },
-];
-
-const PRIMARY_RATES: { value: PrimaryRate; label: string; hint: string }[] = [
-  { value: 'ptolemy', label: 'Ptolemy (1°/yr)', hint: 'One year per degree.' },
-  { value: 'naibod', label: 'Naibod (59′08″/yr)', hint: '0.985647° per year, the Sun’s mean motion.' },
-  { value: 'cardan', label: 'Cardan (59′12″/yr)', hint: '0.986667° per year.' },
-  { value: 'kepler-ra', label: 'Kepler: Natal Solar RA', hint: 'Natal Sun’s daily motion in right ascension × years.' },
-  { value: 'solar-long', label: 'Natal Solar: Longitude', hint: 'Natal Sun’s daily motion in ecliptic longitude × years.' },
-  { value: 'placidus-ra', label: 'Placidus: True SA in RA', hint: 'True secondary-progressed solar arc in RA (nonlinear).' },
-  { value: 'user', label: 'User rate', hint: 'Enter your own degrees-per-year below.' },
+const PRIMARY_RATE_VALUES: PrimaryRate[] = [
+  'ptolemy', 'naibod', 'cardan', 'kepler-ra', 'solar-long', 'placidus-ra', 'user',
 ];
 
 // Sidebar sections behave as an accordion — at most one open at a time — so the
@@ -329,7 +275,7 @@ function HintMenu<V extends string>({
 }: {
   value: V;
   onChange: (v: V) => void;
-  options: { value: V; label: string; hint: string }[];
+  options: { value: V; label: string; hint: string; disabled?: boolean }[];
   note?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -346,17 +292,27 @@ function HintMenu<V extends string>({
   } | null>(null);
   const current = options.find((o) => o.value === value);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
+    // The panel re-measures and re-places below before the browser paints, so a
+    // reopen never shows a stale position even though `box` keeps its last value.
     const place = () => {
       const r = triggerRef.current?.getBoundingClientRect();
       if (!r) return;
       const margin = 8; // keep this clear of the viewport edges
       const gap = 6; // gap between the trigger and the panel
       const vh = window.innerHeight;
-      // Estimate before the panel mounts; once it has, use its true height (the
-      // rAF below re-runs this so the final position is exact).
-      const panelH = panelRef.current?.scrollHeight ?? 240;
+      // The panel is mounted (hidden) before this layout effect runs, so its real
+      // height is available on the very first open. Measure the FULL outer height:
+      // scrollHeight is content + padding but EXCLUDES the border, and the panel is
+      // border-box, so using scrollHeight alone makes maxHeight a couple of pixels too
+      // short — the border then overflows and shows a scrollbar even when every row is
+      // visible. (offsetHeight − clientHeight) adds the border back; +1 absorbs
+      // sub-pixel rounding so it never under-shoots.
+      const el = panelRef.current;
+      const panelH = el
+        ? el.scrollHeight + (el.offsetHeight - el.clientHeight) + 1
+        : 240;
       // Never taller than the viewport (minus margins); it scrolls past that.
       const height = Math.min(panelH, vh - margin * 2);
       const spaceBelow = vh - r.bottom - gap - margin;
@@ -371,11 +327,24 @@ function HintMenu<V extends string>({
         // whichever side has more room, so the whole list stays reachable.
         top = spaceAbove > spaceBelow ? margin : vh - margin - height;
       }
-      setBox({ left: r.left, width: r.width, top, maxHeight: height });
+      // Skip the update when nothing changed, so the ResizeObserver below can't
+      // ping-pong with its own re-render.
+      setBox((prev) =>
+        prev &&
+        prev.left === r.left &&
+        prev.width === r.width &&
+        prev.top === top &&
+        prev.maxHeight === height
+          ? prev
+          : { left: r.left, width: r.width, top, maxHeight: height },
+      );
     };
     place();
-    // Re-place once the panel has mounted so the flip uses its real height.
-    const raf = requestAnimationFrame(place);
+    // Re-measure if the panel's own size settles after mount (e.g. fallback fonts
+    // for non-Latin labels loading in).
+    const panel = panelRef.current;
+    const ro = panel ? new ResizeObserver(place) : null;
+    if (panel) ro?.observe(panel);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
@@ -384,14 +353,20 @@ function HintMenu<V extends string>({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
-    // Keep the portaled panel pinned to the trigger as the sidebar scrolls.
-    window.addEventListener('scroll', place, true);
+    // Re-pin to the trigger when the SIDEBAR (page) scrolls, but ignore scrolling
+    // *inside* the panel — that's the user scrolling the list, and re-placing on it
+    // made the panel visibly jump and the scrollbar flicker.
+    const onScroll = (e: Event) => {
+      if (panel && e.target instanceof Node && panel.contains(e.target)) return;
+      place();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', place);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('scroll', place, true);
+      ro?.disconnect();
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', place);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
@@ -414,7 +389,6 @@ function HintMenu<V extends string>({
         </span>
       </button>
       {open &&
-        box &&
         createPortal(
           <div
             ref={panelRef}
@@ -422,12 +396,15 @@ function HintMenu<V extends string>({
             role="listbox"
             style={{
               position: 'fixed',
-              left: box.left,
-              top: box.top,
-              minWidth: box.width,
-              maxHeight: box.maxHeight,
+              left: box?.left ?? 0,
+              top: box?.top ?? 0,
+              minWidth: box?.width,
+              maxHeight: box?.maxHeight,
               overflowY: 'auto',
               zIndex: 900,
+              // Mounted before it's measured so the first open knows its real height;
+              // kept hidden until placed so it never flashes at the top-left corner.
+              visibility: box ? 'visible' : 'hidden',
             }}
           >
             {options.map((o) => (
@@ -435,8 +412,10 @@ function HintMenu<V extends string>({
                 key={o.value}
                 label={o.label}
                 hint={o.hint}
+                disabled={o.disabled}
                 selected={o.value === value}
                 onSelect={() => {
+                  if (o.disabled) return;
                   onChange(o.value);
                   setOpen(false);
                 }}
@@ -456,21 +435,27 @@ function HintMenuItem({
   hint,
   selected,
   onSelect,
+  disabled = false,
 }: {
   label: string;
   hint: string;
   selected: boolean;
   onSelect: () => void;
+  /** A listed-but-unavailable option: grayed, non-selecting, but still shows its tip
+   *  on hover (so we use aria-disabled, not the native `disabled` attribute, which
+   *  would suppress the pointer events the tip needs). */
+  disabled?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   return (
     <button
       ref={ref}
       type="button"
-      className={`navmenu-item ${selected ? 'on' : ''}`}
+      className={`navmenu-item ${selected ? 'on' : ''}${disabled ? ' disabled' : ''}`}
       role="option"
       aria-selected={selected}
-      onClick={onSelect}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onSelect}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
@@ -478,7 +463,7 @@ function HintMenuItem({
     >
       <span className="navmenu-marker">{selected ? '●' : '○'}</span>
       <span>{label}</span>
-      <ChoiceTip pos={pos} title={label} hint={hint} />
+      {hint && <ChoiceTip pos={pos} title={label} hint={hint} />}
     </button>
   );
 }
@@ -493,6 +478,7 @@ function UserRateInput({
   value: number;
   onChange: (deg: number) => void;
 }) {
+  const { t } = useT();
   const [draft, setDraft] = useState<string | null>(null);
   const display = draft ?? (Number.isFinite(value) ? value.toFixed(2) : '');
 
@@ -506,7 +492,7 @@ function UserRateInput({
   return (
     <div className="calc-user-rate">
       <label className="calc-user-rate-label" htmlFor="user-primary-rate">
-        Degrees per year
+        {t('settings.userRate.label')}
       </label>
       <input
         id="user-primary-rate"
@@ -558,6 +544,7 @@ function PlanetToggle({
   onShiftClick?: () => void;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
+  const { labels } = useT();
   return (
     <li>
       <button
@@ -576,17 +563,17 @@ function PlanetToggle({
           color={PLANET_COLORS[planet]}
           className="planet-toggle-icon"
         />
-        <span className="name">{PLANET_DISPLAY[planet]}</span>
+        <span className="name">{labels.planet(planet)}</span>
       </button>
       <ChoiceTip
         pos={pos}
         title={
           <span className="planet-tip-title">
             <PlanetGlyph planet={planet} size={14} color={PLANET_COLORS[planet]} />
-            {PLANET_DISPLAY[planet]}
+            {labels.planet(planet)}
           </span>
         }
-        hint={PLANET_THEMES[planet]}
+        hint={labels.planetTheme(planet)}
         hotkey={<ShiftTapTag />}
       />
     </li>
@@ -666,6 +653,27 @@ export function Sidebar({
   openSection,
   setOpenSection,
 }: SidebarProps) {
+  const { t, labels, locale, setLocale } = useT();
+  // The House-system / Primary-rate dropdowns need {value,label,hint} rows; build
+  // them from the value lists + the shared catalog accessors.
+  const houseSystemOptions = HOUSE_SYSTEM_VALUES.map((value) => ({
+    value,
+    label: labels.houseSystem(value),
+    hint: labels.houseSystemHint(value),
+  }));
+  const primaryRateOptions = PRIMARY_RATE_VALUES.map((value) => ({
+    value,
+    label: labels.primaryRate(value),
+    hint: labels.primaryRateHint(value),
+  }));
+  // The Language dropdown lists the top astrology-community languages; only the ones
+  // with a catalog (English today) are selectable — the rest are grayed with a tip.
+  const languageOptions = LANGUAGES.map((lang) => ({
+    value: lang.code,
+    label: lang.autonym,
+    hint: lang.available ? '' : t('settings.languageUnavailable'),
+    disabled: !lang.available,
+  }));
   const toggleSection = (s: SidebarSection) =>
     setOpenSection(openSection === s ? null : s);
 
@@ -702,40 +710,49 @@ export function Sidebar({
         onClick={() => toggleSection('theme')}
         aria-expanded={openSection === 'theme'}
       >
-        <span className="sidebar-title">Appearance</span>
+        <span className="sidebar-title">{t('settings.sections.appearance')}</span>
         <span className="sidebar-chevron">{openSection === 'theme' ? '▾' : '▸'}</span>
       </button>
 
       {openSection === 'theme' && (
         <div className="sidebar-section theme-section">
-          <h2>Theme</h2>
+          <h2>{t('settings.headings.theme')}</h2>
           <ul className="theme-list">
-            {THEMES.map((t) => (
-              <li key={t}>
+            {THEMES.map((th) => (
+              <li key={th}>
                 <button
                   type="button"
-                  className={`theme-option ${theme === t ? 'active' : ''}`}
-                  onClick={() => setTheme(t)}
+                  className={`theme-option ${theme === th ? 'active' : ''}`}
+                  onClick={() => setTheme(th)}
                 >
-                  <span className="radio">{theme === t ? '●' : '○'}</span>
-                  <span className={`swatch swatch-${t}`} />
-                  <span className="label">{THEME_LABELS[t]}</span>
+                  <span className="radio">{theme === th ? '●' : '○'}</span>
+                  <span className={`swatch swatch-${th}`} />
+                  <span className="label">{labels.theme(th)}</span>
                 </button>
               </li>
             ))}
           </ul>
 
           <div className="theme-detail">
-            <h2>Details</h2>
+            <h2>{t('settings.headings.language')}</h2>
+            <HintMenu<string>
+              value={locale}
+              onChange={(code) => setLocale(code as Locale)}
+              options={languageOptions}
+            />
+          </div>
+
+          <div className="theme-detail">
+            <h2>{t('settings.headings.details')}</h2>
             <ul className="technique-list">
               {(
                 [
-                  ['Roads', showRoads, setShowRoads],
-                  ['Rivers', showRivers, setShowRivers],
-                  ['Labels', showLabels, setShowLabels],
+                  ['roads', showRoads, setShowRoads],
+                  ['rivers', showRivers, setShowRivers],
+                  ['labels', showLabels, setShowLabels],
                 ] as const
-              ).map(([label, shown, setShown]) => (
-                <li key={label}>
+              ).map(([key, shown, setShown]) => (
+                <li key={key}>
                   <button
                     type="button"
                     className={`tech-toggle ${shown ? 'on' : 'off'}`}
@@ -743,7 +760,7 @@ export function Sidebar({
                     aria-pressed={shown}
                   >
                     <EyeIcon open={shown} />
-                    <span className="name">{label}</span>
+                    <span className="name">{t(`settings.details.${key}`)}</span>
                   </button>
                 </li>
               ))}
@@ -751,15 +768,15 @@ export function Sidebar({
           </div>
 
           <div className="theme-detail">
-            <h2>Projection</h2>
+            <h2>{t('settings.headings.projection')}</h2>
             <ul className="theme-list">
-              {PROJECTIONS.map(({ value, label, hint }) => (
+              {PROJECTION_VALUES.map((value) => (
                 <HintOption
                   key={value}
                   selected={projection === value}
                   onSelect={() => setProjection(value)}
-                  label={label}
-                  hint={hint}
+                  label={labels.projection(value)}
+                  hint={labels.projectionHint(value)}
                 />
               ))}
             </ul>
@@ -773,13 +790,13 @@ export function Sidebar({
         onClick={() => toggleSection('filters')}
         aria-expanded={openSection === 'filters'}
       >
-        <span className="sidebar-title">Map filters</span>
+        <span className="sidebar-title">{t('settings.sections.mapFilters')}</span>
         <span className="sidebar-chevron">{openSection === 'filters' ? '▾' : '▸'}</span>
       </button>
 
       {openSection === 'filters' && (
         <div className="sidebar-section">
-          <h2>Planets</h2>
+          <h2>{t('settings.headings.planets')}</h2>
           <ul className="planet-grid">
             {PLANET_FILTERS.map((p) => (
               <PlanetToggle
@@ -794,7 +811,7 @@ export function Sidebar({
             ))}
           </ul>
 
-          <h2>Asteroids</h2>
+          <h2>{t('settings.headings.asteroids')}</h2>
           <ul className="planet-grid">
             {ASTEROID_NAMES.map((p) => (
               <PlanetToggle
@@ -809,9 +826,9 @@ export function Sidebar({
             ))}
           </ul>
 
-          <h2>Lines</h2>
+          <h2>{t('settings.headings.lines')}</h2>
           <ul className="line-type-grid">
-            {LINE_TYPES.map(({ type, label, full }) => {
+            {LINE_TYPES.map(({ type, label }) => {
               const on = visibleLineTypes.has(type);
               return (
                 <TipToggle
@@ -820,7 +837,7 @@ export function Sidebar({
                   onClick={() => toggleLineType(type)}
                   onShiftClick={() => setAllLineTypes(!on)}
                   title={label}
-                  hint={full}
+                  hint={labels.lineTypeHint(type)}
                   hotkey={<ShiftTapTag />}
                 >
                   {type === 'ASC' ? (
@@ -842,23 +859,23 @@ export function Sidebar({
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
-              title="Parans"
+              title={t('settings.parans.title')}
               hotkey="P"
-              hint="Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map."
+              hint={t('settings.parans.hint')}
             >
               <EyeIcon open={showParans} />
-              <span className="name">Parans</span>
+              <span className="name">{t('settings.parans.title')}</span>
             </TipToggle>
             <TipToggle
               className={`tech-toggle ${showLocalSpace ? 'on' : 'off'}`}
               onClick={() => setShowLocalSpace(!showLocalSpace)}
               ariaPressed={showLocalSpace}
-              title="Local Space"
+              title={t('settings.localSpace.title')}
               hotkey="L"
-              hint="Directional lines radiating from the birthplace, each pointing to a planet’s compass bearing in the local sky."
+              hint={t('settings.localSpace.hint')}
             >
               <EyeIcon open={showLocalSpace} />
-              <span className="name">Local Space</span>
+              <span className="name">{t('settings.localSpace.title')}</span>
             </TipToggle>
           </ul>
         </div>
@@ -870,7 +887,7 @@ export function Sidebar({
         onClick={() => toggleSection('calc')}
         aria-expanded={openSection === 'calc'}
       >
-        <span className="sidebar-title">Calculation</span>
+        <span className="sidebar-title">{t('settings.sections.calculation')}</span>
         <span className="sidebar-chevron">{openSection === 'calc' ? '▾' : '▸'}</span>
       </button>
 
@@ -881,61 +898,61 @@ export function Sidebar({
               "Line projection" below is a Celestial-only refinement, so it shows
               ONLY in Celestial — which also keeps "In Mundo" from ever appearing
               next to "Mundane". */}
-          <h2>Line system</h2>
+          <h2>{t('settings.headings.lineSystem')}</h2>
           <ul className="theme-list">
-            {LINE_SYSTEMS.map(({ value, label, hint }) => (
+            {LINE_SYSTEM_VALUES.map((value) => (
               <HintOption
                 key={value}
                 selected={lineSystem === value}
                 onSelect={() => setLineSystem(value)}
-                label={label}
-                hint={hint}
+                label={labels.lineSystem(value)}
+                hint={labels.lineSystemHint(value)}
               />
             ))}
           </ul>
 
           {lineSystem === 'celestial' && (
             <>
-              <h2>Line projection</h2>
+              <h2>{t('settings.headings.lineProjection')}</h2>
               <ul className="theme-list">
-                {COORD_SYSTEMS.map(({ value, label, hint }) => (
+                {COORD_SYSTEM_VALUES.map((value) => (
                   <HintOption
                     key={value}
                     selected={coordSystem === value}
                     onSelect={() => setCoordSystem(value)}
-                    label={label}
-                    hint={hint}
+                    label={labels.coordSystem(value)}
+                    hint={labels.coordSystemHint(value)}
                   />
                 ))}
               </ul>
             </>
           )}
 
-          <h2>Lunar node</h2>
+          <h2>{t('settings.headings.lunarNode')}</h2>
           <ul className="theme-list">
-            {NODE_TYPES.map(({ value, label, hint }) => (
+            {NODE_TYPE_VALUES.map((value) => (
               <HintOption
                 key={value}
                 selected={nodeType === value}
                 onSelect={() => setNodeType(value)}
-                label={label}
-                hint={hint}
+                label={labels.nodeType(value)}
+                hint={labels.nodeTypeHint(value)}
               />
             ))}
           </ul>
 
-          <h2>House system</h2>
+          <h2>{t('settings.headings.houseSystem')}</h2>
           <HintMenu
             value={houseSystem}
             onChange={setHouseSystem}
-            options={HOUSE_SYSTEMS}
+            options={houseSystemOptions}
           />
 
-          <h2>Primary directions rate</h2>
+          <h2>{t('settings.headings.primaryRate')}</h2>
           <HintMenu
             value={primaryRate}
             onChange={setPrimaryRate}
-            options={PRIMARY_RATES}
+            options={primaryRateOptions}
           />
           {primaryRate === 'user' && (
             <UserRateInput value={userPrimaryRate} onChange={setUserPrimaryRate} />
@@ -951,7 +968,7 @@ export function Sidebar({
             onClick={() => toggleSection('overlay')}
             aria-expanded={openSection === 'overlay'}
           >
-            <span className="sidebar-title">Overlay</span>
+            <span className="sidebar-title">{t('settings.sections.overlay')}</span>
             <span className="sidebar-chevron">
               {openSection === 'overlay' ? '▾' : '▸'}
             </span>
@@ -960,7 +977,7 @@ export function Sidebar({
             <div className="sidebar-section">
               {isTimeMode && (
                 <>
-                  <h2>Display</h2>
+                  <h2>{t('settings.headings.display')}</h2>
                   <ul className="technique-list">
                     <li>
                       <button
@@ -970,7 +987,7 @@ export function Sidebar({
                         aria-pressed={showTimeline}
                       >
                         <EyeIcon open={showTimeline} />
-                        <span className="name">Timeline bar</span>
+                        <span className="name">{t('settings.timelineBar')}</span>
                       </button>
                     </li>
                   </ul>
@@ -979,15 +996,15 @@ export function Sidebar({
 
               {showPositioning && (
                 <>
-                  <h2>Positioning</h2>
+                  <h2>{t('settings.headings.positioning')}</h2>
                   <ul className="theme-list">
-                    {POSITIONINGS.map(({ value, label, hint }) => (
+                    {POSITIONING_VALUES.map((value) => (
                       <HintOption
                         key={value}
                         selected={transitFrame === value}
                         onSelect={() => setTransitFrame(value)}
-                        label={label}
-                        hint={hint}
+                        label={labels.positioning(value)}
+                        hint={labels.positioningHint(value)}
                       />
                     ))}
                   </ul>
@@ -996,15 +1013,15 @@ export function Sidebar({
 
               {showChartAngle && (
                 <>
-                  <h2>Chart Angle</h2>
+                  <h2>{t('settings.headings.chartAngle')}</h2>
                   <ul className="theme-list">
-                    {ANGLE_PROGRESSIONS.map(({ value, label, hint }) => (
+                    {ANGLE_PROGRESSION_VALUES.map((value) => (
                       <HintOption
                         key={value}
                         selected={angleProgression === value}
                         onSelect={() => setAngleProgression(value)}
-                        label={label}
-                        hint={hint}
+                        label={labels.chartAngle(value)}
+                        hint={labels.chartAngleHint(value)}
                       />
                     ))}
                   </ul>

@@ -5,16 +5,34 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useEffect } from 'react';
+import { useT } from '../../i18n';
 import './CreditsModal.css';
+
+// Sub-key into creditsModal.notes / creditsModal.groups. Kept as literal unions so the
+// `creditsModal.notes.${noteKey}` template still resolves to a valid typed MsgKey.
+type NoteKey =
+  | 'astrolina'
+  | 'sourceCode'
+  | 'openstreetmap'
+  | 'openfreemap'
+  | 'maptiler'
+  | 'geonames'
+  | 'swisseph'
+  | 'noto'
+  | 'maplibre'
+  | 'other';
+type GroupKey = 'astrolina' | 'mapsPlaces' | 'astronomy' | 'typeSoftware';
 
 interface CreditItem {
   name: string;
   href?: string;
   license: string;
-  note: string;
+  // Key into the creditsModal.notes namespace, resolved via t() at render time.
+  noteKey: NoteKey;
 }
 interface CreditGroup {
-  title: string;
+  // Key into the creditsModal.groups namespace, resolved via t() at render time.
+  titleKey: GroupKey;
   items: CreditItem[];
 }
 
@@ -24,81 +42,81 @@ interface CreditGroup {
 // the "AstroLina" entry in that attribution bar.
 const CREDIT_GROUPS: CreditGroup[] = [
   {
-    title: 'AstroLina',
+    titleKey: 'astrolina',
     items: [
       {
         name: 'AstroLina',
         href: 'https://astrolina.org',
         license: 'AGPL-3.0',
-        note: '© 2026 AstroLina. Free, open-source software under the GNU Affero General Public License v3.0.',
+        noteKey: 'astrolina',
       },
       {
         name: 'Source code',
         href: 'https://git.astrolina.org',
         license: 'AGPL-3.0',
-        note: 'Full source code, available per the AGPL. Contributions welcome.',
+        noteKey: 'sourceCode',
       },
     ],
   },
   {
-    title: 'Maps & places',
+    titleKey: 'mapsPlaces',
     items: [
       {
         name: 'OpenStreetMap contributors',
         href: 'https://www.openstreetmap.org/copyright',
         license: 'ODbL',
-        note: 'Base map data (also credited on the map itself).',
+        noteKey: 'openstreetmap',
       },
       {
         name: 'OpenFreeMap',
         href: 'https://openfreemap.org',
         license: 'OpenMapTiles',
-        note: 'Free vector tiles, label fonts, and sprites.',
+        noteKey: 'openfreemap',
       },
       {
         name: 'MapTiler Basic style',
         href: 'https://github.com/openmaptiles/maptiler-basic-gl-style',
         license: 'BSD-3-Clause',
-        note: 'Basemap styling for the Earth theme. © MapTiler.com & OpenMapTiles contributors; © Mapbox.',
+        noteKey: 'maptiler',
       },
       {
         name: 'GeoNames',
         href: 'https://www.geonames.org',
         license: 'CC BY 4.0',
-        note: 'Offline place-name search and city lookup.',
+        noteKey: 'geonames',
       },
     ],
   },
   {
-    title: 'Astronomy',
+    titleKey: 'astronomy',
     items: [
       {
         name: 'Swiss Ephemeris',
         href: 'https://www.astro.com/swisseph/',
         license: 'AGPL-3.0',
-        note: 'Planetary positions (JPL DE441). © Astrodienst AG, via @swisseph/browser.',
+        noteKey: 'swisseph',
       },
     ],
   },
   {
-    title: 'Type & software',
+    titleKey: 'typeSoftware',
     items: [
       {
         name: 'Noto Sans Symbols & Symbols 2',
         href: 'https://github.com/notofonts/symbols',
         license: 'SIL OFL 1.1',
-        note: 'Astrological glyphs. © 2022 The Noto Project Authors.',
+        noteKey: 'noto',
       },
       {
         name: 'MapLibre GL JS',
         href: 'https://maplibre.org',
         license: 'BSD-3-Clause',
-        note: 'Interactive map rendering.',
+        noteKey: 'maplibre',
       },
       {
         name: 'React, Turf.js, Luxon, and more',
         license: 'open-source',
-        note: 'Plus other MIT-licensed libraries listed in the project repository.',
+        noteKey: 'other',
       },
     ],
   },
@@ -107,6 +125,7 @@ const CREDIT_GROUPS: CreditGroup[] = [
 // A scrollable dialog of secondary copyright / license disclosures, plus
 // AstroLina's own copyright. Reuses the shared .modal-backdrop chrome.
 export function CreditsModal({ onClose }: { onClose: () => void }) {
+  const { t } = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -125,29 +144,24 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <header>
-          <h2 id="credits-title">Credits &amp; licenses</h2>
-          <button type="button" className="close" onClick={onClose} aria-label="Close">
+          <h2 id="credits-title">{t('creditsModal.title')}</h2>
+          <button type="button" className="close" onClick={onClose} aria-label={t('common.close')}>
             ×
           </button>
         </header>
 
-        <p className="credits-intro">
-          AstroLina is built on open data and open-source software. The full
-          license texts are available in the project repository.
-        </p>
+        <p className="credits-intro">{t('creditsModal.intro')}</p>
 
         {/* TEMP: accuracy disclaimer. Remove once outputs are corroborated against other tools. */}
         <p className="credits-disclaimer">
-          <strong>⚠️ Early access:</strong> accuracy is still being verified.
-          AstroLina uses the same datasets as the professional tools, but its
-          output is still being cross-checked, and display bugs could currently
-          misplace a line. Please treat results as provisional for now.
+          <strong>{t('creditsModal.disclaimer.label')}</strong>
+          {t('creditsModal.disclaimer.body')}
         </p>
 
         <div className="credits-groups">
         {CREDIT_GROUPS.map((group) => (
-          <section key={group.title} className="credits-group">
-            <h3>{group.title}</h3>
+          <section key={group.titleKey} className="credits-group">
+            <h3>{t(`creditsModal.groups.${group.titleKey}`)}</h3>
             <ul>
               {group.items.map((item) => (
                 <li key={item.name}>
@@ -161,7 +175,7 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
                     )}
                     <span className="credits-license">{item.license}</span>
                   </span>
-                  <span className="credits-note">{item.note}</span>
+                  <span className="credits-note">{t(`creditsModal.notes.${item.noteKey}`)}</span>
                 </li>
               ))}
             </ul>
@@ -174,9 +188,7 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
           <a href="https://astrolina.org" target="_blank" rel="noopener noreferrer">
             astrolina.org
           </a>
-          {' '}· The astrocartography calculations and interface design are
-          AstroLina's own; the underlying ephemeris and map data are credited
-          above.
+          {t('creditsModal.footer')}
         </footer>
       </div>
     </div>

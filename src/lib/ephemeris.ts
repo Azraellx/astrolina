@@ -81,26 +81,8 @@ export const EXTRA_BODIES: PlanetName[] = [...NODE_NAMES, ...ASTEROID_NAMES];
 
 export const PLANET_NAMES: PlanetName[] = [...TRADITIONAL_PLANETS, ...EXTRA_BODIES];
 
-export const PLANET_DISPLAY: Record<PlanetName, string> = {
-  Sun: 'Sun',
-  Moon: 'Moon',
-  Mercury: 'Mercury',
-  Venus: 'Venus',
-  Mars: 'Mars',
-  Jupiter: 'Jupiter',
-  Saturn: 'Saturn',
-  Uranus: 'Uranus',
-  Neptune: 'Neptune',
-  Pluto: 'Pluto',
-  NorthNode: 'N Node',
-  SouthNode: 'S Node',
-  Lilith: 'Lilith',
-  Chiron: 'Chiron',
-  Ceres: 'Ceres',
-  Pallas: 'Pallas',
-  Juno: 'Juno',
-  Vesta: 'Vesta',
-};
+// Planet display names moved to the i18n catalog (src/i18n/en/planets.ts); resolve
+// them via useT().labels.planet(name). The PlanetName union + order arrays stay here.
 
 export const PLANET_CODES: Record<PlanetName, string> = {
   Sun: 'Su',

@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import type { RelocatedAngles } from '../../lib/ephemeris';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { useT } from '../../i18n';
 import './CoordReadout.css';
 
 interface CoordReadoutProps {
@@ -56,6 +57,7 @@ export function CoordReadout({
   location,
   fadeLocation,
 }: CoordReadoutProps) {
+  const { t } = useT();
   const [open, setOpen] = useState<boolean>(
     () => localStorage.getItem(SHOW_ANGLES_KEY) === '1',
   );
@@ -98,7 +100,7 @@ export function CoordReadout({
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
           >
-            <span>Angles</span>
+            <span>{t('coordReadout.angles')}</span>
             <span className="show-more-chevron">{open ? '▾' : '▸'}</span>
           </button>
 

@@ -24,6 +24,7 @@ import {
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { useT } from '../../i18n';
 import './TimelineHud.css';
 
 // Active map location state, shared with the map edge-glow — drives the HUD
@@ -49,22 +50,15 @@ interface TimelineHudProps {
   showTimeline: boolean;
 }
 
-const UNIT_OPTIONS: { unit: TimeUnit; label: string }[] = [
-  { unit: 'minute', label: 'Minute' },
-  { unit: 'hour', label: 'Hour' },
-  { unit: 'day', label: 'Day' },
-  { unit: 'week', label: 'Week' },
-  { unit: 'month', label: 'Month' },
-  { unit: 'year', label: 'Year' },
-];
+const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
 
-// Name shown on the draggable nub for each time-overlay mode.
-const MODE_LABEL: Partial<Record<OverlayMode, string>> = {
-  transits: 'Transits',
-  progressed: 'Sec. Progressed',
-  'solar-arc': 'Solar Arc',
-  'primary-directions': 'Primary',
-};
+// Catalog keys for the draggable nub's per-mode name (timeline.nubMode.*).
+const NUB_LABEL_KEY = {
+  transits: 'timeline.nubMode.transits',
+  progressed: 'timeline.nubMode.progressed',
+  'solar-arc': 'timeline.nubMode.solar-arc',
+  'primary-directions': 'timeline.nubMode.primary-directions',
+} as const;
 
 // Midnight-UTC epoch ms of a chart's civil birth date — the timeline's birth
 // anchor. Built via setUTCFullYear because Date.UTC()/new Date() remap years
@@ -86,16 +80,8 @@ const RULER_PX: Record<TimeUnit, number> = {
   year: 8,
 };
 
-// Human description of one minor notch (= one default Step / one tick), for
-// tooltips.
-const MINOR_LABEL: Record<TimeUnit, string> = {
-  minute: '1 min',
-  hour: '10 min',
-  day: '6 hours',
-  week: '1 day',
-  month: '5 days',
-  year: '1 month',
-};
+// The human description of one minor notch (= one default Step / one tick) per
+// scale now lives in the catalog (timeline.minorLabel.*).
 
 // The base unit each scale's mini-notch is measured in, plus the default count
 // of that base per mini-notch. The step-size box defaults to `count` and lets
@@ -115,25 +101,25 @@ const STEP_UNIT: Record<TimeUnit, { count: number; baseMs: number; label: string
 
 const YEAR_MS = 365.2425 * 86_400_000;
 
-const MON = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-// Label for a major (labeled) notch, formatted to suit the granularity.
-function fmtTick(ms: number, unit: TimeUnit): string {
+// Label for a major (labeled) notch, formatted to suit the granularity. Month names
+// come from the active locale (fmt.monthAbbr), passed in since this isn't a component.
+function fmtTick(
+  ms: number,
+  unit: TimeUnit,
+  monthAbbr: (month1to12: number) => string,
+): string {
   const d = new Date(ms);
   if (unit === 'minute')
     return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   if (unit === 'hour') return `${pad2(d.getUTCHours())}:00`;
   if (unit === 'year') return String(d.getUTCFullYear());
   if (unit === 'month')
-    return `${MON[d.getUTCMonth()]} ’${String(d.getUTCFullYear()).slice(2)}`;
-  return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
+    return `${monthAbbr(d.getUTCMonth() + 1)} ’${String(d.getUTCFullYear()).slice(2)}`;
+  return `${d.getUTCDate()} ${monthAbbr(d.getUTCMonth() + 1)}`;
 }
 
 // datetime-local <-> epoch ms, interpreting the control's value as UTC (to match
@@ -169,6 +155,7 @@ function TimeRuler({
   onChange: (ms: number) => void;
   onDragStart: () => void;
 }) {
+  const { t, fmt } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
   const dragRef = useRef<{ startX: number; startVal: number } | null>(null);
@@ -203,7 +190,11 @@ function TimeRuler({
     if (tickValue < min - minorMs || tickValue > max + minorMs) continue;
     const x = center + (k - valSteps) * px;
     const isMajor = ((k % subdiv) + subdiv) % subdiv === 0;
-    ticks.push({ x, isMajor, label: isMajor ? fmtTick(tickValue, unit) : null });
+    ticks.push({
+      x,
+      isMajor,
+      label: isMajor ? fmtTick(tickValue, unit, fmt.monthAbbr) : null,
+    });
   }
 
   const onDown = (e: ReactPointerEvent) => {
@@ -236,7 +227,7 @@ function TimeRuler({
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={value}
-      aria-label="Scrub date"
+      aria-label={t('timeline.ruler.aria')}
     >
       {ticks.map((t, i) => (
         <div
@@ -266,6 +257,7 @@ export function TimelineHud({
   overlayMeasure,
   showTimeline,
 }: TimelineHudProps) {
+  const { t } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
   // Read "now" once at mount: calling Date.now() during render makes render
   // impure, and a ±50-year slider doesn't care about sub-second drift.
@@ -320,8 +312,11 @@ export function TimelineHud({
   // The readout shows only the dynamic measure (Age / arc°). Transits passes null
   // — its state is already clear from the date field.
   const readout = overlayMeasure;
-  const minorDesc = MINOR_LABEL[stepUnit];
-  const modeLabel = MODE_LABEL[overlayMode] ?? 'Overlay';
+  const minorDesc = t(`timeline.minorLabel.${stepUnit}`);
+  const modeLabel =
+    overlayMode in NUB_LABEL_KEY
+      ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
+      : t('timeline.nubFallback');
 
   // ── Draggable bar ──────────────────────────────────────────────────────
   // The nub is the move handle. Position is shared with the synastry bar (same
@@ -356,8 +351,8 @@ export function TimelineHud({
         <span className="thud-measure-label">{modeLabel}</span>
         {readout && <span className="thud-measure-value">{readout}</span>}
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
-          <span className="ui-tip-title">Drag to move</span>
-          <span className="ui-tip-sub">Double-click to dock · snaps to centre</span>
+          <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
+          <span className="ui-tip-sub">{t('common.hud.dockHint')}</span>
         </span>
       </div>
 
@@ -380,9 +375,12 @@ export function TimelineHud({
             type="button"
             className="thud-step-btn"
             onClick={() => step(-1)}
-            aria-label="Step back"
+            aria-label={t('timeline.transport.stepBackAria')}
             placement="top"
-            tip={`Step back ${stepCount} ${stepBase.label}`}
+            tip={t('timeline.transport.stepBack', {
+              count: stepCount,
+              unit: stepBase.label,
+            })}
           >
             ‹
           </TipButton>
@@ -390,9 +388,9 @@ export function TimelineHud({
             type="button"
             className={`thud-play ${playing ? 'on' : ''}`}
             onClick={() => setPlaying(!playing)}
-            aria-label={playing ? 'Pause' : 'Play'}
+            aria-label={playing ? t('timeline.transport.pause') : t('timeline.transport.play')}
             placement="top"
-            tip={playing ? 'Pause' : 'Play'}
+            tip={playing ? t('timeline.transport.pause') : t('timeline.transport.play')}
           >
             {playing ? '❚❚' : '▶'}
           </TipButton>
@@ -400,16 +398,19 @@ export function TimelineHud({
             type="button"
             className="thud-step-btn"
             onClick={() => step(1)}
-            aria-label="Step forward"
+            aria-label={t('timeline.transport.stepForwardAria')}
             placement="top"
-            tip={`Step forward ${stepCount} ${stepBase.label}`}
+            tip={t('timeline.transport.stepForward', {
+              count: stepCount,
+              unit: stepBase.label,
+            })}
           >
             ›
           </TipButton>
           <TipSpan
             className="thud-stepsize"
             placement="top"
-            tip={`Step amount, in ${stepBase.label}`}
+            tip={t('timeline.transport.stepAmount', { unit: stepBase.label })}
           >
             <input
               type="number"
@@ -418,7 +419,7 @@ export function TimelineHud({
               step={1}
               value={Number.isFinite(stepCount) ? stepCount : ''}
               onChange={(e) => setStepCount(e.target.valueAsNumber)}
-              aria-label={`Step amount in ${stepBase.label}`}
+              aria-label={t('timeline.transport.stepAmountAria', { unit: stepBase.label })}
             />
             <span className="thud-stepunit">{stepBase.label}</span>
           </TipSpan>
@@ -451,17 +452,17 @@ export function TimelineHud({
             className="thud-now"
             onClick={() => setTargetDate(clamp(Date.now()))}
             placement="top"
-            tip="Set to the current moment"
+            tip={t('timeline.now.tip')}
           >
-            Now
+            {t('timeline.now.label')}
           </TipButton>
           <TipSpan
             className="thud-utc"
             placement="top"
             tip={
               current
-                ? `Transit / progressed moment, in the chart’s time zone`
-                : 'Transit / progressed moment, in UTC'
+                ? t('timeline.dateField.tipChartZone')
+                : t('timeline.dateField.tipUtc')
             }
           >
             {tzLabel}
@@ -469,20 +470,23 @@ export function TimelineHud({
         </span>
 
         <label className="thud-mode thud-unit">
-          <span className="thud-mode-label">Scale</span>
+          <span className="thud-mode-label">{t('timeline.scale.label')}</span>
           <TipSpan
             className="thud-select-wrap"
             placement="top"
-            tip={`Notch = 1 ${stepUnit}; mini-notch = ${minorDesc}`}
+            tip={t('timeline.scale.tip', {
+              unit: t(`timeline.unitsLower.${stepUnit}`),
+              minor: minorDesc,
+            })}
           >
             <select
               className="thud-select"
               value={stepUnit}
               onChange={(e) => setStepUnit(e.target.value as TimeUnit)}
             >
-              {UNIT_OPTIONS.map(({ unit, label }) => (
+              {UNIT_OPTIONS.map((unit) => (
                 <option key={unit} value={unit}>
-                  {label}
+                  {t(`timeline.units.${unit}`)}
                 </option>
               ))}
             </select>

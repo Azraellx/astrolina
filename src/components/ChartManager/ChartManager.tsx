@@ -13,15 +13,12 @@ import {
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import './ChartManager.css';
 
-const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
-function fmtBirth(c: StoredChart): string {
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+function fmtBirth(c: StoredChart, fmt: Formatters): string {
+  return `${c.day} ${fmt.monthAbbr(c.month)} ${c.year}`;
 }
 
 interface ChartManagerProps {
@@ -55,6 +52,7 @@ export function ChartManager({
   onImport,
   onClose,
 }: ChartManagerProps) {
+  const { t, fmt } = useT();
   const [query, setQuery] = useState('');
   // The chart loaded in the right-hand form (null = adding a new one).
   const [editing, setEditing] = useState<StoredChart | null>(
@@ -141,7 +139,7 @@ export function ChartManager({
   };
 
   const handleDelete = (c: StoredChart) => {
-    if (!confirm(`Delete "${c.name}"?`)) return;
+    if (!confirm(t('chartManager.deleteConfirm', { name: c.name }))) return;
     onDelete(c.id);
     if (editing?.id === c.id) editNew('');
   };
@@ -153,15 +151,15 @@ export function ChartManager({
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Charts"
+        aria-label={t('chartManager.dialogLabel')}
       >
         <header className="cm-header">
-          <h2>My Charts</h2>
+          <h2>{t('chartManager.title')}</h2>
           <button
             type="button"
             className="cm-close"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             ×
           </button>
@@ -191,16 +189,16 @@ export function ChartManager({
                 className="cm-search-input"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search names or places…"
+                placeholder={t('chartManager.searchPlaceholder')}
                 autoFocus
-                aria-label="Search charts"
+                aria-label={t('chartManager.searchLabel')}
               />
               {query && (
                 <button
                   type="button"
                   className="cm-search-clear"
                   onClick={() => setQuery('')}
-                  aria-label="Clear search"
+                  aria-label={t('chartManager.clearSearch')}
                 >
                   ×
                 </button>
@@ -210,7 +208,7 @@ export function ChartManager({
             <div className="cm-list-scroll">
             <ul className="cm-list" ref={listRef}>
               {matches.length === 0 && !query && (
-                <li className="cm-list-empty">No saved charts yet.</li>
+                <li className="cm-list-empty">{t('chartManager.empty')}</li>
               )}
               {q && !exactNameExists && (
                 <li>
@@ -220,7 +218,7 @@ export function ChartManager({
                     onClick={() => editNew(query.trim())}
                   >
                     <span className="cm-add-plus">＋</span>
-                    Add “{query.trim()}”
+                    {t('chartManager.addQuery', { name: query.trim() })}
                   </button>
                 </li>
               )}
@@ -241,7 +239,7 @@ export function ChartManager({
                   >
                     <span className="cm-row-name">{displayName(c.name)}</span>
                     <span className="cm-row-meta">
-                      {fmtBirth(c)} · {c.birthplace.label.split(',')[0]}
+                      {fmtBirth(c, fmt)} · {c.birthplace.label.split(',')[0]}
                     </span>
                   </button>
                   <div className="cm-row-actions">
@@ -250,7 +248,7 @@ export function ChartManager({
                       className="cm-act"
                       onClick={() => editExisting(c)}
                       placement="top"
-                      tip="Edit"
+                      tip={t('common.edit')}
                     >
                       ✎
                     </TipButton>
@@ -259,7 +257,7 @@ export function ChartManager({
                       className="cm-act danger"
                       onClick={() => handleDelete(c)}
                       placement="top"
-                      tip="Delete"
+                      tip={t('common.delete')}
                     >
                       ×
                     </TipButton>
@@ -282,7 +280,9 @@ export function ChartManager({
                   onMouseEnter={showFormHead}
                   onMouseLeave={hideFormHead}
                 >
-                  Editing {displayName(editing.name)}
+                  {t('chartManager.editingHeader', {
+                    name: displayName(editing.name),
+                  })}
                 </div>
                 <HoverTip
                   pos={formHeadPos}
@@ -295,7 +295,11 @@ export function ChartManager({
               key={formKey}
               initial={editing}
               nameSeed={editing ? undefined : seed}
-              submitLabel={editing ? 'Save changes' : 'Add chart'}
+              submitLabel={
+                editing
+                  ? t('chartManager.saveChanges')
+                  : t('chartManager.addChart')
+              }
               onSubmit={handleSave}
               onImport={editing ? undefined : onImport}
             />

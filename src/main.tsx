@@ -8,6 +8,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { I18nProvider } from './i18n'
 import { initEphemeris } from './lib/ephemeris'
 
 // The index.html inline script starts the progress bar at page load (so it moves
@@ -71,6 +72,8 @@ await new Promise((resolve) => setTimeout(resolve, 240))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <I18nProvider>
+      <App />
+    </I18nProvider>
   </StrictMode>,
 )

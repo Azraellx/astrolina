@@ -18,6 +18,7 @@ import {
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { TipButton } from '../ui/HoverTip';
+import { useT } from '../../i18n';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
@@ -135,6 +136,7 @@ export function BirthDataFields({
   onSubmit,
   onImport,
 }: BirthDataFieldsProps) {
+  const { t } = useT();
   const now = new Date();
   const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
   const [year, setYear] = useState(initial?.year ?? now.getFullYear());
@@ -296,11 +298,11 @@ export function BirthDataFields({
     e.preventDefault();
     setError(null);
     if (!selectedPlace) {
-      setError('Choose a birthplace from the dropdown.');
+      setError(t('chartForm.errorNoPlace'));
       return;
     }
     if (!name.trim()) {
-      setError('Add a name.');
+      setError(t('chartForm.errorNoName'));
       return;
     }
     // tzOffset is the single value the chart math uses — either the user's manual
@@ -335,14 +337,14 @@ export function BirthDataFields({
   return (
     <form className="birth-form birth-fields" onSubmit={handleSubmit}>
         <label>
-          <span>Name</span>
+          <span>{t('chartForm.name')}</span>
           <div className="name-field">
             <input
               type="text"
               value={name}
               maxLength={NAME_HARD_LIMIT}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter a chart name"
+              placeholder={t('chartForm.namePlaceholder')}
             />
             {/* Count appears only as you near the cap, faint and right-aligned. */}
             {name.length >= NAME_SOFT_LIMIT && (
@@ -356,7 +358,7 @@ export function BirthDataFields({
         {/* The birth moment, grouped together: date → time → zone. */}
         <div className="moment-row">
           <label className="moment-date">
-            <span>Date (Y / M / D)</span>
+            <span>{t('chartForm.dateLabel')}</span>
             <div className="spin-group">
               <SpinInput
                 value={year}
@@ -364,7 +366,7 @@ export function BirthDataFields({
                 max={2200}
                 pad={4}
                 width="62px"
-                ariaLabel="Year"
+                ariaLabel={t('chartForm.year')}
                 onChange={setYear}
               />
               <span className="sep">/</span>
@@ -374,7 +376,7 @@ export function BirthDataFields({
                 max={12}
                 pad={2}
                 width="40px"
-                ariaLabel="Month"
+                ariaLabel={t('chartForm.month')}
                 onChange={setMonth}
               />
               <span className="sep">/</span>
@@ -384,7 +386,7 @@ export function BirthDataFields({
                 max={dayMax}
                 pad={2}
                 width="40px"
-                ariaLabel="Day"
+                ariaLabel={t('chartForm.day')}
                 onChange={setDay}
               />
             </div>
@@ -392,7 +394,7 @@ export function BirthDataFields({
           {/* Time + Zone stay glued on one row (Zone to the right of Time). */}
           <div className="moment-tz-pair">
           <label className="moment-time">
-            <span>Time (local, 24h)</span>
+            <span>{t('chartForm.timeLabel')}</span>
             <div className="spin-group">
               <SpinInput
                 value={hour}
@@ -400,7 +402,7 @@ export function BirthDataFields({
                 max={23}
                 pad={2}
                 width="40px"
-                ariaLabel="Hour"
+                ariaLabel={t('chartForm.hour')}
                 onChange={setHour}
               />
               <span className="sep">:</span>
@@ -410,20 +412,20 @@ export function BirthDataFields({
                 max={59}
                 pad={2}
                 width="40px"
-                ariaLabel="Minute"
+                ariaLabel={t('chartForm.minute')}
                 onChange={setMinute}
               />
             </div>
           </label>
           <label className="moment-zone tz-field">
-            <span>Time zone</span>
+            <span>{t('chartForm.timeZone')}</span>
             <div className="tz-control-row">
             <div className="tz-control">
               <button
                 type="button"
                 className="tz-step"
                 onClick={() => stepOffset(-0.25)}
-                aria-label="Decrease offset 15 minutes"
+                aria-label={t('chartForm.decreaseOffset')}
               >
                 −
               </button>
@@ -432,7 +434,7 @@ export function BirthDataFields({
                 type="button"
                 className="tz-step"
                 onClick={() => stepOffset(0.25)}
-                aria-label="Increase offset 15 minutes"
+                aria-label={t('chartForm.increaseOffset')}
               >
                 +
               </button>
@@ -441,24 +443,26 @@ export function BirthDataFields({
               {offsetOverride != null ? (
                 detected ? (
                   <>
-                    Manual ·{' '}
+                    {t('chartForm.tz.manualPrefix')}{' '}
                     <TipButton
                       type="button"
                       className="tz-reset-link"
                       onClick={() => setOffsetOverride(null)}
                       placement="top"
-                      tip={`Use detected ${detected.iana}`}
+                      tip={t('chartForm.tz.useDetectedTip', { iana: detected.iana })}
                     >
-                      use detected
+                      {t('chartForm.tz.useDetected')}
                     </TipButton>
                   </>
                 ) : (
-                  'Manual offset'
+                  t('chartForm.tz.manualOffset')
                 )
               ) : detected ? (
-                `Auto · ${detected.iana}${detected.uncertain ? ' · verify DST' : ''}`
+                detected.uncertain
+                  ? t('chartForm.tz.autoVerifyDst', { iana: detected.iana })
+                  : t('chartForm.tz.auto', { iana: detected.iana })
               ) : (
-                'Set a place to detect'
+                t('chartForm.tz.setPlace')
               )}
             </p>
             </div>
@@ -467,7 +471,7 @@ export function BirthDataFields({
         </div>
 
         <label className="location-field">
-          <span>Birthplace</span>
+          <span>{t('chartForm.birthplace')}</span>
           <input
             type="text"
             value={locationQuery}
@@ -475,12 +479,12 @@ export function BirthDataFields({
               setLocationQuery(e.target.value);
               setSelectedPlace(null);
             }}
-            placeholder="City, country"
+            placeholder={t('chartForm.birthplacePlaceholder')}
             autoComplete="off"
           />
           {(suggestions.length > 0 || searching) && !selectedPlace && (
             <ul className="suggestions">
-              {searching && <li className="hint">searching…</li>}
+              {searching && <li className="hint">{t('chartForm.searching')}</li>}
               {suggestions.map((s, i) => (
                 <li key={i}>
                   <button type="button" onClick={() => pickSuggestion(s)}>
@@ -494,13 +498,13 @@ export function BirthDataFields({
             </ul>
           )}
           {selectedPlace && (
-            <p className="resolved">✓ {selectedPlace.label}</p>
+            <p className="resolved">{t('chartForm.resolved', { label: selectedPlace.label })}</p>
           )}
         </label>
 
         <div className="row">
           <label>
-            <span>Latitude</span>
+            <span>{t('chartForm.latitude')}</span>
             <input
               type="text"
               inputMode="decimal"
@@ -511,7 +515,7 @@ export function BirthDataFields({
             />
           </label>
           <label>
-            <span>Longitude</span>
+            <span>{t('chartForm.longitude')}</span>
             <input
               type="text"
               inputMode="decimal"
@@ -529,7 +533,7 @@ export function BirthDataFields({
           <div className="footer-left">
             {onImport && !initial && (
               <button type="button" className="secondary" onClick={onImport}>
-                Import
+                {t('chartForm.import')}
               </button>
             )}
           </div>
