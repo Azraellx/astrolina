@@ -1,0 +1,289 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Bottom-center bar for the active Eclipses overlay — the same slot, movable-bar
+   behavior, and visual language as the synastry partner picker (SynastryHud.css):
+   accent tracks --map-accent, --es-width shifts it clear of the expanded sidebar,
+   and the tag is the drag handle. ‹ › step chronologically; the trigger opens an
+   upward picker with search + type filter over the full catalog. */
+.eclipse-hud {
+  position: absolute;
+  bottom: 16px;
+  left: calc(50% + var(--es-width, 0px) / 4);
+  transform: translateX(-50%);
+  z-index: 13;
+  transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - var(--es-width, 0px) - 80px);
+  padding: 10px 14px;
+  background: rgba(var(--bg-panel), 0.96);
+  border: 1px solid rgba(var(--map-accent-rgb), 0.6);
+  border-radius: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(7px);
+}
+
+/* No position transition while dragging, so the bar tracks the pointer 1:1. */
+.eclipse-hud.dragging {
+  transition: none;
+}
+
+.eclipse-hud-tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--map-accent);
+  flex-shrink: 0;
+  padding-right: 12px;
+  border-right: 1px solid rgba(var(--map-accent-rgb), 0.28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.eclipse-hud-tag:active,
+.eclipse-hud.dragging .eclipse-hud-tag {
+  cursor: grabbing;
+}
+.eclipse-hud-tag:hover .hud-move-hint {
+  opacity: 1;
+}
+.eclipse-hud.dragging .hud-move-hint {
+  opacity: 0 !important;
+}
+
+/* ‹ › chronological steppers. */
+.eclipse-hud-step {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 2px;
+  background: rgba(var(--tint), 0.06);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 7px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.eclipse-hud-step:hover:not(:disabled) {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.12);
+}
+.eclipse-hud-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.eclipse-hud-picker {
+  position: relative;
+  min-width: 0;
+}
+
+/* The date · type + meta line is the clickable trigger. */
+.eclipse-hud-trigger {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.eclipse-hud-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.eclipse-hud-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.eclipse-hud-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Floor the title at ~27 characters so the centered bar keeps ONE width as
+     ‹ › steps through differently-sized titles ("8 April 2024 · Total" vs
+     "21 September 2025 · Partial") — otherwise the arrows shift under the
+     cursor and rapid tap-tap-tap stepping needs re-aiming every click.
+     Capped by viewport width so narrow screens can still shrink the bar.
+     Shorter titles center in the floored box (matching the centered meta
+     line below) rather than hugging its left edge. */
+  min-width: min(27ch, 40vw);
+  text-align: center;
+}
+
+.eclipse-hud-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: color 0.12s, transform 0.12s;
+}
+.eclipse-hud-trigger:hover .eclipse-hud-icon,
+.eclipse-hud-trigger.open .eclipse-hud-icon {
+  color: var(--text-strong);
+}
+.eclipse-hud-trigger:hover .eclipse-hud-icon {
+  transform: scale(1.08);
+}
+
+.eclipse-hud-meta {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* Picker opens UPWARD — the bar sits at the bottom of the screen. */
+.eclipse-hud-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.32);
+  padding: 8px;
+  z-index: 20;
+}
+
+.eclipse-hud-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  background: rgba(var(--tint), 0.06);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 7px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+.eclipse-hud-search::placeholder {
+  color: var(--text-faint);
+}
+.eclipse-hud-search:focus {
+  outline: none;
+  border-color: rgba(var(--map-accent-rgb), 0.5);
+}
+
+/* Type filter chips: All / Total / Annular / Hybrid / Partial. */
+.eclipse-hud-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.eclipse-hud-filter {
+  flex: 1;
+  padding: 4px 0;
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.eclipse-hud-filter:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.06);
+}
+.eclipse-hud-filter.active {
+  color: var(--map-accent);
+  border-color: rgba(var(--map-accent-rgb), 0.5);
+  background: rgba(var(--map-accent-rgb), 0.1);
+}
+
+.eclipse-hud-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.eclipse-hud-menu li {
+  border-radius: 6px;
+  margin-bottom: 1px;
+}
+
+.eclipse-hud-menu li.active .eclipse-hud-row {
+  background: rgba(var(--map-accent-rgb), 0.14);
+}
+
+.eclipse-hud-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 7px 11px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+}
+.eclipse-hud-row:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.eclipse-hud-row-name {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.eclipse-hud-row-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.eclipse-hud-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}

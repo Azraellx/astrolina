@@ -17,6 +17,10 @@
   z-index: 7;
   pointer-events: none;
   overflow: visible;
+  /* Eased opacity so the dial fades out while the map is in motion (its inline opacity
+     is forced to 0 then) and fades back in, repositioned, once it settles — matching the
+     edge labels. */
+  transition: opacity 0.2s ease;
 }
 
 .lhw-svg {

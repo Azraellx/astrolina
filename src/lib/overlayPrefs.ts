@@ -34,6 +34,7 @@ const MODES: OverlayMode[] = [
   'solar-arc',
   'primary-directions',
   'synastry',
+  'eclipses',
 ];
 
 const ANGLE_PROGS: AngleProgression[] = [
@@ -127,6 +128,52 @@ export function loadTransitFrame(): TransitFrame {
 }
 export function saveTransitFrame(f: TransitFrame) {
   localStorage.setItem(TRANSIT_FRAME_KEY, f);
+}
+
+// ── Eclipses overlay ─────────────────────────────────────────────────────────
+// The selected eclipse (a catalog id, "YYYY-MM-DD" of greatest eclipse), the
+// magnitude-isoline interval, and the two display toggles: the natal chart's
+// map linework (on by default) and the "eclipse chart lines" overlay.
+const ECLIPSE_ID_KEY = 'astro:eclipse-id:v1';
+const ECLIPSE_ISO_STEP_KEY = 'astro:eclipse-iso-step:v1';
+const ECLIPSE_CHART_LINES_KEY = 'astro:eclipse-chart-lines:v1';
+const ECLIPSE_NATAL_LINES_KEY = 'astro:eclipse-natal-lines:v1';
+
+export type EclipseIsoStep = 10 | 20 | 25;
+const ECLIPSE_ISO_STEPS: EclipseIsoStep[] = [10, 20, 25];
+
+export function loadEclipseId(): string | null {
+  const v = localStorage.getItem(ECLIPSE_ID_KEY);
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+export function saveEclipseId(id: string | null) {
+  if (id) localStorage.setItem(ECLIPSE_ID_KEY, id);
+  else localStorage.removeItem(ECLIPSE_ID_KEY);
+}
+
+export function loadEclipseIsoStep(): EclipseIsoStep {
+  const v = Number(localStorage.getItem(ECLIPSE_ISO_STEP_KEY));
+  return (ECLIPSE_ISO_STEPS as number[]).includes(v) ? (v as EclipseIsoStep) : 25;
+}
+export function saveEclipseIsoStep(step: EclipseIsoStep) {
+  localStorage.setItem(ECLIPSE_ISO_STEP_KEY, String(step));
+}
+
+export function loadEclipseChartLines(): boolean {
+  return localStorage.getItem(ECLIPSE_CHART_LINES_KEY) === '1';
+}
+export function saveEclipseChartLines(show: boolean) {
+  localStorage.setItem(ECLIPSE_CHART_LINES_KEY, show ? '1' : '0');
+}
+
+// Kept separate from the time overlays' Natal Chart toggle: that one PROMOTES
+// the overlay to stand in for the chart, while this simply clears the natal
+// linework off the map so the eclipse path stands alone.
+export function loadEclipseNatalLines(): boolean {
+  return localStorage.getItem(ECLIPSE_NATAL_LINES_KEY) !== '0';
+}
+export function saveEclipseNatalLines(show: boolean) {
+  localStorage.setItem(ECLIPSE_NATAL_LINES_KEY, show ? '1' : '0');
 }
 
 // Which relationship-chart method the Synastry overlay's Generate button uses.

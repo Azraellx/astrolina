@@ -30,6 +30,8 @@ export const creditsModal = {
     maptiler: 'Basemap styling for the Earth theme. © MapTiler.com & OpenMapTiles contributors; © Mapbox.',
     geonames: 'Offline place-name search and city lookup.',
     swisseph: 'Planetary positions (JPL DE441). © Astrodienst AG, via @swisseph/browser.',
+    nasaEclipse:
+      'Solar-eclipse catalog (dates, types, Saros series). Eclipse Predictions by Fred Espenak and Jean Meeus (NASA/GSFC).',
     noto: 'Astrological glyphs. © 2022 The Noto Project Authors.',
     maplibre: 'Interactive map rendering.',
     other: 'Plus other MIT-licensed libraries listed in the project repository.',

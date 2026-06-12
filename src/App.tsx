@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  Feature,
   FeatureCollection,
   Geometry,
   LineString,
@@ -20,6 +21,7 @@ import {
 import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
+import { EclipseHud } from './components/EclipseHud/EclipseHud';
 import { TeleportHud } from './components/TeleportHud/TeleportHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
@@ -42,7 +44,9 @@ import {
   getHorizontalCoords,
   getPlanetPositions,
   gmstRadians,
+  jdToCivil,
   obliquity,
+  PLANET_NAMES,
   projectOntoEcliptic,
   relocate,
   toEclipticPositions,
@@ -54,6 +58,15 @@ import {
   type PlanetName,
 } from './lib/ephemeris';
 import {
+  buildEclipseDetails,
+  buildEclipseMap,
+  jdToMs,
+  loadEclipseCatalog,
+  nearestEclipse,
+  resolveEclipse,
+} from './lib/astro/eclipses';
+import { localCircumstances } from './lib/astro/eclipsePath';
+import {
   generateEcliptic,
   generateLines,
   generateZenithStamps,
@@ -63,6 +76,11 @@ import {
   type MeridianLng,
   type ZenithProps,
 } from './lib/astro/lines';
+import {
+  generateAspectLines,
+  generateMidpointLines,
+  type AngleOverlayLineProps,
+} from './lib/astro/angleAspects';
 import { generateParans, type ParanProps } from './lib/astro/parans';
 import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
 import { generateLocalSpaceCrossings } from './lib/astro/localSpaceCrossings';
@@ -81,6 +99,10 @@ import {
 import { buildDavison } from './lib/astro/relationship';
 import {
   loadAngleProgression,
+  loadEclipseChartLines,
+  loadEclipseId,
+  loadEclipseIsoStep,
+  loadEclipseNatalLines,
   loadOverlayDate,
   loadOverlayMode,
   loadOverlayPartner,
@@ -90,6 +112,10 @@ import {
   loadUserPrimaryRate,
   loadSynastryMethod,
   saveAngleProgression,
+  saveEclipseChartLines,
+  saveEclipseId,
+  saveEclipseIsoStep,
+  saveEclipseNatalLines,
   saveSynastryMethod,
   saveOverlayDate,
   saveOverlayMode,
@@ -98,6 +124,7 @@ import {
   savePrimaryRate,
   saveTransitFrame,
   saveUserPrimaryRate,
+  type EclipseIsoStep,
 } from './lib/overlayPrefs';
 import {
   loadCharts,
@@ -126,7 +153,9 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 // themes only, swap it for a darker slate (MOON_LINE_DARK, shared from lib/theme so the
 // baked zenith glyph matches). The color is the single source the edge badges, hover
 // tip, crossing-dot blends, AND the zenith disc/stamp all read, so they follow suit.
-// Geometry-agnostic so it covers the line/local-space (LineString) and zenith (Point) sets.
+// Geometry-agnostic so it covers the line/local-space (LineString) and zenith (Point)
+// sets. Midpoint lines carry a second body (planetB/colorB, read by their hover tip);
+// a Moon there gets the same swap so "Sun/Moon" tips stay readable on light themes.
 function withDarkMoon<G extends Geometry, P extends { planet: PlanetName; color: string }>(
   fc: FeatureCollection<G, P>,
   theme: Theme,
@@ -134,11 +163,18 @@ function withDarkMoon<G extends Geometry, P extends { planet: PlanetName; color:
   if (theme === 'dark') return fc;
   return {
     type: 'FeatureCollection',
-    features: fc.features.map((f) =>
-      f.properties.planet === 'Moon'
-        ? { ...f, properties: { ...f.properties, color: MOON_LINE_DARK } }
-        : f,
-    ),
+    features: fc.features.map((f) => {
+      const p = f.properties as P & { planetB?: PlanetName; colorB?: string };
+      if (p.planet !== 'Moon' && p.planetB !== 'Moon') return f;
+      return {
+        ...f,
+        properties: {
+          ...p,
+          ...(p.planet === 'Moon' ? { color: MOON_LINE_DARK } : null),
+          ...(p.planetB === 'Moon' ? { colorB: MOON_LINE_DARK } : null),
+        },
+      };
+    }),
   };
 }
 
@@ -282,14 +318,48 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  const [visiblePlanets, setVisiblePlanets] = useState<Set<PlanetName>>(
-    () => new Set(TRADITIONAL_PLANETS),
-  );
+  // Persisted planet filter (planets, nodes, and asteroids share one set), so
+  // a narrowed set survives reloads alongside the persisted overlay toggles —
+  // important for the quadratic midpoint overlay, which would otherwise come
+  // back against the full default body set. Unknown names in a stale payload
+  // are dropped; an empty array is an intentional "all hidden" and restores.
+  const [visiblePlanets, setVisiblePlanets] = useState<Set<PlanetName>>(() => {
+    try {
+      const raw = localStorage.getItem('astro:visible-planets:v1');
+      if (raw) {
+        const arr: unknown = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          return new Set(
+            arr.filter((p): p is PlanetName =>
+              (PLANET_NAMES as string[]).includes(p as string),
+            ),
+          );
+        }
+      }
+    } catch {
+      // Corrupt payload — fall through to the default set.
+    }
+    return new Set(TRADITIONAL_PLANETS);
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      'astro:visible-planets:v1',
+      JSON.stringify([...visiblePlanets]),
+    );
+  }, [visiblePlanets]);
   const [visibleLineTypes, setVisibleLineTypes] = useState<Set<LineType>>(
     () => new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']),
   );
   const [showParans, setShowParans] = useState(false);
   const [showLocalSpace, setShowLocalSpace] = useState(false);
+  // The "Aspects to angles" line sets — two independent overlays (they can
+  // stack), persisted like the other map preferences below.
+  const [showAspectLines, setShowAspectLines] = useState(
+    () => localStorage.getItem('astro:show-aspect-lines:v1') === '1',
+  );
+  const [showMidpointLines, setShowMidpointLines] = useState(
+    () => localStorage.getItem('astro:show-midpoint-lines:v1') === '1',
+  );
   const [coordSystem, setCoordSystem] = useState<CoordSystem>(() =>
     localStorage.getItem('astro:coord-system:v1') === 'zodiaco'
       ? 'zodiaco'
@@ -420,6 +490,20 @@ export default function App() {
   const [transitFrame, setTransitFrame] = useState<TransitFrame>(() =>
     loadTransitFrame(),
   );
+  // Eclipses overlay: the selected catalog eclipse (by id), the magnitude-
+  // isoline interval, and the "eclipse chart lines" display toggle.
+  const [eclipseId, setEclipseId] = useState<string | null>(() =>
+    loadEclipseId(),
+  );
+  const [eclipseIsoStep, setEclipseIsoStep] = useState<EclipseIsoStep>(() =>
+    loadEclipseIsoStep(),
+  );
+  const [showEclipseChartLines, setShowEclipseChartLines] = useState(() =>
+    loadEclipseChartLines(),
+  );
+  const [showEclipseNatalLines, setShowEclipseNatalLines] = useState(() =>
+    loadEclipseNatalLines(),
+  );
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
@@ -453,6 +537,7 @@ export default function App() {
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     const overlayCycle: OverlayMode[] = [
       'transits', 'progressed', 'solar-arc', 'primary-directions', 'synastry',
+      'eclipses',
     ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
@@ -507,7 +592,21 @@ export default function App() {
         }
         return;
       }
-      if (e.shiftKey || isTypingField(el)) return;
+      if (isTypingField(el)) return;
+      // Shift+letter: the Map-filters technique toggles (Parans / Local Space /
+      // Aspect Lines / Midpoint Lines). Kept on Shift so the plain letters stay
+      // free for the view/tool hotkeys below.
+      if (e.shiftKey) {
+        switch (e.key.toLowerCase()) {
+          case 'p': setShowParans((v) => !v); break;
+          case 'l': setShowLocalSpace((v) => !v); break;
+          case 'a': setShowAspectLines((v) => !v); break;
+          case 'm': setShowMidpointLines((v) => !v); break;
+          default: return;
+        }
+        e.preventDefault();
+        return;
+      }
       switch (e.key.toLowerCase()) {
         case 'm': setShowChart((v) => !v); break;
         case 'c': setShowCoords((v) => !v); break;
@@ -521,8 +620,6 @@ export default function App() {
           );
           break;
         case 'n': setOverlayMode('off'); break;
-        case 'p': setShowParans((v) => !v); break;
-        case 'l': setShowLocalSpace((v) => !v); break;
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
@@ -546,6 +643,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:line-system:v1', lineSystem);
   }, [lineSystem]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-aspect-lines:v1', showAspectLines ? '1' : '0');
+  }, [showAspectLines]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-midpoint-lines:v1', showMidpointLines ? '1' : '0');
+  }, [showMidpointLines]);
   useEffect(() => {
     localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
   }, [showRoads]);
@@ -595,6 +698,16 @@ export default function App() {
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
   useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
   useEffect(() => saveSynastryMethod(synastryMethod), [synastryMethod]);
+  useEffect(() => saveEclipseId(eclipseId), [eclipseId]);
+  useEffect(() => saveEclipseIsoStep(eclipseIsoStep), [eclipseIsoStep]);
+  useEffect(
+    () => saveEclipseChartLines(showEclipseChartLines),
+    [showEclipseChartLines],
+  );
+  useEffect(
+    () => saveEclipseNatalLines(showEclipseNatalLines),
+    [showEclipseNatalLines],
+  );
 
   // Animation: advance the target date one minor notch per tick while playing.
   // setData is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps
@@ -704,6 +817,55 @@ export default function App() {
     [allLines, visiblePlanets, visibleLineTypes, theme],
   );
 
+  // The "Aspects to angles" overlay lines (aspect and/or midpoint sets — both
+  // share one map source). Unlike the base lines this generates FROM the visible
+  // set: the midpoint pair count is quadratic in it, and the node dedup below
+  // depends on it. In geodetic mode the positions are already ecliptic-projected
+  // (see linePositions), so the measuring frame is zodiacal regardless of the
+  // (possibly stale, hidden) In-Mundo/In-Zodiaco radio.
+  const angleLines = useMemo<
+    FeatureCollection<LineString, AngleOverlayLineProps>
+  >(() => {
+    if ((!showAspectLines && !showMidpointLines) || !current) return EMPTY_FC;
+    const effCoordSystem: CoordSystem =
+      lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
+    const vis = linePositions.filter((p) => visiblePlanets.has(p.name));
+    const features: Feature<LineString, AngleOverlayLineProps>[] = [];
+    if (showAspectLines) {
+      // (The generator drops the South Node itself while the North Node is
+      // visible — antipodal duplicate set, same spirit as mergeNodeParans.)
+      features.push(
+        ...generateAspectLines(vis, meridianLng, effCoordSystem, eps).features,
+      );
+    }
+    if (showMidpointLines) {
+      features.push(
+        ...generateMidpointLines(vis, meridianLng, effCoordSystem, eps).features,
+      );
+    }
+    return withDarkMoon(
+      {
+        type: 'FeatureCollection',
+        features: features.filter((f) =>
+          visibleLineTypes.has(f.properties.lineType),
+        ),
+      },
+      theme,
+    );
+  }, [
+    showAspectLines,
+    showMidpointLines,
+    current,
+    lineSystem,
+    coordSystem,
+    linePositions,
+    visiblePlanets,
+    visibleLineTypes,
+    meridianLng,
+    eps,
+    theme,
+  ]);
+
   const parans = useMemo(
     () =>
       showParans
@@ -745,8 +907,78 @@ export default function App() {
         : null,
     [charts, partnerId, current],
   );
+  // ── Eclipses overlay ──────────────────────────────────────────────────────
+  // Catalog → selected row → Swiss-resolved event + fitted Besselian elements →
+  // the GeoJSON the map draws. Each link memoizes separately, so a display
+  // tweak (isoline step, theme) never re-runs the ~20-call Swiss fit.
+  const eclipseCatalog = useMemo(() => loadEclipseCatalog(), []);
+  const eclipseRow = useMemo(() => {
+    if (overlayMode !== 'eclipses') return null;
+    return (
+      eclipseCatalog.find((r) => r.id === eclipseId) ??
+      nearestEclipse(eclipseCatalog, targetDate)
+    );
+  }, [overlayMode, eclipseCatalog, eclipseId, targetDate]);
+  // Pin the fallback selection: entering the mode with no (or a stale) saved id
+  // lands on the eclipse nearest the overlay date; persist that id immediately
+  // so timeline scrubbing in other modes can't silently change the selection.
+  // Adjusted during render (the playing-pause precedent above), not an effect.
+  if (eclipseRow && eclipseRow.id !== eclipseId) setEclipseId(eclipseRow.id);
+  const resolvedEclipse = useMemo(
+    () => (eclipseRow ? resolveEclipse(eclipseRow) : null),
+    [eclipseRow],
+  );
+  const eclipseMapData = useMemo(
+    () =>
+      resolvedEclipse
+        ? buildEclipseMap(
+            resolvedEclipse,
+            eclipseIsoStep,
+            theme,
+            `${resolvedEclipse.row.id} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`,
+          )
+        : null,
+    [resolvedEclipse, eclipseIsoStep, theme, t],
+  );
+  const eclipseDetails = useMemo(
+    () => (resolvedEclipse ? buildEclipseDetails(resolvedEclipse) : null),
+    [resolvedEclipse],
+  );
+  // Local circumstances under the cursor, for the eclipse-curve hover tip.
+  const eclipseTip = useMemo(() => {
+    if (!resolvedEclipse) return null;
+    const el = resolvedEclipse.elements;
+    return (lat: number, lng: number) => {
+      const lc = localCircumstances(el, lat, lng);
+      if (!lc) return null;
+      const civil = jdToCivil(lc.jd);
+      const p = (n: number) => String(n).padStart(2, '0');
+      return t('map.eclipse.localMax', {
+        pct: `${Math.round(lc.obscuration * 100)}%`,
+        time: `${p(civil.hour)}:${p(civil.minute)}`,
+      });
+    };
+  }, [resolvedEclipse, t]);
+
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
+    if (overlayMode === 'eclipses') {
+      // The optional "eclipse chart lines": planet/angle lines for the sky at
+      // the eclipse maximum — a transit overlay pinned to that instant.
+      if (!showEclipseChartLines || !resolvedEclipse) return null;
+      return buildOverlay(
+        current,
+        'eclipses',
+        jdToMs(resolvedEclipse.event.maximum),
+        null,
+        nodeType,
+        angleProgression,
+        primaryRate,
+        userPrimaryRate,
+        transitFrame,
+        t,
+      );
+    }
     return buildOverlay(
       current,
       overlayMode,
@@ -769,6 +1001,8 @@ export default function App() {
     primaryRate,
     userPrimaryRate,
     transitFrame,
+    showEclipseChartLines,
+    resolvedEclipse,
     t,
   ]);
 
@@ -863,6 +1097,12 @@ export default function App() {
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions';
   const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
+  // Eclipses ▸ Display ▸ Natal Chart Lines: unlike the time overlays' Natal
+  // toggle (which promotes the overlay to stand in for the chart), turning
+  // this off simply clears the natal LINEWORK off the map — lines, derived
+  // aspect/midpoint lines, parans, local space, zenith stamps, ecliptic — so
+  // the eclipse path stands alone. The wheel and readouts keep the natal chart.
+  const hideNatalLinework = overlayMode === 'eclipses' && !showEclipseNatalLines;
 
   // The promoted dataset: the overlay's bodies run through the SAME generators and
   // filters as the natal chart, so the map's natal rendering path draws them solid and
@@ -1347,16 +1587,33 @@ export default function App() {
     <>
       <Map
         ref={mapRef}
-        lines={promoted ? promoted.lines : lines}
-        parans={promoted ? promoted.parans : parans}
-        localSpace={promoted ? promoted.localSpace : localSpace}
-        localSpaceCross={promoted ? promoted.localSpaceCross : localSpaceCross}
-        localSpaceOrigin={
-          showLocalSpace ? (promoted ? promoted.origin : localSpaceOrigin) : null
+        lines={hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines}
+        // Natal-only by design; when the overlay is promoted the natal chart is
+        // hidden, so its derived aspect/midpoint lines hide with it.
+        angleLines={promoted || hideNatalLinework ? EMPTY_FC : angleLines}
+        parans={hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans}
+        localSpace={
+          hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace
         }
-        zenith={promoted ? promoted.zenith : zenith}
-        ecliptic={promoted ? promoted.eclipticLine : eclipticLine}
+        localSpaceCross={
+          hideNatalLinework
+            ? EMPTY_FC
+            : promoted
+              ? promoted.localSpaceCross
+              : localSpaceCross
+        }
+        localSpaceOrigin={
+          showLocalSpace && !hideNatalLinework
+            ? (promoted ? promoted.origin : localSpaceOrigin)
+            : null
+        }
+        zenith={hideNatalLinework ? EMPTY_FC : promoted ? promoted.zenith : zenith}
+        ecliptic={
+          hideNatalLinework ? null : promoted ? promoted.eclipticLine : eclipticLine
+        }
         overlay={promoted ? null : overlay}
+        eclipse={eclipseMapData}
+        eclipseTip={eclipseTip}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
@@ -1404,6 +1661,10 @@ export default function App() {
           setShowParans={setShowParans}
           showLocalSpace={showLocalSpace}
           setShowLocalSpace={setShowLocalSpace}
+          showAspectLines={showAspectLines}
+          setShowAspectLines={setShowAspectLines}
+          showMidpointLines={showMidpointLines}
+          setShowMidpointLines={setShowMidpointLines}
           lineSystem={lineSystem}
           setLineSystem={setLineSystem}
           coordSystem={coordSystem}
@@ -1419,6 +1680,13 @@ export default function App() {
           setSynastryMethod={setSynastryMethod}
           onGenerateRelationship={handleGenerateRelationship}
           canGenerateRelationship={overlayMode === 'synastry' && !!partner}
+          eclipseDetails={eclipseDetails}
+          showEclipseNatalLines={showEclipseNatalLines}
+          setShowEclipseNatalLines={setShowEclipseNatalLines}
+          showEclipseChartLines={showEclipseChartLines}
+          setShowEclipseChartLines={setShowEclipseChartLines}
+          eclipseIsoStep={eclipseIsoStep}
+          setEclipseIsoStep={setEclipseIsoStep}
           showTimeline={showTimeline}
           setShowTimeline={setShowTimeline}
           showOverlayZenith={showOverlayZenith}
@@ -1513,6 +1781,13 @@ export default function App() {
           currentId={current?.id ?? null}
           onSelectPartner={setPartnerId}
           onAddPerson={() => setCreating(true)}
+        />
+      )}
+      {overlayMode === 'eclipses' && (
+        <EclipseHud
+          catalog={eclipseCatalog}
+          selected={eclipseRow}
+          onSelect={setEclipseId}
         />
       )}
       {showTeleport && (

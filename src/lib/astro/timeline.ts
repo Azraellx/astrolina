@@ -35,7 +35,8 @@ export type OverlayMode =
   | 'progressed'
   | 'solar-arc'
   | 'primary-directions'
-  | 'synastry';
+  | 'synastry'
+  | 'eclipses';
 
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
@@ -404,18 +405,40 @@ export function buildOverlay(
         originLng: partner.birthplace.lng,
       };
     }
+    case 'eclipses': {
+      // The Eclipses overlay's optional "eclipse chart lines": the sky at the
+      // eclipse maximum (App passes that instant in the targetDate slot). The
+      // frame is ALWAYS the moment's own sidereal time — the eclipse path is a
+      // geographic fact at one instant, and only the same-instant framing puts
+      // the Sun/Moon conjunction's MC line through the path itself, so the
+      // transit overlay's relative-to-natal positioning setting does not apply.
+      const jd = epochMsToJD(targetDate);
+      return {
+        kind: mode,
+        measure: null,
+        labelFull: t('timeline.labelFull.eclipses', {
+          datetime: fmtDateTimeUTC(targetDate),
+        }),
+        jd,
+        positions: getPlanetPositions(jd, nodeType),
+        gmst: gmstRadians(jd),
+        originLat: chart.birthplace.lat,
+        originLng: chart.birthplace.lng,
+      };
+    }
   }
 }
 
 // Two-letter tag per overlay kind, shown on the map ahead of the glyph + angle
 // code so overlay lines read e.g. "Tr ♂ MC". Tr transits · Sp secondary
-// progressions · Sa solar arc · Sy synastry.
+// progressions · Sa solar arc · Sy synastry · Ec eclipse chart.
 export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   transits: 'Tr',
   progressed: 'Sp',
   'solar-arc': 'Sa',
   'primary-directions': 'Pd',
   synastry: 'Sy',
+  eclipses: 'Ec',
 };
 
 // Clone a line/paran FeatureCollection, stamping the overlay tag onto each feature.

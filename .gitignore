@@ -11,8 +11,6 @@ node_modules
 dist
 dist-ssr
 *.local
-docs/local
-.claude
 
 # Editor directories and files
 .vscode/*
@@ -24,3 +22,9 @@ docs/local
 *.njsproj
 *.sln
 *.sw?
+
+# Other
+scratch/*
+!scratch/README.md
+docs/local
+.claude

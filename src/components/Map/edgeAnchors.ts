@@ -11,6 +11,7 @@
 // map move. ACG lines only — parans / local space keep their along-line labels.
 import type { Map as MlMap } from 'maplibre-gl';
 import type { Feature, LineString } from 'geojson';
+import type { AspectKind } from '../../lib/astro/angleAspects';
 import type { LineProps, LineType } from '../../lib/astro/lines';
 import type { PlanetName } from '../../lib/ephemeris';
 import { isOccluded } from '../../lib/mapProjection';
@@ -22,6 +23,16 @@ export interface LineBadge {
   color: string;
   planet: PlanetName;
   lineType: LineType;
+  /** Set on "Aspects to angles" aspect lines: the badge shows the aspect glyph
+   *  between the planet and the angle code (e.g. "Su □ MC"). */
+  aspect?: AspectKind;
+  /** Set on midpoint lines: the pair's second body — the badge shows both
+   *  glyphs (e.g. "Su/Mo MC"). */
+  planetB?: PlanetName;
+  /** Aspect/midpoint badges' click-to-fly target: the computed point's
+   *  sub-point (where its ecliptic degree is directly overhead). */
+  targetLng?: number;
+  targetLat?: number;
   /** The body's overlay/promoted tag (e.g. "Tr") shown as the label prefix; empty for
    *  the natal chart's own lines. Display only — natal-vs-overlay routing uses
    *  `overlay` below, so a promoted overlay can show a prefix yet route as natal. */
@@ -123,13 +134,22 @@ export function clipSegmentToView(
   return { near: at(c.t0), far: at(c.t1) };
 }
 
-interface LineGroup {
+// The per-line display facts a badge carries, shared by every end of the line.
+interface LineMeta {
   color: string;
   planet: PlanetName;
   lineType: LineType;
   prefix: string;
   /** Whether this is a merged lunar-node pair line (see LineBadge.pair). */
   pair: boolean;
+  /** Aspect / midpoint extras (see the same fields on LineBadge). */
+  aspect?: AspectKind;
+  planetB?: PlanetName;
+  targetLng?: number;
+  targetLat?: number;
+}
+
+interface LineGroup extends LineMeta {
   // The two ends (or single end) of the LONGEST on-screen run seen so far, plus that
   // run's squared end-to-end pixel extent and its full projected polyline. We label the
   // most-visible contiguous run rather than the farthest-apart pair across all runs, so
@@ -152,11 +172,7 @@ function addRunEnds(
   rect: Rect,
   groups: Map<string, LineGroup>,
   key: string,
-  color: string,
-  planet: PlanetName,
-  lineType: LineType,
-  prefix: string,
-  pair: boolean,
+  meta: LineMeta,
 ): void {
   if (pts.length === 0) return;
   const anchors: Pt[] = [];
@@ -176,7 +192,7 @@ function addRunEnds(
   if (anchors.length === 0) return;
   let g = groups.get(key);
   if (!g) {
-    g = { color, planet, lineType, prefix, pair, bestEnds: [], bestExtent: -1, bestLine: [] };
+    g = { ...meta, bestEnds: [], bestExtent: -1, bestLine: [] };
     groups.set(key, g);
   }
   const ends =
@@ -200,9 +216,23 @@ function addRunEnds(
 // pair per line at every zoom, world view included.
 export function computeLineBadges(
   map: MlMap,
-  features: Feature<LineString, LineProps>[],
+  features: Feature<
+    LineString,
+    LineProps & {
+      aspect?: AspectKind;
+      /** Geometric branch discriminator on aspect lines (see AspectLineProps.branch). */
+      branch?: LineType;
+      planetB?: PlanetName;
+      targetLng?: number;
+      targetLat?: number;
+    }
+  >[],
   inset: number,
   isOverlay: boolean,
+  // React-key namespace for this feature set. The natal, overlay, and
+  // aspect/midpoint sets are computed in separate calls whose badges render in
+  // ONE list, so each call needs its own namespace to keep keys unique.
+  keyNs: string = isOverlay ? 'ov' : 'n',
 ): LineBadge[] {
   const container = map.getContainer();
   const w = container.clientWidth;
@@ -231,11 +261,18 @@ export function computeLineBadges(
     // every 3rd point is plenty to find edge crossings and keeps the per-move cost
     // low. Anything short (a stray fragment) is walked point-by-point.
     const step = coords.length > 20 ? 3 : 1;
-    const { planet, lineType, color, tag, pair = false } = f.properties;
+    const { planet, lineType, color, tag, pair = false, aspect, branch, planetB, targetLng, targetLat } =
+      f.properties;
     // Display prefix comes from the line's tag (set by tagLabels for overlay AND
     // promoted lines), independent of the isOverlay routing flag below.
     const prefix = tag ?? '';
-    const key = `${planet}|${lineType}|${prefix}`;
+    // aspect/planetB join the key so each aspect or midpoint line labels its own
+    // ends — they all share a planet + lineType within one body's set. `branch`
+    // separates an aspect's two same-label sides (e.g. both trine-MC meridians).
+    const key = `${planet}|${lineType}|${prefix}|${aspect ?? ''}|${branch ?? ''}|${planetB ?? ''}`;
+    const meta: LineMeta = {
+      color, planet, lineType, prefix, pair, aspect, planetB, targetLng, targetLat,
+    };
 
     // Split the projected polyline into contiguous runs of VISIBLE vertices. On a
     // globe, occluded / behind-camera points project to bogus pixels, so we break
@@ -245,7 +282,7 @@ export function computeLineBadges(
     // (the worldPx jump guard below).
     let run: Pt[] = [];
     const flushRun = () => {
-      addRunEnds(run, rect, groups, key, color, planet, lineType, prefix, pair);
+      addRunEnds(run, rect, groups, key, meta);
       run = [];
     };
     const pushCoord = (c: number[]) => {
@@ -276,7 +313,7 @@ export function computeLineBadges(
   groups.forEach((g) => {
     g.bestEnds.forEach((pt, ei) => {
       out.push({
-        key: `${isOverlay ? 'ov' : 'n'}-${gi}-${ei}`,
+        key: `${keyNs}-${gi}-${ei}`,
         x: pt.x,
         y: pt.y,
         color: g.color,
@@ -286,6 +323,10 @@ export function computeLineBadges(
         overlay: isOverlay,
         line: g.bestLine,
         pair: g.pair,
+        aspect: g.aspect,
+        planetB: g.planetB,
+        targetLng: g.targetLng,
+        targetLat: g.targetLat,
       });
     });
     gi++;

@@ -89,6 +89,7 @@ const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'solar-arc',
   'primary-directions',
   'synastry',
+  'eclipses',
 ];
 
 function pad2(n: number): string {

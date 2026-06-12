@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useHoverTip, type TipPlacement, type TipPos } from './useHoverTip';
+import { glyphify } from './glyphify';
 import './HoverTip.css';
 
 // Margin kept between a tip and the viewport edge when nudging it back on-screen.
@@ -74,7 +75,12 @@ export function HoverTip({
         </span>
         {hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>}
       </span>
-      {hasHint && <span className="ui-tip-sub">{hint}</span>}
+      {/* String hints get their astro symbols re-rendered in the glyph font. */}
+      {hasHint && (
+        <span className="ui-tip-sub">
+          {typeof hint === 'string' ? glyphify(hint) : hint}
+        </span>
+      )}
     </span>,
     document.body,
   );

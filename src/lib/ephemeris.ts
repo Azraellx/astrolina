@@ -22,12 +22,14 @@ import {
   HouseSystem as SweHouse,
   CalculationFlag,
   CalendarType,
+  EclipseType,
 } from '@swisseph/browser';
 // Vite emits the wasm as a fingerprinted asset and hands us its URL; we pass it
 // to init() explicitly (the package's import.meta.url fallback is unreliable
 // under Vite chunking + static hosting).
 import wasmUrl from '@swisseph/browser/dist/swisseph.wasm?url';
 import type { BirthData } from './birthData';
+import { normalizeSwissEclipse, type SunMoonSample } from './astro/eclipsePath';
 
 export type PlanetName =
   | 'Sun'
@@ -702,6 +704,67 @@ export function getAngleCoords(
     mc: at(angles.mc),
     dsc: at(angles.dsc),
     ic: at(angles.ic),
+  };
+}
+
+// ── Solar eclipses ────────────────────────────────────────────────────────────
+
+export type SolarEclipseKind = 'total' | 'annular' | 'hybrid' | 'partial';
+
+// A solar-eclipse event from Swiss's global search: classification plus the
+// reliable instants (UT Julian Days). The contact fields go through
+// normalizeSwissEclipse — the wrapper's own field names are misaligned with
+// the underlying C array (see that helper) — and the finer phase windows are
+// re-derived geometrically in eclipsePath.ts rather than read from Swiss.
+export interface EclipseEvent {
+  kind: SolarEclipseKind;
+  /** Whether the shadow-cone axis itself crosses Earth's surface. */
+  central: boolean;
+  maximum: number;
+  /** First/last external penumbral contact (P1/P4). */
+  partialBegin: number;
+  partialEnd: number;
+}
+
+// The next solar eclipse anywhere on Earth after (or before, with `backward`)
+// the given UT JD. Wraps swe_sol_eclipse_when_glob; the path geometry itself is
+// not exposed by Swiss — src/lib/astro/eclipsePath.ts derives it from positions.
+export function findSolarEclipse(startJD: number, backward = false): EclipseEvent {
+  const e = eph().findNextSolarEclipse(
+    startJD,
+    CalculationFlag.SwissEphemeris,
+    0, // no type filter
+    backward,
+  );
+  const kind: SolarEclipseKind =
+    e.type & EclipseType.AnnularTotal
+      ? 'hybrid'
+      : e.type & EclipseType.Total
+        ? 'total'
+        : e.type & EclipseType.Annular
+          ? 'annular'
+          : 'partial';
+  return {
+    kind,
+    central: (e.type & EclipseType.Central) !== 0,
+    ...normalizeSwissEclipse(e),
+  };
+}
+
+// Apparent geocentric Sun + Moon (equatorial, of date) plus sidereal time at one
+// UT instant — the ephemeris adapter eclipsePath.ts builds Besselian elements
+// from. Distances stay in AU (the adapter scales to Earth radii itself).
+export function sunMoonEquatorial(jd: number): SunMoonSample {
+  const sun = eph().calculatePosition(jd, Planet.Sun, FLAG_EQ);
+  const moon = eph().calculatePosition(jd, Planet.Moon, FLAG_EQ);
+  return {
+    sunRa: norm2pi(sun.longitude * DEG2RAD),
+    sunDec: sun.latitude * DEG2RAD,
+    sunDistAu: sun.distance,
+    moonRa: norm2pi(moon.longitude * DEG2RAD),
+    moonDec: moon.latitude * DEG2RAD,
+    moonDistAu: moon.distance,
+    gast: gmstRadians(jd),
   };
 }
 

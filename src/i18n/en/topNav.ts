@@ -37,6 +37,10 @@ export const topNav = {
         label: 'Synastry',
         desc: 'Another person’s chart laid over yours, for relationships.',
       },
+      eclipses: {
+        label: 'Eclipses',
+        desc: 'Solar-eclipse paths and shadow contours across the map.',
+      },
     },
   },
 

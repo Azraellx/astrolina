@@ -32,6 +32,8 @@ export const settings = {
     positioning: 'Positioning',
     chartAngle: 'Chart Angle',
     relationships: 'Relationships',
+    eclipse: 'Eclipse',
+    magnitudeSteps: 'Magnitude steps',
   },
   details: { roads: 'Roads', rivers: 'Rivers', labels: 'Labels' },
   shiftTag: 'Shift',
@@ -47,7 +49,7 @@ export const settings = {
   },
   natal: {
     title: 'Natal Chart',
-    hint: 'The underlying birth chart. Hide them to show just the overlay.',
+    hint: 'The underlying birth chart. Hide it to show just the overlay.',
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
@@ -59,6 +61,14 @@ export const settings = {
   localSpace: {
     title: 'Local Space',
     hint: 'Directional lines radiating from the birthplace, each pointing to a planet’s compass bearing in the local sky.',
+  },
+  aspectLines: {
+    title: 'Aspect Lines',
+    hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the Asc doubles as a sextile to the Dsc; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
+  },
+  midpointLines: {
+    title: 'Midpoint Lines',
+    hint: 'Lines where the midpoint of two visible bodies sits exactly on an angle (e.g. Su/Mo MC). In Mundo uses the bodily midpoint (mean RA and declination); In Zodiaco the classic longitude midpoint. Narrow the planet filter to keep the set readable.',
   },
 
   theme: {
@@ -160,6 +170,50 @@ export const settings = {
       hint: 'Build the chart, make it active, and clear the synastry partner.',
       needPartner: 'Pick a partner in the synastry bar first.',
       comingSoon: 'Composite charts are coming soon.',
+    },
+  },
+
+  // Eclipses overlay (Overlay tab while the Eclipses mode is active): the
+  // details panel labels, the display toggle, and the isoline-interval radios.
+  eclipses: {
+    kind: {
+      total: 'Total',
+      annular: 'Annular',
+      hybrid: 'Hybrid',
+      partial: 'Partial',
+    },
+    details: {
+      maximum: 'Maximum',
+      type: 'Type',
+      central: 'central',
+      nonCentral: 'non-central',
+      magnitude: 'Magnitude',
+      gamma: 'Gamma',
+      saros: 'Saros series',
+      lunation: 'Lunation',
+      sunPosition: 'Eclipse degree',
+      // Hover tip on the eclipse-degree value; {sign} is the spelled-out sign name.
+      sunPositionTip:
+        'The zodiac degree of the eclipse — the Sun and Moon meet here in {sign}.',
+      hemisphere: 'Hemisphere',
+      north: 'Northern',
+      south: 'Southern',
+      duration: 'Max duration',
+      width: 'Path width',
+    },
+    natalLines: {
+      title: 'Natal Chart Lines',
+      hint: 'The birth chart’s linework on the map. Hide it to see the eclipse path on a clean map — the chart wheel and readouts stay.',
+    },
+    chartLines: {
+      title: 'Eclipse Chart Lines',
+      hint: 'Planet and angle lines for the chart of the eclipse maximum, framed at that moment’s own sky — see where the eclipse-time lines run relative to the path.',
+    },
+    isoStep: {
+      // Spacing of the dashed equal-magnitude contours around the path.
+      '10': { label: '10%', hint: 'Nine contours — a dense reference grid.' },
+      '20': { label: '20%', hint: 'Four contours — a balanced middle ground.' },
+      '25': { label: '25%', hint: 'Three contours at quarter steps (the classic eclipse-map convention).' },
     },
   },
 

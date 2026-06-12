@@ -93,6 +93,7 @@ export const timeline = {
     'solar-arc': 'Solar Arc · {deg}°',
     'primary-directions': 'Primary Directions · {deg}°',
     synastry: 'Synastry · {partner}',
+    eclipses: 'Eclipse · {datetime} UTC',
   },
   // Dynamic nub readout. Solar-arc / primary show just "{deg}°" (number + degree
   // symbol, language-neutral), so only the progressed "Age …" form needs a key.

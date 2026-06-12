@@ -138,12 +138,19 @@ const ASPECT_TYPES: {
   color: string;
   category: AspectCategory;
 }[] = [
-  { name: 'conjunction', angle: 0,   orb: 8, color: '#f5b83d', category: 'conjunction' },
-  { name: 'opposition',  angle: 180, orb: 8, color: '#e85a4f', category: 'hard' },
-  { name: 'trine',       angle: 120, orb: 8, color: '#5ec2e0', category: 'harmonious' },
+  // One flat 7° orb across the majors. Note the sextile is deliberately as wide
+  // as the rest here — tighten it first (3-5° is the common practice) if the
+  // aspect lists feel noisy.
+  { name: 'conjunction', angle: 0,   orb: 7, color: '#f5b83d', category: 'conjunction' },
+  { name: 'opposition',  angle: 180, orb: 7, color: '#e85a4f', category: 'hard' },
+  { name: 'trine',       angle: 120, orb: 7, color: '#5ec2e0', category: 'harmonious' },
   { name: 'square',      angle: 90,  orb: 7, color: '#e85a4f', category: 'hard' },
-  { name: 'sextile',     angle: 60,  orb: 4, color: '#5ec2e0', category: 'harmonious' },
+  { name: 'sextile',     angle: 60,  orb: 7, color: '#5ec2e0', category: 'harmonious' },
 ];
+
+// The widest orb in the table — normalizes the per-aspect opacity fade so an
+// exact aspect is brightest and one at the orb limit sits at the floor.
+const MAX_ORB = Math.max(...ASPECT_TYPES.map((t) => t.orb));
 
 // The tightest aspect (if any) between two ecliptic longitudes (radians).
 function aspectBetween(
@@ -882,7 +889,7 @@ export function WheelSvg({
 
       {detailed &&
         filteredAspects.map((a, i) => {
-          const opacity = 0.35 + (1 - a.orb / 8) * 0.45;
+          const opacity = 0.35 + (1 - a.orb / MAX_ORB) * 0.45;
           // A conjunction's two endpoints nearly coincide, so a chord collapses to
           // an invisible dot — mark it with a small disc at its longitude instead.
           if (a.category === 'conjunction') {
@@ -912,7 +919,7 @@ export function WheelSvg({
       {/* Bi-wheel cross-aspect lines (overlay ↔ natal), dashed. */}
       {hasOverlay &&
         filteredCrossAspects.map((a, i) => {
-          const opacity = 0.4 + (1 - a.orb / 8) * 0.4;
+          const opacity = 0.4 + (1 - a.orb / MAX_ORB) * 0.4;
           // Cross-aspect conjunction: a small ring at its longitude (the chord
           // would be invisibly short), distinct from the natal filled disc.
           if (a.category === 'conjunction') {

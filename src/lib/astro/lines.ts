@@ -141,8 +141,11 @@ function horizonLine(
   const lngAt = (H: number) => meridianLng(p.ra + H);
 
   // Hour-angle magnitudes 0 … π, always including the exact apex endpoint π.
+  // The loop stops a hair short of π: the 180th accumulated 1° step lands at
+  // π − ~1e-14 by float error, which would otherwise duplicate the exact-π
+  // endpoint as a zero-length final segment.
   const mags: number[] = [0];
-  for (let m = HORIZON_H_STEP; m < Math.PI; m += HORIZON_H_STEP) mags.push(m);
+  for (let m = HORIZON_H_STEP; m < Math.PI - 1e-9; m += HORIZON_H_STEP) mags.push(m);
   mags.push(Math.PI);
 
   const coords: [number, number][] = [];

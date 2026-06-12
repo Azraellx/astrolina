@@ -21,9 +21,12 @@ OUT="src/fonts/subset-NotoSansSymbols-Regular.woff2"
 # SIGN_GLYPHS (U+2648–U+2653). U+2609 (Sun ☉) and U+FE0E (text variation selector)
 # are NOT in this font — the Sun falls back to the OS symbol font — so the
 # subsetter silently ignores them; they're listed here for documentation.
-SYM_UNICODES="2609,260A,260B,263D,263F,2640-2646,2648-2653,26B3-26B8,FE0E"
-# Pluto Form Two — only in Noto Sans Symbols 2.
-SYM2_UNICODES="2BD3"
+# U+260C/260D are the conjunction/opposition aspects and U+26B9 the sextile
+# (ASPECT_GLYPHS).
+SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,FE0E"
+# From Noto Sans Symbols 2: Pluto Form Two, plus the square (U+25A1) and trine
+# (U+25B3) aspect shapes (ASPECT_GLYPHS) — Geometric Shapes live only here.
+SYM2_UNICODES="25A1,25B3,2BD3"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

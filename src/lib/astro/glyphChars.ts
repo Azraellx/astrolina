@@ -40,3 +40,20 @@ export const SIGN_GLYPHS: string[] = Array.from(
   { length: 12 },
   (_, i) => String.fromCodePoint(0x2648 + i) + VS_TEXT,
 );
+
+// The five Ptolemaic aspect symbols: conjunction/opposition/sextile (U+260C /
+// U+260D / U+26B9) from Noto Sans Symbols, the square/trine shapes (U+25A1 /
+// U+25B3) from Noto Sans Symbols 2 — all in the bundled subset
+// (scripts/subset-font.sh). The "Aspects to angles" map lines use only the
+// sextile/square/trine subset (conjunction/opposition lines ARE the planets'
+// own angle lines); the chart sidebar's aspect tables use all five.
+export const ASPECT_GLYPHS: Record<
+  'conjunction' | 'opposition' | 'sextile' | 'square' | 'trine',
+  string
+> = {
+  conjunction: '☌' + VS_TEXT,
+  opposition: '☍' + VS_TEXT,
+  sextile: '⚹' + VS_TEXT,
+  square: '□' + VS_TEXT,
+  trine: '△' + VS_TEXT,
+};

@@ -26,9 +26,13 @@ import type {
   TransitFrame,
 } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
+import type { EclipseDetails } from '../../lib/astro/eclipses';
+import type { EclipseIsoStep } from '../../lib/overlayPrefs';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { TipButton } from '../ui/HoverTip';
+import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
 import './Sidebar.css';
@@ -49,6 +53,10 @@ interface SidebarProps {
   setShowParans: (v: boolean) => void;
   showLocalSpace: boolean;
   setShowLocalSpace: (v: boolean) => void;
+  showAspectLines: boolean;
+  setShowAspectLines: (v: boolean) => void;
+  showMidpointLines: boolean;
+  setShowMidpointLines: (v: boolean) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
   coordSystem: CoordSystem;
@@ -64,6 +72,17 @@ interface SidebarProps {
   setSynastryMethod: (m: RelationshipMethod) => void;
   onGenerateRelationship: () => void;
   canGenerateRelationship: boolean;
+  /** The selected eclipse's details panel data (null outside eclipses mode). */
+  eclipseDetails: EclipseDetails | null;
+  showEclipseNatalLines: boolean;
+  setShowEclipseNatalLines: (v: boolean) => void;
+  /** Eclipse Chart Lines toggle wiring — currently UI-gated (no button shown;
+   *  see the Display section comment), but kept in the contract so App's
+   *  state/persistence and the Map rendering stay exercised. */
+  showEclipseChartLines: boolean;
+  setShowEclipseChartLines: (v: boolean) => void;
+  eclipseIsoStep: EclipseIsoStep;
+  setEclipseIsoStep: (s: EclipseIsoStep) => void;
   showTimeline: boolean;
   setShowTimeline: (v: boolean) => void;
   showOverlayZenith: boolean;
@@ -197,7 +216,8 @@ function ChoiceTip({
       ) : (
         <span className="ui-tip-title">{title}</span>
       )}
-      <span className="ui-tip-sub">{hint}</span>
+      {/* Astro symbols in the hint copy render with the bundled glyph font. */}
+      <span className="ui-tip-sub">{glyphify(hint)}</span>
     </span>,
     document.body,
   );
@@ -633,6 +653,10 @@ export function Sidebar({
   setShowParans,
   showLocalSpace,
   setShowLocalSpace,
+  showAspectLines,
+  setShowAspectLines,
+  showMidpointLines,
+  setShowMidpointLines,
   lineSystem,
   setLineSystem,
   coordSystem,
@@ -648,6 +672,11 @@ export function Sidebar({
   setSynastryMethod,
   onGenerateRelationship,
   canGenerateRelationship,
+  eclipseDetails,
+  showEclipseNatalLines,
+  setShowEclipseNatalLines,
+  eclipseIsoStep,
+  setEclipseIsoStep,
   showTimeline,
   setShowTimeline,
   showOverlayZenith,
@@ -697,6 +726,15 @@ export function Sidebar({
   const toggleSection = (s: SidebarSection) =>
     setOpenSection(openSection === s ? null : s);
 
+  // Hover tip on the eclipse-degree value: names the sign behind the glyph
+  // ("♐ Sagittarius") for readers who don't keep the twelve glyphs memorized.
+  const {
+    ref: eclipseSignRef,
+    pos: eclipseSignPos,
+    show: showEclipseSign,
+    hide: hideEclipseSign,
+  } = useHoverTip<HTMLElement>();
+
   // The settings groups the active overlay exposes in its Overlay tab. Each is its
   // own flag, and the tab is shown only when at least one is on — so an overlay with
   // nothing to configure simply gets no tab, with no per-mode special-casing.
@@ -721,11 +759,18 @@ export function Sidebar({
   // Synastry's own section: pick a relationship method and generate that derived
   // chart. Synastry-only (the other overlays have no second chart to combine).
   const showRelationships = overlayMode === 'synastry';
+  // Eclipses' own section: the selected eclipse's details, the chart-lines
+  // toggle, and the magnitude-isoline interval.
+  const showEclipses = overlayMode === 'eclipses';
   // Show the Overlay tab only when the active overlay actually has a setting to
   // toggle; otherwise its header isn't rendered (and any saved open-state for it
   // just reads as "nothing open").
   const showOverlayTab =
-    isTimeMode || showPositioning || showChartAngle || showRelationships;
+    isTimeMode ||
+    showPositioning ||
+    showChartAngle ||
+    showRelationships ||
+    showEclipses;
 
   return (
     <aside className="sidebar">
@@ -885,7 +930,7 @@ export function Sidebar({
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
               title={t('settings.parans.title')}
-              hotkey="P"
+              hotkey="Shift P"
               hint={t('settings.parans.hint')}
             >
               <EyeIcon open={showParans} />
@@ -896,11 +941,33 @@ export function Sidebar({
               onClick={() => setShowLocalSpace(!showLocalSpace)}
               ariaPressed={showLocalSpace}
               title={t('settings.localSpace.title')}
-              hotkey="L"
+              hotkey="Shift L"
               hint={t('settings.localSpace.hint')}
             >
               <EyeIcon open={showLocalSpace} />
               <span className="name">{t('settings.localSpace.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
+              onClick={() => setShowAspectLines(!showAspectLines)}
+              ariaPressed={showAspectLines}
+              title={t('settings.aspectLines.title')}
+              hotkey="Shift A"
+              hint={t('settings.aspectLines.hint')}
+            >
+              <EyeIcon open={showAspectLines} />
+              <span className="name">{t('settings.aspectLines.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
+              onClick={() => setShowMidpointLines(!showMidpointLines)}
+              ariaPressed={showMidpointLines}
+              title={t('settings.midpointLines.title')}
+              hotkey="Shift M"
+              hint={t('settings.midpointLines.hint')}
+            >
+              <EyeIcon open={showMidpointLines} />
+              <span className="name">{t('settings.midpointLines.title')}</span>
             </TipToggle>
           </ul>
         </div>
@@ -1115,6 +1182,131 @@ export function Sidebar({
                   >
                     {t('settings.relationships.generate.title')}
                   </TipButton>
+                </>
+              )}
+
+              {showEclipses && eclipseDetails && (
+                <>
+                  <h2>{t('settings.headings.eclipse')}</h2>
+                  {/* The selected eclipse's vitals — catalog metadata (NASA) plus
+                      the Swiss-derived maximum instant and eclipse degree. */}
+                  <dl className="eclipse-details">
+                    <div>
+                      <dt>{t('settings.eclipses.details.maximum')}</dt>
+                      <dd>{eclipseDetails.maxUtc}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.type')}</dt>
+                      <dd>
+                        {t(`settings.eclipses.kind.${eclipseDetails.row.kind}`)}
+                        {eclipseDetails.row.kind !== 'partial' &&
+                          ` · ${t(
+                            eclipseDetails.row.central
+                              ? 'settings.eclipses.details.central'
+                              : 'settings.eclipses.details.nonCentral',
+                          )}`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.sunPosition')}</dt>
+                      <dd
+                        ref={eclipseSignRef}
+                        className="eclipse-degree"
+                        onMouseEnter={showEclipseSign}
+                        onMouseLeave={hideEclipseSign}
+                      >
+                        {glyphify(eclipseDetails.sunZodiac)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.magnitude')}</dt>
+                      <dd>{eclipseDetails.row.magnitude.toFixed(4)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.gamma')}</dt>
+                      <dd>{eclipseDetails.row.gamma.toFixed(4)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.hemisphere')}</dt>
+                      <dd>
+                        {t(
+                          eclipseDetails.row.gamma >= 0
+                            ? 'settings.eclipses.details.north'
+                            : 'settings.eclipses.details.south',
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.saros')}</dt>
+                      <dd>{eclipseDetails.row.saros}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('settings.eclipses.details.lunation')}</dt>
+                      <dd>{eclipseDetails.row.lunation}</dd>
+                    </div>
+                    {eclipseDetails.row.durationSec !== null && (
+                      <div>
+                        <dt>{t('settings.eclipses.details.duration')}</dt>
+                        <dd>
+                          {Math.floor(eclipseDetails.row.durationSec / 60)}m{' '}
+                          {eclipseDetails.row.durationSec % 60}s
+                        </dd>
+                      </div>
+                    )}
+                    {eclipseDetails.row.widthKm !== null && (
+                      <div>
+                        <dt>{t('settings.eclipses.details.width')}</dt>
+                        <dd>{eclipseDetails.row.widthKm} km</dd>
+                      </div>
+                    )}
+                  </dl>
+
+                  <h2>{t('settings.headings.display')}</h2>
+                  <ul className="technique-list">
+                    <TipToggle
+                      className={`tech-toggle ${showEclipseNatalLines ? 'on' : 'off'}`}
+                      onClick={() =>
+                        setShowEclipseNatalLines(!showEclipseNatalLines)
+                      }
+                      ariaPressed={showEclipseNatalLines}
+                      title={t('settings.eclipses.natalLines.title')}
+                      hint={t('settings.eclipses.natalLines.hint')}
+                    >
+                      <EyeIcon open={showEclipseNatalLines} />
+                      <span className="name">
+                        {t('settings.eclipses.natalLines.title')}
+                      </span>
+                    </TipToggle>
+                    {/* Eclipse Chart Lines: feature-complete but not ready to
+                        ship — UI-gated only, so all state/props/render logic
+                        stays wired. Restore the TipToggle (same shape as Natal
+                        Chart above, props showEclipseChartLines /
+                        setShowEclipseChartLines, strings under
+                        settings.eclipses.chartLines.*) to re-enable. */}
+                  </ul>
+
+                  <h2>{t('settings.headings.magnitudeSteps')}</h2>
+                  <ul className="theme-list">
+                    {([10, 20, 25] as const).map((step) => (
+                      <HintOption
+                        key={step}
+                        selected={eclipseIsoStep === step}
+                        onSelect={() => setEclipseIsoStep(step)}
+                        label={t(`settings.eclipses.isoStep.${step}.label`)}
+                        hint={t(`settings.eclipses.isoStep.${step}.hint`)}
+                      />
+                    ))}
+                  </ul>
+
+                  <ChoiceTip
+                    pos={eclipseSignPos}
+                    title={glyphify(
+                      `${SIGN_GLYPHS[eclipseDetails.sunSignIndex]} ${labels.sign(eclipseDetails.sunSignIndex)}`,
+                    )}
+                    hint={t('settings.eclipses.details.sunPositionTip', {
+                      sign: labels.sign(eclipseDetails.sunSignIndex),
+                    })}
+                  />
                 </>
               )}
             </div>

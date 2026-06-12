@@ -21,6 +21,7 @@ import {
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
 import type { LineType } from '../../lib/astro/lines';
+import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { formatUtcOffset } from '../../lib/atlas/timezone';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
@@ -175,13 +176,8 @@ function maxSidebarWidth(): number {
 const MIN_WHEEL = 280;
 const MAX_WHEEL = 900;
 
-const ASPECT_GLYPHS: Record<string, string> = {
-  conjunction: '☌',
-  opposition: '☍',
-  trine: '△',
-  square: '□',
-  sextile: '⚹',
-};
+// Aspect symbols come from the shared glyph catalog (lib/astro/glyphChars.ts),
+// rendered with the bundled glyph font via .astro-glyph below.
 
 // Per-aspect exact-angle for the Advanced aspect tips (language-neutral numeric).
 // The name + description copy is resolved from the catalog (expandedSidebar.aspect.*).
@@ -232,14 +228,14 @@ function TipGlyph({
 function AspectGlyph({ type, color }: { type: string; color: string }) {
   const { t } = useT();
   const known = ASPECT_KEYS.has(type);
-  const glyph = ASPECT_GLYPHS[type] ?? type;
+  const glyph = known ? ASPECT_GLYPHS[type as keyof typeof ASPECT_GLYPHS] : type;
   return (
     <TipGlyph
-      className="asp-glyph"
+      className="asp-glyph astro-glyph"
       color={color}
       title={
         <span className="es-tip-title">
-          <span style={{ color }}>{glyph}</span>
+          <span className="astro-glyph" style={{ color }}>{glyph}</span>
           {known
             ? `${t(`expandedSidebar.aspect.${type}.name` as 'expandedSidebar.aspect.conjunction.name')} (${ASPECT_ANGLES[type]})`
             : type}

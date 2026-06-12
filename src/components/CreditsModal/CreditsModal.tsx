@@ -18,6 +18,7 @@ type NoteKey =
   | 'maptiler'
   | 'geonames'
   | 'swisseph'
+  | 'nasaEclipse'
   | 'noto'
   | 'maplibre'
   | 'other';
@@ -95,6 +96,12 @@ const CREDIT_GROUPS: CreditGroup[] = [
         href: 'https://www.astro.com/swisseph/',
         license: 'AGPL-3.0',
         noteKey: 'swisseph',
+      },
+      {
+        name: 'NASA GSFC Eclipse Catalog',
+        href: 'https://eclipse.gsfc.nasa.gov',
+        license: 'NASA',
+        noteKey: 'nasaEclipse',
       },
     ],
   },

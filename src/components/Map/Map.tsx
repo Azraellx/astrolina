@@ -15,9 +15,11 @@ import {
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
 import type { FeatureCollection, LineString, Point } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
+import { ASPECT_COMPLEMENT, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
 import type { ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
+import type { EclipseMapData } from '../../lib/astro/eclipses';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
@@ -50,7 +52,7 @@ import { PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { TFn } from '../../i18n';
-import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
+import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { CreditsModal } from '../CreditsModal/CreditsModal';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
@@ -177,6 +179,13 @@ const CLOSE_ZOOM = 8.5;
 // Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
 // escape button appears; clicking it eases back to this wide overview in one step.
 const ZOOM_OUT_TARGET = 3;
+// SECONDARY badge sets — aspect/midpoint and paran labels — only render once
+// zoomed in past this (a step or two in from the world view). At world zoom the
+// secondary sets can run to hundreds of badges that bury the base-line labels
+// and block each other's clicks; the lines themselves (and their hover tips)
+// stay visible at every zoom. Same gating idea as the CLOSE_ZOOM features,
+// just at a much shallower threshold.
+const SECONDARY_BADGE_ZOOM = 3;
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
 const COMPASS_ZOOM = 4;
@@ -319,11 +328,14 @@ const SNAP_LINE_LAYERS = [
   'acg-lines-ov-horizon',
   'acg-lines-ov-pair-nn',
   'acg-lines-ov-pair-sn',
+  'angle-lines-layer',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
   'local-space-layer-in',
   'local-space-ov-layer',
+  'eclipse-central',
+  'eclipse-limits',
 ];
 // Cursor-to-line distance (px) within which the measure endpoint snaps. Small, so
 // it grabs a line you're aiming at without hijacking nearby free-space measuring.
@@ -573,6 +585,7 @@ const LINE_HIT_LAYERS = [
   'acg-lines-ov-horizon',
   'acg-lines-ov-pair-nn',
   'acg-lines-ov-pair-sn',
+  'angle-lines-layer',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
@@ -580,6 +593,9 @@ const LINE_HIT_LAYERS = [
   'local-space-ov-layer',
   'ecliptic-layer',
   'ecliptic-ov-layer',
+  'eclipse-central',
+  'eclipse-limits',
+  'eclipse-isolines',
 ];
 const LINE_HIT_TOLERANCE_PX = 3;
 
@@ -590,11 +606,31 @@ function tagHtml(t: string): string {
   return `<span class="cross-tip-tag">${t}</span>`;
 }
 
+// Poleward of this latitude a rising/setting line can crest (the horizon
+// grazes its point's diurnal circle): across the crest the rising and setting
+// identities — and so an As-vs-Ds reading — trade places. The tooltips flag it.
+const POLAR_LAT = 66.5;
+
+// Whether this hovered line is a rising/setting-type curve, whose reading is
+// ambiguous around a polar crest (meridians are immune).
+function isHorizonLine(layerId: string, props: Record<string, unknown>): boolean {
+  if (layerId.startsWith('acg-lines')) {
+    return props.lineType === 'ASC' || props.lineType === 'DSC';
+  }
+  if (layerId === 'angle-lines-layer') {
+    return props.kind === 'aspect'
+      ? props.branch === 'ASC' || props.branch === 'DSC'
+      : props.lineType === 'ASC' || props.lineType === 'DSC';
+  }
+  return false;
+}
+
 function lineLabelHtml(
   layerId: string,
   props: Record<string, unknown>,
   t: TFn,
   labels: EnumLabels,
+  hoverLatDeg: number,
 ): string | null {
   // Overlay AND promoted lines carry their tag (e.g. "Tr") in props.tag; show it as the
   // hover-tip prefix regardless of which path (dashed overlay or solid natal/promoted)
@@ -620,6 +656,39 @@ function lineLabelHtml(
         glyphHtml(planet, props.color as string) +
         `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
     }
+  } else if (layerId === 'angle-lines-layer') {
+    // "Aspects to angles" overlay: either "Sun □ MC" (planet square the MC here)
+    // or "Sun/Moon MC" (the pair's midpoint culminates here).
+    const planet = props.planet as PlanetName;
+    if (props.kind === 'midpoint') {
+      const pb = props.planetB as PlanetName;
+      // colorB carries the same light-theme Moon swap as props.color (see
+      // App.withDarkMoon), so a "Sun/Moon" tip stays readable on Glass/Earth.
+      row =
+        glyphHtml(planet, props.color as string) +
+        labels.planet(planet) +
+        `<span class="cross-tip-x">/</span>` +
+        glyphHtml(pb, (props.colorB as string) ?? PLANET_COLORS[pb]) +
+        `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+    } else {
+      // The aspect symbol renders glyph-sized in the bundled glyph font
+      // (astro-glyph + cross-tip-glyph), matching the planet glyph beside it.
+      // The complementary reading follows — a trine to the ASC is equally a
+      // sextile to the DSC — so users coming from either labeling convention
+      // recognize the line.
+      const asp = props.aspect as AspectKind;
+      const ang = props.lineType as LineType;
+      const aspHtml = (a: AspectKind) =>
+        `<span class="astro-glyph cross-tip-glyph">${ASPECT_GLYPHS[a]}</span>`;
+      row =
+        glyphHtml(planet, props.color as string) +
+        `${labels.planet(planet)} ` +
+        aspHtml(asp) +
+        ` ${tagHtml(ANGLE_CODE[ang])}` +
+        `<span class="cross-tip-x">/</span>` +
+        aspHtml(ASPECT_COMPLEMENT[asp]) +
+        ` ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[ang]])}`;
+    }
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
     row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
@@ -635,8 +704,27 @@ function lineLabelHtml(
       `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
     row = t('map.ecliptic');
+  } else if (layerId.startsWith('eclipse')) {
+    // Eclipse curves: lead with the eclipse identity ("2024-04-08 · Total"),
+    // then name the curve. The cursor's local obscuration is appended by the
+    // hover handler (it knows the lat/lng; this function only sees the feature).
+    const kind = props.kind as string;
+    const what =
+      kind === 'central'
+        ? t('map.eclipse.central')
+        : kind === 'limit'
+          ? t('map.eclipse.pathEdge')
+          : t('map.eclipse.isoline', { pct: props.label as string });
+    row = tagHtml(props.dateLabel as string) + what;
   }
-  return row ? `<div class="ui-tip"><span class="cross-tip-row">${row}</span></div>` : null;
+  if (!row) return null;
+  // Rising/setting curves hovered inside a polar circle get a one-line caveat:
+  // past the line's crest the As/Ds reading flips (see POLAR_LAT).
+  const polar =
+    Math.abs(hoverLatDeg) > POLAR_LAT && isHorizonLine(layerId, props)
+      ? `<span class="ui-tip-sub">${t('map.polarNote')}</span>`
+      : '';
+  return `<div class="ui-tip"><span class="cross-tip-row">${row}</span>${polar}</div>`;
 }
 
 function lineAtPoint(
@@ -657,10 +745,17 @@ function lineAtPoint(
   );
   const f = feats[0];
   if (!f || !f.properties) return null;
-  const html = lineLabelHtml(f.layer.id, f.properties, t, labels);
+  const hoverLat = map.unproject([pt.x, pt.y]).lat;
+  const html = lineLabelHtml(f.layer.id, f.properties, t, labels, hoverLat);
   if (!html) return null;
   // Stable id so the popup HTML is only re-set when the hovered line changes.
-  return { id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}`, html };
+  // The polar-zone flag joins it so the caveat appears/disappears as the hover
+  // crosses the polar circle along one line.
+  const polarKey = Math.abs(hoverLat) > POLAR_LAT ? 'p' : '';
+  return {
+    id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${polarKey}`,
+    html,
+  };
 }
 
 // Apply a projection mode to the live map: swap mercator↔globe, gate rotate/tilt
@@ -685,6 +780,9 @@ function applyProjection(map: maplibregl.Map, mode: MapProjectionMode): void {
 
 interface MapProps {
   lines: FeatureCollection<LineString, LineProps>;
+  /** The "Aspects to angles" overlays: planet-aspect lines and/or midpoint
+   *  lines, concatenated (the two toggles stack; empty when both are off). */
+  angleLines: FeatureCollection<LineString, AngleOverlayLineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   /** Dots where local-space lines cross birth-chart lines (empty when LS hidden). */
@@ -699,6 +797,12 @@ interface MapProps {
   ecliptic?: FeatureCollection<LineString> | null;
   /** Second, time/relationship overlay rendered dashed + dimmed over the base. */
   overlay?: OverlayData | null;
+  /** The Eclipses overlay: the selected solar eclipse's ground track (central
+   *  line, umbral band, magnitude isolines, greatest-eclipse marker). */
+  eclipse?: EclipseMapData | null;
+  /** Local circumstances for the eclipse hover tip ("63% obscured at {time}");
+   *  null where the eclipse is invisible. Read via ref — may change freely. */
+  eclipseTip?: ((lat: number, lng: number) => string | null) | null;
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
@@ -740,6 +844,7 @@ interface MapProps {
 
 interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
+  angleLines: FeatureCollection<LineString, AngleOverlayLineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
@@ -747,6 +852,7 @@ interface MapData {
   zenith: FeatureCollection<Point, ZenithProps>;
   ecliptic?: FeatureCollection<LineString> | null;
   overlay?: OverlayData | null;
+  eclipse?: EclipseMapData | null;
 }
 
 export interface MapHandle {
@@ -891,15 +997,92 @@ function setupCustomLayers(
     },
   });
 
+  // ── Eclipses overlay: the selected solar eclipse's ground track. One mixed-
+  // geometry source; each layer filters on the feature `kind` (colors ride in
+  // feature props, themed by the App). Added here so the shaded umbral band and
+  // the contour lines sit beneath all chart linework; the greatest-eclipse
+  // marker layers are added later, above the lines, beside the zenith stamps.
+  map.addSource('eclipse', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'eclipse-band-fill',
+    source: 'eclipse',
+    type: 'fill',
+    filter: ['==', ['get', 'kind'], 'band'],
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': 0.16,
+    },
+  });
+  // Dashed-dotted contours of equal MAXIMUM partial-eclipse magnitude (the
+  // classic eclipse-map 25/50/75% family). The dash-dot pattern is unique to
+  // these — every other dashed line on the map uses a plain dash.
+  map.addLayer({
+    id: 'eclipse-isolines',
+    source: 'eclipse',
+    type: 'line',
+    filter: ['==', ['get', 'kind'], 'isoline'],
+    layout: { 'line-join': 'round' },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1,
+      'line-opacity': 0.75,
+      'line-dasharray': [5, 2, 1, 2],
+    },
+  });
+  map.addLayer({
+    id: 'eclipse-isoline-labels',
+    source: 'eclipse',
+    type: 'symbol',
+    filter: ['==', ['get', 'kind'], 'isoline'],
+    layout: {
+      'symbol-placement': 'line',
+      'text-field': ['get', 'label'],
+      'text-size': 10,
+      'text-font': ['Noto Sans Regular'],
+      'symbol-spacing': 350,
+    },
+    paint: {
+      'text-color': ['get', 'color'],
+      'text-halo-color': haloColor,
+      'text-halo-width': 1.2,
+    },
+  });
+  map.addLayer({
+    id: 'eclipse-limits',
+    source: 'eclipse',
+    type: 'line',
+    filter: ['==', ['get', 'kind'], 'limit'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1.1,
+      'line-opacity': 0.8,
+    },
+  });
+  map.addLayer({
+    id: 'eclipse-central',
+    source: 'eclipse',
+    type: 'line',
+    filter: ['==', ['get', 'kind'], 'central'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 2,
+      'line-opacity': 0.95,
+    },
+  });
+
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-layer',
     source: 'parans',
     type: 'line',
+    // Full opacity like every chart line; the hairline width keeps the
+    // horizontal rows subordinate to the angle lines.
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 0.7,
-      'line-opacity': 0.45,
+      'line-opacity': 1,
     },
   });
   // Paran labels are drawn as centred DOM badges (see the paran-badge overlay in
@@ -918,7 +1101,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.2,
-      'line-opacity': 0.75,
+      'line-opacity': 1,
     },
   });
   map.addLayer({
@@ -929,7 +1112,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.2,
-      'line-opacity': 0.75,
+      'line-opacity': 1,
       'line-dasharray': [2, 2],
     },
   });
@@ -938,6 +1121,26 @@ function setupCustomLayers(
   // oversized (2×) for emphasis; the inward ones stay normal.
   addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
   addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
+
+  // "Aspects to angles" overlays (aspect lines and/or midpoint lines — the two
+  // toggles stack, concatenated into this one source). Added before the base
+  // acg-lines so those stay on top; thinner + long-dashed so the set reads as
+  // "derived from" the solid base lines (the [4,3] dash is longer than any
+  // timeline-overlay pattern).
+  map.addSource('angle-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'angle-lines-layer',
+    source: 'angle-lines',
+    type: 'line',
+    // Full opacity like every chart line; the thinner width + dash alone mark
+    // the set as "derived" from the solid base lines.
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.9,
+      'line-opacity': 1,
+      'line-dasharray': [4, 3],
+    },
+  });
 
   // lineMetrics:true lets the node-pair layers below colour a single line with a
   // line-gradient (half North Node colour, half South Node colour).
@@ -958,6 +1161,7 @@ function setupCustomLayers(
       ['!=', ['get', 'pair'], true],
     ],
     type: 'line',
+    // Full opacity everywhere — the MC/IC hierarchy reads from width alone.
     paint: {
       'line-color': ['get', 'color'],
       'line-width': [
@@ -966,12 +1170,7 @@ function setupCustomLayers(
         1.9,
         1.0,
       ],
-      'line-opacity': [
-        'case',
-        ['==', ['get', 'lineType'], 'MC'],
-        0.95,
-        0.7,
-      ],
+      'line-opacity': 1,
     },
   });
   // Base horizon lines are SOLID (no dashes) — dashes are reserved entirely for
@@ -989,7 +1188,7 @@ function setupCustomLayers(
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.5,
-      'line-opacity': 0.85,
+      'line-opacity': 1,
     },
   });
   // Merged lunar-node pairs: the North Node line and its antipodal South Node line
@@ -1015,7 +1214,7 @@ function setupCustomLayers(
     paint: {
       'line-gradient': nodePairGradient,
       'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.9, 1.0],
-      'line-opacity': ['case', ['==', ['get', 'lineType'], 'MC'], 0.95, 0.7],
+      'line-opacity': 1,
     },
   });
   map.addLayer({
@@ -1030,7 +1229,7 @@ function setupCustomLayers(
     paint: {
       'line-gradient': nodePairGradient,
       'line-width': 1.5,
-      'line-opacity': 0.85,
+      'line-opacity': 1,
     },
   });
   // ASC/DSC arrows skip merged node pairs (pair == true): a single line that is both a
@@ -1296,6 +1495,34 @@ function setupCustomLayers(
     },
   });
 
+  // The greatest-eclipse marker: a smaller echo of the zenith stamps (disc +
+  // the baked Sun glyph) at the point where the eclipse is deepest. Drawn here
+  // so it sits above the path lines like the stamps sit above the ACG lines.
+  map.addLayer({
+    id: 'eclipse-ge-disc',
+    source: 'eclipse',
+    type: 'circle',
+    filter: ['==', ['get', 'kind'], 'ge'],
+    paint: {
+      'circle-radius': 10,
+      'circle-color': zenithFill,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'eclipse-ge-glyph',
+    source: 'eclipse',
+    type: 'symbol',
+    filter: ['==', ['get', 'kind'], 'ge'],
+    layout: {
+      'icon-image': ZENITH_GLYPH_PREFIX + 'Sun',
+      'icon-size': 0.8,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
   map.addSource('measure', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
@@ -1326,17 +1553,21 @@ function setupCustomLayers(
 
 function pushData(map: maplibregl.Map, data: MapData) {
   const acg = map.getSource('acg-lines') as maplibregl.GeoJSONSource | undefined;
+  const ang = map.getSource('angle-lines') as maplibregl.GeoJSONSource | undefined;
+  if (ang) ang.setData(data.angleLines);
   const par = map.getSource('parans') as maplibregl.GeoJSONSource | undefined;
   const ls = map.getSource('local-space') as maplibregl.GeoJSONSource | undefined;
   const lsx = map.getSource('acg-ls-cross') as maplibregl.GeoJSONSource | undefined;
   const zen = map.getSource('acg-zenith') as maplibregl.GeoJSONSource | undefined;
   const ecl = map.getSource('ecliptic') as maplibregl.GeoJSONSource | undefined;
+  const ecp = map.getSource('eclipse') as maplibregl.GeoJSONSource | undefined;
   if (acg) acg.setData(data.lines);
   if (par) par.setData(data.parans);
   if (ls) ls.setData(data.localSpace);
   if (lsx) lsx.setData(data.localSpaceCross);
   if (zen) zen.setData(data.zenith);
   if (ecl) ecl.setData(data.ecliptic ?? EMPTY_FC());
+  if (ecp) ecp.setData(data.eclipse ?? EMPTY_FC());
 
   const acgOv = map.getSource('acg-lines-ov') as
     | maplibregl.GeoJSONSource
@@ -1366,6 +1597,7 @@ function pushData(map: maplibregl.Map, data: MapData) {
 
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
+  angleLines,
   parans,
   localSpace,
   localSpaceCross,
@@ -1373,6 +1605,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   zenith,
   ecliptic,
   overlay,
+  eclipse,
+  eclipseTip,
   pin,
   pinType,
   theme,
@@ -1433,7 +1667,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onRightClickRef = useRef(onRightClick);
-  const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -1443,14 +1677,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const measureColorRef = useRef(measureColor);
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
   const detailRef = useRef({ showRoads, showRivers, showLabels });
+  // The eclipse local-circumstances closure, read inside the long-lived hover
+  // handler (it changes with each selected eclipse; a ref avoids re-binding).
+  const eclipseTipRef = useRef(eclipseTip);
   // The map's load/style.load/click handlers are bound once and never rebound;
   // refresh these refs after each commit (not during render) so those async
   // handlers always read the latest props.
   useEffect(() => {
     onRightClickRef.current = onRightClick;
-    dataRef.current = { lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay };
+    dataRef.current = { lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse };
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
+    eclipseTipRef.current = eclipseTip;
   });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
@@ -1542,15 +1780,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const computeBadges = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    setZoom(map.getZoom());
+    const z = map.getZoom();
+    setZoom(z);
+    // Secondary badge sets (aspect/midpoint + paran labels) only past the
+    // shallow zoom threshold — see SECONDARY_BADGE_ZOOM. Recomputed on every
+    // move, so they pop in/out as the camera crosses it.
+    const secondary = z >= SECONDARY_BADGE_ZOOM;
     const data = dataRef.current;
     const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
     const ov = data.overlay?.lines
       ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
       : [];
+    // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
+    // their aspect/planetB props give them distinct group keys and badge faces.
+    const ang = secondary
+      ? computeLineBadges(map, data.angleLines.features, BADGE_INSET, false, 'ang')
+      : [];
     const cont = map.getContainer();
     const dodged = dodgeBadges(
-      natal.concat(ov),
+      natal.concat(ov, ang),
       readHudRects(map),
       cont.clientWidth,
       cont.clientHeight,
@@ -1588,8 +1836,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         });
       });
     };
-    pushParans(data.parans, false);
-    if (data.overlay?.parans) pushParans(data.overlay.parans, true);
+    if (secondary) {
+      pushParans(data.parans, false);
+      if (data.overlay?.parans) pushParans(data.overlay.parans, true);
+    }
     setParanBadges(pbadges);
 
     // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
@@ -2054,6 +2304,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // click target, so the cursor stays the map's default (no pointer).
           const line = lineAtPoint(map, e.point, t, labels);
           if (line) {
+            // Eclipse curves add the LOCAL circumstances at the cursor ("63%
+            // obscured at 18:14 UTC"). The id is salted with a coarse cursor
+            // cell so the figure refreshes while sliding along the line without
+            // re-setting the popup HTML on every pixel.
+            if (line.id.startsWith('eclipse') && eclipseTipRef.current) {
+              const sub = eclipseTipRef.current(e.lngLat.lat, e.lngLat.lng);
+              if (sub) {
+                line.html = line.html.replace(
+                  '</div>',
+                  `<span class="ui-tip-sub">${sub}</span></div>`,
+                );
+                line.id += `@${Math.round(e.lngLat.lat * 2)},${Math.round(e.lngLat.lng * 2)}`;
+              }
+            }
             clearZenith();
             clearCross();
             showLine(line, e.lngLat);
@@ -2260,7 +2524,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, parans, localSpace, localSpaceCross, zenith, ecliptic, overlay });
+      pushData(map, { lines, angleLines, parans, localSpace, localSpaceCross, zenith, ecliptic, overlay, eclipse });
       computeBadges();
     } else {
       map.once('load', () => {
@@ -2268,7 +2532,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, computeBadges]);
+  }, [lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse, computeBadges]);
 
   // Toggle basemap road / river / foliage visibility live (theme reloads reapply
   // via the style.load handler above).
@@ -2384,10 +2648,45 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           const bg = b.pair
             ? `linear-gradient(100deg, ${PLANET_COLORS.NorthNode} 0 ${seamPct}%, ${PLANET_COLORS.SouthNode} ${seamPct}% 100%)`
             : b.color;
-          const zenithTarget =
-            b.overlay
+          // Aspect/midpoint badges fly to their computed point's sub-point —
+          // where the aspect-offset (or midpoint) ecliptic degree is directly
+          // overhead, on the set's dashed MC line — the analog of a planet
+          // badge's zenith. It rides the same fly-out / fly-back toggle, keyed
+          // by the computed point so each aspect or pair toggles independently.
+          const angleBadge = Boolean(b.aspect || b.planetB);
+          const zenithTarget = angleBadge
+            ? b.targetLng !== undefined && b.targetLat !== undefined
+              ? ([b.targetLng, b.targetLat] as [number, number])
+              : undefined
+            : b.overlay
               ? zenithByOverlayPlanet[b.planet]
               : zenithByPlanet[b.planet];
+          // Key angle badges by their anchor COORDS, not just planet+aspect:
+          // every (planet, aspect) family exists as two branches with antipodal
+          // anchors (e.g. the two trine-MC meridians), and a midpoint pair has
+          // near/far anchors — each badge must own its fly-out/fly-back toggle,
+          // or clicking the second branch would "return" instead of flying.
+          const flyId = angleBadge
+            ? `ang|${b.planet}|${b.aspect ?? ''}|${b.planetB ?? ''}|${b.targetLng?.toFixed(3)}|${b.targetLat?.toFixed(3)}`
+            : // Key by the routing prefix (the overlay tag for overlay-path
+              // badges, '' otherwise) so the label shares one toggle with its
+              // stamp — a promoted label shows "Tr" but keys '' like its
+              // natal-source stamp.
+              zenithKey(b.overlay ? b.prefix : '', b.planet);
+          const flyTip = b.planetB
+            ? t('map.flyToMidpoint', {
+                planetA: labels.planet(b.planet),
+                planetB: labels.planet(b.planetB),
+              })
+            : b.aspect
+              ? t('map.flyToAspectPoint', {
+                  planet: labels.planet(b.planet),
+                  aspect: t(`map.aspectNames.${b.aspect}`),
+                })
+              : t('map.flyToZenith', {
+                  prefix: b.prefix ? `${b.prefix} ` : '',
+                  planet: labels.planet(b.planet),
+                });
           const inner = b.pair ? (
             // No "/" separator — the two-tone fill splits North vs South node — but keep an
             // empty spacer so the two halves read as two groups and the colour seam falls
@@ -2402,6 +2701,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span className="acg-badge-code">
                 {ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]]}
               </span>
+            </>
+          ) : b.planetB ? (
+            // Midpoint line: both bodies' glyphs, then the angle ("Su Mo MC").
+            <>
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <PlanetGlyph planet={b.planetB} size={11} color={text} />
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+            </>
+          ) : b.aspect ? (
+            // Aspect line: glyph, aspect symbol, angle ("Su □ MC"). The symbol
+            // uses the bundled glyph font, like the planet glyph beside it.
+            <>
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <span className="astro-glyph acg-badge-code">
+                {ASPECT_GLYPHS[b.aspect]}
+              </span>
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
             </>
           ) : (
             <>
@@ -2420,22 +2736,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
               style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
-              onClick={() =>
-                flyToZenith(
-                  // Key by the routing prefix (the overlay tag for overlay-path
-                  // badges, '' otherwise) so the label shares one toggle with its
-                  // stamp — a promoted label shows "Tr" but keys '' like its
-                  // natal-source stamp.
-                  zenithKey(b.overlay ? b.prefix : '', b.planet),
-                  zenithTarget[0],
-                  zenithTarget[1],
-                )
-              }
+              onClick={() => flyToZenith(flyId, zenithTarget[0], zenithTarget[1])}
               placement="top"
-              tip={t('map.flyToZenith', {
-                prefix: b.prefix ? `${b.prefix} ` : '',
-                planet: labels.planet(b.planet),
-              })}
+              tip={flyTip}
             >
               {inner}
             </TipButton>
@@ -2500,7 +2803,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           cy={originScreen.y}
           size={HORIZON_WHEEL_SIZE}
           scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
-          opacity={COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)}
+          opacity={
+            mapMoving
+              ? 0
+              : COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)
+          }
           bearing={originNorthDeg}
         />
       )}

@@ -28,6 +28,7 @@ import { chartSwitcher } from './en/chartSwitcher';
 import { chartWheel } from './en/chartWheel';
 import { coordReadout } from './en/coordReadout';
 import { creditsModal } from './en/creditsModal';
+import { eclipseHud } from './en/eclipseHud';
 import { expandedSidebar } from './en/expandedSidebar';
 import { importChartModal } from './en/importChartModal';
 import { map } from './en/map';
@@ -50,6 +51,7 @@ export const en = {
   chartWheel,
   coordReadout,
   creditsModal,
+  eclipseHud,
   expandedSidebar,
   importChartModal,
   map,

@@ -41,6 +41,10 @@ Astronomy
   - Swiss Ephemeris — planetary positions (JPL DE441 data).
     © Astrodienst AG, via @swisseph/browser. Licensed AGPL-3.0.
     https://www.astro.com/swisseph/
+  - Five Millennium Catalog of Solar Eclipses — the bundled eclipse catalog
+    (dates, types, Saros series). Eclipse Predictions by Fred Espenak and
+    Jean Meeus (NASA's GSFC); reproduced with the required acknowledgment.
+    https://eclipse.gsfc.nasa.gov
 
 Maps & places
   - OpenStreetMap — base map data (also credited on the map itself).
