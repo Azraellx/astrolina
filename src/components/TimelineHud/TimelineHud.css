@@ -279,6 +279,42 @@
   border-color: rgba(var(--accent-rgb), 0.55);
 }
 
+/* Returns snap group (transits only): ‹ ☉ › ‹ ☽ › — the luminary button snaps
+   to the nearest return, the chevrons walk whole returns. */
+.thud-returns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.thud-return-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.thud-return-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.thud-return-btn:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
 /* Adjustable step-amount box, sitting just right of the forward step button.
    Defaults to the scale's mini-notch count; overriding it only changes how far a
    step press jumps (not the ruler). */

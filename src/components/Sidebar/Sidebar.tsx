@@ -30,8 +30,12 @@ import type { EclipseContact, EclipseDetails } from '../../lib/astro/eclipses';
 import type { EclipseIsoStep } from '../../lib/overlayPrefs';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import { ASPECT_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
-import { TipButton } from '../ui/HoverTip';
+import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
+import { ASPECT_NAMES, type AspectOrbs } from '../../lib/aspectPrefs';
+import type { LsOriginPref, StarSetPref } from '../../lib/overlayPrefs';
+import type { ProgressionType } from '../../lib/astro/timeline';
+import type { ZodiacMode } from '../../lib/astro/ayanamsa';
+import { TipButton, TipSpan } from '../ui/HoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
@@ -57,12 +61,35 @@ interface SidebarProps {
   setShowAspectLines: (v: boolean) => void;
   showMidpointLines: boolean;
   setShowMidpointLines: (v: boolean) => void;
+  showOrbZones: boolean;
+  setShowOrbZones: (v: boolean) => void;
+  orbZoneKm: number;
+  setOrbZoneKm: (km: number) => void;
+  paranOrbDeg: number;
+  setParanOrbDeg: (deg: number) => void;
+  aspectOrbs: AspectOrbs;
+  setAspectOrbs: (o: AspectOrbs) => void;
+  showStarLines: boolean;
+  setShowStarLines: (v: boolean) => void;
+  starSet: StarSetPref;
+  setStarSet: (s: StarSetPref) => void;
+  showNightShade: boolean;
+  setShowNightShade: (v: boolean) => void;
+  progressionType: ProgressionType;
+  setProgressionType: (p: ProgressionType) => void;
+  lsOrigin: LsOriginPref;
+  setLsOrigin: (o: LsOriginPref) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
   coordSystem: CoordSystem;
   setCoordSystem: (c: CoordSystem) => void;
   houseSystem: HouseSystem;
   setHouseSystem: (h: HouseSystem) => void;
+  zodiacMode: ZodiacMode;
+  setZodiacMode: (m: ZodiacMode) => void;
+  /** Overlay wheel layout (Advanced ▸ Wheel layout): bi-wheel vs Dual Wheels. */
+  dualWheels: boolean;
+  setDualWheels: (v: boolean) => void;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
   overlayMode: OverlayMode;
@@ -72,6 +99,9 @@ interface SidebarProps {
   setSynastryMethod: (m: RelationshipMethod) => void;
   onGenerateRelationship: () => void;
   canGenerateRelationship: boolean;
+  /** Why Generate is disabled (drives the tip): no partner picked, or one of
+   *  the pair is itself a composite (can't be midpointed again). */
+  generateBlock?: 'partner' | 'composite' | null;
   /** The selected eclipse's details panel data (null outside eclipses mode). */
   eclipseDetails: EclipseDetails | null;
   /** Eclipse-degree hits on the natal chart (conj/square/opp within 3°),
@@ -169,7 +199,7 @@ const PRIMARY_RATE_VALUES: PrimaryRate[] = [
 // Sidebar sections behave as an accordion — at most one open at a time — so the
 // panel never grows into a tall stack of expanded sections. The open section is
 // owned by App (so the Info chip can open the Calculation tab from outside).
-export type SidebarSection = 'theme' | 'filters' | 'calc' | 'overlay';
+export type SidebarSection = 'theme' | 'filters' | 'calc' | 'advanced' | 'overlay';
 
 // Where a hover/focus hint pops, relative to its trigger. The sidebar is docked
 // at the screen's right edge, so the card pops left onto the open map, centred on
@@ -500,42 +530,71 @@ function HintMenuItem({
   );
 }
 
-// The "User rate" field: a small degrees/year input that always shows two decimals
-// (formatting only when not mid-edit, so typing stays free), with custom themed step
-// chevrons in place of the browser's default number spinners.
-function UserRateInput({
+// The settings tab's ONE numeric field: a glyph + spelled-out label on the
+// left, and a fixed-width input (sized for "359.59") with themed step chevrons
+// flush right. Free typing with clamping; the display re-formats to `decimals`
+// only when not mid-edit, so typing stays free. Used by the Primary-rate User
+// rate, the Advanced tab's orb rows, and the Filters' orb-zone widths.
+function StepperField({
+  id,
+  glyph,
+  label,
   value,
   onChange,
+  min = 0,
+  max = Infinity,
+  step,
+  decimals,
+  ariaLabel,
 }: {
+  id: string;
+  glyph?: string;
+  label: string;
   value: number;
-  onChange: (deg: number) => void;
+  onChange: (n: number) => void;
+  min?: number;
+  max?: number;
+  step: number;
+  /** Fixed decimal places shown when not editing (omit → plain String). */
+  decimals?: number;
+  ariaLabel?: string;
 }) {
-  const { t } = useT();
   const [draft, setDraft] = useState<string | null>(null);
-  const display = draft ?? (Number.isFinite(value) ? value.toFixed(2) : '');
-
+  const display =
+    draft ??
+    (Number.isFinite(value)
+      ? decimals !== undefined
+        ? value.toFixed(decimals)
+        : String(value)
+      : '');
+  const clamp = (n: number) => Math.min(Math.max(n, min), max);
   const bump = (dir: 1 | -1) => {
-    // Step on the 0.01 grid the display rounds to; round again to avoid float drift.
-    const base = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-    onChange(Math.max(0, Math.round((base + dir * 0.01) * 100) / 100));
+    // Step on a rounded grid to avoid float drift.
+    const base = Number.isFinite(value) ? value : min;
+    onChange(clamp(Math.round((base + dir * step) * 100) / 100));
     setDraft(null);
   };
-
   return (
     <div className="calc-user-rate">
-      <label className="calc-user-rate-label" htmlFor="user-primary-rate">
-        {t('settings.userRate.label')}
+      <label className="calc-user-rate-label" htmlFor={id}>
+        {glyph && (
+          <span className="astro-glyph orb-field-glyph" aria-hidden="true">
+            {glyph}
+          </span>
+        )}
+        {label}
       </label>
       <input
-        id="user-primary-rate"
+        id={id}
         type="text"
         inputMode="decimal"
         className="thud-select calc-user-rate-input"
         value={display}
+        aria-label={ariaLabel}
         onChange={(e) => {
           setDraft(e.target.value);
           const n = parseFloat(e.target.value);
-          if (Number.isFinite(n) && n >= 0) onChange(n);
+          if (Number.isFinite(n)) onChange(clamp(n));
         }}
         onBlur={() => setDraft(null)}
       />
@@ -657,12 +716,34 @@ export function Sidebar({
   setShowAspectLines,
   showMidpointLines,
   setShowMidpointLines,
+  showOrbZones,
+  setShowOrbZones,
+  orbZoneKm,
+  setOrbZoneKm,
+  paranOrbDeg,
+  setParanOrbDeg,
+  aspectOrbs,
+  setAspectOrbs,
+  showStarLines,
+  setShowStarLines,
+  starSet,
+  setStarSet,
+  showNightShade,
+  setShowNightShade,
+  progressionType,
+  setProgressionType,
+  lsOrigin,
+  setLsOrigin,
   lineSystem,
   setLineSystem,
   coordSystem,
   setCoordSystem,
   houseSystem,
   setHouseSystem,
+  zodiacMode,
+  setZodiacMode,
+  dualWheels,
+  setDualWheels,
   nodeType,
   setNodeType,
   overlayMode,
@@ -672,6 +753,7 @@ export function Sidebar({
   setSynastryMethod,
   onGenerateRelationship,
   canGenerateRelationship,
+  generateBlock,
   eclipseDetails,
   eclipseContacts,
   showEclipseNatalLines,
@@ -748,7 +830,8 @@ export function Sidebar({
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions';
+    overlayMode === 'primary-directions' ||
+    overlayMode === 'cyclo';
   // Positioning (radix-relative vs the transit moment's own sidereal time) only changes
   // the TRANSITS overlay, and only in the Celestial line system: the directed overlays
   // (progressed / solar arc / primary directions) are natal-framed by construction, and
@@ -950,6 +1033,26 @@ export function Sidebar({
               <EyeIcon open={showLocalSpace} />
               <span className="name">{t('settings.localSpace.title')}</span>
             </TipToggle>
+            {showLocalSpace && (
+              <li className="orb-zone-row">
+                <HintMenu
+                  value={lsOrigin}
+                  onChange={setLsOrigin}
+                  options={[
+                    {
+                      value: 'pin',
+                      label: t('settings.lsOrigin.pin'),
+                      hint: t('settings.lsOrigin.pinHint'),
+                    },
+                    {
+                      value: 'birthplace',
+                      label: t('settings.lsOrigin.birthplace'),
+                      hint: t('settings.lsOrigin.birthplaceHint'),
+                    },
+                  ]}
+                />
+              </li>
+            )}
             <TipToggle
               className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
               onClick={() => setShowAspectLines(!showAspectLines)}
@@ -972,6 +1075,80 @@ export function Sidebar({
               <EyeIcon open={showMidpointLines} />
               <span className="name">{t('settings.midpointLines.title')}</span>
             </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showOrbZones ? 'on' : 'off'}`}
+              onClick={() => setShowOrbZones(!showOrbZones)}
+              ariaPressed={showOrbZones}
+              title={t('settings.orbZones.title')}
+              hint={t('settings.orbZones.hint')}
+            >
+              <EyeIcon open={showOrbZones} />
+              <span className="name">{t('settings.orbZones.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
+              onClick={() => setShowStarLines(!showStarLines)}
+              ariaPressed={showStarLines}
+              title={t('settings.starLines.title')}
+              hint={t('settings.starLines.hint')}
+            >
+              <EyeIcon open={showStarLines} />
+              <span className="name">{t('settings.starLines.title')}</span>
+            </TipToggle>
+            {showStarLines && (
+              <li className="orb-zone-row">
+                <HintMenu
+                  value={starSet}
+                  onChange={setStarSet}
+                  options={[
+                    {
+                      value: 'bright',
+                      label: t('settings.starLines.bright'),
+                      hint: t('settings.starLines.brightHint'),
+                    },
+                    {
+                      value: 'all',
+                      label: t('settings.starLines.all'),
+                      hint: t('settings.starLines.allHint'),
+                    },
+                  ]}
+                />
+              </li>
+            )}
+            <TipToggle
+              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
+              onClick={() => setShowNightShade(!showNightShade)}
+              ariaPressed={showNightShade}
+              title={t('settings.nightShade.title')}
+              hint={t('settings.nightShade.hint')}
+            >
+              <EyeIcon open={showNightShade} />
+              <span className="name">{t('settings.nightShade.title')}</span>
+            </TipToggle>
+            {showOrbZones && (
+              <li className="orb-zone-row orb-zone-steppers">
+                <StepperField
+                  id="orb-zone-km"
+                  label={t('settings.orbZones.lineLabel')}
+                  value={orbZoneKm}
+                  onChange={setOrbZoneKm}
+                  min={10}
+                  max={2000}
+                  step={10}
+                  ariaLabel={t('settings.orbZones.lineAria')}
+                />
+                <StepperField
+                  id="orb-zone-paran"
+                  label={t('settings.orbZones.paranLabel')}
+                  value={paranOrbDeg}
+                  onChange={setParanOrbDeg}
+                  min={0.25}
+                  max={5}
+                  step={0.25}
+                  ariaLabel={t('settings.orbZones.paranAria')}
+                />
+              </li>
+            )}
           </ul>
         </div>
       )}
@@ -1036,13 +1213,6 @@ export function Sidebar({
             ))}
           </ul>
 
-          <h2>{t('settings.headings.houseSystem')}</h2>
-          <HintMenu
-            value={houseSystem}
-            onChange={setHouseSystem}
-            options={houseSystemOptions}
-          />
-
           <h2>{t('settings.headings.primaryRate')}</h2>
           <HintMenu
             value={primaryRate}
@@ -1050,8 +1220,133 @@ export function Sidebar({
             options={primaryRateOptions}
           />
           {primaryRate === 'user' && (
-            <UserRateInput value={userPrimaryRate} onChange={setUserPrimaryRate} />
+            <StepperField
+              id="user-primary-rate"
+              label={t('settings.userRate.label')}
+              value={userPrimaryRate}
+              onChange={setUserPrimaryRate}
+              step={0.01}
+              decimals={2}
+            />
           )}
+        </div>
+      )}
+
+      {/* Advanced: the chart wheel's READING preferences — house system, zodiac
+          frame, aspect orbs. None of these move a single map line (houses only
+          shape the wheel's cusps; the zodiac is a display frame; orbs gate the
+          aspect lists), which is the membership rule for this tab. */}
+      <button
+        type="button"
+        className="sidebar-header"
+        onClick={() => toggleSection('advanced')}
+        aria-expanded={openSection === 'advanced'}
+      >
+        <span className="sidebar-title">{t('settings.sections.advanced')}</span>
+        <span className="sidebar-chevron">{openSection === 'advanced' ? '▾' : '▸'}</span>
+      </button>
+
+      {openSection === 'advanced' && (
+        <div className="sidebar-section">
+          <h2>{t('settings.headings.houseSystem')}</h2>
+          <HintMenu
+            value={houseSystem}
+            onChange={setHouseSystem}
+            options={houseSystemOptions}
+          />
+
+          <h2>{t('settings.headings.zodiac')}</h2>
+          <HintMenu
+            value={zodiacMode}
+            onChange={setZodiacMode}
+            options={(['tropical', 'lahiri', 'fagan-bradley'] as const).map((m) => ({
+              value: m,
+              label: t(`settings.zodiac.${m}.label`),
+              hint: t(`settings.zodiac.${m}.hint`),
+            }))}
+          />
+
+          {/* One or the other, like the Projection picker: the classic bi-wheel
+              (overlay as an outer ring) or two full stacked wheels. */}
+          <h2>{t('settings.headings.wheelLayout')}</h2>
+          <ul className="theme-list">
+            <HintOption
+              selected={!dualWheels}
+              onSelect={() => setDualWheels(false)}
+              label={t('settings.wheelLayout.biwheel.label')}
+              hint={t('settings.wheelLayout.biwheel.hint')}
+            />
+            <HintOption
+              selected={dualWheels}
+              onSelect={() => setDualWheels(true)}
+              label={t('settings.wheelLayout.dual.label')}
+              hint={t('settings.wheelLayout.dual.hint')}
+            />
+          </ul>
+
+          <h2 className="orb-heading">
+            {t('settings.headings.aspectOrbs')}
+            <TipSpan
+              className="orb-info"
+              placement="top"
+              tip={t('settings.aspectOrbs.hint')}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v6" />
+                <path d="M12 7.5v.5" />
+              </svg>
+            </TipSpan>
+          </h2>
+          {ASPECT_NAMES.map((n) => (
+            <StepperField
+              key={n}
+              id={`aspect-orb-${n}`}
+              glyph={ASPECT_GLYPHS[n]}
+              label={t(`expandedSidebar.aspect.${n}.name`)}
+              value={aspectOrbs.orbs[n]}
+              max={15}
+              step={0.5}
+              onChange={(v) =>
+                setAspectOrbs({
+                  ...aspectOrbs,
+                  orbs: { ...aspectOrbs.orbs, [n]: v },
+                })
+              }
+              ariaLabel={t('settings.aspectOrbs.orbAria', {
+                aspect: t(`expandedSidebar.aspect.${n}.name`),
+              })}
+            />
+          ))}
+          <StepperField
+            id="aspect-orb-luminaries"
+            glyph={`${PLANET_GLYPHS.Sun}/${PLANET_GLYPHS.Moon}`}
+            label={t('settings.aspectOrbs.lumLabel')}
+            value={aspectOrbs.luminaryBonus}
+            max={5}
+            step={0.5}
+            onChange={(v) => setAspectOrbs({ ...aspectOrbs, luminaryBonus: v })}
+            ariaLabel={t('settings.aspectOrbs.lumAria')}
+          />
+          <StepperField
+            id="aspect-orb-declination"
+            glyph="∥"
+            label={t('settings.aspectOrbs.declinationLabel')}
+            value={aspectOrbs.declinationOrb}
+            max={3}
+            step={0.25}
+            onChange={(v) => setAspectOrbs({ ...aspectOrbs, declinationOrb: v })}
+            ariaLabel={t('settings.aspectOrbs.declinationAria')}
+          />
         </div>
       )}
 
@@ -1125,6 +1420,23 @@ export function Sidebar({
                 </>
               )}
 
+              {overlayMode === 'progressed' && (
+                <>
+                  <h2>{t('settings.headings.progressionType')}</h2>
+                  <ul className="theme-list">
+                    {(['secondary', 'tertiary'] as const).map((value) => (
+                      <HintOption
+                        key={value}
+                        selected={progressionType === value}
+                        onSelect={() => setProgressionType(value)}
+                        label={t(`settings.progressionType.${value}.label`)}
+                        hint={t(`settings.progressionType.${value}.hint`)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
+
               {showChartAngle && (
                 <>
                   <h2>{t('settings.headings.chartAngle')}</h2>
@@ -1162,22 +1474,17 @@ export function Sidebar({
                   <TipButton
                     type="button"
                     className={`relationship-generate${
-                      !canGenerateRelationship || synastryMethod === 'composite'
-                        ? ' is-disabled'
-                        : ''
+                      !canGenerateRelationship ? ' is-disabled' : ''
                     }`}
-                    aria-disabled={
-                      !canGenerateRelationship || synastryMethod === 'composite'
-                    }
+                    aria-disabled={!canGenerateRelationship}
                     onClick={() => {
-                      if (canGenerateRelationship && synastryMethod === 'davison')
-                        onGenerateRelationship();
+                      if (canGenerateRelationship) onGenerateRelationship();
                     }}
                     placement="top"
                     tip={t('settings.relationships.generate.title')}
                     hint={
-                      synastryMethod === 'composite'
-                        ? t('settings.relationships.generate.comingSoon')
+                      generateBlock === 'composite'
+                        ? t('settings.relationships.generate.compositeParent')
                         : !canGenerateRelationship
                           ? t('settings.relationships.generate.needPartner')
                           : t('settings.relationships.generate.hint')

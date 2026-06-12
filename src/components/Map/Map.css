@@ -250,6 +250,40 @@
   color: var(--text-muted);
 }
 
+/* ── Line interpretation card ─────────────────────────────────────────
+   The pinned click-card on a map line (planet-on-angle reading). Shares the
+   eclipse card's chrome; the body is a short paragraph, so it gets a width
+   cap and reading-friendly line height. */
+.line-card-popup {
+  pointer-events: auto;
+}
+.line-card-popup .ui-tip {
+  text-align: left;
+  max-width: 250px;
+}
+.line-card-popup .maplibregl-popup-close-button {
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  border-radius: 6px;
+}
+.line-card-popup .maplibregl-popup-close-button:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.12);
+}
+.line-card-body {
+  margin: 4px 0 2px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+.line-card-glyph {
+  margin-right: 5px;
+}
+
 /* The local-space × birth-chart crossing tooltip stacks both lines with the cross
    between them: "LS <glyph> Mars" / × / "Ds <glyph> Venus". */
 .cross-tip {

@@ -21,6 +21,10 @@
     "preview": "vite preview",
     "verify:eclipses": "tsx scripts/verify-eclipses.ts",
     "build:eclipses": "node scripts/build-eclipses.mjs",
+    "verify:stars": "node scripts/verify-stars.mjs",
+    "build:stars": "node scripts/build-stars.mjs",
+    "verify:composite": "node scripts/verify-composite.mjs",
+    "verify:ayanamsa": "node scripts/verify-ayanamsa.mjs",
     "deploy": "npm run build && wrangler pages deploy dist --project-name astrolina-maps",
     "deploy:preview": "npm run build && wrangler pages deploy dist --project-name astrolina-maps --branch preview"
   },

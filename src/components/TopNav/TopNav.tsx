@@ -88,6 +88,7 @@ const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'progressed',
   'solar-arc',
   'primary-directions',
+  'cyclo',
   'synastry',
   'eclipses',
 ];

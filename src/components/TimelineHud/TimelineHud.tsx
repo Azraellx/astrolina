@@ -14,14 +14,17 @@ import {
   minorStepMs,
   TIME_UNITS,
   type OverlayMode,
+  type ProgressionType,
   type TimeUnit,
 } from '../../lib/astro/timeline';
+import type { ReturnBody } from '../../lib/astro/returns';
 import type { StoredChart } from '../../lib/chartLibrary';
 import {
   formatUtcOffset,
   offsetHoursAt,
   zoneLabelAt,
 } from '../../lib/atlas/timezone';
+import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -51,6 +54,12 @@ interface TimelineHudProps {
   overlayMeasure: string | null;
   /** When false, collapse to just the draggable nub (no ruler / transport). */
   showTimeline: boolean;
+  /** Snap the target date to a solar/lunar return (dir 0 = nearest, ±1 = next/
+   *  previous). Transits mode only — the Returns group hides otherwise. */
+  onSnapReturn: (body: ReturnBody, dir: -1 | 0 | 1) => void;
+  /** Which progression clock drives the Progressed overlay — retitles the nub
+   *  ("Sec." vs "Tert. Progressed"). */
+  progressionType: ProgressionType;
 }
 
 const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
@@ -61,6 +70,7 @@ const NUB_LABEL_KEY = {
   progressed: 'timeline.nubMode.progressed',
   'solar-arc': 'timeline.nubMode.solar-arc',
   'primary-directions': 'timeline.nubMode.primary-directions',
+  cyclo: 'timeline.nubMode.cyclo',
 } as const;
 
 // Midnight-UTC epoch ms of a chart's civil birth date — the timeline's birth
@@ -251,6 +261,8 @@ export function TimelineHud({
   currentId,
   overlayMeasure,
   showTimeline,
+  onSnapReturn,
+  progressionType,
 }: TimelineHudProps) {
   const { t, fmt } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
@@ -325,9 +337,11 @@ export function TimelineHud({
   const stepWord = (n: number) =>
     t(`timeline.stepWords.${stepBase.unit}.${n === 1 ? 'one' : 'other'}`);
   const modeLabel =
-    overlayMode in NUB_LABEL_KEY
-      ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
-      : t('timeline.nubFallback');
+    overlayMode === 'progressed' && progressionType === 'tertiary'
+      ? t('timeline.nubMode.tertiary')
+      : overlayMode in NUB_LABEL_KEY
+        ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
+        : t('timeline.nubFallback');
 
   // ── Draggable bar ──────────────────────────────────────────────────────
   // The nub is the move handle. Position is shared with the synastry bar (same
@@ -441,6 +455,53 @@ export function TimelineHud({
             <span className="thud-stepunit">{stepBase.label}</span>
           </TipSpan>
         </div>
+
+        {/* Returns snap (transits only): jump the target date to the chart's
+            solar/lunar return. Clicking the luminary snaps to the nearest
+            return; ‹ › walk whole returns. The snap also switches Positioning
+            to "Transit moment" (App side) — only that framing makes the snapped
+            map the return chart's astrocartography — which the tips disclose. */}
+        {overlayMode === 'transits' && (
+          <div className="thud-returns">
+            <span className="thud-mode-label">{t('timeline.returns.label')}</span>
+            {(['solar', 'lunar'] as const).map((body) => (
+              <span key={body} className="thud-return-group">
+                <TipButton
+                  type="button"
+                  className="thud-step-btn"
+                  onClick={() => onSnapReturn(body, -1)}
+                  aria-label={t(`timeline.returns.${body}.prevAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.prev`)}
+                >
+                  ‹
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="thud-return-btn"
+                  onClick={() => onSnapReturn(body, 0)}
+                  aria-label={t(`timeline.returns.${body}.snapAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.snap`)}
+                >
+                  <span className="astro-glyph" aria-hidden="true">
+                    {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
+                  </span>
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="thud-step-btn"
+                  onClick={() => onSnapReturn(body, 1)}
+                  aria-label={t(`timeline.returns.${body}.nextAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.next`)}
+                >
+                  ›
+                </TipButton>
+              </span>
+            ))}
+          </div>
+        )}
 
         <span className="thud-datewrap">
           {/* The date is a button that opens the shared moment picker (same control as

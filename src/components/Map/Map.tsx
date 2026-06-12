@@ -13,8 +13,11 @@ import {
   useState,
 } from 'react';
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
-import type { FeatureCollection, LineString, Point } from 'geojson';
+import type { FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
+import type { OrbBandProps } from '../../lib/astro/orbBands';
+import type { StarLineProps } from '../../lib/astro/starLines';
+import type { NightShadeProps } from '../../lib/astro/nightShade';
 import { ASPECT_COMPLEMENT, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
 import type { ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
@@ -33,7 +36,7 @@ import {
   projectVisible,
   screenAngleOfNorth,
 } from '../../lib/mapProjection';
-import { ensureGlyphImages, ZENITH_GLYPH_PREFIX } from './glyphImages';
+import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { tipPosFor, type TipPos } from '../ui/useHoverTip';
@@ -591,6 +594,7 @@ function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
 // label its edge badge carries: planet glyph + name + angle (ACG), "LS" + body
 // (local space), the two-body crossing (parans), or "Ecliptic".
 const LINE_HIT_LAYERS = [
+  'star-lines-layer',
   'acg-lines-meridian',
   'acg-lines-horizon',
   'acg-lines-meridian-pair',
@@ -705,6 +709,12 @@ function lineLabelHtml(
         aspHtml(ASPECT_COMPLEMENT[asp]) +
         ` ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[ang]])}`;
     }
+  } else if (layerId === 'star-lines-layer') {
+    // Fixed-star line: ★ in the shared star tint, then "Name MC" like the
+    // planet rows (star names are proper nouns, shown as-is).
+    row =
+      `<span class="cross-tip-glyph" style="color:${props.color}">★</span>` +
+      `${props.star} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
     row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
@@ -752,7 +762,7 @@ function lineAtPoint(
   pt: ScreenPt,
   t: TFn,
   labels: EnumLabels,
-): { id: string; html: string } | null {
+): { id: string; html: string; layerId: string; props: Record<string, unknown> } | null {
   const layers = LINE_HIT_LAYERS.filter((l) => map.getLayer(l));
   if (!layers.length) return null;
   const tol = LINE_HIT_TOLERANCE_PX;
@@ -775,6 +785,8 @@ function lineAtPoint(
   return {
     id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${polarKey}`,
     html,
+    layerId: f.layer.id,
+    props: f.properties,
   };
 }
 
@@ -804,6 +816,13 @@ interface MapProps {
    *  lines, concatenated (the two toggles stack; empty when both are off). */
   angleLines: FeatureCollection<LineString, AngleOverlayLineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
+  /** Orb-of-influence zones (Filters ▸ Orb zones): translucent bands around the
+   *  planet angle lines and parans, drawn under every line layer. */
+  orbBands?: FeatureCollection<Polygon, OrbBandProps> | null;
+  /** Fixed-star angle lines (Filters ▸ Fixed Stars); empty when off. */
+  starLines?: FeatureCollection<LineString, StarLineProps> | null;
+  /** Night-side wash (Filters ▸ Night Shading); empty when off. */
+  nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   /** Dots where local-space lines cross birth-chart lines (empty when LS hidden). */
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
@@ -828,6 +847,10 @@ interface MapProps {
    *  clicked point; null when the eclipse is invisible there. Supplying the
    *  prop arms the click handler; the card closes when it changes. */
   eclipseCard?: ((lat: number, lng: number) => string | null) | null;
+  /** Click-a-line interpretation card: ready-made .ui-tip HTML for the clicked
+   *  line feature, or null for lines without a reading. Not consulted while the
+   *  eclipse card is armed (eclipses mode owns clicks there). */
+  lineCard?: ((layerId: string, props: Record<string, unknown>) => string | null) | null;
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
@@ -871,6 +894,9 @@ interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
   angleLines: FeatureCollection<LineString, AngleOverlayLineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
+  orbBands?: FeatureCollection<Polygon, OrbBandProps> | null;
+  starLines?: FeatureCollection<LineString, StarLineProps> | null;
+  nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
   localSpaceOrigin?: { lat: number; lng: number } | null;
@@ -988,6 +1014,36 @@ function setupCustomLayers(
   measureColor: string,
   zenithFill: string,
 ) {
+  // Night-side shading (Filters ▸ Night Shading): the very bottom of the
+  // custom stack — an environment wash that everything astrological draws over.
+  map.addSource('night-shade', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'night-shade-layer',
+    source: 'night-shade',
+    type: 'fill',
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': ['get', 'opacity'],
+      'fill-antialias': false,
+    },
+  });
+
+  // Orb-of-influence zones: under everything the chart draws — ecliptic,
+  // eclipse curves, lines, parans, overlays, stamps (only the night wash sits
+  // deeper). One source carries both band kinds; opacity is per-feature
+  // (paran latitude bands run fainter than line bands).
+  map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'orb-bands-layer',
+    source: 'orb-bands',
+    type: 'fill',
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': ['get', 'opacity'],
+      'fill-antialias': false,
+    },
+  });
+
   // The ecliptic (zodiac great circle) projected to its sub-points — a subtle
   // bright-yellow reference threading through the Sun's zenith. Added first so it
   // sits beneath the ACG lines, parans, and stamps.
@@ -1213,6 +1269,43 @@ function setupCustomLayers(
       'line-width': 0.9,
       'line-opacity': 1,
       'line-dasharray': [4, 3],
+    },
+  });
+
+  // Fixed-star lines (Filters ▸ Fixed Stars): thin and dotted in one shared
+  // per-theme starlight tint, under the planet lines so the chart's own
+  // linework keeps visual priority. Little baked star sparks repeat along each
+  // line (✦—✦—✦) so the set reads at a glance on the pale basemaps too — the
+  // sprite carries the theme halo, the dotted line stays the thread (and the
+  // hover/click hit target).
+  map.addSource('star-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'star-lines-layer',
+    source: 'star-lines',
+    type: 'line',
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.8,
+      'line-opacity': 0.9,
+      'line-dasharray': [1, 2.5],
+    },
+  });
+  map.addLayer({
+    id: 'star-lines-marks',
+    source: 'star-lines',
+    type: 'symbol',
+    layout: {
+      'icon-image': STAR_MARK_IMAGE,
+      'symbol-placement': 'line',
+      // Roomy spacing: the dotted line shows through as the thread between
+      // sparks, rather than a dense bead chain.
+      'symbol-spacing': 72,
+      // Upright stars (a rotated five-point star reads as noise), decorative
+      // placement that never suppresses or collides with the planet labels.
+      'icon-rotation-alignment': 'viewport',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-padding': 0,
     },
   });
 
@@ -1680,6 +1773,9 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
   push('acg-lines', data.lines);
   push('angle-lines', data.angleLines);
   push('parans', data.parans);
+  push('orb-bands', data.orbBands ?? EMPTY_DATA);
+  push('star-lines', data.starLines ?? EMPTY_DATA);
+  push('night-shade', data.nightShade ?? EMPTY_DATA);
   push('local-space', data.localSpace);
   push('acg-ls-cross', data.localSpaceCross);
   push('acg-zenith', data.zenith);
@@ -1701,6 +1797,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   angleLines,
   parans,
+  orbBands,
+  starLines,
+  nightShade,
   localSpace,
   localSpaceCross,
   localSpaceOrigin,
@@ -1710,6 +1809,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   eclipse,
   eclipseTip,
   eclipseCard,
+  lineCard,
   pin,
   pinType,
   theme,
@@ -1770,7 +1870,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onRightClickRef = useRef(onRightClick);
-  const dataRef = useRef<MapData>({ lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -1785,20 +1885,24 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // re-binding).
   const eclipseTipRef = useRef(eclipseTip);
   const eclipseCardRef = useRef(eclipseCard);
+  const lineCardRef = useRef(lineCard);
   // The pinned local-circumstances card (one per map). Held in a ref so the
   // close-on-selection-change effect below can reach the instance the
   // long-lived click handler owns.
   const eclipseCardPopupRef = useRef<maplibregl.Popup | null>(null);
+  // Same arrangement for the pinned line-interpretation card.
+  const lineCardPopupRef = useRef<maplibregl.Popup | null>(null);
   // The map's load/style.load/click handlers are bound once and never rebound;
   // refresh these refs after each commit (not during render) so those async
   // handlers always read the latest props.
   useEffect(() => {
     onRightClickRef.current = onRightClick;
-    dataRef.current = { lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse };
+    dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse };
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
     eclipseTipRef.current = eclipseTip;
     eclipseCardRef.current = eclipseCard;
+    lineCardRef.current = lineCard;
   });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
@@ -2399,6 +2503,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       maxWidth: 'none',
     });
     eclipseCardPopupRef.current = eclipseCardPopup;
+    // The pinned line-interpretation card (click a line to open, ✕ or an
+    // empty-map click to close).
+    const lineCardPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      offset: 10,
+      className: 'zenith-popup line-card-popup',
+      maxWidth: 'none',
+    });
+    lineCardPopupRef.current = lineCardPopup;
     const clearLine = () => {
       hoveredLine = null;
       linePopup.remove();
@@ -2542,6 +2656,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           .setLngLat(e.lngLat)
           .setHTML(html ?? `<div class="ui-tip">${t('map.eclipseCard.notVisible')}</div>`);
         if (!eclipseCardPopup.isOpen()) eclipseCardPopup.addTo(map);
+      } else if (lineCardRef.current) {
+        // Outside eclipses mode, a click on a line pins its interpretation
+        // card; a click on empty map dismisses it.
+        const hit = lineAtPoint(map, e.point, t, labels);
+        const html = hit ? lineCardRef.current(hit.layerId, hit.props) : null;
+        if (html) {
+          lineCardPopup.setLngLat(e.lngLat).setHTML(html);
+          if (!lineCardPopup.isOpen()) lineCardPopup.addTo(map);
+        } else {
+          lineCardPopup.remove();
+        }
       }
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
@@ -2574,6 +2699,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearLine();
       eclipseCardPopup.remove();
       eclipseCardPopupRef.current = null;
+      lineCardPopup.remove();
+      lineCardPopupRef.current = null;
     };
   }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToZenith, t, labels]);
 
@@ -2583,6 +2710,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     eclipseCardPopupRef.current?.remove();
   }, [eclipseCard]);
+  // Same contract for the line card: its builder's identity tracks the active
+  // chart and overlay mode, so a stale reading can't outlive either.
+  useEffect(() => {
+    lineCardPopupRef.current?.remove();
+  }, [lineCard]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -2722,7 +2854,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, angleLines, parans, localSpace, localSpaceCross, zenith, ecliptic, overlay, eclipse });
+      pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, ecliptic, overlay, eclipse });
       computeBadges();
     } else {
       map.once('load', () => {
@@ -2730,7 +2862,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, angleLines, parans, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse, computeBadges]);
+  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse, computeBadges]);
 
   // Toggle basemap road / river / foliage visibility live (theme reloads reapply
   // via the style.load handler above).

@@ -10,10 +10,12 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
+  ProgressionType,
   RelationshipMethod,
   TimeUnit,
   TransitFrame,
 } from './astro/timeline';
+import { ZODIAC_MODES, type ZodiacMode } from './astro/ayanamsa';
 
 const MODE_KEY = 'astro:overlay-mode:v1';
 const DATE_KEY = 'astro:overlay-date:v1';
@@ -33,6 +35,7 @@ const MODES: OverlayMode[] = [
   'progressed',
   'solar-arc',
   'primary-directions',
+  'cyclo',
   'synastry',
   'eclipses',
 ];
@@ -174,6 +177,111 @@ export function loadEclipseNatalLines(): boolean {
 }
 export function saveEclipseNatalLines(show: boolean) {
   localStorage.setItem(ECLIPSE_NATAL_LINES_KEY, show ? '1' : '0');
+}
+
+// ── Orb-of-influence zones ───────────────────────────────────────────────────
+// The translucent bands around planet angle lines (a ground distance, km) and
+// parans (degrees of latitude, the conventional paran orb). Off by default —
+// they add visual weight that not every reading wants.
+const ORB_ZONES_KEY = 'astro:orb-zones:v1';
+const ORB_ZONE_KM_KEY = 'astro:orb-zone-km:v1';
+const PARAN_ORB_DEG_KEY = 'astro:paran-orb-deg:v1';
+
+export function loadShowOrbZones(): boolean {
+  return localStorage.getItem(ORB_ZONES_KEY) === '1';
+}
+export function saveShowOrbZones(show: boolean) {
+  localStorage.setItem(ORB_ZONES_KEY, show ? '1' : '0');
+}
+
+export function loadOrbZoneKm(): number {
+  const v = Number(localStorage.getItem(ORB_ZONE_KM_KEY));
+  return Number.isFinite(v) && v >= 10 && v <= 2000 ? v : 150;
+}
+export function saveOrbZoneKm(km: number) {
+  localStorage.setItem(ORB_ZONE_KM_KEY, String(km));
+}
+
+export function loadParanOrbDeg(): number {
+  const v = Number(localStorage.getItem(PARAN_ORB_DEG_KEY));
+  return Number.isFinite(v) && v >= 0.25 && v <= 5 ? v : 1.5;
+}
+export function saveParanOrbDeg(deg: number) {
+  localStorage.setItem(PARAN_ORB_DEG_KEY, String(deg));
+}
+
+// Night-side shading (Filters ▸ Night Shading): the hemisphere where the Sun
+// is below the horizon at the displayed moment. Off by default.
+const NIGHT_SHADE_KEY = 'astro:night-shade:v1';
+
+export function loadShowNightShade(): boolean {
+  return localStorage.getItem(NIGHT_SHADE_KEY) === '1';
+}
+export function saveShowNightShade(show: boolean) {
+  localStorage.setItem(NIGHT_SHADE_KEY, show ? '1' : '0');
+}
+
+// Zodiac reading frame: tropical (default) or sidereal by ayanamsa. Display
+// layer only — the map lines mark zodiac-independent angular events.
+const ZODIAC_MODE_KEY = 'astro:zodiac-mode:v1';
+
+export function loadZodiacMode(): ZodiacMode {
+  const v = localStorage.getItem(ZODIAC_MODE_KEY);
+  return v && (ZODIAC_MODES as string[]).includes(v) ? (v as ZodiacMode) : 'tropical';
+}
+export function saveZodiacMode(m: ZodiacMode) {
+  localStorage.setItem(ZODIAC_MODE_KEY, m);
+}
+
+// Where local-space lines radiate from: the active pin (default — relocated
+// local space) or always the birthplace.
+const LS_ORIGIN_KEY = 'astro:ls-origin:v1';
+
+export type LsOriginPref = 'pin' | 'birthplace';
+const LS_ORIGINS: LsOriginPref[] = ['pin', 'birthplace'];
+
+export function loadLsOrigin(): LsOriginPref {
+  const v = localStorage.getItem(LS_ORIGIN_KEY);
+  return v && (LS_ORIGINS as string[]).includes(v) ? (v as LsOriginPref) : 'pin';
+}
+export function saveLsOrigin(o: LsOriginPref) {
+  localStorage.setItem(LS_ORIGIN_KEY, o);
+}
+
+// The 'progressed' overlay's symbolic clock (secondary vs tertiary).
+const PROGRESSION_TYPE_KEY = 'astro:progression-type:v1';
+const PROGRESSION_TYPES: ProgressionType[] = ['secondary', 'tertiary'];
+
+export function loadProgressionType(): ProgressionType {
+  const v = localStorage.getItem(PROGRESSION_TYPE_KEY);
+  return v && (PROGRESSION_TYPES as string[]).includes(v)
+    ? (v as ProgressionType)
+    : 'secondary';
+}
+export function saveProgressionType(p: ProgressionType) {
+  localStorage.setItem(PROGRESSION_TYPE_KEY, p);
+}
+
+// ── Fixed-star lines ─────────────────────────────────────────────────────────
+const STAR_LINES_KEY = 'astro:star-lines:v1';
+const STAR_SET_KEY = 'astro:star-set:v1';
+
+export type StarSetPref = 'bright' | 'all';
+const STAR_SETS: StarSetPref[] = ['bright', 'all'];
+
+export function loadShowStarLines(): boolean {
+  return localStorage.getItem(STAR_LINES_KEY) === '1';
+}
+export function saveShowStarLines(show: boolean) {
+  localStorage.setItem(STAR_LINES_KEY, show ? '1' : '0');
+}
+
+export function loadStarSet(): StarSetPref {
+  const v = localStorage.getItem(STAR_SET_KEY);
+  return v && (STAR_SETS as string[]).includes(v) ? (v as StarSetPref) : 'bright';
+}
+export function saveStarSet(s: StarSetPref) {
+  localStorage.setItem(STAR_SET_KEY, s);
 }
 
 // Which relationship-chart method the Synastry overlay's Generate button uses.

@@ -13,6 +13,7 @@ export const settings = {
     appearance: 'Appearance',
     mapFilters: 'Map filters',
     calculation: 'Calculation',
+    advanced: 'Advanced',
     overlay: 'Overlay',
   },
   headings: {
@@ -27,6 +28,10 @@ export const settings = {
     lineProjection: 'Line projection',
     lunarNode: 'Lunar node',
     houseSystem: 'House system',
+    zodiac: 'Zodiac',
+    wheelLayout: 'Wheel layout',
+    aspectOrbs: 'Aspect orbs',
+    progressionType: 'Progression',
     primaryRate: 'Primary directions rate',
     display: 'Display',
     positioning: 'Positioning',
@@ -60,7 +65,13 @@ export const settings = {
   },
   localSpace: {
     title: 'Local Space',
-    hint: 'Directional lines radiating from the birthplace, each pointing to a planet’s compass bearing in the local sky.',
+    hint: 'Directional lines radiating from the origin point, each pointing to a planet’s compass bearing in the local sky.',
+  },
+  lsOrigin: {
+    pin: 'From the pin',
+    pinHint: 'Relocated local space: the lines radiate from the active pin (the birthplace when nothing is pinned).',
+    birthplace: 'From the birthplace',
+    birthplaceHint: 'The lines stay anchored to the birthplace even while a pin is down.',
   },
   aspectLines: {
     title: 'Aspect Lines',
@@ -69,6 +80,70 @@ export const settings = {
   midpointLines: {
     title: 'Midpoint Lines',
     hint: 'Lines where the midpoint of two visible bodies sits exactly on an angle (e.g. Su/Mo MC). In Mundo uses the bodily midpoint (mean RA and declination); In Zodiaco the classic longitude midpoint. Narrow the planet filter to keep the set readable.',
+  },
+  // The overlay wheel's layout (Advanced ▸ Wheel layout) — one or the other,
+  // like the Projection picker.
+  wheelLayout: {
+    biwheel: {
+      label: 'Bi-wheel',
+      hint: 'The classic layout: the overlay rides the natal wheel as an outer ring, with cross-aspect lines between the two.',
+    },
+    dual: {
+      label: 'Dual Wheels',
+      hint: 'Two full stacked wheels: the natal chart, then the overlay as its own chart with its own aspect lines. Applies whenever an overlay is on.',
+    },
+  },
+  aspectOrbs: {
+    hint: 'Max distance from exact (degrees) per aspect in the wheel and aspect lists. Luminaries widens every orb when the Sun or Moon is involved; Parallels is the declination orb.',
+    orbAria: 'Orb for {aspect} aspects, in degrees',
+    lumLabel: 'Luminaries +',
+    lumAria: 'Extra orb when a luminary is involved, in degrees',
+    declinationLabel: 'Parallels',
+    declinationAria: 'Orb for parallel and contraparallel aspects, in degrees of declination',
+  },
+  zodiac: {
+    tropical: {
+      label: 'Tropical',
+      hint: 'Signs anchored to the seasons (0° Aries = the March equinox). The Western default.',
+    },
+    lahiri: {
+      label: 'Sidereal · Lahiri',
+      hint: 'Signs anchored to the fixed stars, by the Lahiri ayanamsa (the Vedic standard, ~24° behind tropical today). Changes the wheel and readouts; the map lines mark zodiac-independent events and stay put.',
+    },
+    'fagan-bradley': {
+      label: 'Sidereal · Fagan/Bradley',
+      hint: 'Signs anchored to the fixed stars, by the Fagan/Bradley ayanamsa (the Western sidereal standard). Changes the wheel and readouts; the map lines stay put.',
+    },
+  },
+  progressionType: {
+    secondary: {
+      label: 'Secondary',
+      hint: 'The classic day-for-a-year clock: one ephemeris day per year of life.',
+    },
+    tertiary: {
+      label: 'Tertiary',
+      hint: 'One ephemeris day per tropical month of life: a faster hand for finer timing.',
+    },
+  },
+  starLines: {
+    title: 'Fixed Stars',
+    hint: 'Angle lines for the classic fixed stars (Regulus, Spica, Algol and company): dotted lines threaded with little stars, in a shared starlight tint. Rising/setting lines are skipped for circumpolar stars; parans are the traditional reading there.',
+    bright: 'Headline stars',
+    brightHint: 'The four royal stars and the brightest classics (18 stars).',
+    all: 'Full set',
+    allHint: 'The whole bundled working set (40 stars). Expect a busy map.',
+  },
+  nightShade: {
+    title: 'Night Shading',
+    hint: 'Shades the half of Earth in night at the displayed moment: the chart’s own moment, the target date under Transits or CCG, and the eclipse maximum in Eclipses mode (a lunar eclipse is visible from exactly that night side).',
+  },
+  orbZones: {
+    title: 'Orb Zones',
+    hint: 'Shaded influence zones: a band of ground distance around each planet angle line, and a band of latitude around each paran. Influence fades with distance; the edge is a convention, not a cliff.',
+    lineLabel: 'Lines (km)',
+    lineAria: 'Line orb zone width, in kilometres each side',
+    paranLabel: 'Parans (°)',
+    paranAria: 'Paran orb, in degrees of latitude each side',
   },
 
   theme: {
@@ -89,7 +164,7 @@ export const settings = {
     },
     geodetic: {
       label: 'Mundane',
-      hint: "Geodetic mapping: the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries), independent of birth time",
+      hint: "Geodetic mapping: the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries, always tropical), independent of birth time",
     },
   },
 
@@ -163,13 +238,13 @@ export const settings = {
     },
     composite: {
       label: 'Comp. Midpoints',
-      hint: 'Midpoint of every planet between the two charts. Coming soon.',
+      hint: 'Every planet at the midpoint of the two charts, on the ecliptic; the map frame is the midpoint of their sidereal times. Conventions under review.',
     },
     generate: {
       title: 'Generate',
       hint: 'Build the chart, make it active, and clear the synastry partner.',
       needPartner: 'Pick a partner in the synastry bar first.',
-      comingSoon: 'Composite charts are coming soon.',
+      compositeParent: 'A composite chart can’t be combined again; pick two regular charts.',
     },
   },
 

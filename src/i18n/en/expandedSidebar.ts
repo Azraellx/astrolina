@@ -82,6 +82,10 @@ export const expandedSidebar = {
     trine: { name: 'Trine', desc: 'An easy, harmonious flow of energy and natural talent.' },
     square: { name: 'Square', desc: 'Friction and challenge that pushes you to grow.' },
     sextile: { name: 'Sextile', desc: 'A supportive opportunity that rewards a little effort.' },
+    parallel: { name: 'Parallel', desc: 'Equal declination on the same side of the celestial equator: reads like a conjunction.' },
+    contraparallel: { name: 'Contraparallel', desc: 'Mirror declinations across the celestial equator: reads like an opposition.' },
+    // The parenthetical for the declination pair (the others show a degree figure).
+    byDeclination: 'by declination',
   },
 
   // Aspect-category pill toggles below the wheel: compact label, full tip label, desc.
@@ -101,6 +105,20 @@ export const expandedSidebar = {
       tipLabel: 'Conjunction',
       desc: 'Two bodies fused at the same point, blending their energies.',
     },
+  },
+
+  // Balance section (Advanced): element/modality tallies + essential dignities
+  // over the bodies the map filter shows.
+  balanceHeading: 'Balance',
+  balanceTip: 'Chart balance',
+  balanceHint: 'How the shown bodies spread across the four elements and three modalities, plus any in essential dignity (rulership, exaltation) or debility (detriment, fall).',
+  element: { fire: 'Fire', earth: 'Earth', air: 'Air', water: 'Water' },
+  modality: { cardinal: 'Cardinal', fixed: 'Fixed', mutable: 'Mutable' },
+  dignity: {
+    rulership: 'rulership',
+    exaltation: 'exaltation',
+    detriment: 'detriment',
+    fall: 'fall',
   },
 
   // Aspect section heading (counted) + its hover-tip title and explanation.

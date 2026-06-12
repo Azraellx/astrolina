@@ -11,6 +11,13 @@ import type { BirthData } from './birthData';
  *  'none' is the default — and what an absent `tag` field means on older records. */
 export type ChartTag = 'none' | 'star' | 'space';
 
+/** A composite-midpoints chart's parents, snapshotted at generation so the
+ *  composite stays intact if a parent chart is later edited or deleted. */
+export interface CompositeParents {
+  a: BirthData;
+  b: BirthData;
+}
+
 export interface StoredChart extends BirthData {
   id: string;
   createdAt: number;
@@ -28,6 +35,11 @@ export interface StoredChart extends BirthData {
   /** Organizing tag; absent on charts saved before tagging existed. Read via
    *  chartTag() so an absent value reads as 'none'. */
   tag?: ChartTag;
+  /** Composite-midpoints payload. When present, the chart's PLANET POSITIONS
+   *  are the parents' longitude midpoints (lib/astro/composite.ts), not a cast
+   *  of the stored moment — that moment is the synthesized sidereal-frame
+   *  anchor, which every gmst/houses/relocation consumer reads normally. */
+  composite?: CompositeParents;
 }
 
 /** Recency key for sorting the "most recently used" list (newest first). */

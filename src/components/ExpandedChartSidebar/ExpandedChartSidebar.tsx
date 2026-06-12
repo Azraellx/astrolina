@@ -31,8 +31,17 @@ import {
   WheelSvg,
   computeAspects,
   computeCrossAspects,
+  computeDeclinationAspects,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
+import type { AspectOrbs } from '../../lib/aspectPrefs';
+import {
+  essentialDignity,
+  signElement,
+  signIndex,
+  signModality,
+  type Dignity,
+} from '../../lib/astro/dignities';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
@@ -149,6 +158,15 @@ interface ExpandedChartSidebarProps {
   advancedCoords: Map<PlanetName, HorizontalCoords>;
   /** RA + declination + azimuth/altitude for the four angles (ecliptic points). */
   angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic', AngleCoords> | null;
+  /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
+  aspectOrbs: AspectOrbs;
+  /** The Advanced reading mode (degree rim, aspect grid, coordinate tables).
+   *  Lifted to App so the Info chip can gate its Advanced-tab items on it. */
+  advanced: boolean;
+  setAdvanced: (v: boolean) => void;
+  /** Overlay wheel layout (Advanced ▸ Wheel layout): true splits the bi-wheel
+   *  into two full stacked wheels whenever an overlay ring exists. */
+  dualWheels: boolean;
   onClose: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
@@ -160,7 +178,6 @@ interface ExpandedChartSidebarProps {
 
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const ASPECTS_KEY = 'astro:visible-aspects:v1';
-const ADVANCED_KEY = 'astro:advanced:v1';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
 // The drag handle won't take the panel past ~70% of the viewport (leaving the map
@@ -181,6 +198,8 @@ const MAX_WHEEL = 900;
 
 // Per-aspect exact-angle for the Advanced aspect tips (language-neutral numeric).
 // The name + description copy is resolved from the catalog (expandedSidebar.aspect.*).
+// Values are language-neutral degree figures; the declination pair resolves
+// its parenthetical through the catalog instead (see AspectGlyph).
 const ASPECT_ANGLES: Record<string, string> = {
   conjunction: '0°',
   opposition: '180°',
@@ -188,7 +207,21 @@ const ASPECT_ANGLES: Record<string, string> = {
   square: '90°',
   sextile: '60°',
 };
-const ASPECT_KEYS = new Set(['conjunction', 'opposition', 'trine', 'square', 'sextile']);
+const ASPECT_KEYS = new Set([
+  'conjunction',
+  'opposition',
+  'trine',
+  'square',
+  'sextile',
+  'parallel',
+  'contraparallel',
+]);
+// Declination aspects have no astrological symbol in the bundled glyph font;
+// the math marks ∥ / ∦ read naturally and fall back to the system font.
+const DECLINATION_MARKS: Record<string, string> = {
+  parallel: '∥',
+  contraparallel: '∦',
+};
 
 // A glyph in the Advanced aspect lists that reveals an explanation as the shared
 // .ui-tip on hover — portaled, so the sidebar's overflow can't clip it, and popped
@@ -228,7 +261,9 @@ function TipGlyph({
 function AspectGlyph({ type, color }: { type: string; color: string }) {
   const { t } = useT();
   const known = ASPECT_KEYS.has(type);
-  const glyph = known ? ASPECT_GLYPHS[type as keyof typeof ASPECT_GLYPHS] : type;
+  const glyph =
+    DECLINATION_MARKS[type] ??
+    (known ? ASPECT_GLYPHS[type as keyof typeof ASPECT_GLYPHS] : type);
   return (
     <TipGlyph
       className="asp-glyph astro-glyph"
@@ -237,7 +272,9 @@ function AspectGlyph({ type, color }: { type: string; color: string }) {
         <span className="es-tip-title">
           <span className="astro-glyph" style={{ color }}>{glyph}</span>
           {known
-            ? `${t(`expandedSidebar.aspect.${type}.name` as 'expandedSidebar.aspect.conjunction.name')} (${ASPECT_ANGLES[type]})`
+            ? `${t(`expandedSidebar.aspect.${type}.name` as 'expandedSidebar.aspect.conjunction.name')} (${
+                ASPECT_ANGLES[type] ?? t('expandedSidebar.aspect.byDeclination')
+              })`
             : type}
         </span>
       }
@@ -378,6 +415,10 @@ export function ExpandedChartSidebar({
   visibleLineTypes,
   advancedCoords,
   angleCoords,
+  aspectOrbs,
+  advanced,
+  setAdvanced,
+  dualWheels,
   onClose,
   onResizingChange,
   onSelectChart,
@@ -425,12 +466,6 @@ export function ExpandedChartSidebar({
     );
   }, [visibleAspects]);
 
-  const [advanced, setAdvanced] = useState<boolean>(
-    () => localStorage.getItem(ADVANCED_KEY) === '1',
-  );
-  useEffect(() => {
-    localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0');
-  }, [advanced]);
 
   // Respect the Map Filter's planet toggles across every area of the expanded
   // view (planet list, wheel, aspects, overlay aspects), and present them in the
@@ -592,7 +627,7 @@ export function ExpandedChartSidebar({
               <TipButton
                 type="button"
                 className={`es-advanced-toggle ${advanced ? 'on' : 'off'}`}
-                onClick={() => setAdvanced((v) => !v)}
+                onClick={() => setAdvanced(!advanced)}
                 role="switch"
                 aria-checked={advanced}
                 placement="bottom"
@@ -719,40 +754,93 @@ export function ExpandedChartSidebar({
       </section>
 
       <section className="es-section es-section-wheel">
-        {/* Use the wheel's empty top corners: the chart-state title (left, always)
-            and, when an overlay is on, its caption (right). */}
-        {angles && (
-          <div className="es-wheel-corner es-wheel-corner-left">
-            <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
-              {wheelTitle}
-            </span>
-          </div>
-        )}
-        {angles && overlayName && (
-          <div className="es-wheel-corner es-wheel-corner-right">
-            <span className="es-overlay-caption es-overlay-dashed">
-              {overlayName}
-            </span>
-          </div>
-        )}
-        <div className="es-wheel-pane" ref={wheelPaneRef}>
-          {angles ? (
-            <WheelSvg
-              size={wheelSize}
-              angles={angles}
-              planets={shownPlanets}
-              detailed={true}
-              advanced={advanced}
-              overlayPlanets={shownOverlay}
-              overlayAngles={overlayAngles}
-              visibleAspects={visibleAspects}
-              visibleAngles={visibleAngles}
-              interactive
-            />
-          ) : (
-            <div className="es-empty">{t('expandedSidebar.empty')}</div>
-          )}
-        </div>
+        {(() => {
+          // Dual Wheels (Advanced ▸ Wheel layout): split the bi-wheel into two
+          // full wheels — natal, then the overlay as a standalone chart with
+          // its own internal aspect chords. Bi-wheel is the default.
+          const showDual =
+            dualWheels &&
+            !!shownOverlay &&
+            shownOverlay.length > 0 &&
+            !!overlayAngles;
+          return (
+            <>
+              {/* Use the wheel's empty top corners: the chart-state title (left,
+                  always) and, when an overlay is on, its caption (right — in
+                  Dual Wheels the caption sits between the wheels instead). */}
+              {angles && (
+                <div className="es-wheel-corner es-wheel-corner-left">
+                  <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
+                    {wheelTitle}
+                  </span>
+                </div>
+              )}
+              {angles && overlayName && !showDual && (
+                <div className="es-wheel-corner es-wheel-corner-right">
+                  <span className="es-overlay-caption es-overlay-dashed">
+                    {overlayName}
+                  </span>
+                </div>
+              )}
+              <div
+                className={`es-wheel-pane${showDual ? ' es-wheel-pane-dual' : ''}`}
+                ref={wheelPaneRef}
+              >
+                {angles ? (
+                  showDual ? (
+                    <>
+                      <WheelSvg
+                        size={wheelSize}
+                        angles={angles}
+                        planets={shownPlanets}
+                        detailed={true}
+                        advanced={advanced}
+                        aspectOrbs={aspectOrbs}
+                        visibleAspects={visibleAspects}
+                        visibleAngles={visibleAngles}
+                        interactive
+                      />
+                      {overlayName && (
+                        <div className="es-dual-caption">
+                          <span className="es-overlay-caption es-overlay-dashed">
+                            {overlayName}
+                          </span>
+                        </div>
+                      )}
+                      <WheelSvg
+                        size={wheelSize}
+                        angles={overlayAngles!}
+                        planets={shownOverlay!}
+                        detailed={true}
+                        advanced={advanced}
+                        aspectOrbs={aspectOrbs}
+                        visibleAspects={visibleAspects}
+                        visibleAngles={visibleAngles}
+                        interactive
+                      />
+                    </>
+                  ) : (
+                    <WheelSvg
+                      size={wheelSize}
+                      angles={angles}
+                      planets={shownPlanets}
+                      detailed={true}
+                      advanced={advanced}
+                      aspectOrbs={aspectOrbs}
+                      overlayPlanets={shownOverlay}
+                      overlayAngles={overlayAngles}
+                      visibleAspects={visibleAspects}
+                      visibleAngles={visibleAngles}
+                      interactive
+                    />
+                  )
+                ) : (
+                  <div className="es-empty">{t('expandedSidebar.empty')}</div>
+                )}
+              </div>
+            </>
+          );
+        })()}
         {angles && (
           <div className="es-aspect-toggles">
             {ASPECT_TOGGLES.map((tg) => {
@@ -980,8 +1068,65 @@ export function ExpandedChartSidebar({
         );
       })()}
 
+      {angles && advanced && shownPlanets.length > 0 && (() => {
+        // Element/modality tallies + essential dignities over the SHOWN bodies
+        // (the map filter decides what counts, like every list in this panel).
+        const elements = { fire: 0, earth: 0, air: 0, water: 0 };
+        const modalities = { cardinal: 0, fixed: 0, mutable: 0 };
+        for (const p of shownPlanets) {
+          const idx = signIndex(p.lon);
+          elements[signElement(idx)]++;
+          modalities[signModality(idx)]++;
+        }
+        const dignified = shownPlanets
+          .map((p) => ({ p, d: essentialDignity(p.name, signIndex(p.lon)) }))
+          .filter((x): x is typeof x & { d: Dignity } => x.d !== null);
+        return (
+          <section className="es-section es-section-balance">
+            <TipHeading
+              tip={t('expandedSidebar.balanceTip')}
+              hint={t('expandedSidebar.balanceHint')}
+            >
+              {t('expandedSidebar.balanceHeading')}
+            </TipHeading>
+            <div className="es-balance-row">
+              {(['fire', 'earth', 'air', 'water'] as const).map((e) => (
+                <span key={e} className={`es-balance-pill es-el-${e}`}>
+                  {t(`expandedSidebar.element.${e}`)} <b>{elements[e]}</b>
+                </span>
+              ))}
+            </div>
+            <div className="es-balance-row">
+              {(['cardinal', 'fixed', 'mutable'] as const).map((m) => (
+                <span key={m} className="es-balance-pill">
+                  {t(`expandedSidebar.modality.${m}`)} <b>{modalities[m]}</b>
+                </span>
+              ))}
+            </div>
+            {dignified.length > 0 && (
+              <ul className="es-dignity-list">
+                {dignified.map(({ p, d }) => (
+                  <li key={p.name}>
+                    <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
+                    <span className="es-dignity-planet">{labels.planet(p.name)}</span>
+                    <span className={`es-dignity es-dignity-${d}`}>
+                      {t(`expandedSidebar.dignity.${d}`)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })()}
+
       {angles && advanced && (() => {
-        const aspects = computeAspects(shownPlanets)
+        // Longitude aspects plus the declination pairs (parallel reads with the
+        // conjunction toggle, contraparallel with the hard-aspect toggle).
+        const aspects = [
+          ...computeAspects(shownPlanets, aspectOrbs),
+          ...computeDeclinationAspects(shownPlanets, aspectOrbs),
+        ]
           .filter((a) => visibleAspects.has(a.category))
           .sort((a, b) => a.orb - b.orb);
         if (aspects.length === 0) return null;
@@ -1020,7 +1165,7 @@ export function ExpandedChartSidebar({
         // Overlay-first ordering: the overlay body is the subject of the aspect
         // (e.g. "transiting Mars conjunct natal Sun"), so it's listed first and
         // the natal body second.
-        const cross = computeCrossAspects(shownOverlay, shownPlanets)
+        const cross = computeCrossAspects(shownOverlay, shownPlanets, aspectOrbs)
           .filter((a) => visibleAspects.has(a.category))
           .sort((a, b) => a.orb - b.orb);
         if (cross.length === 0) return null;

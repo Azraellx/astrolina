@@ -662,6 +662,29 @@ export function getEclipticPositions(
   return out;
 }
 
+// One body's ecliptic longitude (radians) + speed (deg/day) at an instant — the
+// minimal sample the solar/lunar-return root-finder iterates on. A single Swiss
+// call, vs getEclipticPositions' all-bodies sweep (which would resample every
+// body on each Newton step). Returns null off the ephemeris range, like the rest
+// of the sampling layer.
+export function bodyLonSpeed(
+  jd: number,
+  name: PlanetName,
+  nodeType: NodeType = 'mean',
+): { lon: number; speed: number } | null {
+  if (name === 'SouthNode') {
+    const nn = bodyLonSpeed(jd, 'NorthNode', nodeType);
+    return nn && { lon: norm2pi(nn.lon + Math.PI), speed: nn.speed };
+  }
+  const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
+  try {
+    const ecl = eph().calculatePosition(jd, id, FLAG_ECL);
+    return { lon: norm2pi(ecl.longitude * DEG2RAD), speed: ecl.longitudeSpeed };
+  } catch {
+    return null;
+  }
+}
+
 // Ecliptic longitude/latitude for DERIVED positions (solar-arc shifts, overlay
 // bi-wheels) where the input is a {ra,dec} that is not a direct Swiss lookup, so
 // it must be converted geometrically. Speed/retrograde are meaningless for these

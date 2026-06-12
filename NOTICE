@@ -38,8 +38,9 @@ available in the project repository (and, where they ship with the app, under
 public/).
 
 Astronomy
-  - Swiss Ephemeris — planetary positions (JPL DE441 data).
-    © Astrodienst AG, via @swisseph/browser. Licensed AGPL-3.0.
+  - Swiss Ephemeris — planetary positions (JPL DE441 data), via
+    @swisseph/browser, and the bundled fixed-star catalog (a 40-star extract
+    of its sefstars.txt). © Astrodienst AG. Licensed AGPL-3.0.
     https://www.astro.com/swisseph/
   - Five Millennium Catalogs of Solar and of Lunar Eclipses — the bundled
     eclipse catalogs (dates, types, Saros series). Eclipse Predictions by

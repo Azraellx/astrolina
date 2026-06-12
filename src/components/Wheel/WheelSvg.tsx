@@ -18,6 +18,12 @@ import {
 } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { MsgKey, TFn } from '../../i18n';
+import {
+  DEFAULT_ASPECT_ORBS,
+  maxAspectOrb,
+  type AspectName,
+  type AspectOrbs,
+} from '../../lib/aspectPrefs';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import './WheelSvg.css';
@@ -132,51 +138,108 @@ interface Aspect {
 }
 
 const ASPECT_TYPES: {
-  name: string;
+  name: AspectName;
   angle: number;
-  orb: number;
   color: string;
   category: AspectCategory;
 }[] = [
-  // One flat 7° orb across the majors. Note the sextile is deliberately as wide
-  // as the rest here — tighten it first (3-5° is the common practice) if the
-  // aspect lists feel noisy.
-  { name: 'conjunction', angle: 0,   orb: 7, color: '#f5b83d', category: 'conjunction' },
-  { name: 'opposition',  angle: 180, orb: 7, color: '#e85a4f', category: 'hard' },
-  { name: 'trine',       angle: 120, orb: 7, color: '#5ec2e0', category: 'harmonious' },
-  { name: 'square',      angle: 90,  orb: 7, color: '#e85a4f', category: 'hard' },
-  { name: 'sextile',     angle: 60,  orb: 7, color: '#5ec2e0', category: 'harmonious' },
+  // Orb limits live in AspectOrbs (Advanced ▸ Aspect orbs); the default is
+  // the original flat 7° across the majors. The common practice of a tighter
+  // sextile (3-5°) is now one settings change away.
+  { name: 'conjunction', angle: 0,   color: '#f5b83d', category: 'conjunction' },
+  { name: 'opposition',  angle: 180, color: '#e85a4f', category: 'hard' },
+  { name: 'trine',       angle: 120, color: '#5ec2e0', category: 'harmonious' },
+  { name: 'square',      angle: 90,  color: '#e85a4f', category: 'hard' },
+  { name: 'sextile',     angle: 60,  color: '#5ec2e0', category: 'harmonious' },
 ];
 
-// The widest orb in the table — normalizes the per-aspect opacity fade so an
-// exact aspect is brightest and one at the orb limit sits at the floor.
-const MAX_ORB = Math.max(...ASPECT_TYPES.map((t) => t.orb));
+const isLuminary = (name: string) => name === 'Sun' || name === 'Moon';
 
 // The tightest aspect (if any) between two ecliptic longitudes (radians).
+// `widen` adds the luminary bonus to every limit (set when either body is a
+// luminary).
 function aspectBetween(
   lonA: number,
   lonB: number,
+  orbs: AspectOrbs,
+  widen: boolean,
 ): { type: string; category: AspectCategory; color: string; orb: number } | null {
   let diff = Math.abs(((lonA - lonB) * 180) / Math.PI);
   if (diff > 180) diff = 360 - diff;
+  // Pick the TIGHTEST in-orb aspect, not the first: wide user orbs (up to 15°
+  // + luminary bonus) can put one separation inside two adjacent majors'
+  // windows (e.g. 104° inside both trine and square at 20° orbs).
+  let best: { type: string; category: AspectCategory; color: string; orb: number } | null =
+    null;
   for (const t of ASPECT_TYPES) {
     const orb = Math.abs(diff - t.angle);
-    if (orb <= t.orb) {
-      return { type: t.name, category: t.category, color: t.color, orb };
+    if (orb <= orbs.orbs[t.name] + (widen ? orbs.luminaryBonus : 0)) {
+      if (!best || orb < best.orb) {
+        best = { type: t.name, category: t.category, color: t.color, orb };
+      }
     }
   }
-  return null;
+  return best;
 }
 
-export function computeAspects(planets: EclipticPosition[]): Aspect[] {
+export function computeAspects(
+  planets: EclipticPosition[],
+  orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
+): Aspect[] {
   const out: Aspect[] = [];
   for (let i = 0; i < planets.length; i++) {
     for (let j = i + 1; j < planets.length; j++) {
       const a = planets[i];
       const b = planets[j];
-      const asp = aspectBetween(a.lon, b.lon);
+      const asp = aspectBetween(
+        a.lon,
+        b.lon,
+        orbs,
+        isLuminary(a.name) || isLuminary(b.name),
+      );
       if (asp) {
         out.push({ a: a.name, b: b.name, ...asp, lonA: a.lon, lonB: b.lon });
+      }
+    }
+  }
+  return out;
+}
+
+// Declination aspects: parallel (same declination, same side of the celestial
+// equator — read like a conjunction) and contraparallel (mirror declinations —
+// read like an opposition). List-only: they have no zodiacal chord to draw in
+// the wheel, so only the sidebar's aspect tables consume them.
+export function computeDeclinationAspects(
+  planets: EclipticPosition[],
+  orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
+): Aspect[] {
+  const out: Aspect[] = [];
+  const R2D = 180 / Math.PI;
+  for (let i = 0; i < planets.length; i++) {
+    for (let j = i + 1; j < planets.length; j++) {
+      const a = planets[i];
+      const b = planets[j];
+      if (a.dec === undefined || b.dec === undefined) continue;
+      const decA = a.dec * R2D;
+      const decB = b.dec * R2D;
+      const par = Math.abs(decA - decB);
+      const contra = Math.abs(decA + decB);
+      // Hemisphere decides the reading: same side of the equator → parallel,
+      // opposite sides → contraparallel (a near-equator straddling pair is a
+      // contraparallel, not a wide "parallel"). A body exactly ON the equator
+      // can read either way — take the tighter.
+      const sameSide = decA * decB;
+      const isParallel = sameSide > 0 || (sameSide === 0 && par <= contra);
+      if (isParallel && par <= orbs.declinationOrb) {
+        out.push({
+          a: a.name, b: b.name, type: 'parallel', category: 'conjunction',
+          color: '#f5b83d', orb: par, lonA: a.lon, lonB: b.lon,
+        });
+      } else if (!isParallel && contra <= orbs.declinationOrb) {
+        out.push({
+          a: a.name, b: b.name, type: 'contraparallel', category: 'hard',
+          color: '#e85a4f', orb: contra, lonA: a.lon, lonB: b.lon,
+        });
       }
     }
   }
@@ -189,11 +252,17 @@ export function computeAspects(planets: EclipticPosition[]): Aspect[] {
 export function computeCrossAspects(
   inner: EclipticPosition[],
   outer: EclipticPosition[],
+  orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
 ): Aspect[] {
   const out: Aspect[] = [];
   for (const a of inner) {
     for (const b of outer) {
-      const asp = aspectBetween(a.lon, b.lon);
+      const asp = aspectBetween(
+        a.lon,
+        b.lon,
+        orbs,
+        isLuminary(a.name) || isLuminary(b.name),
+      );
       if (asp) {
         out.push({ a: a.name, b: b.name, ...asp, lonA: a.lon, lonB: b.lon });
       }
@@ -341,6 +410,9 @@ interface WheelSvgProps {
    *  same visibleAngles toggles as the natal angles). */
   overlayAngles?: RelocatedAngles | null;
   visibleAspects?: Set<AspectCategory>;
+  /** Per-aspect orb limits (Advanced ▸ Aspect orbs). Omitted → the flat-7°
+   *  defaults, the original behaviour. */
+  aspectOrbs?: AspectOrbs;
   /**
    * Which of the four angle labels (As/Ds/Mc/Ic) to draw, mirroring the Map
    * Filter's line-type toggles. Omitted → all four (the minimap shows the lot).
@@ -363,6 +435,7 @@ export function WheelSvg({
   overlayPlanets,
   overlayAngles,
   visibleAspects,
+  aspectOrbs = DEFAULT_ASPECT_ORBS,
   visibleAngles,
   interactive = false,
 }: WheelSvgProps) {
@@ -457,7 +530,10 @@ export function WheelSvg({
   const mcOuter = svgPos(angles.mc, angles.asc, rOuter, cx, cy);
   const icOuter = svgPos(angles.ic, angles.asc, rOuter, cx, cy);
 
-  const aspects = detailed ? computeAspects(planets) : [];
+  const aspects = detailed ? computeAspects(planets, aspectOrbs) : [];
+  // Normalizes the per-aspect opacity fade: an exact aspect is brightest, one
+  // at the (configurable) orb limit sits at the floor.
+  const maxOrb = maxAspectOrb(aspectOrbs);
   const filteredAspects = visibleAspects
     ? aspects.filter((a) => visibleAspects.has(a.category))
     : aspects;
@@ -465,7 +541,9 @@ export function WheelSvg({
   // Bi-wheel cross-aspects (overlay-to-natal). Drawn dashed so they read as
   // distinct from the solid natal-to-natal aspect lines, and gated by the same
   // category toggles.
-  const crossAspects = hasOverlay ? computeCrossAspects(overlayPlanets!, planets) : [];
+  const crossAspects = hasOverlay
+    ? computeCrossAspects(overlayPlanets!, planets, aspectOrbs)
+    : [];
   const filteredCrossAspects = visibleAspects
     ? crossAspects.filter((a) => visibleAspects.has(a.category))
     : crossAspects;
@@ -889,7 +967,7 @@ export function WheelSvg({
 
       {detailed &&
         filteredAspects.map((a, i) => {
-          const opacity = 0.35 + (1 - a.orb / MAX_ORB) * 0.45;
+          const opacity = 0.35 + (1 - a.orb / maxOrb) * 0.45;
           // A conjunction's two endpoints nearly coincide, so a chord collapses to
           // an invisible dot — mark it with a small disc at its longitude instead.
           if (a.category === 'conjunction') {
@@ -919,7 +997,7 @@ export function WheelSvg({
       {/* Bi-wheel cross-aspect lines (overlay ↔ natal), dashed. */}
       {hasOverlay &&
         filteredCrossAspects.map((a, i) => {
-          const opacity = 0.4 + (1 - a.orb / MAX_ORB) * 0.4;
+          const opacity = 0.4 + (1 - a.orb / maxOrb) * 0.4;
           // Cross-aspect conjunction: a small ring at its longitude (the chord
           // would be invisibly short), distinct from the natal filled disc.
           if (a.category === 'conjunction') {

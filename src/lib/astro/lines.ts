@@ -99,7 +99,7 @@ function pushHorizonPoint(
 // only for near-zero-declination bodies, whose lines are essentially vertical and so
 // have no high-latitude turning point to streak/break.
 function horizonByLatitude(
-  p: PlanetPosition,
+  p: { ra: number; dec: number },
   meridianLng: MeridianLng,
   sign: -1 | 1,
 ): [number, number][] {
@@ -123,17 +123,18 @@ function horizonByLatitude(
 // south→north as before (arrows keep their orientation); the halves share the apex
 // (H=0) and nadir (H=±π) points exactly, so ASC and DSC meet with no gap. Each half is
 // monotonic in latitude, so clipping to ±85° leaves one contiguous on-map run.
-function horizonLine(
-  p: PlanetPosition,
+// Geometry-only horizon trace for any equatorial position (the fixed-star lines
+// reuse it with their own feature properties); horizonLine below wraps it in the
+// planet-labeled feature.
+export function traceHorizonCoords(
+  p: { ra: number; dec: number },
   meridianLng: MeridianLng,
   side: 'ASC' | 'DSC',
-): Feature<LineString, LineProps>[] {
+): [number, number][] {
   const tanDec = Math.tan(p.dec);
   if (Math.abs(tanDec) < DEC_EPS) {
     const sign = side === 'ASC' ? -1 : 1;
-    return [
-      makeFeature(unwrapLongitudes(horizonByLatitude(p, meridianLng, sign)), p.name, side),
-    ];
+    return unwrapLongitudes(horizonByLatitude(p, meridianLng, sign));
   }
 
   const hDir = side === 'ASC' ? -1 : 1; // sweep H from 0 toward ∓π
@@ -167,8 +168,16 @@ function horizonLine(
     pushHorizonPoint(coords, lngAt(H), lat);
     prevLat = lat;
   }
-  // One continuous feature (longitudes may run past ±180 across the antimeridian).
-  return [makeFeature(unwrapLongitudes(coords), p.name, side)];
+  // One continuous run (longitudes may go past ±180 across the antimeridian).
+  return unwrapLongitudes(coords);
+}
+
+function horizonLine(
+  p: PlanetPosition,
+  meridianLng: MeridianLng,
+  side: 'ASC' | 'DSC',
+): Feature<LineString, LineProps>[] {
+  return [makeFeature(traceHorizonCoords(p, meridianLng, side), p.name, side)];
 }
 
 // A meridian as a DENSE run of vertices (constant longitude, lat −85…85). The
@@ -181,13 +190,17 @@ const MERIDIAN_LAT_MIN = -85;
 const MERIDIAN_LAT_MAX = 85;
 const GLOBE_STEP_DEG = 2;
 
-function meridianCoords(lng: number): [number, number][] {
+// Exported for the fixed-star lines, which build their own features over the
+// same dense-meridian geometry. Also normLng below, the shared wrap helper.
+export function meridianCoords(lng: number): [number, number][] {
   const coords: [number, number][] = [];
   for (let lat = MERIDIAN_LAT_MIN; lat <= MERIDIAN_LAT_MAX; lat += GLOBE_STEP_DEG) {
     coords.push([lng, lat]);
   }
   return coords;
 }
+
+export { normLng };
 
 export function generateLines(
   positions: PlanetPosition[],

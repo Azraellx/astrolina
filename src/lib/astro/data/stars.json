@@ -1,0 +1,366 @@
+{
+ "source": "Swiss Ephemeris sefstars.txt",
+ "frame": "ICRS/J2000",
+ "stars": [
+  {
+   "name": "Algol",
+   "tier": 1,
+   "ra": 47.042219,
+   "dec": 40.955647,
+   "pmRa": 2.99,
+   "pmDec": -1.66,
+   "mag": 2.12
+  },
+  {
+   "name": "Alcyone",
+   "tier": 1,
+   "ra": 56.871152,
+   "dec": 24.105136,
+   "pmRa": 19.34,
+   "pmDec": -43.67,
+   "mag": 2.87
+  },
+  {
+   "name": "Aldebaran",
+   "tier": 1,
+   "ra": 68.980163,
+   "dec": 16.509302,
+   "pmRa": 63.45,
+   "pmDec": -188.94,
+   "mag": 0.86
+  },
+  {
+   "name": "Rigel",
+   "tier": 1,
+   "ra": 78.634467,
+   "dec": -8.201638,
+   "pmRa": 1.31,
+   "pmDec": 0.5,
+   "mag": 0.13
+  },
+  {
+   "name": "Capella",
+   "tier": 1,
+   "ra": 79.172328,
+   "dec": 45.997991,
+   "pmRa": 75.25,
+   "pmDec": -426.89,
+   "mag": 0.08
+  },
+  {
+   "name": "Betelgeuse",
+   "tier": 1,
+   "ra": 88.792939,
+   "dec": 7.407064,
+   "pmRa": 27.54,
+   "pmDec": 11.3,
+   "mag": 0.42
+  },
+  {
+   "name": "Canopus",
+   "tier": 1,
+   "ra": 95.987958,
+   "dec": -52.695661,
+   "pmRa": 19.93,
+   "pmDec": 23.24,
+   "mag": -0.74
+  },
+  {
+   "name": "Sirius",
+   "tier": 1,
+   "ra": 101.287155,
+   "dec": -16.716116,
+   "pmRa": -546.01,
+   "pmDec": -1223.07,
+   "mag": -1.46
+  },
+  {
+   "name": "Procyon",
+   "tier": 1,
+   "ra": 114.825498,
+   "dec": 5.224988,
+   "pmRa": -714.59,
+   "pmDec": -1036.8,
+   "mag": 0.37
+  },
+  {
+   "name": "Pollux",
+   "tier": 1,
+   "ra": 116.328958,
+   "dec": 28.026199,
+   "pmRa": -626.55,
+   "pmDec": -45.8,
+   "mag": 1.14
+  },
+  {
+   "name": "Regulus",
+   "tier": 1,
+   "ra": 152.092962,
+   "dec": 11.967209,
+   "pmRa": -248.73,
+   "pmDec": 5.59,
+   "mag": 1.4
+  },
+  {
+   "name": "Spica",
+   "tier": 1,
+   "ra": 201.298247,
+   "dec": -11.161319,
+   "pmRa": -42.35,
+   "pmDec": -30.67,
+   "mag": 0.97
+  },
+  {
+   "name": "Arcturus",
+   "tier": 1,
+   "ra": 213.9153,
+   "dec": 19.182409,
+   "pmRa": -1093.39,
+   "pmDec": -2000.06,
+   "mag": -0.05
+  },
+  {
+   "name": "Antares",
+   "tier": 1,
+   "ra": 247.351915,
+   "dec": -26.432003,
+   "pmRa": -12.11,
+   "pmDec": -23.3,
+   "mag": 0.91
+  },
+  {
+   "name": "Vega",
+   "tier": 1,
+   "ra": 279.234735,
+   "dec": 38.783689,
+   "pmRa": 200.94,
+   "pmDec": 286.23,
+   "mag": 0.03
+  },
+  {
+   "name": "Altair",
+   "tier": 1,
+   "ra": 297.695827,
+   "dec": 8.868321,
+   "pmRa": 536.23,
+   "pmDec": 385.29,
+   "mag": 0.76
+  },
+  {
+   "name": "Deneb Algedi",
+   "tier": 1,
+   "ra": 326.760184,
+   "dec": -16.127287,
+   "pmRa": 261.7,
+   "pmDec": -296.7,
+   "mag": 2.83
+  },
+  {
+   "name": "Fomalhaut",
+   "tier": 1,
+   "ra": 344.412693,
+   "dec": -29.622237,
+   "pmRa": 328.95,
+   "pmDec": -164.67,
+   "mag": 1.16
+  },
+  {
+   "name": "Alpheratz",
+   "tier": 2,
+   "ra": 2.096916,
+   "dec": 29.090431,
+   "pmRa": 137.46,
+   "pmDec": -163.44,
+   "mag": 2.06
+  },
+  {
+   "name": "Mirach",
+   "tier": 2,
+   "ra": 17.433016,
+   "dec": 35.620558,
+   "pmRa": 175.9,
+   "pmDec": -112.2,
+   "mag": 2.05
+  },
+  {
+   "name": "Achernar",
+   "tier": 2,
+   "ra": 24.428523,
+   "dec": -57.236753,
+   "pmRa": 87,
+   "pmDec": -38.24,
+   "mag": 0.46
+  },
+  {
+   "name": "Hamal",
+   "tier": 2,
+   "ra": 31.793357,
+   "dec": 23.462418,
+   "pmRa": 188.55,
+   "pmDec": -148.08,
+   "mag": 2.01
+  },
+  {
+   "name": "Menkar",
+   "tier": 2,
+   "ra": 45.569888,
+   "dec": 4.089739,
+   "pmRa": -10.41,
+   "pmDec": -76.85,
+   "mag": 2.53
+  },
+  {
+   "name": "Mirfak",
+   "tier": 2,
+   "ra": 51.080709,
+   "dec": 49.861179,
+   "pmRa": 23.75,
+   "pmDec": -26.23,
+   "mag": 1.79
+  },
+  {
+   "name": "Bellatrix",
+   "tier": 2,
+   "ra": 81.282764,
+   "dec": 6.349703,
+   "pmRa": -8.11,
+   "pmDec": -12.88,
+   "mag": 1.64
+  },
+  {
+   "name": "Alnilam",
+   "tier": 2,
+   "ra": 84.053389,
+   "dec": -1.201919,
+   "pmRa": 1.44,
+   "pmDec": -0.78,
+   "mag": 1.69
+  },
+  {
+   "name": "Castor",
+   "tier": 2,
+   "ra": 113.649472,
+   "dec": 31.888282,
+   "pmRa": -191.45,
+   "pmDec": -145.19,
+   "mag": 1.58
+  },
+  {
+   "name": "Alphard",
+   "tier": 2,
+   "ra": 141.896845,
+   "dec": -8.6586,
+   "pmRa": -15.23,
+   "pmDec": 34.37,
+   "mag": 1.97
+  },
+  {
+   "name": "Denebola",
+   "tier": 2,
+   "ra": 177.26491,
+   "dec": 14.572058,
+   "pmRa": -497.68,
+   "pmDec": -114.67,
+   "mag": 2.13
+  },
+  {
+   "name": "Acrux",
+   "tier": 2,
+   "ra": 186.649563,
+   "dec": -63.099093,
+   "pmRa": -35.83,
+   "pmDec": -14.86,
+   "mag": 0.81
+  },
+  {
+   "name": "Algorab",
+   "tier": 2,
+   "ra": 187.466063,
+   "dec": -16.515431,
+   "pmRa": -210.49,
+   "pmDec": -138.74,
+   "mag": 2.94
+  },
+  {
+   "name": "Toliman",
+   "tier": 2,
+   "ra": 219.90085,
+   "dec": -60.835619,
+   "pmRa": -3608,
+   "pmDec": 686,
+   "mag": -0.1
+  },
+  {
+   "name": "Zuben Elgenubi",
+   "tier": 2,
+   "ra": 222.719638,
+   "dec": -16.041777,
+   "pmRa": -105.68,
+   "pmDec": -68.4,
+   "mag": 2.75
+  },
+  {
+   "name": "Zuben Eschamali",
+   "tier": 2,
+   "ra": 229.251724,
+   "dec": -9.382914,
+   "pmRa": -98.1,
+   "pmDec": -19.65,
+   "mag": 2.62
+  },
+  {
+   "name": "Alphecca",
+   "tier": 2,
+   "ra": 233.67195,
+   "dec": 26.714693,
+   "pmRa": 120.27,
+   "pmDec": -89.58,
+   "mag": 2.24
+  },
+  {
+   "name": "Unukalhai",
+   "tier": 2,
+   "ra": 236.066976,
+   "dec": 6.425629,
+   "pmRa": 133.84,
+   "pmDec": 44.81,
+   "mag": 2.63
+  },
+  {
+   "name": "Rasalhague",
+   "tier": 2,
+   "ra": 263.733623,
+   "dec": 12.560037,
+   "pmRa": 108.07,
+   "pmDec": -221.57,
+   "mag": 2.07
+  },
+  {
+   "name": "Deneb",
+   "tier": 2,
+   "ra": 310.35798,
+   "dec": 45.280339,
+   "pmRa": 2.01,
+   "pmDec": 1.85,
+   "mag": 1.25
+  },
+  {
+   "name": "Scheat",
+   "tier": 2,
+   "ra": 345.943573,
+   "dec": 28.082787,
+   "pmRa": 187.65,
+   "pmDec": 136.93,
+   "mag": 2.42
+  },
+  {
+   "name": "Markab",
+   "tier": 2,
+   "ra": 346.190223,
+   "dec": 15.205267,
+   "pmRa": 60.4,
+   "pmDec": -41.3,
+   "mag": 2.48
+  }
+ ]
+}

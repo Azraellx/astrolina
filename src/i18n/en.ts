@@ -31,6 +31,7 @@ import { creditsModal } from './en/creditsModal';
 import { eclipseHud } from './en/eclipseHud';
 import { expandedSidebar } from './en/expandedSidebar';
 import { importChartModal } from './en/importChartModal';
+import { lineMeanings } from './en/lineMeanings';
 import { map } from './en/map';
 import { missions } from './en/missions';
 import { synastryHud } from './en/synastryHud';
@@ -54,6 +55,7 @@ export const en = {
   eclipseHud,
   expandedSidebar,
   importChartModal,
+  lineMeanings,
   map,
   missions,
   synastryHud,

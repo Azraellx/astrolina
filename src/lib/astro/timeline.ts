@@ -24,9 +24,11 @@ import {
   solarDailyMotionLong,
   solarDailyMotionRA,
   type NodeType,
+  type PlanetName,
   type PlanetPosition,
 } from '../ephemeris';
 import type { StoredChart } from '../chartLibrary';
+import { compositeEquatorial } from './composite';
 import type { TFn } from '../../i18n';
 
 export type OverlayMode =
@@ -35,6 +37,7 @@ export type OverlayMode =
   | 'progressed'
   | 'solar-arc'
   | 'primary-directions'
+  | 'cyclo'
   | 'synastry'
   | 'eclipses';
 
@@ -68,6 +71,13 @@ export type PrimaryRate =
   | 'placidus-ra'  // true secondary-progressed solar arc in RA (nonlinear)
   | 'user';        // user-entered degrees per year
 
+// The 'progressed' overlay's symbolic clock: secondary is the classic
+// day-for-a-year; tertiary runs one ephemeris day per TROPICAL MONTH of life
+// (the common "tertiary I" definition), a faster hand for finer timing work.
+export type ProgressionType = 'secondary' | 'tertiary';
+
+const TROPICAL_MONTH_DAYS = 27.321582;
+
 // How the TRANSIT overlay's angle lines are framed:
 //  - 'relative-to-natal' (default): hold the natal chart's RAMC fixed and let the
 //    transiting planets fall through it — the lines reflect the planets' zodiacal
@@ -83,6 +93,25 @@ export type TransitFrame = 'relative-to-natal' | 'transit-moment';
 // Mean solar motion keys (degrees/year of life), per their classical definitions.
 const NAIBOD_DEG_PER_YR = 0.985647; // 0°59′08.33″
 const CARDAN_DEG_PER_YR = 0.986667; // 0°59′12″
+
+// Cyclo*carto*graphy's body split: the personal planets read at their
+// secondary-progressed positions; everything else (Jupiter outward, the nodes,
+// Lilith, Chiron, the asteroids) at its real transiting position. Solar Fire's
+// conventional CCG split.
+const CYCLO_PROGRESSED: ReadonlySet<string> = new Set([
+  'Sun',
+  'Moon',
+  'Mercury',
+  'Venus',
+  'Mars',
+]);
+
+/** Cyclo*carto*graphy's per-body label tag: each feature names its actual
+ *  SOURCE — "Sp" on the progressed personal planets, "Tr" on the transiting
+ *  outers — rather than the mode. (A paran that PAIRS the two sets has no
+ *  single source and keeps the mode tag "Cy"; see the App's paran tagger.) */
+export const cycloBodyTag = (planet: PlanetName): string =>
+  CYCLO_PROGRESSED.has(planet) ? 'Sp' : 'Tr';
 
 // Timeline granularity. Each unit defines the MAJOR (labeled) notch interval on
 // the ruler and how many sub-segments it splits into; the minor notch — and the
@@ -127,6 +156,11 @@ export interface OverlayLayer {
   gmst: number;
   originLat: number; // local-space origin
   originLng: number;
+  /** Per-body epochs for a layer that MIXES instants (cyclo: progressed
+   *  inners + transiting outers). Sidereal display shifts each listed body by
+   *  its own epoch's ayanamsa instead of the layer's `jd`; absent for the
+   *  single-instant overlays. */
+  bodyJd?: Partial<Record<PlanetName, number>>;
   /** Directed-overlay angle inference. Solar-arc / primary-directions have no relocatable
    *  "second moment": their angles are the NATAL angles advanced by the arc. This closure
    *  takes a (relocated) natal angle's ecliptic longitude and returns the directed one,
@@ -140,6 +174,7 @@ const TROPICAL_YEAR_DAYS = 365.2422;
 const UNIX_EPOCH_JD = 2440587.5;
 
 export const epochMsToJD = (ms: number) => UNIX_EPOCH_JD + ms / 86_400_000;
+export const jdToEpochMs = (jd: number) => (jd - UNIX_EPOCH_JD) * 86_400_000;
 
 // Normalize a radian angle to (-π, π].
 export function normalizeAngle(r: number): number {
@@ -175,20 +210,28 @@ function directionContext(
 ) {
   const birthJD = birthDataToJD(chart);
   const eps = obliquity(birthJD);
-  const natal = getPlanetPositions(birthJD, nodeType);
+  // The directed BASE: a composite chart directs its midpoint positions, not
+  // the real sky behind its frame-anchor moment.
+  const real = getPlanetPositions(birthJD, nodeType);
+  const natal = chart.composite
+    ? compositeEquatorial(chart.composite, nodeType, eps)
+    : real;
   const years = (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
   const progressedJD = birthJD + years;
   const natalGMST = gmstRadians(birthJD);
-  // Solar arc measured in ecliptic longitude vs in right ascension.
+  // Solar arc measured in ecliptic longitude vs in right ascension. The arc is
+  // ALWAYS the real Sun's day-for-a-year travel from the chart's stored moment
+  // — for a composite that keeps arc(birth) = 0 and ~1°/yr thereafter (the
+  // composite Sun is a midpoint, not a moving body to progress against).
   const arcLong = () => {
     const s = getPlanetPositions(progressedJD, nodeType)[0];
     return normalizeAngle(
       raDecToEclipticLon(s.ra, s.dec, eps) -
-        raDecToEclipticLon(natal[0].ra, natal[0].dec, eps),
+        raDecToEclipticLon(real[0].ra, real[0].dec, eps),
     );
   };
   const arcRA = () =>
-    normalizeAngle(getPlanetPositions(progressedJD, nodeType)[0].ra - natal[0].ra);
+    normalizeAngle(getPlanetPositions(progressedJD, nodeType)[0].ra - real[0].ra);
   // Advance the MC's ecliptic longitude by Δλ and return the matching RAMC (gmst).
   // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST.
   const ramcOfLong = (dLon: number) =>
@@ -225,6 +268,7 @@ export function buildOverlay(
   primaryRate: PrimaryRate = 'ptolemy',
   userPrimaryRate = 1,
   transitFrame: TransitFrame = 'relative-to-natal',
+  progressionType: ProgressionType = 'secondary',
   t: TFn,
 ): OverlayLayer | null {
   switch (mode) {
@@ -281,12 +325,25 @@ export function buildOverlay(
           gmst = c.natalGMST; // relative-to-natal (default)
           break;
       }
+      // Tertiary swaps only the symbolic clock (day per tropical month instead
+      // of day per year); the angle-method arcs above stay defined by the
+      // secondary-progressed Sun, the conventional reading for solar arcs, and
+      // the default (natal) framing is untouched either way.
+      const progJD =
+        progressionType === 'tertiary'
+          ? c.birthJD + (epochMsToJD(targetDate) - c.birthJD) / TROPICAL_MONTH_DAYS
+          : c.progressedJD;
       return {
         kind: mode,
         measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
-        labelFull: t('timeline.labelFull.progressed', { years: c.years.toFixed(1) }),
-        jd: c.progressedJD,
-        positions: getPlanetPositions(c.progressedJD, nodeType),
+        labelFull: t(
+          progressionType === 'tertiary'
+            ? 'timeline.labelFull.tertiary'
+            : 'timeline.labelFull.progressed',
+          { years: c.years.toFixed(1) },
+        ),
+        jd: progJD,
+        positions: getPlanetPositions(progJD, nodeType),
         gmst,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
@@ -391,15 +448,54 @@ export function buildOverlay(
         originLng: chart.birthplace.lng,
       };
     }
+    case 'cyclo': {
+      // Cyclo*carto*graphy (Solar Fire's CCG): one line-set mixing the
+      // secondary-PROGRESSED personal planets with the TRANSITING societal/outer
+      // bodies — the inners' day-for-a-year pace keeps them readable next to the
+      // outers' real-time motion. Both sets are framed against the NATAL RAMC
+      // (a 'transit-moment' frame is ill-defined across two instants), so the
+      // map shows where the combined sky falls through the birth chart's angles.
+      const c = directionContext(chart, targetDate, nodeType);
+      const jd = epochMsToJD(targetDate);
+      const progressed = getPlanetPositions(c.progressedJD, nodeType);
+      const bodyJd: Partial<Record<PlanetName, number>> = {};
+      const positions = getPlanetPositions(jd, nodeType).map((p) => {
+        if (!CYCLO_PROGRESSED.has(p.name)) return p;
+        bodyJd[p.name] = c.progressedJD;
+        return progressed.find((q) => q.name === p.name) ?? p;
+      });
+      return {
+        kind: mode,
+        measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
+        labelFull: t('timeline.labelFull.cyclo', {
+          datetime: fmtDateTimeUTC(targetDate),
+        }),
+        // The transit instant; the progressed inners' bi-wheel longitudes read
+        // through this epoch's obliquity, an arcsecond-scale shrug. Their
+        // sidereal readouts do NOT shrug — bodyJd carries each progressed
+        // body's own epoch so the ayanamsa matches the Progressed overlay's.
+        jd,
+        positions,
+        gmst: c.natalGMST,
+        bodyJd,
+        originLat: chart.birthplace.lat,
+        originLng: chart.birthplace.lng,
+      };
+    }
     case 'synastry': {
       if (!partner) return null;
       const pjd = birthDataToJD(partner);
+      // A composite partner overlays its midpoint positions; its stored moment
+      // is only the sidereal-frame anchor (which gmst below reads normally).
+      const positions = partner.composite
+        ? compositeEquatorial(partner.composite, nodeType, obliquity(pjd))
+        : getPlanetPositions(pjd, nodeType);
       return {
         kind: mode,
         measure: null,
         labelFull: t('timeline.labelFull.synastry', { partner: partner.name }),
         jd: pjd,
-        positions: getPlanetPositions(pjd, nodeType),
+        positions,
         gmst: gmstRadians(pjd),
         originLat: partner.birthplace.lat,
         originLng: partner.birthplace.lng,
@@ -431,12 +527,16 @@ export function buildOverlay(
 
 // Two-letter tag per overlay kind, shown on the map ahead of the glyph + angle
 // code so overlay lines read e.g. "Tr ♂ MC". Tr transits · Sp secondary
-// progressions · Sa solar arc · Sy synastry · Ec eclipse chart.
+// progressions · Sa solar arc · Sy synastry · Ec eclipse chart. Cyclo is the
+// exception: its features carry per-body SOURCE tags (cycloBodyTag — Sp/Tr),
+// and 'Cy' appears only on a paran pairing a progressed body with a
+// transiting one.
 export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   transits: 'Tr',
   progressed: 'Sp',
   'solar-arc': 'Sa',
   'primary-directions': 'Pd',
+  cyclo: 'Cy',
   synastry: 'Sy',
   eclipses: 'Ec',
 };
@@ -455,5 +555,20 @@ export function tagLabels<P extends { label: string; tag?: string }>(
       ...f,
       properties: { ...f.properties, tag, label: tag },
     })),
+  };
+}
+
+// Per-feature variant for a layer whose features have MIXED sources (cyclo):
+// the resolver sees each feature's properties and names its tag.
+export function tagLabelsBy<P extends { label: string; tag?: string }>(
+  fc: FeatureCollection<LineString, P>,
+  tagFor: (props: P) => string,
+): FeatureCollection<LineString, P> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f) => {
+      const tag = tagFor(f.properties);
+      return { ...f, properties: { ...f.properties, tag, label: tag } };
+    }),
   };
 }

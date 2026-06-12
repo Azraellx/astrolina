@@ -18,6 +18,9 @@ export const chartForm = {
   hour: 'Hour',
   minute: 'Minute',
   timeZone: 'Time zone',
+  // Shown above the (disabled) moment fields when editing a composite chart.
+  compositeMoment:
+    'Composite chart: the planets are midpoints of its two parents, and the date below is the synthesized map-frame anchor (kept in sync automatically).',
   tz: {
     selectLabel: 'Choose time zone',
     auto: 'Auto',

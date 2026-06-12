@@ -260,6 +260,52 @@
   background: rgba(var(--accent-rgb), 0.08);
 }
 
+/* Rows revealed under a Filters toggle (orb-zone widths, the star-set and
+   local-space-origin pickers). */
+.orb-zone-row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 8px 2px;
+}
+
+/* The orb-zone StepperFields stack as full-width rows (their own top margins
+   provide the rhythm). */
+.orb-zone-steppers {
+  flex-direction: column;
+  gap: 0;
+  padding-top: 0;
+}
+
+.orb-zone-steppers .calc-user-rate {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* The glyph slot in a StepperField label (aspect symbol, ☉/☽, ∥). */
+.orb-field-glyph {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+/* The (i) beside the Aspect orbs heading — its hover tip carries the section's
+   explanation, keeping the panel itself compact. */
+.orb-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.orb-info {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.orb-info:hover {
+  color: var(--text-strong);
+}
+
 /* Eye marker for the "Hide details" toggles: accent + open when the layer is
    shown, faint + closed (eye-off) when hidden. */
 .tech-toggle .eye-icon {
@@ -552,18 +598,29 @@
   margin-top: 8px;
 }
 
+/* The label owns the leftover row width, pushing the input + steppers flush
+   right; long labels ellipsize rather than wrap. */
 .calc-user-rate-label {
-  flex: none;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--text-muted);
 }
 
-/* The input fills the row so the field + steppers run flush with the dropdown
-   above; the steppers sit just outside the box, on its right. */
+/* Width sized for exactly the longest sensible value — six characters
+   ("359.59") plus the box's own padding and border; numbers read
+   right-aligned, and the steppers sit just outside the box, on its right. */
 .calc-user-rate .calc-user-rate-input {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 10px;
+  flex: none;
+  width: calc(6ch + 18px);
+  padding: 6px 8px;
+  text-align: right;
 }
 
 .calc-user-rate-steppers {

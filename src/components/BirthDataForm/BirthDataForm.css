@@ -78,6 +78,26 @@
   gap: 10px;
 }
 
+/* The (disabled) moment block when editing a composite chart: the fieldset is
+   pure grouping — no chrome — and the note above it explains the lock. */
+.moment-fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.moment-fieldset:disabled {
+  opacity: 0.6;
+}
+
+.composite-moment-note {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* A captioned "Tag" field to the right of the time inputs (a DateTimeFields `trailing`
    slot): the caption reuses .moment-caption to line up with the Date / Time captions,
    and the toggle sits under it (so its baseline matches the input boxes). The toggle is

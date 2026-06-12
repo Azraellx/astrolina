@@ -14,8 +14,11 @@ export const timeline = {
   nubMode: {
     transits: 'Transits',
     progressed: 'Sec. Progressed',
+    // Shown instead of `progressed` when the Progression setting is Tertiary.
+    tertiary: 'Tert. Progressed',
     'solar-arc': 'Solar Arc',
     'primary-directions': 'Primary',
+    cyclo: 'CCG',
   },
   nubFallback: 'Overlay',
 
@@ -70,6 +73,30 @@ export const timeline = {
 
   ruler: { aria: 'Scrub date' },
   now: { label: 'Now', tip: 'Set to the current moment' },
+
+  // Returns snap (transits only). The snap tips disclose the Positioning side
+  // effect: a return map is only the return chart's astrocartography when the
+  // lines are framed by the return instant itself (Transit moment).
+  returns: {
+    label: 'Returns',
+    // "Absolute" names the Positioning option as the Calculation tab labels it.
+    solar: {
+      snap: 'Nearest solar return. Positioning switches to Absolute.',
+      snapAria: 'Snap to the nearest solar return',
+      prev: 'Previous solar return',
+      prevAria: 'Previous solar return',
+      next: 'Next solar return',
+      nextAria: 'Next solar return',
+    },
+    lunar: {
+      snap: 'Nearest lunar return. Positioning switches to Absolute.',
+      snapAria: 'Snap to the nearest lunar return',
+      prev: 'Previous lunar return',
+      prevAria: 'Previous lunar return',
+      next: 'Next lunar return',
+      nextAria: 'Next lunar return',
+    },
+  },
   scale: { label: 'Scale' },
   dateField: {
     tipChartZone: 'Transit / progressed moment, in the chart’s time zone',
@@ -92,6 +119,8 @@ export const timeline = {
     progressed: 'Sec. Progressed · age {years}',
     'solar-arc': 'Solar Arc · {deg}°',
     'primary-directions': 'Primary Directions · {deg}°',
+    tertiary: 'Tert. Progressed · age {years}',
+    cyclo: 'Cyclo·carto·graphy · {datetime} UTC',
     synastry: 'Synastry · {partner}',
     eclipses: 'Eclipse · {datetime} UTC',
   },

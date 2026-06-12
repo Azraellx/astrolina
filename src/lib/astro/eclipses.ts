@@ -419,7 +419,17 @@ export interface EclipseDetails {
   lonRad: number;
 }
 
-export function buildEclipseDetails(resolved: ResolvedEclipse): EclipseDetails {
+export function buildEclipseDetails(
+  resolved: ResolvedEclipse,
+  /** Sidereal display offset (radians) for the zodiac READOUT. The returned
+   *  lonRad stays tropical: the natal-contact search compares it against
+   *  tropical natal longitudes — a deliberate doctrine choice. (Under the
+   *  per-epoch sidereal convention the eclipse-to-natal separation differs
+   *  from the tropical one by the precession between the two epochs, so in
+   *  sidereal mode the contacts list and the bi-wheel's cross list can show
+   *  different orbs for one pair; documented in calculation-methods.md.) */
+  ayanRad = 0,
+): EclipseDetails {
   const jd = resolved.event.maximum;
   const c = jdToCivil(jd);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -434,7 +444,8 @@ export function buildEclipseDetails(resolved: ResolvedEclipse): EclipseDetails {
     resolved.body === 'lunar'
       ? raDecToEclipticLon(sky.moonRa, sky.moonDec, obliquity(jd))
       : raDecToEclipticLon(sky.sunRa, sky.sunDec, obliquity(jd));
-  const zodiac = zodiacParts(lonRad);
+  const TWO_PI = 2 * Math.PI;
+  const zodiac = zodiacParts((((lonRad - ayanRad) % TWO_PI) + TWO_PI) % TWO_PI);
   return {
     row: resolved.row,
     maxUtc: `${c.year}-${p(c.month)}-${p(c.day)} ${p(c.hour)}:${p(c.minute)} UTC`,

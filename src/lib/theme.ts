@@ -65,3 +65,21 @@ export const ZENITH_DISC_COLORS: Record<Theme, string> = {
 // glyph/stamp use this darker slate instead. Single source for App's withDarkMoon and
 // the baked zenith glyph (glyphImages.ensureGlyphImages), so they stay in sync.
 export const MOON_LINE_DARK = '#5b6480';
+
+// The fixed-star lines' shared tint, per theme: the pale starlight gold reads on
+// the dark basemap but washes out on Glass/Earth, which get a deep antique gold
+// instead. Single source for the line features (App's starLines memo), the baked
+// star sprite (glyphImages), and every tag/card that echoes the line color.
+export const STAR_LINE_COLORS: Record<Theme, string> = {
+  dark: '#cdbf8f',
+  glass: '#8a6e1f',
+  vintage: '#7e6118',
+};
+
+// The night-side shading (Filters ▸ Night Shading): a dusk-blue wash on the
+// light themes, a deeper darkening on the already-dark basemap.
+export const NIGHT_SHADE_STYLE: Record<Theme, { color: string; opacity: number }> = {
+  dark: { color: '#01040f', opacity: 0.38 },
+  glass: { color: '#1b2a4a', opacity: 0.18 },
+  vintage: { color: '#23204a', opacity: 0.16 },
+};

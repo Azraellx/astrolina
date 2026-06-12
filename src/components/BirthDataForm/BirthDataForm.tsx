@@ -25,6 +25,8 @@ import {
 } from '../../lib/chartLibrary';
 import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
+import { jdToCivil } from '../../lib/ephemeris';
+import { solveCompositeJd } from '../../lib/astro/composite';
 import { DateTimeFields } from '../DateTimeFields/DateTimeFields';
 import { useT } from '../../i18n';
 import './BirthDataForm.css';
@@ -271,7 +273,22 @@ export function BirthDataFields({
       tzUncertain: effective?.uncertain ?? false,
       birthplace: selectedPlace,
       tag,
+      // A composite chart's parents survive an edit (renames, place tweaks):
+      // the planet positions stay the midpoints.
+      composite: initial?.composite,
     };
+    if (initial?.composite) {
+      // The stored moment IS the composite's sidereal frame (the parents'
+      // midpoint — see lib/astro/composite.ts). Re-solve it on every save so
+      // no edit path can desync the frame from that documented convention;
+      // the moment fields are disabled above to match.
+      Object.assign(chart, jdToCivil(solveCompositeJd(initial.composite)), {
+        tzOffset: 0,
+        tzIana: 'UTC',
+        tzManual: true,
+        tzUncertain: false,
+      });
+    }
     onSubmit(chart);
   };
 
@@ -305,7 +322,16 @@ export function BirthDataFields({
         </label>
 
         {/* The birth moment: date and time, side by side (shared with the timeline
-            date modal so the moment editor stays identical across the app). */}
+            date modal so the moment editor stays identical across the app). A
+            composite chart's moment is its synthesized sidereal-frame anchor —
+            locked here, and re-solved from the parents on save regardless. */}
+        {initial?.composite && (
+          <p className="composite-moment-note">{t('chartForm.compositeMoment')}</p>
+        )}
+        <fieldset
+          className="moment-fieldset"
+          disabled={!!initial?.composite}
+        >
         <DateTimeFields
           value={{ year, month, day, hour, minute }}
           onChange={(v) => {
@@ -341,6 +367,7 @@ export function BirthDataFields({
             </div>
           }
         />
+        </fieldset>
 
         <label className="location-field">
           <span>{t('chartForm.birthplace')}</span>
@@ -384,7 +411,9 @@ export function BirthDataFields({
             <select
               className="tz-select"
               aria-label={t('chartForm.tz.selectLabel')}
-              disabled={!selectedPlace}
+              // A composite's anchor moment is UT by construction (and
+              // re-solved on save), so its zone isn't editable either.
+              disabled={!selectedPlace || !!initial?.composite}
               value={selectedPlace ? (effectiveZone ?? '') : ''}
               onChange={(e) => setZoneOverride(e.target.value || null)}
             >

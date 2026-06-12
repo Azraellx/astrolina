@@ -33,10 +33,14 @@ These are the things that set a browser-based tool apart from established deskto
 
 Set against full-featured desktop software, these are the deliberate gaps:
 
-- **Fixed stars and fixed-star parans.** No fixed-star lines (Regulus, Algol, Spica, and the rest) or fixed-star parans yet; these need a star catalog with proper motion.
+- **Fixed-star parans.** Fixed-star angle lines shipped (a 40-star catalog with proper motion, Regulus to Acrux, toggleable in Filters), but planet-to-star and star-to-star parans are not computed yet.
 - **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, converse motion, or a dated event list.
-- **Sidereal / Vedic mode.** Tropical zodiac only; no ayanamsa.
-- **Composite and midpoint maps.** No Davison or composite chart projected as lines. (Synastry, two charts overlaid, does ship.)
+- **Sidereal conventions under review.** A sidereal zodiac mode ships (Lahiri
+  and Fagan/Bradley ayanamsas, as a reading layer over the wheel and readouts —
+  the map lines mark zodiac-independent events and don't move), but its
+  conventions are still being reviewed with a practicing astrologer, and the
+  Geodetic technique stays tropical by definition.
+- **Relationship-chart conventions under review.** Synastry (two charts overlaid), Davison, and composite-midpoint charts all ship; the composite's conventions (shorter-arc planet midpoints on the ecliptic, a synthesized midpoint sidereal frame) are documented in [Calculation Methods](calculation-methods.md) and still being reviewed with a practicing astrologer.
 - **A hand-curated historical atlas.** Birthplaces are geocoded and timezones resolved from open data, not from a proprietary hand-curated historical atlas (see Accuracy & limitations).
 - **Date entry before 1800.** The birth-data form accepts years 1800–2200. An imported chart with an earlier date still computes its planets, nodes, and Lilith, but its asteroids are omitted (see [Calculation Methods](calculation-methods.md) for why).
 - **Hypothetical bodies.** Transpluto and the Uranian points are omitted (there is no consensus ephemeris for them), and centaurs beyond Chiron aren't bundled.
@@ -63,4 +67,4 @@ This application is open source under the **AGPL-3.0**.
 
 ## In short
 
-It's a web-based astrocartography tool for practitioners. The map and live drag-relocation match or beat desktop interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk. It computes the ten classical planets plus the lunar nodes, Black Moon Lilith, Chiron, and the four main asteroids, all with the Swiss Ephemeris, in the browser. You can overlay transits, secondary progressions, and directions and animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco or between celestial and geodetic placement. It doesn't yet have fixed stars, a hand-curated historical atlas, a full primary-directions engine, sidereal mode, or composite maps. If your work leans on those, keep your existing tool alongside it; if it leans on planets, asteroids, nodes, parans, local space, a relocated wheel, transits and secondary progressions, and relationship maps, this can already handle the map portion of your workflow on any device.
+It's a web-based astrocartography tool for practitioners. The map and live drag-relocation match or beat desktop interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk. It computes the ten classical planets plus the lunar nodes, Black Moon Lilith, Chiron, and the four main asteroids, all with the Swiss Ephemeris, in the browser. You can overlay transits, secondary progressions, and directions and animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco or between celestial and geodetic placement. It doesn't yet have fixed-star parans, a hand-curated historical atlas, or a full primary-directions engine. If your work leans on those, keep your existing tool alongside it; if it leans on planets, asteroids, nodes, parans, local space, a relocated wheel, transits and secondary progressions, and relationship maps, this can already handle the map portion of your workflow on any device.

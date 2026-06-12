@@ -482,6 +482,73 @@
   vertical-align: -1px;
 }
 
+/* --- Balance section (Advanced): tallies + dignities --- */
+
+.es-section-balance {
+  flex-shrink: 0;
+}
+
+.es-balance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 3px 0;
+}
+
+.es-balance-pill {
+  padding: 2px 8px;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.es-balance-pill b {
+  margin-left: 2px;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.es-el-fire { border-color: rgba(232, 90, 79, 0.35); }
+.es-el-earth { border-color: rgba(141, 188, 109, 0.35); }
+.es-el-air { border-color: rgba(94, 194, 224, 0.35); }
+.es-el-water { border-color: rgba(126, 116, 219, 0.35); }
+
+.es-dignity-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 10px;
+}
+
+.es-dignity-list li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.es-dignity-planet {
+  color: var(--text-strong);
+}
+
+.es-dignity {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.es-dignity-rulership,
+.es-dignity-exaltation {
+  color: #8dbc6d;
+}
+
+.es-dignity-detriment,
+.es-dignity-fall {
+  color: #c98a4b;
+}
+
 /* --- Aspects section (only shown in Advanced mode) --- */
 
 .es-section-aspects {
@@ -563,6 +630,20 @@
    release, so genuinely-too-narrow panels can still scroll to the wheel. */
 .expanded-sidebar.dragging .es-wheel-pane {
   overflow-x: hidden;
+}
+
+/* Dual Wheels (Advanced): the natal and overlay wheels stack vertically with
+   the overlay's caption as the seam between them. */
+.es-wheel-pane-dual {
+  flex-direction: column;
+  align-items: safe center;
+  gap: 2px;
+}
+
+.es-dual-caption {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
 }
 
 .es-section-wheel svg {

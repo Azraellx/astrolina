@@ -85,17 +85,34 @@ import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace
 import { generateLocalSpaceCrossings } from './lib/astro/localSpaceCrossings';
 import {
   buildOverlay,
+  cycloBodyTag,
+  epochMsToJD,
   minorStepMs,
   OVERLAY_LABEL_PREFIX,
   tagLabels,
+  tagLabelsBy,
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
+  type ProgressionType,
   type RelationshipMethod,
   type TimeUnit,
   type TransitFrame,
 } from './lib/astro/timeline';
-import { buildDavison } from './lib/astro/relationship';
+import { buildComposite, buildDavison } from './lib/astro/relationship';
+import { compositeEcliptic, compositeEquatorial } from './lib/astro/composite';
+import {
+  ayanamsaRad,
+  shiftAngles,
+  shiftEclipticPositions,
+  shiftEclipticPositionsPerBody,
+} from './lib/astro/ayanamsa';
+import { findReturn, type ReturnBody } from './lib/astro/returns';
+import { buildLineCard } from './lib/lineCard';
+import { generateOrbBands } from './lib/astro/orbBands';
+import { generateStarLines, starsOfDate } from './lib/astro/starLines';
+import { generateNightShade } from './lib/astro/nightShade';
+import { loadAspectOrbs, saveAspectOrbs } from './lib/aspectPrefs';
 import {
   loadAngleProgression,
   loadEclipseChartLines,
@@ -105,11 +122,21 @@ import {
   loadOverlayDate,
   loadOverlayMode,
   loadOverlayPartner,
+  loadLsOrigin,
   loadOverlayStep,
+  loadOrbZoneKm,
+  loadParanOrbDeg,
   loadPrimaryRate,
+  loadProgressionType,
+  loadShowNightShade,
+  loadShowOrbZones,
+  loadShowStarLines,
+  loadStarSet,
   loadTransitFrame,
   loadUserPrimaryRate,
   loadSynastryMethod,
+  loadZodiacMode,
+  saveZodiacMode,
   saveAngleProgression,
   saveEclipseChartLines,
   saveEclipseId,
@@ -119,8 +146,16 @@ import {
   saveOverlayDate,
   saveOverlayMode,
   saveOverlayPartner,
+  saveLsOrigin,
   saveOverlayStep,
+  saveOrbZoneKm,
+  saveParanOrbDeg,
   savePrimaryRate,
+  saveProgressionType,
+  saveShowNightShade,
+  saveShowOrbZones,
+  saveShowStarLines,
+  saveStarSet,
   saveTransitFrame,
   saveUserPrimaryRate,
   type EclipseIsoStep,
@@ -133,7 +168,15 @@ import {
   saveCurrentId,
   type StoredChart,
 } from './lib/chartLibrary';
-import { applyTheme, loadTheme, MOON_LINE_DARK, saveTheme, type Theme } from './lib/theme';
+import {
+  applyTheme,
+  loadTheme,
+  MOON_LINE_DARK,
+  NIGHT_SHADE_STYLE,
+  saveTheme,
+  STAR_LINE_COLORS,
+  type Theme,
+} from './lib/theme';
 import {
   loadProjection,
   saveProjection,
@@ -279,15 +322,19 @@ function filterZenith(
 // Stamp the overlay tag (e.g. "Tr") onto each zenith point — the on-map stamp's hover
 // tooltip reads it, so an overlay (or promoted) zenith reads "Tr Moon" rather than
 // being mistaken for the natal body. The natal chart's own zeniths are left untagged.
+// A resolver tag (cyclo) names each body's own source instead of one mode tag.
 function tagZeniths(
   fc: FeatureCollection<GeoPoint, ZenithProps>,
-  tag: string,
+  tag: string | ((planet: PlanetName) => string),
 ): FeatureCollection<GeoPoint, ZenithProps> {
   return {
     type: 'FeatureCollection',
     features: fc.features.map((f) => ({
       ...f,
-      properties: { ...f.properties, tag },
+      properties: {
+        ...f.properties,
+        tag: typeof tag === 'string' ? tag : tag(f.properties.planet),
+      },
     })),
   };
 }
@@ -420,6 +467,23 @@ export default function App() {
   const [showTeleport, setShowTeleport] = useState(
     () => localStorage.getItem('astro:view-teleport:v1') === '1',
   );
+  // The expanded wheel's Advanced reading mode (degree rim, aspect grid,
+  // coordinate tables). Lifted here — same storage key the sidebar always
+  // used — so the Info chip can gate its Advanced-tab items on it.
+  const [advancedWheel, setAdvancedWheel] = useState(
+    () => localStorage.getItem('astro:advanced:v1') === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem('astro:advanced:v1', advancedWheel ? '1' : '0');
+  }, [advancedWheel]);
+  // Overlay wheel layout (Advanced ▸ Wheel layout): the classic bi-wheel, or
+  // two full stacked wheels.
+  const [dualWheels, setDualWheels] = useState(
+    () => localStorage.getItem('astro:wheel-layout:v1') === 'dual',
+  );
+  useEffect(() => {
+    localStorage.setItem('astro:wheel-layout:v1', dualWheels ? 'dual' : 'bi-wheel');
+  }, [dualWheels]);
   // The guides reference (View ▸ Guides): reopen the onboarding guides as a glossary.
   // Not persisted — it's an on-demand reference, so it shouldn't reappear on every load.
   // guideIndex is which met-guide the pager is showing (reset to the first on open).
@@ -455,7 +519,13 @@ export default function App() {
   // Calculation tab). Persisted; defaults to Map Filters.
   const [sidebarSection, setSidebarSection] = useState<SidebarSection | null>(() => {
     const v = localStorage.getItem('astro:sidebar-section:v1');
-    if (v === 'theme' || v === 'filters' || v === 'calc' || v === 'overlay') {
+    if (
+      v === 'theme' ||
+      v === 'filters' ||
+      v === 'calc' ||
+      v === 'advanced' ||
+      v === 'overlay'
+    ) {
       return v;
     }
     if (v === 'none') return null;
@@ -479,6 +549,11 @@ export default function App() {
   const [angleProgression, setAngleProgression] = useState<AngleProgression>(() =>
     loadAngleProgression(),
   );
+  // The Progressed overlay's symbolic clock: secondary (day/year) or tertiary
+  // (day/tropical month).
+  const [progressionType, setProgressionType] = useState<ProgressionType>(() =>
+    loadProgressionType(),
+  );
   const [primaryRate, setPrimaryRate] = useState<PrimaryRate>(() =>
     loadPrimaryRate(),
   );
@@ -489,6 +564,10 @@ export default function App() {
   const [transitFrame, setTransitFrame] = useState<TransitFrame>(() =>
     loadTransitFrame(),
   );
+  // Zodiac reading frame (Advanced ▸ Zodiac): tropical, or sidereal by
+  // ayanamsa — a display-layer choice (see the sidereal block further down).
+  const [zodiacMode, setZodiacMode] = useState(loadZodiacMode);
+  useEffect(() => saveZodiacMode(zodiacMode), [zodiacMode]);
   // Eclipses overlay: the selected catalog eclipse (by id), the magnitude-
   // isoline interval, and the "eclipse chart lines" display toggle.
   const [eclipseId, setEclipseId] = useState<string | null>(() =>
@@ -535,8 +614,8 @@ export default function App() {
     // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     const overlayCycle: OverlayMode[] = [
-      'transits', 'progressed', 'solar-arc', 'primary-directions', 'synastry',
-      'eclipses',
+      'transits', 'progressed', 'solar-arc', 'primary-directions', 'cyclo',
+      'synastry', 'eclipses',
     ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
@@ -693,6 +772,7 @@ export default function App() {
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
   useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
   useEffect(() => saveAngleProgression(angleProgression), [angleProgression]);
+  useEffect(() => saveProgressionType(progressionType), [progressionType]);
   useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
   useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
@@ -723,7 +803,8 @@ export default function App() {
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions';
+    overlayMode === 'primary-directions' ||
+    overlayMode === 'cyclo';
   // Adjusted during render (not in an effect) so we never paint a frame that's
   // still "playing" after the overlay has left a time mode.
   if (!isTimeMode && playing) setPlaying(false);
@@ -772,15 +853,30 @@ export default function App() {
     () => (current ? birthDataToJD(current) : 0),
     [current],
   );
+  // A composite chart's positions are the parents' longitude midpoints, not a
+  // cast of the stored moment (which only anchors the sidereal frame — see
+  // lib/astro/composite.ts). Everything downstream of these two memos follows
+  // automatically: lines, parans, local space, zenith, aspect/midpoint lines,
+  // the wheel, eclipse natal contacts, the advanced tables.
   const positions = useMemo(
-    () => (current ? getPlanetPositions(jd, nodeType) : []),
+    () => {
+      if (!current) return [];
+      return current.composite
+        ? compositeEquatorial(current.composite, nodeType, obliquity(jd))
+        : getPlanetPositions(jd, nodeType);
+    },
     // ephemerisEpoch isn't read by the calc — it marks the deferred asteroid
     // file arriving, so the same jd resamples with the new data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [current, jd, nodeType, ephemerisEpoch],
   );
   const ecliptic = useMemo(
-    () => (current ? getEclipticPositions(jd, nodeType) : []),
+    () => {
+      if (!current) return [];
+      return current.composite
+        ? compositeEcliptic(current.composite, nodeType, obliquity(jd))
+        : getEclipticPositions(jd, nodeType);
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [current, jd, nodeType, ephemerisEpoch],
   );
@@ -818,11 +914,17 @@ export default function App() {
     () => generateParans(linePositions, gmst),
     [linePositions, gmst],
   );
+  // Local-space origin: follow the pin (default) or stay on the birthplace.
+  const [lsOrigin, setLsOrigin] = useState(loadLsOrigin);
+  useEffect(() => saveLsOrigin(lsOrigin), [lsOrigin]);
   // Local space radiates from the placed pin (relocated local space) — or the
-  // birthplace when nothing is pinned. Also the anchor for the LS ring labels.
+  // birthplace, either when nothing is pinned or when the Origin setting pins
+  // it home explicitly. Also the anchor for the LS ring labels.
   const localSpaceOrigin = useMemo<Point | null>(
-    () => pinned ?? (current ? current.birthplace : null),
-    [pinned, current],
+    () =>
+      (lsOrigin === 'pin' ? pinned : null) ??
+      (current ? current.birthplace : null),
+    [lsOrigin, pinned, current],
   );
   const allLocalSpace = useMemo(
     () =>
@@ -844,6 +946,33 @@ export default function App() {
   // through the Sun's zenith), independent of planet visibility, so not filtered.
   // (Named *Line to avoid colliding with the `ecliptic` projection-mode variable.)
   const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
+
+  // Fixed-star lines toggle + which bundled set draws.
+  const [showStarLines, setShowStarLines] = useState(loadShowStarLines);
+  const [starSet, setStarSet] = useState(loadStarSet);
+  useEffect(() => saveShowStarLines(showStarLines), [showStarLines]);
+  useEffect(() => saveStarSet(starSet), [starSet]);
+
+  // Night-side shading toggle (the wash itself is computed below, after the
+  // eclipse selection it keys its moment from is known).
+  const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
+  useEffect(() => saveShowNightShade(showNightShade), [showNightShade]);
+
+
+  // Fixed-star lines (Filters ▸ Fixed Stars): proper-motion + precessed star
+  // positions for the chart instant, through the same meridian mapping as the
+  // planet lines (so they follow Celestial vs Mundane like everything else).
+  const starLines = useMemo(() => {
+    if (!showStarLines || !current) return EMPTY_FC;
+    return generateStarLines(
+      starsOfDate(jd, starSet),
+      meridianLng,
+      lineSystem === 'geodetic' ? eps : null,
+      // The pale starlight gold washes out on the light basemaps; each theme
+      // gets its own tint (and the baked star sprite matches).
+      STAR_LINE_COLORS[theme],
+    );
+  }, [showStarLines, current, jd, starSet, meridianLng, lineSystem, eps, theme]);
 
   const lines = useMemo(
     () =>
@@ -1009,10 +1138,34 @@ export default function App() {
   const eclipseDetails = useMemo(
     () =>
       resolvedEclipse && eclipsesMod
-        ? eclipsesMod.buildEclipseDetails(resolvedEclipse)
+        ? eclipsesMod.buildEclipseDetails(
+            resolvedEclipse,
+            // The eclipse degree readout shifts by the ayanamsa of the
+            // ECLIPSE's own moment (sidereal frames ride the stars).
+            ayanamsaRad(resolvedEclipse.event.maximum, zodiacMode),
+          )
         : null,
-    [resolvedEclipse, eclipsesMod],
+    [resolvedEclipse, eclipsesMod, zodiacMode],
   );
+
+  // Night-side shading (Filters ▸ Night Shading): the hemisphere where the Sun
+  // is below the horizon, keyed to the moment the map is showing — the eclipse
+  // maximum in Eclipses mode (a lunar eclipse is visible from exactly this
+  // hemisphere), the target date under Transits/CCG (it sweeps with playback),
+  // and the chart's own moment otherwise (symbolic overlays like progressions
+  // have no second real instant to shade).
+  const nightShade = useMemo(() => {
+    if (!showNightShade || !current) return EMPTY_FC;
+    const nightJd =
+      overlayMode === 'eclipses' && resolvedEclipse
+        ? resolvedEclipse.event.maximum
+        : overlayMode === 'transits' || overlayMode === 'cyclo'
+          ? epochMsToJD(targetDate)
+          : jd;
+    const style = NIGHT_SHADE_STYLE[theme];
+    return generateNightShade(nightJd, style.color, style.opacity);
+  }, [showNightShade, current, overlayMode, resolvedEclipse, targetDate, jd, theme]);
+
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
     if (!resolvedEclipse || !eclipsesMod) return null;
@@ -1130,6 +1283,21 @@ export default function App() {
     };
   }, [overlayMode, resolvedEclipse, eclipsesMod, t]);
 
+  // Click-a-line interpretation card: a short reading for the clicked line
+  // (planet on angle, aspect/midpoint/paran/local-space explainers). Off in
+  // eclipses mode, whose clicks pin the local-circumstances card instead. The
+  // builder's identity carries the active chart so a card can't outlive it.
+  const lineCard = useMemo(() => {
+    if (overlayMode === 'eclipses' || !current) return null;
+    return (layerId: string, props: Record<string, unknown>) =>
+      buildLineCard(layerId, props, t);
+    // lineSystem/coordSystem aren't read by the builder — they're deliberate
+    // identity-bust deps: those settings move every line wholesale, and a
+    // pinned card would float over empty map, so the change closes it (the
+    // Map's close-on-identity effect).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayMode, current, lineSystem, coordSystem, t]);
+
   // Ease the camera to an eclipse's headline ground point (the catalog's
   // whole-degree coordinates are plenty at this zoom). Menu picks and the
   // HUD's ⌖ fly; ‹ › stepping deliberately never moves the camera.
@@ -1149,6 +1317,26 @@ export default function App() {
     [eclipseCatalog, flyToEclipse],
   );
 
+  // Returns snap (timeline ▸ Returns, transits only): move the target date to
+  // the chart's solar/lunar return and frame the lines by that instant's own
+  // sidereal time — only 'transit-moment' positioning makes the snapped map the
+  // return chart's astrocartography (the HUD tips disclose the switch). The
+  // persisted Positioning pref changes with it, visibly, in the Calculation tab.
+  const snapToReturn = useCallback(
+    (body: ReturnBody, dir: -1 | 0 | 1) => {
+      if (!current) return;
+      const r = findReturn(current, body, targetDate, dir);
+      if (!r) return;
+      setPlaying(false);
+      setTargetDate(r.ms);
+      // Geodetic lines ignore sidereal time, so the frame flip would change
+      // nothing there while silently rewriting a persisted pref behind a
+      // hidden control — only switch it where it has its documented effect.
+      if (lineSystem === 'celestial') setTransitFrame('transit-moment');
+    },
+    [current, targetDate, lineSystem],
+  );
+
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
     if (overlayMode === 'eclipses') {
@@ -1166,6 +1354,7 @@ export default function App() {
         primaryRate,
         userPrimaryRate,
         transitFrame,
+        progressionType,
         t,
       );
     }
@@ -1179,6 +1368,7 @@ export default function App() {
       primaryRate,
       userPrimaryRate,
       transitFrame,
+      progressionType,
       t,
     );
     // ephemerisEpoch resamples the overlay instant too when the deferred
@@ -1194,6 +1384,7 @@ export default function App() {
     primaryRate,
     userPrimaryRate,
     transitFrame,
+    progressionType,
     showEclipseChartLines,
     resolvedEclipse,
     eclipsesMod,
@@ -1204,6 +1395,14 @@ export default function App() {
   const overlay = useMemo<OverlayData | null>(() => {
     if (!overlayLayer) return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
+    // CCG names each feature's actual source — Sp on the progressed personal
+    // planets, Tr on the transiting outers — instead of one mode tag. A paran
+    // PAIRING the two sets has no single source and keeps the mode tag "Cy".
+    const isCyclo = overlayLayer.kind === 'cyclo';
+    const paranCycloTag = (p: ParanProps) => {
+      const a = cycloBodyTag(p.planetA);
+      return a === cycloBodyTag(p.planetB) ? a : 'Cy';
+    };
     const ovPositions =
       lineSystem === 'geodetic' || coordSystem === 'zodiaco'
         ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
@@ -1216,7 +1415,11 @@ export default function App() {
       lines: mergeNodePairs(
         withDarkMoon(
           filterLines(
-            tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+            isCyclo
+              ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) =>
+                  cycloBodyTag(p.planet),
+                )
+              : tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
             visiblePlanets,
             visibleLineTypes,
           ),
@@ -1226,7 +1429,12 @@ export default function App() {
       parans: showParans
         ? mergeNodeParans(
             filterParans(
-              tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+              isCyclo
+                ? tagLabelsBy(
+                    generateParans(ovPositions, overlayLayer.gmst),
+                    paranCycloTag,
+                  )
+                : tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -1260,7 +1468,7 @@ export default function App() {
               ),
               theme,
             ),
-            prefix,
+            isCyclo ? cycloBodyTag : prefix,
           )
         : EMPTY_FC,
       // The overlay's ecliptic (zodiac) line — a dotted yellow companion to the natal
@@ -1290,7 +1498,8 @@ export default function App() {
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions';
+    overlayMode === 'primary-directions' ||
+    overlayMode === 'cyclo';
   const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
   // Eclipses ▸ Display ▸ Natal Chart Lines: unlike the time overlays' Natal
   // toggle (which promotes the overlay to stand in for the chart), turning
@@ -1298,6 +1507,21 @@ export default function App() {
   // aspect/midpoint lines, parans, local space, zenith stamps, ecliptic — so
   // the eclipse path stands alone. The wheel and readouts keep the natal chart.
   const hideNatalLinework = overlayMode === 'eclipses' && !showEclipseNatalLines;
+
+  // Orb-of-influence zones (Filters ▸ Orb Zones): bands around whatever line set
+  // the map is actually drawing (natal, or the promoted overlay standing in for
+  // it), so the zones always shadow the visible lines.
+  const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
+  const [orbZoneKm, setOrbZoneKm] = useState(loadOrbZoneKm);
+  const [paranOrbDeg, setParanOrbDeg] = useState(loadParanOrbDeg);
+  useEffect(() => saveShowOrbZones(showOrbZones), [showOrbZones]);
+  useEffect(() => saveOrbZoneKm(orbZoneKm), [orbZoneKm]);
+  useEffect(() => saveParanOrbDeg(paranOrbDeg), [paranOrbDeg]);
+
+  // Per-aspect orb limits (Advanced ▸ Aspect orbs) for the wheel's aspect
+  // grid, aspect lines, and cross-aspect lists.
+  const [aspectOrbs, setAspectOrbs] = useState(loadAspectOrbs);
+  useEffect(() => saveAspectOrbs(aspectOrbs), [aspectOrbs]);
 
   // The promoted dataset: the overlay's bodies run through the SAME generators and
   // filters as the natal chart, so the map's natal rendering path draws them solid and
@@ -1316,10 +1540,20 @@ export default function App() {
       lineSystem === 'geodetic'
         ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
         : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
+    // Promoted CCG keeps the per-body source tags (see the overlay memo above).
+    const isCyclo = overlayLayer.kind === 'cyclo';
+    const paranCycloTag = (p: ParanProps) => {
+      const a = cycloBodyTag(p.planetA);
+      return a === cycloBodyTag(p.planetB) ? a : 'Cy';
+    };
     const pLines = mergeNodePairs(
       withDarkMoon(
         filterLines(
-          tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+          isCyclo
+            ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) =>
+                cycloBodyTag(p.planet),
+              )
+            : tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
           visiblePlanets,
           visibleLineTypes,
         ),
@@ -1345,7 +1579,12 @@ export default function App() {
       parans: showParans
         ? mergeNodeParans(
             filterParans(
-              tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+              isCyclo
+                ? tagLabelsBy(
+                    generateParans(ovPositions, overlayLayer.gmst),
+                    paranCycloTag,
+                  )
+                : tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -1368,7 +1607,7 @@ export default function App() {
               ),
               theme,
             ),
-            prefix,
+            isCyclo ? cycloBodyTag : prefix,
           )
         : EMPTY_FC,
       eclipticLine: showOverlayZenith
@@ -1388,6 +1627,13 @@ export default function App() {
     lineSystem,
     theme,
   ]);
+
+  const orbBands = useMemo(() => {
+    if (!showOrbZones) return null;
+    const bandLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
+    const bandParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
+    return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbDeg);
+  }, [showOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbDeg]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -1542,11 +1788,56 @@ export default function App() {
     return getAngleCoords(a, gmst, eps, obs.lat, obs.lng);
   }, [promoteOverlay, overlayLayer, overlayAngles, angles, activePoint, current, gmst, eps]);
 
+  // Sidereal display layer (Advanced ▸ Zodiac). The map's line geometry is
+  // zodiac-independent and never shifts; every WHEEL/READOUT longitude does,
+  // each ring by ITS OWN epoch's ayanamsa (the sidereal frame rides the
+  // stars, so the natal ring and a transit ring decades later shift by
+  // slightly different amounts — standard sidereal practice). The equatorial
+  // tables (advancedCoords/angleCoords) and the eclipse-contact math keep
+  // consuming the tropical `ecliptic`/`angles` above: their values are
+  // frame-independent physics, and shifted input would corrupt them.
+  const natalAyan = useMemo(() => ayanamsaRad(jd, zodiacMode), [jd, zodiacMode]);
+  const overlayAyan = useMemo(
+    () => (overlayLayer ? ayanamsaRad(overlayLayer.jd, zodiacMode) : 0),
+    [overlayLayer, zodiacMode],
+  );
+  const displayEcliptic = useMemo(
+    () => shiftEclipticPositions(ecliptic, natalAyan),
+    [ecliptic, natalAyan],
+  );
+  const displayAngles = useMemo(
+    () =>
+      angles ? shiftAngles(angles, natalAyan, houseSystem === 'whole') : angles,
+    [angles, natalAyan, houseSystem],
+  );
+  const displayOverlayEcliptic = useMemo(() => {
+    if (!overlayEcliptic) return null;
+    // A mixed-epoch layer (cyclo) carries per-body epochs: each progressed
+    // body shifts by ITS epoch's ayanamsa, so its sidereal readout matches
+    // the dedicated Progressed overlay's exactly.
+    const byBody = overlayLayer?.bodyJd;
+    if (byBody && zodiacMode !== 'tropical') {
+      return shiftEclipticPositionsPerBody(overlayEcliptic, (name) =>
+        ayanamsaRad(byBody[name] ?? overlayLayer!.jd, zodiacMode),
+      );
+    }
+    return shiftEclipticPositions(overlayEcliptic, overlayAyan);
+  }, [overlayEcliptic, overlayAyan, overlayLayer, zodiacMode]);
+  const displayOverlayAngles = useMemo(
+    () =>
+      overlayAngles
+        ? shiftAngles(overlayAngles, overlayAyan, houseSystem === 'whole')
+        : null,
+    [overlayAngles, overlayAyan, houseSystem],
+  );
+
   // While promoting the overlay (Natal off), the wheel + coordinate readout read the
   // overlay's own planet positions / angles as the single chart; the natal ring is
   // dropped (see the overlay* props on the wheel below, nulled when promoting).
-  const wheelPlanets = promoteOverlay && overlayEcliptic ? overlayEcliptic : ecliptic;
-  const wheelAngles = promoteOverlay && overlayAngles ? overlayAngles : angles;
+  const wheelPlanets =
+    promoteOverlay && displayOverlayEcliptic ? displayOverlayEcliptic : displayEcliptic;
+  const wheelAngles =
+    promoteOverlay && displayOverlayAngles ? displayOverlayAngles : displayAngles;
 
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
@@ -1737,14 +2028,15 @@ export default function App() {
 
   // Build a relationship chart from the active chart + its synastry partner using the
   // chosen method, make it the active chart, and clear the partner — the synastry view
-  // stays on (its partner slot just empties for re-picking). Davison only for now;
-  // Composite is gated off in the UI until its render path exists.
+  // stays on (its partner slot just empties for re-picking).
   const handleGenerateRelationship = () => {
-    if (overlayMode !== 'synastry' || synastryMethod !== 'davison') return;
+    if (overlayMode !== 'synastry') return;
     if (!current || !partner) return;
     const now = Date.now();
     const chart: StoredChart = {
-      ...buildDavison(current, partner),
+      ...(synastryMethod === 'composite'
+        ? buildComposite(current, partner)
+        : buildDavison(current, partner)),
       id: newChartId(),
       createdAt: now,
       lastUsedAt: now,
@@ -1797,6 +2089,14 @@ export default function App() {
         // hidden, so its derived aspect/midpoint lines hide with it.
         angleLines={promoted || hideNatalLinework ? EMPTY_FC : angleLines}
         parans={hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans}
+        orbBands={orbBands}
+        // Natal-frame geometry: hides with the natal linework AND under a
+        // promoted overlay (whose lines live in a different sidereal frame —
+        // mixing the two would fake star↔planet crossings).
+        starLines={promoted || hideNatalLinework ? EMPTY_FC : starLines}
+        // Environment layer, not natal linework — stays on in every mode (in
+        // eclipses mode with natal lines hidden it's at its most useful).
+        nightShade={nightShade}
         localSpace={
           hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace
         }
@@ -1820,6 +2120,7 @@ export default function App() {
         eclipse={eclipseMapData}
         eclipseTip={eclipseTip}
         eclipseCard={eclipseCard}
+        lineCard={lineCard}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
@@ -1871,12 +2172,34 @@ export default function App() {
           setShowAspectLines={setShowAspectLines}
           showMidpointLines={showMidpointLines}
           setShowMidpointLines={setShowMidpointLines}
+          showOrbZones={showOrbZones}
+          setShowOrbZones={setShowOrbZones}
+          orbZoneKm={orbZoneKm}
+          setOrbZoneKm={setOrbZoneKm}
+          paranOrbDeg={paranOrbDeg}
+          setParanOrbDeg={setParanOrbDeg}
+          aspectOrbs={aspectOrbs}
+          setAspectOrbs={setAspectOrbs}
+          showStarLines={showStarLines}
+          setShowStarLines={setShowStarLines}
+          starSet={starSet}
+          setStarSet={setStarSet}
+          showNightShade={showNightShade}
+          setShowNightShade={setShowNightShade}
+          progressionType={progressionType}
+          setProgressionType={setProgressionType}
+          lsOrigin={lsOrigin}
+          setLsOrigin={setLsOrigin}
           lineSystem={lineSystem}
           setLineSystem={setLineSystem}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
           houseSystem={houseSystem}
           setHouseSystem={setHouseSystem}
+          zodiacMode={zodiacMode}
+          setZodiacMode={setZodiacMode}
+          dualWheels={dualWheels}
+          setDualWheels={setDualWheels}
           nodeType={nodeType}
           setNodeType={setNodeType}
           overlayMode={overlayMode}
@@ -1885,7 +2208,24 @@ export default function App() {
           synastryMethod={synastryMethod}
           setSynastryMethod={setSynastryMethod}
           onGenerateRelationship={handleGenerateRelationship}
-          canGenerateRelationship={overlayMode === 'synastry' && !!partner}
+          // A composite can't parent another relationship chart: its midpoint
+          // positions aren't reachable from the BirthData a Davison/composite
+          // build would snapshot (and stacking midpoints is astrological soup).
+          canGenerateRelationship={
+            overlayMode === 'synastry' &&
+            !!partner &&
+            !current?.composite &&
+            !partner.composite
+          }
+          generateBlock={
+            overlayMode !== 'synastry'
+              ? null
+              : current?.composite || partner?.composite
+                ? 'composite'
+                : partner
+                  ? null
+                  : 'partner'
+          }
           eclipseDetails={eclipseDetails}
           eclipseContacts={eclipseContactList}
           showEclipseNatalLines={showEclipseNatalLines}
@@ -1958,10 +2298,12 @@ export default function App() {
           lineSystem={lineSystem}
           coordSystem={coordSystem}
           houseSystem={houseSystem}
+          zodiacMode={zodiacMode}
           nodeType={nodeType}
-          onClick={() => {
+          advancedMode={advancedWheel}
+          onOpen={(section) => {
             setShowSettings(true);
-            setSidebarSection('calc');
+            setSidebarSection(section);
           }}
         />
       )}
@@ -1979,6 +2321,8 @@ export default function App() {
           currentId={current?.id ?? null}
           overlayMeasure={overlayLayer?.measure ?? null}
           showTimeline={showTimeline}
+          onSnapReturn={snapToReturn}
+          progressionType={progressionType}
         />
       )}
       {overlayMode === 'synastry' && (
@@ -2027,13 +2371,17 @@ export default function App() {
           isNatalPin={isNatalPin}
           angles={wheelAngles}
           planets={wheelPlanets}
-          overlayPlanets={promoteOverlay ? null : overlayEcliptic}
-          overlayAngles={promoteOverlay ? null : overlayAngles}
+          overlayPlanets={promoteOverlay ? null : displayOverlayEcliptic}
+          overlayAngles={promoteOverlay ? null : displayOverlayAngles}
           overlayLabel={promoteOverlay ? null : (overlayLayer?.labelFull ?? null)}
           visiblePlanets={visiblePlanets}
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
           angleCoords={angleCoords}
+          aspectOrbs={aspectOrbs}
+          advanced={advancedWheel}
+          setAdvanced={setAdvancedWheel}
+          dualWheels={dualWheels}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
           onSelectChart={selectChart}

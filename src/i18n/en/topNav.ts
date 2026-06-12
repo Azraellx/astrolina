@@ -33,6 +33,10 @@ export const topNav = {
         label: 'Primary Directions',
         desc: 'An ancient timing method driven by the sky’s rotation.',
       },
+      cyclo: {
+        label: 'Cyclo·carto·graphy',
+        desc: 'Progressed personal planets and transiting outer planets, one map.',
+      },
       synastry: {
         label: 'Synastry',
         desc: 'Another person’s chart laid over yours, for relationships.',

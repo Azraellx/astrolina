@@ -44,7 +44,8 @@ geocoding.
   directions, and primary directions, with a date scrubber and play/pause
   animation that sweeps the lines across the map over time.
 - **Relationship mapping**: overlay a second chart (synastry), with a bi-wheel and
-  natal-to-overlay cross-aspects.
+  natal-to-overlay cross-aspects — and generate Davison or composite-midpoint
+  charts from the pair, mapped like any chart.
 - **Live relocation**: hover or pin anywhere on the map; the relocated angles and
   chart wheel update in real time. Pin your natal location, or recenter the map
   on the active pin.
@@ -53,8 +54,9 @@ geocoding.
   aspect grid). Eight house systems: Placidus (default), Koch, Regiomontanus,
   Campanus, Porphyry, Alcabitus, Whole Sign, Equal.
 - **Calculation conventions** as live toggles: Celestial vs geodetic (Mundane)
-  line placement, In Mundo vs In Zodiaco, house system, lunar-node type
-  (mean/true), and the progression/direction method.
+  line placement, In Mundo vs In Zodiaco, house system, tropical vs sidereal
+  zodiac (Lahiri / Fagan-Bradley), lunar-node type (mean/true), and the
+  progression/direction method.
 - **Chart library**: store multiple charts (localStorage), switch between them,
   edit, and delete.
 - **Birthplace geocoding + timezone resolution**: search any place, offline-first

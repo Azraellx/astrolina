@@ -1,6 +1,6 @@
 # Calculation Methods
 
-This note documents the calculation conventions AstroLina uses, in plain astrological terms: the ephemeris and the bodies it computes, how the map lines are placed, parans, house systems, the Geodetic ("Mundane") line mode, and the Progressions & Directions overlays. The underlying positions come from the Swiss Ephemeris, the same engine the professional desktop tools use, reading genuine JPL DE441 data, with agreement to those tools well under an arcsecond (see the companion [About](about.md) page). The planetary accuracy is therefore settled; what these notes lay out is which *conventions* were chosen, so it is always clear what the map is showing.
+This note documents the calculation conventions AstroLina uses, in plain astrological terms: the ephemeris and the bodies it computes, how the map lines are placed, parans, the relationship charts (Davison and composite), house systems, the Geodetic ("Mundane") line mode, and the Progressions & Directions overlays. The underlying positions come from the Swiss Ephemeris, the same engine the professional desktop tools use, reading genuine JPL DE441 data, with agreement to those tools well under an arcsecond (see the companion [About](about.md) page). The planetary accuracy is therefore settled; what these notes lay out is which *conventions* were chosen, so it is always clear what the map is showing.
 
 ## Ephemeris engine & data
 
@@ -27,11 +27,103 @@ The app computes all **planet-to-planet** parans:
 - **Meridian × horizon:** planet A on the **MC** or **IC** while planet B is on the horizon (rising or setting).
 - **Horizon × horizon:** both planets on the horizon together, in any rising/setting combination. This is solved in closed form rather than by iteration: the two-on-the-horizon condition reduces to a linear equation in the local sidereal time, `cos(θ − raA) = k · cos(θ − raB)` with `k = tan(decA) / tan(decB)`, giving two latitudes per pair.
 
-**Fixed-star parans** (planet-to-star and star-to-star) are not computed; they would need a star catalog (such as FK6 or Hipparcos) with proper motion, after which the same meridian/horizon machinery applies.
+**Fixed-star parans** (planet-to-star and star-to-star) are not computed yet. The prerequisite star catalog now exists — the bundled 40-star set (extracted from the Swiss Ephemeris star file, with proper motion) that drives the fixed-star angle lines — so the remaining work is applying the same meridian/horizon machinery to star positions.
+
+## Zodiac mode (Tropical vs Sidereal)
+
+*Under review: the sidereal conventions in this section are proposed defaults
+awaiting confirmation by a practicing astrologer.*
+
+The **Advanced ▸ Zodiac** setting reads the chart in the **tropical** zodiac
+(the default: 0° Aries pinned to the March equinox) or a **sidereal** one
+(signs pinned to the fixed stars), offset by the chosen **ayanamsa**:
+**Lahiri** (the Indian national standard) or **Fagan/Bradley** (the Western
+sidereal standard).
+
+Conventions:
+
+- **Display layer only — the map lines never move.** An astrocartography line
+  marks where a body is physically angular, a zodiac-independent event, so the
+  same lines serve both zodiacs. What shifts is every *reading*: the wheel's
+  sign ring, degree·sign·minute readouts, the coordinate readout, element and
+  modality tallies, essential dignities, and the eclipse-degree readout.
+- **Ayanamsa math.** The bundled Swiss wrapper exposes no sidereal API, so the
+  ayanamsa is computed in-app: each mode anchors the Swiss Ephemeris epoch
+  value (mean-equinox referred) and accumulates IAU-2006 general precession in
+  longitude. Agreement with the genuine Swiss values is sub-arcsecond for both
+  modes across 1800–2399 (≤ 0.1″ Lahiri, ≤ 0.4″ Fagan/Bradley) — far below the
+  arcminute readout grain (verified by `npm run verify:ayanamsa` against
+  `@swisseph/node`).
+- **Each ring uses its own epoch's ayanamsa.** The sidereal frame rides the
+  stars, so the natal ring shifts by the ayanamsa at birth and an overlay ring
+  (transits, progressions) by the ayanamsa at the overlay date — the standard
+  sidereal practice, and why sidereal transit contacts differ from tropical
+  ones by the natal point's precession since birth.
+- **Whole Sign houses are rebuilt, not offset**: in sidereal mode their cusps
+  are the sidereal sign boundaries starting at the sidereal Ascendant's sign.
+  Equal and the quadrant systems shift uniformly (their geometry is
+  zodiac-independent).
+- **Geodetic (Mundane) lines stay tropical** — that technique maps the
+  *tropical* zodiac onto Earth's longitudes by definition here (see the
+  Geodetic section's conventions); a sidereal-geodetic variant is a separate
+  convention question for the review.
+- The equatorial/horizontal tables (RA, declination, azimuth, altitude) read
+  identically either way, and WITHIN one chart aspect orbs are unchanged (a
+  uniform shift cancels in every separation). CROSS-chart separations — the
+  bi-wheel's overlay-to-natal aspects — differ from tropical by the precession
+  between the two epochs, which is precisely the per-epoch convention's point.
+- **The eclipse Contacts list stays tropical** (the 3°-orb eclipse-degree
+  doctrine is applied in the tropical frame), so in sidereal mode its orbs can
+  differ from the bi-wheel's cross-aspect orbs for the same pair by the
+  inter-epoch precession — flagged for the same review.
+
+## Relationship charts (Davison & Composite)
+
+*Under review: the Composite conventions in this section are proposed defaults
+awaiting confirmation by a practicing astrologer.*
+
+The Synastry overlay's **Generate** button turns the active chart + partner into
+a relationship chart by one of two methods, saved to the library with the
+"Space" place tag.
+
+**Davison** is a real chart: the arithmetic mean of the two births in Universal
+Time, cast at the geographic midpoint of the birthplaces (simple mean latitude;
+shorter-arc mean longitude). Everything about it — positions, angles, houses,
+overlays — is ordinary natal math.
+
+**Composite (midpoints)** has no real moment. Its conventions here:
+
+- **Planets** sit at the **shorter-arc midpoint** of the two charts' zodiacal
+  longitudes, **on the ecliptic** (latitude zero, so In Mundo and In Zodiaco
+  coincide). An exactly-opposed pair (no shorter arc) takes the side nearer the
+  composite Sun. Bodies resolve only when both parents can compute them, and
+  the lunar nodes follow the sidebar's mean/true setting; the South Node
+  midpoint stays exactly antipodal to the North Node midpoint by construction.
+- **The map frame** (which fixes every MC/IC/ASC/DSC line, the relocated
+  angles, all eight house systems, parans, and local space) is the
+  **shorter-arc midpoint of the two charts' Greenwich sidereal times**. It is
+  realized as a real stored moment: the UT minute nearest the Davison
+  time-midpoint whose sidereal time matches that midpoint frame (the
+  minute-rounding quantizes the frame by at most ±0.13°). Because the stored
+  moment IS the frame, the whole rendering pipeline — celestial and geodetic —
+  treats a composite like any chart; only the planet positions are overridden.
+- **The reference place** is the same geographic midpoint Davison uses,
+  labeled "Space".
+- **Time overlays** over a composite: transits (and the Returns snap) compare
+  the moving sky against the composite positions — a composite "solar return"
+  is the transiting Sun back on the composite Sun. The directed overlays
+  (solar arc, primary directions) direct the composite positions rigidly, with
+  the arc keyed to the stored anchor moment's real Sun (so the arc is zero at
+  the anchor and grows at the usual solar rate). Secondary/tertiary
+  progressions and cyclo*carto*graphy read the real progressed/transiting sky
+  over the composite frame — the "progressed composite" technique of
+  re-midpointing two progressed charts is **not** what they compute.
+- **No motion**: composite points have no speed, so retrograde/station badges
+  don't apply.
 
 ## House systems
 
-The expanded chart wheel draws all twelve house cusps in any of **eight** systems, switchable from the **Calculation** section of the sidebar: **Placidus** (the default), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Whole Sign**, and **Equal**. All are computed natively by the Swiss Ephemeris, including polar-circle behaviour for the quadrant systems.
+The expanded chart wheel draws all twelve house cusps in any of **eight** systems, switchable from the **Advanced** section of the sidebar (houses shape the wheel only — no map line moves with this setting): **Placidus** (the default), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Whole Sign**, and **Equal**. All are computed natively by the Swiss Ephemeris, including polar-circle behaviour for the quadrant systems.
 
 The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes, so a system like Equal (whose 4th and 10th float off the meridian) renders correctly. The mini wheel shows the angles only, to stay legible at small size.
 
@@ -127,7 +219,7 @@ The default is **Ptolemy (1°/yr)**. Choosing **User rate** reveals a number fie
 1. From the top bar, open **Overlay** and choose **Progressed**, **Solar Arc**, or **Primary Directions**.
 2. A **timeline bar** appears across the bottom; drag it to set the target date.
 3. In the sidebar **Calculation** tab, set **Chart angle progression** (for Progressed/Solar Arc) or **Primary directions rate** (for Primary Directions). Each shows a hint describing the selected method.
-4. The overlaid lines are tagged with a two-letter prefix: **Sp** secondary progressions, **Sa** solar arc, **Pd** primary directions (e.g. "Pd ♂ MC"), alongside **Tr** transits and **Sy** synastry.
+4. The overlaid lines are tagged with a two-letter prefix: **Sp** secondary progressions, **Sa** solar arc, **Pd** primary directions (e.g. "Pd ♂ MC"), alongside **Tr** transits and **Sy** synastry. Cyclo·carto·graphy tags each feature by its actual source — **Sp** on the progressed personal planets (Sun–Mars), **Tr** on the transiting outers — and reserves **Cy** for a paran that pairs one of each.
 5. The timeline's readout shows the directed amount: **Progressed** shows "Age N.N"; **Solar Arc** and **Primary Directions** show the arc in degrees (e.g. "30.2°").
 
 All three settings are remembered between sessions.
