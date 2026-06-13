@@ -1,11 +1,13 @@
 # Bundled font
 
-The astrological glyphs (planets, zodiac signs, Black Moon Lilith, lunar nodes)
-are drawn with a **subset of Noto Sans Symbols** — pinned to Regular (400) and
-reduced to only the codepoints the app renders (see `scripts/subset-font.sh`).
-One glyph, Pluto Form Two (U+2BD3), exists only in **Noto Sans Symbols 2**, so the
-subset script also pulls that single glyph from it and merges the two into one
-`.woff2` (both fonts are 1000 units-per-em, so they stay metrically consistent).
+The astrological glyphs (planets, zodiac signs, Black Moon Lilith, lunar nodes,
+the four element triangles, aspect shapes) are drawn with a **subset of Noto Sans
+Symbols** — pinned to Regular (400) and reduced to only the codepoints the app
+renders (see `scripts/subset-font.sh`). A handful of glyphs exist only in **Noto
+Sans Symbols 2** — Pluto Form Two (U+2BD3), the square/trine aspect shapes, and
+the modality-bar icons (heavy cross, diamond, medium square) — so the subset
+script also pulls those from it and merges the two into one `.woff2` (both fonts
+are 1000 units-per-em, so they stay metrically consistent).
 The subset `.woff2` lives in `src/fonts/` and is inlined into the built
 stylesheet, so there is no separate font file at runtime; this directory ships
 the font's license alongside the deployed site at `/fonts/OFL.txt`.

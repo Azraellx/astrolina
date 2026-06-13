@@ -10,8 +10,9 @@
    and mirrors the My Charts (.birth-form) card chrome so the two feel like one app. */
 .tdm-card {
   width: 100%;
-  /* Wide enough to keep Date + Time (with its zone label) on one row. */
-  max-width: 380px;
+  /* Wide enough to keep Date + Time (with its zone label) on one row — 380px was
+     borderline and wrapped Time below Date at some font sizes / zone-label widths. */
+  max-width: 420px;
   background: rgba(var(--bg-menu), 0.98);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 10px;

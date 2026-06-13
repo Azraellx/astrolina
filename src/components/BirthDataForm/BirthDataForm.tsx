@@ -27,7 +27,11 @@ import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { jdToCivil } from '../../lib/ephemeris';
 import { solveCompositeJd } from '../../lib/astro/composite';
-import { DateTimeFields } from '../DateTimeFields/DateTimeFields';
+import {
+  DateTimeFields,
+  BIRTH_YEAR_MIN,
+  BIRTH_YEAR_MAX,
+} from '../DateTimeFields/DateTimeFields';
 import { useT } from '../../i18n';
 import './BirthDataForm.css';
 
@@ -54,6 +58,14 @@ const ZONE_GROUPS: { region: string; zones: string[] }[] = (() => {
 const zoneInList = (iana: string) =>
   ZONE_GROUPS.some((g) => g.zones.includes(iana));
 
+// Whole-hour UTC offsets (−12 … +14) for the quick offset picker, each mapped to its
+// fixed-offset Etc/GMT zone. Note the IANA sign flip — Etc/GMT+4 is UTC−4 — so a user
+// who knows their offset can pick it without scrolling the full zone list; Luxon
+// resolves these to a constant, DST-free offset.
+const UTC_OFFSETS: number[] = Array.from({ length: 27 }, (_, i) => i - 12);
+const etcZoneForOffset = (o: number): string =>
+  o === 0 ? 'Etc/GMT' : `Etc/GMT${o > 0 ? '-' : '+'}${Math.abs(o)}`;
+
 interface BirthDataFieldsProps {
   /** Chart being edited, or null/undefined to create a new one. */
   initial?: StoredChart | null;
@@ -77,13 +89,15 @@ export function BirthDataFields({
   onImport,
 }: BirthDataFieldsProps) {
   const { t } = useT();
-  const now = new Date();
   const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
-  const [year, setYear] = useState(initial?.year ?? now.getFullYear());
-  const [month, setMonth] = useState(initial?.month ?? now.getMonth() + 1);
-  const [day, setDay] = useState(initial?.day ?? now.getDate());
-  const [hour, setHour] = useState(initial?.hour ?? 12);
-  const [minute, setMinute] = useState(initial?.minute ?? 0);
+  // A new chart starts with empty date/time fields (null) rather than "today" —
+  // pre-filling a real-looking date reads as a half-entered chart you're editing.
+  // Editing an existing chart loads its saved values.
+  const [year, setYear] = useState<number | null>(initial?.year ?? null);
+  const [month, setMonth] = useState<number | null>(initial?.month ?? null);
+  const [day, setDay] = useState<number | null>(initial?.day ?? null);
+  const [hour, setHour] = useState<number | null>(initial?.hour ?? null);
+  const [minute, setMinute] = useState<number | null>(initial?.minute ?? null);
   // Organizing tag. Only Star is user-assignable (a None ⇄ Star toggle); the system
   // 'space' tag is set by future in-app tools, never here.
   const [tag, setTag] = useState<ChartTag>(initial?.tag ?? 'none');
@@ -123,6 +137,31 @@ export function BirthDataFields({
   // manually" reveals the editable inputs (for raw-coordinate / rectified charts).
   const [showCoordInputs, setShowCoordInputs] = useState(false);
 
+  // If a birthplace is chosen while the date is still blank, fill it with "now" so the
+  // time zone (which needs a complete moment) is editable straight away — the user can
+  // then adjust the date. Guarded on every field being empty, so it never overwrites a
+  // date you've already started entering.
+  useEffect(() => {
+    if (
+      !selectedPlace ||
+      year != null ||
+      month != null ||
+      day != null ||
+      hour != null ||
+      minute != null
+    ) {
+      return;
+    }
+    const now = new Date();
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setYear(now.getFullYear());
+    setMonth(now.getMonth() + 1);
+    setDay(now.getDate());
+    setHour(now.getHours());
+    setMinute(now.getMinutes());
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [selectedPlace, year, month, day, hour, minute]);
+
   // Timezone: the user picks an IANA zone, which defaults to the one detected from
   // the birthplace. zoneOverride = null means "follow the detected zone"; a string is
   // a zone the user deliberately chose instead. Either way the offset we save is the
@@ -131,9 +170,17 @@ export function BirthDataFields({
   const [zoneOverride, setZoneOverride] = useState<string | null>(
     initial?.tzManual ? (initial.tzIana ?? null) : null,
   );
+  // A DST-aware offset needs the whole moment, so detection waits until every
+  // date/time field is filled (a new chart starts empty); the inline null checks
+  // also narrow the fields to numbers for the resolver.
   const detected = useMemo(
     () =>
-      selectedPlace
+      selectedPlace &&
+      year != null &&
+      month != null &&
+      day != null &&
+      hour != null &&
+      minute != null
         ? resolveBirthTimezone(
             selectedPlace.lat,
             selectedPlace.lng,
@@ -154,13 +201,30 @@ export function BirthDataFields({
   // birth from the birthplace's mean time to the zone reference city's.
   const effective = useMemo(
     () =>
-      zoneOverride && zoneOverride !== detected?.iana
+      zoneOverride &&
+      zoneOverride !== detected?.iana &&
+      year != null &&
+      month != null &&
+      day != null &&
+      hour != null &&
+      minute != null
         ? resolveZoneInfo(zoneOverride, year, month, day, hour, minute)
         : detected,
     [zoneOverride, detected, year, month, day, hour, minute],
   );
   const effectiveZone = effective?.iana ?? null;
   const effectiveOffset = effective?.offsetHours ?? 0;
+  // The tz controls are usable once a place is set AND the moment is complete (the
+  // offset is DST-aware, so it needs the full date); until then they prompt for
+  // what's missing rather than show a misleading UTC+00:00.
+  const tzReady = !!selectedPlace && effective != null;
+  // The quick UTC-offset picker mirrors the IANA dropdown's effective offset (both
+  // write zoneOverride). A whole-hour offset maps to its standard Etc/GMT option; a
+  // half-hour zone (e.g. +05:30) keeps an exact leading option.
+  const offsetIsWholeHour = Number.isInteger(effectiveOffset);
+  const utcSelectValue = offsetIsWholeHour
+    ? etcZoneForOffset(effectiveOffset)
+    : (effectiveZone ?? '');
 
   // Latest selected place, read by the reverse-geocode effect below WITHOUT being
   // one of its triggers (declared first so it syncs before that effect runs).
@@ -257,6 +321,27 @@ export function BirthDataFields({
       setError(t('chartForm.errorNoName'));
       return;
     }
+    if (
+      year == null ||
+      month == null ||
+      day == null ||
+      hour == null ||
+      minute == null
+    ) {
+      setError(t('chartForm.errorNoDate'));
+      return;
+    }
+    // The year box doesn't auto-clamp to the data range (so a typo isn't silently
+    // "corrected"); block submission instead, with the same range explanation.
+    if (year < BIRTH_YEAR_MIN || year > BIRTH_YEAR_MAX) {
+      setError(
+        t('chartForm.errorYearRange', {
+          min: BIRTH_YEAR_MIN,
+          max: BIRTH_YEAR_MAX,
+        }),
+      );
+      return;
+    }
     // tzOffset is the single value the chart math uses: the DST-aware offset of the
     // effective zone (detected, or the user's pick) at the birth moment. tzManual just
     // records whether that zone was a deliberate override, so the editor reopens on it.
@@ -337,6 +422,10 @@ export function BirthDataFields({
         >
         <DateTimeFields
           value={{ year, month, day, hour, minute }}
+          yearHint={t('chartForm.yearRangeTip', {
+            min: BIRTH_YEAR_MIN,
+            max: BIRTH_YEAR_MAX,
+          })}
           onChange={(v) => {
             setYear(v.year);
             setMonth(v.month);
@@ -416,17 +505,21 @@ export function BirthDataFields({
               aria-label={t('chartForm.tz.selectLabel')}
               // A composite's anchor moment is UT by construction (and
               // re-solved on save), so its zone isn't editable either.
-              disabled={!selectedPlace || !!initial?.composite}
-              value={selectedPlace ? (effectiveZone ?? '') : ''}
+              disabled={!tzReady || !!initial?.composite}
+              value={tzReady ? (effectiveZone ?? '') : ''}
               onChange={(e) => setZoneOverride(e.target.value || null)}
             >
-              {!selectedPlace && (
-                <option value="">{t('chartForm.tz.setPlace')}</option>
+              {!tzReady && (
+                <option value="">
+                  {selectedPlace
+                    ? t('chartForm.tz.setDate')
+                    : t('chartForm.tz.setPlace')}
+                </option>
               )}
-              {selectedPlace && effectiveZone && !zoneInList(effectiveZone) && (
+              {tzReady && effectiveZone && !zoneInList(effectiveZone) && (
                 <option value={effectiveZone}>{effectiveZone}</option>
               )}
-              {selectedPlace &&
+              {tzReady &&
                 ZONE_GROUPS.map((g) => (
                   <optgroup key={g.region} label={g.region}>
                     {g.zones.map((z) => (
@@ -435,6 +528,32 @@ export function BirthDataFields({
                       </option>
                     ))}
                   </optgroup>
+                ))}
+            </select>
+            {/* Quick UTC-offset picker, synced with the IANA dropdown through the
+                shared effective zone (both write zoneOverride): for users who know
+                their offset and don't want to scroll the full list. Choosing one
+                sets the matching fixed Etc/GMT zone. */}
+            <select
+              className="tz-select tz-utc-select"
+              aria-label={t('chartForm.tz.utcLabel')}
+              disabled={!tzReady || !!initial?.composite}
+              value={tzReady ? utcSelectValue : ''}
+              onChange={(e) => setZoneOverride(e.target.value || null)}
+            >
+              {!tzReady && <option value="">—</option>}
+              {/* Labels drop the "UTC" prefix (e.g. "+05:30") so they fit the narrow
+                  box; the field's aria-label still says it's the UTC offset. */}
+              {tzReady && !offsetIsWholeHour && (
+                <option value={effectiveZone ?? ''}>
+                  {formatUtcOffset(effectiveOffset).replace('UTC', '')}
+                </option>
+              )}
+              {tzReady &&
+                UTC_OFFSETS.map((o) => (
+                  <option key={o} value={etcZoneForOffset(o)}>
+                    {formatUtcOffset(o).replace('UTC', '')}
+                  </option>
                 ))}
             </select>
             <TipButton
@@ -452,21 +571,20 @@ export function BirthDataFields({
               {t('chartForm.tz.auto')}
             </TipButton>
           </div>
-          <p className="tz-note">
-            {selectedPlace ? (
-              <>
-                {formatUtcOffset(effectiveOffset)}
+          {tzReady &&
+            ((effective?.lmt && !zoneOverride) || effective?.uncertain) && (
+              <p className="tz-note">
                 {effective?.lmt && !zoneOverride && (
-                  <span> · {t('chartForm.tz.lmt')}</span>
+                  <span>{t('chartForm.tz.lmt')}</span>
+                )}
+                {effective?.lmt && !zoneOverride && effective?.uncertain && (
+                  <span> · </span>
                 )}
                 {effective?.uncertain && (
-                  <span className="tz-warn"> · ⚠ {t('chartForm.tz.verifyDst')}</span>
+                  <span className="tz-warn">⚠ {t('chartForm.tz.verifyDst')}</span>
                 )}
-              </>
-            ) : (
-              t('chartForm.tz.setPlace')
+              </p>
             )}
-          </p>
         </label>
 
         {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default;

@@ -93,10 +93,17 @@
   cursor: default;
 }
 
-/* ⌖ fly-to button: same chrome as the steppers, sized for the wider glyph. */
+/* Fly-to "locate" button: same chrome as the steppers, but its crosshair is an
+   inline SVG (see EclipseHud.tsx) rather than the thin, font-dependent ⌖ text
+   glyph. Drop the steppers' optical 2px bottom padding so the square icon sits
+   dead-centre. */
 .eclipse-hud-locate {
-  font-size: 15px;
   padding-bottom: 0;
+}
+/* block removes the inline-SVG baseline gap so it centres within the button;
+   stroke/fill inherit the stepper's muted→strong colour via currentColor. */
+.eclipse-hud-locate-icon {
+  display: block;
 }
 
 .eclipse-hud-picker {

@@ -14,6 +14,7 @@ import {
 import type { MeasureInfo } from '../Map/Map';
 import type { MapState } from '../TimelineHud/TimelineHud';
 import type { OverlayMode } from '../../lib/astro/timeline';
+import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
@@ -78,6 +79,9 @@ interface TopNavProps {
    *  No hotkey: it's an occasional reference, not a frequently toggled HUD. */
   showGuides: boolean;
   setShowGuides: (v: boolean) => void;
+  /** Open ids + toggle for registry-driven HUD extensions (registerMapExtension). */
+  openExtensions: ReadonlySet<string>;
+  onToggleExtension: (id: string) => void;
 }
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
@@ -308,6 +312,8 @@ export function TopNav({
   setShowTeleport,
   showGuides,
   setShowGuides,
+  openExtensions,
+  onToggleExtension,
 }: TopNavProps) {
   const { t } = useT();
   const overlayActive = overlayMode !== 'off';
@@ -555,6 +561,17 @@ export function TopNav({
                 checked={showGuides}
                 onToggle={() => setShowGuides(!showGuides)}
               />
+              {/* Registry-driven HUD extensions — appended after the built-in
+                  View items, with no edits needed here. */}
+              {getMapExtensions().map((ext) => (
+                <CheckItem
+                  key={ext.id}
+                  label={ext.label}
+                  hotkey={ext.hotkey}
+                  checked={openExtensions.has(ext.id)}
+                  onToggle={() => onToggleExtension(ext.id)}
+                />
+              ))}
             </NavMenu>
           </div>
         </div>

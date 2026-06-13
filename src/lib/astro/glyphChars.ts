@@ -57,3 +57,26 @@ export const ASPECT_GLYPHS: Record<
   square: '□' + VS_TEXT,
   trine: '△' + VS_TEXT,
 };
+
+// The four classical elements → their alchemical triangle symbols (the
+// traditional element glyphs): fire △, water ▽, air △-with-bar, earth ▽-with-bar.
+// These live in Noto Sans Symbols (Alchemical Symbols block); written via
+// fromCodePoint so the source stays free of astral-plane literals. Drives the
+// chart sidebar's element-balance bar.
+export const ELEMENT_GLYPHS: Record<'fire' | 'earth' | 'air' | 'water', string> = {
+  fire: String.fromCodePoint(0x1f702) + VS_TEXT, // ALCHEMICAL SYMBOL FOR FIRE
+  earth: String.fromCodePoint(0x1f703) + VS_TEXT, // ALCHEMICAL SYMBOL FOR EARTH
+  air: String.fromCodePoint(0x1f701) + VS_TEXT, // ALCHEMICAL SYMBOL FOR AIR
+  water: String.fromCodePoint(0x1f704) + VS_TEXT, // ALCHEMICAL SYMBOL FOR WATER
+};
+
+// The three modalities → icons for the modality-balance bar. There is no
+// standard astrological glyph for the qualities, so these are chosen for
+// legibility as bold filled shapes (from Noto Sans Symbols 2): a heavy cross for
+// cardinal (initiating), a filled square for fixed (stable), a filled diamond for
+// mutable (shifting).
+export const MODALITY_GLYPHS: Record<'cardinal' | 'fixed' | 'mutable', string> = {
+  cardinal: '✚' + VS_TEXT, // U+271A HEAVY GREEK CROSS
+  fixed: '◼' + VS_TEXT, // U+25FC BLACK MEDIUM SQUARE
+  mutable: '◆' + VS_TEXT, // U+25C6 BLACK DIAMOND
+};

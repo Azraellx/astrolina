@@ -81,3 +81,12 @@
   outline: 1px solid rgba(var(--accent-rgb), 0.6);
   border-color: rgba(var(--accent-rgb), 0.6);
 }
+
+/* An out-of-range entry that we deliberately don't clamp (e.g. a year before the
+   ephemeris data starts): flagged, not silently corrected. Hover shows why (title). */
+.spin-input.invalid,
+.spin-input.invalid:focus {
+  color: var(--danger);
+  border-color: var(--danger);
+  outline-color: var(--danger);
+}

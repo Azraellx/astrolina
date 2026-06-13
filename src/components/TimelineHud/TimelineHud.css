@@ -46,6 +46,18 @@
   border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
+/* …but the play/pause button, the scale picker, and the Returns group stay the
+   STEADY brand accent rather than tracking the map pin state — they read as fixed
+   transport controls. (The Returns buttons then use that accent only as an
+   "active return" cue; see .thud-return-btn.active below.) */
+.thud-play,
+.thud-select,
+.thud-returns {
+  --accent: var(--accent-brand);
+  --accent-rgb: var(--accent-brand-rgb);
+  --accent-hover: var(--accent-brand);
+}
+
 /* The overlay label (Transits / Progressed Age / Sun Angle) drawn as a NUB that
    protrudes from the top of the bar and flares into it with a concave fillet on
    each side, so it reads as part of the bar. Bar-colored fill + accent text; the
@@ -200,11 +212,6 @@
   border-color: rgba(var(--accent-rgb), 0.6);
 }
 
-.timeline-hud:not([data-mode='off']) .thud-select {
-  border-color: rgba(var(--accent-rgb), 0.4);
-  background: rgba(var(--accent-rgb), 0.08);
-}
-
 /* The native popup list draws options on the OS default (white). Give them an
    opaque themed background + readable text so they aren't white-on-light in the
    dark/vintage themes. */
@@ -265,7 +272,8 @@
   width: 34px;
   height: 28px;
   font-size: 12px;
-  color: var(--accent);
+  /* Neutral like the step buttons — no always-on accent; a subtle accent fill only
+     appears while actually playing (.thud-play.on below). */
 }
 
 .thud-step-btn:hover,
@@ -289,9 +297,11 @@
 }
 
 /* The returns live on their OWN row under the transport, so the main row stays
-   the same width as the other overlay bars. Tucked up against it. */
+   the same width as the other overlay bars. Tucked up against it, and centred so the
+   "Returns" label sits in the middle with Solar to its left and Lunar to its right. */
 .thud-returns-row {
   padding-top: 0;
+  justify-content: center;
 }
 
 .thud-return-group {
@@ -300,18 +310,21 @@
   gap: 2px;
 }
 
+/* Sized to the spelled-out luminary ("Solar" / "Lunar") rather than a square icon. */
 .thud-return-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  gap: 4px;
   height: 28px;
+  padding: 0 10px;
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
   background: rgba(var(--tint), 0.04);
-  color: var(--accent);
+  color: var(--text-strong);
   font: inherit;
-  font-size: 15px;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
@@ -319,6 +332,27 @@
 .thud-return-btn:hover {
   background: rgba(var(--accent-rgb), 0.12);
   border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+
+/* Highlighted (steady brand accent) when the selected date IS this luminary's
+   return — the visual cue that you're on a solar / lunar return chart. */
+.thud-return-btn.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.16);
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+/* The luminary glyph preceding the spelled-out name ("☉ Solar"); a touch larger
+   than the 11px label so it reads. */
+.thud-return-btn .astro-glyph {
+  font-size: 13px;
+}
+
+/* Extra breathing room around the centred "Returns" label, between it and the
+   Solar / Lunar groups flanking it. */
+.thud-returns .thud-mode-label {
+  margin: 0 8px;
 }
 
 /* Adjustable step-amount box, sitting just right of the forward step button.

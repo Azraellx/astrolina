@@ -84,12 +84,15 @@
 
 /* Keyboard-shortcut key (or short action tag), inline on the title row: a small
    yellow (accent) badge. nowrap so a longer tag like "⇧+click: hide all" stays on
-   one line rather than breaking inside the pill. */
+   one line rather than breaking inside the pill. Uses the STEADY brand accent
+   (--accent-brand, captured at :root) — not --accent, which the movable HUD bars
+   alias to --map-accent, which would otherwise recolour the pill per pin state when
+   the tip renders inline inside a bar (e.g. the timeline move hint). */
 .ui-tip-hotkey {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(var(--accent-rgb), 0.18);
-  color: var(--accent);
+  background: rgba(var(--accent-brand-rgb), 0.18);
+  color: var(--accent-brand);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;

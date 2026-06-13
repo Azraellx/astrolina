@@ -354,7 +354,30 @@ export function EclipseHud({ catalog, selected, onSelect, onLocate }: EclipseHud
         tip={t('eclipseHud.locate')}
         aria-label={t('eclipseHud.locate')}
       >
-        ⌖
+        {/* Crosshair "locate" target. An inline SVG, not the ⌖ text glyph
+            (U+2316): the glyph renders thin and font-dependent — hard to read
+            at this size — whereas the SVG stays crisp, auto-centers in the
+            flex button, and inherits color via currentColor like the
+            eclipse-disc icon above. */}
+        <svg
+          className="eclipse-hud-locate-icon"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 1v3" />
+          <path d="M12 20v3" />
+          <path d="M1 12h3" />
+          <path d="M20 12h3" />
+          <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+        </svg>
       </TipButton>
     </div>
   );

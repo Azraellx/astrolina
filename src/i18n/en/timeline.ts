@@ -81,6 +81,7 @@ export const timeline = {
     label: 'Returns',
     // "Absolute" names the Positioning option as the Calculation tab labels it.
     solar: {
+      name: 'Solar',
       snap: 'Nearest solar return. Positioning switches to Absolute.',
       snapAria: 'Snap to the nearest solar return',
       prev: 'Previous solar return',
@@ -89,6 +90,7 @@ export const timeline = {
       nextAria: 'Next solar return',
     },
     lunar: {
+      name: 'Lunar',
       snap: 'Nearest lunar return. Positioning switches to Absolute.',
       snapAria: 'Snap to the nearest lunar return',
       prev: 'Previous lunar return',

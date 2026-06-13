@@ -206,6 +206,41 @@ const CLOSE_ZOOM = 8.5;
 // Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
 // escape button appears; clicking it eases back to this wide overview in one step.
 const ZOOM_OUT_TARGET = 3;
+// First-load framing. Opening on the whole globe drops every line on screen at
+// once, which is a lot to take in before you've found your footing. Instead we
+// open on a continental box CENTRED on the active chart's birthplace (see
+// firstLoadBounds) so you start looking at the chart's own part of the world.
+// Expressed as a bounding box (not a fixed zoom) so MapLibre fits it to the
+// viewport: wide on a desktop, comfortably pulled-in on a phone, with the
+// surrounding continent staying in frame either way.
+//
+// This North-America box is the fallback used only when no birthplace is known.
+// [SW corner, NE corner] as [lng, lat].
+const DEFAULT_BOUNDS: maplibregl.LngLatBoundsLike = [
+  [-128, 22], // Pacific coast / southern US
+  [-64, 52], // Atlantic coast / southern Canada
+];
+// Half-spans of the first-load box around the birthplace, in degrees. Sized for a
+// continental overview — wide enough that a US chart opens seeing all of North
+// America, a European one all of Europe, etc. — and a touch wider than the old
+// fixed North-America frame so a little more of the continent shows.
+const FIRST_LOAD_HALF_LNG = 46;
+const FIRST_LOAD_HALF_LAT = 24;
+// A continental box centred on `center`. Latitude is clamped so a high-latitude
+// birthplace can't push an edge past the Mercator limit (longitude is left to
+// wrap naturally across the antimeridian). Falls back to DEFAULT_BOUNDS when no
+// birthplace is supplied.
+function firstLoadBounds(
+  center?: { lat: number; lng: number } | null,
+): maplibregl.LngLatBoundsLike {
+  if (!center) return DEFAULT_BOUNDS;
+  const south = Math.max(center.lat - FIRST_LOAD_HALF_LAT, -82);
+  const north = Math.min(center.lat + FIRST_LOAD_HALF_LAT, 82);
+  return [
+    [center.lng - FIRST_LOAD_HALF_LNG, south],
+    [center.lng + FIRST_LOAD_HALF_LNG, north],
+  ];
+}
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
 const COMPASS_ZOOM = 4;
@@ -856,6 +891,10 @@ interface MapProps {
   lineCard?: ((layerId: string, props: Record<string, unknown>) => string | null) | null;
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
+  /** The active chart's birthplace at mount — the first-load view is framed on a
+   *  continental box centred here (read once; later chart switches recenter via
+   *  their own flyTo). Absent → the North-America fallback frame. */
+  initialCenter?: { lat: number; lng: number } | null;
   theme: Theme;
   /** Flat Mercator ('2d') or 3D globe ('3d'). */
   projection: MapProjectionMode;
@@ -1581,16 +1620,18 @@ function setupCustomLayers(
     source: 'acg-ls-cross',
     type: 'circle',
     paint: {
+      // ~30% smaller than the original 4/6 dot, stroke scaled to match so it
+      // shrinks evenly rather than reading as a heavy ring.
       'circle-radius': [
         'case',
         ['boolean', ['feature-state', 'hover'], false],
-        6,
-        4,
+        4.2,
+        2.8,
       ],
       'circle-radius-transition': { duration: 150, delay: 0 },
       'circle-color': ['get', 'color'],
       'circle-stroke-color': haloColor || 'rgba(0,0,0,0.4)',
-      'circle-stroke-width': 1.25,
+      'circle-stroke-width': 0.875,
     },
   });
 
@@ -1833,6 +1874,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lineCard,
   pin,
   pinType,
+  initialCenter,
   theme,
   projection,
   showRoads = true,
@@ -2234,8 +2276,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: BASEMAP_STYLE_URLS[themeRef.current],
-      center: [0, 20],
-      zoom: 1.5,
+      // Open framed on a continental box centred on the active chart's birthplace
+      // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
+      // once at mount; fitBoundsOptions keeps the continent off the very edges and
+      // clear of the +/− controls in the top-right corner.
+      bounds: firstLoadBounds(initialCenter),
+      fitBoundsOptions: { padding: 24 },
       // MapLibre's hard ceiling. OpenFreeMap vector tiles only carry data to
       // z14, so past that the map overzooms (scales z14 tiles — blurrier) but
       // still lets you zoom right in for fine placement.
@@ -2782,41 +2828,68 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // The endpoint auto-snaps to the nearest rendered chart line when the cursor is
     // close to one (snapToNearestLine returns null when nothing is within range);
     // otherwise it tracks the raw cursor.
-    const pointFor = (e: maplibregl.MapMouseEvent): { lng: number; lat: number } =>
-      snapToNearestLine(map, e.point) ?? { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    const pointFor = (
+      point: ScreenPt,
+      lngLat: { lng: number; lat: number },
+    ): { lng: number; lat: number } => snapToNearestLine(map, point) ?? lngLat;
 
     let origin: { lng: number; lat: number } | null = null;
+    // Last cursor position during a drag, kept so a Shift press/release can re-run the
+    // snap at the current spot WITHOUT a mouse move — otherwise the snap only updates
+    // on the next mousemove, so Shift seems to do nothing until you wiggle the cursor.
+    let lastPoint: ScreenPt | null = null;
+    let lastLngLat: { lng: number; lat: number } | null = null;
+
+    // Recompute the moving endpoint for a cursor position + Shift state. With Shift,
+    // lock onto the hovered line (the point on it nearest the origin — the shortest hop
+    // from the first point, the distance-to-this-line you usually want in ACG);
+    // otherwise track the cursor, auto-snapping to a line it's right over.
+    const update = (
+      point: ScreenPt,
+      lngLat: { lng: number; lat: number },
+      shiftKey: boolean,
+    ) => {
+      if (!origin) return;
+      let cur: { lng: number; lat: number };
+      if (shiftKey) {
+        const snapped = constrainToHoveredLine(map, point, origin);
+        if (snapped) {
+          cur = snapped;
+          onMissionEvent?.('measure-snap'); // Shift actually locked onto a line
+        } else {
+          cur = pointFor(point, lngLat);
+        }
+      } else {
+        cur = pointFor(point, lngLat);
+      }
+      setSegment(origin, cur);
+      onMeasure?.(measureBetween(origin, cur));
+    };
+
     const onDown = (e: maplibregl.MapMouseEvent) => {
       // Left button only — right-click is reserved for cancelling the tool.
       if (e.originalEvent.button !== 0) return;
       // Leave Shift+drag to MapLibre's box-zoom rather than starting a measurement.
       if (e.originalEvent.shiftKey) return;
-      origin = pointFor(e);
+      lastPoint = e.point;
+      lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      origin = pointFor(e.point, lastLngLat);
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
       onMissionEvent?.('measure-point');
     };
     const onMove = (e: maplibregl.MapMouseEvent) => {
-      if (!origin) return;
-      // Hold Shift while dragging over a line to lock the moving endpoint to the
-      // point on that hovered line CLOSEST to the first point — i.e. the shortest
-      // hop from your origin to the line (the distance-to-this-line you usually
-      // want in ACG). Falls back to the normal cursor / snap when no line is under
-      // the cursor.
-      let cur: { lng: number; lat: number };
-      if (e.originalEvent.shiftKey) {
-        const snapped = constrainToHoveredLine(map, e.point, origin);
-        if (snapped) {
-          cur = snapped;
-          onMissionEvent?.('measure-snap'); // Shift actually locked onto a line
-        } else {
-          cur = pointFor(e);
-        }
-      } else {
-        cur = pointFor(e);
+      lastPoint = e.point;
+      lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      update(e.point, lastLngLat, e.originalEvent.shiftKey);
+    };
+    // Pressing/releasing Shift mid-drag re-runs the snap at the last cursor spot, so it
+    // engages (or releases) instantly without a mouse move. Skips keydown auto-repeat.
+    const onShiftKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Shift' || e.repeat || !origin || !lastPoint || !lastLngLat) {
+        return;
       }
-      setSegment(origin, cur);
-      onMeasure?.(measureBetween(origin, cur));
+      update(lastPoint, lastLngLat, e.type === 'keydown');
     };
     const onUp = () => {
       origin = null;
@@ -2834,12 +2907,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('mousemove', onMove);
     map.on('mouseup', onUp);
     map.on('contextmenu', onContextMenu);
+    // Shift is a keyboard event (not a map mouse event), so listen on the window to
+    // catch it even when the cursor is idle over the map.
+    window.addEventListener('keydown', onShiftKey);
+    window.addEventListener('keyup', onShiftKey);
 
     return () => {
       map.off('mousedown', onDown);
       map.off('mousemove', onMove);
       map.off('mouseup', onUp);
       map.off('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onShiftKey);
+      window.removeEventListener('keyup', onShiftKey);
       map.dragPan.enable();
       map.getCanvas().style.cursor = '';
       const src = map.getSource('measure') as
@@ -2904,15 +2983,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!markerRef.current) {
       const el = document.createElement('div');
       el.className = 'map-pin';
-      // Frosted-glass teardrop pin (drawn in CSS, .map-pin-body) so it matches the
-      // app's glass panels and tints with the location-state color instead of the
-      // old fixed gold/grey artwork. The aura is that color glowing out from the
-      // pin's centre (the inverted edge-glow); the ring pulses from the tip; only the
-      // glass head is clickable (transparent gaps stay click-through).
+      // The app's standard teardrop pin icon — the same SVG as the guide window and
+      // the sidebar's relocated-chart readout — filled with the location-state colour
+      // and rimmed in --tint so it stands out on the basemap (styled by .map-pin-body
+      // in Map.css). The state colour stays at the SCREEN EDGES (the .map-edge-glow
+      // vignette, recoloured per state) rather than glowing around the pin; a ring
+      // still pings from the tip on placement; only the icon is clickable (transparent
+      // gaps stay click-through).
       el.innerHTML =
-        '<span class="map-pin-aura"></span>' +
         '<span class="map-pin-glow"></span>' +
-        '<span class="map-pin-body"></span>';
+        '<svg class="map-pin-body" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path class="map-pin-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
+        '<circle class="map-pin-dot" cx="12" cy="10" r="3"/>' +
+        '</svg>';
       // Right-click the pin to remove it (matches the map's right-click-to-remove).
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -2939,7 +3022,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (moved) {
         for (const span of markerRef.current
           .getElement()
-          .querySelectorAll('.map-pin-aura, .map-pin-glow')) {
+          .querySelectorAll('.map-pin-glow')) {
           span.replaceWith(span.cloneNode(false));
         }
       }

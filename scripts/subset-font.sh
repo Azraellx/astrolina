@@ -29,15 +29,18 @@ curl -fsSL "$GF/notosanssymbols2/NotoSansSymbols2-Regular.ttf" -o "$SYM2"
 OUT="src/fonts/subset-NotoSansSymbols-Regular.woff2"
 
 # Codepoints drawn from Noto Sans Symbols: PLANET_GLYPHS (minus Pluto) + the 12
-# SIGN_GLYPHS (U+2648–U+2653). U+2609 (Sun ☉) and U+FE0E (text variation selector)
-# are NOT in this font — the Sun falls back to the OS symbol font — so the
-# subsetter silently ignores them; they're listed here for documentation.
-# U+260C/260D are the conjunction/opposition aspects and U+26B9 the sextile
-# (ASPECT_GLYPHS).
-SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,FE0E"
-# From Noto Sans Symbols 2: Pluto Form Two, plus the square (U+25A1) and trine
-# (U+25B3) aspect shapes (ASPECT_GLYPHS) — Geometric Shapes live only here.
-SYM2_UNICODES="25A1,25B3,2BD3"
+# SIGN_GLYPHS (U+2648–U+2653) + the four ELEMENT_GLYPHS (Alchemical Symbols
+# U+1F701–U+1F704: air/fire/earth/water triangles). U+2609 (Sun ☉) and U+FE0E
+# (text variation selector) are NOT in this font — the Sun falls back to the OS
+# symbol font — so the subsetter silently ignores them; they're listed here for
+# documentation. U+260C/260D are the conjunction/opposition aspects and U+26B9 the
+# sextile (ASPECT_GLYPHS).
+SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,1F701-1F704,FE0E"
+# From Noto Sans Symbols 2: Pluto Form Two (U+2BD3), the square (U+25A1) and trine
+# (U+25B3) aspect shapes (ASPECT_GLYPHS), and the three MODALITY_GLYPHS — heavy
+# cross (U+271A), black diamond (U+25C6), black medium square (U+25FC) — Geometric
+# Shapes and Dingbats live only here.
+SYM2_UNICODES="25A1,25B3,25C6,25FC,271A,2BD3"
 
 # Pin the Symbols weight axis to Regular (400) → a small static font, then subset.
 python -m fontTools.varLib.instancer "$SYM" wght=400 -o "$TMP/sym-reg.ttf" >/dev/null

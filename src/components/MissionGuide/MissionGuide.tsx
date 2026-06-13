@@ -97,11 +97,23 @@ const GESTURES: Record<
   MissionGesture,
   { beforeKey?: MsgKey; icon?: boolean; afterKey?: MsgKey }
 > = {
-  double: { beforeKey: 'missions.gesture.double', icon: true },
-  right: { beforeKey: 'missions.gesture.right', icon: true },
-  hold: { beforeKey: 'missions.gesture.hold', icon: true },
-  shift: { beforeKey: 'missions.gesture.shift' },
-  click: { beforeKey: 'missions.gesture.click', icon: true },
+  double: {
+    beforeKey: 'missions.gesture.double',
+    icon: true,
+    afterKey: 'missions.gesture.click',
+  },
+  right: {
+    beforeKey: 'missions.gesture.right',
+    icon: true,
+    afterKey: 'missions.gesture.click',
+  },
+  hold: {
+    beforeKey: 'missions.gesture.hold',
+    icon: true,
+    afterKey: 'missions.gesture.drag',
+  },
+  shift: { beforeKey: 'missions.gesture.hold', afterKey: 'missions.gesture.shift' },
+  click: { icon: true, afterKey: 'missions.gesture.click' },
   'shift-drag': {
     beforeKey: 'missions.gesture.shift',
     icon: true,
@@ -227,9 +239,11 @@ export function MissionGuide({
               </span>
               <span className="mg-label">
                 <span className="ui-tip-hotkey mg-gesture">
-                  {g.beforeKey && t(g.beforeKey)}
+                  {/* Each word is its own span so the flex gap spaces them even when
+                      there's no icon between (e.g. "Hold Shift"). */}
+                  {g.beforeKey && <span>{t(g.beforeKey)}</span>}
                   {g.icon && <ClickIcon className="mg-click-icon" />}
-                  {g.afterKey && t(g.afterKey)}
+                  {g.afterKey && <span>{t(g.afterKey)}</span>}
                 </span>{' '}
                 {t(m.labelKey)}
               </span>

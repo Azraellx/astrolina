@@ -327,11 +327,11 @@ body,
   overflow: hidden;
 }
 
-/* Map edge-glow: a faint pulsing vignette echoing the active-location color while
-   HOVERING (blue) and no pin is placed. Once a pin exists the glow inverts — it
-   leaves the screen edges and concentrates on the pin itself (see .map-pin-aura);
-   so the pinned / natal-pinned states no longer light this. Its left edge insets to
-   the visible map area when the expanded chart panel is open (--es-width, else 0). */
+/* Map edge-glow: a faint pulsing vignette echoing the active-location colour around
+   the screen edges — blue while hovering, orange for a placed pin, green for the
+   natal pin (the colour follows --map-accent per the map state). Only the empty
+   "natal" state (nothing placed or hovered) stays dark. Its left edge insets to the
+   visible map area when the expanded chart panel is open (--es-width, else 0). */
 .map-edge-glow {
   position: fixed;
   top: 0;
@@ -346,13 +346,14 @@ body,
   transition: opacity 0.5s ease, left 0.2s ease;
 }
 
-/* Color comes from the single --map-accent source (root data-mapstate). Only the
-   pin-less hover state lights the edges now; natal (nothing placed) stays dark, and
-   the pinned states hand off to the pin-centered .map-pin-aura.
-   The pulse is finite (same idle-power reasoning as .map-pin-aura — a cursor parked
-   over the map shouldn't keep the compositor busy forever): a few breaths around the
-   steady opacity it then rests at, restarting whenever the hover state re-applies. */
-.map-edge-glow[data-state='hover'] {
+/* Colour comes from the single --map-accent source (root data-mapstate), so each
+   state lights the edges in its own hue: hover blue, placed pin orange, natal pin
+   green. Only the empty "natal" state stays dark. The pulse is finite (idle-power:
+   a cursor parked over the map shouldn't keep the compositor busy forever) — a few
+   breaths around the steady opacity it then rests at. */
+.map-edge-glow[data-state='hover'],
+.map-edge-glow[data-state='pinned'],
+.map-edge-glow[data-state='natal-pinned'] {
   --glow-color: rgba(var(--map-accent-rgb), 0.85);
   opacity: 0.38;
   animation: edge-pulse 5.2s ease-in-out 4;
@@ -369,7 +370,9 @@ body,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-edge-glow[data-state='hover'] {
+  .map-edge-glow[data-state='hover'],
+  .map-edge-glow[data-state='pinned'],
+  .map-edge-glow[data-state='natal-pinned'] {
     animation: none;
   }
 }

@@ -115,18 +115,38 @@ export const expandedSidebar = {
     },
   },
 
-  // Balance section (Advanced): element/modality tallies + essential dignities
-  // over the bodies the map filter shows.
+  // Balance section: element/modality glyph constellations (always shown) +
+  // essential dignities (Advanced) over the bodies the map filter shows.
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
   balanceHint: 'How the shown bodies spread across the four elements and three modalities, plus any in essential dignity (rulership, exaltation) or debility (detriment, fall).',
   element: { fire: 'Fire', earth: 'Earth', air: 'Air', water: 'Water' },
   modality: { cardinal: 'Cardinal', fixed: 'Fixed', mutable: 'Mutable' },
+  // Blurbs shown beneath the name in each balance category's hover tip: the
+  // constituent signs plus what the element/modality colours in a chart.
+  elementDesc: {
+    fire: 'The fire signs — Aries, Leo, Sagittarius. Drive, warmth, and spontaneity; spirit and the urge to act.',
+    earth: 'The earth signs — Taurus, Virgo, Capricorn. Grounding, patience, and craft; the world of the senses and the made.',
+    air: 'The air signs — Gemini, Libra, Aquarius. Thought, language, and connection; ideas and the space between people.',
+    water: 'The water signs — Cancer, Scorpio, Pisces. Feeling, intuition, and memory; the tides of the inner life.',
+  },
+  modalityDesc: {
+    cardinal: 'The cardinal signs — Aries, Cancer, Libra, Capricorn. Initiators that open each season and set things in motion.',
+    fixed: 'The fixed signs — Taurus, Leo, Scorpio, Aquarius. Stabilisers at each season’s heart; they hold, sustain, and persist.',
+    mutable: 'The mutable signs — Gemini, Virgo, Sagittarius, Pisces. Adapters that close each season; they flex, blend, and prepare the turn.',
+  },
   dignity: {
     rulership: 'rulership',
     exaltation: 'exaltation',
     detriment: 'detriment',
     fall: 'fall',
+  },
+  // Hover blurbs explaining each essential dignity (the Advanced dignity list).
+  dignityDesc: {
+    rulership: 'The planet is in a sign it rules — at home and able to act freely, in full strength.',
+    exaltation: 'The planet is an honoured guest in its sign of exaltation — its best qualities lifted and amplified.',
+    detriment: 'The planet sits opposite a sign it rules — out of place, working against the grain.',
+    fall: 'The planet sits opposite its sign of exaltation — weakened, its expression strained.',
   },
 
   // Aspect section heading (counted) + its hover-tip title and explanation.

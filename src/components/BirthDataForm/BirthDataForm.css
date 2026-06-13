@@ -326,6 +326,16 @@
   gap: 8px;
 }
 
+/* The quick UTC-offset picker beside the IANA dropdown: a compact fixed width — its
+   labels are just the offset ("+05:30"), so it stays narrow while the IANA select
+   (flex: 1) fills the rest of the row. The compound selector is needed so this beats
+   the plain `.tz-select { flex: 1 }` rule below regardless of source order (otherwise
+   both selects share the row 50/50). */
+.tz-select.tz-utc-select {
+  flex: 0 0 auto;
+  width: 4.5rem;
+}
+
 .tz-select {
   flex: 1;
   min-width: 0;

@@ -6,6 +6,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -17,14 +18,14 @@ import {
   type ProgressionType,
   type TimeUnit,
 } from '../../lib/astro/timeline';
-import type { ReturnBody } from '../../lib/astro/returns';
+import { findReturn, type ReturnBody } from '../../lib/astro/returns';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import {
   formatUtcOffset,
   offsetHoursAt,
   zoneLabelAt,
 } from '../../lib/atlas/timezone';
-import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -350,6 +351,59 @@ export function TimelineHud({
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef);
 
+  // Highlight the Solar / Lunar snap button when the selected date sits ON that
+  // luminary's return — a snap lands exactly on it, and a one-minute window keeps the
+  // cue while you're effectively there. Transits only (the Returns row hides otherwise).
+  const activeReturn = useMemo<ReturnBody | null>(() => {
+    if (overlayMode !== 'transits' || !current) return null;
+    return (
+      (['solar', 'lunar'] as const).find((body) => {
+        const r = findReturn(current, body, targetDate, 0);
+        return r != null && Math.abs(r.ms - targetDate) <= 60_000;
+      }) ?? null
+    );
+  }, [overlayMode, current, targetDate]);
+
+  // One luminary's return controls: ‹ prev · the named snap button · next ›. Shared by
+  // the Solar (left) and Lunar (right) groups that flank the centred "Returns" label.
+  const returnGroup = (body: ReturnBody) => (
+    <span key={body} className="thud-return-group">
+      <TipButton
+        type="button"
+        className="thud-step-btn"
+        onClick={() => onSnapReturn(body, -1)}
+        aria-label={t(`timeline.returns.${body}.prevAria`)}
+        placement="top"
+        tip={t(`timeline.returns.${body}.prev`)}
+      >
+        ‹
+      </TipButton>
+      <TipButton
+        type="button"
+        className={`thud-return-btn${activeReturn === body ? ' active' : ''}`}
+        onClick={() => onSnapReturn(body, 0)}
+        aria-label={t(`timeline.returns.${body}.snapAria`)}
+        placement="top"
+        tip={t(`timeline.returns.${body}.snap`)}
+      >
+        <span className="astro-glyph" aria-hidden="true">
+          {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
+        </span>
+        {t(`timeline.returns.${body}.name`)}
+      </TipButton>
+      <TipButton
+        type="button"
+        className="thud-step-btn"
+        onClick={() => onSnapReturn(body, 1)}
+        aria-label={t(`timeline.returns.${body}.nextAria`)}
+        placement="top"
+        tip={t(`timeline.returns.${body}.next`)}
+      >
+        ›
+      </TipButton>
+    </span>
+  );
+
   return (
     <div
       className={`timeline-hud${dragging ? ' thud-dragging' : ''}${
@@ -521,43 +575,9 @@ export function TimelineHud({
       {overlayMode === 'transits' && (
         <div className="thud-row thud-returns-row">
           <div className="thud-returns">
+            {returnGroup('solar')}
             <span className="thud-mode-label">{t('timeline.returns.label')}</span>
-            {(['solar', 'lunar'] as const).map((body) => (
-              <span key={body} className="thud-return-group">
-                <TipButton
-                  type="button"
-                  className="thud-step-btn"
-                  onClick={() => onSnapReturn(body, -1)}
-                  aria-label={t(`timeline.returns.${body}.prevAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.prev`)}
-                >
-                  ‹
-                </TipButton>
-                <TipButton
-                  type="button"
-                  className="thud-return-btn"
-                  onClick={() => onSnapReturn(body, 0)}
-                  aria-label={t(`timeline.returns.${body}.snapAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.snap`)}
-                >
-                  <span className="astro-glyph" aria-hidden="true">
-                    {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
-                  </span>
-                </TipButton>
-                <TipButton
-                  type="button"
-                  className="thud-step-btn"
-                  onClick={() => onSnapReturn(body, 1)}
-                  aria-label={t(`timeline.returns.${body}.nextAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.next`)}
-                >
-                  ›
-                </TipButton>
-              </span>
-            ))}
+            {returnGroup('lunar')}
           </div>
         </div>
       )}

@@ -40,7 +40,16 @@ export const settings = {
     eclipse: 'Eclipse',
     magnitudeSteps: 'Magnitude steps',
   },
-  details: { roads: 'Roads', rivers: 'Rivers', labels: 'Labels' },
+  // Basemap detail toggles. Roads + rivers share one switch; "Place names" (city
+  // and country text) is named to avoid confusion with the ACG line-label badges.
+  details: {
+    roadsRivers: 'Roads/Rivers',
+    roadsRiversHint:
+      'Shows the basemap’s road and river linework. Hide it for a cleaner backdrop behind the astrocartography lines.',
+    placeNames: 'Place Names',
+    placeNamesHint:
+      'Shows the basemap’s city and country text. This is separate from the ACG line-label badges, which stay either way.',
+  },
   shiftTag: 'Shift',
   // Overlay ▸ Display toggles — each a show/hide switch with a hover hint, like the
   // Parans / Local Space toggles in Map filters.
@@ -95,6 +104,9 @@ export const settings = {
   },
   aspectOrbs: {
     hint: 'Max distance from exact (degrees) per aspect in the wheel and aspect lists. Luminaries widens every orb when the Sun or Moon is involved; Parallels is the declination orb.',
+    // The stepper's label below the dropdown (which already names the picked orb);
+    // it states the unit, like "Degrees per year" over in the Calculation tab.
+    setDegrees: 'Set degrees',
     orbAria: 'Orb for {aspect} aspects, in degrees',
     lumLabel: 'Luminaries +',
     // Hover hint on the Luminaries+ pick in the orb dropdown.
@@ -136,7 +148,7 @@ export const settings = {
     allHint: 'The whole bundled working set (40 stars). Expect a busy map.',
   },
   nightShade: {
-    title: 'Night Shading',
+    title: 'Night Shades',
     hint: 'Shades the half of Earth in night at the displayed moment: the chart’s own moment, the target date under Transits or CCG, and the eclipse maximum in Eclipses mode (a lunar eclipse is visible from exactly that night side).',
   },
   orbZones: {
@@ -314,11 +326,11 @@ export const settings = {
       mc: 'Midheaven',
     },
     natalLines: {
-      title: 'Natal Chart Lines',
+      title: 'Natal Lines',
       hint: 'The birth chart’s linework on the map. Hide it to see the eclipse path on a clean map — the chart wheel and readouts stay.',
     },
     chartLines: {
-      title: 'Eclipse Chart Lines',
+      title: 'Eclipse Lines',
       hint: 'Planet and angle lines for the chart of the eclipse maximum, framed at that moment’s own sky — see where the eclipse-time lines run relative to the path.',
     },
     isoStep: {

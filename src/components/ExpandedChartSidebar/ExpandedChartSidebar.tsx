@@ -45,7 +45,8 @@ import {
   signModality,
   type Dignity,
 } from '../../lib/astro/dignities';
-import { HoverTip, TipButton } from '../ui/HoverTip';
+import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
+import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
@@ -383,6 +384,74 @@ function TipHeading({
       </span>
       <HoverTip pos={pos} placement="right" title={tip} hint={hint} />
     </h3>
+  );
+}
+
+// One balance row: a category (element or modality) and the actual bodies that
+// fall in it, each drawn as its own planet glyph — a unit chart, so you read both
+// the tally and *which* bodies make it up. The whole row is tinted by the
+// category colour (the --cat custom property on its cls). The category badge and
+// each body glyph are TipSpans, so hovering reveals the shared .ui-tip card
+// (category → name + blurb; body → its name) just like the aspect/planet glyphs
+// elsewhere. role="img" + aria-label gives the figure a spoken form; an empty
+// category stays visible (dimmed) since a missing element/modality is real info.
+function BalanceRow({
+  seg,
+}: {
+  seg: {
+    label: string;
+    glyph: string;
+    cls: string;
+    hint: string;
+    bodies: EclipticPosition[];
+  };
+}) {
+  const { labels } = useT();
+  const count = seg.bodies.length;
+  const aria =
+    count > 0
+      ? `${seg.label}: ${count} — ${seg.bodies
+          .map((p) => labels.planet(p.name))
+          .join(', ')}`
+      : `${seg.label}: 0`;
+  return (
+    <div
+      className={`es-balance-row2 ${seg.cls}${count === 0 ? ' es-balance-row2--empty' : ''}`}
+      role="img"
+      aria-label={aria}
+    >
+      <TipSpan
+        className="es-balance-cat"
+        placement="top"
+        tip={
+          <span className="es-tip-title">
+            <span className="astro-glyph">{seg.glyph}</span> {seg.label}
+          </span>
+        }
+        hint={seg.hint}
+      >
+        <span className="astro-glyph es-balance-cat-glyph">{seg.glyph}</span>
+        <span className="es-balance-name">
+          {seg.label} <span className="es-balance-num">({count})</span>
+        </span>
+      </TipSpan>
+      <span className="es-balance-bodies">
+        {seg.bodies.map((p) => (
+          <TipSpan
+            key={p.name}
+            className="es-balance-body"
+            placement="top"
+            tip={
+              <span className="es-tip-title">
+                <PlanetGlyph planet={p.name} size={13} /> {labels.planet(p.name)}
+              </span>
+            }
+          >
+            <PlanetGlyph planet={p.name} size={14} />
+          </TipSpan>
+        ))}
+      </span>
+    </div>
   );
 }
 
@@ -1105,19 +1174,53 @@ export function ExpandedChartSidebar({
         );
       })()}
 
-      {angles && advanced && shownPlanets.length > 0 && (() => {
-        // Element/modality tallies + essential dignities over the SHOWN bodies
+      {angles && shownPlanets.length > 0 && (() => {
+        // Element/modality tallies (always shown) + essential dignities (Advanced
+        // only — domicile/detriment/etc. is a denser read) over the SHOWN bodies
         // (the map filter decides what counts, like every list in this panel).
-        const elements = { fire: 0, earth: 0, air: 0, water: 0 };
-        const modalities = { cardinal: 0, fixed: 0, mutable: 0 };
+        // Group the SHOWN bodies by element and by modality (every body has
+        // exactly one of each). We keep the bodies themselves, not just a count,
+        // so the balance can be drawn as a constellation of their glyphs.
+        const elementBodies: Record<
+          'fire' | 'earth' | 'air' | 'water',
+          EclipticPosition[]
+        > = { fire: [], earth: [], air: [], water: [] };
+        const modalityBodies: Record<
+          'cardinal' | 'fixed' | 'mutable',
+          EclipticPosition[]
+        > = { cardinal: [], fixed: [], mutable: [] };
         for (const p of shownPlanets) {
           const idx = signIndex(p.lon);
-          elements[signElement(idx)]++;
-          modalities[signModality(idx)]++;
+          elementBodies[signElement(idx)].push(p);
+          modalityBodies[signModality(idx)].push(p);
         }
-        const dignified = shownPlanets
-          .map((p) => ({ p, d: essentialDignity(p.name, signIndex(p.lon)) }))
-          .filter((x): x is typeof x & { d: Dignity } => x.d !== null);
+        // Dignities stay gated to Advanced; skip the lookup entirely otherwise so
+        // the always-on constellation costs nothing extra.
+        const dignified = advanced
+          ? shownPlanets
+              .map((p) => ({ p, d: essentialDignity(p.name, signIndex(p.lon)) }))
+              .filter((x): x is typeof x & { d: Dignity } => x.d !== null)
+          : [];
+        const elementSegs = (['fire', 'earth', 'air', 'water'] as const).map(
+          (e) => ({
+            key: e,
+            label: t(`expandedSidebar.element.${e}`),
+            glyph: ELEMENT_GLYPHS[e],
+            cls: `es-el-${e}`,
+            hint: t(`expandedSidebar.elementDesc.${e}`),
+            bodies: elementBodies[e],
+          }),
+        );
+        const modalitySegs = (['cardinal', 'fixed', 'mutable'] as const).map(
+          (m) => ({
+            key: m,
+            label: t(`expandedSidebar.modality.${m}`),
+            glyph: MODALITY_GLYPHS[m],
+            cls: `es-mod-${m}`,
+            hint: t(`expandedSidebar.modalityDesc.${m}`),
+            bodies: modalityBodies[m],
+          }),
+        );
         return (
           <section className="es-section es-section-balance">
             <TipHeading
@@ -1126,31 +1229,42 @@ export function ExpandedChartSidebar({
             >
               {t('expandedSidebar.balanceHeading')}
             </TipHeading>
-            <div className="es-balance-row">
-              {(['fire', 'earth', 'air', 'water'] as const).map((e) => (
-                <span key={e} className={`es-balance-pill es-el-${e}`}>
-                  {t(`expandedSidebar.element.${e}`)} <b>{elements[e]}</b>
-                </span>
-              ))}
-            </div>
-            <div className="es-balance-row">
-              {(['cardinal', 'fixed', 'mutable'] as const).map((m) => (
-                <span key={m} className="es-balance-pill">
-                  {t(`expandedSidebar.modality.${m}`)} <b>{modalities[m]}</b>
-                </span>
-              ))}
+            <div className="es-balance-groups">
+              <div className="es-balance-group">
+                {elementSegs.map((s) => (
+                  <BalanceRow key={s.key} seg={s} />
+                ))}
+              </div>
+              <div className="es-balance-group">
+                {modalitySegs.map((s) => (
+                  <BalanceRow key={s.key} seg={s} />
+                ))}
+              </div>
             </div>
             {dignified.length > 0 && (
               <ul className="es-dignity-list">
-                {dignified.map(({ p, d }) => (
-                  <li key={p.name}>
-                    <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
-                    <span className="es-dignity-planet">{labels.planet(p.name)}</span>
-                    <span className={`es-dignity es-dignity-${d}`}>
-                      {t(`expandedSidebar.dignity.${d}`)}
-                    </span>
-                  </li>
-                ))}
+                {dignified.map(({ p, d }) => {
+                  const term = t(`expandedSidebar.dignity.${d}`);
+                  return (
+                    <li key={p.name}>
+                      <PlanetGlyph
+                        planet={p.name}
+                        size={12}
+                        className="asp-planet"
+                        color={PLANET_COLORS[p.name]}
+                      />
+                      <span className="es-dignity-planet">{labels.planet(p.name)}</span>
+                      <TipSpan
+                        className={`es-dignity es-dignity-${d}`}
+                        placement="top"
+                        tip={term.charAt(0).toUpperCase() + term.slice(1)}
+                        hint={t(`expandedSidebar.dignityDesc.${d}`)}
+                      >
+                        {term}
+                      </TipSpan>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

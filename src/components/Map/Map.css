@@ -322,22 +322,22 @@
   color: var(--text-faint);
 }
 
-/* The placed-location marker: a frosted-glass teardrop (drawn in CSS, .map-pin-body).
-   The tip marks the exact point (marker anchored 'bottom'); a state-colored ring
-   pulses behind the head — gold for a pinned location, green for the natal
-   birthplace. --pin-rgb drives the rim + aura so the .natal variant flips one prop. */
+/* The placed-location marker: the app's teardrop pin icon (SVG, .map-pin-body). The
+   tip marks the exact point (marker anchored 'bottom'); the location-state colour
+   fills the icon — gold pinned, green natal — while the screen-edge glow (not the
+   pin) carries the ambient state colour. --pin-rgb is that one state colour. */
 .map-pin {
   position: relative;
   width: 38px;
   height: 52px;
   /* One source for the state color: gold when pinned, green for the natal pin.
-     Drives the glass rim, the aura, and the tip pulse (all via currentColor /
-     --pin-rgb), so the .natal variant only flips this one custom property. */
+     Drives the icon fill and the tip pulse (via currentColor / --pin-rgb), so the
+     .natal variant only flips this one custom property. */
   --pin-rgb: var(--accent-rgb);
   color: rgb(var(--pin-rgb));
-  /* Only the glass head captures clicks (they bubble to the marker's click
-     handler); transparent gaps stay click-through, so the marker doesn't create a
-     dead-zone over the map. */
+  /* Only the icon captures clicks (they bubble to the marker's click handler);
+     transparent gaps stay click-through, so the marker doesn't create a dead-zone
+     over the map. */
   pointer-events: none;
 }
 
@@ -345,80 +345,42 @@
   --pin-rgb: var(--success-rgb);
 }
 
-/* The pin head: a frosted-glass teardrop. Its translucent --bg-panel fill + the
-   backdrop blur let the map show through (so the inside reads as clear glass),
-   matching the app's glass panels; the only color is a soft state-tinted rim. A
-   45° rotation turns the square's one sharp corner into the downward tip. */
+/* The pin head: the app's standard teardrop icon (the same SVG as the guide window
+   and the sidebar's relocated-chart readout), drawn solid so it reads clearly on the
+   basemap. The teardrop is filled with the state colour (--pin-rgb: gold pinned,
+   green natal) and rimmed + centre-dotted in --tint — white on the dark themes, dark
+   slate on the light one — so it stays legible against each theme's map. A drop-
+   shadow lifts it off the surface; the tip (≈92% down the box) marks the point. */
 .map-pin-body {
   position: absolute;
   left: 50%;
-  top: 19px;
-  width: 26px;
-  height: 26px;
-  margin-left: -13px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  transform-origin: center;
-  background: rgba(var(--bg-panel), 0.26);
-  backdrop-filter: blur(7px) saturate(150%);
-  -webkit-backdrop-filter: blur(7px) saturate(150%);
-  border: 1.5px solid rgba(var(--tint), 0.5);
-  box-shadow:
-    0 0 0 1.5px rgba(var(--pin-rgb), 0.5),
-    0 0 8px rgba(0, 0, 0, 0.32),
-    inset 0 0 7px rgba(255, 255, 255, 0.4),
-    inset 0 0 2px rgba(255, 255, 255, 0.7);
+  top: 15px;
+  width: 38px;
+  height: 38px;
+  margin-left: -19px;
+  overflow: visible;
   pointer-events: auto;
   cursor: pointer;
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  transform-origin: 50% 92%; /* pivot near the tip so hover / drop scale from the point */
+  filter: drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, 0.5));
+  transition: transform 0.15s ease, filter 0.15s ease;
   animation: map-pin-drop 0.34s cubic-bezier(0.22, 1.2, 0.4, 1);
 }
 
+.map-pin-shape {
+  fill: rgb(var(--pin-rgb));
+  stroke: rgb(var(--tint));
+  stroke-width: 1.75;
+}
+
+/* The centre reads as the pin's "hole", in the same theme-aware --tint as the rim. */
+.map-pin-dot {
+  fill: rgb(var(--tint));
+}
+
 .map-pin:hover .map-pin-body {
-  transform: translateY(-1px) rotate(-45deg) scale(1.07);
-  box-shadow:
-    0 0 0 1.5px rgba(var(--pin-rgb), 0.78),
-    0 0 11px rgba(var(--pin-rgb), 0.5),
-    0 0 12px rgba(0, 0, 0, 0.4),
-    inset 0 0 8px rgba(255, 255, 255, 0.5),
-    inset 0 0 2px rgba(255, 255, 255, 0.8);
-}
-
-/* Location-color aura radiating from the pin's centre, dissipating outward — the
-   inverted edge-glow: once a pin is placed the screen-edge vignette gives way to
-   this, concentrated on the pin. currentColor tracks the .natal state (gold for a
-   pinned spot, green for the natal pin), matching the old edge glow's per-state hue.
-
-   The pulse is FINITE (a few breaths after each placement, then a calm static
-   aura). An infinite animation would keep the compositor producing frames at full
-   refresh rate for as long as a pin exists — measurable idle CPU/GPU burn over a
-   full-screen WebGL canvas. The keyframes start and end on the resting opacity,
-   so when the animation releases the property nothing visibly jumps. Replays per
-   placement: a re-placed pin builds fresh marker DOM, and a RELOCATED pin (whose
-   marker persists) gets its pulse spans swapped for clones in the Map's pin
-   effect — don't remove that swap; nothing else restarts these animations. */
-.map-pin-aura {
-  position: absolute;
-  left: 50%;
-  top: 38%;
-  width: 340px;
-  height: 340px;
-  margin: -170px 0 0 -170px;
-  border-radius: 50%;
-  background: radial-gradient(circle closest-side, currentColor, transparent 72%);
-  opacity: 0.18;
-  pointer-events: none;
-  animation: map-pin-aura-pulse 5.2s ease-in-out 4;
-}
-
-@keyframes map-pin-aura-pulse {
-  0%,
-  100% {
-    opacity: 0.18;
-  }
-  50% {
-    opacity: 0.3;
-  }
+  transform: translateY(-2px) scale(1.08);
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.55));
 }
 
 /* Pulse ring centered on the pin TIP — the actual point on the map — so it pings
@@ -467,17 +429,17 @@
 }
 
 @keyframes map-pin-drop {
-  /* translateY is listed first so it acts in screen space (a vertical drop); the
-     rotate keeps the teardrop's tip pointing down throughout. */
+  /* A vertical drop onto the point; the SVG isn't rotated, so there's no rotate term
+     (the transform-origin near the tip keeps the scale anchored on the location). */
   0% {
-    transform: translateY(-9px) rotate(-45deg) scale(0.8);
+    transform: translateY(-9px) scale(0.8);
     opacity: 0;
   }
   60% {
     opacity: 1;
   }
   100% {
-    transform: translateY(0) rotate(-45deg) scale(1);
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
@@ -486,8 +448,7 @@
   /* The finite pulses end on these same base values, so dropping the animations
      lands on exactly the steady-state look. */
   .map-pin-body,
-  .map-pin-glow,
-  .map-pin-aura {
+  .map-pin-glow {
     animation: none;
   }
 }

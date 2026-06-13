@@ -4,7 +4,12 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  getMapExtensions,
+  isEntitled,
+  type MapExtensionContext,
+} from './lib/extensions/mapExtensions';
 import type {
   Feature,
   FeatureCollection,
@@ -42,6 +47,7 @@ import { useCountryOf } from './lib/atlas/useCountryOf';
 import {
   birthDataToJD,
   eclipticLonOfRA,
+  eclipticToRaDec,
   ensureAsteroidEphemeris,
   getAngleCoords,
   getEclipticPositions,
@@ -53,6 +59,7 @@ import {
   obliquity,
   PLANET_NAMES,
   projectOntoEcliptic,
+  raDecToEclipticLon,
   relocate,
   toEclipticPositions,
   TRADITIONAL_PLANETS,
@@ -80,7 +87,7 @@ import {
   generateMidpointLines,
   type AngleOverlayLineProps,
 } from './lib/astro/angleAspects';
-import { generateParans, type ParanProps } from './lib/astro/parans';
+import { generateParans, generateStarParans, type ParanProps } from './lib/astro/parans';
 import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
 import { generateLocalSpaceCrossings } from './lib/astro/localSpaceCrossings';
 import {
@@ -2081,6 +2088,96 @@ export default function App() {
     setEditingId(null);
   };
 
+  // Fixed-star × planet parans — computed here and exposed to map-HUD extensions
+  // via extensionCtx; the engine (generateStarParans) lives in lib/astro/parans.
+  // Never drawn as map lines (the catalog × planet set is hundreds of latitude
+  // rows; the conventional reading is a per-location list). Follows the star-lines
+  // toggle/set and, in Mundane mode, the same ecliptic projection.
+  const starParans = useMemo(() => {
+    if (!showStarLines || !current) return EMPTY_FC;
+    const stars = starsOfDate(jd, starSet).map((s) => {
+      if (lineSystem !== 'geodetic') return s;
+      const lon = raDecToEclipticLon(s.ra, s.dec, eps);
+      return { ...s, ...eclipticToRaDec(lon, 0, eps) };
+    });
+    return generateStarParans(
+      stars,
+      linePositions.filter((p) => visiblePlanets.has(p.name)),
+      meridianLng,
+      STAR_LINE_COLORS[theme],
+    );
+  }, [showStarLines, current, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
+
+  // ── Map-HUD extensions ────────────────────────────────────────────────────
+  // Features registered via registerMapExtension() (e.g. add-ons in a downstream
+  // build) get a View-menu toggle + HUD without editing this file.
+  // Open/closed state is generic and persisted per the extension's storageKey.
+  const [openExtensions, setOpenExtensions] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    for (const ext of getMapExtensions()) {
+      const saved = ext.storageKey ? localStorage.getItem(ext.storageKey) : null;
+      if (saved === '1' || (saved === null && ext.defaultOpen)) open.add(ext.id);
+    }
+    return open;
+  });
+  const toggleExtension = useCallback((id: string) => {
+    setOpenExtensions((prev) => {
+      const next = new Set(prev);
+      const nowOpen = !next.has(id);
+      if (nowOpen) next.add(id);
+      else next.delete(id);
+      const ext = getMapExtensions().find((e) => e.id === id);
+      if (ext?.storageKey) localStorage.setItem(ext.storageKey, nowOpen ? '1' : '0');
+      return next;
+    });
+  }, []);
+  // A stable fly-to that reads the map ref lazily, so the snapshot below holds no
+  // ref access during render (the HUD calls it from its own event handlers).
+  const extFlyTo = useCallback(
+    (lat: number, lng: number, zoom?: number) => mapRef.current?.flyTo(lat, lng, zoom),
+    [],
+  );
+  // The read-only snapshot + actions handed to each open HUD extension.
+  const extensionCtx = useMemo<MapExtensionContext>(
+    () => ({
+      current,
+      jd,
+      pinned,
+      pinnedLabel,
+      visiblePlanets,
+      nodeType,
+      houseSystem,
+      overlayMode,
+      lines: hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines,
+      angleLines: promoted || hideNatalLinework ? EMPTY_FC : angleLines,
+      parans: hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans,
+      starParans,
+      overlayLines: promoted ? null : (overlay?.lines ?? null),
+      overlayParans: promoted ? null : (overlay?.parans ?? null),
+      flyTo: extFlyTo,
+      setTargetDate,
+      setOverlayMode,
+    }),
+    [
+      current,
+      jd,
+      pinned,
+      pinnedLabel,
+      visiblePlanets,
+      nodeType,
+      houseSystem,
+      overlayMode,
+      lines,
+      angleLines,
+      parans,
+      starParans,
+      overlay,
+      promoted,
+      hideNatalLinework,
+      extFlyTo,
+    ],
+  );
+
   return (
     <>
       <Map
@@ -2124,6 +2221,9 @@ export default function App() {
         lineCard={lineCard}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
+        // First-load framing centres on the active chart's birthplace (read once
+        // at mount inside Map); later chart switches recenter via their own flyTo.
+        initialCenter={current ? current.birthplace : null}
         theme={theme}
         projection={projection}
         showRoads={showRoads}
@@ -2181,6 +2281,7 @@ export default function App() {
           setParanOrbDeg={setParanOrbDeg}
           aspectOrbs={aspectOrbs}
           setAspectOrbs={setAspectOrbs}
+          showAdvancedTab={advancedWheel && wheelExpanded}
           showStarLines={showStarLines}
           setShowStarLines={setShowStarLines}
           starSet={starSet}
@@ -2293,6 +2394,8 @@ export default function App() {
         setShowTeleport={setShowTeleport}
         showGuides={showGuides}
         setShowGuides={toggleGuides}
+        openExtensions={openExtensions}
+        onToggleExtension={toggleExtension}
       />
       {showInfo && (
         <InfoBar
@@ -2358,6 +2461,18 @@ export default function App() {
           backState={teleportReturn}
           onClose={() => setShowTeleport(false)}
         />
+      )}
+      {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
+          with no edits to this file. Entitled → the HUD; else its CTA. */}
+      {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
+      {getMapExtensions().map((ext) =>
+        openExtensions.has(ext.id) ? (
+          <Fragment key={ext.id}>
+            {isEntitled(ext)
+              ? ext.render(extensionCtx, () => toggleExtension(ext.id))
+              : (ext.renderLocked?.(() => toggleExtension(ext.id)) ?? null)}
+          </Fragment>
+        ) : null,
       )}
       {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and
           must stay reachable even when the compact Minimap (showChart) is hidden —

@@ -25,6 +25,7 @@ import type {
   RelationshipMethod,
   TransitFrame,
 } from '../../lib/astro/timeline';
+import { OVERLAY_LABEL_PREFIX } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
 import type { EclipseContact, EclipseDetails } from '../../lib/astro/eclipses';
 import type { EclipseIsoStep } from '../../lib/overlayPrefs';
@@ -35,7 +36,7 @@ import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspect
 import type { LsOriginPref, StarSetPref } from '../../lib/overlayPrefs';
 import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
-import { TipButton, TipSpan } from '../ui/HoverTip';
+import { TipButton } from '../ui/HoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
@@ -87,6 +88,10 @@ interface SidebarProps {
   setHouseSystem: (h: HouseSystem) => void;
   zodiacMode: ZodiacMode;
   setZodiacMode: (m: ZodiacMode) => void;
+  /** Whether the Advanced settings tab is shown. It only governs the expanded
+   *  chart sidebar's reading prefs, so it appears only while that sidebar is open
+   *  with its Advanced toggle on. */
+  showAdvancedTab: boolean;
   /** Overlay wheel layout (Advanced ▸ Wheel layout): bi-wheel vs Dual Wheels. */
   dualWheels: boolean;
   setDualWheels: (v: boolean) => void;
@@ -326,6 +331,42 @@ function HintOption({
   );
 }
 
+// A small "(i)" info icon that reveals its explanation as the same .ui-tip card
+// the rest of the settings use (ChoiceTip: title + hint, popped to the left), so
+// its shape matches every other hover in the panel rather than the shared
+// HoverTip's plainer, title-only box.
+function InfoTip({ title, hint }: { title: string; hint: string }) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>();
+  return (
+    <span
+      ref={ref}
+      className="orb-info"
+      tabIndex={0}
+      aria-label={title}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v6" />
+        <path d="M12 7.5v.5" />
+      </svg>
+      <ChoiceTip pos={pos} title={title} hint={hint} />
+    </span>
+  );
+}
+
 // A dropdown for the Calc settings that mirrors the top-nav "Overlay" menu: a
 // full-width trigger showing the current value, opening a panel of option rows.
 // The panel is portaled to <body> so the sidebar's overflow can't clip it, and —
@@ -340,7 +381,14 @@ export function HintMenu<V extends string>({
 }: {
   value: V;
   onChange: (v: V) => void;
-  options: { value: V; label: string; hint: string; disabled?: boolean }[];
+  options: {
+    value: V;
+    label: string;
+    hint: string;
+    /** Optional leading symbol (rendered in the bundled glyph font). */
+    glyph?: string;
+    disabled?: boolean;
+  }[];
   note?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -448,7 +496,14 @@ export function HintMenu<V extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="calc-menu-value">{current?.label ?? ''}</span>
+        <span className="calc-menu-value">
+          {current?.glyph && (
+            <span className="astro-glyph hintmenu-glyph" aria-hidden="true">
+              {current.glyph}
+            </span>
+          )}
+          {current?.label ?? ''}
+        </span>
         <span className="thud-select-caret" aria-hidden="true">
           ▾
         </span>
@@ -477,6 +532,7 @@ export function HintMenu<V extends string>({
                 key={o.value}
                 label={o.label}
                 hint={o.hint}
+                glyph={o.glyph}
                 disabled={o.disabled}
                 selected={o.value === value}
                 onSelect={() => {
@@ -498,12 +554,14 @@ export function HintMenu<V extends string>({
 function HintMenuItem({
   label,
   hint,
+  glyph,
   selected,
   onSelect,
   disabled = false,
 }: {
   label: string;
   hint: string;
+  glyph?: string;
   selected: boolean;
   onSelect: () => void;
   /** A listed-but-unavailable option: grayed, non-selecting, but still shows its tip
@@ -527,6 +585,11 @@ function HintMenuItem({
       onBlur={hide}
     >
       <span className="navmenu-marker">{selected ? '●' : '○'}</span>
+      {glyph && (
+        <span className="astro-glyph hintmenu-glyph" aria-hidden="true">
+          {glyph}
+        </span>
+      )}
       <span>{label}</span>
       {hint && <ChoiceTip pos={pos} title={label} hint={hint} />}
     </button>
@@ -745,6 +808,7 @@ export function Sidebar({
   setHouseSystem,
   zodiacMode,
   setZodiacMode,
+  showAdvancedTab,
   dualWheels,
   setDualWheels,
   nodeType,
@@ -840,6 +904,11 @@ export function Sidebar({
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions' ||
     overlayMode === 'cyclo';
+  // The overlay-zenith toggle names the ACTIVE overlay's zenith — "Tr Zenith",
+  // "Sp Zenith", "Cy Zenith" … — using the same two-letter tag the map labels use.
+  const zenithLabel = `${
+    overlayMode === 'off' ? '' : OVERLAY_LABEL_PREFIX[overlayMode]
+  } ${t('settings.overlayZenith.title')}`.trim();
   // Positioning (radix-relative vs the transit moment's own sidereal time) only changes
   // the TRANSITS overlay, and only in the Celestial line system: the directed overlays
   // (progressed / solar arc / primary directions) are natal-framed by construction, and
@@ -866,6 +935,10 @@ export function Sidebar({
     showRelationships ||
     showEclipses;
 
+  // Roads and rivers now share one toggle: "on" if either basemap layer shows,
+  // and clicking flips both together.
+  const roadsRiversOn = showRoads || showRivers;
+
   return (
     <aside className="sidebar">
       <button
@@ -879,7 +952,7 @@ export function Sidebar({
       </button>
 
       {openSection === 'theme' && (
-        <div className="sidebar-section theme-section">
+        <div className="sidebar-section">
           <h2>{t('settings.headings.theme')}</h2>
           <ul className="theme-list">
             {THEMES.map((th) => (
@@ -897,54 +970,108 @@ export function Sidebar({
             ))}
           </ul>
 
-          <div className="theme-detail">
-            <h2>{t('settings.headings.language')}</h2>
-            <HintMenu<string>
-              value={locale}
-              onChange={(code) => setLocale(code as Locale)}
-              options={languageOptions}
-            />
-          </div>
-
-          <div className="theme-detail">
-            <h2>{t('settings.headings.details')}</h2>
-            <ul className="technique-list">
-              {(
-                [
-                  ['roads', showRoads, setShowRoads],
-                  ['rivers', showRivers, setShowRivers],
-                  ['labels', showLabels, setShowLabels],
-                ] as const
-              ).map(([key, shown, setShown]) => (
-                <li key={key}>
-                  <button
-                    type="button"
-                    className={`tech-toggle ${shown ? 'on' : 'off'}`}
-                    onClick={() => setShown(!shown)}
-                    aria-pressed={shown}
-                  >
-                    <EyeIcon open={shown} />
-                    <span className="name">{t(`settings.details.${key}`)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="theme-detail">
-            <h2>{t('settings.headings.projection')}</h2>
-            <ul className="theme-list">
-              {PROJECTION_VALUES.map((value) => (
-                <HintOption
-                  key={value}
-                  selected={projection === value}
-                  onSelect={() => setProjection(value)}
-                  label={labels.projection(value)}
-                  hint={labels.projectionHint(value)}
+          <h2>{t('settings.headings.details')}</h2>
+          <ul className="technique-list">
+            {/* Roads and rivers share one switch — both are low-emphasis basemap
+                linework, so a single toggle covers them. */}
+            <TipToggle
+              className={`tech-toggle ${roadsRiversOn ? 'on' : 'off'}`}
+              onClick={() => {
+                const next = !roadsRiversOn;
+                setShowRoads(next);
+                setShowRivers(next);
+              }}
+              ariaPressed={roadsRiversOn}
+              title={t('settings.details.roadsRivers')}
+              hint={t('settings.details.roadsRiversHint')}
+            >
+              <EyeIcon open={roadsRiversOn} />
+              <span className="name">{t('settings.details.roadsRivers')}</span>
+            </TipToggle>
+            {/* "Place Names" hides basemap text (city / country names); named so
+                it isn't mistaken for the ACG line-label badges. */}
+            <TipToggle
+              className={`tech-toggle ${showLabels ? 'on' : 'off'}`}
+              onClick={() => setShowLabels(!showLabels)}
+              ariaPressed={showLabels}
+              title={t('settings.details.placeNames')}
+              hint={t('settings.details.placeNamesHint')}
+            >
+              <EyeIcon open={showLabels} />
+              <span className="name">{t('settings.details.placeNames')}</span>
+            </TipToggle>
+            {/* Night Shades lives here with the other basemap-appearance toggles
+                (it shades the night half of Earth) rather than with the chart
+                line filters. */}
+            <TipToggle
+              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
+              onClick={() => setShowNightShade(!showNightShade)}
+              ariaPressed={showNightShade}
+              title={t('settings.nightShade.title')}
+              hint={t('settings.nightShade.hint')}
+            >
+              <EyeIcon open={showNightShade} />
+              <span className="name">{t('settings.nightShade.title')}</span>
+            </TipToggle>
+            {/* Orb zones — the soft influence band drawn around each line — is a
+                rendering-appearance toggle, so it sits here with the other
+                Details switches; its width steppers reveal when it's on. */}
+            <TipToggle
+              className={`tech-toggle ${showOrbZones ? 'on' : 'off'}`}
+              onClick={() => setShowOrbZones(!showOrbZones)}
+              ariaPressed={showOrbZones}
+              title={t('settings.orbZones.title')}
+              hint={t('settings.orbZones.hint')}
+            >
+              <EyeIcon open={showOrbZones} />
+              <span className="name">{t('settings.orbZones.title')}</span>
+            </TipToggle>
+            {showOrbZones && (
+              <li className="orb-zone-row orb-zone-steppers">
+                <StepperField
+                  id="orb-zone-km"
+                  label={t('settings.orbZones.lineLabel')}
+                  value={orbZoneKm}
+                  onChange={setOrbZoneKm}
+                  min={10}
+                  max={2000}
+                  step={10}
+                  ariaLabel={t('settings.orbZones.lineAria')}
                 />
-              ))}
-            </ul>
-          </div>
+                <StepperField
+                  id="orb-zone-paran"
+                  label={t('settings.orbZones.paranLabel')}
+                  value={paranOrbDeg}
+                  onChange={setParanOrbDeg}
+                  min={0.25}
+                  max={5}
+                  step={0.25}
+                  ariaLabel={t('settings.orbZones.paranAria')}
+                />
+              </li>
+            )}
+          </ul>
+
+          <h2>{t('settings.headings.projection')}</h2>
+          <ul className="theme-list">
+            {PROJECTION_VALUES.map((value) => (
+              <HintOption
+                key={value}
+                selected={projection === value}
+                onSelect={() => setProjection(value)}
+                label={labels.projection(value)}
+                hint={labels.projectionHint(value)}
+              />
+            ))}
+          </ul>
+
+          {/* Language sits last, below the map-facing detail + projection controls. */}
+          <h2>{t('settings.headings.language')}</h2>
+          <HintMenu<string>
+            value={locale}
+            onChange={(code) => setLocale(code as Locale)}
+            options={languageOptions}
+          />
         </div>
       )}
 
@@ -1084,16 +1211,6 @@ export function Sidebar({
               <span className="name">{t('settings.midpointLines.title')}</span>
             </TipToggle>
             <TipToggle
-              className={`tech-toggle ${showOrbZones ? 'on' : 'off'}`}
-              onClick={() => setShowOrbZones(!showOrbZones)}
-              ariaPressed={showOrbZones}
-              title={t('settings.orbZones.title')}
-              hint={t('settings.orbZones.hint')}
-            >
-              <EyeIcon open={showOrbZones} />
-              <span className="name">{t('settings.orbZones.title')}</span>
-            </TipToggle>
-            <TipToggle
               className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
               onClick={() => setShowStarLines(!showStarLines)}
               ariaPressed={showStarLines}
@@ -1120,40 +1237,6 @@ export function Sidebar({
                       hint: t('settings.starLines.allHint'),
                     },
                   ]}
-                />
-              </li>
-            )}
-            <TipToggle
-              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
-              onClick={() => setShowNightShade(!showNightShade)}
-              ariaPressed={showNightShade}
-              title={t('settings.nightShade.title')}
-              hint={t('settings.nightShade.hint')}
-            >
-              <EyeIcon open={showNightShade} />
-              <span className="name">{t('settings.nightShade.title')}</span>
-            </TipToggle>
-            {showOrbZones && (
-              <li className="orb-zone-row orb-zone-steppers">
-                <StepperField
-                  id="orb-zone-km"
-                  label={t('settings.orbZones.lineLabel')}
-                  value={orbZoneKm}
-                  onChange={setOrbZoneKm}
-                  min={10}
-                  max={2000}
-                  step={10}
-                  ariaLabel={t('settings.orbZones.lineAria')}
-                />
-                <StepperField
-                  id="orb-zone-paran"
-                  label={t('settings.orbZones.paranLabel')}
-                  value={paranOrbDeg}
-                  onChange={setParanOrbDeg}
-                  min={0.25}
-                  max={5}
-                  step={0.25}
-                  ariaLabel={t('settings.orbZones.paranAria')}
                 />
               </li>
             )}
@@ -1243,18 +1326,22 @@ export function Sidebar({
       {/* Advanced: the chart wheel's READING preferences — house system, zodiac
           frame, aspect orbs. None of these move a single map line (houses only
           shape the wheel's cusps; the zodiac is a display frame; orbs gate the
-          aspect lists), which is the membership rule for this tab. */}
-      <button
-        type="button"
-        className="sidebar-header"
-        onClick={() => toggleSection('advanced')}
-        aria-expanded={openSection === 'advanced'}
-      >
-        <span className="sidebar-title">{t('settings.sections.advanced')}</span>
-        <span className="sidebar-chevron">{openSection === 'advanced' ? '▾' : '▸'}</span>
-      </button>
+          aspect lists), which is the membership rule for this tab. And because the
+          whole tab only governs the expanded chart sidebar, it appears only while
+          that sidebar is open with Advanced mode on (showAdvancedTab). */}
+      {showAdvancedTab && (
+        <button
+          type="button"
+          className="sidebar-header"
+          onClick={() => toggleSection('advanced')}
+          aria-expanded={openSection === 'advanced'}
+        >
+          <span className="sidebar-title">{t('settings.sections.advanced')}</span>
+          <span className="sidebar-chevron">{openSection === 'advanced' ? '▾' : '▸'}</span>
+        </button>
+      )}
 
-      {openSection === 'advanced' && (
+      {showAdvancedTab && openSection === 'advanced' && (
         <div className="sidebar-section">
           <h2>{t('settings.headings.houseSystem')}</h2>
           <HintMenu
@@ -1294,26 +1381,10 @@ export function Sidebar({
 
           <h2 className="orb-heading">
             {t('settings.headings.aspectOrbs')}
-            <TipSpan
-              className="orb-info"
-              placement="top"
-              tip={t('settings.aspectOrbs.hint')}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 11v6" />
-                <path d="M12 7.5v.5" />
-              </svg>
-            </TipSpan>
+            <InfoTip
+              title={t('settings.headings.aspectOrbs')}
+              hint={t('settings.aspectOrbs.hint')}
+            />
           </h2>
           {/* One orb at a time: the dropdown picks WHICH orb, the stepper below
               edits the picked one (instead of seven stacked rows). */}
@@ -1325,24 +1396,26 @@ export function Sidebar({
                 value: n as string,
                 label: t(`expandedSidebar.aspect.${n}.name`),
                 hint: t(`expandedSidebar.aspect.${n}.desc`),
+                glyph: ASPECT_GLYPHS[n],
               })),
               {
                 value: 'luminaries',
                 label: t('settings.aspectOrbs.lumLabel'),
                 hint: t('settings.aspectOrbs.lumHint'),
+                glyph: `${PLANET_GLYPHS.Sun}/${PLANET_GLYPHS.Moon}`,
               },
               {
                 value: 'declination',
                 label: t('settings.aspectOrbs.declinationLabel'),
                 hint: t('expandedSidebar.aspect.parallel.desc'),
+                glyph: '∥',
               },
             ]}
           />
           {orbPick === 'luminaries' ? (
             <StepperField
               id="aspect-orb-active"
-              glyph={`${PLANET_GLYPHS.Sun}/${PLANET_GLYPHS.Moon}`}
-              label={t('settings.aspectOrbs.lumLabel')}
+              label={t('settings.aspectOrbs.setDegrees')}
               value={aspectOrbs.luminaryBonus}
               max={5}
               step={0.5}
@@ -1352,8 +1425,7 @@ export function Sidebar({
           ) : orbPick === 'declination' ? (
             <StepperField
               id="aspect-orb-active"
-              glyph="∥"
-              label={t('settings.aspectOrbs.declinationLabel')}
+              label={t('settings.aspectOrbs.setDegrees')}
               value={aspectOrbs.declinationOrb}
               max={3}
               step={0.25}
@@ -1363,8 +1435,7 @@ export function Sidebar({
           ) : (
             <StepperField
               id="aspect-orb-active"
-              glyph={ASPECT_GLYPHS[orbPick]}
-              label={t(`expandedSidebar.aspect.${orbPick}.name`)}
+              label={t('settings.aspectOrbs.setDegrees')}
               value={aspectOrbs.orbs[orbPick]}
               max={15}
               step={0.5}
@@ -1402,16 +1473,6 @@ export function Sidebar({
                   <h2>{t('settings.headings.display')}</h2>
                   <ul className="technique-list">
                     <TipToggle
-                      className={`tech-toggle ${showNatal ? 'on' : 'off'}`}
-                      onClick={() => setShowNatal(!showNatal)}
-                      ariaPressed={showNatal}
-                      title={t('settings.natal.title')}
-                      hint={t('settings.natal.hint')}
-                    >
-                      <EyeIcon open={showNatal} />
-                      <span className="name">{t('settings.natal.title')}</span>
-                    </TipToggle>
-                    <TipToggle
                       className={`tech-toggle ${showTimeline ? 'on' : 'off'}`}
                       onClick={() => setShowTimeline(!showTimeline)}
                       ariaPressed={showTimeline}
@@ -1422,14 +1483,24 @@ export function Sidebar({
                       <span className="name">{t('settings.timelineBar.title')}</span>
                     </TipToggle>
                     <TipToggle
+                      className={`tech-toggle ${showNatal ? 'on' : 'off'}`}
+                      onClick={() => setShowNatal(!showNatal)}
+                      ariaPressed={showNatal}
+                      title={t('settings.natal.title')}
+                      hint={t('settings.natal.hint')}
+                    >
+                      <EyeIcon open={showNatal} />
+                      <span className="name">{t('settings.natal.title')}</span>
+                    </TipToggle>
+                    <TipToggle
                       className={`tech-toggle ${showOverlayZenith ? 'on' : 'off'}`}
                       onClick={() => setShowOverlayZenith(!showOverlayZenith)}
                       ariaPressed={showOverlayZenith}
-                      title={t('settings.overlayZenith.title')}
+                      title={zenithLabel}
                       hint={t('settings.overlayZenith.hint')}
                     >
                       <EyeIcon open={showOverlayZenith} />
-                      <span className="name">{t('settings.overlayZenith.title')}</span>
+                      <span className="name">{zenithLabel}</span>
                     </TipToggle>
                   </ul>
                 </>
@@ -1658,6 +1729,17 @@ export function Sidebar({
                           <span className="astro-glyph eclipse-contact-asp">
                             {ASPECT_GLYPHS[c.aspect]}
                           </span>
+                          {/* Planet glyph in the body's own colour, beside the
+                              spelled-out name (so no hover tip is needed). Angle
+                              contacts (no planet) just show the name. */}
+                          {c.planet && (
+                            <PlanetGlyph
+                              planet={c.planet}
+                              size={13}
+                              className="eclipse-contact-planet"
+                              color={PLANET_COLORS[c.planet]}
+                            />
+                          )}
                           <span className="eclipse-contact-name">
                             {t(`settings.eclipses.contacts.aspect.${c.aspect}`)}{' '}
                             {c.planet

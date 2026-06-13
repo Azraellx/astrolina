@@ -23,9 +23,11 @@ export const chartForm = {
     'Composite chart: the planets are midpoints of its two parents, and the date below is the synthesized map-frame anchor (kept in sync automatically).',
   tz: {
     selectLabel: 'Choose time zone',
+    utcLabel: 'Choose UTC offset',
     auto: 'Auto',
     autoTip: 'Reset to the zone detected from the birthplace ({iana})',
     setPlace: 'Set a birthplace to choose a time zone',
+    setDate: 'Add the birth date to set the time zone',
     verifyDst: 'verify DST',
     // Shown when the birth predates standard time in this region: the offset is
     // the birthplace's own local mean time, derived from its longitude.
@@ -48,5 +50,10 @@ export const chartForm = {
   enterCoords: 'Enter manually',
   errorNoPlace: 'Choose a birthplace from the dropdown.',
   errorNoName: 'Add a name.',
+  errorNoDate: 'Add a birth date and time.',
+  // Tooltip on an out-of-range year box (not auto-corrected), and the matching
+  // submit-blocked message. {min}/{max} are the ephemeris data's year range.
+  yearRangeTip: 'Our ephemeris data covers {min}–{max}.',
+  errorYearRange: 'Enter a year between {min} and {max}.',
   import: 'Import',
 } as const;
