@@ -527,6 +527,61 @@
   }
 }
 
+/* ── Eclipse maximum marker (DOM marker) ─────────────────────────────────────
+   The greatest-eclipse (solar) / sub-lunar (lunar) point, drawn as a distinctive,
+   tinted icon — a radiating corona vs a shadow-bitten Moon — rather than a GL coin
+   that looked like a zenith stamp. `color` is set inline to the eclipse's own
+   colour; the icon tints from it via currentColor. Purely decorative (click-through). */
+.eclipse-marker {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+}
+.eclipse-marker-icon {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 1px 2.5px rgba(0, 0, 0, 0.5));
+}
+/* The dark occulting core (solar) / umbral crescent (lunar) — a fixed deep tone so
+   it reads as shadow on every theme and basemap. */
+.eclipse-marker-core,
+.eclipse-marker-umbra {
+  fill: rgba(11, 13, 22, 0.92);
+}
+/* A finite expanding ring on (re)selection: it replays when the marker's markup is
+   rebuilt for a newly-picked eclipse, then settles — no idle animation (see the
+   finite-pulse convention shared with the pin above). */
+.eclipse-marker-ping {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: eclipse-marker-ping 1.5s ease-out 2;
+}
+@keyframes eclipse-marker-ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eclipse-marker-ping {
+    animation: none;
+  }
+}
+
 /* MapLibre default-control restyling */
 
 /* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */

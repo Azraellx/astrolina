@@ -9,6 +9,8 @@ import {
   chartRecency,
   chartTag,
   displayName,
+  NAME_SOFT_LIMIT,
+  NAME_SOFT_LIMIT_STARRED,
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { useT } from '../../i18n';
@@ -109,7 +111,10 @@ export function ChartSwitcher({
               {current ? (
                 <>
                   <TagIcon tag={chartTag(current)} className="tag-icon" />
-                  {displayName(current.name)}
+                  {/* Compact (top bar): hard-cap the name length. Expanded sidebar:
+                      show the full name and let CSS ellipsis trim it to the available
+                      width, so it reveals more as the sidebar is widened. */}
+                  {compact ? displayName(current.name) : current.name}
                 </>
               ) : (
                 t('chartSwitcher.noChart')
@@ -172,7 +177,14 @@ export function ChartSwitcher({
                 >
                   <span className="chart-name">
                     <TagIcon tag={chartTag(c)} className="tag-icon" />
-                    {displayName(c.name)}
+                    {/* Starred rows show a star badge, so cap their name a little
+                        shorter to leave room for it. */}
+                    {displayName(
+                      c.name,
+                      chartTag(c) === 'star'
+                        ? NAME_SOFT_LIMIT_STARRED
+                        : NAME_SOFT_LIMIT,
+                    )}
                   </span>
                   <span className="chart-meta">
                     {fmtBirthDate(c, fmt)} · {c.birthplace.label.split(',')[0]}

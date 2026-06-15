@@ -364,6 +364,21 @@
   display: none;
 }
 
+/* Make the name clamp to the sidebar's (definite, resizable) width. The name lives
+   inside the trigger <button> → .label (flex column) → .name-row, and that chain is
+   fit-content by default (align-items:flex-start), so the button just grows to the name
+   and it never ellipsises. Forcing every level to full width gives the name a definite
+   box to truncate within — and it reveals more as the sidebar is dragged wider. */
+.es-switcher .chart-switcher {
+  display: block;
+}
+.es-switcher .switcher-trigger,
+.es-switcher .switcher-trigger .label,
+.es-switcher .switcher-trigger .name-row {
+  width: 100%;
+  min-width: 0;
+}
+
 /* Larger name + add-person icon in the expanded header. */
 .es-switcher .switcher-trigger strong {
   font-size: 15.75px;

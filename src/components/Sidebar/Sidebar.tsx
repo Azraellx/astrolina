@@ -20,23 +20,15 @@ import {
 import type { LineType } from '../../lib/astro/lines';
 import type {
   AngleProgression,
-  OverlayMode,
   PrimaryRate,
-  RelationshipMethod,
-  TransitFrame,
 } from '../../lib/astro/timeline';
-import { OVERLAY_LABEL_PREFIX } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
-import type { EclipseContact, EclipseDetails } from '../../lib/astro/eclipses';
-import type { EclipseIsoStep } from '../../lib/overlayPrefs';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
+import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
 import type { StarSetPref } from '../../lib/overlayPrefs';
-import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
-import { TipButton } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import { glyphify } from '../ui/glyphify';
@@ -78,8 +70,6 @@ interface SidebarProps {
   setShowNightShade: (v: boolean) => void;
   showZenith: boolean;
   setShowZenith: (v: boolean) => void;
-  progressionType: ProgressionType;
-  setProgressionType: (p: ProgressionType) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
   coordSystem: CoordSystem;
@@ -97,31 +87,6 @@ interface SidebarProps {
   setDualWheels: (v: boolean) => void;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
-  overlayMode: OverlayMode;
-  transitFrame: TransitFrame;
-  setTransitFrame: (f: TransitFrame) => void;
-  synastryMethod: RelationshipMethod;
-  setSynastryMethod: (m: RelationshipMethod) => void;
-  onGenerateRelationship: () => void;
-  canGenerateRelationship: boolean;
-  /** Why Generate is disabled (drives the tip): no partner picked, or one of
-   *  the pair is itself a composite (can't be midpointed again). */
-  generateBlock?: 'partner' | 'composite' | null;
-  /** The selected eclipse's details panel data (null outside eclipses mode). */
-  eclipseDetails: EclipseDetails | null;
-  /** Eclipse-degree hits on the natal chart (conj/square/opp within 3°),
-   *  tightest first; null outside eclipses mode. */
-  eclipseContacts: EclipseContact[] | null;
-  showEclipseNatalLines: boolean;
-  setShowEclipseNatalLines: (v: boolean) => void;
-  showEclipseChartLines: boolean;
-  setShowEclipseChartLines: (v: boolean) => void;
-  eclipseIsoStep: EclipseIsoStep;
-  setEclipseIsoStep: (s: EclipseIsoStep) => void;
-  showOverlayZenith: boolean;
-  setShowOverlayZenith: (v: boolean) => void;
-  showNatal: boolean;
-  setShowNatal: (v: boolean) => void;
   angleProgression: AngleProgression;
   setAngleProgression: (a: AngleProgression) => void;
   primaryRate: PrimaryRate;
@@ -192,8 +157,6 @@ const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
 
-const POSITIONING_VALUES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
-
 const ANGLE_PROGRESSION_VALUES: AngleProgression[] = [
   'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra', 'mean-quotidian',
 ];
@@ -205,7 +168,7 @@ const PRIMARY_RATE_VALUES: PrimaryRate[] = [
 // Sidebar sections behave as an accordion — at most one open at a time — so the
 // panel never grows into a tall stack of expanded sections. The open section is
 // owned by App (so the Info chip can open the Calculation tab from outside).
-export type SidebarSection = 'theme' | 'filters' | 'calc' | 'advanced' | 'overlay';
+export type SidebarSection = 'theme' | 'filters' | 'calc' | 'advanced';
 
 // Sidebar hints use the shared useHoverTip with its default 'left' placement: the
 // sidebar is docked at the screen's right edge, so cards pop left onto the open
@@ -761,8 +724,6 @@ export function Sidebar({
   setShowNightShade,
   showZenith,
   setShowZenith,
-  progressionType,
-  setProgressionType,
   lineSystem,
   setLineSystem,
   coordSystem,
@@ -776,26 +737,6 @@ export function Sidebar({
   setDualWheels,
   nodeType,
   setNodeType,
-  overlayMode,
-  transitFrame,
-  setTransitFrame,
-  synastryMethod,
-  setSynastryMethod,
-  onGenerateRelationship,
-  canGenerateRelationship,
-  generateBlock,
-  eclipseDetails,
-  eclipseContacts,
-  showEclipseNatalLines,
-  setShowEclipseNatalLines,
-  showEclipseChartLines,
-  setShowEclipseChartLines,
-  eclipseIsoStep,
-  setEclipseIsoStep,
-  showOverlayZenith,
-  setShowOverlayZenith,
-  showNatal,
-  setShowNatal,
   angleProgression,
   setAngleProgression,
   primaryRate,
@@ -833,6 +774,11 @@ export function Sidebar({
     label: labels.primaryRate(value),
     hint: labels.primaryRateHint(value),
   }));
+  const chartAngleOptions = ANGLE_PROGRESSION_VALUES.map((value) => ({
+    value,
+    label: labels.chartAngle(value),
+    hint: labels.chartAngleHint(value),
+  }));
   // The Language dropdown lists the top astrology-community languages; only the ones
   // with a catalog (English today) are selectable — the rest are grayed with a tip.
   const languageOptions = LANGUAGES.map((lang) => ({
@@ -844,65 +790,10 @@ export function Sidebar({
   const toggleSection = (s: SidebarSection) =>
     setOpenSection(openSection === s ? null : s);
 
-  // Hover tip on the eclipse-degree value: names the sign behind the glyph
-  // ("♐ Sagittarius") for readers who don't keep the twelve glyphs memorized.
-  const {
-    ref: eclipseSignRef,
-    pos: eclipseSignPos,
-    show: showEclipseSign,
-    hide: hideEclipseSign,
-  } = useHoverTip<HTMLElement>();
-
-  // The settings groups the active overlay exposes in its Overlay tab. Each is its
-  // own flag, and the tab is shown only when at least one is on — so an overlay with
-  // nothing to configure simply gets no tab, with no per-mode special-casing.
-
-  // The bottom timeline only exists for the time-scrub overlays (not synastry), so
-  // the Display section (Natal / Overlay Zenith) is shown only then. (The Timeline
-  // Bar show/hide toggle itself now lives on the timeline nub — see TimelineHud.)
-  const isTimeMode =
-    overlayMode === 'transits' ||
-    overlayMode === 'progressed' ||
-    overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions' ||
-    overlayMode === 'cyclo';
-  // The overlay-zenith toggle names the ACTIVE overlay's zenith — "Tr Zenith",
-  // "Sp Zenith", "CCG Zenith" … — using the same two-letter tag the map labels
-  // use, except cyclo spells out as "CCG" (the map tag 'Cy' is reserved for its
-  // mixed-source parans, so it reads ambiguously as a standalone overlay name).
-  const zenithPrefix =
-    overlayMode === 'off'
-      ? ''
-      : overlayMode === 'cyclo'
-        ? 'CCG'
-        : OVERLAY_LABEL_PREFIX[overlayMode];
-  const zenithLabel =
-    `${zenithPrefix} ${t('settings.overlayZenith.title')}`.trim();
-  // Positioning (radix-relative vs the transit moment's own sidereal time) only changes
-  // the TRANSITS overlay, and only in the Celestial line system: the directed overlays
-  // (progressed / solar arc / primary directions) are natal-framed by construction, and
-  // Mundane/Geodetic lines key off zodiacal longitude with no sidereal-time reference —
-  // so the toggle would do nothing in those cases and isn't shown.
-  const showPositioning =
-    overlayMode === 'transits' && lineSystem === 'celestial';
-  // The Chart Angle control is for the directed overlays only.
-  const showChartAngle =
-    overlayMode === 'progressed' || overlayMode === 'solar-arc';
-  // Synastry's own section: pick a relationship method and generate that derived
-  // chart. Synastry-only (the other overlays have no second chart to combine).
-  const showRelationships = overlayMode === 'synastry';
-  // Eclipses' own section: the selected eclipse's details, the chart-lines
-  // toggle, and the magnitude-isoline interval.
-  const showEclipses = overlayMode === 'eclipses';
-  // Show the Overlay tab only when the active overlay actually has a setting to
-  // toggle; otherwise its header isn't rendered (and any saved open-state for it
-  // just reads as "nothing open").
-  const showOverlayTab =
-    isTimeMode ||
-    showPositioning ||
-    showChartAngle ||
-    showRelationships ||
-    showEclipses;
+  // (Every overlay now hosts its own controls on its bottom-center HUD — time
+  // overlays' display drawer + positioning switch on the timeline bar, synastry's
+  // relationship builder on the synastry bar, and the eclipse vitals/contacts/
+  // toggles on the EclipseHud — so the Sidebar no longer has an "Overlay" tab.)
 
   // Roads and rivers now share one toggle: "on" if either basemap layer shows,
   // and clicking flips both together.
@@ -1263,6 +1154,13 @@ export function Sidebar({
             ))}
           </ul>
 
+          <h2>{t('settings.headings.chartAngle')}</h2>
+          <HintMenu
+            value={angleProgression}
+            onChange={setAngleProgression}
+            options={chartAngleOptions}
+          />
+
           <h2>{t('settings.headings.primaryRate')}</h2>
           <HintMenu
             value={primaryRate}
@@ -1412,374 +1310,6 @@ export function Sidebar({
         </div>
       )}
 
-      {showOverlayTab && (
-        <>
-          <button
-            type="button"
-            className="sidebar-header"
-            onClick={() => toggleSection('overlay')}
-            aria-expanded={openSection === 'overlay'}
-          >
-            <span className="sidebar-title">{t('settings.sections.overlay')}</span>
-            <span className="sidebar-chevron">
-              {openSection === 'overlay' ? '▾' : '▸'}
-            </span>
-          </button>
-          {openSection === 'overlay' && (
-            <div className="sidebar-section">
-              {isTimeMode && (
-                <>
-                  <h2>{t('settings.headings.display')}</h2>
-                  <ul className="technique-list">
-                    {/* The Timeline Bar show/hide toggle moved onto the timeline
-                        nub itself (an eye on its right edge), since the nub is always
-                        visible — see TimelineHud. */}
-                    <TipToggle
-                      className={`tech-toggle ${showNatal ? 'on' : 'off'}`}
-                      onClick={() => setShowNatal(!showNatal)}
-                      ariaPressed={showNatal}
-                      title={t('settings.natal.title')}
-                      hint={t('settings.natal.hint')}
-                    >
-                      <EyeIcon open={showNatal} />
-                      <span className="name">{t('settings.natal.title')}</span>
-                    </TipToggle>
-                    <TipToggle
-                      className={`tech-toggle ${showOverlayZenith ? 'on' : 'off'}`}
-                      onClick={() => setShowOverlayZenith(!showOverlayZenith)}
-                      ariaPressed={showOverlayZenith}
-                      title={zenithLabel}
-                      hint={t('settings.overlayZenith.hint')}
-                    >
-                      <EyeIcon open={showOverlayZenith} />
-                      <span className="name">{zenithLabel}</span>
-                    </TipToggle>
-                  </ul>
-                </>
-              )}
-
-              {showPositioning && (
-                <>
-                  <h2>{t('settings.headings.positioning')}</h2>
-                  <ul className="theme-list">
-                    {POSITIONING_VALUES.map((value) => (
-                      <HintOption
-                        key={value}
-                        selected={transitFrame === value}
-                        onSelect={() => setTransitFrame(value)}
-                        label={labels.positioning(value)}
-                        hint={labels.positioningHint(value)}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {overlayMode === 'progressed' && (
-                <>
-                  <h2>{t('settings.headings.progressionType')}</h2>
-                  <ul className="theme-list">
-                    {(['secondary', 'tertiary'] as const).map((value) => (
-                      <HintOption
-                        key={value}
-                        selected={progressionType === value}
-                        onSelect={() => setProgressionType(value)}
-                        label={t(`settings.progressionType.${value}.label`)}
-                        hint={t(`settings.progressionType.${value}.hint`)}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {showChartAngle && (
-                <>
-                  <h2>{t('settings.headings.chartAngle')}</h2>
-                  <ul className="theme-list">
-                    {ANGLE_PROGRESSION_VALUES.map((value) => (
-                      <HintOption
-                        key={value}
-                        selected={angleProgression === value}
-                        onSelect={() => setAngleProgression(value)}
-                        label={labels.chartAngle(value)}
-                        hint={labels.chartAngleHint(value)}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {showRelationships && (
-                <>
-                  <h2>{t('settings.headings.relationships')}</h2>
-                  <ul className="theme-list">
-                    <HintOption
-                      selected={synastryMethod === 'davison'}
-                      onSelect={() => setSynastryMethod('davison')}
-                      label={t('settings.relationships.davison.label')}
-                      hint={t('settings.relationships.davison.hint')}
-                    />
-                    <HintOption
-                      selected={synastryMethod === 'composite'}
-                      onSelect={() => setSynastryMethod('composite')}
-                      label={t('settings.relationships.composite.label')}
-                      hint={t('settings.relationships.composite.hint')}
-                    />
-                  </ul>
-                  <TipButton
-                    type="button"
-                    className={`relationship-generate${
-                      !canGenerateRelationship ? ' is-disabled' : ''
-                    }`}
-                    aria-disabled={!canGenerateRelationship}
-                    onClick={() => {
-                      if (canGenerateRelationship) onGenerateRelationship();
-                    }}
-                    placement="top"
-                    tip={t('settings.relationships.generate.title')}
-                    hint={
-                      generateBlock === 'composite'
-                        ? t('settings.relationships.generate.compositeParent')
-                        : !canGenerateRelationship
-                          ? t('settings.relationships.generate.needPartner')
-                          : t('settings.relationships.generate.hint')
-                    }
-                  >
-                    {t('settings.relationships.generate.title')}
-                  </TipButton>
-                </>
-              )}
-
-              {showEclipses && eclipseDetails && (
-                <>
-                  <h2>{t('settings.headings.eclipse')}</h2>
-                  {/* The selected eclipse's vitals — catalog metadata (NASA) plus
-                      the Swiss-derived maximum instant and eclipse degree. The
-                      magnitude/duration rows differ by body: a solar eclipse has
-                      one magnitude and a path; a lunar one has umbral/penumbral
-                      depths and per-phase durations. */}
-                  <dl className="eclipse-details">
-                    <div>
-                      <dt>{t('settings.eclipses.details.maximum')}</dt>
-                      <dd>{eclipseDetails.maxUtc}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.type')}</dt>
-                      <dd>
-                        {t(`settings.eclipses.body.${eclipseDetails.row.body}`)}
-                        {' · '}
-                        {t(`settings.eclipses.kind.${eclipseDetails.row.kind}`)}
-                        {eclipseDetails.row.body === 'solar' &&
-                          eclipseDetails.row.kind !== 'partial' &&
-                          ` · ${t(
-                            eclipseDetails.row.central
-                              ? 'settings.eclipses.details.central'
-                              : 'settings.eclipses.details.nonCentral',
-                          )}`}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.sunPosition')}</dt>
-                      <dd
-                        ref={eclipseSignRef}
-                        className="eclipse-degree"
-                        onMouseEnter={showEclipseSign}
-                        onMouseLeave={hideEclipseSign}
-                      >
-                        {glyphify(eclipseDetails.zodiac)}
-                      </dd>
-                    </div>
-                    {eclipseDetails.row.body === 'solar' ? (
-                      <div>
-                        <dt>{t('settings.eclipses.details.magnitude')}</dt>
-                        <dd>{eclipseDetails.row.magnitude.toFixed(4)}</dd>
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <dt>{t('settings.eclipses.details.umbralMag')}</dt>
-                          <dd>{eclipseDetails.row.umbMag.toFixed(4)}</dd>
-                        </div>
-                        <div>
-                          <dt>{t('settings.eclipses.details.penumbralMag')}</dt>
-                          <dd>{eclipseDetails.row.penMag.toFixed(4)}</dd>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <dt>{t('settings.eclipses.details.gamma')}</dt>
-                      <dd>{eclipseDetails.row.gamma.toFixed(4)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.hemisphere')}</dt>
-                      <dd>
-                        {t(
-                          eclipseDetails.row.gamma >= 0
-                            ? 'settings.eclipses.details.north'
-                            : 'settings.eclipses.details.south',
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.saros')}</dt>
-                      <dd>{eclipseDetails.row.saros}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.lunation')}</dt>
-                      <dd>{eclipseDetails.row.lunation}</dd>
-                    </div>
-                    {eclipseDetails.row.body === 'solar' ? (
-                      <>
-                        {eclipseDetails.row.durationSec !== null && (
-                          <div>
-                            <dt>{t('settings.eclipses.details.duration')}</dt>
-                            <dd>
-                              {Math.floor(eclipseDetails.row.durationSec / 60)}m{' '}
-                              {eclipseDetails.row.durationSec % 60}s
-                            </dd>
-                          </div>
-                        )}
-                        {eclipseDetails.row.widthKm !== null && (
-                          <div>
-                            <dt>{t('settings.eclipses.details.width')}</dt>
-                            <dd>{eclipseDetails.row.widthKm} km</dd>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {(
-                          [
-                            ['penumbralDur', eclipseDetails.row.durPenMin],
-                            ['partialDur', eclipseDetails.row.durParMin],
-                            ['totalDur', eclipseDetails.row.durTotMin],
-                          ] as const
-                        ).map(
-                          ([key, min]) =>
-                            min !== null && (
-                              <div key={key}>
-                                <dt>{t(`settings.eclipses.details.${key}`)}</dt>
-                                <dd>
-                                  {Math.floor(min / 60)}h{' '}
-                                  {String(Math.round(min % 60)).padStart(2, '0')}m
-                                </dd>
-                              </div>
-                            ),
-                        )}
-                      </>
-                    )}
-                  </dl>
-
-                  {/* Where the eclipse degree strikes the natal chart — the
-                      classical hard contacts (conj/square/opp, 3° orb),
-                      tightest first. */}
-                  <h2>{t('settings.eclipses.contacts.heading')}</h2>
-                  {eclipseContacts && eclipseContacts.length > 0 ? (
-                    <ul className="eclipse-contacts">
-                      {eclipseContacts.map((c) => (
-                        <li key={`${c.aspect}-${c.planet ?? c.angle}`}>
-                          <span className="astro-glyph eclipse-contact-asp">
-                            {ASPECT_GLYPHS[c.aspect]}
-                          </span>
-                          {/* Planet glyph in the body's own colour, beside the
-                              spelled-out name (so no hover tip is needed). Angle
-                              contacts (no planet) just show the name. */}
-                          {c.planet && (
-                            <PlanetGlyph
-                              planet={c.planet}
-                              size={13}
-                              className="eclipse-contact-planet"
-                              color={PLANET_COLORS[c.planet]}
-                            />
-                          )}
-                          <span className="eclipse-contact-name">
-                            {t(`settings.eclipses.contacts.aspect.${c.aspect}`)}{' '}
-                            {c.planet
-                              ? labels.planet(c.planet)
-                              : t(`settings.eclipses.contacts.${c.angle!}`)}
-                          </span>
-                          <span className="eclipse-contact-orb">
-                            {Math.floor(c.orb)}°
-                            {String(Math.round((c.orb % 1) * 60)).padStart(2, '0')}′
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="eclipse-contacts-empty">
-                      {t('settings.eclipses.contacts.none')}
-                    </p>
-                  )}
-
-                  <h2>{t('settings.headings.display')}</h2>
-                  <ul className="technique-list">
-                    <TipToggle
-                      className={`tech-toggle ${showEclipseNatalLines ? 'on' : 'off'}`}
-                      onClick={() =>
-                        setShowEclipseNatalLines(!showEclipseNatalLines)
-                      }
-                      ariaPressed={showEclipseNatalLines}
-                      title={t('settings.eclipses.natalLines.title')}
-                      hint={t('settings.eclipses.natalLines.hint')}
-                    >
-                      <EyeIcon open={showEclipseNatalLines} />
-                      <span className="name">
-                        {t('settings.eclipses.natalLines.title')}
-                      </span>
-                    </TipToggle>
-                    <TipToggle
-                      className={`tech-toggle ${showEclipseChartLines ? 'on' : 'off'}`}
-                      onClick={() =>
-                        setShowEclipseChartLines(!showEclipseChartLines)
-                      }
-                      ariaPressed={showEclipseChartLines}
-                      title={t('settings.eclipses.chartLines.title')}
-                      hint={t('settings.eclipses.chartLines.hint')}
-                    >
-                      <EyeIcon open={showEclipseChartLines} />
-                      <span className="name">
-                        {t('settings.eclipses.chartLines.title')}
-                      </span>
-                    </TipToggle>
-                  </ul>
-
-                  {/* The isoline radios describe the solar percentage contours;
-                      a lunar eclipse draws no isolines, so the section hides. */}
-                  {eclipseDetails.row.body === 'solar' && (
-                    <>
-                      <h2>{t('settings.headings.magnitudeSteps')}</h2>
-                      <ul className="theme-list">
-                        {([10, 20, 25] as const).map((step) => (
-                          <HintOption
-                            key={step}
-                            selected={eclipseIsoStep === step}
-                            onSelect={() => setEclipseIsoStep(step)}
-                            label={t(`settings.eclipses.isoStep.${step}.label`)}
-                            hint={t(`settings.eclipses.isoStep.${step}.hint`)}
-                          />
-                        ))}
-                      </ul>
-                    </>
-                  )}
-
-                  <ChoiceTip
-                    pos={eclipseSignPos}
-                    title={glyphify(
-                      `${SIGN_GLYPHS[eclipseDetails.signIndex]} ${labels.sign(eclipseDetails.signIndex)}`,
-                    )}
-                    hint={t(
-                      eclipseDetails.row.body === 'solar'
-                        ? 'settings.eclipses.details.sunPositionTip'
-                        : 'settings.eclipses.details.moonPositionTip',
-                      { sign: labels.sign(eclipseDetails.signIndex) },
-                    )}
-                  />
-                </>
-              )}
-            </div>
-          )}
-        </>
-      )}
     </aside>
   );
 }

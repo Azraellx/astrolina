@@ -493,6 +493,32 @@ button.topnav-status:hover {
   color: var(--text-faint);
 }
 
+/* A tool's glyph beside its menu-item label — inherits the item's text colour (so it
+   dims when disabled and tints with the row), echoed in the hover tip below. */
+.navmenu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.navmenu-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+/* The same glyph in the hover-tip title, aligned beside the tool name. */
+.navmenu-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.navmenu-tip-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.navmenu-tip-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .navmenu-divider {
   height: 1px;
   margin: 5px 6px;

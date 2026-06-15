@@ -344,6 +344,18 @@
   padding: 0;
 }
 
+/* Select-only ("pick a chart") mode: the form pane is gone, so narrow the window to
+   roughly the list pane's own width — no edit/delete actions means a wide window would
+   just be empty space on the right of each row. */
+.chart-manager.select-only {
+  max-width: 330px;
+}
+.chart-manager.select-only .cm-list-pane {
+  width: auto;
+  flex: 1;
+  border-right: none;
+}
+
 /* Stack the panes on narrow viewports. */
 @media (max-width: 600px) {
   .cm-body {
@@ -354,5 +366,11 @@
     border-right: none;
     border-bottom: 1px solid rgba(var(--tint), 0.08);
     max-height: 38vh;
+  }
+  /* Select-only has no form pane below the list, so don't cap or underline it — the
+     list owns the whole window. */
+  .chart-manager.select-only .cm-list-pane {
+    border-bottom: none;
+    max-height: none;
   }
 }

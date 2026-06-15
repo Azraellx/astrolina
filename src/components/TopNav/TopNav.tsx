@@ -15,6 +15,8 @@ import type { MeasureInfo, SlideInfo } from '../Map/Map';
 import type { MapState } from '../TimelineHud/TimelineHud';
 import type { OverlayMode } from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
+import { getToolExtensions } from '../../lib/extensions/toolExtensions';
+import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
@@ -88,6 +90,14 @@ interface TopNavProps {
   /** Open ids + toggle for registry-driven HUD extensions (registerMapExtension). */
   openExtensions: ReadonlySet<string>;
   onToggleExtension: (id: string) => void;
+  /** Open ids + toggle for Tools-menu extensions (registerToolExtension). Each is a
+   *  toggled HUD surfaced beneath the built-in tools. */
+  openTools: ReadonlySet<string>;
+  onToggleTool: (id: string) => void;
+  /** The active Overlay-menu extension id (registerOverlayExtension), or null. Mutually
+   *  exclusive with the core overlayMode — selecting one clears the other. */
+  activeOverlayExt: string | null;
+  onSelectOverlayExt: (id: string) => void;
 }
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
@@ -96,6 +106,7 @@ interface TopNavProps {
 const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'transits',
   'progressed',
+  'tertiary-progressed',
   'cyclo',
   'solar-arc',
   'primary-directions',
@@ -346,6 +357,7 @@ function CheckItem({
 // when disabled, why it's unavailable). Disabled rows grey out and don't fire.
 function ToolItem({
   label,
+  icon,
   hotkey,
   checked,
   disabled,
@@ -353,7 +365,11 @@ function ToolItem({
   onToggle,
 }: {
   label: string;
-  hotkey: string;
+  /** The tool's glyph, shown beside the label and in its hover tip. Optional —
+   *  registered tools without an icon just show the label. */
+  icon?: ReactNode;
+  /** Single-key shortcut badge; omitted by registered tools shipped without one. */
+  hotkey?: string;
   checked: boolean;
   disabled?: boolean;
   hint?: string;
@@ -365,10 +381,13 @@ function ToolItem({
   // hover that surfaces the "why it's unavailable" tip.
   return (
     <>
+      {/* Tools are left-aligned (icon → label, flush): no checkmark column. The
+          active tool is signalled by the accent tint (.navmenu-item.on) — plus the
+          armed-tool trigger icon + the readout bar — and stays a checkbox for a11y. */}
       <button
         ref={ref}
         type="button"
-        className={`navmenu-item navmenu-check ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        className={`navmenu-item ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
         role="menuitemcheckbox"
         aria-checked={checked}
         aria-disabled={disabled || undefined}
@@ -380,14 +399,29 @@ function ToolItem({
         onFocus={show}
         onBlur={hide}
       >
-        <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
+        {icon && (
+          <span className="navmenu-item-icon" aria-hidden="true">
+            {icon}
+          </span>
+        )}
         <span>{label}</span>
-        <span className="navmenu-key">{hotkey}</span>
+        {hotkey && <span className="navmenu-key">{hotkey}</span>}
       </button>
       <HoverTip
         pos={pos}
         placement="left"
-        title={label}
+        title={
+          icon ? (
+            <span className="navmenu-tip-title">
+              <span className="navmenu-tip-icon" aria-hidden="true">
+                {icon}
+              </span>
+              {label}
+            </span>
+          ) : (
+            label
+          )
+        }
         hint={hint}
         hotkey={hotkey}
       />
@@ -432,9 +466,14 @@ export function TopNav({
   setShowGuides,
   openExtensions,
   onToggleExtension,
+  openTools,
+  onToggleTool,
+  activeOverlayExt,
+  onSelectOverlayExt,
 }: TopNavProps) {
   const { t } = useT();
-  const overlayActive = overlayMode !== 'off';
+  // The Overlay trigger reads as active for either a core mode or an extension overlay.
+  const overlayActive = overlayMode !== 'off' || activeOverlayExt != null;
 
   // View-menu items: the built-ins, then any registry (add-on) extensions. We then
   // float every item that HAS a hotkey above the ones that don't, so any hotkey-less
@@ -616,6 +655,7 @@ export function TopNav({
                 <>
                   <ToolItem
                     label={t('topNav.tools.measureItem')}
+                    icon={<ToolMenuIcon tool="measure" />}
                     hint={t('topNav.tools.measureHint')}
                     hotkey="T"
                     checked={measuring}
@@ -626,6 +666,7 @@ export function TopNav({
                   />
                   <ToolItem
                     label={t('topNav.tools.slideItem')}
+                    icon={<ToolMenuIcon tool="slide" />}
                     hint={
                       slideEnabled
                         ? t('topNav.tools.slideHint')
@@ -639,6 +680,23 @@ export function TopNav({
                       close();
                     }}
                   />
+                  {/* Registered Tools-menu extensions (registerToolExtension) — add-on
+                      tools attach here with no edits to this file. The checkmark
+                      mirrors their open state; whether the click opens the real HUD or a
+                      CTA is decided downstream (App gates on entitlement). */}
+                  {getToolExtensions().map((ext) => (
+                    <ToolItem
+                      key={ext.id}
+                      label={ext.label}
+                      hint={ext.hint}
+                      hotkey={ext.hotkey}
+                      checked={openTools.has(ext.id)}
+                      onToggle={() => {
+                        onToggleTool(ext.id);
+                        close();
+                      }}
+                    />
+                  ))}
                 </>
               )}
             </NavMenu>
@@ -654,8 +712,10 @@ export function TopNav({
                     label={t('topNav.overlay.none.label')}
                     hint={t('topNav.overlay.none.hint')}
                     hotkey="N"
-                    checked={overlayMode === 'off'}
+                    checked={overlayMode === 'off' && activeOverlayExt == null}
                     onSelect={() => {
+                      // setOverlayMode is the App's combined setter — it clears any
+                      // active extension overlay as it sets the core mode to 'off'.
                       setOverlayMode('off');
                       close();
                     }}
@@ -667,15 +727,35 @@ export function TopNav({
                       tipTitle={
                         mode === 'progressed'
                           ? t('topNav.overlay.modes.progressed.tipTitle')
-                          : mode === 'cyclo'
-                            ? t('topNav.overlay.modes.cyclo.tipTitle')
-                            : undefined
+                          : mode === 'tertiary-progressed'
+                            ? t('topNav.overlay.modes.tertiary-progressed.tipTitle')
+                            : mode === 'cyclo'
+                              ? t('topNav.overlay.modes.cyclo.tipTitle')
+                              : undefined
                       }
                       hint={t(`topNav.overlay.modes.${mode}.desc`)}
                       hotkey={<CycleHotkey />}
                       checked={overlayMode === mode}
                       onSelect={() => {
                         setOverlayMode(mode);
+                        close();
+                      }}
+                    />
+                  ))}
+                  {/* Registered Overlay-menu extensions (registerOverlayExtension) —
+                      single-select rows beneath the built-in modes. Selecting one
+                      clears the core mode (App's onSelectOverlayExt); whether the real
+                      HUD or a CTA shows is decided downstream on entitlement. */}
+                  {getOverlayExtensions().map((ext) => (
+                    <RadioItem
+                      key={ext.id}
+                      label={ext.label}
+                      tipTitle={ext.tipTitle}
+                      hint={ext.hint}
+                      hotkey={ext.hotkey}
+                      checked={activeOverlayExt === ext.id}
+                      onSelect={() => {
+                        onSelectOverlayExt(ext.id);
                         close();
                       }}
                     />

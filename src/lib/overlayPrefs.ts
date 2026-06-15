@@ -10,7 +10,6 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
-  ProgressionType,
   RelationshipMethod,
   TimeUnit,
   TransitFrame,
@@ -33,6 +32,7 @@ const MODES: OverlayMode[] = [
   'off',
   'transits',
   'progressed',
+  'tertiary-progressed',
   'solar-arc',
   'primary-directions',
   'cyclo',
@@ -267,19 +267,8 @@ export function saveLsHideCompass(v: boolean) {
   localStorage.setItem(LS_HIDE_COMPASS_KEY, v ? '1' : '0');
 }
 
-// The 'progressed' overlay's symbolic clock (secondary vs tertiary).
-const PROGRESSION_TYPE_KEY = 'astro:progression-type:v1';
-const PROGRESSION_TYPES: ProgressionType[] = ['secondary', 'tertiary'];
-
-export function loadProgressionType(): ProgressionType {
-  const v = localStorage.getItem(PROGRESSION_TYPE_KEY);
-  return v && (PROGRESSION_TYPES as string[]).includes(v)
-    ? (v as ProgressionType)
-    : 'secondary';
-}
-export function saveProgressionType(p: ProgressionType) {
-  localStorage.setItem(PROGRESSION_TYPE_KEY, p);
-}
+// (The 'progressed' vs 'tertiary-progressed' choice is now two separate Overlay-menu
+// modes — see OverlayMode / loadOverlayMode — so there's no separate clock pref.)
 
 // ── Fixed-star lines ─────────────────────────────────────────────────────────
 const STAR_LINES_KEY = 'astro:star-lines:v1';

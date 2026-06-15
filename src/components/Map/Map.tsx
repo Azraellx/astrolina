@@ -26,6 +26,7 @@ import type { EclipseMapData } from '../../lib/astro/eclipses';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
+  ECLIPSE_LABEL_HALO,
   ZENITH_DISC_COLORS,
   type Theme,
 } from '../../lib/theme';
@@ -334,9 +335,13 @@ export interface OverlayData {
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   /** Sub-planetary (zenith) point per overlay body. Drawn as stamps (and used as
-   *  the overlay labels' click-to-fly target, like natal) only when Overlay ▸
-   *  Display ▸ Zenith is on; the App feeds this empty otherwise. */
+   *  the overlay labels' click-to-fly target, like natal) only when the overlay's
+   *  Zenith/Nadirs toggle is on; the App feeds this empty otherwise. */
   zenith: FeatureCollection<Point, ZenithProps>;
+  /** The antipodal nadir (underfoot) stamps for the overlay bodies — the overlay's
+   *  twin of the natal `nadir`, on the IC line. Shares the overlay Zenith/Nadirs
+   *  toggle (empty when off). */
+  nadir: FeatureCollection<Point, ZenithProps>;
   /** The overlay's ecliptic (zodiac) line — a dotted companion to the solid
    *  bright-yellow natal ecliptic, threading through the overlay Sun's zenith. Shown
    *  only while the overlay zeniths are (the App gates it the same way; empty
@@ -602,8 +607,40 @@ function constrainToHoveredLine(
 // circle layers — those are now a hover-only bloom that's transparent at rest, so
 // they're no longer a reliable query target. The stamps are always rendered, and
 // their feature ids/props/geometry match the discs (same source).
-const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer'] as const;
+const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer', 'acg-nadir-ov-layer'] as const;
+
+// Each hit-testable stamp layer → the GeoJSON source its features live in (so a
+// hover/click feature-state targets the right source; ids collide across sources).
+const ZENITH_SOURCE_BY_LAYER: Record<string, string> = {
+  'acg-zenith-layer': 'acg-zenith',
+  'acg-zenith-ov-layer': 'acg-zenith-ov',
+  'acg-nadir-layer': 'acg-nadir',
+  'acg-nadir-ov-layer': 'acg-nadir-ov',
+};
 const ZENITH_HIT_TOLERANCE_PX = 4;
+
+// Inline SVG for the eclipse-maximum DOM marker (set as the marker element's
+// innerHTML). Solar: a radiating corona / "ring of fire" — eight rays + a bright
+// annulus with a dark occulting core. Lunar: a disc bitten by a darker umbral
+// crescent (an eclipsed Moon). Both tint from the element's `color` (the eclipse's
+// own colour) via currentColor; the dark core/umbra fill comes from Map.css. A
+// deliberately different shape language from the zenith/nadir coins.
+const SOLAR_MARKER_SVG =
+  '<svg class="eclipse-marker-icon" viewBox="0 0 36 36" aria-hidden="true">' +
+  '<g class="eclipse-marker-rays" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' +
+  '<line x1="18" y1="2.5" x2="18" y2="7.5"/><line x1="18" y1="28.5" x2="18" y2="33.5"/>' +
+  '<line x1="2.5" y1="18" x2="7.5" y2="18"/><line x1="28.5" y1="18" x2="33.5" y2="18"/>' +
+  '<line x1="7.1" y1="7.1" x2="10.6" y2="10.6"/><line x1="25.4" y1="25.4" x2="28.9" y2="28.9"/>' +
+  '<line x1="7.1" y1="28.9" x2="10.6" y2="25.4"/><line x1="25.4" y1="10.6" x2="28.9" y2="7.1"/>' +
+  '</g>' +
+  '<circle cx="18" cy="18" r="8" fill="currentColor"/>' +
+  '<circle class="eclipse-marker-core" cx="18" cy="18" r="4.4"/>' +
+  '</svg>';
+const LUNAR_MARKER_SVG =
+  '<svg class="eclipse-marker-icon" viewBox="0 0 36 36" aria-hidden="true">' +
+  '<circle cx="18" cy="18" r="8.6" fill="currentColor"/>' +
+  '<circle class="eclipse-marker-umbra" cx="22.7" cy="15.3" r="8"/>' +
+  '</svg>';
 
 interface ZenithHit {
   id: string;
@@ -641,12 +678,14 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
-  const overlay = f.layer.id === 'acg-zenith-ov-layer';
-  const nadir = f.layer.id === 'acg-nadir-layer';
+  const overlay =
+    f.layer.id === 'acg-zenith-ov-layer' || f.layer.id === 'acg-nadir-ov-layer';
+  const nadir =
+    f.layer.id === 'acg-nadir-layer' || f.layer.id === 'acg-nadir-ov-layer';
   const [lng, lat] = f.geometry.coordinates as [number, number];
   return {
     id: String(f.id),
-    source: nadir ? 'acg-nadir' : overlay ? 'acg-zenith-ov' : 'acg-zenith',
+    source: ZENITH_SOURCE_BY_LAYER[f.layer.id] ?? 'acg-zenith',
     overlay,
     nadir,
     tag: typeof f.properties.tag === 'string' ? f.properties.tag : undefined,
@@ -1157,6 +1196,7 @@ function setupCustomLayers(
   haloColor: string,
   measureColor: string,
   zenithFill: string,
+  eclipseLabelHalo: { color: string; width: number },
 ) {
   // Night-side shading (Filters ▸ Night Shading): the very bottom of the
   // custom stack — an environment wash that everything astrological draws over.
@@ -1319,8 +1359,10 @@ function setupCustomLayers(
     },
     paint: {
       'text-color': ['get', 'color'],
-      'text-halo-color': haloColor,
-      'text-halo-width': 1.2,
+      // Theme-aware halo: Earth's medium-brown digits need a light parchment ring
+      // (a near-black one buried them); Glass/Dark keep their high-contrast halos.
+      'text-halo-color': eclipseLabelHalo.color,
+      'text-halo-width': eclipseLabelHalo.width,
     },
   });
   map.addLayer({
@@ -1784,6 +1826,31 @@ function setupCustomLayers(
     },
   });
 
+  // The overlay bodies' nadir (underfoot) stamps — the overlay twin of the natal
+  // nadir layer below: the DIAMOND coin (NADIR_GLYPH_PREFIX), softer at rest and
+  // brightening on hover, hit-tested (ZENITH_HIT_LAYERS) so it hovers + flies like a
+  // zenith. Shares the overlay Zenith/Nadirs toggle. Tucked BENEATH the overlay
+  // zenith disc so a nadir coinciding with another overlay body's zenith draws under.
+  map.addSource('acg-nadir-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer(
+    {
+      id: 'acg-nadir-ov-layer',
+      source: 'acg-nadir-ov',
+      type: 'symbol',
+      layout: {
+        'icon-image': ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
+        'icon-size': 1,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        'icon-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.95, 0.7],
+        'icon-opacity-transition': { duration: 150, delay: 0 },
+      },
+    },
+    'acg-zenith-ov-disc',
+  );
+
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
@@ -1860,59 +1927,11 @@ function setupCustomLayers(
     'acg-zenith-disc',
   );
 
-  // The greatest-eclipse marker: a smaller echo of the zenith stamps (disc +
-  // the baked Sun glyph) at the point where the eclipse is deepest. Drawn here
-  // so it sits above the path lines like the stamps sit above the ACG lines.
-  map.addLayer({
-    id: 'eclipse-ge-disc',
-    source: 'eclipse',
-    type: 'circle',
-    filter: ['==', ['get', 'kind'], 'ge'],
-    paint: {
-      'circle-radius': 10,
-      'circle-color': zenithFill,
-      'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': 1.5,
-    },
-  });
-  map.addLayer({
-    id: 'eclipse-ge-glyph',
-    source: 'eclipse',
-    type: 'symbol',
-    filter: ['==', ['get', 'kind'], 'ge'],
-    layout: {
-      'icon-image': ZENITH_GLYPH_PREFIX + 'Sun',
-      'icon-size': 0.8,
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-    },
-  });
-  // The lunar counterpart: the sub-lunar point at maximum — where the
-  // eclipsed Moon stands at zenith.
-  map.addLayer({
-    id: 'eclipse-sublunar-disc',
-    source: 'eclipse',
-    type: 'circle',
-    filter: ['==', ['get', 'kind'], 'sublunar'],
-    paint: {
-      'circle-radius': 10,
-      'circle-color': zenithFill,
-      'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': 1.5,
-    },
-  });
-  map.addLayer({
-    id: 'eclipse-sublunar-glyph',
-    source: 'eclipse',
-    type: 'symbol',
-    filter: ['==', ['get', 'kind'], 'sublunar'],
-    layout: {
-      'icon-image': ZENITH_GLYPH_PREFIX + 'Moon',
-      'icon-size': 0.8,
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-    },
-  });
+  // The greatest-eclipse (solar) / sub-lunar (lunar) maximum point is drawn as a
+  // STYLED DOM marker — a corona / eclipsed-moon icon with a finite ping — rather
+  // than a GL coin, so it's clearly distinct from the zenith stamps (see the
+  // eclipse-marker effect below). The 'ge'/'sublunar' point features stay in the
+  // eclipse source (just unrendered here) as that marker's position source.
 
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
@@ -1989,6 +2008,7 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
   // Display ▸ Zenith is on (the App gates ov.zenith / ov.ecliptic), so this just
   // mirrors the source data.
   push('acg-zenith-ov', ov ? ov.zenith : EMPTY_DATA);
+  push('acg-nadir-ov', ov ? ov.nadir : EMPTY_DATA);
   push('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
 }
 
@@ -2111,6 +2131,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     zoomOut: () => mapRef.current?.zoomOut(),
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  // The greatest-eclipse / sub-lunar maximum marker (a styled DOM marker, distinct
+  // from the GL zenith coins). `eclipseMarkerKey` tracks the rendered point so the
+  // effect knows when to replay the finite ping.
+  const eclipseMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const eclipseMarkerKeyRef = useRef<string | null>(null);
   const onRightClickRef = useRef(onRightClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // Slide active flag, read inside the data effect / badge anchoring while the tool
@@ -2481,6 +2506,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [ctrlTip, setCtrlTip] = useState<
     { pos: TipPos; title: string; hotkey?: string } | null
   >(null);
+  // Same deal for the placed pin: it's a MapLibre Marker (plain DOM, not React),
+  // so its tip is driven imperatively from the marker effect below — never a
+  // native `title=` (which the app has retired in favour of the shared .ui-tip).
+  const [pinTip, setPinTip] = useState<{ pos: TipPos; title: string } | null>(null);
   // The "AstroLina" entry in the map attribution bar opens this credits / license
   // dialog (the secondary disclosures that needn't sit on the map at all times).
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -2630,6 +2659,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         LABEL_HALO_COLORS[themeRef.current],
         measureColorRef.current,
         ZENITH_DISC_COLORS[themeRef.current],
+        ECLIPSE_LABEL_HALO[themeRef.current],
       );
       pushData(map, dataRef.current, true);
       computeBadgesRef.current();
@@ -2720,7 +2750,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
-      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme]);
+      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
       pushData(map, dataRef.current, true);
       computeBadges();
     });
@@ -3590,11 +3620,72 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     }
     const el = markerRef.current.getElement();
     el.classList.toggle('natal', pinType === 'natal');
-    el.title =
-      pinType === 'natal'
-        ? t('map.pin.natal')
-        : t('map.pin.custom');
+    const label = pinType === 'natal' ? t('map.pin.natal') : t('map.pin.custom');
+    // The pin is plain MapLibre DOM, so it can't take the shared HoverTip's ref —
+    // drive the portaled tip imperatively, exactly like the nav-control tips above
+    // (NOT a native `title=`). `aria-label` stays as the accessible name; the shared
+    // long-press kernel (bindTouchTip with pointer:true) gives hover + hold-to-reveal
+    // on touch. Re-bound each run so the label tracks natal/custom; the returned
+    // cleanup tears the listeners down (and clears any open tip) when the pin moves
+    // type, is removed, or the map unmounts.
+    el.setAttribute('aria-label', label);
+    const show = () =>
+      setPinTip({ pos: tipPosFor(el.getBoundingClientRect(), 'top'), title: label });
+    const { cleanup } = bindTouchTip(el, show, () => setPinTip(null), {
+      pointer: true,
+    });
+    return () => {
+      cleanup();
+      setPinTip(null);
+    };
   }, [pin, pinType, t]);
+
+  // The greatest-eclipse (solar) / sub-lunar (lunar) maximum marker — a styled DOM
+  // marker tinted with the eclipse's own colour, with a finite ping that replays
+  // whenever the point moves (a new eclipse is selected). Replaces the old GL coin
+  // that read as a zenith stamp; the 'ge'/'sublunar' point lives in the eclipse data.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const feat = eclipse?.features.find(
+      (f) => f.properties.kind === 'ge' || f.properties.kind === 'sublunar',
+    );
+    const pt =
+      feat && feat.geometry.type === 'Point'
+        ? (feat.geometry.coordinates as [number, number])
+        : null;
+    if (!feat || !pt) {
+      eclipseMarkerRef.current?.remove();
+      eclipseMarkerRef.current = null;
+      eclipseMarkerKeyRef.current = null;
+      return;
+    }
+    const solar = feat.properties.kind === 'ge';
+    const color = feat.properties.color;
+    // Skip a needless rebuild (which would restart the ping) when nothing changed.
+    const key = `${solar ? 's' : 'l'}|${pt[0].toFixed(4)},${pt[1].toFixed(4)}|${color}`;
+    if (eclipseMarkerKeyRef.current === key && eclipseMarkerRef.current) return;
+
+    if (!eclipseMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'eclipse-marker';
+      eclipseMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat(pt)
+        .addTo(map);
+    } else {
+      eclipseMarkerRef.current.setLngLat(pt);
+    }
+    const el = eclipseMarkerRef.current.getElement();
+    el.classList.toggle('eclipse-marker--solar', solar);
+    el.classList.toggle('eclipse-marker--lunar', !solar);
+    el.style.color = color;
+    // Rebuilding the inner markup restarts the ping's CSS animation, so the marker
+    // re-pings each time you step to a different eclipse.
+    el.innerHTML =
+      '<span class="eclipse-marker-ping" aria-hidden="true"></span>' +
+      (solar ? SOLAR_MARKER_SVG : LUNAR_MARKER_SVG);
+    eclipseMarkerKeyRef.current = key;
+  }, [eclipse]);
 
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
@@ -3667,6 +3758,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         placement="left"
         title={ctrlTip?.title ?? ''}
         hotkey={ctrlTip?.hotkey}
+      />
+      <HoverTip
+        pos={pinTip?.pos ?? null}
+        placement="top"
+        title={pinTip?.title ?? ''}
       />
       <div
         className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}

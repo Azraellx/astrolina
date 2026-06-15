@@ -239,6 +239,7 @@ export const lineMeanings = {
   overlayNote: {
     Tr: 'A transit line: a temporary influence, tied to the overlay date.',
     Sp: 'A progressed line: a slowly unfolding influence for the overlay date.',
+    Tp: 'A tertiary-progressed line: a faster progressed hand (a day for a lunar month) for the overlay date.',
     Sa: 'A solar-arc line: a directed influence for the overlay date.',
     Pd: 'A primary-directions line: a directed influence for the overlay date.',
     // Only mixed-source CCG parans carry 'Cy' — cyclo lines tag their actual

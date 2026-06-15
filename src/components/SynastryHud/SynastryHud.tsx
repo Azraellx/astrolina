@@ -5,12 +5,15 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useEffect, useRef, useState } from 'react';
-import { displayName, type StoredChart } from '../../lib/chartLibrary';
+import { chartTag, displayName, type StoredChart } from '../../lib/chartLibrary';
+import type { RelationshipMethod } from '../../lib/astro/timeline';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
+import { EyeIcon } from '../ui/EyeIcon';
+import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
 
@@ -24,6 +27,12 @@ function fmtShort(c: StoredChart, fmt: Formatters): string {
   return `${c.day} ${fmt.monthName(c.month)} ${c.year}`;
 }
 
+// Just the city from a "City, Region, Country" birthplace label — matching how the
+// top bar shows the active person's location.
+function cityOf(c: StoredChart): string {
+  return c.birthplace.label.split(',')[0];
+}
+
 interface SynastryHudProps {
   /** The chart currently being compared, or null until one is chosen. */
   partner: StoredChart | null;
@@ -35,18 +44,29 @@ interface SynastryHudProps {
   onSelectPartner: (id: string | null) => void;
   /** Open the add-person flow — used when there are no other charts to compare. */
   onAddPerson: () => void;
+  /** Open the full chart browser (select-only) to search and pick a partner. */
+  onSearchPartner: () => void;
+  /** The relationship-chart type the Generate button builds. */
+  method: RelationshipMethod;
+  setMethod: (m: RelationshipMethod) => void;
+  /** Build the Davison/Composite chart from the active chart + partner. */
+  onGenerate: () => void;
+  /** Whether Generate is allowed (a partner is picked and neither chart is itself a
+   *  composite — a composite can't parent another relationship chart). */
+  canGenerate: boolean;
+  /** Why Generate is blocked, driving its tip: no partner, or a composite parent. */
+  generateBlock: 'partner' | 'composite' | null;
 }
 
 /**
- * Bottom-center bar shown whenever the synastry overlay is active. It both shows
- * the comparison partner and *is* where the partner is chosen: the whole name +
- * birth-line (with an inline add-person icon) is one clickable trigger that opens
- * an upward picker of the other saved charts — mirroring the chart switcher in
- * the expanded sidebar. (The Overlay top-nav menu only toggles the mode.)
+ * Bottom-center HUD for the synastry overlay. Like the timeline bar, it leads with a
+ * draggable NUB (grip + "Synastry" + an eye that collapses the body to focus on the
+ * map). The body both shows + chooses the comparison partner (a click-to-open upward
+ * picker of the other saved charts) and hosts the relationship-chart builder (type +
+ * Generate), relocated here from the Settings sidebar.
  *
- * With no other charts to compare against, the picker would be empty, so the bar
- * instead becomes a plain "Add person" prompt (add-person icon, no birth-line) that
- * opens the add-chart flow directly.
+ * With no other charts to compare, the body becomes a plain "Add person" prompt that
+ * opens the add-chart flow directly (no partner, so no relationship controls).
  */
 export function SynastryHud({
   partner,
@@ -54,9 +74,16 @@ export function SynastryHud({
   currentId,
   onSelectPartner,
   onAddPerson,
+  onSearchPartner,
+  method,
+  setMethod,
+  onGenerate,
+  canGenerate,
+  generateBlock,
 }: SynastryHudProps) {
   const { t, fmt } = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false); // partner picker menu
+  const [expanded, setExpanded] = useState(true); // nub eye: body shown?
   const ref = useRef<HTMLDivElement>(null);
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
@@ -82,10 +109,21 @@ export function SynastryHud({
   const candidates = charts
     .filter((c) => c.id !== currentId)
     .sort((a, b) => a.name.localeCompare(b.name));
+  const hasCandidates = candidates.length > 0;
+
+  // Generate's tip explains why it's blocked, or what it does when enabled.
+  const generateHint =
+    generateBlock === 'composite'
+      ? t('synastryHud.generate.compositeParent')
+      : !canGenerate
+        ? t('synastryHud.generate.needPartner')
+        : t('synastryHud.generate.hint');
 
   return (
     <div
-      className={`synastry-hud${dragging ? ' dragging' : ''}`}
+      className={`synastry-hud${dragging ? ' dragging' : ''}${
+        expanded ? '' : ' is-collapsed'
+      }`}
       ref={ref}
       style={
         pos
@@ -93,11 +131,33 @@ export function SynastryHud({
           : undefined
       }
     >
-      {/* The tag doubles as the move handle (grip + label); drag to float the bar,
-          release near the dock to snap home, double-click to dock. */}
-      <span className="synastry-hud-tag" {...handleProps}>
+      {/* Nub: grip + label (+ partner name when set) + the collapse eye. Doubles as
+          the move handle — drag to float, release near the dock to snap, double-click
+          to dock. The eye stops pointer/double events so it never starts a drag. */}
+      <div className="synastry-hud-nub" {...handleProps}>
         <span className="hud-grip" aria-hidden="true" />
-        {t('synastryHud.title')}
+        <span className="synastry-hud-nub-label">{t('synastryHud.title')}</span>
+        {/* Name the partner on the nub only while COLLAPSED — when expanded it's
+            already shown (twice) in the picker below, so it'd be redundant there. */}
+        {!expanded && partner && (
+          <span className="synastry-hud-nub-partner">
+            <TagIcon tag={chartTag(partner)} className="tag-icon" />
+            {displayName(partner.name)}
+          </span>
+        )}
+        <TipButton
+          type="button"
+          className="synastry-hud-eye"
+          placement="top"
+          tip={t(expanded ? 'synastryHud.barToggle.hide' : 'synastryHud.barToggle.show')}
+          aria-label={t(expanded ? 'synastryHud.barToggle.hide' : 'synastryHud.barToggle.show')}
+          aria-pressed={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <EyeIcon open={expanded} />
+        </TipButton>
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
           <span className="ui-tip-sub hud-dock-line">
@@ -108,130 +168,201 @@ export function SynastryHud({
             {t('common.hud.dockHint')}
           </span>
         </span>
-      </span>
-      <div className="synastry-hud-picker">
-        {candidates.length === 0 ? (
-          // Nothing to select — the only chart is the active one — so the bar is a
-          // direct "Add person" prompt (no birth-line) that opens the add-chart flow.
-          <TipButton
-            type="button"
-            className="synastry-hud-trigger synastry-hud-add"
-            onClick={onAddPerson}
-            placement="top"
-            tip={t('synastryHud.addPersonTip')}
-            aria-label={t('synastryHud.addPersonTip')}
-          >
-            <span className="synastry-hud-label">
-              <span className="synastry-hud-name-row">
-                <span className="synastry-hud-name is-prompt">
-                  {t('synastryHud.addPerson')}
-                </span>
-                <svg
-                  className="synastry-hud-icon"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  {/* add-person (person + plus), reused from the chart switcher */}
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9.5" cy="7" r="4" />
-                  <path d="M22 11h-6" />
-                  <path d="M19 8v6" />
-                </svg>
-              </span>
-            </span>
-          </TipButton>
-        ) : (
-          <>
-            <button
-              ref={tipRef}
-              type="button"
-              className={`synastry-hud-trigger ${open ? 'open' : ''}`}
-              onClick={() => {
-                setOpen((v) => !v);
-                hideTip();
-              }}
-              onMouseEnter={() => {
-                if (!open) showTip();
-              }}
-              onMouseLeave={hideTip}
-              onFocus={() => {
-                if (!open) showTip();
-              }}
-              onBlur={hideTip}
-              aria-label={t('synastryHud.chooseComparison')}
-              aria-expanded={open}
-            >
-              <span className="synastry-hud-label">
-                <span className="synastry-hud-name-row">
-                  <span
-                    className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
-                  >
-                    {partner ? displayName(partner.name) : t('synastryHud.choosePrompt')}
-                  </span>
-                  <svg
-                    className="synastry-hud-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    {/* closed chart directory — book + ruled lines */}
-                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
-                    <path d="M8 7h8" />
-                    <path d="M8 11h8" />
-                  </svg>
-                </span>
-                {partner && (
-                  <span className="synastry-hud-meta">
-                    {fmtDate(partner, fmt)} · {partner.birthplace.label}
-                  </span>
-                )}
-              </span>
-            </button>
-            <HoverTip pos={tipPos} placement="top" title={t('synastryHud.chooseComparison')} />
-            {open && (
-              <div className="synastry-hud-menu">
-                <ul>
-                  {candidates.map((c) => (
-                    <li
-                      key={c.id}
-                      className={c.id === partner?.id ? 'active' : ''}
-                    >
-                      <button
-                        type="button"
-                        className="synastry-hud-row"
-                        onClick={() => {
-                          onSelectPartner(c.id);
-                          setOpen(false);
-                        }}
-                      >
-                        <span className="synastry-hud-row-name">
-                          {displayName(c.name)}
-                        </span>
-                        <span className="synastry-hud-row-meta">
-                          {fmtShort(c, fmt)} · {c.birthplace.label.split(',')[0]}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
       </div>
+
+      {expanded && (
+        <div className="synastry-hud-body">
+          {!hasCandidates ? (
+            // Nothing to select — the only chart is the active one — so the body is a
+            // direct "Add person" prompt (no birth-line) that opens the add-chart flow.
+            <div className="synastry-hud-picker">
+              <TipButton
+                type="button"
+                className="synastry-hud-trigger synastry-hud-add"
+                onClick={onAddPerson}
+                placement="top"
+                tip={t('synastryHud.addPersonTip')}
+                aria-label={t('synastryHud.addPersonTip')}
+              >
+                <span className="synastry-hud-label">
+                  <span className="synastry-hud-name-row">
+                    <span className="synastry-hud-name is-prompt">
+                      {t('synastryHud.addPerson')}
+                    </span>
+                    <svg
+                      className="synastry-hud-icon"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      {/* add-person (person + plus), reused from the chart switcher */}
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                      <circle cx="9.5" cy="7" r="4" />
+                      <path d="M22 11h-6" />
+                      <path d="M19 8v6" />
+                    </svg>
+                  </span>
+                </span>
+              </TipButton>
+            </div>
+          ) : (
+            <>
+              <div className="synastry-hud-picker">
+                <button
+                  ref={tipRef}
+                  type="button"
+                  className={`synastry-hud-trigger ${open ? 'open' : ''}`}
+                  onClick={() => {
+                    setOpen((v) => !v);
+                    hideTip();
+                  }}
+                  onMouseEnter={() => {
+                    if (!open) showTip();
+                  }}
+                  onMouseLeave={hideTip}
+                  onFocus={() => {
+                    if (!open) showTip();
+                  }}
+                  onBlur={hideTip}
+                  aria-label={t('synastryHud.chooseComparison')}
+                  aria-expanded={open}
+                >
+                  <span className="synastry-hud-label">
+                    <span className="synastry-hud-name-row">
+                      <span
+                        className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
+                      >
+                        {partner ? (
+                          <>
+                            <TagIcon tag={chartTag(partner)} className="tag-icon" />
+                            {displayName(partner.name)}
+                          </>
+                        ) : (
+                          t('synastryHud.choosePrompt')
+                        )}
+                      </span>
+                      <svg
+                        className="synastry-hud-icon"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        {/* closed chart directory — book + ruled lines */}
+                        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
+                        <path d="M8 7h8" />
+                        <path d="M8 11h8" />
+                      </svg>
+                    </span>
+                    {partner && (
+                      <span className="synastry-hud-meta">
+                        {fmtDate(partner, fmt)} · {cityOf(partner)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                <HoverTip pos={tipPos} placement="top" title={t('synastryHud.chooseComparison')} />
+                {open && (
+                  <div className="synastry-hud-menu">
+                    <ul>
+                      {candidates.map((c) => (
+                        <li key={c.id} className={c.id === partner?.id ? 'active' : ''}>
+                          <button
+                            type="button"
+                            className="synastry-hud-row"
+                            onClick={() => {
+                              onSelectPartner(c.id);
+                              setOpen(false);
+                            }}
+                          >
+                            <span className="synastry-hud-row-name">
+                              <TagIcon tag={chartTag(c)} className="tag-icon" />
+                              {displayName(c.name)}
+                            </span>
+                            <span className="synastry-hud-row-meta">
+                              {fmtShort(c, fmt)} · {cityOf(c)}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {/* Mirrors the chart switcher's "Search" — opens the full
+                        (select-only) chart browser to find/pick any chart. */}
+                    <button
+                      type="button"
+                      className="synastry-hud-search"
+                      onClick={() => {
+                        onSearchPartner();
+                        setOpen(false);
+                      }}
+                    >
+                      {t('synastryHud.search')}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Relationship-chart builder: a compact type toggle (Davison /
+                  Composite) + Generate, relocated from Settings. Generate is disabled
+                  without a partner, or when either chart is itself a composite. */}
+              <span className="synastry-hud-divider" />
+              <div className="synastry-hud-build">
+                <span className="synastry-hud-build-label">
+                  {t('synastryHud.method.label')}
+                </span>
+                <span className="synastry-hud-methods" role="group">
+                  {(['davison', 'composite'] as const).map((m) => (
+                    <TipButton
+                      key={m}
+                      type="button"
+                      className={`synastry-hud-method${method === m ? ' on' : ''}`}
+                      placement="top"
+                      tip={t(`synastryHud.method.${m}.label`)}
+                      hint={t(`synastryHud.method.${m}.hint`)}
+                      aria-pressed={method === m}
+                      onClick={() => setMethod(m)}
+                    >
+                      {t(`synastryHud.method.${m}.label`)}
+                    </TipButton>
+                  ))}
+                </span>
+                <TipButton
+                  type="button"
+                  className={`synastry-hud-generate${canGenerate ? '' : ' is-disabled'}`}
+                  aria-disabled={!canGenerate}
+                  onClick={() => {
+                    if (canGenerate) onGenerate();
+                  }}
+                  placement="top"
+                  // The space-tag glyph prefixes both the button and its tip — a hint
+                  // that the built chart is saved with the "space" (relationship) tag.
+                  tip={
+                    <span className="synastry-hud-gen-tip">
+                      <TagIcon tag="space" />
+                      {t('synastryHud.generate.label')}
+                    </span>
+                  }
+                  hint={generateHint}
+                >
+                  <TagIcon tag="space" />
+                  {t('synastryHud.generate.label')}
+                </TipButton>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

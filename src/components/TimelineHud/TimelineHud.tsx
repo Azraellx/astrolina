@@ -6,6 +6,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,11 +14,13 @@ import {
 } from 'react';
 import {
   minorStepMs,
+  OVERLAY_LABEL_PREFIX,
   TIME_UNITS,
   type OverlayMode,
-  type ProgressionType,
   type TimeUnit,
+  type TransitFrame,
 } from '../../lib/astro/timeline';
+import type { LineSystem } from '../../lib/ephemeris';
 import { findReturn, type ReturnBody } from '../../lib/astro/returns';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
@@ -62,9 +65,19 @@ interface TimelineHudProps {
   /** Snap the target date to a solar/lunar return (dir 0 = nearest, ±1 = next/
    *  previous). Transits mode only — the Returns group hides otherwise. */
   onSnapReturn: (body: ReturnBody, dir: -1 | 0 | 1) => void;
-  /** Which progression clock drives the Progressed overlay — retitles the nub
-   *  ("Sec." vs "Tert. Progressed"). */
-  progressionType: ProgressionType;
+  /** Transit framing (Relative-to-natal ↔ Absolute/transit-moment), flipped by the
+   *  switch in the transits returns row. `lineSystem` gates that switch: framing only
+   *  has an effect on Celestial lines, so it's hidden for Mundane/Geodetic. */
+  transitFrame: TransitFrame;
+  setTransitFrame: (f: TransitFrame) => void;
+  lineSystem: LineSystem;
+  /** The overlay's two display toggles, relocated from Settings ▸ Display into the
+   *  bar's right-side drawer: the natal chart linework and this overlay's zenith
+   *  stamps. (Synastry/eclipses don't render this HUD, so they keep their own UI.) */
+  showNatal: boolean;
+  setShowNatal: (v: boolean) => void;
+  showOverlayZenith: boolean;
+  setShowOverlayZenith: (v: boolean) => void;
 }
 
 const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
@@ -73,6 +86,7 @@ const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'yea
 const NUB_LABEL_KEY = {
   transits: 'timeline.nubMode.transits',
   progressed: 'timeline.nubMode.progressed',
+  'tertiary-progressed': 'timeline.nubMode.tertiary-progressed',
   'solar-arc': 'timeline.nubMode.solar-arc',
   'primary-directions': 'timeline.nubMode.primary-directions',
   cyclo: 'timeline.nubMode.cyclo',
@@ -268,11 +282,43 @@ export function TimelineHud({
   showTimeline,
   onToggleTimeline,
   onSnapReturn,
-  progressionType,
+  transitFrame,
+  setTransitFrame,
+  lineSystem,
+  showNatal,
+  setShowNatal,
+  showOverlayZenith,
+  setShowOverlayZenith,
 }: TimelineHudProps) {
   const { t, fmt } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The right-side display drawer (Natal + Zenith toggles) — closed by default.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // The drawer animates open by transitioning its width 0 → the toggles' natural
+  // width, which we measure here. (A shrink-to-fit absolutely-positioned box can't
+  // use the pure-CSS grid 0fr→1fr trick: 1fr has no free space to expand into, so it
+  // stays collapsed.) Re-measured when the toggle labels change — e.g. the overlay's
+  // Zenith prefix (Tr/Sp/CCG…) — so the open width always fits.
+  const drawerTogglesRef = useRef<HTMLDivElement>(null);
+  const [drawerWidth, setDrawerWidth] = useState(0);
+  // useLayoutEffect (not useEffect) so the width is committed before the first paint —
+  // the first open then animates and can't race a click. getBoundingClientRect →
+  // Math.ceil avoids offsetWidth's integer truncation shaving ~1px off the last toggle.
+  useLayoutEffect(() => {
+    const el = drawerTogglesRef.current;
+    if (!el) return;
+    // Ignore zero readings (e.g. while the drawer is display:none — hidden when the
+    // bar is collapsed) so the last good width is kept and a reopen animates at once.
+    const measure = () => {
+      const next = Math.ceil(el.getBoundingClientRect().width);
+      if (next > 0) setDrawerWidth(next);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Read "now" once at mount: calling Date.now() during render makes render
   // impure, and a ±50-year slider doesn't care about sub-second drift.
   const [nowMs] = useState(() => Date.now());
@@ -343,11 +389,22 @@ export function TimelineHud({
   const stepWord = (n: number) =>
     t(`timeline.stepWords.${stepBase.unit}.${n === 1 ? 'one' : 'other'}`);
   const modeLabel =
-    overlayMode === 'progressed' && progressionType === 'tertiary'
-      ? t('timeline.nubMode.tertiary')
-      : overlayMode in NUB_LABEL_KEY
-        ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
-        : t('timeline.nubFallback');
+    overlayMode in NUB_LABEL_KEY
+      ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
+      : t('timeline.nubFallback');
+  // The zenith toggle names the ACTIVE overlay's zenith — "Tr Zenith", "Sp Zenith",
+  // "CCG Zenith" … — using the same two-letter map tag, except cyclo spells out as
+  // "CCG" (its 'Cy' tag is reserved for mixed-source parans). (Moved here verbatim
+  // from the old Settings ▸ Display toggle.)
+  const zenithLabel = (
+    `${
+      overlayMode === 'off'
+        ? ''
+        : overlayMode === 'cyclo'
+          ? 'CCG'
+          : OVERLAY_LABEL_PREFIX[overlayMode]
+    } ${t('settings.overlayZenith.title')}`
+  ).trim();
 
   // ── Draggable bar ──────────────────────────────────────────────────────
   // The nub is the move handle. Position is shared with the synastry bar (same
@@ -461,6 +518,69 @@ export function TimelineHud({
             {t('common.hud.dockHint')}
           </span>
         </span>
+      </div>
+
+      {/* Right-side display drawer: the overlay's Natal Chart + Zenith toggles,
+          relocated here from Settings ▸ Display. The edge chevron opens/closes a
+          compartment that slides out with a quick width animation (grid 0fr→1fr in
+          the CSS); the handle is faint at rest and brightens on hover. The panel is
+          always rendered (so it can animate) but made `inert` while closed so its
+          toggles aren't focusable then. Sits outside the ruler/transport block so
+          it's reachable whether the bar is expanded or collapsed to its nub. */}
+      <div className={`thud-drawer${drawerOpen ? ' is-open' : ''}`}>
+        <TipButton
+          type="button"
+          className="thud-drawer-tab"
+          placement="top"
+          tip={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+          aria-label={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+          aria-expanded={drawerOpen}
+          onClick={() => setDrawerOpen((o) => !o)}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <span className="thud-drawer-chevron" aria-hidden="true">
+            {drawerOpen ? '‹' : '›'}
+          </span>
+        </TipButton>
+        <div
+          className="thud-drawer-compartment"
+          inert={!drawerOpen || undefined}
+          // Fall back to max-content if the width hasn't been measured yet (0): the
+          // open drawer must never collapse to nothing. That first open won't animate;
+          // every subsequent one uses the measured px width and does.
+          style={{ width: drawerOpen ? drawerWidth || 'max-content' : 0 }}
+        >
+          <div className="thud-drawer-toggles" ref={drawerTogglesRef}>
+            <TipButton
+              type="button"
+              className={`thud-drawer-toggle ${showNatal ? 'on' : 'off'}`}
+              placement="top"
+              tip={t('settings.natal.title')}
+              hint={t('settings.natal.hint')}
+              aria-label={t('settings.natal.title')}
+              aria-pressed={showNatal}
+              onClick={() => setShowNatal(!showNatal)}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <EyeIcon open={showNatal} />
+              <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
+            </TipButton>
+            <TipButton
+              type="button"
+              className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
+              placement="top"
+              tip={zenithLabel}
+              hint={t('settings.overlayZenith.hint')}
+              aria-label={zenithLabel}
+              aria-pressed={showOverlayZenith}
+              onClick={() => setShowOverlayZenith(!showOverlayZenith)}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <EyeIcon open={showOverlayZenith} />
+              <span className="thud-drawer-toggle-name">{zenithLabel}</span>
+            </TipButton>
+          </div>
+        </div>
       </div>
 
       {/* Ruler + transport: hidden when Display ▸ Timeline is off (only the nub
@@ -601,6 +721,58 @@ export function TimelineHud({
             <span className="thud-mode-label">{t('timeline.returns.label')}</span>
             {returnGroup('lunar')}
           </div>
+          {/* Faint separator, centred in the flexible gap between the left Returns
+              group and the right Positioning group (space-between splits the gap). */}
+          <span className="thud-returns-divider" aria-hidden="true" />
+          {/* Positioning, relocated from Settings: a flip-switch (Relative ↔ Absolute).
+              Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
+              longitude — so on those it's shown DISABLED, reading "—" (not the stored
+              frame, which would be meaningless here) with a tip explaining why, rather
+              than hidden. The button is floored to one width (see .thud-positioning-btn)
+              so toggling Relative↔Absolute can't nudge the bar wider. */}
+          {(() => {
+            const posEnabled = lineSystem === 'celestial';
+            return (
+              <div className="thud-positioning">
+                <span className="thud-mode-label">{t('settings.headings.positioning')}</span>
+                <TipButton
+                  type="button"
+                  className={`thud-positioning-btn${posEnabled ? '' : ' is-disabled'}`}
+                  aria-disabled={!posEnabled}
+                  placement="top"
+                  // Enabled: tip names the CURRENT framing + its meaning. Disabled
+                  // (non-Celestial lines): explain why framing has no effect here.
+                  tip={
+                    posEnabled
+                      ? t(`settings.positioning.${transitFrame}.label`)
+                      : t('settings.headings.positioning')
+                  }
+                  hint={
+                    posEnabled
+                      ? t(`settings.positioning.${transitFrame}.hint`)
+                      : t('timeline.positioning.disabled')
+                  }
+                  aria-label={
+                    posEnabled
+                      ? `${t('settings.headings.positioning')}: ${t(
+                          `settings.positioning.${transitFrame}.label`,
+                        )}`
+                      : t('settings.headings.positioning')
+                  }
+                  onClick={() => {
+                    if (posEnabled)
+                      setTransitFrame(
+                        transitFrame === 'relative-to-natal'
+                          ? 'transit-moment'
+                          : 'relative-to-natal',
+                      );
+                  }}
+                >
+                  {posEnabled ? t(`settings.positioning.${transitFrame}.label`) : '—'}
+                </TipButton>
+              </div>
+            );
+          })()}
         </div>
       )}
 

@@ -13,9 +13,8 @@ import {
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
-import { HoverTip, TipButton } from '../ui/HoverTip';
+import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
-import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import './ChartManager.css';
@@ -36,7 +35,15 @@ interface ChartManagerProps {
   currentId: string | null;
   /** When set, opens with this chart loaded in the form for editing. */
   initialEditId?: string | null;
-  /** Make a chart the active one (the manager then closes). */
+  /** Select-only ("pick a chart") mode: hide the add/edit form pane, the "Add <query>"
+   *  row and the per-row edit/delete actions — leaving just search + the list to choose
+   *  from (used by the synastry partner picker). */
+  selectOnly?: boolean;
+  /** A chart id to omit from the list — e.g. the active chart, which can't be its own
+   *  synastry partner. */
+  excludeId?: string | null;
+  /** Make a chart the active one — or, in selectOnly mode, the picked chart (the
+   *  manager then closes). */
   onSelect: (id: string) => void;
   /** Create a new chart or save an edited one (the manager then closes). */
   onSave: (chart: StoredChart) => void;
@@ -56,6 +63,8 @@ export function ChartManager({
   charts,
   currentId,
   initialEditId,
+  selectOnly = false,
+  excludeId = null,
   onSelect,
   onSave,
   onDelete,
@@ -77,13 +86,6 @@ export function ChartManager({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  // Reveals the full chart name on the editing header (which truncates).
-  const {
-    ref: formHeadRef,
-    pos: formHeadPos,
-    show: showFormHead,
-    hide: hideFormHead,
-  } = useHoverTip<HTMLDivElement>('bottom');
   const fadeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -121,6 +123,7 @@ export function ChartManager({
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
     let result = [...charts].sort((a, b) => chartRecency(b) - chartRecency(a));
+    if (excludeId) result = result.filter((c) => c.id !== excludeId);
     if (tagFilter !== 'all')
       result = result.filter((c) => chartTag(c) === tagFilter);
     if (q)
@@ -130,13 +133,15 @@ export function ChartManager({
           c.birthplace.label.toLowerCase().includes(q),
       );
     return result;
-  }, [charts, q, tagFilter]);
+  }, [charts, q, tagFilter, excludeId]);
 
-  // Offer "Add <query>" unless the query already names an existing chart exactly.
+  // Offer "Add <query>" unless the query already names an existing chart exactly — and
+  // never in selectOnly mode (no form to add into).
   const exactNameExists = useMemo(
     () => charts.some((c) => c.name.trim().toLowerCase() === q),
     [charts, q],
   );
+  const showAddRow = !selectOnly && q !== '' && !exactNameExists;
   // The Space filter chip appears only once at least one chart carries that (system) tag.
   const hasSpace = useMemo(
     () => charts.some((c) => chartTag(c) === 'space'),
@@ -167,7 +172,7 @@ export function ChartManager({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="chart-manager"
+        className={`chart-manager${selectOnly ? ' select-only' : ''}`}
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -250,14 +255,14 @@ export function ChartManager({
 
             <div className="cm-list-scroll">
             <ul className="cm-list" ref={listRef}>
-              {matches.length === 0 && !(q && !exactNameExists) && (
+              {matches.length === 0 && !showAddRow && (
                 <li className="cm-list-empty">
                   {charts.length === 0
                     ? t('chartManager.empty')
                     : t('chartManager.noMatches')}
                 </li>
               )}
-              {q && !exactNameExists && (
+              {showAddRow && (
                 <li>
                   <button
                     type="button"
@@ -286,32 +291,37 @@ export function ChartManager({
                   >
                     <span className="cm-row-name">
                       <TagIcon tag={chartTag(c)} className="tag-icon" />
-                      {displayName(c.name)}
+                      {/* In selectOnly (pick) mode there's no edit/delete column, so let
+                          the name fill the row — .cm-row-name's max-width:100% + ellipsis
+                          clamps it dynamically instead of the shorter 25-char cap. */}
+                      {selectOnly ? c.name : displayName(c.name)}
                     </span>
                     <span className="cm-row-meta">
                       {fmtBirth(c, fmt)} · {c.birthplace.label.split(',')[0]}
                     </span>
                   </button>
-                  <div className="cm-row-actions">
-                    <TipButton
-                      type="button"
-                      className="cm-act"
-                      onClick={() => editExisting(c)}
-                      placement="top"
-                      tip={t('common.edit')}
-                    >
-                      ✎
-                    </TipButton>
-                    <TipButton
-                      type="button"
-                      className="cm-act danger"
-                      onClick={() => handleDelete(c)}
-                      placement="top"
-                      tip={t('common.delete')}
-                    >
-                      ×
-                    </TipButton>
-                  </div>
+                  {!selectOnly && (
+                    <div className="cm-row-actions">
+                      <TipButton
+                        type="button"
+                        className="cm-act"
+                        onClick={() => editExisting(c)}
+                        placement="top"
+                        tip={t('common.edit')}
+                      >
+                        ✎
+                      </TipButton>
+                      <TipButton
+                        type="button"
+                        className="cm-act danger"
+                        onClick={() => handleDelete(c)}
+                        placement="top"
+                        tip={t('common.delete')}
+                      >
+                        ×
+                      </TipButton>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -320,26 +330,15 @@ export function ChartManager({
             </div>
           </div>
 
-          {/* Right: add / edit the birth details. */}
+          {/* Right: add / edit the birth details. Omitted in selectOnly (pick) mode. */}
+          {!selectOnly && (
           <div className="cm-form-pane">
             {editing && (
-              <>
-                <div
-                  ref={formHeadRef}
-                  className="cm-form-head"
-                  onMouseEnter={showFormHead}
-                  onMouseLeave={hideFormHead}
-                >
-                  {t('chartManager.editingHeader', {
-                    name: displayName(editing.name),
-                  })}
-                </div>
-                <HoverTip
-                  pos={formHeadPos}
-                  placement="bottom"
-                  title={editing.name}
-                />
-              </>
+              <div className="cm-form-head">
+                {t('chartManager.editingHeader', {
+                  name: displayName(editing.name),
+                })}
+              </div>
             )}
             <BirthDataFields
               key={formKey}
@@ -354,6 +353,7 @@ export function ChartManager({
               onImport={editing ? undefined : onImport}
             />
           </div>
+          )}
         </div>
       </div>
     </div>

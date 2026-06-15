@@ -76,6 +76,19 @@ export const STAR_LINE_COLORS: Record<Theme, string> = {
   vintage: '#7e6118',
 };
 
+// Halo behind the eclipse magnitude-isoline percentage labels (e.g. "50%"), whose
+// digits draw in the quiet isoline tint (eclipses.ts PATH_COLORS.iso). Glass pairs
+// its medium-slate digits with a white halo and Dark pairs light-slate digits with a
+// near-black one — both already high-contrast. Earth's digits are a MEDIUM brown, so
+// reusing its near-black LABEL_HALO_COLORS buried them (dark-on-dark mud); Earth gets
+// a light parchment halo instead so the brown digits pop, plus a slightly thinner
+// ring so the small 10px text stays crisp rather than choked by a heavy outline.
+export const ECLIPSE_LABEL_HALO: Record<Theme, { color: string; width: number }> = {
+  glass: { color: 'rgba(255, 255, 255, 0.95)', width: 1.2 },
+  dark: { color: 'rgba(10, 10, 15, 0.95)', width: 1.2 },
+  vintage: { color: 'rgba(238, 230, 213, 0.95)', width: 0.9 },
+};
+
 // The night-side shading (Filters ▸ Night Shading): a dusk-blue wash on the
 // light themes, a deeper darkening on the already-dark basemap.
 export const NIGHT_SHADE_STYLE: Record<Theme, { color: string; opacity: number }> = {

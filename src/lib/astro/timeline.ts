@@ -35,6 +35,7 @@ export type OverlayMode =
   | 'off'
   | 'transits'
   | 'progressed'
+  | 'tertiary-progressed'
   | 'solar-arc'
   | 'primary-directions'
   | 'cyclo'
@@ -71,9 +72,12 @@ export type PrimaryRate =
   | 'placidus-ra'  // true secondary-progressed solar arc in RA (nonlinear)
   | 'user';        // user-entered degrees per year
 
-// The 'progressed' overlay's symbolic clock: secondary is the classic
-// day-for-a-year; tertiary runs one ephemeris day per TROPICAL MONTH of life
-// (the common "tertiary I" definition), a faster hand for finer timing work.
+// The two progressed overlays are distinct OverlayModes (above), each its own row in
+// the Overlay menu: 'progressed' is the classic SECONDARY day-for-a-year; the separate
+// 'tertiary-progressed' runs one ephemeris day per TROPICAL MONTH of life (the common
+// "tertiary I" definition), a faster hand for finer timing work. ProgressionType remains
+// as the day-clock selector buildOverlay reads (the mode is the source of truth — see
+// its progressed case — but the type also lets callers/tests name a clock directly).
 export type ProgressionType = 'secondary' | 'tertiary';
 
 const TROPICAL_MONTH_DAYS = 27.321582;
@@ -307,7 +311,13 @@ export function buildOverlay(
         originLng: chart.birthplace.lng,
       };
     }
-    case 'progressed': {
+    case 'progressed':
+    case 'tertiary-progressed': {
+      // Mode is the source of truth for the day-clock: 'tertiary-progressed' is the
+      // tertiary hand. The legacy progressionType param is still honoured (tests /
+      // back-compat callers that pass 'tertiary' with the 'progressed' mode).
+      const isTertiary =
+        mode === 'tertiary-progressed' || progressionType === 'tertiary';
       const c = directionContext(chart, targetDate, nodeType);
       const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
       // The planets progress via day-for-a-year; the angle method chooses how the
@@ -353,15 +363,15 @@ export function buildOverlay(
       // secondary-progressed Sun, the conventional reading for solar arcs, and
       // the default (natal) framing is untouched either way.
       const progJD =
-        progressionType === 'tertiary'
+        isTertiary
           ? c.birthJD + (epochMsToJD(targetDate) - c.birthJD) / TROPICAL_MONTH_DAYS
           : c.progressedJD;
       return {
         kind: mode,
         measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
         labelFull: t(
-          progressionType === 'tertiary'
-            ? 'timeline.labelFull.tertiary'
+          isTertiary
+            ? 'timeline.labelFull.tertiary-progressed'
             : 'timeline.labelFull.progressed',
           { years: c.years.toFixed(1) },
         ),
@@ -552,13 +562,14 @@ export function buildOverlay(
 
 // Two-letter tag per overlay kind, shown on the map ahead of the glyph + angle
 // code so overlay lines read e.g. "Tr ♂ MC". Tr transits · Sp secondary
-// progressions · Sa solar arc · Sy synastry · Ec eclipse chart. Cyclo is the
-// exception: its features carry per-body SOURCE tags (cycloBodyTag — Sp/Tr),
-// and 'Cy' appears only on a paran pairing a progressed body with a
+// progressions · Tp tertiary progressions · Sa solar arc · Sy synastry · Ec eclipse
+// chart. Cyclo is the exception: its features carry per-body SOURCE tags (cycloBodyTag
+// — Sp/Tr), and 'Cy' appears only on a paran pairing a progressed body with a
 // transiting one.
 export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   transits: 'Tr',
   progressed: 'Sp',
+  'tertiary-progressed': 'Tp',
   'solar-arc': 'Sa',
   'primary-directions': 'Pd',
   cyclo: 'Cy',

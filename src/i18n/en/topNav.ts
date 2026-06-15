@@ -25,6 +25,11 @@ export const topNav = {
         tipTitle: 'Secondary Progressions',
         desc: 'Secondary progressions: a symbolic day-for-a-year unfolding.',
       },
+      'tertiary-progressed': {
+        label: 'Tert. Progressed',
+        tipTitle: 'Tertiary Progressions',
+        desc: 'Tertiary progressions: a day-for-a-lunar-month hand for finer timing.',
+      },
       'solar-arc': {
         label: 'Solar Arc',
         desc: 'Every point advanced by the Sun’s one-degree-per-year arc.',

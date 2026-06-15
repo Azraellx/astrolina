@@ -10,6 +10,10 @@ import {
   isEntitled,
   type MapExtensionContext,
 } from './lib/extensions/mapExtensions';
+import { getToolExtensions } from './lib/extensions/toolExtensions';
+import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
+// Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
+import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
 import type {
   Feature,
   FeatureCollection,
@@ -109,7 +113,6 @@ import {
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
-  type ProgressionType,
   type RelationshipMethod,
   type TimeUnit,
   type TransitFrame,
@@ -144,7 +147,6 @@ import {
   loadOrbZoneKm,
   loadParanOrbDeg,
   loadPrimaryRate,
-  loadProgressionType,
   loadShowNightShade,
   loadShowOrbZones,
   loadShowStarLines,
@@ -170,7 +172,6 @@ import {
   saveOrbZoneKm,
   saveParanOrbDeg,
   savePrimaryRate,
-  saveProgressionType,
   saveShowNightShade,
   saveShowOrbZones,
   saveShowStarLines,
@@ -209,6 +210,11 @@ interface Point {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+
+// Persists the active Overlay-menu extension id (registerOverlayExtension). A single
+// key (not per-extension) since the Overlay menu is single-select; the core ships no
+// overlay extensions, so this is unused here.
+const OVERLAY_EXT_KEY = 'astro:overlay-ext:v1';
 
 // Slide tool: quantize the time-shifted line recompute to ~1-hour Δt steps. Even the
 // fastest body (Moon, ~0.5°/h) drifts only ~0.5° per step — invisible against a spin —
@@ -397,6 +403,9 @@ export default function App() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Open the chart browser in select-only mode to pick a synastry partner (vs. the
+  // normal add/edit/select flow driven by `creating`/`editingId`).
+  const [pickingPartner, setPickingPartner] = useState(false);
   const [importing, setImporting] = useState(false);
 
   // Persisted planet filter (planets, nodes, and asteroids share one set), so
@@ -572,8 +581,7 @@ export default function App() {
       v === 'theme' ||
       v === 'filters' ||
       v === 'calc' ||
-      v === 'advanced' ||
-      v === 'overlay'
+      v === 'advanced'
     ) {
       return v;
     }
@@ -584,6 +592,16 @@ export default function App() {
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() =>
     loadOverlayMode(),
   );
+  // The active Overlay-menu EXTENSION (registerOverlayExtension), single-select and
+  // mutually exclusive with overlayMode. Restored only if the id still matches a
+  // registered extension, so a stale id from a removed plugin activates nothing. The
+  // open core registers none, so this stays null here.
+  const [activeOverlayExt, setActiveOverlayExt] = useState<string | null>(() => {
+    const saved = localStorage.getItem(OVERLAY_EXT_KEY);
+    return saved && getOverlayExtensions().some((e) => e.id === saved)
+      ? saved
+      : null;
+  });
   const [targetDate, setTargetDate] = useState<number>(() => loadOverlayDate());
   const [partnerId, setPartnerId] = useState<string | null>(() =>
     loadOverlayPartner(),
@@ -597,11 +615,6 @@ export default function App() {
   // Progressions & Directions ("Progs/Dirns") settings — drive the directed overlays.
   const [angleProgression, setAngleProgression] = useState<AngleProgression>(() =>
     loadAngleProgression(),
-  );
-  // The Progressed overlay's symbolic clock: secondary (day/year) or tertiary
-  // (day/tropical month).
-  const [progressionType, setProgressionType] = useState<ProgressionType>(() =>
-    loadProgressionType(),
   );
   const [primaryRate, setPrimaryRate] = useState<PrimaryRate>(() =>
     loadPrimaryRate(),
@@ -694,8 +707,8 @@ export default function App() {
     // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     const overlayCycle: OverlayMode[] = [
-      'transits', 'progressed', 'cyclo', 'solar-arc', 'primary-directions',
-      'synastry', 'eclipses',
+      'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
+      'primary-directions', 'synastry', 'eclipses',
     ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
@@ -804,12 +817,14 @@ export default function App() {
         case 'g': setGuideIndex(0); setShowGuides((v) => !v); break;
         case 'i': setShowInfo((v) => !v); break;
         case 'o':
+          // Cycling into a core mode supersedes any active extension overlay.
+          setActiveOverlayExt(null);
           setOverlayMode(
             (mode) =>
               overlayCycle[(overlayCycle.indexOf(mode) + 1) % overlayCycle.length],
           );
           break;
-        case 'n': setOverlayMode('off'); break;
+        case 'n': setActiveOverlayExt(null); setOverlayMode('off'); break;
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
@@ -890,7 +905,6 @@ export default function App() {
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
   useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
   useEffect(() => saveAngleProgression(angleProgression), [angleProgression]);
-  useEffect(() => saveProgressionType(progressionType), [progressionType]);
   useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
   useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
@@ -920,6 +934,7 @@ export default function App() {
   const isTimeMode =
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
+    overlayMode === 'tertiary-progressed' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions' ||
     overlayMode === 'cyclo';
@@ -1512,8 +1527,9 @@ export default function App() {
   // Returns snap (timeline ▸ Returns, transits only): move the target date to
   // the chart's solar/lunar return and frame the lines by that instant's own
   // sidereal time — only 'transit-moment' positioning makes the snapped map the
-  // return chart's astrocartography (the HUD tips disclose the switch). The
-  // persisted Positioning pref changes with it, visibly, in the Calculation tab.
+  // return chart's astrocartography (the HUD tips disclose the switch). The flip
+  // shows on the timeline bar's Positioning switch (in the Returns row) right beside
+  // the snap that triggered it.
   const snapToReturn = useCallback(
     (body: ReturnBody, dir: -1 | 0 | 1) => {
       if (!current) return;
@@ -1521,9 +1537,9 @@ export default function App() {
       if (!r) return;
       setPlaying(false);
       setTargetDate(r.ms);
-      // Geodetic lines ignore sidereal time, so the frame flip would change
-      // nothing there while silently rewriting a persisted pref behind a
-      // hidden control — only switch it where it has its documented effect.
+      // Geodetic lines ignore sidereal time, so the frame flip would change nothing
+      // there while silently rewriting a persisted pref whose switch isn't even shown
+      // (it's gated to celestial) — only switch it where it has its documented effect.
       if (lineSystem === 'celestial') setTransitFrame('transit-moment');
     },
     [current, targetDate, lineSystem],
@@ -1531,6 +1547,10 @@ export default function App() {
 
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
+    // Tertiary Progressed is its own Overlay mode; map it to the tertiary day-clock
+    // buildOverlay reads (every other mode resolves to the default secondary clock).
+    const progressionType =
+      overlayMode === 'tertiary-progressed' ? 'tertiary' : 'secondary';
     if (overlayMode === 'eclipses') {
       // The optional "eclipse chart lines": planet/angle lines for the sky at
       // the eclipse maximum — a transit overlay pinned to that instant.
@@ -1576,7 +1596,6 @@ export default function App() {
     primaryRate,
     userPrimaryRate,
     transitFrame,
-    progressionType,
     showEclipseChartLines,
     resolvedEclipse,
     eclipsesMod,
@@ -1664,6 +1683,23 @@ export default function App() {
             isCyclo ? cycloBodyTag : prefix,
           )
         : EMPTY_FC,
+      // The antipodal nadir stamps — antipodes of the overlay zeniths, filtered to the
+      // IC line (so they follow the IC toggle, as natal nadirs do). Same overlay
+      // Zenith/Nadirs gate as the zeniths above.
+      nadir: showOverlayZenith
+        ? tagZeniths(
+            withDarkMoon(
+              filterZenith(
+                antipodeStamps(generateZenithStamps(ovPositions, ovMeridianLng)),
+                visiblePlanets,
+                visibleLineTypes,
+                'IC',
+              ),
+              theme,
+            ),
+            isCyclo ? cycloBodyTag : prefix,
+          )
+        : EMPTY_FC,
       // The overlay's ecliptic (zodiac) line — a dotted yellow companion to the natal
       // ecliptic, threading through the overlay Sun's zenith. Shown only when the
       // overlay zeniths are (same gate), since it's the zenith stamps' reference curve.
@@ -1690,6 +1726,7 @@ export default function App() {
   const isTimeOverlay =
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
+    overlayMode === 'tertiary-progressed' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions' ||
     overlayMode === 'cyclo';
@@ -2315,6 +2352,7 @@ export default function App() {
   const closeManager = () => {
     setCreating(false);
     setEditingId(null);
+    setPickingPartner(false);
   };
 
   // Fixed-star × planet parans — computed here and exposed to map-HUD extensions
@@ -2360,6 +2398,57 @@ export default function App() {
       return next;
     });
   }, []);
+
+  // ── Tools-menu extensions ─────────────────────────────────────────────────
+  // Same machinery as the Map-HUD extensions above, surfaced in the Tools dropdown
+  // instead of the View menu (registerToolExtension). Each is a toggled HUD with
+  // generic, per-storageKey persistence. The open core registers none.
+  const [openTools, setOpenTools] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    for (const ext of getToolExtensions()) {
+      const saved = ext.storageKey ? localStorage.getItem(ext.storageKey) : null;
+      if (saved === '1' || (saved === null && ext.defaultOpen)) open.add(ext.id);
+    }
+    return open;
+  });
+  const toggleTool = useCallback((id: string) => {
+    setOpenTools((prev) => {
+      const next = new Set(prev);
+      const nowOpen = !next.has(id);
+      if (nowOpen) next.add(id);
+      else next.delete(id);
+      const ext = getToolExtensions().find((e) => e.id === id);
+      if (ext?.storageKey) localStorage.setItem(ext.storageKey, nowOpen ? '1' : '0');
+      return next;
+    });
+  }, []);
+
+  // ── Overlay-menu extensions ───────────────────────────────────────────────
+  // Single-select, mutually exclusive with the core overlayMode. selectOverlay is the
+  // combined setter passed to the Overlay menu's core rows (it clears any active
+  // extension as it sets the core mode); selectOverlayExt does the inverse.
+  const selectOverlay = useCallback((mode: OverlayMode) => {
+    setActiveOverlayExt(null);
+    setOverlayMode(mode);
+  }, []);
+  const selectOverlayExt = useCallback((id: string) => {
+    setOverlayMode('off');
+    setActiveOverlayExt(id);
+  }, []);
+  const clearOverlayExt = useCallback(() => setActiveOverlayExt(null), []);
+  useEffect(() => {
+    if (activeOverlayExt) localStorage.setItem(OVERLAY_EXT_KEY, activeOverlayExt);
+    else localStorage.removeItem(OVERLAY_EXT_KEY);
+  }, [activeOverlayExt]);
+  // The active overlay extension object (if any is selected and still registered).
+  const activeOverlayExtension = useMemo(
+    () =>
+      activeOverlayExt
+        ? (getOverlayExtensions().find((e) => e.id === activeOverlayExt) ?? null)
+        : null,
+    [activeOverlayExt],
+  );
+
   // A stable fly-to that reads the map ref lazily, so the snapshot below holds no
   // ref access during render (the HUD calls it from its own event handlers).
   const extFlyTo = useCallback(
@@ -2385,7 +2474,10 @@ export default function App() {
       overlayParans: promoted ? null : (overlay?.parans ?? null),
       flyTo: extFlyTo,
       setTargetDate,
-      setOverlayMode,
+      // The exclusion-aware setter (not the raw setOverlayMode) so an extension HUD that
+      // drives a core overlay mode also clears any active extension overlay — preserving
+      // the Overlay menu's single-select invariant.
+      setOverlayMode: selectOverlay,
     }),
     [
       current,
@@ -2404,6 +2496,7 @@ export default function App() {
       promoted,
       hideNatalLinework,
       extFlyTo,
+      selectOverlay,
     ],
   );
 
@@ -2541,8 +2634,6 @@ export default function App() {
           setShowNightShade={setShowNightShade}
           showZenith={showZenith}
           setShowZenith={setShowZenith}
-          progressionType={progressionType}
-          setProgressionType={setProgressionType}
           lineSystem={lineSystem}
           setLineSystem={setLineSystem}
           coordSystem={coordSystem}
@@ -2555,42 +2646,6 @@ export default function App() {
           setDualWheels={setDualWheels}
           nodeType={nodeType}
           setNodeType={setNodeType}
-          overlayMode={overlayMode}
-          transitFrame={transitFrame}
-          setTransitFrame={setTransitFrame}
-          synastryMethod={synastryMethod}
-          setSynastryMethod={setSynastryMethod}
-          onGenerateRelationship={handleGenerateRelationship}
-          // A composite can't parent another relationship chart: its midpoint
-          // positions aren't reachable from the BirthData a Davison/composite
-          // build would snapshot (and stacking midpoints is astrological soup).
-          canGenerateRelationship={
-            overlayMode === 'synastry' &&
-            !!partner &&
-            !current?.composite &&
-            !partner.composite
-          }
-          generateBlock={
-            overlayMode !== 'synastry'
-              ? null
-              : current?.composite || partner?.composite
-                ? 'composite'
-                : partner
-                  ? null
-                  : 'partner'
-          }
-          eclipseDetails={eclipseDetails}
-          eclipseContacts={eclipseContactList}
-          showEclipseNatalLines={showEclipseNatalLines}
-          setShowEclipseNatalLines={setShowEclipseNatalLines}
-          showEclipseChartLines={showEclipseChartLines}
-          setShowEclipseChartLines={setShowEclipseChartLines}
-          eclipseIsoStep={eclipseIsoStep}
-          setEclipseIsoStep={setEclipseIsoStep}
-          showOverlayZenith={showOverlayZenith}
-          setShowOverlayZenith={setShowOverlayZenith}
-          showNatal={showNatal}
-          setShowNatal={setShowNatal}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}
@@ -2633,7 +2688,7 @@ export default function App() {
         locationLabel={locationLabel}
         fadeLocation={fadeLocation}
         overlayMode={overlayMode}
-        setOverlayMode={setOverlayMode}
+        setOverlayMode={selectOverlay}
         showChart={showChart}
         setShowChart={setShowChart}
         showCoords={showCoords}
@@ -2648,6 +2703,10 @@ export default function App() {
         setShowGuides={toggleGuides}
         openExtensions={openExtensions}
         onToggleExtension={toggleExtension}
+        openTools={openTools}
+        onToggleTool={toggleTool}
+        activeOverlayExt={activeOverlayExt}
+        onSelectOverlayExt={selectOverlayExt}
       />
       {showInfo && (
         <InfoBar
@@ -2679,7 +2738,13 @@ export default function App() {
           showTimeline={showTimeline}
           onToggleTimeline={() => setShowTimeline((v) => !v)}
           onSnapReturn={snapToReturn}
-          progressionType={progressionType}
+          transitFrame={transitFrame}
+          setTransitFrame={setTransitFrame}
+          lineSystem={lineSystem}
+          showNatal={showNatal}
+          setShowNatal={setShowNatal}
+          showOverlayZenith={showOverlayZenith}
+          setShowOverlayZenith={setShowOverlayZenith}
         />
       )}
       {overlayMode === 'synastry' && (
@@ -2689,6 +2754,23 @@ export default function App() {
           currentId={current?.id ?? null}
           onSelectPartner={setPartnerId}
           onAddPerson={() => setCreating(true)}
+          onSearchPartner={() => setPickingPartner(true)}
+          method={synastryMethod}
+          setMethod={setSynastryMethod}
+          onGenerate={handleGenerateRelationship}
+          // A composite can't parent another relationship chart: its midpoint
+          // positions aren't reachable from the BirthData a Davison/composite
+          // build would snapshot (and stacking midpoints is astrological soup).
+          canGenerate={
+            !!partner && !current?.composite && !partner.composite
+          }
+          generateBlock={
+            current?.composite || partner?.composite
+              ? 'composite'
+              : partner
+                ? null
+                : 'partner'
+          }
         />
       )}
       {overlayMode === 'eclipses' && (
@@ -2699,6 +2781,14 @@ export default function App() {
           onLocate={() => {
             if (eclipseRow) flyToEclipse(eclipseRow);
           }}
+          details={eclipseDetails}
+          contacts={eclipseContactList}
+          showNatalLines={showEclipseNatalLines}
+          setShowNatalLines={setShowEclipseNatalLines}
+          showChartLines={showEclipseChartLines}
+          setShowChartLines={setShowEclipseChartLines}
+          isoStep={eclipseIsoStep}
+          setIsoStep={setEclipseIsoStep}
         />
       )}
       {showLocation && (
@@ -2743,6 +2833,29 @@ export default function App() {
           </Fragment>
         ) : null,
       )}
+      {/* Registered Tools-menu extensions (registerToolExtension) — toggled HUDs
+          surfaced in the Tools dropdown. Entitled → the HUD; else its CTA. */}
+      {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
+      {getToolExtensions().map((ext) =>
+        openTools.has(ext.id) ? (
+          <Fragment key={ext.id}>
+            {isAddonEntitled(ext)
+              ? ext.render(extensionCtx, () => toggleTool(ext.id))
+              : (ext.renderLocked?.(() => toggleTool(ext.id)) ?? null)}
+          </Fragment>
+        ) : null,
+      )}
+      {/* The active Overlay-menu extension (registerOverlayExtension), single-select.
+          Its HUD while entitled, else its CTA; onClose clears the selection. Mapped
+          over a 0/1-element list so it shares the ref-handling of the blocks above. */}
+      {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
+      {(activeOverlayExtension ? [activeOverlayExtension] : []).map((ext) => (
+        <Fragment key={ext.id}>
+          {isAddonEntitled(ext)
+            ? ext.render(extensionCtx, clearOverlayExt)
+            : (ext.renderLocked?.(clearOverlayExt) ?? null)}
+        </Fragment>
+      ))}
       {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and
           must stay reachable even when the compact Minimap (showChart) is hidden —
           so only the compact wheel is gated by showChart. */}
@@ -2759,6 +2872,18 @@ export default function App() {
           overlayPlanets={promoteOverlay ? null : displayOverlayEcliptic}
           overlayAngles={promoteOverlay ? null : displayOverlayAngles}
           overlayLabel={promoteOverlay ? null : (overlayLayer?.labelFull ?? null)}
+          overlayKind={overlayLayer?.kind ?? null}
+          // When the overlay is promoted (Natal hidden), tag the chart-state title with
+          // its prefix so the sidebar reads e.g. "Tr NATAL CHART" — cyclo spells out as
+          // "CCG" (its 'Cy' tag is reserved for mixed-source parans), matching the
+          // overlay-zenith label convention.
+          promotedPrefix={
+            promoteOverlay && overlayLayer
+              ? overlayLayer.kind === 'cyclo'
+                ? 'CCG'
+                : OVERLAY_LABEL_PREFIX[overlayLayer.kind]
+              : null
+          }
           visiblePlanets={visiblePlanets}
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
@@ -2786,13 +2911,20 @@ export default function App() {
           />
         )
       )}
-      {(creating || editingId != null) && (
+      {(creating || editingId != null || pickingPartner) && (
         <ChartManager
           charts={charts}
-          currentId={current?.id ?? null}
+          // In partner-pick mode highlight the chosen partner (not the active chart)
+          // and drop the active chart from the list — it can't be its own partner.
+          currentId={
+            pickingPartner ? (partner?.id ?? null) : (current?.id ?? null)
+          }
+          excludeId={pickingPartner ? (current?.id ?? null) : null}
           initialEditId={editingId}
+          selectOnly={pickingPartner}
           onSelect={(id) => {
-            selectChart(id);
+            if (pickingPartner) setPartnerId(id);
+            else selectChart(id);
             closeManager();
           }}
           onSave={handleSaveChart}

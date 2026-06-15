@@ -165,6 +165,14 @@ interface ExpandedChartSidebarProps {
   overlayPlanets?: EclipticPosition[] | null;
   overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
+  /** The active overlay's kind, used to label the wheel caption by tag — cyclo shows
+   *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
+   *  the first middot). */
+  overlayKind?: string | null;
+  /** When the Natal toggle is off and a time overlay is promoted to stand in for the
+   *  chart, its short tag ("Tr"/"Sp"/"CCG"/…) — prefixed to the chart-state title so
+   *  it's clear the displayed chart is the overlay, not the natal. Null otherwise. */
+  promotedPrefix?: string | null;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
   /** Line-type toggles from the Map Filter; gate which angles show in the wheel + list. */
@@ -494,6 +502,8 @@ export function ExpandedChartSidebar({
   overlayPlanets,
   overlayAngles,
   overlayLabel,
+  overlayKind,
+  promotedPrefix,
   visiblePlanets,
   visibleLineTypes,
   advancedCoords,
@@ -604,16 +614,26 @@ export function ExpandedChartSidebar({
   // Bold state title for the wheel's top-left corner (always shown when a chart is
   // up). Coloured by the live map state via --map-accent — neutral natal, blue
   // hover, gold pinned, green natal-pin — so it tracks the same palette as the pin.
-  const wheelTitle = isNatalPin
+  const baseTitle = isNatalPin
     ? t('expandedSidebar.wheelTitle.natal')
     : pinned
       ? t('expandedSidebar.wheelTitle.pinned')
       : point
         ? t('expandedSidebar.wheelTitle.hover')
         : t('expandedSidebar.wheelTitle.natal');
+  // When a time overlay is promoted (Natal toggle off, so it stands in for the chart),
+  // lead the state title with the overlay's tag — "Tr NATAL CHART", "CCG HOVER CHART" —
+  // so it's obvious the displayed chart is the overlay, not the natal itself.
+  const wheelTitle = promotedPrefix ? `${promotedPrefix} ${baseTitle}` : baseTitle;
   // Just the overlay's name for the wheel's top-right corner (the full label
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
-  const overlayName = overlayLabel ? overlayLabel.split('·')[0].trim() : null;
+  // Cyclo is special-cased to "CCG": its name "Cyclo·carto·graphy" contains middots,
+  // so the generic split would truncate it to "Cyclo".
+  const overlayName = overlayLabel
+    ? overlayKind === 'cyclo'
+      ? 'CCG'
+      : overlayLabel.split('·')[0].trim()
+    : null;
 
   const toggleAspect = (cat: AspectCategory) => {
     setVisibleAspects((prev) => {

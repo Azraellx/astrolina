@@ -6,13 +6,13 @@
  * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
  */
 
-/* Bottom-center bar for an active synastry overlay. Larger + more prominent than
-   the other HUD readouts, and the place where the comparison partner is chosen:
-   the whole name + birth-line (with an inline add-person icon) is one clickable
-   trigger that opens an upward picker of the other saved charts. Accent tracks
-   the map-state color via --map-accent (set on <html> per pin state); --es-width
-   shifts it clear of the expanded sidebar. Occupies the same slot as TimelineHud,
-   which never renders in synastry mode. */
+/* Bottom-center HUD for an active synastry overlay — the place where the comparison
+   partner is chosen AND where the relationship chart (Davison / Composite) is built.
+   It mirrors the timeline bar's chrome: a protruding nub (grip + "Synastry" + an eye
+   that collapses the body) atop a panel. Accent tracks the map-state color via
+   --map-accent (set on <html> per pin state); --es-width shifts it clear of the
+   expanded sidebar. Occupies the same slot as TimelineHud, which never renders in
+   synastry mode. */
 .synastry-hud {
   position: absolute;
   bottom: 16px;
@@ -20,12 +20,12 @@
   transform: translateX(-50%);
   z-index: 13;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-
-  display: flex;
-  align-items: center;
-  gap: 14px;
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
-  padding: 10px 18px;
+
+  /* Alias the bar's accent to the shared map-state source, like the timeline bar, so
+     borders/buttons track the pin state. */
+  --accent: var(--map-accent);
+  --accent-rgb: var(--map-accent-rgb);
   background: rgba(var(--bg-panel), 0.96);
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
@@ -38,35 +38,141 @@
   transition: none;
 }
 
-/* The tag is also the drag handle: grip + "Synastry", grabbable. position:relative
-   so its "Drag to move" hint (.hud-move-hint) anchors above it. */
-.synastry-hud-tag {
-  position: relative;
-  display: inline-flex;
+/* ── Nub (grip + label + collapse eye), protruding from the top ─────────── */
+.synastry-hud-nub {
+  position: absolute;
+  bottom: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  padding: 3px 14px 5px;
+  background: rgba(var(--bg-panel), 0.96);
+  border-radius: 9px 9px 0 0;
+  color: var(--map-accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--map-accent);
-  flex-shrink: 0;
-  padding-right: 14px;
-  border-right: 1px solid rgba(var(--map-accent-rgb), 0.28);
+  white-space: nowrap;
   cursor: grab;
-  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
-.synastry-hud-tag:active,
-.synastry-hud.dragging .synastry-hud-tag {
+.synastry-hud-nub:active,
+.synastry-hud.dragging .synastry-hud-nub {
   cursor: grabbing;
 }
-.synastry-hud-tag:hover .hud-move-hint {
+
+/* The partner name trailing the "Synastry" label on the nub — a touch dimmer and
+   not uppercased, so the collapsed bar still says who's being compared. */
+.synastry-hud-nub-partner {
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Side fillets that flare the nub into the bar (same trick as the timeline nub). */
+.synastry-hud-nub::before,
+.synastry-hud-nub::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+}
+.synastry-hud-nub::before {
+  left: -9px;
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+}
+.synastry-hud-nub::after {
+  right: -9px;
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+}
+
+.synastry-hud-nub:hover .hud-move-hint {
   opacity: 1;
 }
 .synastry-hud.dragging .hud-move-hint {
   opacity: 0 !important;
+}
+/* Hovering the eye suppresses the nub's "Drag to move" hint so the eye's own tip is
+   the only one showing. */
+.synastry-hud-nub:has(.synastry-hud-eye:hover) .hud-move-hint {
+  opacity: 0 !important;
+}
+
+/* The collapse eye on the nub's right edge — a plain icon button (not a drag target):
+   dimmer at rest, full accent on hover/focus. */
+.synastry-hud-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 1px;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--map-accent);
+  opacity: 0.55;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: opacity 0.12s, background 0.12s;
+}
+.synastry-hud-eye .eye-icon {
+  display: block;
+}
+.synastry-hud-eye:hover,
+.synastry-hud-eye:focus-visible {
+  opacity: 1;
+  background: rgba(var(--map-accent-rgb), 0.12);
+}
+.synastry-hud-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--map-accent-rgb), 0.5);
+}
+
+/* Collapsed (eye off): no body, so the bar reduces to just its nub — strip the bar
+   chrome and turn the nub into a standalone, fully-rounded pill. */
+.synastry-hud.is-collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.synastry-hud.is-collapsed .synastry-hud-nub {
+  position: static;
+  transform: none;
+  padding: 5px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--map-accent-rgb), 0.6);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(7px);
+}
+.synastry-hud.is-collapsed .synastry-hud-nub::before,
+.synastry-hud.is-collapsed .synastry-hud-nub::after {
+  display: none;
+}
+
+/* ── Body: partner picker | divider | relationship builder ──────────────── */
+.synastry-hud-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  min-width: 0;
+}
+
+.synastry-hud-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(var(--tint), 0.14);
+  flex-shrink: 0;
 }
 
 .synastry-hud-picker {
@@ -203,6 +309,9 @@
   background: rgba(var(--tint), 0.06);
 }
 
+/* Plain (not flex) so the tag icon uses its own inline spacing (vertical-align +
+   margin-right), exactly like the nav + My-Charts rows — flex dropped vertical-align
+   and over-padded the starred rows. */
 .synastry-hud-row-name {
   font-size: 13px;
   color: var(--text-strong);
@@ -214,9 +323,122 @@
   margin-top: 2px;
 }
 
-.synastry-hud-empty {
-  padding: 12px;
+/* Bottom "Search" action — opens the full (select-only) chart browser. Mirrors the
+   chart switcher's new-chart button; uses the HUD's aliased --accent (so it tracks the
+   map-state colour like the rest of the bar). */
+.synastry-hud-search {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 4px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 0 0 6px 6px;
+  color: var(--accent);
+  font: inherit;
   font-size: 12px;
-  color: var(--text-faint);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-align: center;
+  cursor: pointer;
+}
+.synastry-hud-search:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+/* ── Relationship-chart builder (type toggle + Generate) ────────────────── */
+.synastry-hud-build {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.synastry-hud-build-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Segmented type toggle: two pills sharing one rounded shell. Plain (neutral) chrome
+   — the active one is a quiet tint fill, not an accent cue. */
+.synastry-hud-methods {
+  display: inline-flex;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.synastry-hud-method {
+  padding: 5px 10px;
+  background: rgba(var(--tint), 0.04);
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.synastry-hud-method + .synastry-hud-method {
+  border-left: 1px solid rgba(var(--tint), 0.14);
+}
+.synastry-hud-method:hover {
+  background: rgba(var(--tint), 0.09);
+  color: var(--text-strong);
+}
+.synastry-hud-method.on {
+  background: rgba(var(--tint), 0.16);
+  color: var(--text-strong);
+}
+
+/* Generate: the commit action — builds the relationship chart and switches to it.
+   Tracks the map-state color (blue hover / orange pinned / green natal-pinned) via
+   --map-accent, so it reads as "the chart you're about to create"; dimmed + not-
+   allowed when blocked. The leading space-tag glyph keeps its own --tag-space colour. */
+.synastry-hud-generate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  background: rgba(var(--map-accent-rgb), 0.16);
+  border: 1px solid rgba(var(--map-accent-rgb), 0.5);
+  border-radius: 7px;
+  color: var(--map-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+.synastry-hud-generate:hover {
+  background: rgba(var(--map-accent-rgb), 0.26);
+}
+.synastry-hud-generate.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(var(--tint), 0.04);
+  border-color: rgba(var(--tint), 0.14);
+  color: var(--text-muted);
+}
+
+/* The space glyph + label in the Generate button's hover tip — keep them aligned. */
+.synastry-hud-gen-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (max-width: 1080px) {
+  .synastry-hud {
+    max-width: calc(100vw - 32px);
+  }
+  .synastry-hud-body {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }

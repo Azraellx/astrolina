@@ -14,7 +14,6 @@ export const settings = {
     mapFilters: 'Map filters',
     calculation: 'Calculation',
     advanced: 'Advanced',
-    overlay: 'Overlay',
   },
   headings: {
     theme: 'Theme',
@@ -31,13 +30,10 @@ export const settings = {
     zodiac: 'Zodiac',
     wheelLayout: 'Wheel layout',
     aspectOrbs: 'Aspect orbs',
-    progressionType: 'Progression',
-    primaryRate: 'Primary directions rate',
+    primaryRate: 'Pri. directions rate',
     display: 'Display',
     positioning: 'Positioning',
     chartAngle: 'Chart Angle',
-    relationships: 'Relationships',
-    eclipse: 'Eclipse',
     magnitudeSteps: 'Magnitude steps',
   },
   // Basemap detail toggles. Roads + rivers share one switch; "Place names" (city
@@ -55,8 +51,8 @@ export const settings = {
   // Parans toggle in Map filters. (The Timeline Bar show/hide toggle moved onto the
   // timeline nub itself — see timeline.barToggle.)
   overlayZenith: {
-    title: 'Zenith',
-    hint: 'Mark where each overlay body is directly overhead.',
+    title: 'Zenith/Nadirs',
+    hint: 'Stamps where each overlay body is directly overhead (its zenith — a circle, on the MC line) and directly underfoot (its antipodal nadir — a diamond, on the IC line).',
   },
   natal: {
     title: 'Natal Chart',
@@ -119,16 +115,6 @@ export const settings = {
     'fagan-bradley': {
       label: 'Sidereal · Fagan/Bradley',
       hint: 'Signs anchored to the fixed stars, by the Fagan/Bradley ayanamsa (the Western sidereal standard). Changes the wheel and readouts; the map lines stay put.',
-    },
-  },
-  progressionType: {
-    secondary: {
-      label: 'Secondary',
-      hint: 'The classic day-for-a-year clock: one ephemeris day per year of life.',
-    },
-    tertiary: {
-      label: 'Tertiary',
-      hint: 'One ephemeris day per tropical month of life: a faster hand for finer timing.',
     },
   },
   starLines: {
@@ -243,22 +229,6 @@ export const settings = {
   },
 
   // Synastry ▸ Relationships: derive one chart from the two synastry charts.
-  relationships: {
-    davison: {
-      label: 'Davison',
-      hint: 'Midpoint in time and place of the two charts, cast as a real chart.',
-    },
-    composite: {
-      label: 'Comp. Midpoints',
-      hint: 'Every planet at the midpoint of the two charts, on the ecliptic; the map frame is the midpoint of their sidereal times.',
-    },
-    generate: {
-      title: 'Generate',
-      hint: 'Build the chart, make it active, and clear the synastry partner.',
-      needPartner: 'Pick a partner in the synastry bar first.',
-      compositeParent: 'A composite chart can’t be combined again; pick two regular charts.',
-    },
-  },
 
   // Eclipses overlay (Overlay tab while the Eclipses mode is active): the
   // details panel labels, the display toggles, the natal-contacts list, and
@@ -322,7 +292,7 @@ export const settings = {
       hint: 'The birth chart’s linework on the map. Hide it to see the eclipse path on a clean map — the chart wheel and readouts stay.',
     },
     chartLines: {
-      title: 'Eclipse Lines',
+      title: 'Eclipse Chart',
       hint: 'Planet and angle lines for the chart of the eclipse maximum, framed at that moment’s own sky — see where the eclipse-time lines run relative to the path.',
     },
     isoStep: {

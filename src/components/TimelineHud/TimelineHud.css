@@ -25,6 +25,13 @@
   transform: translateX(-50%);
   z-index: 12;
   max-width: calc(100vw - 360px);
+  /* A column so the bar's width is driven only by the ruler + transport row (the
+     same content every overlay bar has) — the returns/positioning row then FILLS
+     that width without inflating it (see .thud-returns-row), so the transits bar
+     stays the same width as the other overlay bars regardless of the Positioning
+     label, and the flexible gap absorbs the Relative↔Absolute difference. */
+  display: flex;
+  flex-direction: column;
   background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 10px;
@@ -193,13 +200,6 @@
   flex-wrap: nowrap;
 }
 
-.thud-divider {
-  width: 1px;
-  align-self: stretch;
-  background: rgba(var(--tint), 0.12);
-  flex-shrink: 0;
-}
-
 /* ── Mode / partner dropdowns ──────────────────────────────────── */
 .thud-mode {
   display: flex;
@@ -327,16 +327,43 @@
 .thud-returns {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
-/* The returns live on their OWN row under the transport, so the main row stays
-   the same width as the other overlay bars. Tucked up against it, and centred so the
-   "Returns" label sits in the middle with Solar to its left and Lunar to its right. */
+/* The returns + positioning live on their OWN row under the transport, so the main
+   row sets the bar width. Returns sit at the LEFT, Positioning at the RIGHT, and the
+   gap between them FLEXES (space-between) — no fixed centre padding that could push
+   the row wider than the transport row above. */
 .thud-returns-row {
   padding-top: 0;
-  justify-content: center;
+  justify-content: space-between;
+  /* Fill the bar width the transport row sets, WITHOUT contributing to it: width:0
+     keeps this row out of the bar's shrink-to-fit sizing, min-width:100% then makes
+     it span the resolved bar width. So the Positioning label never widens the bar —
+     the flexible space-between gap takes up the slack. Tighter gap than the main row
+     leaves headroom for the longest label. */
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  gap: 8px;
+}
+
+/* Positioning group, right-aligned end of the returns row. */
+.thud-positioning {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* A very faint hairline marking the Returns | Positioning boundary. space-between
+   centres it in the flexible gap between the two groups. */
+.thud-returns-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(var(--tint), 0.16);
+  flex-shrink: 0;
 }
 
 .thud-return-group {
@@ -384,10 +411,40 @@
   font-size: 13px;
 }
 
-/* Extra breathing room around the centred "Returns" label, between it and the
-   Solar / Lunar groups flanking it. */
-.thud-returns .thud-mode-label {
-  margin: 0 8px;
+/* Positioning flip-switch (Relative ↔ Absolute), to the right of the lunar returns
+   in the transits row. One button showing the current frame; clicking flips it.
+   Styled like the return buttons but on the STEADY brand accent (a fixed control,
+   not a map-state cue). */
+.thud-positioning-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.thud-positioning-btn:hover {
+  background: rgba(var(--accent-brand-rgb), 0.12);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  color: var(--accent-brand);
+}
+/* Disabled on non-Celestial line systems (framing has no effect): dimmed, no hover
+   accent — but still hoverable so its tip can explain why. */
+.thud-positioning-btn.is-disabled,
+.thud-positioning-btn.is-disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(var(--tint), 0.04);
+  border-color: rgba(var(--tint), 0.12);
+  color: var(--text-strong);
 }
 
 /* Adjustable step-amount box, sitting just right of the forward step button.
@@ -576,6 +633,144 @@
 .thud-hint {
   font-size: 11px;
   color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ── Right-side display drawer (Natal + Zenith toggles) ─────────── */
+/* A compartment off the bar's right edge: a faint chevron handle that brightens on
+   hover, and a panel of toggles that slides open with a quick width animation. One
+   rounded box holds both so the handle and compartment share a seamless surface as it
+   opens. Vertically centred + absolutely positioned, so it works whether the bar is
+   expanded or collapsed to its nub. The toggles were relocated here from Settings ▸
+   Display. */
+.thud-drawer {
+  position: absolute;
+  top: 50%;
+  left: calc(100% - 1px);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: stretch;
+  z-index: 1;
+  /* The drawer's chevron + toggles keep the steady brand accent (they don't shift
+     blue/orange/green with hover/pin/natal state — hence the local --accent override),
+     but its BORDER tracks the pin-state --map-accent like the bar, so drawer and bar
+     read as one edge-glowing unit. */
+  --accent: var(--accent-brand);
+  --accent-rgb: var(--accent-brand-rgb);
+  --accent-hover: var(--accent-brand);
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--map-accent-rgb), 0.55);
+  border-left: none;
+  border-radius: 0 9px 9px 0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  /* Faint at rest so the closed handle is a quiet affordance; brightens to full on
+     hover or keyboard focus, and stays full while open so its fill matches the bar.
+     (Previously the reverse — hovering dropped the tab to a faint accent fill, which
+     read as fading out.) Timed close to the compartment's slide so brightening and
+     opening read as one motion. */
+  opacity: 0.42;
+  transition: opacity 0.22s ease;
+}
+.thud-drawer:hover,
+.thud-drawer:focus-within,
+.thud-drawer.is-open {
+  opacity: 1;
+}
+/* The display toggles belong to the open bar — when the eye collapses it to just the
+   nub, hide the drawer (kept in the DOM, so its width stays measured for reopen). */
+.thud-collapsed .thud-drawer {
+  display: none;
+}
+
+/* The chevron handle — clickable; the box behind provides its surface, so the button
+   itself is chrome-free. */
+.thud-drawer-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  min-height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.thud-drawer-tab:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.5);
+  border-radius: 0 8px 8px 0;
+}
+.thud-drawer-chevron {
+  display: block;
+  transform: translateY(-1px);
+}
+
+/* The sliding compartment: its width is driven inline (0 → the toggles' measured
+   width) and transitioned here for a quick, smooth open — the same easing the bar
+   uses to shift when the sidebar opens. overflow:hidden clips the toggles to the
+   animating width so they wipe into view rather than reflowing. */
+.thud-drawer-compartment {
+  overflow: hidden;
+  transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Toggles stacked (Natal Chart over Zenith) at their natural width. This makes the
+   compartment ~2× the single-row height; the chevron handle follows automatically
+   (the drawer is align-items:stretch), so the "open" button doubles to match. Stacked
+   also narrows the open width to the widest single toggle. align-items:stretch (the
+   column default) gives both toggles equal width; padding keeps them off the box edges
+   and the chevron. */
+.thud-drawer-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 7px 5px 5px;
+  width: max-content;
+}
+
+/* Each toggle: an eye + label, echoing the Settings tech-toggle but sized for the
+   bar. Dimmed when off, full accent when on. */
+.thud-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+}
+.thud-drawer-toggle:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+/* Inset focus ring — the compartment's overflow:hidden would clip a default (outset)
+   outline, so keep the keyboard indicator inside the box (matches the tab handle). */
+.thud-drawer-toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.6);
+}
+.thud-drawer-toggle.on {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+.thud-drawer-toggle.off {
+  opacity: 0.6;
+}
+.thud-drawer-toggle .eye-icon {
+  display: block;
   flex-shrink: 0;
 }
 

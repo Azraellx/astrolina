@@ -15,7 +15,7 @@ import type { LineType } from './astro/lines';
 import type { AspectKind } from './astro/angleAspects';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from './astro/glyphChars';
 
-const OVERLAY_NOTE_TAGS = ['Tr', 'Sp', 'Sa', 'Pd', 'Cy', 'Sy'] as const;
+const OVERLAY_NOTE_TAGS = ['Tr', 'Sp', 'Tp', 'Sa', 'Pd', 'Cy', 'Sy'] as const;
 type NoteTag = (typeof OVERLAY_NOTE_TAGS)[number];
 const isNoteTag = (tag: unknown): tag is NoteTag =>
   typeof tag === 'string' && (OVERLAY_NOTE_TAGS as readonly string[]).includes(tag);

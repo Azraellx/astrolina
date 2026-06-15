@@ -214,6 +214,7 @@ span.astro-glyph {
 :root[data-theme='glass'] .app-header,
 :root[data-theme='glass'] .chart-info-panel,
 :root[data-theme='glass'] .timeline-hud,
+:root[data-theme='glass'] .thud-drawer,
 :root[data-theme='glass'] .sidebar,
 :root[data-theme='glass'] .chart-wheel {
   background: rgba(var(--bg-panel), 0.6);
@@ -255,6 +256,7 @@ span.astro-glyph {
 :root[data-theme='vintage'] .app-header,
 :root[data-theme='vintage'] .chart-info-panel,
 :root[data-theme='vintage'] .timeline-hud,
+:root[data-theme='vintage'] .thud-drawer,
 :root[data-theme='vintage'] .sidebar,
 :root[data-theme='vintage'] .chart-wheel {
   background: rgba(var(--bg-panel), 0.72);

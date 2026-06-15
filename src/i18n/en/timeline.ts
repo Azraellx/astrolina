@@ -14,8 +14,8 @@ export const timeline = {
   nubMode: {
     transits: 'Transits',
     progressed: 'Sec. Progressed',
-    // Shown instead of `progressed` when the Progression setting is Tertiary.
-    tertiary: 'Tert. Progressed',
+    // The separate Tertiary Progressed overlay (its own Overlay-menu mode).
+    'tertiary-progressed': 'Tert. Progressed',
     'solar-arc': 'Solar Arc',
     'primary-directions': 'Primary',
     cyclo: 'CCG',
@@ -27,6 +27,20 @@ export const timeline = {
     show: 'Show timeline bar',
     hide: 'Hide timeline bar',
     hint: 'The date scrubber + playback controls. The nub stays either way.',
+  },
+
+  // The tab on the bar's right edge that opens/closes the display-toggles drawer
+  // (Natal Chart + this overlay's Zenith stamps).
+  drawer: {
+    show: 'Show display toggles',
+    hide: 'Hide display toggles',
+  },
+
+  // The Positioning flip-switch in the transits returns row. When the line system
+  // isn't Celestial the switch is disabled — this tip explains why framing is moot.
+  positioning: {
+    disabled:
+      'Only Celestial lines have a sidereal-time frame to switch — Mundane and Geodetic lines key off zodiacal longitude, so framing has no effect.',
   },
 
   // Timeline scale picker (the <select>).
@@ -126,9 +140,9 @@ export const timeline = {
   labelFull: {
     transits: 'Transits · {datetime} UTC',
     progressed: 'Sec. Progressed · age {years}',
+    'tertiary-progressed': 'Tert. Progressed · age {years}',
     'solar-arc': 'Solar Arc · {deg}°',
     'primary-directions': 'Primary Directions · {deg}°',
-    tertiary: 'Tert. Progressed · age {years}',
     cyclo: 'Cyclo·carto·graphy · {datetime} UTC',
     synastry: 'Synastry · {partner}',
     eclipses: 'Eclipse · {datetime} UTC',

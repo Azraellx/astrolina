@@ -20,7 +20,6 @@ import type {
 import type {
   AngleProgression,
   PrimaryRate,
-  TransitFrame,
 } from '../lib/astro/timeline';
 import type { LineType } from '../lib/astro/lines';
 import type { Theme } from '../lib/theme';
@@ -59,9 +58,6 @@ export function makeEnumLabels(t: TFn) {
 
     primaryRate: (r: PrimaryRate) => t(`settings.primaryRate.${r}.label`),
     primaryRateHint: (r: PrimaryRate) => t(`settings.primaryRate.${r}.hint`),
-
-    positioning: (f: TransitFrame) => t(`settings.positioning.${f}.label`),
-    positioningHint: (f: TransitFrame) => t(`settings.positioning.${f}.hint`),
 
     chartAngle: (a: AngleProgression) => t(`settings.chartAngle.${a}.label`),
     chartAngleHint: (a: AngleProgression) => t(`settings.chartAngle.${a}.hint`),

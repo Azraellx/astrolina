@@ -10,8 +10,9 @@
 // Sign and planet display names come from labels.sign / labels.planet; the
 // 3-letter sign codes and glyphs stay language-neutral.
 export const wheel = {
-  // House sector label in the house ring's hover hint, e.g. "House 5".
-  house: 'House {number}',
+  // House sector label in the house ring's hover hint, e.g. "5th House". The ordinal
+  // suffix is locale-correct via ICU selectordinal (see i18n/plural.ts).
+  house: '{number, selectordinal, one {#st} two {#nd} few {#rd} other {#th}} House',
   // One-line novice gloss per sign (element · modality · keyword), 0-based.
   signMeanings: {
     aries: 'Fire · Cardinal · initiative',

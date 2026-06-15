@@ -54,14 +54,15 @@ export function chartTag(c: StoredChart): ChartTag {
 
 // Chart-name length limits. Hard: the most a name can be (enforced on entry). Soft:
 // where it gets ellipsised for display around the app (the full name is still stored).
+// Starred rows reserve a little width for the star badge, so they ellipsise sooner.
+// (Some surfaces pass their own limit, or truncate dynamically by width instead.)
 export const NAME_HARD_LIMIT = 50;
-export const NAME_SOFT_LIMIT = 30;
+export const NAME_SOFT_LIMIT = 25;
+export const NAME_SOFT_LIMIT_STARRED = 21;
 
-/** A chart name trimmed for display: names past the soft limit get an ellipsis. */
-export function displayName(name: string): string {
-  return name.length > NAME_SOFT_LIMIT
-    ? name.slice(0, NAME_SOFT_LIMIT).trimEnd() + '…'
-    : name;
+/** A chart name trimmed for display: names past the given soft limit get an ellipsis. */
+export function displayName(name: string, limit = NAME_SOFT_LIMIT): string {
+  return name.length > limit ? name.slice(0, limit).trimEnd() + '…' : name;
 }
 
 const STORAGE_KEY = 'astro:charts:v1';

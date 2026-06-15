@@ -6,11 +6,11 @@
  * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
  */
 
-/* Bottom-center bar for the active Eclipses overlay — the same slot, movable-bar
-   behavior, and visual language as the synastry partner picker (SynastryHud.css):
-   accent tracks --map-accent, --es-width shifts it clear of the expanded sidebar,
-   and the tag is the drag handle. ‹ › step chronologically; the trigger opens an
-   upward picker with search + type filter over the full catalog. */
+/* Bottom-center HUD for the active Eclipses overlay. Mirrors the timeline + synastry
+   bars: a protruding nub (grip + "Eclipses" + an eye that collapses the body) atop a
+   panel that holds the picker, the eclipse vitals, its natal contacts, the line
+   toggles, and the solar isoline interval. Accent tracks --map-accent; --es-width
+   shifts it clear of the expanded sidebar. Same slot as TimelineHud/SynastryHud. */
 .eclipse-hud {
   position: absolute;
   bottom: 16px;
@@ -18,12 +18,10 @@
   transform: translateX(-50%);
   z-index: 13;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-
-  display: flex;
-  align-items: center;
-  gap: 10px;
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
-  padding: 10px 14px;
+
+  --accent: var(--map-accent);
+  --accent-rgb: var(--map-accent-rgb);
   background: rgba(var(--bg-panel), 0.96);
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
@@ -36,33 +34,142 @@
   transition: none;
 }
 
-.eclipse-hud-tag {
-  position: relative;
-  display: inline-flex;
+/* ── Nub (grip + label + collapse eye), protruding from the top ─────────── */
+.eclipse-hud-nub {
+  position: absolute;
+  bottom: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  padding: 3px 14px 5px;
+  background: rgba(var(--bg-panel), 0.96);
+  border-radius: 9px 9px 0 0;
+  color: var(--map-accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--map-accent);
-  flex-shrink: 0;
-  padding-right: 12px;
-  border-right: 1px solid rgba(var(--map-accent-rgb), 0.28);
+  white-space: nowrap;
   cursor: grab;
-  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
-.eclipse-hud-tag:active,
-.eclipse-hud.dragging .eclipse-hud-tag {
+.eclipse-hud-nub:active,
+.eclipse-hud.dragging .eclipse-hud-nub {
   cursor: grabbing;
 }
-.eclipse-hud-tag:hover .hud-move-hint {
+
+/* The selected eclipse trailing the "Eclipses" label on the nub — dimmer and not
+   uppercased, so the collapsed bar still names the current eclipse. */
+.eclipse-hud-nub-sel {
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eclipse-hud-nub-sel .astro-glyph {
+  font-size: 13px;
+}
+
+/* Side fillets that flare the nub into the bar (same trick as the other HUDs). */
+.eclipse-hud-nub::before,
+.eclipse-hud-nub::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+}
+.eclipse-hud-nub::before {
+  left: -9px;
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+}
+.eclipse-hud-nub::after {
+  right: -9px;
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+}
+
+.eclipse-hud-nub:hover .hud-move-hint {
   opacity: 1;
 }
 .eclipse-hud.dragging .hud-move-hint {
   opacity: 0 !important;
+}
+.eclipse-hud-nub:has(.eclipse-hud-eye:hover) .hud-move-hint {
+  opacity: 0 !important;
+}
+
+/* The collapse eye on the nub's right edge. */
+.eclipse-hud-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 1px;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--map-accent);
+  opacity: 0.55;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: opacity 0.12s, background 0.12s;
+}
+.eclipse-hud-eye .eye-icon {
+  display: block;
+}
+.eclipse-hud-eye:hover,
+.eclipse-hud-eye:focus-visible {
+  opacity: 1;
+  background: rgba(var(--map-accent-rgb), 0.12);
+}
+.eclipse-hud-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--map-accent-rgb), 0.5);
+}
+
+/* Collapsed (eye off): no body — the bar reduces to just its nub as a standalone pill. */
+.eclipse-hud.is-collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.eclipse-hud.is-collapsed .eclipse-hud-nub {
+  position: static;
+  transform: none;
+  padding: 5px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--map-accent-rgb), 0.6);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(7px);
+}
+.eclipse-hud.is-collapsed .eclipse-hud-nub::before,
+.eclipse-hud.is-collapsed .eclipse-hud-nub::after {
+  display: none;
+}
+
+/* ── Body (selection + vitals + contacts + display options) ─────────────── */
+.eclipse-hud-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  min-width: 0;
+}
+
+/* Selection row: ‹ picker › ⌖ */
+.eclipse-hud-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 /* ‹ › chronological steppers. */
@@ -94,14 +201,10 @@
 }
 
 /* Fly-to "locate" button: same chrome as the steppers, but its crosshair is an
-   inline SVG (see EclipseHud.tsx) rather than the thin, font-dependent ⌖ text
-   glyph. Drop the steppers' optical 2px bottom padding so the square icon sits
-   dead-centre. */
+   inline SVG rather than the thin, font-dependent ⌖ text glyph. */
 .eclipse-hud-locate {
   padding-bottom: 0;
 }
-/* block removes the inline-SVG baseline gap so it centres within the button;
-   stroke/fill inherit the stepper's muted→strong colour via currentColor. */
 .eclipse-hud-locate-icon {
   display: block;
 }
@@ -111,7 +214,7 @@
   min-width: 0;
 }
 
-/* The date · type + meta line is the clickable trigger. */
+/* The date · type line is the clickable trigger. */
 .eclipse-hud-trigger {
   display: flex;
   align-items: center;
@@ -138,8 +241,16 @@
 .eclipse-hud-name-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-width: 0;
+  /* Floor the title + its trailing eclipse-disc icon (now beside the text, not
+     right-pushed) at the longest title's width so the picker keeps ONE width as ‹ ›
+     steps through differently-sized titles — otherwise the arrows shift and rapid
+     stepping needs re-aiming. The title+icon group centers in the floor (shorter
+     titles sit centred with the icon beside them); ~31ch is the longest title and the
+     extra ~3ch accounts for the icon + gap. Capped by viewport width so narrow
+     screens can still shrink (the title ellipsises). */
+  min-width: min(34ch, 42vw);
   max-width: 100%;
 }
 
@@ -150,16 +261,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Floor the title at the longest it can get so the centered bar keeps ONE
-     width as ‹ › steps through differently-sized titles ("8 April 2024 ·
-     ☉ Total" vs "18 September 2024 · ☾ Penumbral", ~31 characters with the
-     body glyph) — otherwise the arrows shift under the cursor and rapid
-     tap-tap-tap stepping needs re-aiming every click. Capped by viewport
-     width so narrow screens can still shrink the bar. Shorter titles center
-     in the floored box (matching the centered meta line below) rather than
-     hugging its left edge. */
-  min-width: min(31ch, 40vw);
-  text-align: center;
+  min-width: 0;
 }
 
 .eclipse-hud-icon {
@@ -173,17 +275,6 @@
 }
 .eclipse-hud-trigger:hover .eclipse-hud-icon {
   transform: scale(1.08);
-}
-
-.eclipse-hud-meta {
-  max-width: 100%;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
 }
 
 /* Picker opens UPWARD — the bar sits at the bottom of the screen. */
@@ -301,4 +392,172 @@
   font-size: 12px;
   color: var(--text-faint);
   text-align: center;
+}
+
+/* ── Vitals: a compact, horizontally-wrapping term/value strip ──────────── */
+.eclipse-hud-vitals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 6px 10px;
+  max-width: 600px;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 8px;
+}
+.eclipse-hud-vitals > div {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.eclipse-hud-vitals dt {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.eclipse-hud-vitals dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The eclipse-degree value reveals its sign name on hover — a dotted underline
+   marks it as the one inspectable value. */
+.eclipse-hud-degree {
+  cursor: help;
+  text-decoration: underline dotted rgba(var(--tint), 0.55);
+  text-underline-offset: 3px;
+}
+
+/* ── Natal contacts: a small group label + a wrapping inline list ───────── */
+.eclipse-hud-contacts-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  max-width: 600px;
+}
+.eclipse-hud-grouplabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.eclipse-hud-contacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.eclipse-hud-contacts li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-strong);
+}
+.eclipse-hud-contact-asp {
+  color: var(--text-muted);
+}
+.eclipse-hud-contact-planet {
+  flex-shrink: 0;
+}
+.eclipse-hud-contact-name {
+  white-space: nowrap;
+}
+.eclipse-hud-contact-orb {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.eclipse-hud-contacts-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Display options: line toggles + solar isoline interval ─────────────── */
+.eclipse-hud-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Line toggles (eye + label), echoing the timeline drawer toggles. */
+.eclipse-hud-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+}
+.eclipse-hud-toggle:hover {
+  background: rgba(var(--map-accent-rgb), 0.12);
+  border-color: rgba(var(--map-accent-rgb), 0.5);
+}
+.eclipse-hud-toggle.on {
+  color: var(--map-accent);
+  background: rgba(var(--map-accent-rgb), 0.1);
+  border-color: rgba(var(--map-accent-rgb), 0.45);
+}
+.eclipse-hud-toggle.off {
+  opacity: 0.6;
+}
+.eclipse-hud-toggle .eye-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Segmented magnitude-isoline interval (10 │ 20 │ 25), plain tint chrome. */
+.eclipse-hud-isosteps {
+  display: inline-flex;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.eclipse-hud-iso {
+  padding: 5px 10px;
+  background: rgba(var(--tint), 0.04);
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.eclipse-hud-iso + .eclipse-hud-iso {
+  border-left: 1px solid rgba(var(--tint), 0.14);
+}
+.eclipse-hud-iso:hover {
+  background: rgba(var(--tint), 0.09);
+  color: var(--text-strong);
+}
+.eclipse-hud-iso.on {
+  background: rgba(var(--tint), 0.16);
+  color: var(--text-strong);
+}
+
+@media (max-width: 1080px) {
+  .eclipse-hud {
+    max-width: calc(100vw - 32px);
+  }
 }
