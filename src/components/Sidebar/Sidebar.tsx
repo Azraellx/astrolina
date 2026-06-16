@@ -78,9 +78,8 @@ interface SidebarProps {
   setHouseSystem: (h: HouseSystem) => void;
   zodiacMode: ZodiacMode;
   setZodiacMode: (m: ZodiacMode) => void;
-  /** Whether the Advanced settings tab is shown. It only governs the expanded
-   *  chart sidebar's reading prefs, so it appears only while that sidebar is open
-   *  with its Advanced toggle on. */
+  /** Whether the Advanced settings tab is shown — true whenever the Advanced toggle
+   *  is on (it no longer also requires the expanded chart sidebar to be open). */
   showAdvancedTab: boolean;
   /** Overlay wheel layout (Advanced ▸ Wheel layout): bi-wheel vs Dual Wheels. */
   dualWheels: boolean;
@@ -1183,9 +1182,9 @@ export function Sidebar({
       {/* Advanced: the chart wheel's READING preferences — house system, zodiac
           frame, aspect orbs. None of these move a single map line (houses only
           shape the wheel's cusps; the zodiac is a display frame; orbs gate the
-          aspect lists), which is the membership rule for this tab. And because the
-          whole tab only governs the expanded chart sidebar, it appears only while
-          that sidebar is open with Advanced mode on (showAdvancedTab). */}
+          aspect lists), which is the membership rule for this tab. It appears
+          whenever Advanced mode is on (showAdvancedTab), regardless of whether the
+          expanded chart sidebar is open. */}
       {showAdvancedTab && (
         <button
           type="button"

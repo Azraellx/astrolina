@@ -855,6 +855,9 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   white-space: nowrap;
+  /* All caps so a promoted overlay's own name ("Sec. Progressed" → "SEC. PROGRESSED")
+     matches the state titles, whose strings are already uppercase ("NATAL CHART"). */
+  text-transform: uppercase;
   /* colour set inline from --map-accent (per chart state) */
 }
 

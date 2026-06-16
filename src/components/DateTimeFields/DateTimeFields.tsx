@@ -221,7 +221,7 @@ export function DateTimeFields<V extends PartialMoment>({
             min={1}
             max={12}
             pad={2}
-            width="40px"
+            width="48px"
             placeholder="MM"
             ariaLabel={t('chartForm.month')}
             onChange={(m) => patch({ month: m, day: clampDay(day, year, m) })}
@@ -258,7 +258,7 @@ export function DateTimeFields<V extends PartialMoment>({
             min={0}
             max={59}
             pad={2}
-            width="40px"
+            width="48px"
             placeholder="MM"
             ariaLabel={t('chartForm.minute')}
             onChange={(mi) => patch({ minute: mi })}

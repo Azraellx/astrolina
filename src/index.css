@@ -225,6 +225,13 @@ span.astro-glyph {
     inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
+/* The drawer carries the display toggles, so it reads better as a denser chip than the
+   airy glass bar — at the shared 0.6 it was too see-through. Bump only its fill; the
+   frost/blur/shadow from the shared rule above still apply. */
+:root[data-theme='glass'] .thud-drawer {
+  background: rgba(var(--bg-panel), 0.85);
+}
+
 /* The expanded chart reader is a dense surface — a touch more opaque so its
    text stays crisp over a busy map. */
 :root[data-theme='glass'] .expanded-sidebar {
@@ -265,6 +272,12 @@ span.astro-glyph {
   box-shadow:
     0 8px 30px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(240, 226, 192, 0.12);
+}
+
+/* Same denser-than-the-bar fill for the drawer on Earth — at the shared 0.72 panel
+   value it read too see-through for the small toggle chip. */
+:root[data-theme='vintage'] .thud-drawer {
+  background: rgba(var(--bg-panel), 0.86);
 }
 
 :root[data-theme='vintage'] .expanded-sidebar {

@@ -403,8 +403,9 @@ export default function App() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  // Open the chart browser in select-only mode to pick a synastry partner (vs. the
-  // normal add/edit/select flow driven by `creating`/`editingId`).
+  // Open the regular chart browser to pick/add a synastry partner — the same
+  // add/edit/select flow as the nav, with the active chart excluded and the choice
+  // routed to the partner slot (vs. the normal flow driven by `creating`/`editingId`).
   const [pickingPartner, setPickingPartner] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -813,9 +814,6 @@ export default function App() {
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
         case 'l': setShowLocation((v) => !v); break;
-        // Guides (re)opens at the first guide; Info is a plain toggle.
-        case 'g': setGuideIndex(0); setShowGuides((v) => !v); break;
-        case 'i': setShowInfo((v) => !v); break;
         case 'o':
           // Cycling into a core mode supersedes any active extension overlay.
           setActiveOverlayExt(null);
@@ -1271,7 +1269,8 @@ export default function App() {
   // current chart via buildOverlay, then run through the SAME generators and
   // visibility filters as the base.
   // A chart can't be its own synastry partner, so a partner that matches the active
-  // chart resolves to none (the effect below also clears the stale selection).
+  // chart resolves to none here (the memo guard); selectChart/handleDelete clear the
+  // stored partnerId in the cases that can cause such a self-match.
   const partner = useMemo(
     () =>
       partnerId && partnerId !== current?.id
@@ -2073,10 +2072,24 @@ export default function App() {
   // While promoting the overlay (Natal off), the wheel + coordinate readout read the
   // overlay's own planet positions / angles as the single chart; the natal ring is
   // dropped (see the overlay* props on the wheel below, nulled when promoting).
-  const wheelPlanets =
-    promoteOverlay && displayOverlayEcliptic ? displayOverlayEcliptic : displayEcliptic;
-  const wheelAngles =
-    promoteOverlay && displayOverlayAngles ? displayOverlayAngles : displayAngles;
+  // EXCEPT Cyclo·cartography (CCG): it's a deliberately mixed layer (progressed personal
+  // planets + transiting outers) with no single coherent chart, so we never wheel it.
+  // With Natal visible we just drop its overlay ring (isCyclo on the overlay* props);
+  // with Natal hidden there's nothing left to draw, so the wheel goes to an explicit
+  // "NO CHART" empty state (noChart) — angles nulled here so the corners/toggles/coord
+  // angles fall away with it.
+  const isCyclo = overlayMode === 'cyclo';
+  const noChart = promoteOverlay && isCyclo;
+  const wheelPlanets = noChart
+    ? []
+    : promoteOverlay && displayOverlayEcliptic
+      ? displayOverlayEcliptic
+      : displayEcliptic;
+  const wheelAngles = noChart
+    ? null
+    : promoteOverlay && displayOverlayAngles
+      ? displayOverlayAngles
+      : displayAngles;
 
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
@@ -2285,7 +2298,7 @@ export default function App() {
   }, []);
 
   const handleSaveChart = (chart: StoredChart) => {
-    // The saved chart becomes active — stamp its recency.
+    // Stamp recency on the saved chart.
     const stamped = { ...chart, lastUsedAt: Date.now() };
     setCharts((prev) => {
       const exists = prev.some((c) => c.id === stamped.id);
@@ -2293,11 +2306,18 @@ export default function App() {
         ? prev.map((c) => (c.id === stamped.id ? stamped : c))
         : [...prev, stamped];
     });
-    setCurrentId(stamped.id);
+    if (pickingPartner) {
+      // Saving from the synastry partner picker → the saved chart becomes the
+      // comparison partner; the active chart (the synastry subject) is untouched.
+      setPartnerId(stamped.id);
+    } else {
+      setCurrentId(stamped.id);
+      setPinned(null);
+      setHover(null);
+    }
     setEditingId(null);
     setCreating(false);
-    setPinned(null);
-    setHover(null);
+    setPickingPartner(false);
   };
 
   // Build a relationship chart from the active chart + its synastry partner using the
@@ -2326,17 +2346,26 @@ export default function App() {
   const handleImport = (imported: StoredChart[]) => {
     setImporting(false);
     if (imported.length === 0) return;
+    // Capture the picker mode before closeManager() resets it.
+    const toPartner = pickingPartner;
     // A real import is the end of the flow — close the chart manager too (it stays
     // open behind the import modal so Cancel returns to it).
     closeManager();
-    // The first imported chart becomes active — stamp its recency.
+    // Stamp recency on the first imported chart.
     const stamped = imported.map((c, i) =>
       i === 0 ? { ...c, lastUsedAt: Date.now() } : c,
     );
     setCharts((prev) => [...prev, ...stamped]);
-    setCurrentId(stamped[0].id);
-    setPinned(null);
-    setHover(null);
+    if (toPartner) {
+      // Imported from the synastry picker → the first chart becomes the partner;
+      // the active chart (and its pin/hover) stay put.
+      setPartnerId(stamped[0].id);
+    } else {
+      // The first imported chart becomes active.
+      setCurrentId(stamped[0].id);
+      setPinned(null);
+      setHover(null);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -2625,7 +2654,7 @@ export default function App() {
           setParanOrbDeg={setParanOrbDeg}
           aspectOrbs={aspectOrbs}
           setAspectOrbs={setAspectOrbs}
-          showAdvancedTab={advancedWheel && wheelExpanded}
+          showAdvancedTab={advancedWheel}
           showStarLines={showStarLines}
           setShowStarLines={setShowStarLines}
           starSet={starSet}
@@ -2750,11 +2779,7 @@ export default function App() {
       {overlayMode === 'synastry' && (
         <SynastryHud
           partner={partner}
-          charts={charts}
-          currentId={current?.id ?? null}
-          onSelectPartner={setPartnerId}
-          onAddPerson={() => setCreating(true)}
-          onSearchPartner={() => setPickingPartner(true)}
+          onPickPartner={() => setPickingPartner(true)}
           method={synastryMethod}
           setMethod={setSynastryMethod}
           onGenerate={handleGenerateRelationship}
@@ -2869,19 +2894,27 @@ export default function App() {
           isNatalPin={isNatalPin}
           angles={wheelAngles}
           planets={wheelPlanets}
-          overlayPlanets={promoteOverlay ? null : displayOverlayEcliptic}
-          overlayAngles={promoteOverlay ? null : displayOverlayAngles}
-          overlayLabel={promoteOverlay ? null : (overlayLayer?.labelFull ?? null)}
+          // CCG never rides as an overlay ring/caption either (no coherent chart to
+          // show alongside the natal) — isCyclo drops it whether or not it's promoted.
+          overlayPlanets={promoteOverlay || isCyclo ? null : displayOverlayEcliptic}
+          overlayAngles={promoteOverlay || isCyclo ? null : displayOverlayAngles}
+          overlayLabel={
+            promoteOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
+          }
           overlayKind={overlayLayer?.kind ?? null}
-          // When the overlay is promoted (Natal hidden), tag the chart-state title with
-          // its prefix so the sidebar reads e.g. "Tr NATAL CHART" — cyclo spells out as
-          // "CCG" (its 'Cy' tag is reserved for mixed-source parans), matching the
-          // overlay-zenith label convention.
-          promotedPrefix={
+          // When promoted CCG leaves nothing to wheel, render the empty "NO CHART" state.
+          noChart={noChart}
+          // When the overlay is promoted (Natal hidden), the wheel's state title is
+          // REPLACED by the overlay's own name — the same tag the timeline bar shows
+          // ("Sec. Progressed", "Transits", …) — still coloured by the live hover/pin
+          // state. This is the name half of labelFull ("Sec. Progressed · age 30.2" →
+          // "Sec. Progressed"), matching the overlay caption in the wheel's other corner.
+          // Cyclo keeps its "CCG" short form (its "Cyclo·carto·graphy" would split badly).
+          promotedLabel={
             promoteOverlay && overlayLayer
               ? overlayLayer.kind === 'cyclo'
                 ? 'CCG'
-                : OVERLAY_LABEL_PREFIX[overlayLayer.kind]
+                : overlayLayer.labelFull.split('·')[0].trim()
               : null
           }
           visiblePlanets={visiblePlanets}
@@ -2908,12 +2941,15 @@ export default function App() {
             angles={wheelAngles}
             planets={wheelPlanets}
             visiblePlanets={visiblePlanets}
+            noChart={noChart}
           />
         )
       )}
       {(creating || editingId != null || pickingPartner) && (
         <ChartManager
           charts={charts}
+          // The synastry picker reuses this browser to choose a comparison chart.
+          title={pickingPartner ? t('chartManager.comparisonTitle') : undefined}
           // In partner-pick mode highlight the chosen partner (not the active chart)
           // and drop the active chart from the list — it can't be its own partner.
           currentId={
@@ -2921,7 +2957,6 @@ export default function App() {
           }
           excludeId={pickingPartner ? (current?.id ?? null) : null}
           initialEditId={editingId}
-          selectOnly={pickingPartner}
           onSelect={(id) => {
             if (pickingPartner) setPartnerId(id);
             else selectChart(id);

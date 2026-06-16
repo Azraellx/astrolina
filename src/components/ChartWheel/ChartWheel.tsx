@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
+import { NoChartWheel } from '../Wheel/NoChartWheel';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
@@ -28,6 +29,9 @@ interface ChartWheelProps {
   planets: EclipticPosition[];
   /** Map Filter visibility — planets toggled off are hidden in the wheel too. */
   visiblePlanets: Set<PlanetName>;
+  /** A promoted overlay with no coherent chart (Cyclo·cartography, Natal hidden): show
+   *  an empty "NO CHART" wheel instead of a chart. `angles` is null in this state. */
+  noChart?: boolean;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
@@ -52,6 +56,7 @@ export function ChartWheel({
   angles,
   planets,
   visiblePlanets,
+  noChart = false,
 }: ChartWheelProps) {
   const { t } = useT();
   const [enlarged, setEnlarged] = useState(false);
@@ -111,6 +116,12 @@ export function ChartWheel({
             detailed={enlarged}
             visibleAspects={NO_ASPECTS}
           />
+        </div>
+      ) : noChart ? (
+        // A promoted overlay with no coherent chart (CCG, Natal hidden) — the empty
+        // wheel rather than the generic "no chart selected" placeholder.
+        <div className="chart-wheel-svg-wrap">
+          <NoChartWheel size={COMPACT_SIZE} label={t('chartWheel.noChart')} />
         </div>
       ) : (
         <div className="chart-wheel-placeholder">{t('chartWheel.placeholder')}</div>

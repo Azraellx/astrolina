@@ -234,13 +234,11 @@
   transition: color 0.12s, transform 0.12s;
 }
 
-.synastry-hud-trigger:hover .synastry-hud-name,
-.synastry-hud-trigger.open .synastry-hud-name {
+.synastry-hud-trigger:hover .synastry-hud-name {
   color: var(--text-strong);
 }
 
-.synastry-hud-trigger:hover .synastry-hud-icon,
-.synastry-hud-trigger.open .synastry-hud-icon {
+.synastry-hud-trigger:hover .synastry-hud-icon {
   color: var(--text-strong);
 }
 
@@ -256,95 +254,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Picker opens UPWARD — the bar sits at the bottom of the screen. */
-.synastry-hud-menu {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  min-width: 240px;
-  max-width: 320px;
-  background: rgba(var(--bg-menu), 0.98);
-  border: 1px solid rgba(var(--tint), 0.12);
-  border-radius: 10px;
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.32);
-  padding: 4px;
-  z-index: 20;
-}
-
-.synastry-hud-menu ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.synastry-hud-menu li {
-  border-radius: 6px;
-  margin-bottom: 1px;
-}
-
-.synastry-hud-menu li.active .synastry-hud-row {
-  background: rgba(var(--map-accent-rgb), 0.14);
-}
-
-.synastry-hud-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  padding: 8px 11px;
-  background: transparent;
-  border: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-  border-radius: 6px;
-}
-
-.synastry-hud-row:hover {
-  background: rgba(var(--tint), 0.06);
-}
-
-/* Plain (not flex) so the tag icon uses its own inline spacing (vertical-align +
-   margin-right), exactly like the nav + My-Charts rows — flex dropped vertical-align
-   and over-padded the starred rows. */
-.synastry-hud-row-name {
-  font-size: 13px;
-  color: var(--text-strong);
-}
-
-.synastry-hud-row-meta {
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-top: 2px;
-}
-
-/* Bottom "Search" action — opens the full (select-only) chart browser. Mirrors the
-   chart switcher's new-chart button; uses the HUD's aliased --accent (so it tracks the
-   map-state colour like the rest of the bar). */
-.synastry-hud-search {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  margin-top: 4px;
-  background: transparent;
-  border: none;
-  border-top: 1px solid rgba(var(--tint), 0.08);
-  border-radius: 0 0 6px 6px;
-  color: var(--accent);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-align: center;
-  cursor: pointer;
-}
-.synastry-hud-search:hover {
-  background: rgba(var(--accent-rgb), 0.1);
 }
 
 /* ── Relationship-chart builder (type toggle + Generate) ────────────────── */

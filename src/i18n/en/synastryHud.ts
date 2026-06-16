@@ -10,16 +10,10 @@
 export const synastryHud = {
   // Nub label (the move handle).
   title: 'Synastry',
-  // Empty-state prompt (no other charts) — opens the add-chart flow directly.
-  addPerson: 'Add person',
-  // Hover tip + aria-label on the empty-state add-person trigger.
-  addPersonTip: 'Add a person to compare',
-  // Hover-tip title + aria-label on the picker trigger.
+  // Hover tip + aria-label on the picker trigger (opens the chart browser).
   chooseComparison: 'Choose comparison chart',
   // Prompt shown in the trigger when no partner is selected yet.
   choosePrompt: 'Choose a chart to compare',
-  // Bottom-of-dropdown action that opens the full chart browser to find/pick a partner.
-  search: 'Search',
   // The eye on the nub collapses/expands the body (partner picker + relationship
   // controls), leaving just the nub — to focus on the map.
   barToggle: {

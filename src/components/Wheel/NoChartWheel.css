@@ -1,0 +1,35 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Empty-wheel placeholder (NoChartWheel.tsx): a faint dashed ring where the chart would
+   be, with a centred label. The inline width is the target diameter; max-width clamps it
+   to the container and aspect-ratio keeps it a circle, so it shrinks cleanly on narrow
+   sidebars. container-type lets the label size track the ring's actual width (cqi) while
+   clamp() holds a legible floor — the label stays readable even when the ring is small. */
+.wheel-nochart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(var(--tint), 0.22);
+  background: rgba(var(--tint), 0.03);
+  container-type: inline-size;
+}
+
+.wheel-nochart-label {
+  /* Strongest text colour for clear contrast on the panel across all three themes. */
+  color: var(--text-strong);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  font-size: clamp(13px, 13cqi, 22px);
+}

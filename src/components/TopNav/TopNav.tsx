@@ -491,8 +491,8 @@ export function TopNav({
     { id: 'minimap', label: t('topNav.view.minimap'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
     { id: 'location', label: t('topNav.view.location'), hotkey: 'L', checked: showLocation, onToggle: () => setShowLocation(!showLocation) },
-    { id: 'guides', label: t('topNav.view.guides'), hotkey: 'G', checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
-    { id: 'info', label: t('topNav.view.info'), hotkey: 'I', checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
+    { id: 'guides', label: t('topNav.view.guides'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
+    { id: 'info', label: t('topNav.view.info'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions().map((ext) => ({
       id: ext.id,
       label: ext.label,

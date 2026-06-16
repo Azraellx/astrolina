@@ -33,17 +33,16 @@ const FILTER_CHIPS = [
 interface ChartManagerProps {
   charts: StoredChart[];
   currentId: string | null;
+  /** Header + dialog label override (e.g. "Choose companion" when the synastry
+   *  overlay opens the browser to pick a partner). Defaults to "My Charts". */
+  title?: string;
   /** When set, opens with this chart loaded in the form for editing. */
   initialEditId?: string | null;
-  /** Select-only ("pick a chart") mode: hide the add/edit form pane, the "Add <query>"
-   *  row and the per-row edit/delete actions — leaving just search + the list to choose
-   *  from (used by the synastry partner picker). */
-  selectOnly?: boolean;
   /** A chart id to omit from the list — e.g. the active chart, which can't be its own
    *  synastry partner. */
   excludeId?: string | null;
-  /** Make a chart the active one — or, in selectOnly mode, the picked chart (the
-   *  manager then closes). */
+  /** Make a chart the active one — or, from the synastry picker, the comparison
+   *  partner (App decides). The manager then closes. */
   onSelect: (id: string) => void;
   /** Create a new chart or save an edited one (the manager then closes). */
   onSave: (chart: StoredChart) => void;
@@ -62,8 +61,8 @@ interface ChartManagerProps {
 export function ChartManager({
   charts,
   currentId,
+  title,
   initialEditId,
-  selectOnly = false,
   excludeId = null,
   onSelect,
   onSave,
@@ -135,13 +134,12 @@ export function ChartManager({
     return result;
   }, [charts, q, tagFilter, excludeId]);
 
-  // Offer "Add <query>" unless the query already names an existing chart exactly — and
-  // never in selectOnly mode (no form to add into).
+  // Offer "Add <query>" unless the query already names an existing chart exactly.
   const exactNameExists = useMemo(
     () => charts.some((c) => c.name.trim().toLowerCase() === q),
     [charts, q],
   );
-  const showAddRow = !selectOnly && q !== '' && !exactNameExists;
+  const showAddRow = q !== '' && !exactNameExists;
   // The Space filter chip appears only once at least one chart carries that (system) tag.
   const hasSpace = useMemo(
     () => charts.some((c) => chartTag(c) === 'space'),
@@ -172,14 +170,14 @@ export function ChartManager({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className={`chart-manager${selectOnly ? ' select-only' : ''}`}
+        className="chart-manager"
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label={t('chartManager.dialogLabel')}
+        aria-label={title ?? t('chartManager.dialogLabel')}
       >
         <header className="cm-header">
-          <h2>{t('chartManager.title')}</h2>
+          <h2>{title ?? t('chartManager.title')}</h2>
           <button
             type="button"
             className="cm-close"
@@ -291,37 +289,32 @@ export function ChartManager({
                   >
                     <span className="cm-row-name">
                       <TagIcon tag={chartTag(c)} className="tag-icon" />
-                      {/* In selectOnly (pick) mode there's no edit/delete column, so let
-                          the name fill the row — .cm-row-name's max-width:100% + ellipsis
-                          clamps it dynamically instead of the shorter 25-char cap. */}
-                      {selectOnly ? c.name : displayName(c.name)}
+                      {displayName(c.name)}
                     </span>
                     <span className="cm-row-meta">
                       {fmtBirth(c, fmt)} · {c.birthplace.label.split(',')[0]}
                     </span>
                   </button>
-                  {!selectOnly && (
-                    <div className="cm-row-actions">
-                      <TipButton
-                        type="button"
-                        className="cm-act"
-                        onClick={() => editExisting(c)}
-                        placement="top"
-                        tip={t('common.edit')}
-                      >
-                        ✎
-                      </TipButton>
-                      <TipButton
-                        type="button"
-                        className="cm-act danger"
-                        onClick={() => handleDelete(c)}
-                        placement="top"
-                        tip={t('common.delete')}
-                      >
-                        ×
-                      </TipButton>
-                    </div>
-                  )}
+                  <div className="cm-row-actions">
+                    <TipButton
+                      type="button"
+                      className="cm-act"
+                      onClick={() => editExisting(c)}
+                      placement="top"
+                      tip={t('common.edit')}
+                    >
+                      ✎
+                    </TipButton>
+                    <TipButton
+                      type="button"
+                      className="cm-act danger"
+                      onClick={() => handleDelete(c)}
+                      placement="top"
+                      tip={t('common.delete')}
+                    >
+                      ×
+                    </TipButton>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -330,8 +323,7 @@ export function ChartManager({
             </div>
           </div>
 
-          {/* Right: add / edit the birth details. Omitted in selectOnly (pick) mode. */}
-          {!selectOnly && (
+          {/* Right: add / edit the birth details. */}
           <div className="cm-form-pane">
             {editing && (
               <div className="cm-form-head">
@@ -353,7 +345,6 @@ export function ChartManager({
               onImport={editing ? undefined : onImport}
             />
           </div>
-          )}
         </div>
       </div>
     </div>

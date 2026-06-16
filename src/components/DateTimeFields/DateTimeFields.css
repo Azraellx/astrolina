@@ -59,7 +59,10 @@
   background: rgba(var(--tint), 0.04);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 5px;
-  padding: 7px 6px;
+  /* Tighter side padding + don't let the fixed-width boxes shrink in a tight flex row,
+     so the centred placeholder (notably the wide "MM" month/minute) isn't clipped. */
+  padding: 7px 4px;
+  flex-shrink: 0;
   color: var(--text-strong);
   font: inherit;
   font-size: 13px;

@@ -37,6 +37,7 @@ import {
   computeDeclinationAspects,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
+import { NoChartWheel } from '../Wheel/NoChartWheel';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import {
   essentialDignity,
@@ -170,9 +171,15 @@ interface ExpandedChartSidebarProps {
    *  the first middot). */
   overlayKind?: string | null;
   /** When the Natal toggle is off and a time overlay is promoted to stand in for the
-   *  chart, its short tag ("Tr"/"Sp"/"CCG"/…) — prefixed to the chart-state title so
-   *  it's clear the displayed chart is the overlay, not the natal. Null otherwise. */
-  promotedPrefix?: string | null;
+   *  chart, the overlay's own name ("Sec. Progressed"/"Transits"/"CCG"/…). It REPLACES
+   *  the chart-state title above the wheel — the title's live hover/pin colour still
+   *  conveys the state, so the text is freed to name the promoted overlay outright
+   *  (rather than tagging "Sp" onto "HOVER CHART"). Null otherwise. */
+  promotedLabel?: string | null;
+  /** A promoted overlay with no coherent chart (Cyclo·cartography, Natal hidden): the
+   *  wheel shows an empty "NO CHART" ring instead of a chart. `angles` is null then, so
+   *  the state title, overlay caption, and aspect toggles fall away with it. */
+  noChart?: boolean;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
   /** Line-type toggles from the Map Filter; gate which angles show in the wheel + list. */
@@ -503,7 +510,8 @@ export function ExpandedChartSidebar({
   overlayAngles,
   overlayLabel,
   overlayKind,
-  promotedPrefix,
+  promotedLabel,
+  noChart = false,
   visiblePlanets,
   visibleLineTypes,
   advancedCoords,
@@ -622,9 +630,11 @@ export function ExpandedChartSidebar({
         ? t('expandedSidebar.wheelTitle.hover')
         : t('expandedSidebar.wheelTitle.natal');
   // When a time overlay is promoted (Natal toggle off, so it stands in for the chart),
-  // lead the state title with the overlay's tag — "Tr NATAL CHART", "CCG HOVER CHART" —
-  // so it's obvious the displayed chart is the overlay, not the natal itself.
-  const wheelTitle = promotedPrefix ? `${promotedPrefix} ${baseTitle}` : baseTitle;
+  // the wheel's state title is REPLACED by the overlay's own name ("Sec. Progressed",
+  // "Transits", "CCG", …) rather than "NATAL/HOVER/PINNED CHART": the live --map-accent
+  // colour (applied below) already conveys the hover/pin state, so the text is freed to
+  // name the promoted overlay outright.
+  const wheelTitle = promotedLabel ?? baseTitle;
   // Just the overlay's name for the wheel's top-right corner (the full label
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
   // Cyclo is special-cased to "CCG": its name "Cyclo·carto·graphy" contains middots,
@@ -960,6 +970,10 @@ export function ExpandedChartSidebar({
                       interactive
                     />
                   )
+                ) : noChart ? (
+                  // A promoted overlay with no coherent chart (CCG, Natal hidden) — an
+                  // empty wheel reading "NO CHART", sized to the pane.
+                  <NoChartWheel size={wheelSize} label={t('expandedSidebar.noChart')} />
                 ) : (
                   <div className="es-empty">{t('expandedSidebar.empty')}</div>
                 )}

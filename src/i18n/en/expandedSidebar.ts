@@ -16,6 +16,9 @@ export const expandedSidebar = {
     hover: 'HOVER CHART',
   },
   empty: 'No chart selected',
+  // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
+  // is promoted with the natal chart hidden — there's nothing to draw.
+  noChart: 'NO CHART (CCG)',
 
   advanced: {
     // The Advanced toggle: pill label, hover tip title, and explanation.

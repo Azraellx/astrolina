@@ -664,17 +664,21 @@
   border-radius: 0 9px 9px 0;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(6px);
-  /* Faint at rest so the closed handle is a quiet affordance; brightens to full on
-     hover or keyboard focus, and stays full while open so its fill matches the bar.
-     (Previously the reverse — hovering dropped the tab to a faint accent fill, which
-     read as fading out.) Timed close to the compartment's slide so brightening and
-     opening read as one motion. */
-  opacity: 0.42;
+  /* Subdued at rest so the closed handle stays secondary to the bar, yet visible
+     enough to find; brightens to full on hover / keyboard focus / while open. The
+     bright state keys off :has(:focus-visible), NOT :focus-within, so a MOUSE click on
+     the chevron doesn't pin it bright after closing (it only un-lit once you clicked
+     elsewhere) — only real keyboard focus keeps it lit. */
+  opacity: 0.6;
   transition: opacity 0.22s ease;
 }
 .thud-drawer:hover,
-.thud-drawer:focus-within,
+.thud-drawer:has(:focus-visible),
 .thud-drawer.is-open {
+  /* Full element opacity. The drawer's see-through look is its BACKGROUND alpha
+     (rgba(--bg-panel, 0.94)) — the very same fill the nub uses — so at opacity:1 the
+     open drawer already matches the nub. A value <1 here would MULTIPLY that 0.94 bg
+     (e.g. 0.94×0.94 = 0.88) and make the drawer MORE see-through than the nub. */
   opacity: 1;
 }
 /* The display toggles belong to the open bar — when the eye collapses it to just the
@@ -729,7 +733,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 5px 7px 5px 5px;
+  /* A touch more top/bottom padding gives the compartment (and so the chevron handle,
+     which stretches to match) a bit more height. */
+  padding: 7px 7px 7px 5px;
   width: max-content;
 }
 

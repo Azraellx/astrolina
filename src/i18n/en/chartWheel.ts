@@ -11,4 +11,7 @@ export const chartWheel = {
   shrink: 'Shrink wheel',
   enlarge: 'Enlarge wheel',
   placeholder: 'No chart selected',
+  // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
+  // is promoted with the natal chart hidden — there's nothing to draw.
+  noChart: 'NO CHART (CCG)',
 } as const;
