@@ -95,7 +95,7 @@ export const topNav = {
     minimap: 'Minimap',
     settings: 'Settings',
     teleport: 'Teleport',
-    localSpace: 'Loc. Space',
+    localSpace: 'Local Space',
     info: 'Info',
     // Opens the guides as a reference — a glossary of the map controls you can revisit.
     guides: 'Guides',

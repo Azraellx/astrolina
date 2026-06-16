@@ -356,6 +356,12 @@
   flex-shrink: 0;
 }
 
+/* When Advanced is off, the positioning control is removed (see TimelineHud) — centre the
+   lone returns group instead of leaving it pinned left (the row default is space-between). */
+.thud-returns-row--solo {
+  justify-content: center;
+}
+
 .thud-return-group {
   display: inline-flex;
   align-items: center;

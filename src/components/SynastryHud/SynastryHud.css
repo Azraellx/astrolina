@@ -305,35 +305,192 @@
   color: var(--text-strong);
 }
 
-/* Generate: the commit action — builds the relationship chart and switches to it.
-   Steady brand accent: the result is the midpoint of the two charts and does NOT
-   depend on the pin location, so it doesn't track the map state. Dimmed + not-
-   allowed when blocked. The leading space-tag glyph keeps its own --tag-space colour. */
+/* Generate: the commit action — builds the relationship chart and switches to it. The
+   result is the midpoint of the two charts and does NOT depend on the map pin, so the
+   label stays the steady brand gold (not the map-state accent). When READY (a partner is
+   picked → not .is-disabled), the fill becomes a "space" scene — a nebula base with a
+   slowly drifting starfield — riffing on how a relationship chart's location is treated as
+   "space" in astrocartography. Hover brings it alive (faster drift + a light sweep + a
+   glow/lift). Deliberately cheap: ONE GPU-composited transform layer, drift distance == a
+   whole star tile so the loop is seamless, and the HUD only renders in synastry mode;
+   reduced-motion (below) freezes it to the static scene. */
 .synastry-hud-generate {
+  position: relative;
+  isolation: isolate; /* own stacking context so the z-index:-1 star layers stay inside */
+  overflow: hidden; /* clip the oversized drifting layers to the rounded pill */
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 13px;
-  background: rgba(var(--accent-brand-rgb), 0.16);
-  border: 1px solid rgba(var(--accent-brand-rgb), 0.5);
+  /* Deep-space nebula base (static; the starfield drifts over it on ::before). */
+  background:
+    radial-gradient(ellipse at 22% 12%, rgba(120, 84, 196, 0.6), transparent 60%),
+    radial-gradient(ellipse at 82% 92%, rgba(52, 104, 200, 0.55), transparent 55%),
+    linear-gradient(135deg, #0c1030, #190f3a 55%, #0a1228);
+  border: 1px solid rgba(var(--tag-space-rgb), 0.5);
   border-radius: 7px;
   color: var(--accent-brand);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); /* keep the label legible over the busy fill */
   font: inherit;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  transition: border-color 0.18s, box-shadow 0.2s, transform 0.12s;
 }
+/* Brighten the leading space glyph so its blue reads on the dark fill. */
+.synastry-hud-generate .tag-glyph--space {
+  color: #b9d6f7;
+}
+
+/* Glass (light theme): swap the near-black deep space for a lighter periwinkle twilight, so
+   the ready button blends with the light UI instead of punching a dark hole in it. White
+   label + the white stars still read on the medium fill. Scoped :not(.is-disabled) so the
+   muted disabled chip is unaffected (this rule would otherwise outrank .is-disabled). */
+:root[data-theme='glass'] .synastry-hud-generate:not(.is-disabled) {
+  background:
+    radial-gradient(ellipse at 22% 12%, rgba(170, 152, 232, 0.5), transparent 60%),
+    radial-gradient(ellipse at 82% 92%, rgba(142, 178, 236, 0.5), transparent 55%),
+    linear-gradient(135deg, #5a60ac, #696fc2 55%, #5570b6);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(40, 32, 92, 0.55);
+}
+:root[data-theme='glass'] .synastry-hud-generate:not(.is-disabled) .tag-glyph--space {
+  color: #eaf2ff;
+}
+
+/* Drifting starfield: a tiled dot pattern, oversized and translated by exactly one tile so
+   the loop is seamless. transform is GPU-composited, so the idle drift is cheap. */
+.synastry-hud-generate::before {
+  content: '';
+  position: absolute;
+  inset: -70% -130%;
+  z-index: -1;
+  background-image:
+    radial-gradient(1.4px 1.4px at 14% 26%, #fff, transparent),
+    radial-gradient(1.1px 1.1px at 44% 62%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 70% 20%, rgba(206, 228, 255, 0.95), transparent),
+    radial-gradient(1.3px 1.3px at 86% 70%, #fff, transparent),
+    radial-gradient(1px 1px at 30% 84%, rgba(222, 216, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 60% 40%, rgba(255, 255, 255, 0.7), transparent);
+  background-size: 72px 46px;
+  opacity: 0.95;
+  animation: synastry-gen-drift 28s linear infinite;
+}
+@keyframes synastry-gen-drift {
+  to {
+    transform: translate3d(72px, -46px, 0);
+  }
+}
+
+/* Twinkle layer — a child <span> (not ::before, so it carries its OWN animations without
+   fighting the drift's transform). Its two pseudo-groups twinkle OUT OF PHASE (different
+   durations + a negative delay) so individual points appear to blink, independent of the
+   drifting field. */
+.synastry-gen-stars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.synastry-gen-stars::before,
+.synastry-gen-stars::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+}
+.synastry-gen-stars::before {
+  background-image:
+    radial-gradient(1.6px 1.6px at 24% 36%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 70% 64%, rgba(214, 232, 255, 0.95), transparent);
+  animation: synastry-gen-twinkle 3.6s ease-in-out infinite;
+}
+.synastry-gen-stars::after {
+  background-image:
+    radial-gradient(1.5px 1.5px at 58% 26%, #fff, transparent),
+    radial-gradient(1.3px 1.3px at 38% 80%, rgba(226, 220, 255, 0.95), transparent);
+  animation: synastry-gen-twinkle 4.4s ease-in-out -1.8s infinite;
+}
+@keyframes synastry-gen-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+/* A diagonal light sweep, parked off-screen; runs ONE pass on hover (the "more flair"). */
+.synastry-hud-generate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    110deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 65%
+  );
+  transform: translateX(-130%);
+}
+
 .synastry-hud-generate:hover {
-  background: rgba(var(--accent-brand-rgb), 0.26);
+  border-color: rgba(var(--tag-space-rgb), 0.9);
+  box-shadow:
+    0 0 0 1px rgba(var(--tag-space-rgb), 0.3),
+    0 5px 20px rgba(86, 96, 208, 0.5);
+  transform: translateY(-1px);
 }
+.synastry-hud-generate:hover::before {
+  animation-duration: 9s; /* stars pick up speed */
+  filter: brightness(1.4) saturate(1.1);
+}
+.synastry-hud-generate:hover::after {
+  animation: synastry-gen-sweep 1s ease-out;
+}
+@keyframes synastry-gen-sweep {
+  to {
+    transform: translateX(130%);
+  }
+}
+.synastry-hud-generate:active {
+  transform: translateY(0);
+}
+
+/* Disabled (no partner / composite parent): no space scene — a quiet muted chip. */
 .synastry-hud-generate.is-disabled {
-  opacity: 0.45;
   cursor: not-allowed;
   background: rgba(var(--tint), 0.04);
   border-color: rgba(var(--tint), 0.14);
   color: var(--text-muted);
+  text-shadow: none;
+  box-shadow: none;
+  transform: none;
+  opacity: 0.6;
+}
+.synastry-hud-generate.is-disabled .tag-glyph--space {
+  color: var(--text-muted);
+}
+.synastry-hud-generate.is-disabled::before,
+.synastry-hud-generate.is-disabled::after,
+.synastry-hud-generate.is-disabled .synastry-gen-stars {
+  display: none; /* remove the space layers + their animations entirely */
+}
+
+/* Reduced motion: keep the static space scene, drop all the motion. */
+@media (prefers-reduced-motion: reduce) {
+  .synastry-hud-generate::before,
+  .synastry-hud-generate:hover::before,
+  .synastry-hud-generate:hover::after,
+  .synastry-gen-stars::before,
+  .synastry-gen-stars::after {
+    animation: none;
+  }
+  .synastry-hud-generate:hover {
+    transform: none;
+  }
 }
 
 /* The space glyph + label in the Generate button's hover tip — keep them aligned. */

@@ -435,6 +435,18 @@ button.topnav-status:hover {
   z-index: 20;
 }
 
+/* Top-nav dropdowns size to their widest row — labels never wrap. The 170px min above is
+   kept as a floor; the panel then grows to fit its content up to a cap. Scoped to .topnav
+   so the Sidebar's PORTALED HintMenu (which reuses .navmenu-panel/.navmenu-item but renders
+   outside .topnav) is untouched. */
+.topnav .navmenu-panel {
+  width: max-content;
+  max-width: 300px;
+}
+.topnav .navmenu-item {
+  white-space: nowrap;
+}
+
 .navmenu-item {
   display: flex;
   align-items: center;

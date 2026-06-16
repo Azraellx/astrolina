@@ -123,6 +123,7 @@ span.astro-glyph {
   --tag-star: #f5b83d;
   --tag-star-rgb: 245, 184, 61;
   --tag-space: #7fa8d4;
+  --tag-space-rgb: 127, 168, 212;
 
   color: var(--text-strong);
   background: var(--bg-page);

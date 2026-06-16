@@ -876,18 +876,17 @@ export function Sidebar({
               <EyeIcon open={showLabels} />
               <span className="name">{t('settings.details.placeNames')}</span>
             </TipToggle>
-            {/* Zenith stamps (overhead, circle) + antipodal nadir stamps
-                (underfoot, diamond) and the ecliptic reference curve. */}
+            {/* Night Shade — shades the night half of Earth. */}
             <TipToggle
-              className={`tech-toggle ${showZenith ? 'on' : 'off'}`}
-              onClick={() => setShowZenith(!showZenith)}
-              ariaPressed={showZenith}
-              title={t('settings.zenithNadir.title')}
-              hotkey="Shift Z"
-              hint={t('settings.zenithNadir.hint')}
+              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
+              onClick={() => setShowNightShade(!showNightShade)}
+              ariaPressed={showNightShade}
+              title={t('settings.nightShade.title')}
+              hotkey="Shift N"
+              hint={t('settings.nightShade.hint')}
             >
-              <EyeIcon open={showZenith} />
-              <span className="name">{t('settings.zenithNadir.title')}</span>
+              <EyeIcon open={showNightShade} />
+              <span className="name">{t('settings.nightShade.title')}</span>
             </TipToggle>
           </ul>
 
@@ -1097,17 +1096,18 @@ export function Sidebar({
               still work even while this section is collapsed/hidden. */}
           <h2>{t('settings.headings.display')}</h2>
           <ul className="technique-list">
-            {/* Night Shade — shades the night half of Earth. */}
+            {/* Zenith stamps (overhead, circle) + antipodal nadir stamps
+                (underfoot, diamond) and the ecliptic reference curve. */}
             <TipToggle
-              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
-              onClick={() => setShowNightShade(!showNightShade)}
-              ariaPressed={showNightShade}
-              title={t('settings.nightShade.title')}
-              hotkey="Shift N"
-              hint={t('settings.nightShade.hint')}
+              className={`tech-toggle ${showZenith ? 'on' : 'off'}`}
+              onClick={() => setShowZenith(!showZenith)}
+              ariaPressed={showZenith}
+              title={t('settings.zenithNadir.title')}
+              hotkey="Shift Z"
+              hint={t('settings.zenithNadir.hint')}
             >
-              <EyeIcon open={showNightShade} />
-              <span className="name">{t('settings.nightShade.title')}</span>
+              <EyeIcon open={showZenith} />
+              <span className="name">{t('settings.zenithNadir.title')}</span>
             </TipToggle>
             {/* Orb zones — the soft influence band around each line; its width
                 steppers reveal when it's on. */}
@@ -1336,7 +1336,7 @@ export function Sidebar({
                 }
                 style={accentStyle}
               >
-                {isEntitled(ext) ? ext.render() : ext.renderLocked?.()}
+                {isEntitled(ext) ? ext.render() : null}
               </div>
             )}
           </Fragment>

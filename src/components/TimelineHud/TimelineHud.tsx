@@ -78,6 +78,10 @@ interface TimelineHudProps {
   setShowNatal: (v: boolean) => void;
   showOverlayZenith: boolean;
   setShowOverlayZenith: (v: boolean) => void;
+  /** ADVANCED-ONLY master flag for this bar: when false the right-side display drawer
+   *  (Natal/Zenith toggles) and the Relative/Absolute positioning control are HIDDEN, and
+   *  their values default (App feeds eff* defaults to the map); when true they're restored. */
+  advanced: boolean;
 }
 
 const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
@@ -289,6 +293,7 @@ export function TimelineHud({
   setShowNatal,
   showOverlayZenith,
   setShowOverlayZenith,
+  advanced,
 }: TimelineHudProps) {
   const { t, fmt } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
@@ -526,7 +531,8 @@ export function TimelineHud({
           the CSS); the handle is faint at rest and brightens on hover. The panel is
           always rendered (so it can animate) but made `inert` while closed so its
           toggles aren't focusable then. Sits outside the ruler/transport block so
-          it's reachable whether the bar is expanded or collapsed to its nub. */}
+          it's reachable whether the bar is expanded or collapsed to its nub. The drawer is
+          ALWAYS shown; only its Zenith toggle is Advanced-gated (below). */}
       <div className={`thud-drawer${drawerOpen ? ' is-open' : ''}`}>
         <TipButton
           type="button"
@@ -565,10 +571,15 @@ export function TimelineHud({
               <EyeIcon open={showNatal} />
               <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
             </TipButton>
+            {/* ADVANCED-ONLY: the overlay Zenith toggle is hidden when Advanced is off (the
+                drawer then shows just the Natal toggle); its value defaults via
+                effShowOverlayZenith. The Natal toggle above is always available. */}
+            {advanced && (
             <TipButton
               type="button"
               className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
               placement="top"
+              advanced
               tip={zenithLabel}
               hint={t('settings.overlayZenith.hint')}
               aria-label={zenithLabel}
@@ -579,6 +590,7 @@ export function TimelineHud({
               <EyeIcon open={showOverlayZenith} />
               <span className="thud-drawer-toggle-name">{zenithLabel}</span>
             </TipButton>
+            )}
           </div>
         </div>
       </div>
@@ -715,22 +727,24 @@ export function TimelineHud({
           side) — only that framing makes the snapped map the return chart's
           astrocartography — which the tips disclose. */}
       {overlayMode === 'transits' && (
-        <div className="thud-row thud-returns-row">
+        <div
+          className={`thud-row thud-returns-row${advanced ? '' : ' thud-returns-row--solo'}`}
+        >
           <div className="thud-returns">
             {returnGroup('solar')}
             <span className="thud-mode-label">{t('timeline.returns.label')}</span>
             {returnGroup('lunar')}
           </div>
-          {/* Faint separator, centred in the flexible gap between the left Returns
-              group and the right Positioning group (space-between splits the gap). */}
-          <span className="thud-returns-divider" aria-hidden="true" />
+          {/* ADVANCED-ONLY: the positioning frame + its separator. Hidden when Advanced is
+              off (the returns then centre alone via thud-returns-row--solo); ADV-tagged on. */}
+          {advanced && <span className="thud-returns-divider" aria-hidden="true" />}
           {/* Positioning, relocated from Settings: a flip-switch (Relative ↔ Absolute).
               Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
               longitude — so on those it's shown DISABLED, reading "—" (not the stored
               frame, which would be meaningless here) with a tip explaining why, rather
               than hidden. The button is floored to one width (see .thud-positioning-btn)
               so toggling Relative↔Absolute can't nudge the bar wider. */}
-          {(() => {
+          {advanced && (() => {
             const posEnabled = lineSystem === 'celestial';
             return (
               <div className="thud-positioning">
@@ -740,6 +754,9 @@ export function TimelineHud({
                   className={`thud-positioning-btn${posEnabled ? '' : ' is-disabled'}`}
                   aria-disabled={!posEnabled}
                   placement="top"
+                  // ADV tag only on "Absolute" (transit-moment) — Relative-to-natal is the
+                  // default, so it isn't flagged as an advanced choice.
+                  advanced={posEnabled && transitFrame === 'transit-moment'}
                   // Enabled: tip names the CURRENT framing + its meaning. Disabled
                   // (non-Celestial lines): explain why framing has no effect here.
                   tip={

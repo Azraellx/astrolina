@@ -18,9 +18,9 @@
 // core overlay-line pipeline stays core-owned (an extension that needs to draw lines
 // does so through its own map layers / the context actions).
 //
-// Gating: a 'gated' overlay renders its HUD when entitled, or an optional CTA
-// (`renderLocked`) when not. Entitlement is shared with the Tools seam via ./entitlement
-// — installing ONE resolver gates both. The open core ships no overlay extensions (the
+// Gating: a 'gated' overlay renders its HUD only when entitled — the menu hides it
+// otherwise (no teaser). Entitlement is shared with the Tools seam via ./entitlement —
+// installing ONE resolver gates both. The open core ships no overlay extensions (the
 // registry is empty, so every menu and render path is a no-op here).
 
 import type { ReactNode } from 'react';
@@ -56,9 +56,6 @@ export interface OverlayExtension extends GatedExtension {
   tier?: GatedExtension['tier'];
   /** The HUD, rendered while this overlay is the active one AND entitled. */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
-  /** Optional panel rendered when a 'gated' overlay is selected WITHOUT entitlement
-   *  (the call-to-action shown in place of the HUD). `onClose` clears the selection. */
-  renderLocked?: (onClose: () => void) => ReactNode;
 }
 
 const registry = new Map<string, OverlayExtension>();

@@ -44,6 +44,31 @@ export type OverlayMode =
 
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
+// Overlay modes in MENU + cycle order — the SINGLE source the Overlay dropdown (TopNav)
+// maps over and App's 'o'-key cycle derives from. Transits, the event/relationship overlays
+// (eclipses, synastry) and solar arc lead; the progressed / directional techniques follow.
+export const OVERLAY_MODES: OverlayKind[] = [
+  'transits',
+  'eclipses',
+  'synastry',
+  'solar-arc',
+  'progressed',
+  'tertiary-progressed',
+  'primary-directions',
+  'cyclo',
+];
+
+// The overlay modes that require the 'adv' plan tier — the LAST THREE of OVERLAY_MODES
+// (tertiary progressions, primary directions, cyclocartography). The leading five (transits,
+// eclipses, synastry, solar arc, secondary progressed) are baseline. These are hidden from
+// the menu + the 'o' cycle below the tier, ADV-badged when shown, and switched off if
+// Advanced is turned off. Keep in sync with OVERLAY_MODES — this is the tier source of truth.
+export const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>([
+  'tertiary-progressed',
+  'primary-directions',
+  'cyclo',
+]);
+
 // The relationship-chart method the Synastry overlay's "Generate" button uses.
 // 'davison' is a real moment+place (cast like any chart); 'composite' (midpoint of
 // every planet between the two charts) is not yet wired — it needs precomputed

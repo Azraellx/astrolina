@@ -114,6 +114,8 @@ import {
   OVERLAY_LABEL_PREFIX,
   tagLabels,
   tagLabelsBy,
+  OVERLAY_MODES,
+  ADVANCED_OVERLAY_MODES,
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
@@ -606,8 +608,8 @@ export default function App() {
 
   const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
     const m = loadOverlayMode();
-    // Synastry/Eclipses are Advanced-only; don't restore them while Advanced is off.
-    return (m === 'synastry' || m === 'eclipses') &&
+    // Advanced-tier overlays don't restore while Advanced is off (see ADVANCED_OVERLAY_MODES).
+    return ADVANCED_OVERLAY_MODES.has(m) &&
       localStorage.getItem('astro:advanced:v1') !== '1'
       ? 'off'
       : m;
@@ -730,8 +732,14 @@ export default function App() {
   const effShowAspectLines = advancedWheel && showAspectLines;
   const effShowMidpointLines = advancedWheel && showMidpointLines;
   const effShowStarLines = advancedWheel && showStarLines;
-  const effShowNightShade = advancedWheel && showNightShade;
+  const effShowZenith = advancedWheel && showZenith;
   const effShowOrbZones = advancedWheel && showOrbZones;
+  // Transits-bar ADVANCED-ONLY controls: the positioning frame (Relative/Absolute switch in
+  // the returns row) + the right-side drawer's overlay-Zenith toggle. Default while Advanced
+  // is OFF (their UI is hidden then; see TimelineHud), raw restored when on. (The drawer's
+  // Natal toggle is NOT gated — always available, reads raw showNatal.)
+  const effTransitFrame = advancedWheel ? transitFrame : 'relative-to-natal';
+  const effShowOverlayZenith = advancedWheel && showOverlayZenith;
   // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
   // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
   // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier
@@ -746,17 +754,11 @@ export default function App() {
   useEffect(() => {
     // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
-    // Synastry + Eclipses are Advanced-only, so the 'o' cycle includes them only while
-    // Advanced is on (matching the Overlay menu's filtering); the plain modes always cycle.
+    // The 'o' cycle follows the Overlay menu order (OVERLAY_MODES); the advanced-tier
+    // overlays are included only while Advanced is on, matching the menu's tier filter.
     const overlayCycle: OverlayMode[] = advancedWheel
-      ? [
-          'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
-          'primary-directions', 'synastry', 'eclipses',
-        ]
-      : [
-          'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
-          'primary-directions',
-        ];
+      ? OVERLAY_MODES
+      : OVERLAY_MODES.filter((m) => !ADVANCED_OVERLAY_MODES.has(m));
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
       (el.tagName === 'INPUT' ||
@@ -846,10 +848,10 @@ export default function App() {
             break;
           case 'l': setShowLabels((v) => !v); break;
           // Advanced ▸ Display toggles — gated on Advanced mode.
-          case 'n': if (advancedWheel) setShowNightShade((v) => !v); break;
           case 'o': if (advancedWheel) setShowOrbZones((v) => !v); break;
-          // Zenith lives in Appearance now, so it stays always available.
-          case 'z': setShowZenith((v) => !v); break;
+          case 'z': if (advancedWheel) setShowZenith((v) => !v); break;
+          // Night Shade lives in Appearance now, so it stays always available.
+          case 'n': setShowNightShade((v) => !v); break;
           // Appearance ▸ Projection (absolute mode, not a toggle).
           // One key cycles the projection (flat ↔ globe), like 'o' cycles overlays.
           case 'f': setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
@@ -897,7 +899,7 @@ export default function App() {
     if (!on) {
       setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
       setShowLocalSpace(false);
-      setOverlayMode((m) => (m === 'synastry' || m === 'eclipses' ? 'off' : m));
+      setOverlayMode((m) => (ADVANCED_OVERLAY_MODES.has(m) ? 'off' : m));
     }
     setAdvancedWheel(on);
   }, []);
@@ -1426,7 +1428,7 @@ export default function App() {
   // and the chart's own moment otherwise (symbolic overlays like progressions
   // have no second real instant to shade).
   const nightShade = useMemo(() => {
-    if (!effShowNightShade || !current) return EMPTY_FC;
+    if (!showNightShade || !current) return EMPTY_FC;
     const nightJd =
       overlayMode === 'eclipses' && resolvedEclipse
         ? resolvedEclipse.event.maximum
@@ -1435,7 +1437,7 @@ export default function App() {
           : jd;
     const style = NIGHT_SHADE_STYLE[theme];
     return generateNightShade(nightJd, style.color, style.opacity);
-  }, [effShowNightShade, current, overlayMode, resolvedEclipse, targetDate, jd, theme]);
+  }, [showNightShade, current, overlayMode, resolvedEclipse, targetDate, jd, theme]);
 
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
@@ -1629,7 +1631,7 @@ export default function App() {
         angleProgression,
         primaryRate,
         userPrimaryRate,
-        transitFrame,
+        effTransitFrame,
         progressionType,
         t,
       );
@@ -1643,7 +1645,7 @@ export default function App() {
       angleProgression,
       primaryRate,
       userPrimaryRate,
-      transitFrame,
+      effTransitFrame,
       progressionType,
       t,
     );
@@ -1659,7 +1661,7 @@ export default function App() {
     angleProgression,
     primaryRate,
     userPrimaryRate,
-    transitFrame,
+    effTransitFrame,
     showEclipseChartLines,
     resolvedEclipse,
     eclipsesMod,
@@ -1734,7 +1736,7 @@ export default function App() {
       // these are drawn as stamps AND each overlay label flies to its zenith on click
       // (same MC gating as natal). When off we feed no points: the stamps vanish and,
       // with no fly target, the overlay labels become non-clickable.
-      zenith: showOverlayZenith
+      zenith: effShowOverlayZenith
         ? tagZeniths(
             withDarkMoon(
               filterZenith(
@@ -1750,7 +1752,7 @@ export default function App() {
       // The antipodal nadir stamps — antipodes of the overlay zeniths, filtered to the
       // IC line (so they follow the IC toggle, as natal nadirs do). Same overlay
       // Zenith/Nadirs gate as the zeniths above.
-      nadir: showOverlayZenith
+      nadir: effShowOverlayZenith
         ? tagZeniths(
             withDarkMoon(
               filterZenith(
@@ -1767,11 +1769,11 @@ export default function App() {
       // The overlay's ecliptic (zodiac) line — a dotted yellow companion to the natal
       // ecliptic, threading through the overlay Sun's zenith. Shown only when the
       // overlay zeniths are (same gate), since it's the zenith stamps' reference curve.
-      ecliptic: showOverlayZenith
+      ecliptic: effShowOverlayZenith
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, showOverlayZenith, coordSystem, lineSystem, theme]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowOverlayZenith, coordSystem, lineSystem, theme]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -1895,7 +1897,7 @@ export default function App() {
       // Zeniths + ecliptic follow the Zenith toggle here too, so it still has an effect
       // while Natal is hidden: empty when off → the stamps/line vanish and the promoted
       // labels lose their fly target, just like a normal overlay with Zenith off.
-      zenith: showOverlayZenith
+      zenith: effShowOverlayZenith
         ? tagZeniths(
             withDarkMoon(
               filterZenith(
@@ -1908,7 +1910,7 @@ export default function App() {
             isCyclo ? cycloBodyTag : prefix,
           )
         : EMPTY_FC,
-      eclipticLine: showOverlayZenith
+      eclipticLine: effShowOverlayZenith
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
       origin: { lat: overlayLayer.originLat, lng: overlayLayer.originLng } as Point,
@@ -1921,7 +1923,7 @@ export default function App() {
     effShowParans,
     lsActive,
     hideLsInbound,
-    showOverlayZenith,
+    effShowOverlayZenith,
     coordSystem,
     lineSystem,
     theme,
@@ -2631,15 +2633,15 @@ export default function App() {
         }
         hideCompass={hideLsCompass}
         zenith={
-          hideNatalLinework || !showZenith
+          hideNatalLinework || !effShowZenith
             ? EMPTY_FC
             : promoted
               ? promoted.zenith
               : zenith
         }
-        nadir={hideNatalLinework || !showZenith ? EMPTY_FC : mapNadir}
+        nadir={hideNatalLinework || !effShowZenith ? EMPTY_FC : mapNadir}
         ecliptic={
-          hideNatalLinework || !showZenith
+          hideNatalLinework || !effShowZenith
             ? null
             : promoted
               ? promoted.eclipticLine
@@ -2847,6 +2849,7 @@ export default function App() {
           transitFrame={transitFrame}
           setTransitFrame={setTransitFrame}
           lineSystem={lineSystem}
+          advanced={advancedWheel}
           showNatal={showNatal}
           setShowNatal={setShowNatal}
           showOverlayZenith={showOverlayZenith}
@@ -2936,38 +2939,38 @@ export default function App() {
         />
       )}
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
-          with no edits to this file. Entitled → the HUD; else its CTA. */}
+          with no edits to this file. Entitled → the HUD (the menu hides it otherwise). */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getMapExtensions().map((ext) =>
         openExtensions.has(ext.id) ? (
           <Fragment key={ext.id}>
             {isEntitled(ext)
               ? ext.render(extensionCtx, () => toggleExtension(ext.id))
-              : (ext.renderLocked?.(() => toggleExtension(ext.id)) ?? null)}
+              : null}
           </Fragment>
         ) : null,
       )}
       {/* Registered Tools-menu extensions (registerToolExtension) — toggled HUDs
-          surfaced in the Tools dropdown. Entitled → the HUD; else its CTA. */}
+          surfaced in the Tools dropdown. Entitled → the HUD. */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getToolExtensions().map((ext) =>
         openTools.has(ext.id) ? (
           <Fragment key={ext.id}>
             {isAddonEntitled(ext)
               ? ext.render(extensionCtx, () => toggleTool(ext.id))
-              : (ext.renderLocked?.(() => toggleTool(ext.id)) ?? null)}
+              : null}
           </Fragment>
         ) : null,
       )}
       {/* The active Overlay-menu extension (registerOverlayExtension), single-select.
-          Its HUD while entitled, else its CTA; onClose clears the selection. Mapped
-          over a 0/1-element list so it shares the ref-handling of the blocks above. */}
+          Its HUD while entitled; onClose clears the selection. Mapped over a 0/1-element
+          list so it shares the ref-handling of the blocks above. */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {(activeOverlayExtension ? [activeOverlayExtension] : []).map((ext) => (
         <Fragment key={ext.id}>
           {isAddonEntitled(ext)
             ? ext.render(extensionCtx, clearOverlayExt)
-            : (ext.renderLocked?.(clearOverlayExt) ?? null)}
+            : null}
         </Fragment>
       ))}
       {/* The expanded Sidebar opens from its own top-bar button (wheelExpanded) and

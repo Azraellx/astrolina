@@ -16,10 +16,10 @@
 // View extension, just surfaced in the Tools dropdown. The core's armed-tool icon and
 // the secondary readout bar stay core-owned; an extension renders its own HUD/readout.
 //
-// Gating: a 'gated' tool renders its HUD when entitled, or an optional CTA
-// (`renderLocked`) when not. Entitlement is shared with the Overlay seam via
-// ./entitlement — installing ONE resolver gates both. The open core ships no tool
-// extensions (the registry is empty, so every menu and render path is a no-op here).
+// Gating: a 'gated' tool renders its HUD only when entitled — the menu hides it
+// otherwise (no teaser). Entitlement is shared with the Overlay seam via ./entitlement
+// — installing ONE resolver gates both. The open core ships no tool extensions (the
+// registry is empty, so every menu and render path is a no-op here).
 
 import type { ReactNode } from 'react';
 import type { MapExtensionContext } from './mapExtensions';
@@ -57,9 +57,6 @@ export interface ToolExtension extends GatedExtension {
   tier?: GatedExtension['tier'];
   /** The HUD, rendered when the tool is open AND entitled. */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
-  /** Optional panel rendered when a 'gated' tool is opened WITHOUT entitlement
-   *  (the call-to-action shown in place of the HUD). */
-  renderLocked?: (onClose: () => void) => ReactNode;
 }
 
 const registry = new Map<string, ToolExtension>();

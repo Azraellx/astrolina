@@ -13,7 +13,11 @@ import {
 } from 'react';
 import type { MeasureInfo, SlideInfo } from '../Map/Map';
 import type { MapState } from '../TimelineHud/TimelineHud';
-import type { OverlayMode } from '../../lib/astro/timeline';
+import {
+  OVERLAY_MODES,
+  ADVANCED_OVERLAY_MODES,
+  type OverlayMode,
+} from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
@@ -107,24 +111,6 @@ interface TopNavProps {
   activeOverlayExt: string | null;
   onSelectOverlayExt: (id: string) => void;
 }
-
-// Selectable overlay modes (no explicit "None"); clicking the active one again
-// clears it back to 'off'. Single-select. Labels/descriptions live in the catalog
-// (topNav.overlay.modes.*); status labels and the map-controls hint likewise.
-const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
-  'transits',
-  'progressed',
-  'tertiary-progressed',
-  'cyclo',
-  'solar-arc',
-  'primary-directions',
-  'synastry',
-  'eclipses',
-];
-
-// The two overlay modes available only in Advanced mode: hidden from the Overlay menu
-// (and from App's 'o' cycle) when Advanced is off, ADV-badged when shown.
-const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>(['synastry', 'eclipses']);
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -700,10 +686,11 @@ export function TopNav({
                     />
                   )}
                   {/* Registered Tools-menu extensions (registerToolExtension) — add-on
-                      tools attach here with no edits to this file. The checkmark
-                      mirrors their open state; whether the click opens the real HUD or a
-                      CTA is decided downstream (App gates on entitlement). */}
-                  {getToolExtensions().map((ext) => (
+                      tools attach here with no edits to this file. The checkmark mirrors
+                      their open state. Tier-filtered like the View menu (and the core
+                      tools above): a gated tool stays hidden until the user reaches its
+                      tier — no teaser. */}
+                  {getToolExtensions().filter((ext) => tierMet(planTier, tierOfEntitlement(ext.tier))).map((ext) => (
                     <ToolItem
                       key={ext.id}
                       label={ext.label}
@@ -768,10 +755,10 @@ export function TopNav({
                     />
                   ))}
                   {/* Registered Overlay-menu extensions (registerOverlayExtension) —
-                      single-select rows beneath the built-in modes. Selecting one
-                      clears the core mode (App's onSelectOverlayExt); whether the real
-                      HUD or a CTA shows is decided downstream on entitlement. */}
-                  {getOverlayExtensions().map((ext) => (
+                      single-select rows beneath the built-in modes. Selecting one clears
+                      the core mode (App's onSelectOverlayExt). Tier-filtered like the View
+                      menu: a gated overlay stays hidden until the user reaches its tier. */}
+                  {getOverlayExtensions().filter((ext) => tierMet(planTier, tierOfEntitlement(ext.tier))).map((ext) => (
                     <RadioItem
                       key={ext.id}
                       label={ext.label}

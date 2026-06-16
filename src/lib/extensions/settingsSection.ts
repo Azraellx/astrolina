@@ -32,15 +32,12 @@ export interface SettingsSectionExtension extends GatedExtension {
   id: string;
   /** Section header label, already localized (extensions own their own strings). */
   label: string;
-  /** Defaults to 'core' (inherited). A 'gated' section shows its CTA (renderLocked)
-   *  when the shared entitlement resolver denies it. */
+  /** Defaults to 'core' (inherited). A 'gated' section is subject to the shared
+   *  entitlement resolver in ./entitlement. */
   tier?: GatedExtension['tier'];
   /** The section body, rendered when this section is the open accordion AND entitled.
    *  Context-free: a settings section owns its own controls/preferences. */
   render: () => ReactNode;
-  /** Optional body rendered when a 'gated' section is opened WITHOUT entitlement
-   *  (the call-to-action shown in place of the controls). */
-  renderLocked?: () => ReactNode;
   /** Optional accent for the section, as an "r, g, b" triplet — a literal like
    *  '120, 90, 200' or a token reference like 'var(--brand-rgb)'. When set, the section
    *  gets the same coloured treatment as the core Advanced tab: a diagonal gradient

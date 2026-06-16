@@ -29,12 +29,15 @@ export function HoverTip({
   title,
   hint,
   hotkey,
+  advanced,
 }: {
   pos: TipPos | null;
   placement?: TipPlacement;
   title: ReactNode;
   hint?: ReactNode;
   hotkey?: ReactNode;
+  /** Show an "ADV" tag on the headline — marks the trigger as an Advanced-only control. */
+  advanced?: boolean;
 }) {
   const cardRef = useRef<HTMLSpanElement>(null);
 
@@ -73,6 +76,7 @@ export function HoverTip({
         <span className={`ui-tip-title${hasHint ? '' : ' ui-tip-title-plain'}`}>
           {title}
         </span>
+        {advanced && <span className="ui-tip-adv">ADV</span>}
         {hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>}
       </span>
       {/* String hints get their astro symbols re-rendered in the glyph font. */}
@@ -93,6 +97,7 @@ export function TipButton({
   tip,
   hint,
   hotkey,
+  advanced,
   placement = 'bottom',
   children,
   ...rest
@@ -100,6 +105,7 @@ export function TipButton({
   tip: ReactNode;
   hint?: ReactNode;
   hotkey?: string;
+  advanced?: boolean;
   placement?: TipPlacement;
   children?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -122,6 +128,7 @@ export function TipButton({
         title={tip}
         hint={hint}
         hotkey={hotkey}
+        advanced={advanced}
       />
     </>
   );

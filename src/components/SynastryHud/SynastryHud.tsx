@@ -237,6 +237,9 @@ export function SynastryHud({
               }
               hint={generateHint}
             >
+              {/* Decorative twinkling star layer for the "space" fill. Absolutely
+                  positioned + pointer-events:none, so it doesn't affect layout or clicks. */}
+              <span className="synastry-gen-stars" aria-hidden="true" />
               <TagIcon tag="space" />
               {t('synastryHud.generate.label')}
             </TipButton>

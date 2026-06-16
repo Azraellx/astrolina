@@ -11,9 +11,9 @@
 // This is the attach point for a downstream build that depends on this open
 // core: such a feature is a folder that calls registerMapExtension({...}) at
 // startup and ships its own HUD + label, touching no core file. Gating is built
-// in: a 'gated' extension renders its HUD when entitled, or an optional CTA
-// (`renderLocked`) when not, in the same UI slot. The open core ships no gating
-// (every extension resolves to entitled).
+// in: a 'gated' extension renders its HUD only when entitled — the menu hides it
+// otherwise (no teaser). The open core ships no gating (every extension resolves to
+// entitled).
 
 import type { ReactNode } from 'react';
 import type { FeatureCollection } from 'geojson';
@@ -73,9 +73,6 @@ export interface MapExtension {
   tier?: Entitlement;
   /** The HUD, rendered when the extension is open AND entitled. */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
-  /** Optional panel rendered when a 'gated' extension is opened WITHOUT
-   *  entitlement (the call-to-action shown in place of the HUD). */
-  renderLocked?: (onClose: () => void) => ReactNode;
 }
 
 const registry = new Map<string, MapExtension>();
