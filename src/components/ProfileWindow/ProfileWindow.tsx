@@ -7,6 +7,7 @@
 import { TipButton } from '../ui/HoverTip';
 import { useT } from '../../i18n';
 import { getProfileSection } from '../../lib/extensions/profileSection';
+import { planTierFor, tierName } from '../../lib/plan';
 import './ProfileWindow.css';
 
 interface ProfileWindowProps {
@@ -26,6 +27,12 @@ export function ProfileWindow({
 }: ProfileWindowProps) {
   const { t } = useT();
   const { renderIdentity, onPlanTag } = getProfileSection();
+  // The tag shows the user's rung on the shared ladder (the core reaches new ↔ adv
+  // on its own; a downstream resolver can reach 'gated'). Its text comes from the
+  // tier-label table, so a downstream build names each rung without the core knowing
+  // those names. Clicking flips Advanced in the open core, or runs the installed
+  // onPlanTag handler (e.g. open a plan screen).
+  const tier = planTierFor(advancedWheel);
   const handlePlanTag = () =>
     onPlanTag
       ? onPlanTag({ advanced: advancedWheel, setAdvanced: setAdvancedWheel })
@@ -35,7 +42,7 @@ export function ProfileWindow({
       {renderIdentity?.()}
       <TipButton
         type="button"
-        className={`pw-plan-tag ${advancedWheel ? 'adv' : 'new'}`}
+        className={`pw-plan-tag tier-${tier}`}
         onClick={handlePlanTag}
         role="switch"
         aria-checked={advancedWheel}
@@ -43,7 +50,7 @@ export function ProfileWindow({
         tip={t('profile.planTag.tip')}
         hint={t('profile.planTag.hint')}
       >
-        {advancedWheel ? t('profile.planTag.adv') : t('profile.planTag.new')}
+        {tierName(tier)}
       </TipButton>
     </div>
   );

@@ -186,9 +186,9 @@ export const settings = {
     ptolemy: { label: 'Ptolemy (1°/yr)', hint: 'One year per degree.' },
     naibod: { label: 'Naibod (59′08″/yr)', hint: '0.985647° per year, the Sun’s mean motion.' },
     cardan: { label: 'Cardan (59′12″/yr)', hint: '0.986667° per year.' },
-    'kepler-ra': { label: 'Kepler: Natal Solar RA', hint: 'Natal Sun’s daily motion in right ascension × years.' },
-    'solar-long': { label: 'Natal Solar: Longitude', hint: 'Natal Sun’s daily motion in ecliptic longitude × years.' },
-    'placidus-ra': { label: 'Placidus: True SA in RA', hint: 'True secondary-progressed solar arc in RA (nonlinear).' },
+    'kepler-ra': { label: 'Solar Daily Motion (RA)', hint: 'Kepler’s key — the natal Sun’s daily motion in right ascension × years.' },
+    'solar-long': { label: 'Solar Daily Motion (Longitude)', hint: 'Natal Sun’s daily motion in ecliptic longitude × years.' },
+    'placidus-ra': { label: 'True Solar Arc (RA)', hint: 'True secondary-progressed solar arc in RA, applied as a primary-direction rate (nonlinear with time).' },
     user: { label: 'User rate', hint: 'Enter your own degrees-per-year below.' },
   },
 

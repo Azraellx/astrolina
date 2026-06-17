@@ -26,6 +26,7 @@ import {
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
 import type {
+  OverlayMode,
   AngleProgression,
   PrimaryRate,
 } from '../../lib/astro/timeline';
@@ -95,6 +96,10 @@ interface SidebarProps {
   showAdvancedTab: boolean;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
+  /** The active overlay; the directional-method dropdowns below show only for the
+   *  overlays that actually consume them (Chart Angle for Solar Arc / Progressed,
+   *  Primary Directions rate for Primary Directions). */
+  overlayMode: OverlayMode;
   angleProgression: AngleProgression;
   setAngleProgression: (a: AngleProgression) => void;
   primaryRate: PrimaryRate;
@@ -751,6 +756,7 @@ export function Sidebar({
   showAdvancedTab,
   nodeType,
   setNodeType,
+  overlayMode,
   angleProgression,
   setAngleProgression,
   primaryRate,
@@ -1045,28 +1051,40 @@ export function Sidebar({
             ))}
           </ul>
 
-          <h2>{t('settings.headings.chartAngle')}</h2>
-          <HintMenu
-            value={angleProgression}
-            onChange={setAngleProgression}
-            options={chartAngleOptions}
-          />
+          {/* Each directional-method dropdown shows only for the overlays that read it,
+              so the irrelevant one isn't noise (cf. Line projection, Celestial-only). */}
+          {(overlayMode === 'solar-arc' ||
+            overlayMode === 'progressed' ||
+            overlayMode === 'tertiary-progressed') && (
+            <>
+              <h2>{t('settings.headings.chartAngle')}</h2>
+              <HintMenu
+                value={angleProgression}
+                onChange={setAngleProgression}
+                options={chartAngleOptions}
+              />
+            </>
+          )}
 
-          <h2>{t('settings.headings.primaryRate')}</h2>
-          <HintMenu
-            value={primaryRate}
-            onChange={setPrimaryRate}
-            options={primaryRateOptions}
-          />
-          {primaryRate === 'user' && (
-            <StepperField
-              id="user-primary-rate"
-              label={t('settings.userRate.label')}
-              value={userPrimaryRate}
-              onChange={setUserPrimaryRate}
-              step={0.01}
-              decimals={2}
-            />
+          {overlayMode === 'primary-directions' && (
+            <>
+              <h2>{t('settings.headings.primaryRate')}</h2>
+              <HintMenu
+                value={primaryRate}
+                onChange={setPrimaryRate}
+                options={primaryRateOptions}
+              />
+              {primaryRate === 'user' && (
+                <StepperField
+                  id="user-primary-rate"
+                  label={t('settings.userRate.label')}
+                  value={userPrimaryRate}
+                  onChange={setUserPrimaryRate}
+                  step={0.01}
+                  decimals={2}
+                />
+              )}
+            </>
           )}
         </div>
       )}

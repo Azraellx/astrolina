@@ -29,6 +29,7 @@ import {
   gmstRadians,
   initEphemeris,
   obliquity,
+  projectOntoEcliptic,
   type PlanetName,
 } from '../src/lib/ephemeris';
 import { generateLocalSpace } from '../src/lib/astro/localSpace';
@@ -191,6 +192,25 @@ for (const site of SITES) {
   check(`${site.label}: vertices on the bearing great circle`, worstCrossTrack < 1e-9, `max cross-track ${worstCrossTrack.toExponential(2)}`);
   check(`${site.label}: arc spans 0.995 × half-Earth`, worstSpan < 1e-6, `max Δ ${worstSpan.toExponential(2)}°`);
   check(`${site.label}: generator vs getHorizontalCoords azimuth`, worstAzConsistency < 1e-4, `max Δ ${worstAzConsistency.toExponential(2)}°`);
+}
+
+// ── 5. Q3a: local space is a true-sky technique (no ecliptic projection) ──────
+// The In-Zodiaco / Mundane toggle projects the LINE positions onto the ecliptic
+// (zero latitude); local space must NOT inherit that — projecting an off-ecliptic
+// body first skews its bearing. Pin that the projected bearing diverges from the
+// true-sky one for high-latitude Pluto, so App is right to feed the un-projected
+// positions (the true-sky bearing itself is checked against Horizons above).
+{
+  const site = { lat: 40.9312, lng: -73.8988 };
+  const pluto = getPlanetPositions(jd, 'mean').filter((p) => p.name === 'Pluto');
+  const azOf = (ps: typeof pluto) =>
+    generateLocalSpace(ps, gmst, site.lat, site.lng).features.find(
+      (f) => f.properties.direction === 'out',
+    )!.properties.azimuth;
+  const azTrue = azOf(pluto);
+  const azProj = azOf(projectOntoEcliptic(pluto, jd));
+  const dAz = Math.abs((((azTrue - azProj) % 360) + 540) % 360 - 180);
+  check('Q3a: ecliptic projection skews the bearing (so true-sky positions are used)', dAz > 0.5, `Δ ${dAz.toFixed(3)}° true−vs−projected`);
 }
 
 console.log(failures === 0 ? '\nverify-localspace: ALL PASS' : `\nverify-localspace: ${failures} FAILURE(S)`);

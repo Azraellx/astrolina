@@ -190,13 +190,15 @@ export interface OverlayLayer {
    *  its own epoch's ayanamsa instead of the layer's `jd`; absent for the
    *  single-instant overlays. */
   bodyJd?: Partial<Record<PlanetName, number>>;
-  /** Directed-overlay angle inference. Solar-arc / primary-directions have no relocatable
-   *  "second moment": their angles are the NATAL angles advanced by the arc. This closure
-   *  takes a (relocated) natal angle's ecliptic longitude and returns the directed one,
-   *  applying the SAME arc + frame the bodies use, so the bi-wheel's directed angles move
-   *  coherently with the directed bodies. Absent for transits / synastry, whose overlay
-   *  angles come straight from relocate() at the target moment. */
-  directAngle?: (lon: number) => number;
+  /** Directed-overlay angle inference. Solar-arc / primary-directions / progressed have no
+   *  relocatable "second moment": their bi-wheel angle marks are the NATAL angles advanced
+   *  by the directional arc. `angleArc` is that arc (radians); `angleFrame` is how it
+   *  advances the angles — 'long' adds it to each angle's ecliptic longitude (solar-arc-in-
+   *  longitude); 'ramc' advances the RAMC by the arc and re-derives MC/ASC (the classical
+   *  meridian operation — see ephemeris.directedAngles). Absent for transits / synastry,
+   *  whose overlay angles come straight from relocate() at the target moment. */
+  angleArc?: number;
+  angleFrame?: 'long' | 'ramc';
   /** The moment whose relocated angles seed the bi-wheel's overlay ring (defaults to
    *  `jd`). The progressed overlay sets it to the BIRTH moment: its angle methods direct
    *  the NATAL angles (matching the map frame's RAMC treatment — the default holds them),
@@ -278,25 +280,6 @@ function directionContext(
   return { birthJD, eps, natal, years, progressedJD, natalGMST, arcLong, arcRA, ramcOfLong };
 }
 
-// Direct one ANGLE's ecliptic longitude by the arc, matching how the bodies are directed
-// so the bi-wheel's angles and bodies advance together. 'long' adds the arc in ecliptic
-// longitude (shiftEclipticLongitude's frame). 'ra' shifts the angle — taken as a point ON
-// the ecliptic (latitude 0) — in right ascension keeping its declination (shiftRight-
-// Ascension's frame), then reads the ecliptic longitude back (dec-aware, not the lat-0
-// eclipticLonOfRA). Returned as a closure so App can apply it to the RELOCATED natal
-// angles (the wheel shows angles at the active map point, which buildOverlay can't know).
-function directAngleFn(
-  arc: number,
-  frame: 'long' | 'ra',
-  eps: number,
-): (lon: number) => number {
-  if (frame === 'long') return (lon) => norm2pi(lon + arc);
-  return (lon) => {
-    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
-    return raDecToEclipticLon(norm2pi(ra + arc), dec, eps);
-  };
-}
-
 export function buildOverlay(
   chart: StoredChart,
   mode: OverlayKind,
@@ -351,32 +334,37 @@ export function buildOverlay(
       // primary overlays). The sa-/naibod- options instead advance the natal RAMC by
       // the arc; the true quotidian progressed sidereal time — gmstRadians(progressedJD)
       // — can be re-exposed as its own option when the angle-frame UI toggle is built.
-      // The map frame (gmst) and the bi-wheel's angle marks (directAngle, applied
-      // to the relocated NATAL angles via angleJd below) advance by the same arc
-      // in the same frame, so wheel and map always agree. The Natal Frame default
-      // leaves both untouched.
+      // The map frame (gmst) and the bi-wheel's angle marks (angleArc/angleFrame,
+      // applied to the relocated NATAL angles via angleJd below by ephemeris.
+      // directedAngles) advance by the same arc in the same frame, so wheel and map
+      // always agree. The Natal Frame default leaves both untouched.
       let gmst: number;
-      let directAngle: ((lon: number) => number) | undefined;
+      let angleArc: number | undefined;
+      let angleFrame: 'long' | 'ramc' | undefined;
       switch (angleProgression) {
         case 'naibod-ra':
           gmst = norm2pi(c.natalGMST + naibodArc);
-          directAngle = directAngleFn(naibodArc, 'ra', c.eps);
+          angleArc = naibodArc;
+          angleFrame = 'ramc';
           break;
         case 'sa-ra': {
           const arc = c.arcRA();
           gmst = norm2pi(c.natalGMST + arc);
-          directAngle = directAngleFn(arc, 'ra', c.eps);
+          angleArc = arc;
+          angleFrame = 'ramc';
           break;
         }
         case 'sa-long': {
           const arc = c.arcLong();
           gmst = c.ramcOfLong(arc);
-          directAngle = directAngleFn(arc, 'long', c.eps);
+          angleArc = arc;
+          angleFrame = 'long';
           break;
         }
         case 'naibod-long':
           gmst = c.ramcOfLong(naibodArc);
-          directAngle = directAngleFn(naibodArc, 'long', c.eps);
+          angleArc = naibodArc;
+          angleFrame = 'long';
           break;
         case 'mean-quotidian':
         default:
@@ -403,7 +391,8 @@ export function buildOverlay(
         jd: progJD,
         positions: getPlanetPositions(progJD, nodeType),
         gmst,
-        directAngle,
+        angleArc,
+        angleFrame,
         angleJd: c.birthJD,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
@@ -438,8 +427,10 @@ export function buildOverlay(
           frame = 'long';
           break;
       }
-      // Angles direct by the SAME arc + frame as the bodies (see directAngleFn), so the
-      // bi-wheel's directed MC/IC/As/Ds move with the directed planets.
+      // Bodies shift by the arc in `frame`; the bi-wheel angle marks advance by the same
+      // arc — in longitude for 'long', and via RAMC + arc for 'ra' (an angle has no
+      // declination to freeze, so it's re-derived from the advanced RAMC, not RA-shifted;
+      // see ephemeris.directedAngles). directed MC/IC/As/Ds thus move with the planets.
       const positions =
         frame === 'ra'
           ? c.natal.map((p) => shiftRightAscension(p, arc))
@@ -454,7 +445,8 @@ export function buildOverlay(
         jd: c.birthJD,
         positions,
         gmst: c.natalGMST,
-        directAngle: directAngleFn(arc, frame, c.eps),
+        angleArc: arc,
+        angleFrame: frame === 'ra' ? 'ramc' : 'long',
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };
@@ -502,8 +494,11 @@ export function buildOverlay(
         jd: c.birthJD,
         positions: c.natal.map((p) => shiftRightAscension(p, -arc)),
         gmst: c.natalGMST,
-        // Angles ride the same rigid −arc RA rotation as the bodies.
-        directAngle: directAngleFn(-arc, 'ra', c.eps),
+        // The bodies ride a rigid −arc RA rotation (drawing the same map lines as RAMC+arc
+        // would); the bi-wheel angle marks instead advance FORWARD via RAMC + arc — an angle
+        // is fixed by the RAMC, so the directed MC advances ~1°/yr (see directedAngles).
+        angleArc: arc,
+        angleFrame: 'ramc',
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };

@@ -49,14 +49,14 @@ html[data-mapstate='natal-pinned'] .profile-window {
   transition: transform 0.12s ease, filter 0.12s ease, background 0.15s,
     color 0.15s, border-color 0.15s;
 }
-.pw-plan-tag.new {
+.pw-plan-tag.tier-new {
   background: rgba(var(--accent-brand-rgb), 0.18);
   color: var(--accent-brand);
   border-color: rgba(var(--accent-brand-rgb), 0.35);
 }
-/* Matches the wheel sidebar's ADV cue (.es-plan-tag.adv): the advanced-mode gradient,
-   half-opacity tint at top-left deepening to the full advanced red at bottom-right. */
-.pw-plan-tag.adv {
+/* Matches the wheel sidebar's adv cue (.es-plan-tag.tier-adv): the advanced-mode
+   gradient, half-opacity tint at top-left deepening to the full advanced red. */
+.pw-plan-tag.tier-adv {
   background: linear-gradient(
     to bottom right,
     rgba(var(--advanced-rgb), 0.5),
@@ -64,6 +64,17 @@ html[data-mapstate='natal-pinned'] .profile-window {
   );
   color: #fff;
   border-color: rgba(var(--advanced-rgb), 0.5);
+}
+/* Gated rung: the downstream accent, same gradient treatment as the menu badge
+   (.navmenu-tier.tier-gated). Only reached when a downstream resolver grants it. */
+.pw-plan-tag.tier-gated {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--gated-rgb), 0.5),
+    var(--gated)
+  );
+  color: #fff;
+  border-color: rgba(var(--gated-rgb), 0.5);
 }
 .pw-plan-tag:hover {
   transform: scale(1.06);

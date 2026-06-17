@@ -8,12 +8,14 @@
 // via the harness: `npm run verify:directions`): progression clocks, solar-arc
 // and primary-direction arcs and frames, transit framing, synastry framing, and
 // the Davison midpoints. Each assertion pins either a textbook identity (the
-// day-for-a-year ratio, directed MC = natal MC + arc) or a deliberate design
-// equivalence (primary directions as a rigid rotation), so any future change of
-// convention has to be made knowingly.
+// day-for-a-year ratio, solar-arc-in-longitude's directed MC = natal MC + arc, the
+// bi-wheel's RAMC+arc directed angles) or a deliberate design equivalence (primary
+// directions' MAP lines as a rigid rotation ≡ advancing the RAMC), so any future
+// change of convention has to be made knowingly.
 import { createRequire } from 'node:module';
 import {
   birthDataToJD,
+  directedAngles,
   getPlanetPositions,
   gmstRadians,
   initEphemeris,
@@ -95,15 +97,19 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   // angles (~1°/yr drift) under every method, including "Natal Frame".
   check(
     'progressed default: wheel seeds natal angles, no direction applied',
-    Math.abs((sec.angleJd ?? 0) - birthJD) < 1e-9 && sec.directAngle === undefined,
+    Math.abs((sec.angleJd ?? 0) - birthJD) < 1e-9 && sec.angleArc === undefined,
   );
   const saL = buildOverlay(CHART, 'progressed', target, null, 'mean', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
   const sunProgLon = raDecToEclipticLon(getPlanetPositions(wantSec, 'mean')[0].ra, getPlanetPositions(wantSec, 'mean')[0].dec, eps);
   const sunNatalLon = raDecToEclipticLon(natal[0].ra, natal[0].dec, eps);
   const arcLong = normalizeAngle(sunProgLon - sunNatalLon);
+  const baseAng = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus');
+  const saLDir = directedAngles(baseAng, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus', saL.angleArc, saL.angleFrame);
   check(
     'progressed sa-long: wheel angles advance by the same arc as the map frame',
-    saL.directAngle !== undefined && dAng(saL.directAngle!(1.0), 1.0 + arcLong) < 1e-12,
+    saL.angleFrame === 'long' &&
+      dAng(saLDir.mc, baseAng.mc + arcLong) < 1e-12 &&
+      dAng(saLDir.asc, baseAng.asc + arcLong) < 1e-12,
   );
 }
 
@@ -118,9 +124,8 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   const lonN = node.calculatePosition(birthJD, node.Planet.Sun, FLAG).longitude;
   const lonP = node.calculatePosition(progJD, node.Planet.Sun, FLAG).longitude;
   const arcSwiss = normalizeAngle((lonP - lonN) * DEG2RAD);
-  // Extract the applied arc from the directed angle closure.
-  const probe = 1.0;
-  const arcApplied = normalizeAngle(sa.directAngle!(probe) - probe);
+  // The applied arc is the layer's angleArc (radians).
+  const arcApplied = sa.angleArc!;
   check(
     'solar arc equals the progressed Sun\'s longitude travel',
     dAng(arcApplied, arcSwiss) * RAD2DEG < 0.5 * ARCSEC,
@@ -130,16 +135,17 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   // a June birth's progressed month lands on) to ~1.019°/day (perihelion).
   check('solar arc within the Sun\'s real rate band (0.95–1.03°/yr)', arcApplied * RAD2DEG / years > 0.95 && arcApplied * RAD2DEG / years < 1.03, `${(arcApplied * RAD2DEG / years).toFixed(4)}°/yr`);
 
-  // Directed MC = natal MC + arc (longitude frame), through the real closure.
+  // Directed MC = natal MC + arc (longitude frame), through directedAngles.
   const natalAngles = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus');
-  check('directed MC = natal MC + arc (sa-long)', dAng(sa.directAngle!(natalAngles.mc), natalAngles.mc + arcApplied) < 1e-12);
+  const saDir = directedAngles(natalAngles, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus', sa.angleArc, sa.angleFrame);
+  check('directed MC = natal MC + arc (sa-long)', dAng(saDir.mc, natalAngles.mc + arcApplied) < 1e-12);
   // Bodies shifted by the same arc in longitude.
   const dSun = dAng(raDecToEclipticLon(sa.positions[0].ra, sa.positions[0].dec, eps), raDecToEclipticLon(natal[0].ra, natal[0].dec, eps) + arcApplied);
   check('directed bodies shifted by the same arc (sa-long)', dSun < 1e-9, `Δ ${dSun.toExponential(2)} rad`);
 
   // Age 0 → arc 0 (the directed chart IS the natal chart at birth).
   const sa0 = buildOverlay(CHART, 'solar-arc', jdToEpochMs(birthJD), null, 'mean', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
-  check('solar arc at age 0 is 0', dAng(sa0.directAngle!(probe), probe) < 1e-9);
+  check('solar arc at age 0 is 0', Math.abs(sa0.angleArc ?? 0) < 1e-9);
 }
 
 // ── 3. Primary directions ─────────────────────────────────────────────────────
@@ -169,10 +175,17 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   }
   check('primary directions: rigid rotation ≡ advancing the RAMC (map lines)', worst < 1e-9, `max vertex Δ ${worst.toExponential(2)}°`);
 
-  // Worked numbers for the astrologer hand-off: the bi-wheel's directed MC.
+  // The bi-wheel's directed angles now use the classical RAMC + arc (Q5/Q6): the directed
+  // MC matches the independent closed-form eclipticLonOfRA(RAMC + arc) — a different code
+  // path than relocate — and advances FORWARD (~1°/yr), not the old rigid −arc rotation
+  // that crept backward through the zodiac.
   const natalAngles = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus');
-  const codeMc = pd.directAngle!(natalAngles.mc);
+  const dir = directedAngles(natalAngles, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus', pd.angleArc, pd.angleFrame);
   const classicalMc = eclipticLonOfRA(natalGmst + CHART.birthplace.lng * DEG2RAD + arc, eps);
+  check('primary: bi-wheel angle frame is forward RAMC + arc', pd.angleFrame === 'ramc' && Math.abs((pd.angleArc ?? 0) - arc) < 1e-12);
+  check('primary: directed MC = closed-form RAMC + arc', dAng(dir.mc, classicalMc) < 1e-9, `Δ ${(dAng(dir.mc, classicalMc) * RAD2DEG / ARCSEC).toFixed(3)}″`);
+  // Forward through the zodiac (the textbook "MC advances ~1°/yr"), not frozen / backward.
+  check('primary: directed MC advances forward of natal', normalizeAngle(dir.mc - natalAngles.mc) > 0);
   const fmtZ = (lon: number) => {
     const d = ((lon * RAD2DEG) % 360 + 360) % 360;
     const SIGNS = ['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis'];
@@ -180,8 +193,8 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   };
   console.log(`  [convention table] age 30, Ptolemy key, ${CHART.name} @ birthplace:`);
   console.log(`    natal MC          ${fmtZ(natalAngles.mc)}`);
-  console.log(`    app directed MC   ${fmtZ(codeMc)}   (rigid −arc rotation; body–angle separations stay natal)`);
-  console.log(`    classical dir. MC ${fmtZ(classicalMc)}   (RAMC+arc → MC advances ~1°/yr)`);
+  console.log(`    app directed MC   ${fmtZ(dir.mc)}   (RAMC + arc → advances ~1°/yr)`);
+  console.log(`    classical dir. MC ${fmtZ(classicalMc)}   (independent closed form)`);
 
   // Rate keys scale the arc as documented.
   const naibod = buildOverlay(CHART, 'primary-directions', target, null, 'mean', 'mean-quotidian', 'naibod', 1, 'relative-to-natal', 'secondary', t)!;

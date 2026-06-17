@@ -41,7 +41,7 @@ export const topNav = {
       cyclo: {
         label: 'Cyclocartography',
         tipTitle: 'Cyclocartography (CCG)',
-        desc: 'Secondary progressed personal planets and transiting planets Jupiter and beyond, one map.',
+        desc: 'Jim Lewis’s hybrid: secondary-progressed personal planets with transiting Jupiter and beyond, on one map.',
       },
       synastry: {
         label: 'Synastry',
@@ -49,7 +49,7 @@ export const topNav = {
       },
       eclipses: {
         label: 'Eclipses',
-        desc: 'Solar-eclipse paths and shadow contours across the map.',
+        desc: 'Solar-eclipse paths and magnitude contours, plus where a lunar eclipse is visible, across the map.',
       },
     },
   },

@@ -61,6 +61,7 @@ import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { useCountryOf } from './lib/atlas/useCountryOf';
 import {
   birthDataToJD,
+  directedAngles,
   eclipticLonOfRA,
   eclipticToRaDec,
   ensureAsteroidEphemeris,
@@ -865,7 +866,14 @@ export default function App() {
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
         case 'g': setShowTeleport((v) => !v); break;
-        case 'l': if (advancedWheel) setShowLocalSpace((v) => !v); break;
+        case 'l':
+          // Local space isn't shown in Mundane (geodetic); opening it returns to the
+          // celestial frame (matches the View-menu toggle + the slide tool).
+          if (advancedWheel) {
+            if (lineSystem === 'geodetic') setLineSystem('celestial');
+            setShowLocalSpace((v) => !v);
+          }
+          break;
         case 'o':
           // Cycling into a core mode supersedes any active extension overlay.
           setActiveOverlayExt(null);
@@ -881,13 +889,26 @@ export default function App() {
         case 'y': if (advancedWheel) toggleSlide(); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
-        default: return;
+        default: {
+          // A registered map-HUD extension may claim a plain-letter hotkey (its
+          // `hotkey` field, also shown beside it in the View menu). Toggle it —
+          // but only when the user is entitled, so a gated extension the user
+          // can't reach stays a no-op (its HUD wouldn't render anyway).
+          const ext = getMapExtensions().find(
+            (x) => x.hotkey?.toLowerCase() === e.key.toLowerCase() && isEntitled(x),
+          );
+          if (!ext) return;
+          toggleExtension(ext.id);
+        }
       }
       e.preventDefault();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [current, pinned, toggleSlide, advancedWheel]);
+    // toggleExtension is a stable useCallback declared later in this component; the
+    // keydown closure reads it lazily (post-commit), so it's intentionally left out of
+    // the deps — listing it here would touch its temporal dead zone during render.
+  }, [current, pinned, toggleSlide, advancedWheel, lineSystem]);
 
   // Turning Advanced OFF deactivates any advanced-only feature that's active (Slide tool,
   // Local Space view, Synastry/Eclipses overlays) so nothing advanced-only lingers without
@@ -903,6 +924,23 @@ export default function App() {
     }
     setAdvancedWheel(on);
   }, []);
+
+  // Mundane (geodetic) lines and the Local Space view are mutually exclusive: geodetic
+  // is time-independent, while local space needs the specific birth moment (Solar Maps
+  // withholds local space in geodetic mode for the same reason). Entering Mundane closes
+  // the view (like turning Advanced off); opening the view drops back to the celestial
+  // frame (mirrors the slide tool, which also can't run in geodetic — see toggleSlide).
+  const setLineSystemSafe = useCallback((next: LineSystem) => {
+    if (next === 'geodetic') setShowLocalSpace(false);
+    setLineSystem(next);
+  }, []);
+  const setShowLocalSpaceSafe = useCallback(
+    (v: boolean) => {
+      if (v && lineSystem === 'geodetic') setLineSystem('celestial');
+      setShowLocalSpace(v);
+    },
+    [lineSystem],
+  );
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -1094,25 +1132,32 @@ export default function App() {
   const sliding = mapTool === 'slide';
   const slideBucket = sliding ? Math.round(slideDt / SLIDE_BUCKET_DAYS) : 0;
 
+  // Raw TRUE-SKY positions (RA/dec) at the active instant (natal jd, or the slid date
+  // while the slide tool drags a composite/real chart), sliding-aware. Local space reads
+  // these directly: it's inherently a true-sky technique and must NOT inherit the
+  // In-Zodiaco / Mundane ecliptic projection (projecting Pluto onto the ecliptic skews
+  // its bearing ~3.7°). The map LINES instead use `linePositions` below.
+  const slidPositions = useMemo(() => {
+    if (!(sliding && current)) return positions;
+    const jdEff = jd + slideBucket * SLIDE_BUCKET_DAYS;
+    return current.composite
+      ? compositeEquatorial(current.composite, nodeType, obliquity(jdEff))
+      : getPlanetPositions(jdEff, nodeType);
+    // ephemerisEpoch marks deferred asteroid data arriving (resample with new data).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, sliding, slideBucket, current, jd, nodeType, ephemerisEpoch]);
+
   // Positions feeding the map LINES. Geodetic mode and In-Zodiaco both project each
   // body onto the ecliptic first (geodetic needs the true zodiacal longitude even
   // for off-ecliptic bodies); In-Mundo keeps true sky positions. The wheel keeps
   // using `positions`/`ecliptic` (longitude is identical either way).
   const linePositions = useMemo(() => {
-    let pos = positions;
-    let jdEff = jd;
-    if (sliding && current) {
-      jdEff = jd + slideBucket * SLIDE_BUCKET_DAYS;
-      pos = current.composite
-        ? compositeEquatorial(current.composite, nodeType, obliquity(jdEff))
-        : getPlanetPositions(jdEff, nodeType);
-    }
+    const jdEff = sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd;
     return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-      ? projectOntoEcliptic(pos, jdEff)
-      : pos;
-    // ephemerisEpoch marks deferred asteroid data arriving (resample with new data).
+      ? projectOntoEcliptic(slidPositions, jdEff)
+      : slidPositions;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineSystem, coordSystem, positions, jd, sliding, slideBucket, current, nodeType, ephemerisEpoch]);
+  }, [lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, ephemerisEpoch]);
 
   // Maps a meridian's RA to a geographic longitude (deg). Celestial: RA − GMST
   // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
@@ -1155,13 +1200,13 @@ export default function App() {
     () =>
       localSpaceOrigin
         ? generateLocalSpace(
-            linePositions,
+            slidPositions, // true-sky positions, never ecliptic-projected (Q3a)
             gmst,
             localSpaceOrigin.lat,
             localSpaceOrigin.lng,
           )
         : EMPTY_FC,
-    [linePositions, gmst, localSpaceOrigin],
+    [slidPositions, gmst, localSpaceOrigin],
   );
   const allZenith = useMemo(
     () => generateZenithStamps(linePositions, meridianLng),
@@ -1721,7 +1766,7 @@ export default function App() {
         ? withDarkMoon(
             filterLocalSpace(
               generateLocalSpace(
-                ovPositions,
+                overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
                 overlayLayer.gmst,
                 overlayLayer.originLat,
                 overlayLayer.originLng,
@@ -1863,7 +1908,7 @@ export default function App() {
       ? withDarkMoon(
           filterLocalSpace(
             generateLocalSpace(
-              ovPositions,
+              overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
               overlayLayer.gmst,
               overlayLayer.originLat,
               overlayLayer.originLng,
@@ -2049,20 +2094,24 @@ export default function App() {
   // angles. Time-based overlays (transits / synastry) have a genuine second moment →
   // relocate(jd) at the active point. The directed overlays (solar-arc, primary,
   // progressed) have no such moment: their angles are the NATAL angles (angleJd, the
-  // birth moment for progressed) advanced by the arc, so we relocate those and apply the
-  // overlay's directAngle closure (same arc + frame its map gmst uses). See
+  // birth moment for progressed) advanced by the arc — directedAngles applies the same
+  // arc + frame the map gmst uses (RAMC+arc for the …-in-RA / primary methods). See
   // docs/calculation-methods.md ("Directed-overlay angles").
   const overlayAngles = useMemo(() => {
     if (!overlayLayer || !current) return null;
     const lat = activePoint?.lat ?? current.birthplace.lat;
     const lng = activePoint?.lng ?? current.birthplace.lng;
-    const base = relocate(overlayLayer.angleJd ?? overlayLayer.jd, lat, lng, effHouseSystem);
-    const direct = overlayLayer.directAngle;
-    if (!direct) return base; // transits / synastry / natal-frame progressed
-    const wrap = (x: number) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    const asc = direct(base.asc);
-    const mc = direct(base.mc);
-    return { ...base, asc, mc, dsc: wrap(asc + Math.PI), ic: wrap(mc + Math.PI) };
+    const angleJd = overlayLayer.angleJd ?? overlayLayer.jd;
+    const base = relocate(angleJd, lat, lng, effHouseSystem);
+    return directedAngles(
+      base,
+      angleJd,
+      lat,
+      lng,
+      effHouseSystem,
+      overlayLayer.angleArc,
+      overlayLayer.angleFrame,
+    );
   }, [overlayLayer, activePoint, current, effHouseSystem]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
@@ -2742,7 +2791,7 @@ export default function App() {
           showZenith={showZenith}
           setShowZenith={setShowZenith}
           lineSystem={lineSystem}
-          setLineSystem={setLineSystem}
+          setLineSystem={setLineSystemSafe}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
           houseSystem={houseSystem}
@@ -2751,6 +2800,7 @@ export default function App() {
           setZodiacMode={setZodiacMode}
           nodeType={nodeType}
           setNodeType={setNodeType}
+          overlayMode={overlayMode}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}
@@ -2805,7 +2855,7 @@ export default function App() {
         showTeleport={showTeleport}
         setShowTeleport={setShowTeleport}
         showLocalSpace={showLocalSpace}
-        setShowLocalSpace={setShowLocalSpace}
+        setShowLocalSpace={setShowLocalSpaceSafe}
         planTier={planTier}
         showGuides={showGuides}
         setShowGuides={toggleGuides}

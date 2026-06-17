@@ -27,6 +27,8 @@ import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { formatUtcOffset } from '../../lib/atlas/timezone';
+import { planTierFor, tierName } from '../../lib/plan';
+import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
@@ -800,20 +802,26 @@ export function ExpandedChartSidebar({
               </svg>
               <span>{t('expandedSidebar.close.label')}</span>
             </TipButton>
-            {/* Clickable NEW/ADV cue, absolutely positioned just below the Hide
-                button so it adds no header height. Toggles Advanced reading mode —
-                the profile plan tag does the same. */}
+            {/* Plan-tag cue mirroring the profile strip: shows the rung on the plan
+                ladder and shares its click. Absolutely positioned just below the
+                Hide button so it adds no header height. Open core flips Advanced;
+                a downstream build's onPlanTag (e.g. open a plan screen) takes over
+                when installed, so the two tags stay in lockstep. */}
             <TipButton
               type="button"
-              className={`es-plan-tag ${advanced ? 'adv' : 'new'}`}
-              onClick={() => setAdvanced(!advanced)}
+              className={`es-plan-tag tier-${planTierFor(advanced)}`}
+              onClick={() => {
+                const { onPlanTag } = getProfileSection();
+                if (onPlanTag) onPlanTag({ advanced, setAdvanced });
+                else setAdvanced(!advanced);
+              }}
               role="switch"
               aria-checked={advanced}
               placement="left"
               tip={t('profile.planTag.tip')}
               hint={t('profile.planTag.hint')}
             >
-              {advanced ? t('profile.planTag.adv') : t('profile.planTag.new')}
+              {tierName(planTierFor(advanced))}
             </TipButton>
           </div>
         </div>

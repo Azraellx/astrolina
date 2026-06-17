@@ -972,3 +972,38 @@ export function relocate(
     ...(fallback ? { fallback } : {}),
   };
 }
+
+/**
+ * Directed bi-wheel angles for the time overlays. A directed / progressed chart has
+ * no relocatable "second moment": its overlay-ring angle marks are the NATAL
+ * relocated angles (`base`) advanced by the directional `arc`.
+ *   - 'long' (solar-arc-in-longitude): the whole chart shifts in ecliptic longitude,
+ *     so add the arc to each angle's longitude directly.
+ *   - 'ramc' (the classical meridian operation): an angle has no independent
+ *     declination to freeze — it is fixed entirely by the RAMC. Since
+ *     `armc = gmst(jd) + lng`, relocating at `lng + arc` advances the RAMC by exactly
+ *     the arc and re-derives MC/ASC at the SAME latitude and obliquity (the audited
+ *     angle engine the map frame already uses), giving the forward "MC advances
+ *     ~1°/yr" motion rather than a declination-frozen RA shift or a rigid rotation.
+ * `arc`/`frame` absent (transits / synastry / Natal-Frame progressed) → `base`.
+ * See docs/calculation-methods.md, "Directed-overlay angles".
+ */
+export function directedAngles(
+  base: RelocatedAngles,
+  angleJd: number,
+  latDeg: number,
+  lngDeg: number,
+  system: HouseSystem,
+  arc: number | undefined,
+  frame: 'long' | 'ramc' | undefined,
+): RelocatedAngles {
+  if (!arc || !frame) return base;
+  if (frame === 'long') {
+    const asc = norm2pi(base.asc + arc);
+    const mc = norm2pi(base.mc + arc);
+    return { ...base, asc, mc, dsc: norm2pi(asc + Math.PI), ic: norm2pi(mc + Math.PI) };
+  }
+  // 'ramc': advance the RAMC by the arc and re-derive the angles at the same place.
+  const d = relocate(angleJd, latDeg, lngDeg + (arc * 180) / Math.PI, system);
+  return { ...base, asc: d.asc, mc: d.mc, dsc: d.dsc, ic: d.ic };
+}

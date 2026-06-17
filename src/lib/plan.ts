@@ -61,14 +61,36 @@ export function planTierFor(advanced: boolean): PlanTier {
 // tier). NEW is the baseline, so it never badges a menu row in practice.
 const LABELS: Record<PlanTier, string> = { new: 'NEW', adv: 'ADV', gated: '' };
 
+/** Install a tier's user-facing label (downstream builds only). The core ships
+ *  defaults for the tiers it owns; a downstream build can rename any rung — e.g.
+ *  to its own plan names — without the core knowing those names. */
+export function setTierLabel(tier: PlanTier, label: string): void {
+  LABELS[tier] = label;
+}
+
 /** Install the gated tier's user-facing badge label (downstream builds only). */
 export function setGatedTierLabel(label: string): void {
-  LABELS.gated = label;
+  setTierLabel('gated', label);
 }
 
 /** The short badge label for a tier, or '' when none should show (NEW, or an unset gated). */
 export function tierLabel(tier: PlanTier): string {
   return LABELS[tier];
+}
+
+// Full plan NAME per rung — the longer display name shown on the profile/sidebar plan PILL,
+// as opposed to the compact tierLabel code shown on menu tier badges + tip markers. Defaults
+// mirror the labels; a downstream build renames the rungs to its own plan names.
+const NAMES: Record<PlanTier, string> = { new: 'NEW', adv: 'ADV', gated: '' };
+
+/** Install a tier's full display name (downstream builds only). */
+export function setTierName(tier: PlanTier, name: string): void {
+  NAMES[tier] = name;
+}
+
+/** The full display name for a tier (shown on the profile/sidebar plan pill). */
+export function tierName(tier: PlanTier): string {
+  return NAMES[tier];
 }
 
 /** A registered extension's coarse 'core' | 'gated' entitlement expressed on the plan
