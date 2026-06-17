@@ -362,6 +362,51 @@
   justify-content: center;
 }
 
+/* Relocated bottom settings row — Chart Angle (Solar Arc / Progressed / Tertiary) or
+   the primary-directions Rate. Centred; reuses the returns-row width trick so the
+   control never widens the bar. */
+.thud-setting-row {
+  padding-top: 0;
+  justify-content: center;
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.thud-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Content-sized like the Scale picker so the selected option always shows in full;
+   the min-width floor keeps it from jumping narrow on short options. */
+.thud-setting .calc-menu {
+  display: inline-flex;
+}
+.thud-setting .calc-menu-trigger {
+  width: auto;
+  min-width: 130px;
+}
+/* Rate options run longer than Chart-Angle ones (e.g. "Solar Daily Motion
+   (Longitude)"): floor its dropdown ~25% wider, and width:auto grows it to fit the
+   longest selection rather than truncating it. */
+.thud-rate .calc-menu-trigger {
+  min-width: 165px;
+}
+/* User-rate numeric field, inline beside the Rate dropdown when "User rate" is set. */
+.thud-rate .calc-user-rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.thud-rate .calc-user-rate-label {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.thud-rate .calc-user-rate-input {
+  width: 64px;
+}
+
 .thud-return-group {
   display: inline-flex;
   align-items: center;

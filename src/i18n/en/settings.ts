@@ -114,7 +114,7 @@ export const settings = {
   },
   nightShade: {
     title: 'Night Shade',
-    hint: 'Shades the half of Earth in night at the displayed moment: the chart’s own moment, the target date under Transits or CCG, and the eclipse maximum in Eclipses mode (a lunar eclipse is visible from exactly that night side).',
+    hint: 'Shades the half of Earth in night at the displayed moment.',
   },
   orbZones: {
     title: 'Orb Zones',

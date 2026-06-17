@@ -2025,12 +2025,15 @@ export default function App() {
   // on !pinned), so this hovered-point label doubles as the pin's placeholder while
   // the reverse-geocode loads.
   // Over water there's no city and no country, so fall back to a plain "Ocean".
+  // Any active map tool (measure OR slide) suppresses the location readout: in a
+  // tool mode the cursor serves the tool, so the place under it isn't meaningful.
+  const inToolMode = mapTool !== 'off';
   const hoverLabel =
-    mapTool === 'measure' || !hover
+    inToolMode || !hover
       ? null
       : (hoverCity ?? hoverCountry ?? t('common.locationFallbackOcean'));
   const locationLabel =
-    mapTool === 'measure'
+    inToolMode
       ? null
       : pinned
         ? isNatalPin
@@ -2800,13 +2803,6 @@ export default function App() {
           setZodiacMode={setZodiacMode}
           nodeType={nodeType}
           setNodeType={setNodeType}
-          overlayMode={overlayMode}
-          angleProgression={angleProgression}
-          setAngleProgression={setAngleProgression}
-          primaryRate={primaryRate}
-          setPrimaryRate={setPrimaryRate}
-          userPrimaryRate={userPrimaryRate}
-          setUserPrimaryRate={setUserPrimaryRate}
           theme={theme}
           setTheme={setTheme}
           projection={projection}
@@ -2904,6 +2900,12 @@ export default function App() {
           setShowNatal={setShowNatal}
           showOverlayZenith={showOverlayZenith}
           setShowOverlayZenith={setShowOverlayZenith}
+          angleProgression={angleProgression}
+          setAngleProgression={setAngleProgression}
+          primaryRate={primaryRate}
+          setPrimaryRate={setPrimaryRate}
+          userPrimaryRate={userPrimaryRate}
+          setUserPrimaryRate={setUserPrimaryRate}
         />
       )}
       {overlayMode === 'synastry' && (

@@ -88,6 +88,23 @@ export const ASPECT_COMPLEMENT: Record<AspectKind, AspectKind> = {
   trine: 'sextile',
 };
 
+/** The geometry-true reading of an aspect line: the aspect to its OWN angle
+ *  (the `branch`), rather than the MC/ASC-convention relabel carried by
+ *  `lineType`/`aspect`. The generator labels every line as an aspect to the MC
+ *  or ASC (so a +a point's IC line reads "trine MC"); this recovers the reading
+ *  at the angle the line actually IS — its IC line as "(a) to the Ic", its DSC
+ *  line as "(a) to the Ds". A near-side branch (MC/ASC, and VX/AVX which are
+ *  never relabeled) keeps the stored aspect; a far-side branch (IC/DSC) takes
+ *  the complement, undoing the generator's swap. Used by the hover tip, edge
+ *  badge, and line card so all three name the line by the angle it is. */
+export function aspectBranchReading(
+  aspect: AspectKind,
+  branch: LineType,
+): { aspect: AspectKind; angle: LineType } {
+  const farSide = branch === 'IC' || branch === 'DSC';
+  return { aspect: farSide ? ASPECT_COMPLEMENT[aspect] : aspect, angle: branch };
+}
+
 /** A planet-aspects-angle line. Extends LineProps so the generic line helpers
  *  (withDarkMoon, lineType filtering, edge badges) apply unchanged. The
  *  displayed `lineType` is always MC or ASC (the labeling convention above). */

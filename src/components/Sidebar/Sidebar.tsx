@@ -26,7 +26,6 @@ import {
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
 import type {
-  OverlayMode,
   AngleProgression,
   PrimaryRate,
 } from '../../lib/astro/timeline';
@@ -96,16 +95,6 @@ interface SidebarProps {
   showAdvancedTab: boolean;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
-  /** The active overlay; the directional-method dropdowns below show only for the
-   *  overlays that actually consume them (Chart Angle for Solar Arc / Progressed,
-   *  Primary Directions rate for Primary Directions). */
-  overlayMode: OverlayMode;
-  angleProgression: AngleProgression;
-  setAngleProgression: (a: AngleProgression) => void;
-  primaryRate: PrimaryRate;
-  setPrimaryRate: (r: PrimaryRate) => void;
-  userPrimaryRate: number;
-  setUserPrimaryRate: (deg: number) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   projection: MapProjectionMode;
@@ -170,11 +159,13 @@ const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
 
-const ANGLE_PROGRESSION_VALUES: AngleProgression[] = [
+// Exported so the timeline bar can build the same dropdowns — the Chart Angle and
+// Pri.-directions Rate controls were relocated there from the Calculations tab.
+export const ANGLE_PROGRESSION_VALUES: AngleProgression[] = [
   'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra', 'mean-quotidian',
 ];
 
-const PRIMARY_RATE_VALUES: PrimaryRate[] = [
+export const PRIMARY_RATE_VALUES: PrimaryRate[] = [
   'ptolemy', 'naibod', 'cardan', 'kepler-ra', 'solar-long', 'placidus-ra', 'user',
 ];
 
@@ -579,7 +570,7 @@ function HintMenuItem({
 // flush right. Free typing with clamping; the display re-formats to `decimals`
 // only when not mid-edit, so typing stays free. Used by the Primary-rate User
 // rate, the Advanced tab's orb rows, and the Filters' orb-zone widths.
-function StepperField({
+export function StepperField({
   id,
   glyph,
   label,
@@ -756,13 +747,6 @@ export function Sidebar({
   showAdvancedTab,
   nodeType,
   setNodeType,
-  overlayMode,
-  angleProgression,
-  setAngleProgression,
-  primaryRate,
-  setPrimaryRate,
-  userPrimaryRate,
-  setUserPrimaryRate,
   theme,
   setTheme,
   projection,
@@ -788,16 +772,6 @@ export function Sidebar({
     value,
     label: labels.houseSystem(value),
     hint: labels.houseSystemHint(value),
-  }));
-  const primaryRateOptions = PRIMARY_RATE_VALUES.map((value) => ({
-    value,
-    label: labels.primaryRate(value),
-    hint: labels.primaryRateHint(value),
-  }));
-  const chartAngleOptions = ANGLE_PROGRESSION_VALUES.map((value) => ({
-    value,
-    label: labels.chartAngle(value),
-    hint: labels.chartAngleHint(value),
   }));
   // The Language dropdown lists the top astrology-community languages; only the ones
   // with a catalog (English today) are selectable — the rest are grayed with a tip.
@@ -1051,41 +1025,6 @@ export function Sidebar({
             ))}
           </ul>
 
-          {/* Each directional-method dropdown shows only for the overlays that read it,
-              so the irrelevant one isn't noise (cf. Line projection, Celestial-only). */}
-          {(overlayMode === 'solar-arc' ||
-            overlayMode === 'progressed' ||
-            overlayMode === 'tertiary-progressed') && (
-            <>
-              <h2>{t('settings.headings.chartAngle')}</h2>
-              <HintMenu
-                value={angleProgression}
-                onChange={setAngleProgression}
-                options={chartAngleOptions}
-              />
-            </>
-          )}
-
-          {overlayMode === 'primary-directions' && (
-            <>
-              <h2>{t('settings.headings.primaryRate')}</h2>
-              <HintMenu
-                value={primaryRate}
-                onChange={setPrimaryRate}
-                options={primaryRateOptions}
-              />
-              {primaryRate === 'user' && (
-                <StepperField
-                  id="user-primary-rate"
-                  label={t('settings.userRate.label')}
-                  value={userPrimaryRate}
-                  onChange={setUserPrimaryRate}
-                  step={0.01}
-                  decimals={2}
-                />
-              )}
-            </>
-          )}
         </div>
       )}
 

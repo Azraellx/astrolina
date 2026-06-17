@@ -18,7 +18,7 @@ import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
-import { ASPECT_COMPLEMENT, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
+import { aspectBranchReading, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
 import type { ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
@@ -849,23 +849,25 @@ function lineLabelHtml(
         glyphHtml(pb, (props.colorB as string) ?? PLANET_COLORS[pb]) +
         `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
     } else {
-      // The aspect symbol renders glyph-sized in the bundled glyph font
-      // (astro-glyph + cross-tip-glyph), matching the planet glyph beside it.
-      // The complementary reading follows — a trine to the ASC is equally a
-      // sextile to the DSC — so users coming from either labeling convention
-      // recognize the line.
-      const asp = props.aspect as AspectKind;
-      const ang = props.lineType as LineType;
+      // Name the line by the angle it actually is (its `branch`), not the
+      // MC/ASC-convention relabel: the setting-side line reads "✶ Sextile Ds",
+      // the rising-side "✶ Sextile As". The aspect symbol renders glyph-sized in
+      // the bundled glyph font (astro-glyph + cross-tip-glyph), and the aspect is
+      // also spelled out ("Sextile"/"Square"/"Trine") so the tip reads plainly —
+      // the compact edge badges keep just the glyph + code.
+      const { aspect, angle } = aspectBranchReading(
+        props.aspect as AspectKind,
+        props.branch as LineType,
+      );
       const aspHtml = (a: AspectKind) =>
         `<span class="astro-glyph cross-tip-glyph">${ASPECT_GLYPHS[a]}</span>`;
+      const aspectWord = t(`expandedSidebar.aspect.${aspect}.name`);
       row =
         glyphHtml(planet, props.color as string) +
         `${labels.planet(planet)} ` +
-        aspHtml(asp) +
-        ` ${tagHtml(ANGLE_CODE[ang])}` +
-        `<span class="cross-tip-x">/</span>` +
-        aspHtml(ASPECT_COMPLEMENT[asp]) +
-        ` ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[ang]])}`;
+        aspHtml(aspect) +
+        ` ${aspectWord} ` +
+        tagHtml(ANGLE_CODE[angle]);
     }
   } else if (layerId === 'star-lines-layer') {
     // Fixed-star line: ★ in the shared star tint, then "Name MC" like the
@@ -3787,6 +3789,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // badge's zenith. It rides the same fly-out / fly-back toggle, keyed
           // by the computed point so each aspect or pair toggles independently.
           const angleBadge = Boolean(b.aspect || b.planetB);
+          // Aspect badges name the line by its true angle (its `branch`) — As/Ds/
+          // Mc/Ic — matching the hover tip and line card, not the MC/ASC-convention
+          // relabel in b.lineType. Falls back to that relabel if branch is absent;
+          // null on non-aspect (pair / midpoint / plain) badges.
+          const aspectFace = b.aspect
+            ? aspectBranchReading(b.aspect, b.branch ?? b.lineType)
+            : null;
           const zenithTarget = angleBadge
             ? b.targetLng !== undefined && b.targetLat !== undefined
               ? ([b.targetLng, b.targetLat] as [number, number])
@@ -3811,10 +3820,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 planetA: labels.planet(b.planet),
                 planetB: labels.planet(b.planetB),
               })
-            : b.aspect
+            : aspectFace
               ? t('map.flyToAspectPoint', {
                   planet: labels.planet(b.planet),
-                  aspect: t(`map.aspectNames.${b.aspect}`),
+                  aspect: t(`map.aspectNames.${aspectFace.aspect}`),
                 })
               : t('map.flyToZenith', {
                   prefix: b.prefix ? `${b.prefix} ` : '',
@@ -3842,15 +3851,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <PlanetGlyph planet={b.planetB} size={11} color={text} />
               <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
             </>
-          ) : b.aspect ? (
-            // Aspect line: glyph, aspect symbol, angle ("Su □ MC"). The symbol
-            // uses the bundled glyph font, like the planet glyph beside it.
+          ) : aspectFace ? (
+            // Aspect line: glyph, aspect symbol, the line's true angle ("Su □ Ds").
+            // The symbol uses the bundled glyph font, like the planet glyph beside it.
             <>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
               <span className="astro-glyph acg-badge-code">
-                {ASPECT_GLYPHS[b.aspect]}
+                {ASPECT_GLYPHS[aspectFace.aspect]}
               </span>
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-code">{ANGLE_CODE[aspectFace.angle]}</span>
             </>
           ) : (
             <>

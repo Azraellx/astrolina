@@ -12,7 +12,7 @@
 import type { TFn } from '../i18n';
 import type { PlanetName } from './ephemeris';
 import type { LineType } from './astro/lines';
-import type { AspectKind } from './astro/angleAspects';
+import { aspectBranchReading, type AspectKind } from './astro/angleAspects';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from './astro/glyphChars';
 
 const OVERLAY_NOTE_TAGS = ['Tr', 'Sp', 'Tp', 'Sa', 'Pd', 'Cy', 'Sy'] as const;
@@ -107,19 +107,24 @@ export function buildLineCard(
     const essence = t(`lineMeanings.angleEssence.${angle}`);
     if (props.kind === 'aspect') {
       const planet = props.planet as PlanetName;
-      const aspect = props.aspect as AspectKind;
+      // Name the line by the angle it actually is (its `branch`) — matching the
+      // hover tip and edge badge — not the MC/ASC-convention relabel in lineType.
+      const { aspect, angle: aspAngle } = aspectBranchReading(
+        props.aspect as AspectKind,
+        props.branch as LineType,
+      );
       const name = t(`planets.${planet}.name`);
       const aspectWord = t(`expandedSidebar.aspect.${aspect}.name`).toLowerCase();
       const body =
-        `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle })} ` +
+        `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: aspAngle })} ` +
         `${t(`lineMeanings.aspect.kind.${aspect}`)} ` +
-        t('lineMeanings.aspect.pointer', { planet: name, angle });
+        t('lineMeanings.aspect.pointer', { planet: name, angle: aspAngle });
       return card(
         glyph(planet, props.color) +
           t('lineMeanings.aspectTitle', {
             planet: name,
             aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span>`,
-            angle,
+            angle: aspAngle,
           }),
         body,
         [...notes, footer],

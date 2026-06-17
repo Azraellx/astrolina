@@ -16,7 +16,9 @@ import {
   minorStepMs,
   OVERLAY_LABEL_PREFIX,
   TIME_UNITS,
+  type AngleProgression,
   type OverlayMode,
+  type PrimaryRate,
   type TimeUnit,
   type TransitFrame,
 } from '../../lib/astro/timeline';
@@ -33,7 +35,12 @@ import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
-import { HintMenu } from '../Sidebar/Sidebar';
+import {
+  HintMenu,
+  StepperField,
+  ANGLE_PROGRESSION_VALUES,
+  PRIMARY_RATE_VALUES,
+} from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { useT } from '../../i18n';
 import './TimelineHud.css';
@@ -78,6 +85,15 @@ interface TimelineHudProps {
   setShowNatal: (v: boolean) => void;
   showOverlayZenith: boolean;
   setShowOverlayZenith: (v: boolean) => void;
+  /** Chart-Angle method (Solar Arc / Progressed / Tertiary) and the Primary-Directions
+   *  rate, relocated from the Calculations tab into this bar's bottom settings row —
+   *  each shown only for the overlay that consumes it. */
+  angleProgression: AngleProgression;
+  setAngleProgression: (a: AngleProgression) => void;
+  primaryRate: PrimaryRate;
+  setPrimaryRate: (r: PrimaryRate) => void;
+  userPrimaryRate: number;
+  setUserPrimaryRate: (deg: number) => void;
   /** ADVANCED-ONLY master flag for this bar: when false the right-side display drawer
    *  (Natal/Zenith toggles) and the Relative/Absolute positioning control are HIDDEN, and
    *  their values default (App feeds eff* defaults to the map); when true they're restored. */
@@ -293,10 +309,28 @@ export function TimelineHud({
   setShowNatal,
   showOverlayZenith,
   setShowOverlayZenith,
+  angleProgression,
+  setAngleProgression,
+  primaryRate,
+  setPrimaryRate,
+  userPrimaryRate,
+  setUserPrimaryRate,
   advanced,
 }: TimelineHudProps) {
-  const { t, fmt } = useT();
+  const { t, fmt, labels } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
+  // Dropdowns relocated from the Calculations tab into the bottom settings row
+  // (each shown per-overlay below): Chart Angle for the directed sets, Rate for primaries.
+  const chartAngleOptions = ANGLE_PROGRESSION_VALUES.map((value) => ({
+    value,
+    label: labels.chartAngle(value),
+    hint: labels.chartAngleHint(value),
+  }));
+  const primaryRateOptions = PRIMARY_RATE_VALUES.map((value) => ({
+    value,
+    label: labels.primaryRate(value),
+    hint: labels.primaryRateHint(value),
+  }));
   const [pickerOpen, setPickerOpen] = useState(false);
   // The right-side display drawer (Natal + Zenith toggles) — closed by default.
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -790,6 +824,49 @@ export function TimelineHud({
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Chart-Angle method — relocated from the Calculations tab. Shown for the
+          directed overlays that read it (Solar Arc / Secondary / Tertiary), centred. */}
+      {(overlayMode === 'solar-arc' ||
+        overlayMode === 'progressed' ||
+        overlayMode === 'tertiary-progressed') && (
+        <div className="thud-row thud-setting-row">
+          <div className="thud-mode thud-setting">
+            <span className="thud-mode-label">{t('settings.headings.chartAngle')}</span>
+            <HintMenu
+              value={angleProgression}
+              onChange={setAngleProgression}
+              options={chartAngleOptions}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Primary-Directions rate — relocated from the Calculations tab into its own
+          bottom row, labelled "Rate". Its dropdown is wider (longer option strings);
+          the user-rate stepper rides alongside when "User rate" is picked. */}
+      {overlayMode === 'primary-directions' && (
+        <div className="thud-row thud-setting-row">
+          <div className="thud-mode thud-setting thud-rate">
+            <span className="thud-mode-label">{t('timeline.rate.label')}</span>
+            <HintMenu
+              value={primaryRate}
+              onChange={setPrimaryRate}
+              options={primaryRateOptions}
+            />
+            {primaryRate === 'user' && (
+              <StepperField
+                id="user-primary-rate"
+                label={t('settings.userRate.label')}
+                value={userPrimaryRate}
+                onChange={setUserPrimaryRate}
+                step={0.01}
+                decimals={2}
+              />
+            )}
+          </div>
         </div>
       )}
 

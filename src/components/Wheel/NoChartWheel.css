@@ -13,8 +13,12 @@
    clamp() holds a legible floor — the label stays readable even when the ring is small. */
 .wheel-nochart {
   display: flex;
+  /* Column so the optional reason note stacks under the label; the group stays
+     vertically centred in the ring. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1.5cqi;
   max-width: 100%;
   aspect-ratio: 1;
   margin: 0 auto;
@@ -32,4 +36,15 @@
   text-transform: uppercase;
   white-space: nowrap;
   font-size: clamp(13px, 13cqi, 22px);
+}
+
+/* Optional one-sentence reason under the label. Only the note is width-capped (so it
+   wraps clear of the dashed ring) — the label keeps its own nowrap sizing. */
+.wheel-nochart-note {
+  max-width: 70cqi;
+  color: var(--text-muted);
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.4;
+  font-size: clamp(9px, 6.2cqi, 12.5px);
 }

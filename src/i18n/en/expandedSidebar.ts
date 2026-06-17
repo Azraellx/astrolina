@@ -19,6 +19,10 @@ export const expandedSidebar = {
   // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
   // is promoted with the natal chart hidden — there's nothing to draw.
   noChart: 'NO CHART (CCG)',
+  // One-sentence reason shown (centred) under the empty-wheel label, so the empty
+  // state explains itself rather than just asserting there's nothing to draw.
+  noChartNote:
+    'Cyclocartography blends progressed inner planets with transiting outer planets, so there’s no single chart to draw.',
 
   dual: {
     // The Dual toggle in the header: pill label, hover tip title, and explanation.

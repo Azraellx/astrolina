@@ -26,6 +26,10 @@ export interface LineBadge {
   /** Set on "Aspects to angles" aspect lines: the badge shows the aspect glyph
    *  between the planet and the angle code (e.g. "Su □ MC"). */
   aspect?: AspectKind;
+  /** Aspect lines: the line's true geometric angle (its own MC/IC/ASC/DSC),
+   *  so the badge can name it by the angle it IS (via aspectBranchReading)
+   *  rather than the MC/ASC-convention relabel in `lineType`. */
+  branch?: LineType;
   /** Set on midpoint lines: the pair's second body — the badge shows both
    *  glyphs (e.g. "Su/Mo MC"). */
   planetB?: PlanetName;
@@ -144,6 +148,7 @@ interface LineMeta {
   pair: boolean;
   /** Aspect / midpoint extras (see the same fields on LineBadge). */
   aspect?: AspectKind;
+  branch?: LineType;
   planetB?: PlanetName;
   targetLng?: number;
   targetLat?: number;
@@ -271,7 +276,7 @@ export function computeLineBadges(
     // separates an aspect's two same-label sides (e.g. both trine-MC meridians).
     const key = `${planet}|${lineType}|${prefix}|${aspect ?? ''}|${branch ?? ''}|${planetB ?? ''}`;
     const meta: LineMeta = {
-      color, planet, lineType, prefix, pair, aspect, planetB, targetLng, targetLat,
+      color, planet, lineType, prefix, pair, aspect, branch, planetB, targetLng, targetLat,
     };
 
     // Split the projected polyline into contiguous runs of VISIBLE vertices. On a
@@ -324,6 +329,7 @@ export function computeLineBadges(
         line: g.bestLine,
         pair: g.pair,
         aspect: g.aspect,
+        branch: g.branch,
         planetB: g.planetB,
         targetLng: g.targetLng,
         targetLat: g.targetLat,

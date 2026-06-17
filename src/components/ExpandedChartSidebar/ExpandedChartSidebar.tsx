@@ -818,8 +818,8 @@ export function ExpandedChartSidebar({
               role="switch"
               aria-checked={advanced}
               placement="left"
-              tip={t('profile.planTag.tip')}
-              hint={t('profile.planTag.hint')}
+              tip={t(advanced ? 'profile.planTag.tipBasic' : 'profile.planTag.tip')}
+              hint={t(advanced ? 'profile.planTag.hintBasic' : 'profile.planTag.hint')}
             >
               {tierName(planTierFor(advanced))}
             </TipButton>
@@ -997,7 +997,11 @@ export function ExpandedChartSidebar({
                 ) : noChart ? (
                   // A promoted overlay with no coherent chart (CCG, Natal hidden) — an
                   // empty wheel reading "NO CHART", sized to the pane.
-                  <NoChartWheel size={wheelSize} label={t('expandedSidebar.noChart')} />
+                  <NoChartWheel
+                    size={wheelSize}
+                    label={t('expandedSidebar.noChart')}
+                    note={t('expandedSidebar.noChartNote')}
+                  />
                 ) : (
                   <div className="es-empty">{t('expandedSidebar.empty')}</div>
                 )}

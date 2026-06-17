@@ -103,7 +103,15 @@ export function EclipseHud({
 }: EclipseHudProps) {
   const { t, fmt, labels } = useT();
   const [open, setOpen] = useState(false); // picker menu
-  const [expanded, setExpanded] = useState(true); // nub eye: body shown?
+  // The eclipse module is lazy-loaded on first open; until its chunk lands, every
+  // data prop is empty (`catalog === []`, `selected`/`details === null`), which would
+  // otherwise render the bar EXPANDED but blank — an empty zero-width picker, disabled
+  // steppers, no vitals (the "artifact shapes"). So gate the initial expand on the data
+  // being in: start COLLAPSED while loading (a clean nub), then auto-expand the moment
+  // the catalog lands (effect below). Warm re-entries (module already loaded) have
+  // `ready` true at mount, so they start expanded with no flicker.
+  const ready = catalog.length > 0;
+  const [expanded, setExpanded] = useState(ready); // nub eye: body shown?
   const [query, setQuery] = useState('');
   const [bodyFilter, setBodyFilter] = useState<BodyFilter>('all');
   const [typeFilter, setTypeFilter] = useState<EclipseCatalogRow['kind'] | 'all'>('all');
@@ -125,6 +133,13 @@ export function EclipseHud({
     show: showSign,
     hide: hideSign,
   } = useHoverTip<HTMLElement>('top');
+
+  // Open the bar up the instant the lazy eclipse data lands (cold first open mounted
+  // collapsed). Keyed on `ready` so it fires once on the load edge — a no-op on warm
+  // re-entries (already expanded), and it then leaves the user's eye toggle alone.
+  useEffect(() => {
+    if (ready) setExpanded(true);
+  }, [ready]);
 
   useEffect(() => {
     if (!open) return;

@@ -47,8 +47,8 @@ export function ProfileWindow({
         role="switch"
         aria-checked={advancedWheel}
         placement="bottom"
-        tip={t('profile.planTag.tip')}
-        hint={t('profile.planTag.hint')}
+        tip={t(advancedWheel ? 'profile.planTag.tipBasic' : 'profile.planTag.tip')}
+        hint={t(advancedWheel ? 'profile.planTag.hintBasic' : 'profile.planTag.hint')}
       >
         {tierName(tier)}
       </TipButton>

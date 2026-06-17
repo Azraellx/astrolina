@@ -121,6 +121,9 @@ export const timeline = {
     },
   },
   scale: { label: 'Scale' },
+  // The Pri.-directions Rate picker, relocated from the Calculations tab to the
+  // primary-directions bar's bottom row (labelled just "Rate" there).
+  rate: { label: 'Rate' },
   dateField: {
     tipChartZone: 'Transit / progressed moment, in the chart’s time zone',
     tipUtc: 'Transit / progressed moment, in UTC',

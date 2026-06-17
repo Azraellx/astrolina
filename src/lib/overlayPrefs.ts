@@ -182,14 +182,16 @@ export function saveEclipseNatalLines(show: boolean) {
 
 // ── Orb-of-influence zones ───────────────────────────────────────────────────
 // The translucent bands around planet angle lines (a ground distance, km) and
-// parans (degrees of latitude, the conventional paran orb). Off by default —
-// they add visual weight that not every reading wants.
+// parans (degrees of latitude, the conventional paran orb). On by default, but
+// gated by Advanced mode (App's `advancedWheel && showOrbZones`), so a fresh
+// account first sees them when it switches to ADV — the same pattern as the
+// zenith/nadir stamps (astro:show-zenith:v1, also `!== '0'`).
 const ORB_ZONES_KEY = 'astro:orb-zones:v1';
 const ORB_ZONE_KM_KEY = 'astro:orb-zone-km:v1';
 const PARAN_ORB_DEG_KEY = 'astro:paran-orb-deg:v1';
 
 export function loadShowOrbZones(): boolean {
-  return localStorage.getItem(ORB_ZONES_KEY) === '1';
+  return localStorage.getItem(ORB_ZONES_KEY) !== '0';
 }
 export function saveShowOrbZones(show: boolean) {
   localStorage.setItem(ORB_ZONES_KEY, show ? '1' : '0');

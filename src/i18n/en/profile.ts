@@ -12,7 +12,12 @@ export const profile = {
   planTag: {
     new: 'NEW',
     adv: 'ADV',
+    // The tag shows the CURRENT tier; the tip describes what a click switches you
+    // TO. From NEW (off) you go to Advanced; from ADV (on) back to the standard
+    // view — so the tip is chosen by the current advanced state.
     tip: 'Advanced mode',
     hint: 'Shows more advanced features, intended for experienced astrologers.',
+    tipBasic: 'Standard mode',
+    hintBasic: 'Hides the advanced features for a simpler, standard view.',
   },
 } as const;

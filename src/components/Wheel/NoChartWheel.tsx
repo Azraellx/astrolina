@@ -12,6 +12,9 @@ interface NoChartWheelProps {
   size: number;
   /** Centred label (caller supplies the localized string, e.g. "NO CHART"). */
   label: string;
+  /** Optional one-line reason shown (centred, wrapped) under the label, explaining
+   *  why no chart is drawn — e.g. the CCG mixed-layer note. */
+  note?: string;
 }
 
 // An explicit empty-wheel state, drawn where a chart would normally be but none is
@@ -20,10 +23,11 @@ interface NoChartWheelProps {
 // outers) with no single coherent chart to wheel. A faint dashed ring stands in for the
 // wheel, with a bold, high-contrast label centred and floored at a legible size so it
 // holds up even on a narrow sidebar.
-export function NoChartWheel({ size, label }: NoChartWheelProps) {
+export function NoChartWheel({ size, label, note }: NoChartWheelProps) {
   return (
     <div className="wheel-nochart" style={{ width: size }}>
       <span className="wheel-nochart-label">{label}</span>
+      {note && <span className="wheel-nochart-note">{note}</span>}
     </div>
   );
 }
