@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import type { BirthData } from './birthData';
+import { notifyChartsChanged } from './extensions/chartSync';
 
 /** A chart's organizing tag. 'star' is user-assigned (the only one the UI offers);
  *  'space' is a system tag set by in-app chart generation (no manual control yet).
@@ -80,6 +81,8 @@ export function loadCharts(): StoredChart[] {
 
 export function saveCharts(charts: StoredChart[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(charts));
+  // Let a downstream build mirror the change to its account store (no-op in the open core).
+  notifyChartsChanged(charts);
 }
 
 export function loadCurrentId(): string | null {

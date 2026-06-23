@@ -15,6 +15,7 @@ import {
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
+import { getChartsSection } from '../../lib/extensions/chartsSection';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import './ChartManager.css';
@@ -182,7 +183,12 @@ export function ChartManager({
         aria-label={title ?? t('chartManager.dialogLabel')}
       >
         <header className="cm-header">
-          <h2>{heading ?? title ?? t('chartManager.title')}</h2>
+          <div className="cm-title">
+            <h2>{heading ?? title ?? t('chartManager.title')}</h2>
+            {/* Optional downstream adornment (e.g. a sync-status badge), only on the default
+                "My Charts" view — not when a custom title/heading (synastry picker) is shown. */}
+            {!heading && !title && getChartsSection().renderHeaderStatus?.()}
+          </div>
           <button
             type="button"
             className="cm-close"

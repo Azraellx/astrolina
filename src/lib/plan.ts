@@ -93,6 +93,23 @@ export function tierName(tier: PlanTier): string {
   return NAMES[tier];
 }
 
+// Nudge/teaser policy — whether an item the user has NOT reached should still SHOW (disabled, as
+// an upgrade teaser) instead of hiding. Consulted ONLY by the nav menus (and, downstream, a sync
+// badge); every other tier gate keeps hiding (no teaser). The open core installs none, so it
+// defaults to hiding everything — a downstream build opts in to nudging.
+let resolveNudge: (tier: PlanTier) => boolean = () => false;
+
+/** Install the nudge-teaser policy (downstream builds only). Given the tier an un-reached item
+ *  requires, return true to SHOW it disabled (a teaser) or false to hide it. Default: hide. */
+export function setNudgeTierResolver(fn: (tier: PlanTier) => boolean): void {
+  resolveNudge = fn;
+}
+
+/** Whether an un-reached item requiring this tier should show as a disabled teaser (vs hidden). */
+export function shouldShowNudge(tier: PlanTier): boolean {
+  return resolveNudge(tier);
+}
+
 /** A registered extension's coarse 'core' | 'gated' entitlement expressed on the plan
  *  ladder: a 'gated' add-on is the gated tier, everything else is the baseline. Reconciles
  *  the two vocabularies in ONE place so a gated extension automatically reads as gated. */

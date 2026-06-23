@@ -81,13 +81,29 @@ html[data-mapstate='natal-pinned'] .profile-window {
   filter: brightness(1.08);
 }
 
+/* Gated build: the whole strip is the clickable plan/account affordance. Hovering
+   anywhere on it cues the click by animating ONLY the tag (the avatar/name stay put,
+   so the identity isn't a fidgety target). */
+.profile-window--interactive {
+  cursor: pointer;
+}
+.profile-window--interactive:focus-visible {
+  outline: 2px solid rgba(var(--map-accent-rgb), 0.7);
+  outline-offset: 2px;
+}
+.profile-window--interactive:hover .pw-plan-tag {
+  transform: scale(1.06);
+  filter: brightness(1.08);
+}
+
 /* Honour reduced-motion: keep the colour feedback, drop the scale/brightness
    nudge (matches the map's edge-glow guard). */
 @media (prefers-reduced-motion: reduce) {
   .pw-plan-tag {
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
-  .pw-plan-tag:hover {
+  .pw-plan-tag:hover,
+  .profile-window--interactive:hover .pw-plan-tag {
     transform: none;
     filter: none;
   }

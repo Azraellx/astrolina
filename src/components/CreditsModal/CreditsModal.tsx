@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react';
 import { useT } from '../../i18n';
+import { getCreditsFooter } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
 
 // Sub-key into creditsModal.notes / creditsModal.groups. Kept as literal unions so the
@@ -196,6 +197,8 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
             astrolina.org
           </a>
           {t('creditsModal.footer')}
+          {/* Optional downstream footer content (e.g. Privacy / Terms links); empty in core. */}
+          {getCreditsFooter().render?.()}
         </footer>
       </div>
     </div>

@@ -4,10 +4,11 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { TipButton } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import { getProfileSection } from '../../lib/extensions/profileSection';
-import { planTierFor, tierName } from '../../lib/plan';
+import { planTierFor, tierLabel } from '../../lib/plan';
 import './ProfileWindow.css';
 
 interface ProfileWindowProps {
@@ -18,9 +19,15 @@ interface ProfileWindowProps {
 
 // The permanent top-left profile strip. It hosts an optional identity element
 // (avatar / username, supplied by a downstream build through the profile-section
-// seam) followed by the plan tag. In the open core there is no identity, so the
-// strip is just the tag; clicking it auto-flips Advanced reading mode. A gated
-// build can swap the click for its own action (e.g. open a plan screen).
+// seam) followed by the plan tag.
+//
+// Open core: there is no identity, so the strip is just the tag; clicking it
+// auto-flips Advanced reading mode (a role=switch toggle, tip on the tag).
+//
+// Gated build (an onPlanTag handler is installed — e.g. opens a plan/account
+// screen): the WHOLE strip becomes one click + hover-tip target, so the avatar and
+// name are part of the affordance, not just the tag. The tag keeps its hover
+// animation (now also cued by hovering the strip).
 export function ProfileWindow({
   advancedWheel,
   setAdvancedWheel,
@@ -37,6 +44,44 @@ export function ProfileWindow({
     onPlanTag
       ? onPlanTag({ advanced: advancedWheel, setAdvanced: setAdvancedWheel })
       : setAdvancedWheel(!advancedWheel);
+
+  const interactive = !!onPlanTag;
+  const { ref, pos, show, hide } = useHoverTip<HTMLDivElement>('bottom');
+
+  if (interactive) {
+    // The whole strip opens the plan/account screen. The tip still tracks the current rung
+    // so it stays in lockstep with the wheel-sidebar tag: the account nudge from Basic, or a
+    // pointer to the account screen once on Advanced.
+    const tip = t(advancedWheel ? 'profile.planTag.tipBasic' : 'profile.planTag.tip');
+    const hint = t(advancedWheel ? 'profile.planTag.hintBasic' : 'profile.planTag.hint');
+    return (
+      <>
+        <div
+          ref={ref}
+          className="profile-window profile-window--interactive"
+          role="button"
+          tabIndex={0}
+          aria-label={typeof tip === 'string' ? tip : undefined}
+          onClick={handlePlanTag}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handlePlanTag();
+            }
+          }}
+          onMouseEnter={show}
+          onMouseLeave={hide}
+          onFocus={show}
+          onBlur={hide}
+        >
+          {renderIdentity?.()}
+          <span className={`pw-plan-tag tier-${tier}`}>{tierLabel(tier)}</span>
+        </div>
+        <HoverTip pos={pos} placement="bottom" title={tip} hint={hint} />
+      </>
+    );
+  }
+
   return (
     <div className="profile-window">
       {renderIdentity?.()}
@@ -50,7 +95,7 @@ export function ProfileWindow({
         tip={t(advancedWheel ? 'profile.planTag.tipBasic' : 'profile.planTag.tip')}
         hint={t(advancedWheel ? 'profile.planTag.hintBasic' : 'profile.planTag.hint')}
       >
-        {tierName(tier)}
+        {tierLabel(tier)}
       </TipButton>
     </div>
   );

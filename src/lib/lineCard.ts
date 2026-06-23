@@ -114,7 +114,10 @@ export function buildLineCard(
         props.branch as LineType,
       );
       const name = t(`planets.${planet}.name`);
-      const aspectWord = t(`expandedSidebar.aspect.${aspect}.name`).toLowerCase();
+      // Capitalized aspect name ("Sextile") for the heading; lower-cased for the
+      // in-sentence body copy.
+      const aspectName = t(`expandedSidebar.aspect.${aspect}.name`);
+      const aspectWord = aspectName.toLowerCase();
       const body =
         `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: aspAngle })} ` +
         `${t(`lineMeanings.aspect.kind.${aspect}`)} ` +
@@ -123,7 +126,9 @@ export function buildLineCard(
         glyph(planet, props.color) +
           t('lineMeanings.aspectTitle', {
             planet: name,
-            aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span>`,
+            // Glyph + spelled-out word ("✶ Sextile"), matching the map hover tip —
+            // the bare glyph alone read cryptically in the card heading.
+            aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span> ${aspectName}`,
             angle: aspAngle,
           }),
         body,

@@ -21,7 +21,7 @@ import {
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
-import { type PlanTier, tierMet, tierLabel, tierOfEntitlement } from '../../lib/plan';
+import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
@@ -269,6 +269,7 @@ function RadioItem({
   hint,
   hotkey,
   tier,
+  disabled,
 }: {
   label: string;
   /** Fuller name shown as the hover-tip title when `label` is abbreviated. */
@@ -279,6 +280,8 @@ function RadioItem({
   hotkey?: ReactNode;
   /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
   tier?: PlanTier;
+  /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
+  disabled?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   return (
@@ -286,10 +289,13 @@ function RadioItem({
       <button
         ref={ref}
         type="button"
-        className={`navmenu-item ${checked ? 'on' : ''}`}
+        className={`navmenu-item ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
         role="menuitemradio"
         aria-checked={checked}
-        onClick={onSelect}
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (!disabled) onSelect();
+        }}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}
@@ -305,6 +311,7 @@ function RadioItem({
         title={tipTitle ?? label}
         hint={hint}
         hotkey={hotkey}
+        advanced={tier === 'adv'}
       />
     </>
   );
@@ -318,6 +325,8 @@ function CheckItem({
   onToggle,
   hotkey,
   tier,
+  disabled,
+  hint,
 }: {
   label: string;
   checked: boolean;
@@ -325,20 +334,40 @@ function CheckItem({
   hotkey?: string;
   /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
   tier?: PlanTier;
+  /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
+  disabled?: boolean;
+  /** Optional explainer. View rows normally have none, so they show NO tip; but if a row IS
+   *  given a hint it surfaces on hover/focus like the other menus (with the ADV marker). */
+  hint?: string;
 }) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
+  const hasTip = !!hint;
   return (
-    <button
-      type="button"
-      className={`navmenu-item navmenu-check ${checked ? 'on' : ''}`}
-      role="menuitemcheckbox"
-      aria-checked={checked}
-      onClick={onToggle}
-    >
-      <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
-      <span>{label}</span>
-      <TierBadge tier={tier} />
-      {hotkey && <span className="navmenu-key">{hotkey}</span>}
-    </button>
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={`navmenu-item navmenu-check ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={checked}
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (!disabled) onToggle();
+        }}
+        onMouseEnter={hasTip ? show : undefined}
+        onMouseLeave={hasTip ? hide : undefined}
+        onFocus={hasTip ? show : undefined}
+        onBlur={hasTip ? hide : undefined}
+      >
+        <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
+        <span>{label}</span>
+        <TierBadge tier={tier} />
+        {hotkey && <span className="navmenu-key">{hotkey}</span>}
+      </button>
+      {hasTip && (
+        <HoverTip pos={pos} placement="left" title={label} hint={hint} advanced={tier === 'adv'} />
+      )}
+    </>
   );
 }
 
@@ -418,6 +447,7 @@ function ToolItem({
         }
         hint={hint}
         hotkey={hotkey}
+        advanced={tier === 'adv'}
       />
     </>
   );
@@ -501,11 +531,13 @@ export function TopNav({
       onToggle: () => onToggleExtension(ext.id),
     })),
   ];
-  // Items above the user's tier (e.g. Local Space needs 'adv') drop out of the menu.
+  // Items above the user's tier (e.g. Local Space needs 'adv') normally drop out of the menu —
+  // unless the build's nudge policy opts to show them as a disabled upgrade teaser (then they
+  // stay, greyed, with their tier badge). The open core nudges nothing, so they still drop.
   const orderedViewItems = [
     ...viewItems.filter((i) => i.hotkey),
     ...viewItems.filter((i) => !i.hotkey),
-  ].filter((i) => tierMet(planTier, i.tier ?? 'new'));
+  ].filter((i) => tierMet(planTier, i.tier ?? 'new') || shouldShowNudge(i.tier ?? 'new'));
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
@@ -665,8 +697,10 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {/* Slide needs the 'adv' tier: hidden below it, tier-badged at/above it. */}
-                  {tierMet(planTier, 'adv') && (
+                  {/* Slide needs the 'adv' tier: hidden below it (or a disabled teaser if the
+                      build nudges), tier-badged at/above it. When un-reached it's greyed; once
+                      reached it disables only when Slide can't run (no natal linework). */}
+                  {(tierMet(planTier, 'adv') || shouldShowNudge('adv')) && (
                     <ToolItem
                       label={t('topNav.tools.slideItem')}
                       icon={<ToolMenuIcon tool="slide" />}
@@ -678,7 +712,7 @@ export function TopNav({
                       hotkey="Y"
                       tier="adv"
                       checked={sliding}
-                      disabled={!slideEnabled}
+                      disabled={!tierMet(planTier, 'adv') || !slideEnabled}
                       onToggle={() => {
                         onToggleSlide();
                         close();
@@ -690,20 +724,29 @@ export function TopNav({
                       their open state. Tier-filtered like the View menu (and the core
                       tools above): a gated tool stays hidden until the user reaches its
                       tier — no teaser. */}
-                  {getToolExtensions().filter((ext) => tierMet(planTier, tierOfEntitlement(ext.tier))).map((ext) => (
-                    <ToolItem
-                      key={ext.id}
-                      label={ext.label}
-                      hint={ext.hint}
-                      hotkey={ext.hotkey}
-                      tier={tierOfEntitlement(ext.tier)}
-                      checked={openTools.has(ext.id)}
-                      onToggle={() => {
-                        onToggleTool(ext.id);
-                        close();
-                      }}
-                    />
-                  ))}
+                  {getToolExtensions()
+                    .filter((ext) => {
+                      const req = tierOfEntitlement(ext.tier);
+                      return tierMet(planTier, req) || shouldShowNudge(req);
+                    })
+                    .map((ext) => {
+                      const req = tierOfEntitlement(ext.tier);
+                      return (
+                        <ToolItem
+                          key={ext.id}
+                          label={ext.label}
+                          hint={ext.hint}
+                          hotkey={ext.hotkey}
+                          tier={req}
+                          disabled={!tierMet(planTier, req)}
+                          checked={openTools.has(ext.id)}
+                          onToggle={() => {
+                            onToggleTool(ext.id);
+                            close();
+                          }}
+                        />
+                      );
+                    })}
                 </>
               )}
             </NavMenu>
@@ -727,52 +770,66 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {/* Synastry + Eclipses need the 'adv' tier: filtered out below it,
-                      tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
-                  {OVERLAY_MODES.filter((mode) =>
-                    tierMet(planTier, ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new'),
-                  ).map((mode) => (
-                    <RadioItem
-                      key={mode}
-                      label={t(`topNav.overlay.modes.${mode}.label`)}
-                      tipTitle={
-                        mode === 'progressed'
-                          ? t('topNav.overlay.modes.progressed.tipTitle')
-                          : mode === 'tertiary-progressed'
-                            ? t('topNav.overlay.modes.tertiary-progressed.tipTitle')
-                            : mode === 'cyclo'
-                              ? t('topNav.overlay.modes.cyclo.tipTitle')
-                              : undefined
-                      }
-                      hint={t(`topNav.overlay.modes.${mode}.desc`)}
-                      hotkey={<CycleHotkey label="O" />}
-                      tier={ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : undefined}
-                      checked={overlayMode === mode}
-                      onSelect={() => {
-                        setOverlayMode(mode);
-                        close();
-                      }}
-                    />
-                  ))}
+                  {/* Synastry + Eclipses need the 'adv' tier: filtered out below it (or a disabled
+                      teaser if the build nudges), tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
+                  {OVERLAY_MODES.filter((mode) => {
+                    const req = ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new';
+                    return tierMet(planTier, req) || shouldShowNudge(req);
+                  }).map((mode) => {
+                    const advMode = ADVANCED_OVERLAY_MODES.has(mode);
+                    return (
+                      <RadioItem
+                        key={mode}
+                        label={t(`topNav.overlay.modes.${mode}.label`)}
+                        tipTitle={
+                          mode === 'progressed'
+                            ? t('topNav.overlay.modes.progressed.tipTitle')
+                            : mode === 'tertiary-progressed'
+                              ? t('topNav.overlay.modes.tertiary-progressed.tipTitle')
+                              : mode === 'cyclo'
+                                ? t('topNav.overlay.modes.cyclo.tipTitle')
+                                : undefined
+                        }
+                        hint={t(`topNav.overlay.modes.${mode}.desc`)}
+                        hotkey={<CycleHotkey label="O" />}
+                        tier={advMode ? 'adv' : undefined}
+                        disabled={advMode && !tierMet(planTier, 'adv')}
+                        checked={overlayMode === mode}
+                        onSelect={() => {
+                          setOverlayMode(mode);
+                          close();
+                        }}
+                      />
+                    );
+                  })}
                   {/* Registered Overlay-menu extensions (registerOverlayExtension) —
                       single-select rows beneath the built-in modes. Selecting one clears
                       the core mode (App's onSelectOverlayExt). Tier-filtered like the View
                       menu: a gated overlay stays hidden until the user reaches its tier. */}
-                  {getOverlayExtensions().filter((ext) => tierMet(planTier, tierOfEntitlement(ext.tier))).map((ext) => (
-                    <RadioItem
-                      key={ext.id}
-                      label={ext.label}
-                      tipTitle={ext.tipTitle}
-                      hint={ext.hint}
-                      hotkey={ext.hotkey}
-                      tier={tierOfEntitlement(ext.tier)}
-                      checked={activeOverlayExt === ext.id}
-                      onSelect={() => {
-                        onSelectOverlayExt(ext.id);
-                        close();
-                      }}
-                    />
-                  ))}
+                  {getOverlayExtensions()
+                    .filter((ext) => {
+                      const req = tierOfEntitlement(ext.tier);
+                      return tierMet(planTier, req) || shouldShowNudge(req);
+                    })
+                    .map((ext) => {
+                      const req = tierOfEntitlement(ext.tier);
+                      return (
+                        <RadioItem
+                          key={ext.id}
+                          label={ext.label}
+                          tipTitle={ext.tipTitle}
+                          hint={ext.hint}
+                          hotkey={ext.hotkey}
+                          tier={req}
+                          disabled={!tierMet(planTier, req)}
+                          checked={activeOverlayExt === ext.id}
+                          onSelect={() => {
+                            onSelectOverlayExt(ext.id);
+                            close();
+                          }}
+                        />
+                      );
+                    })}
                 </>
               )}
             </NavMenu>
@@ -787,6 +844,7 @@ export function TopNav({
                   hotkey={it.hotkey}
                   checked={it.checked}
                   tier={it.tier}
+                  disabled={!tierMet(planTier, it.tier ?? 'new')}
                   onToggle={it.onToggle}
                 />
               ))}

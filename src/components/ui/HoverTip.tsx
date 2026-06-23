@@ -141,6 +141,7 @@ export function TipSpan({
   tip,
   hint,
   hotkey,
+  advanced,
   placement = 'bottom',
   children,
   ...rest
@@ -148,6 +149,8 @@ export function TipSpan({
   tip: ReactNode;
   hint?: ReactNode;
   hotkey?: ReactNode;
+  /** Show an "ADV" tag on the tip headline — marks the trigger as an Advanced-only control. */
+  advanced?: boolean;
   placement?: TipPlacement;
   children?: ReactNode;
 } & HTMLAttributes<HTMLSpanElement>) {
@@ -170,6 +173,7 @@ export function TipSpan({
         title={tip}
         hint={hint}
         hotkey={hotkey}
+        advanced={advanced}
       />
     </>
   );

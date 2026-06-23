@@ -43,6 +43,14 @@
   color: var(--text-strong);
 }
 
+/* Title + optional adornment (e.g. a downstream sync-status badge) grouped at the header's
+   left, so the close button keeps its space-between far-right position. */
+.cm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 /* Synastry partner-picker heading: the synastry icon + the compared chart's name
    (the "Synastry with" wording lives on in the heading's accessible label). */
 .cm-comparison-title {
