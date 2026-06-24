@@ -32,6 +32,8 @@ import {
   zoneLabelAt,
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { useTouchLayout } from '../../lib/touch';
+import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -332,7 +334,9 @@ export function TimelineHud({
     hint: labels.primaryRateHint(value),
   }));
   const [pickerOpen, setPickerOpen] = useState(false);
-  // The right-side display drawer (Natal + Zenith toggles) — closed by default.
+  // The right-side display drawer (Natal + Zenith toggles) — closed by default. On TOUCH the same
+  // drawer (chevron tab + toggles) is reused INLINE on the settings/returns row (see
+  // displayDrawerInline) so the toggles populate in the bar; this one drawerOpen drives both.
   const [drawerOpen, setDrawerOpen] = useState(false);
   // The drawer animates open by transitioning its width 0 → the toggles' natural
   // width, which we measure here. (A shrink-to-fit absolutely-positioned box can't
@@ -451,6 +455,8 @@ export function TimelineHud({
   // wherever it was dragged.
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef);
+  // Publish this bar's height so the map's zoom-out pill lifts above it on touch.
+  useOverlayBarGap(hudRef);
 
   // Highlight the Solar / Lunar snap button when the selected date sits ON that
   // luminary's return — a snap lands exactly on it, and a one-minute window keeps the
@@ -505,9 +511,83 @@ export function TimelineHud({
     </span>
   );
 
+  const touch = useTouchLayout();
+  // Modes that render a settings/returns second row — on touch the display toggles ride on the
+  // RIGHT of that row rather than spawning a separate third row. Cyclo (and any future mode with
+  // no second row) falls back to a dedicated toggle row below.
+  const hasSettingsRow =
+    overlayMode === 'transits' ||
+    overlayMode === 'solar-arc' ||
+    overlayMode === 'progressed' ||
+    overlayMode === 'tertiary-progressed' ||
+    overlayMode === 'primary-directions';
+  // The two display toggles (Natal linework + this overlay's Zenith stamps). On desktop they
+  // live in the right-side slide-out drawer; on touch we drop that drawer and lay these inline
+  // in a bottom row of the bar (there's room now the bar is wider) — same buttons either way.
+  const displayToggles = (
+    <>
+      <TipButton
+        type="button"
+        className={`thud-drawer-toggle ${showNatal ? 'on' : 'off'}`}
+        placement="top"
+        tip={t('settings.natal.title')}
+        hint={t('settings.natal.hint')}
+        aria-label={t('settings.natal.title')}
+        aria-pressed={showNatal}
+        onClick={() => setShowNatal(!showNatal)}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <EyeIcon open={showNatal} />
+        <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
+      </TipButton>
+      {/* ADVANCED-ONLY: the overlay Zenith toggle is hidden when Advanced is off; its value
+          defaults via effShowOverlayZenith. The Natal toggle above is always available. */}
+      {advanced && (
+        <TipButton
+          type="button"
+          className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
+          placement="top"
+          advanced
+          tip={zenithLabel}
+          hint={t('settings.overlayZenith.hint')}
+          aria-label={zenithLabel}
+          aria-pressed={showOverlayZenith}
+          onClick={() => setShowOverlayZenith(!showOverlayZenith)}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <EyeIcon open={showOverlayZenith} />
+          <span className="thud-drawer-toggle-name">{zenithLabel}</span>
+        </TipButton>
+      )}
+    </>
+  );
+  // Touch: reuse the desktop display drawer INLINE — used ONLY on the transits returns row, whose
+  // returns + positioning already fill the row, so showing the toggles there would push them onto
+  // a THIRD row. The chevron tab keeps the bar two rows until tapped, then the same toggles
+  // populate IN the bar beside it. (Other modes have a roomy second row, so they just show the
+  // toggles inline with no chevron — see below.) Shares drawerOpen with the desktop slide-out.
+  const displayDrawerInline = (
+    <div className={`thud-drawer-inline${drawerOpen ? ' is-open' : ''}`}>
+      <TipButton
+        type="button"
+        className="thud-drawer-tab"
+        placement="top"
+        tip={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+        aria-label={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+        aria-expanded={drawerOpen}
+        onClick={() => setDrawerOpen((o) => !o)}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <span className="thud-drawer-chevron" aria-hidden="true">
+          {drawerOpen ? '‹' : '›'}
+        </span>
+      </TipButton>
+      {drawerOpen && <div className="thud-drawer-toggles">{displayToggles}</div>}
+    </div>
+  );
   return (
     <div
-      className={`timeline-hud${dragging ? ' thud-dragging' : ''}${
+      className={`timeline-hud thud-bar${dragging ? ' thud-dragging' : ''}${
         showTimeline ? '' : ' thud-collapsed'
       }`}
       data-mode={overlayMode}
@@ -559,75 +639,41 @@ export function TimelineHud({
         </span>
       </div>
 
-      {/* Right-side display drawer: the overlay's Natal Chart + Zenith toggles,
-          relocated here from Settings ▸ Display. The edge chevron opens/closes a
-          compartment that slides out with a quick width animation (grid 0fr→1fr in
-          the CSS); the handle is faint at rest and brightens on hover. The panel is
-          always rendered (so it can animate) but made `inert` while closed so its
-          toggles aren't focusable then. Sits outside the ruler/transport block so
-          it's reachable whether the bar is expanded or collapsed to its nub. The drawer is
-          ALWAYS shown; only its Zenith toggle is Advanced-gated (below). */}
-      <div className={`thud-drawer${drawerOpen ? ' is-open' : ''}`}>
-        <TipButton
-          type="button"
-          className="thud-drawer-tab"
-          placement="top"
-          tip={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
-          aria-label={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
-          aria-expanded={drawerOpen}
-          onClick={() => setDrawerOpen((o) => !o)}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <span className="thud-drawer-chevron" aria-hidden="true">
-            {drawerOpen ? '‹' : '›'}
-          </span>
-        </TipButton>
-        <div
-          className="thud-drawer-compartment"
-          inert={!drawerOpen || undefined}
-          // Fall back to max-content if the width hasn't been measured yet (0): the
-          // open drawer must never collapse to nothing. That first open won't animate;
-          // every subsequent one uses the measured px width and does.
-          style={{ width: drawerOpen ? drawerWidth || 'max-content' : 0 }}
-        >
-          <div className="thud-drawer-toggles" ref={drawerTogglesRef}>
-            <TipButton
-              type="button"
-              className={`thud-drawer-toggle ${showNatal ? 'on' : 'off'}`}
-              placement="top"
-              tip={t('settings.natal.title')}
-              hint={t('settings.natal.hint')}
-              aria-label={t('settings.natal.title')}
-              aria-pressed={showNatal}
-              onClick={() => setShowNatal(!showNatal)}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <EyeIcon open={showNatal} />
-              <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
-            </TipButton>
-            {/* ADVANCED-ONLY: the overlay Zenith toggle is hidden when Advanced is off (the
-                drawer then shows just the Natal toggle); its value defaults via
-                effShowOverlayZenith. The Natal toggle above is always available. */}
-            {advanced && (
-            <TipButton
-              type="button"
-              className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
-              placement="top"
-              advanced
-              tip={zenithLabel}
-              hint={t('settings.overlayZenith.hint')}
-              aria-label={zenithLabel}
-              aria-pressed={showOverlayZenith}
-              onClick={() => setShowOverlayZenith(!showOverlayZenith)}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <EyeIcon open={showOverlayZenith} />
-              <span className="thud-drawer-toggle-name">{zenithLabel}</span>
-            </TipButton>
-            )}
+      {/* Right-side display drawer (DESKTOP only): the overlay's Natal Chart + Zenith toggles,
+          relocated here from Settings ▸ Display. The edge chevron opens/closes a compartment
+          that slides out with a quick width animation; `inert` while closed so its toggles
+          aren't focusable then. On TOUCH the drawer is dropped entirely — the same toggles
+          appear inline in a bottom row of the bar (see below), now that the wider bar has room. */}
+      {!touch && (
+        <div className={`thud-drawer${drawerOpen ? ' is-open' : ''}`}>
+          <TipButton
+            type="button"
+            className="thud-drawer-tab"
+            placement="top"
+            tip={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+            aria-label={t(drawerOpen ? 'timeline.drawer.hide' : 'timeline.drawer.show')}
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen((o) => !o)}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span className="thud-drawer-chevron" aria-hidden="true">
+              {drawerOpen ? '‹' : '›'}
+            </span>
+          </TipButton>
+          <div
+            className="thud-drawer-compartment"
+            inert={!drawerOpen || undefined}
+            // Fall back to max-content if the width hasn't been measured yet (0): the
+            // open drawer must never collapse to nothing. That first open won't animate;
+            // every subsequent one uses the measured px width and does.
+            style={{ width: drawerOpen ? drawerWidth || 'max-content' : 0 }}
+          >
+            <div className="thud-drawer-toggles" ref={drawerTogglesRef}>
+              {displayToggles}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Ruler + transport: hidden when Display ▸ Timeline is off (only the nub
           stays). */}
@@ -824,6 +870,7 @@ export function TimelineHud({
               </div>
             );
           })()}
+          {touch && displayDrawerInline}
         </div>
       )}
 
@@ -841,6 +888,8 @@ export function TimelineHud({
               options={chartAngleOptions}
             />
           </div>
+          {/* Roomy second row — toggles sit inline (no chevron); only transits needs the drawer. */}
+          {touch && displayToggles}
         </div>
       )}
 
@@ -867,7 +916,16 @@ export function TimelineHud({
               />
             )}
           </div>
+          {/* Roomy second row — toggles sit inline (no chevron); only transits needs the drawer. */}
+          {touch && displayToggles}
         </div>
+      )}
+
+      {/* Touch fallback: for modes WITHOUT a settings/returns second row (e.g. cyclo) the
+          toggles get their own row here. Every other mode puts them on its existing second row
+          (above) — no separate third row. The slide-out drawer is desktop-only. */}
+      {touch && !hasSettingsRow && (
+        <div className="thud-row thud-display-row">{displayToggles}</div>
       )}
 
       {pickerOpen && (

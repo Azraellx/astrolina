@@ -11,7 +11,7 @@
    settings tab that owns it (Calculation or Advanced). */
 .info-bar {
   position: fixed;
-  right: 16px;
+  right: var(--edge, 16px);
   bottom: 44px;
   z-index: 5;
   display: flex;

@@ -12,7 +12,7 @@
    picker for synastry). */
 .timeline-hud {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--edge, 16px);
   /* When the expanded chart sidebar is open it publishes its width as --es-width; we
      shift the WHOLE bar right by a quarter of that (not half — full recentering
      over-shot) so it "pops out" from behind the sidebar as a single unit. We
@@ -52,14 +52,8 @@
   border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
-/* Touch: give the bar a little more width so the scrubber + transport controls have
-   more room for fingers (it's content-sized otherwise). */
-@media (pointer: coarse) {
-  .timeline-hud {
-    min-width: min(520px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
-  }
-}
+/* Touch: the overlay bar is widened to fill the screen — that rule lives at the END of this
+   file, after the narrow-screen max-width cap below, so it can override it. */
 
 
 /* The overlay label (Transits / Progressed Age / Sun Angle) drawn as a NUB that
@@ -519,7 +513,10 @@
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  /* Hide the number-input spinners: -moz- for Firefox, the standard `appearance` for everyone
+     else (WebKit/Blink also use the ::-webkit-*-spin-button rules below). */
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .thud-stepinput::-webkit-outer-spin-button,
@@ -786,6 +783,47 @@
    also narrows the open width to the widest single toggle. align-items:stretch (the
    column default) gives both toggles equal width; padding keeps them off the box edges
    and the chevron. */
+/* Touch: the display toggles as a standalone row — the FALLBACK for modes (e.g. cyclo) with no
+   settings/returns second row to ride on. Reuses the .thud-drawer-toggle pills, centred. */
+.thud-display-row {
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Touch: the display drawer reused INLINE on a mode's settings/returns row — the SAME chevron tab
+   + toggles as the desktop slide-out, but populated IN the bar rather than beside it (the desktop
+   .thud-drawer sits at left:100%, outside the bar). Closed → just the tab, so the bar stays two
+   rows; tapping it lays the toggles out in a row beside it (wrapping under the row if tight).
+   Reuses .thud-drawer-tab / -chevron / -toggles / -toggle. */
+.thud-drawer-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The desktop tab borrows the drawer box's surface (it has none here), so give the inline chevron
+   its own small pill so it reads as a tappable control on the row. */
+.thud-drawer-inline .thud-drawer-tab {
+  width: auto;
+  min-height: 0;
+  padding: 6px 9px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  transition: color 0.22s ease, border-color 0.12s, background 0.12s;
+}
+.thud-drawer-inline:hover .thud-drawer-tab,
+.thud-drawer-inline:has(:focus-visible) .thud-drawer-tab,
+.thud-drawer-inline.is-open .thud-drawer-tab {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+/* Lay the toggles in a ROW here (the desktop drawer stacks them in a column for its narrow
+   slide-out); they wrap under the row via the bar's .thud-row wrap rule if space is tight. */
+.thud-drawer-inline .thud-drawer-toggles {
+  flex-direction: row;
+}
+
 .thud-drawer-toggles {
   display: flex;
   flex-direction: column;
@@ -844,5 +882,39 @@
   .thud-row {
     flex-wrap: wrap;
     justify-content: center;
+  }
+}
+
+/* Touch: make the overlay bar as wide as the screen allows (minus edge padding + any side
+   notch), so the scrubber + transport controls pack onto fewer rows — which keeps the bar
+   SHORT. It's centred on the viewport: the sidebar-aware horizontal nudge (base `left`) is
+   dropped here, since a full-width bar can't be re-centred beside the panel. Lifted above the
+   profile box (the top-left/bottom-left stack is z-20) so it's never hidden behind it where
+   they meet at the bottom of the screen. Last in the file, so it overrides the max-width cap
+   above on touch. */
+@media (pointer: coarse) {
+  /* ONLY the actual bottom overlay bar. MANY surfaces reuse the .timeline-hud chrome class — the
+     top-nav bar + its tool readout, and the movable windows (Local Space, Teleport, City Report,
+     Hit List). Width-forcing all of them stretched the measure readout AND blew the movable
+     windows out to the bar's min-width (~600px). The positive .thud-bar marker (set ONLY on the
+     TimelineHud root) scopes this to the real overlay bar, robust to any new .timeline-hud reuser. */
+  .timeline-hud.thud-bar {
+    left: 50%;
+    /* Floor the width at --overlay-bar-min-w (tweak it in index.css). The inner min() clamps that
+       floor to the screen (minus edge padding) so a narrow phone can't force horizontal overflow;
+       max-width keeps the same ceiling for content-driven growth. */
+    min-width: min(var(--overlay-bar-min-w, 520px), calc(100vw - 2 * var(--edge, 3px)));
+    max-width: calc(100vw - 2 * var(--edge, 3px));
+    z-index: 21;
+  }
+  /* Tighten the rows vertically so the bar is shorter — the transport buttons and the scrubber
+     sit closer together. The returns/setting rows keep their top:0 hug under the row above. */
+  .thud-row {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .thud-returns-row,
+  .thud-setting-row {
+    padding-top: 0;
   }
 }

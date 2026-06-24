@@ -32,6 +32,7 @@ import {
 } from '../../lib/theme';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
 import type { MissionEvent } from '../../lib/missions';
+import type { LineCardDistance } from '../../lib/lineCard';
 import {
   isOccluded,
   projectVisible,
@@ -917,6 +918,52 @@ function lineLabelHtml(
   return `<div class="ui-tip"><span class="cross-tip-row">${row}</span>${polar}</div>`;
 }
 
+// A clickable line collection — for the closest-approach search we need only the geometry
+// (the per-line-type props are irrelevant), so keep the shape minimal and structural.
+type ClickableLineFC = { features: { geometry: LineString }[] };
+
+// Normalised longitude difference in degrees, within [-180, 180] (antimeridian-safe).
+function lngDelta(a: number, b: number): number {
+  let d = a - b;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
+// Distance from the origin to planar segment AB.
+function distToSeg(ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(ax, ay);
+  let s = -(ax * dx + ay * dy) / l2; // project the origin onto AB, clamped to the segment
+  s = Math.max(0, Math.min(1, s));
+  return Math.hypot(ax + s * dx, ay + s * dy);
+}
+
+// Closest great-circle distance (km) from a point to a polyline. Each segment is measured in
+// a local equirectangular frame centred on the point — accurate where it matters (the nearest
+// segment lies near the point), antimeridian-safe, and point-to-SEGMENT (not just to vertices)
+// so it reads ~0 when the point sits on the line. Drives the line card's "Closest distance" row.
+function nearestApproachKm(pLat: number, pLng: number, geom: LineString): number {
+  const toRad = Math.PI / 180;
+  const kx = 6371 * toRad * Math.cos(pLat * toRad); // km per degree of longitude near the point
+  const ky = 6371 * toRad; // km per degree of latitude
+  const pts = geom.coordinates;
+  if (pts.length === 1) {
+    return Math.hypot(lngDelta(pts[0][0], pLng) * kx, (pts[0][1] - pLat) * ky);
+  }
+  let best = Infinity;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const ax = lngDelta(pts[i][0], pLng) * kx;
+    const ay = (pts[i][1] - pLat) * ky;
+    const bx = lngDelta(pts[i + 1][0], pLng) * kx;
+    const by = (pts[i + 1][1] - pLat) * ky;
+    best = Math.min(best, distToSeg(ax, ay, bx, by));
+  }
+  return best;
+}
+
 function lineAtPoint(
   map: maplibregl.Map,
   pt: ScreenPt,
@@ -1016,9 +1063,18 @@ interface MapProps {
   /** Click-a-line interpretation card: ready-made .ui-tip HTML for the clicked
    *  line feature, or null for lines without a reading. Not consulted while the
    *  eclipse card is armed (eclipses mode owns clicks there). */
-  lineCard?: ((layerId: string, props: Record<string, unknown>) => string | null) | null;
+  lineCard?:
+    | ((
+        layerId: string,
+        props: Record<string, unknown>,
+        dist: LineCardDistance | null,
+      ) => string | null)
+    | null;
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
+  /** Reference point for the line card's "Distance from …" row: a placed pin, or the natal
+   *  location by default. The line card reports how far the clicked spot is from it. */
+  distanceRef?: { lat: number; lng: number; type: 'pin' | 'natal' } | null;
   /** The active chart's birthplace at mount — the first-load view is framed on a
    *  continental box centred here (read once; later chart switches recenter via
    *  their own flyTo). Absent → the North-America fallback frame. */
@@ -2068,6 +2124,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lineCard,
   pin,
   pinType,
+  distanceRef,
   initialCenter,
   theme,
   projection,
@@ -2172,6 +2229,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const eclipseTipRef = useRef(eclipseTip);
   const eclipseCardRef = useRef(eclipseCard);
   const lineCardRef = useRef(lineCard);
+  const distanceRefRef = useRef(distanceRef);
+  // Every clickable line collection, refreshed each commit (below). The click handler scans
+  // these to find the clicked line's full geometry and measure its closest approach.
+  const lineGeomRef = useRef<ClickableLineFC[]>([]);
   // The pinned local-circumstances card (one per map). Held in a ref so the
   // close-on-selection-change effect below can reach the instance the
   // long-lived click handler owns.
@@ -2190,6 +2251,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     eclipseTipRef.current = eclipseTip;
     eclipseCardRef.current = eclipseCard;
     lineCardRef.current = lineCard;
+    distanceRefRef.current = distanceRef;
+    // Natal + overlay line collections whose features can open an interpretation card. Only
+    // their geometry matters here; nullable/absent ones are dropped.
+    const lineFcs: (ClickableLineFC | null | undefined)[] = [
+      lines, angleLines, parans, localSpace, starLines, ecliptic,
+      overlay?.lines, overlay?.parans, overlay?.localSpace, overlay?.ecliptic,
+    ];
+    lineGeomRef.current = lineFcs.filter((fc): fc is ClickableLineFC => !!fc);
   });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
@@ -3031,7 +3100,29 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // Outside eclipses mode, a click on a line pins its interpretation
         // card; a click on empty map dismisses it.
         const hit = lineAtPoint(map, e.point, t, labels);
-        const html = hit ? lineCardRef.current(hit.layerId, hit.props) : null;
+        // The clicked line's CLOSEST approach to the reference point (placed pin, or natal
+        // default): pick the line-collection feature whose geometry runs nearest the click,
+        // then measure that line's nearest great-circle distance to the reference.
+        let dist: LineCardDistance | null = null;
+        const ref = distanceRefRef.current;
+        if (hit && ref) {
+          let clicked: LineString | null = null;
+          let nearestToClick = Infinity;
+          for (const fc of lineGeomRef.current) {
+            for (const f of fc.features) {
+              const d = nearestApproachKm(e.lngLat.lat, e.lngLat.lng, f.geometry);
+              if (d < nearestToClick) {
+                nearestToClick = d;
+                clicked = f.geometry;
+              }
+            }
+          }
+          if (clicked) {
+            const km = nearestApproachKm(ref.lat, ref.lng, clicked);
+            if (Number.isFinite(km)) dist = { km, type: ref.type };
+          }
+        }
+        const html = hit ? lineCardRef.current(hit.layerId, hit.props, dist) : null;
         if (html) {
           lineCardPopup.setLngLat(e.lngLat).setHTML(html);
           if (!lineCardPopup.isOpen()) lineCardPopup.addTo(map);

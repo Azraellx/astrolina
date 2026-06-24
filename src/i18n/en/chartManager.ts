@@ -11,6 +11,8 @@ export const chartManager = {
   // Header/label when the synastry overlay opens this browser to pick a partner;
   // {name} is the active chart being compared with.
   comparisonTitle: 'Synastry with {name}',
+  // Leading word in the visible partner-picker heading, before the synastry icon + name.
+  comparisonLabel: 'Synastry',
   // Search box placeholder, aria-label, and the clear-search button label.
   searchPlaceholder: 'Search names or places…',
   searchLabel: 'Search charts',

@@ -26,6 +26,17 @@
   overflow: hidden;
 }
 
+/* Touch: short landscape phones are often under 420px tall, so the desktop min-height would
+   force the panel taller than the screen and push the header (and its ✕) off the top. Drop the
+   floor and cap the height to the viewport (100dvh accounts for the mobile URL bar) so the
+   close button stays on-screen; the list body scrolls within. */
+@media (pointer: coarse) {
+  .chart-manager {
+    min-height: 0;
+    max-height: calc(100dvh - 24px);
+  }
+}
+
 .cm-header {
   display: flex;
   justify-content: space-between;
@@ -288,6 +299,14 @@
 .cm-list li:hover .cm-row-actions,
 .cm-list li.editing .cm-row-actions {
   opacity: 1;
+}
+
+/* Touch has no hover, so the edit / delete actions would otherwise never appear — keep them
+   visible there (only the row being edited would show them otherwise). */
+@media (pointer: coarse) {
+  .cm-row-actions {
+    opacity: 1;
+  }
 }
 
 .cm-act {

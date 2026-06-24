@@ -248,6 +248,14 @@ export const lineMeanings = {
     Sy: 'A synastry line: the partner chart’s line laid over this map.',
   },
 
+  // Closest-approach row at the bottom of every card: how near the line passes to the pin (or
+  // the natal location by default). {icon} is the inline pin glyph; the "NN km / NN mi" value
+  // is appended after the label in lineCard.ts.
+  distance: {
+    fromPin: 'Closest distance to {icon} pin:',
+    fromNatal: 'Closest distance to natal:',
+  },
+
   // Footer on every card.
   footer: 'A starting point, not a verdict: strength fades with distance, and the whole chart has a say.',
 } as const;

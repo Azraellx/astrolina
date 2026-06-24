@@ -969,3 +969,24 @@
   line-height: 1;
   padding-bottom: 1px;
 }
+
+/* --- Compact mode: touch + condensed below the default width (.es-compact, set in the TSX) --- */
+
+/* Too narrow to spell every label out, so hide the planet names and the per-longitude sign name
+   — their adjacent glyph already identifies them — and let the glyphs + numeric data carry those
+   rows. The element / modality names (Fire, Cardinal, …) are KEPT visible: their glyphs read less
+   obviously, so the words stay for legibility. Glyphs, body-glyph "counts", and figures stay. */
+.expanded-sidebar.es-compact .es-name,
+.expanded-sidebar.es-compact .es-lon-sign-name {
+  display: none;
+}
+
+/* Clear the wheel-state title (HOVER / PINNED / NATAL CHART) off the wheel: condensed, the wheel
+   is large for the narrow pane and reaches the title at top:4px. Nudge the title up and drop the
+   wheel a little so the two no longer overlap. */
+.expanded-sidebar.es-compact .es-wheel-corner {
+  top: 0;
+}
+.expanded-sidebar.es-compact .es-section-wheel {
+  padding-top: 20px;
+}

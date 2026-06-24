@@ -135,7 +135,7 @@ import {
   shiftEclipticPositionsPerBody,
 } from './lib/astro/ayanamsa';
 import { findReturn, type ReturnBody } from './lib/astro/returns';
-import { buildLineCard } from './lib/lineCard';
+import { buildLineCard, type LineCardDistance } from './lib/lineCard';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
 import { generateNightShade } from './lib/astro/nightShade';
@@ -519,8 +519,11 @@ export default function App() {
   const [showCoords, setShowCoords] = useState(
     () => localStorage.getItem('astro:view-coords:v1') !== '0',
   );
+  // On touch the settings dock is a heavy full-height takeover, so don't auto-open it there —
+  // always start closed regardless of the stored (desktop) preference; the user opens it via
+  // the right-edge nub. Desktop keeps its remembered open/closed state.
   const [showSettings, setShowSettings] = useState(
-    () => localStorage.getItem('astro:view-settings:v1') !== '0',
+    () => !isTouchLayout() && localStorage.getItem('astro:view-settings:v1') !== '0',
   );
   // The active-systems status chip (View ▸ Info), above the map attribution.
   // Off by default (like the Location window) — an opt-in detail, not always-on chrome.
@@ -979,6 +982,8 @@ export default function App() {
     localStorage.setItem('astro:view-coords:v1', showCoords ? '1' : '0');
   }, [showCoords]);
   useEffect(() => {
+    // Touch always starts closed (above), so don't let it overwrite the desktop preference.
+    if (isTouchLayout()) return;
     localStorage.setItem('astro:view-settings:v1', showSettings ? '1' : '0');
   }, [showSettings]);
   useEffect(() => {
@@ -1610,8 +1615,11 @@ export default function App() {
   // builder's identity carries the active chart so a card can't outlive it.
   const lineCard = useMemo(() => {
     if (overlayMode === 'eclipses' || !current) return null;
-    return (layerId: string, props: Record<string, unknown>) =>
-      buildLineCard(layerId, props, t);
+    return (
+      layerId: string,
+      props: Record<string, unknown>,
+      dist: LineCardDistance | null,
+    ) => buildLineCard(layerId, props, t, dist);
     // lineSystem/coordSystem aren't read by the builder — they're deliberate
     // identity-bust deps: those settings move every line wholesale, and a
     // pinned card would float over empty map, so the change closes it (the
@@ -1997,6 +2005,13 @@ export default function App() {
     !!current &&
     Math.abs(pinned.lat - current.birthplace.lat) < 0.001 &&
     Math.abs(pinned.lng - current.birthplace.lng) < 0.001;
+  // Reference point for the line-card "Distance from …" row: the placed custom pin if there
+  // is one, otherwise the natal birthplace (the default). Map reads it per line-click.
+  const distanceRef: { lat: number; lng: number; type: 'pin' | 'natal' } | null = current
+    ? pinned && !isNatalPin
+      ? { lat: pinned.lat, lng: pinned.lng, type: 'pin' }
+      : { lat: current.birthplace.lat, lng: current.birthplace.lng, type: 'natal' }
+    : null;
   const coordSource = isNatalPin
     ? 'natal-pinned'
     : pinned
@@ -2714,6 +2729,7 @@ export default function App() {
         lineCard={lineCard}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
+        distanceRef={distanceRef}
         // First-load framing centres on the active chart's birthplace (read once
         // at mount inside Map); later chart switches recenter via their own flyTo.
         initialCenter={current ? current.birthplace : null}
@@ -3121,6 +3137,7 @@ export default function App() {
           heading={
             pickingPartner ? (
               <span className="cm-comparison-title">
+                {t('chartManager.comparisonLabel')}
                 <SynastryIcon />
                 {displayName(current?.name ?? '')}
               </span>

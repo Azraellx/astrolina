@@ -99,6 +99,17 @@
   white-space: nowrap;
 }
 
+/* On a touch device with no detected hardware keyboard, the keyboard-shortcut chips are
+   noise — you can't press them. Hide them until a physical keydown is observed, at which
+   point touch.ts latches the `has-keyboard` class onto <html> and they reappear. The
+   mission guide reuses this chip for TOUCH gestures (.mg-gesture: "Double-tap", "Pinch"),
+   so it's exempt — those stay relevant on a touch screen. */
+@media (pointer: coarse) {
+  html:not(.has-keyboard) .ui-tip-hotkey:not(.mg-gesture) {
+    display: none;
+  }
+}
+
 /* "ADV" tag on a tip headline — marks the trigger as an Advanced-only control. Same advanced
    red gradient as the menu tier badge / settings tab; sits beside the title like the hotkey
    chip, with a white label for contrast on the red. */

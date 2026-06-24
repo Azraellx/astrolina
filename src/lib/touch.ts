@@ -59,3 +59,65 @@ export function useTouchLayout(): boolean {
 export function usePortrait(): boolean {
   return useSyncExternalStore(portrait.subscribe, portrait.getSnapshot, () => false);
 }
+
+// A physical keyboard can't be detected by any standard web API, so we INFER one: the
+// first time we see a keydown that an on-screen (soft) keyboard wouldn't produce — a key
+// pressed while NOT focused in a text field, or any Ctrl/Meta/Alt combo — we conclude a
+// hardware keyboard is attached and latch it on for the rest of the session (keyboards
+// don't get unplugged mid-use, and re-hiding the hints would be jarring). This lets a
+// tablet paired with a Bluetooth keyboard keep its hotkey hints while a bare touch device
+// hides them. Like the pointer:coarse store, the latch also mirrors to a `has-keyboard`
+// class on <html> so plain CSS (and other React roots) can react without React wiring.
+// The single window listener is registered ONCE at import — never inside an effect — so
+// StrictMode's double-invoke can't double-subscribe.
+function keyboardStore(): {
+  subscribe: (cb: () => void) => () => void;
+  getSnapshot: () => boolean;
+} {
+  const listeners = new Set<() => void>();
+  let present = false;
+  // Whether a keydown looks like it came from real hardware rather than a soft keyboard.
+  function looksPhysical(e: KeyboardEvent): boolean {
+    // Composition / IME — soft keyboards report keyCode 229 — is never a hardware signal.
+    if (e.isComposing || e.keyCode === 229) return false;
+    const k = e.key;
+    if (!k || k === 'Unidentified' || k === 'Process' || k === 'Dead') return false;
+    // A Ctrl/Meta/Alt combo is a near-certain hardware key even inside a text field.
+    if (e.ctrlKey || e.metaKey || e.altKey) return true;
+    // Otherwise: a key pressed while NOT typing into an editable element. Soft keyboards
+    // only emit into the focused field, so a keydown elsewhere implies a real keyboard.
+    const t = e.target as HTMLElement | null;
+    const editable =
+      !!t && (t.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    return !editable;
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (present || !looksPhysical(e)) return;
+        present = true;
+        document.documentElement.classList.add('has-keyboard');
+        for (const l of listeners) l();
+      },
+      { capture: true, passive: true },
+    );
+  }
+  return {
+    subscribe(cb: () => void): () => void {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
+    getSnapshot: (): boolean => present,
+  };
+}
+const keyboard = keyboardStore();
+
+/** Non-reactive read: has a physical keyboard been observed this session? */
+export function isKeyboardPresent(): boolean {
+  return keyboard.getSnapshot();
+}
+/** Reactive read of whether a physical keyboard has been observed this session. */
+export function useKeyboardPresent(): boolean {
+  return useSyncExternalStore(keyboard.subscribe, keyboard.getSnapshot, () => false);
+}

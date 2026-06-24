@@ -18,6 +18,7 @@ import {
   SIGN_GLYPHS,
 } from '../../lib/astro/glyphChars';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { useT } from '../../i18n';
 import type { Formatters, TFn } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -120,6 +121,8 @@ export function EclipseHud({
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
   const { pos, dragging, handleProps } = useMovableHud(ref);
+  // Publish this bar's height so the map's zoom-out pill lifts above it on touch.
+  useOverlayBarGap(ref);
   const {
     ref: tipRef,
     pos: tipPos,
@@ -588,6 +591,11 @@ export function EclipseHud({
                         <span className="astro-glyph eclipse-hud-contact-asp">
                           {ASPECT_GLYPHS[c.aspect]}
                         </span>
+                        {/* "[aspect glyph] Conjunct [planet glyph] Venus": the aspect word
+                            sits between the two glyphs, the target name after its glyph. */}
+                        <span className="eclipse-hud-contact-aspname">
+                          {t(`settings.eclipses.contacts.aspect.${c.aspect}`)}
+                        </span>
                         {c.planet && (
                           <PlanetGlyph
                             planet={c.planet}
@@ -597,7 +605,6 @@ export function EclipseHud({
                           />
                         )}
                         <span className="eclipse-hud-contact-name">
-                          {t(`settings.eclipses.contacts.aspect.${c.aspect}`)}{' '}
                           {c.planet
                             ? labels.planet(c.planet)
                             : t(`settings.eclipses.contacts.${c.angle!}`)}

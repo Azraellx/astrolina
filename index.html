@@ -6,7 +6,13 @@
     <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- viewport-fit=cover fills the notch / safe areas edge-to-edge. user-scalable=no blocks
+         accidental PAGE pinch-zoom on Android (the map keeps its own pinch on its canvas).
+         We deliberately do NOT set minimum/maximum-scale: locking the scale range breaks the
+         iOS *standalone* (home-screen) app in landscape — the layout viewport ends up wider
+         than the screen, so fixed HUD elements detach from the edges and the page scrolls
+         horizontally. (iOS ignores user-scalable=no, so page zoom there is left to Safari.) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>AstroLina Cartography</title>
     <meta
       name="description"

@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import { chartTag, displayName, type StoredChart } from '../../lib/chartLibrary';
 import type { RelationshipMethod } from '../../lib/astro/timeline';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -68,6 +69,8 @@ export function SynastryHud({
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
   const { pos, dragging, handleProps } = useMovableHud(ref);
+  // Publish this bar's height so the map's zoom-out pill lifts above it on touch.
+  useOverlayBarGap(ref);
   // The picker trigger's hover tip — points up (the bar is bottom-docked).
   const {
     ref: tipRef,

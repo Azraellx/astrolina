@@ -14,7 +14,7 @@
    are simple static islands. */
 .topnav-stack {
   position: absolute;
-  top: max(10px, env(safe-area-inset-top));
+  top: max(var(--edge, 10px), env(safe-area-inset-top));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   /* Sit above the movable HUD windows (Location / Local Space at z-index 22, Eclipse /
@@ -134,6 +134,17 @@
 }
 .topnav-snap.on .topnav-snap-dot {
   opacity: 1;
+}
+/* Touch is the only place the snap button shows (desktop uses Shift). There the measure
+   toolbar stacks into a column so the button sits BELOW the readout; the top margin sets it
+   off from the readout text. Column is a no-op for the single-child slide/location toolbars. */
+@media (pointer: coarse) {
+  .topnav-toolbar {
+    flex-direction: column;
+  }
+  .topnav-snap {
+    margin-top: 8px;
+  }
 }
 
 /* Birth location shown in the secondary bar when no tool is active — same island
@@ -538,6 +549,15 @@ button.topnav-status:hover {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+/* Hide the menu-row shortcut badge on a touch device with no detected hardware keyboard —
+   mirror of the .ui-tip-hotkey rule in HoverTip.css (touch.ts latches `has-keyboard` on a
+   physical keydown). The row label simply left-aligns without the right-floated badge. */
+@media (pointer: coarse) {
+  html:not(.has-keyboard) .navmenu-key {
+    display: none;
+  }
 }
 
 /* Tier badge on a plan-gated menu row — ADV (advanced) or the gated/downstream tier. ONE

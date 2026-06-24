@@ -306,9 +306,13 @@
   min-width: 0;
 }
 
-/* Origin segmented control: two equal options, the active one accent-tinted. */
+/* Origin segmented control: two equal options (the active one accent-tinted), STACKED vertically
+   (one over the other) rather than side by side — the two "From the …" labels were the module's
+   widest row, so stacking them narrows the whole window. They fill the width via the column's
+   default align-items: stretch; flex:1 on the buttons is a harmless no-op in this auto-height column. */
 .location-ls-seg {
   display: flex;
+  flex-direction: column;
   gap: 4px;
   padding: 1px 4px 3px;
 }

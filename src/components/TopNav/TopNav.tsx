@@ -273,6 +273,7 @@ function RadioItem({
   hotkey,
   tier,
   disabled,
+  locked,
 }: {
   label: string;
   /** Fuller name shown as the hover-tip title when `label` is abbreviated. */
@@ -285,6 +286,10 @@ function RadioItem({
   tier?: PlanTier;
   /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
   disabled?: boolean;
+  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut, since the
+   *  key does nothing until they upgrade. Distinct from `disabled`, which also covers a
+   *  reached-but-temporarily-unavailable row whose shortcut still applies. */
+  locked?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   return (
@@ -313,7 +318,7 @@ function RadioItem({
         placement="left"
         title={tipTitle ?? label}
         hint={hint}
-        hotkey={hotkey}
+        hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
       />
     </>
@@ -329,6 +334,7 @@ function CheckItem({
   hotkey,
   tier,
   disabled,
+  locked,
   hint,
 }: {
   label: string;
@@ -339,6 +345,9 @@ function CheckItem({
   tier?: PlanTier;
   /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
   disabled?: boolean;
+  /** Tier-locked teaser (the user hasn't reached `tier`): hide the shortcut badge — the key
+   *  does nothing until they upgrade, so "L" on a greyed Local Space row only misleads. */
+  locked?: boolean;
   /** Optional explainer. View rows normally have none, so they show NO tip; but if a row IS
    *  given a hint it surfaces on hover/focus like the other menus (with the ADV marker). */
   hint?: string;
@@ -365,7 +374,7 @@ function CheckItem({
         <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
         <span>{label}</span>
         <TierBadge tier={tier} />
-        {hotkey && <span className="navmenu-key">{hotkey}</span>}
+        {hotkey && !locked && <span className="navmenu-key">{hotkey}</span>}
       </button>
       {hasTip && (
         <HoverTip pos={pos} placement="left" title={label} hint={hint} advanced={tier === 'adv'} />
@@ -383,6 +392,7 @@ function ToolItem({
   hotkey,
   checked,
   disabled,
+  locked,
   hint,
   onToggle,
   tier,
@@ -395,6 +405,11 @@ function ToolItem({
   hotkey?: string;
   checked: boolean;
   disabled?: boolean;
+  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut, since the
+   *  key does nothing until they upgrade. Distinct from `disabled`, which a reached tool also
+   *  sets when temporarily unavailable (e.g. Slide with no natal linework) — its key still
+   *  applies, so we keep it. */
+  locked?: boolean;
   hint?: string;
   onToggle: () => void;
   /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
@@ -431,7 +446,7 @@ function ToolItem({
         )}
         <span>{label}</span>
         <TierBadge tier={tier} />
-        {hotkey && <span className="navmenu-key">{hotkey}</span>}
+        {hotkey && !locked && <span className="navmenu-key">{hotkey}</span>}
       </button>
       <HoverTip
         pos={pos}
@@ -449,7 +464,7 @@ function ToolItem({
           )
         }
         hint={hint}
-        hotkey={hotkey}
+        hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
       />
     </>
@@ -578,6 +593,10 @@ export function TopNav({
     const right = bar.querySelector<HTMLElement>('.topnav-right');
     if (!left || !right) return;
     const recenter = () => {
+      // Expose the nav island's rendered width so the bottom overlay bars (timeline / eclipse)
+      // can size themselves to it ×2 on touch, instead of a fixed viewport %. offsetWidth is the
+      // layout width (ignores the centring translateX below). See TimelineHud/EclipseHud CSS.
+      document.documentElement.style.setProperty('--topnav-width', `${bar.offsetWidth}px`);
       if (chartExpanded) {
         bar.style.transform = '';
         return;
@@ -724,6 +743,7 @@ export function TopNav({
                       tier="adv"
                       checked={sliding}
                       disabled={!tierMet(planTier, 'adv') || !slideEnabled}
+                      locked={!tierMet(planTier, 'adv')}
                       onToggle={() => {
                         onToggleSlide();
                         close();
@@ -750,6 +770,7 @@ export function TopNav({
                           hotkey={ext.hotkey}
                           tier={req}
                           disabled={!tierMet(planTier, req)}
+                          locked={!tierMet(planTier, req)}
                           checked={openTools.has(ext.id)}
                           onToggle={() => {
                             onToggleTool(ext.id);
@@ -805,6 +826,7 @@ export function TopNav({
                         hotkey={<CycleHotkey label="O" />}
                         tier={advMode ? 'adv' : undefined}
                         disabled={advMode && !tierMet(planTier, 'adv')}
+                        locked={advMode && !tierMet(planTier, 'adv')}
                         checked={overlayMode === mode}
                         onSelect={() => {
                           setOverlayMode(mode);
@@ -833,6 +855,7 @@ export function TopNav({
                           hotkey={ext.hotkey}
                           tier={req}
                           disabled={!tierMet(planTier, req)}
+                          locked={!tierMet(planTier, req)}
                           checked={activeOverlayExt === ext.id}
                           onSelect={() => {
                             onSelectOverlayExt(ext.id);
@@ -856,6 +879,7 @@ export function TopNav({
                   checked={it.checked}
                   tier={it.tier}
                   disabled={!tierMet(planTier, it.tier ?? 'new')}
+                  locked={!tierMet(planTier, it.tier ?? 'new')}
                   onToggle={it.onToggle}
                 />
               ))}
@@ -888,18 +912,21 @@ export function TopNav({
                   {t('topNav.tools.toolbarHint')}
                 </span>
               )}
-              {/* Persistent snap toggle — the touch-reachable equivalent of holding
-                  Shift to lock the endpoint onto a chart line. */}
-              <button
-                type="button"
-                className={`topnav-snap${measureSnap ? ' on' : ''}`}
-                onClick={() => setMeasureSnap?.(!measureSnap)}
-                aria-pressed={measureSnap}
-                title="Snap the endpoint to chart lines (or hold Shift)"
-              >
-                <span className="topnav-snap-dot" />
-                Snap
-              </button>
+              {/* Persistent snap toggle — TOUCH ONLY: the finger-reachable stand-in for
+                  holding Shift to lock the endpoint onto a chart line. Desktop keeps the
+                  Shift shortcut, so the button is unnecessary clutter there. */}
+              {touch && (
+                <button
+                  type="button"
+                  className={`topnav-snap${measureSnap ? ' on' : ''}`}
+                  onClick={() => setMeasureSnap?.(!measureSnap)}
+                  aria-pressed={measureSnap}
+                  title="Snap the endpoint to chart lines (or hold Shift)"
+                >
+                  <span className="topnav-snap-dot" />
+                  Snap
+                </button>
+              )}
             </>
           ) : sliding ? (
             slide ? (

@@ -14,7 +14,7 @@
    it clear of the expanded sidebar. Same slot as TimelineHud/SynastryHud. */
 .eclipse-hud {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--edge, 16px);
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   z-index: 13;
@@ -470,6 +470,12 @@
 .eclipse-hud-contact-asp {
   color: var(--text-muted);
 }
+/* The aspect word ("Conjunct" / "Square" / "Opposite"), shown between the aspect glyph and
+   the target glyph. Capitalized to lead the phrase. */
+.eclipse-hud-contact-aspname {
+  text-transform: capitalize;
+  white-space: nowrap;
+}
 .eclipse-hud-contact-planet {
   flex-shrink: 0;
 }
@@ -562,5 +568,29 @@
 @media (max-width: 1080px) {
   .eclipse-hud {
     max-width: calc(100vw - 32px);
+  }
+}
+
+/* Touch: match the timeline overlay's width — 70% of the screen. A plain max-width only CAPPED
+   it, so the content-sized bar read narrower than the other overlays; force the width instead.
+   Forced only while expanded (the collapsed nub keeps its natural size), centred on the viewport
+   (the sidebar-aware nudge is dropped). Plus a tighter body so the bar is shorter. Last in the
+   file, so it wins over the narrow-screen rule above. */
+@media (pointer: coarse) {
+  /* Lift the bar above the profile window (z-20), matching the timeline overlay — applies to the
+     collapsed nub too, so it's never hidden behind the profile at the bottom of the screen. */
+  .eclipse-hud {
+    z-index: 21;
+  }
+  .eclipse-hud:not(.is-collapsed) {
+    left: 50%;
+    /* Same rule as the timeline overlay: floor the width at --overlay-bar-min-w (index.css),
+       clamped to the screen so it never overflows. */
+    min-width: min(var(--overlay-bar-min-w, 520px), calc(100vw - 2 * var(--edge, 3px)));
+    max-width: calc(100vw - 2 * var(--edge, 3px));
+  }
+  .eclipse-hud-body {
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
 }

@@ -40,14 +40,31 @@ type StarName = keyof typeof import('../i18n/en/lineMeanings').lineMeanings.star
 const glyph = (planet: PlanetName, color: unknown) =>
   `<span class="astro-glyph line-card-glyph" style="color:${typeof color === 'string' ? color : 'inherit'}">${PLANET_GLYPHS[planet]}</span>`;
 
-function card(title: string, body: string, notes: string[]): string {
-  return (
-    `<div class="ui-tip line-card">` +
-    `<span class="ui-tip-title">${title}</span>` +
-    `<p class="line-card-body">${body}</p>` +
-    notes.map((n) => `<span class="ui-tip-sub">${n}</span>`).join('') +
-    `</div>`
-  );
+/** Closest-approach row data: km from the reference point (a placed pin, or the natal location
+ *  by default) to the line's NEAREST point. Computed in Map.tsx, which owns the geometry. */
+export interface LineCardDistance {
+  km: number;
+  type: 'pin' | 'natal';
+}
+
+// The teardrop map-pin glyph as inline HTML — the card is composed as an HTML string, so we
+// can't drop in the React <PinIcon>. Same shape as the mission-guide pin mark.
+const PIN_ICON_SVG =
+  '<svg class="line-card-pin-icon" width="11" height="11" viewBox="0 0 24 24" fill="none"' +
+  ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"' +
+  ' aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
+  '<circle cx="12" cy="10" r="3"/></svg>';
+
+// The "Closest distance to … pin / natal: NN km / NN mi" row at the bottom of every card. The
+// reference is the placed pin (shown with the pin glyph) or, by default, the natal location.
+function distanceLine(dist: LineCardDistance, t: TFn): string {
+  const km = Math.round(dist.km);
+  const mi = Math.round(dist.km * 0.621371);
+  const label =
+    dist.type === 'pin'
+      ? t('lineMeanings.distance.fromPin', { icon: PIN_ICON_SVG })
+      : t('lineMeanings.distance.fromNatal');
+  return `<span class="ui-tip-sub line-card-distance">${label} ${km} km / ${mi} mi</span>`;
 }
 
 /**
@@ -59,8 +76,30 @@ export function buildLineCard(
   layerId: string,
   props: Record<string, unknown>,
   t: TFn,
+  dist?: LineCardDistance | null,
 ): string | null {
   if (layerId.startsWith('eclipse')) return null;
+
+  // Pre-render the distance row once (identical for every card type); the local card() below
+  // splices it in just above the disclaimer. Closing over it keeps each card() call a plain
+  // 3-arg call.
+  const distanceRow = dist ? distanceLine(dist, t) : '';
+  const card = (title: string, body: string, notes: string[]): string => {
+    // The disclaimer is always the LAST note (every return below appends t('…footer')). Pull
+    // it out and render it as a hover-revealed tip (.line-card-disclaimer in Map.css) instead
+    // of an always-on line, to cut clutter; the overlay-source notes stay inline.
+    const disclaimer = notes[notes.length - 1] ?? '';
+    const overlayNotes = notes.slice(0, -1);
+    return (
+      `<div class="ui-tip line-card">` +
+      `<span class="ui-tip-title">${title}</span>` +
+      `<p class="line-card-body">${body}</p>` +
+      overlayNotes.map((n) => `<span class="ui-tip-sub">${n}</span>`).join('') +
+      distanceRow +
+      `<span class="line-card-disclaimer ui-tip-box ui-tip" role="tooltip">${disclaimer}</span>` +
+      `</div>`
+    );
+  };
 
   const notes: string[] = [];
   if (isNoteTag(props.tag)) notes.push(t(`lineMeanings.overlayNote.${props.tag}`));

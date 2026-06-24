@@ -176,7 +176,10 @@
    chip tucks behind it; with no overlay the chip sits at the bottom-centre. */
 @media (pointer: coarse) {
   .map-zoom-out {
-    bottom: max(16px, env(safe-area-inset-bottom));
+    /* Bottom gutter, but lifted above a visible overlay bar: each bottom bar (timeline /
+       eclipse / synastry) publishes its height + a small gap as --overlay-bar-gap, so the pill
+       clears it instead of tucking behind. 0 when no bar is up → it drops back to the gutter. */
+    bottom: calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px));
   }
 }
 .map-zoom-out:focus-visible {
@@ -371,6 +374,47 @@
 }
 .line-card-glyph {
   margin-right: 5px;
+}
+/* Anchor for the hover-revealed disclaimer below. */
+.line-card {
+  position: relative;
+}
+/* "Distance from [pin] pin / natal: NN km / NN mi" — the bottom row of every line card. Reuses
+   the muted .ui-tip-sub text; a little top gap sets it off from the reading/notes above. */
+.line-card-distance {
+  margin-top: 4px;
+}
+/* The inline pin glyph inside that row, nudged to sit on the text baseline. */
+.line-card-pin-icon {
+  vertical-align: -2px;
+  margin: 0 1px;
+}
+/* "A starting point, not a verdict…" disclaimer. Hidden by default to keep the card
+   uncluttered; surfaces as its own tip just below the card while it's hovered/focused.
+   Absolutely positioned so revealing it never reflows the reading above. Built as a
+   .ui-tip-box .ui-tip in lineCard.ts, so it inherits the standard tip chrome. */
+.line-card-disclaimer {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+  z-index: 3;
+}
+.line-card:hover .line-card-disclaimer,
+.line-card:focus-within .line-card-disclaimer {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .line-card-disclaimer {
+    transition: none;
+  }
 }
 
 /* The local-space × birth-chart crossing tooltip stacks both lines with the cross
@@ -596,8 +640,8 @@
 
 /* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */
 .maplibregl-ctrl-top-right {
-  top: max(16px, env(safe-area-inset-top)) !important;
-  right: max(16px, env(safe-area-inset-right)) !important;
+  top: max(var(--edge, 16px), env(safe-area-inset-top)) !important;
+  right: var(--edge, 16px) !important;
 }
 
 .maplibregl-ctrl-top-right > .maplibregl-ctrl {
@@ -613,7 +657,7 @@
 
 /* Bottom-right is now just the attribution chip */
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl {
-  margin: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 0 !important;
+  margin: 0 var(--edge, 16px) var(--edge, 16px) 0 !important;
 }
 
 .maplibregl-ctrl-attrib {

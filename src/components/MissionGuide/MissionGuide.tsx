@@ -14,20 +14,22 @@ import { ClickIcon } from '../ui/ClickIcon';
 import { TapIcon } from '../ui/TapIcon';
 import { DragIcon } from '../ui/DragIcon';
 import { PinchIcon } from '../ui/PinchIcon';
-import { useTouchLayout } from '../../lib/touch';
+import { isTouchLayout, useTouchLayout } from '../../lib/touch';
 import { useT } from '../../i18n';
 import './MissionGuide.css';
 
 const MAX_W = 360;
 
-// Default home: inset a quarter of the viewport from the top and right edges (not
-// hugging the corner). The panel is movable, so this is just where it first appears
-// (and where a double-click on the grip resets it to). x is floored at 16 so a narrow
-// viewport — where the panel is nearly full-width — can't push it off the left edge.
+// Default home: where the panel first appears (and where a double-click on the grip resets it
+// to) — it's movable, so this is just the starting spot. On DESKTOP it insets a quarter of the
+// viewport from the right so it doesn't crowd the corner. On TOUCH that wastes scarce screen, so
+// it hugs the right edge instead. x is floored at 16 so a narrow viewport — where the panel is
+// nearly full-width — can't push it off the left edge.
 function topRightHome(): { x: number; y: number } {
   const w = Math.min(MAX_W, window.innerWidth - 32);
+  const rightGap = isTouchLayout() ? 8 : window.innerWidth * 0.25;
   return {
-    x: Math.max(16, window.innerWidth - w - window.innerWidth * 0.25),
+    x: Math.max(16, window.innerWidth - w - rightGap),
     y: window.innerHeight * 0.25,
   };
 }

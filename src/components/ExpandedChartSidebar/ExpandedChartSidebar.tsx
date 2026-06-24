@@ -23,6 +23,7 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { isTouchLayout } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
@@ -125,7 +126,8 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
     <>
       {dms}{' '}
       <span className="es-lon-sign">
-        <ZodiacGlyph sign={signIdx} size={12} /> {labels.sign(signIdx)}
+        <ZodiacGlyph sign={signIdx} size={12} />{' '}
+        <span className="es-lon-sign-name">{labels.sign(signIdx)}</span>
       </span>
     </>
   );
@@ -213,6 +215,10 @@ const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const ASPECTS_KEY = 'astro:visible-aspects:v1';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
+// Touch screens (usually a narrower landscape phone) get a lower floor than the desktop
+// minimum, so the panel can tuck into a smaller slice of the screen and leave more map.
+const MIN_WIDTH_TOUCH = 380;
+const minSidebarWidth = (): number => (isTouchLayout() ? MIN_WIDTH_TOUCH : MIN_WIDTH);
 // The drag handle won't take the panel past ~70% of the viewport (leaving the map
 // usable), and never beyond 1200px — the chart wheel has stopped growing by then,
 // so extra width just wastes space.
@@ -534,9 +540,10 @@ export function ExpandedChartSidebar({
   const { t, fmt, labels } = useT();
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
-    const base = saved && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH;
+    const min = minSidebarWidth();
+    const base = saved && saved >= min ? saved : DEFAULT_WIDTH;
     // Rein in a width saved under the old (wider) cap, and fit a narrower viewport.
-    return Math.max(MIN_WIDTH, Math.min(base, maxSidebarWidth()));
+    return Math.max(min, Math.min(base, maxSidebarWidth()));
   });
 
   useEffect(() => {
@@ -683,7 +690,7 @@ export function ExpandedChartSidebar({
       if (!draggingRef.current) return;
       const maxWidth = maxSidebarWidth();
       const newWidth = Math.max(
-        MIN_WIDTH,
+        minSidebarWidth(),
         Math.min(maxWidth, e.clientX + dragOffsetRef.current),
       );
       setWidth(newWidth);
@@ -750,9 +757,15 @@ export function ExpandedChartSidebar({
     hide: hideResizeTip,
   } = useHoverTip<HTMLDivElement>('right');
 
+  // Touch + dragged below the desktop minimum width (MIN_WIDTH): too narrow to spell every label
+  // out, so the glyphs carry the rows (`es-compact`, see the CSS). The threshold sits INSIDE the
+  // touch drag range [MIN_WIDTH_TOUCH, ~70% of the viewport], so widening back past it restores
+  // the labels live. (Desktop can't go below MIN_WIDTH, so it's never compact — labels always
+  // show there. The old DEFAULT_WIDTH threshold was unreachable on a phone, so it stuck compact.)
+  const compact = isTouchLayout() && width < MIN_WIDTH;
   return (
     <aside
-      className={`expanded-sidebar ${dragging ? 'dragging' : ''}`}
+      className={`expanded-sidebar ${dragging ? 'dragging' : ''}${compact ? ' es-compact' : ''}`}
       style={{ width: `${width}px` }}
     >
       <div className="es-scroll">

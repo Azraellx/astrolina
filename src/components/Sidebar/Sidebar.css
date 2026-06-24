@@ -42,7 +42,7 @@ html[data-mapstate='natal-pinned'] .sidebar {
     position: fixed;
     top: 0;
     right: 0;
-    width: 200px; /* match the desktop settings window's width (it was designed for this) */
+    width: 200px; /* same content width as the desktop window, docked flush to the right edge */
     height: 100vh;
     height: 100dvh;
     max-height: none;
@@ -51,12 +51,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
     border-bottom: none;
     border-right: none;
     z-index: 40;
+    /* Clear the status bar / home-indicator vertically only. NO padding-right: the panel docks
+       flush to the right edge, reclaiming the ~44px the symmetric landscape safe-area inset
+       otherwise wastes here. (On a notch-on-the-right hold the options' right edge would sit near
+       the notch — an accepted trade, matching the edge-hugging corner HUD.) */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
-    padding-right: env(safe-area-inset-right);
   }
-  /* Touch-only close affordance (no `S` hotkey on a phone): a 44px tap target,
-     right-aligned at the top of the dock, above the accordion headers. */
+  /* Touch-only close affordance (no `S` hotkey on a phone): a wide tap target, right-aligned
+     at the top of the dock, above the accordion headers. Kept short vertically — a full 44px
+     square left too much empty space above and below the small ×. */
   .sidebar-close {
     flex: 0 0 auto;
     align-self: flex-end;
@@ -64,7 +68,7 @@ html[data-mapstate='natal-pinned'] .sidebar {
     align-items: center;
     justify-content: center;
     width: 44px;
-    height: 44px;
+    height: 32px;
     margin: 4px 4px 0;
     border: none;
     border-radius: 8px;
@@ -103,7 +107,6 @@ html[data-mapstate='natal-pinned'] .sidebar {
   background: rgba(var(--bg-panel), 0.94);
   color: var(--text-muted);
   cursor: pointer;
-  margin-right: env(safe-area-inset-right);
   box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
   transition: color 0.14s, background 0.14s;
 }

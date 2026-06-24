@@ -369,6 +369,34 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
+  /* Disable mobile browsers' automatic text inflation ("font boosting" / text auto-sizing). With
+     it on (the default), iOS/Android enlarge prose blocks unevenly — making e.g. the credits
+     disclaimer + footer read oversized next to the short credit lines, and overriding our own
+     px sizes. Pinning it to 100% makes our explicit font sizes authoritative on every device. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Touch: screen space is tight, so pull every edge-anchored HUD element in close to the screen
+   edges via --edge (set ONLY here; ~80% off the usual 16px — desktop keeps each element's own
+   fallback gap). Tune the one value below to taste.
+
+   NOTE on safe areas: the CORNER HUD elements deliberately do NOT add env(safe-area-inset-left/
+   right). In an iOS *standalone* (home-screen) app in LANDSCAPE, iOS reports a SYMMETRIC ~44px
+   left+right inset — even on the side with no notch — so `max(--edge, env(…))` floated every
+   element ~44px off both edges and they read as unanchored (Safari the browser doesn't expose
+   those landscape insets, which is why it looked fine there). A corner clears the centred notch
+   on its own, so corners hug --edge. Only the full-height settings panel actually spans the
+   notch; it widens by env() (see Sidebar.css) rather than insetting. Top env stays (harmless:
+   ~0 in landscape, and correct if ever shown in portrait). */
+@media (pointer: coarse) {
+  :root {
+    --edge: 3px;
+    /* Width floor for the bottom overlay bars (timeline / eclipse) on touch. Fixed for now —
+       tweak this one number. (The nav width is also exposed as --topnav-width by TopNav.tsx, so
+       these could later read calc(var(--topnav-width) * 2) to scale with the nav instead.) */
+    --overlay-bar-min-w: 520px;
+  }
 }
 
 /* Map edge-glow: a faint pulsing vignette echoing the active-location colour around
@@ -428,8 +456,8 @@ body,
    each panel opts back in. */
 .top-left-stack {
   position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  left: max(16px, env(safe-area-inset-left));
+  top: max(var(--edge, 16px), env(safe-area-inset-top));
+  left: var(--edge, 16px);
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -454,7 +482,7 @@ body,
 @media (pointer: coarse) and (max-width: 880px) {
   .top-left-stack {
     top: auto;
-    bottom: max(16px, env(safe-area-inset-bottom));
+    bottom: var(--edge, 16px);
   }
 }
 
