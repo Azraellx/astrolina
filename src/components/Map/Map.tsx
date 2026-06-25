@@ -9,12 +9,15 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
+import { getShareBrand } from '../../lib/shareBrand';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
@@ -123,11 +126,21 @@ const HUD_SELECTORS = [
   '.info-bar', // active-systems chip (bottom-right, above the attribution)
 ];
 
-// Current screen rects of the HUD panels, in map-container coordinates.
-function readHudRects(map: maplibregl.Map): AvoidRect[] {
+// While the Share frame is armed, badges ignore the HUD panels (Share window, sidebar,
+// etc.) and hug the frame edges — with ONE exception: the on-map attribution / credits
+// disclosure (bottom-right), which is part of the exported image, so badges still dodge
+// it so a label never sits on top of it.
+const SHARE_AVOID_SELECTORS = ['.maplibregl-ctrl-bottom-right'];
+
+// Current screen rects of the given selectors (default: the HUD panels), in
+// map-container coordinates.
+function readHudRects(
+  map: maplibregl.Map,
+  selectors: readonly string[] = HUD_SELECTORS,
+): AvoidRect[] {
   const cont = map.getContainer().getBoundingClientRect();
   const out: AvoidRect[] = [];
-  for (const sel of HUD_SELECTORS) {
+  for (const sel of selectors) {
     document.querySelectorAll(sel).forEach((el) => {
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
@@ -1105,6 +1118,19 @@ interface MapProps {
   onSlide?: (dtDays: number) => void;
   /** Right-click while sliding resets the spin to natal and exits the tool. */
   onSlideCancel?: () => void;
+  /** Share/Export tool: when true, the working map view is inset to a centred
+   *  capture frame (its shape set by frameAspect) while the surrounding HUD stays
+   *  put — the framed region is what `captureFrame` exports. */
+  frameActive?: boolean;
+  /** Capture-frame aspect ratio (width / height). null = no frame. */
+  frameAspect?: number | null;
+  /** When true (Share + caption toggle on), reserve a footer band at the bottom of the
+   *  frame so linework + edge labels render above it, and render the caption there. */
+  frameCaption?: boolean;
+  /** The caption text (chart name · birth date · place); blank renders no caption. */
+  frameCaptionText?: string;
+  /** Right-click while the Share frame is armed exits the tool (like Measure/Slide). */
+  onFrameCancel?: () => void;
   /** Emits map-originated onboarding mission events (measure point/snap, zoom-out click,
    *  box-zoom, perspective change). Must be STABLE — read inside long-lived map effects
    *  (e.g. the measure drag) that would otherwise re-subscribe and drop their state. */
@@ -1162,6 +1188,10 @@ export interface MapHandle {
   teleportBack: () => { lat: number; lng: number } | null;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Composite the current capture frame (map canvas + the pin, edge labels, caption
+   *  and watermark DOM overlays) into a PNG and resolve a Blob; null if the map isn't
+   *  ready. Driven by the Share tool's Download / Copy buttons. */
+  captureFrame: () => Promise<Blob | null>;
 }
 
 // A saved camera view (for one-slot back/forward toggles).
@@ -2103,6 +2133,13 @@ function detectWebGL(): boolean {
   }
 }
 
+// The caption band's height as a fraction of the frame WIDTH (so the text size stays
+// consistent across aspect ratios). Deliberately small — it's a footer, not a banner.
+// When the caption is on, the map view is inset by this much at the bottom so linework
+// and edge labels render ABOVE the band rather than behind it; the same band carries
+// the caption text and the (mandatory) watermark.
+const SHARE_CAPTION_BAND_FRAC = 0.05;
+
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   angleLines,
@@ -2139,6 +2176,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   slideActive,
   onSlide,
   onSlideCancel,
+  frameActive,
+  frameAspect,
+  frameCaption,
+  frameCaptionText,
+  onFrameCancel,
   onMissionEvent,
   keepZoomOutVisible,
   onHover,
@@ -2150,7 +2192,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
+  // The Share/Export capture frame wraps the map canvas + its DOM overlays (edge
+  // labels, pin, local-horizon wheel); insetting it shrinks the working view, and
+  // it's the element `captureFrame` rasterises.
+  const frameRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // Mirror of frameActive, read by computeBadges' HUD-dodge gate. While the Share frame
+  // is armed, edge badges ignore the HUD panels (incl. the Share window) and hug only
+  // the frame edges. Assigned during render so it's current before any badge recompute.
+  const frameActiveRef = useRef(!!frameActive);
+  frameActiveRef.current = !!frameActive;
   // One-slot "go back" view for the Location window: teleportTo() stashes the
   // pre-jump camera here; teleportBack() swaps current<->saved so the same button
   // toggles between the two locations (two-deep, like browser back/forward).
@@ -2191,6 +2242,185 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     },
     zoomIn: () => mapRef.current?.zoomIn(),
     zoomOut: () => mapRef.current?.zoomOut(),
+    captureFrame: async () => {
+      const map = mapRef.current;
+      const frameEl = frameRef.current;
+      if (!map || !frameEl) return null;
+      const mapCanvas = map.getCanvas();
+      const rect = frameEl.getBoundingClientRect();
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const W = Math.max(1, Math.round(rect.width * scale));
+      const H = Math.max(1, Math.round(rect.height * scale));
+      const out = document.createElement('canvas');
+      out.width = W;
+      out.height = H;
+      const ctx = out.getContext('2d');
+      if (!ctx) return null;
+
+      // 0) Backdrop. In 3D globe mode the "space" void is a CSS background on the map
+      //    container (the GL canvas is transparent there), so paint it first or the
+      //    export would have a transparent void. In flat 2D the basemap is opaque and
+      //    this is a harmless no-op (the container background is unset/transparent).
+      const containerBg = containerRef.current
+        ? getComputedStyle(containerRef.current).backgroundColor
+        : '';
+      if (containerBg && containerBg !== 'rgba(0, 0, 0, 0)' && containerBg !== 'transparent') {
+        ctx.fillStyle = containerBg;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // 1) The map itself: draw the live WebGL canvas straight in. Reliable because
+      //    the map is built with preserveDrawingBuffer, and far sturdier than asking
+      //    html2canvas to rasterise a GL canvas. The map container fills the frame's
+      //    full WIDTH but only the height ABOVE the caption band (when reserved), so
+      //    draw it at its actual size — the band region is left for the caption overlay.
+      const mapW = Math.round(mapCanvas.clientWidth * scale);
+      const mapH = Math.round(mapCanvas.clientHeight * scale);
+      ctx.drawImage(mapCanvas, 0, 0, mapW || W, mapH || H);
+
+      // 2) DOM overlays (pin, edge labels, local-horizon wheel, AND the caption band +
+      //    watermark): html2canvas over the whole frame, with the GL canvas and UI
+      //    chrome ignored, composited on top. The caption/watermark are real DOM inside
+      //    the frame, so they're captured here at their on-screen positions (WYSIWYG).
+      try {
+        // If the brand declares a custom display face (Pro), make sure it's loaded before
+        // rasterising — otherwise html2canvas would capture a fallback font. The core
+        // default has no fontSpec (its watermark uses the already-loaded system font).
+        const brandFont = getShareBrand().fontSpec;
+        if (brandFont) {
+          try {
+            await document.fonts.load(brandFont);
+          } catch {
+            /* font API unavailable — html2canvas will use whatever is loaded */
+          }
+        }
+        // The 2D glyph re-stamp below draws with ctx.fillText, which needs the bundled
+        // symbol face actually loaded for the canvas — otherwise it falls back to a
+        // colour-emoji font (e.g. the Sun renders as concentric rings). Preload it.
+        try {
+          await document.fonts.load('16px "Noto Sans Symbols"', '☉');
+        } catch {
+          /* font API unavailable — fillText will use whatever is loaded */
+        }
+        const { default: html2canvas } = await import('html2canvas-pro');
+        const overlay = await html2canvas(frameEl, {
+          backgroundColor: null,
+          scale,
+          useCORS: true,
+          logging: false,
+          ignoreElements: (el: Element) => {
+            if (el === mapCanvas) return true;
+            const cl = el.classList;
+            if (cl?.contains('maplibregl-canvas')) return true;
+            // Drop the zoom/compass control (top-right) — also hidden live via CSS while
+            // framing. The attribution/credits control (bottom-right) is intentionally
+            // KEPT: it's a real on-map disclosure the user composes with, so it belongs
+            // in the exported image (WYSIWYG).
+            if (
+              cl?.contains('maplibregl-ctrl-top-right') ||
+              el.closest?.('.maplibregl-ctrl-top-right')
+            )
+              return true;
+            // Drop hover tooltips (a bare .ui-tip), but KEEP a .ui-tip that lives inside
+            // a maplibre popup — those are the pinned line / eclipse interpretation cards
+            // the user clicked open, which should appear in the export (WYSIWYG).
+            if (
+              (cl?.contains('ui-tip') || el.closest?.('.ui-tip')) &&
+              !el.closest?.('.maplibregl-popup')
+            )
+              return true;
+            // The pin and edge labels are always part of a share export now.
+            return false;
+          },
+          // Mutate only the CLONE (no live flash): drop the viewfinder ring/scrim so
+          // they don't bleed in, and make the map container transparent. The container
+          // carries an OPAQUE void background in 3D globe mode — left as-is, html2canvas
+          // would repaint it over the globe we already drew in step 1. The void colour
+          // is preserved by the backdrop fill in step 0.
+          onclone: (_doc: Document, el: HTMLElement) => {
+            el.style.outline = 'none';
+            el.style.boxShadow = 'none';
+            el.querySelectorAll<HTMLElement>('.map-container').forEach((c) => {
+              c.style.background = 'transparent';
+            });
+            // A downstream brand may colour a letter of the watermark via
+            // background-clip:text (a gradient), which html2canvas can't honour — it
+            // would render that glyph transparent. Force any such element to a solid
+            // fill of its own live computed colour, so the export is reliable and the
+            // exact colour stays brand-owned (no hard-coded value in core).
+            const liveBrandO = document.querySelector('.share-watermark-o');
+            const brandOColor = liveBrandO ? getComputedStyle(liveBrandO).color : '';
+            if (brandOColor) {
+              el.querySelectorAll<HTMLElement>('.share-watermark-o').forEach((o) => {
+                o.style.setProperty('background', 'none');
+                o.style.setProperty('-webkit-text-fill-color', brandOColor);
+                o.style.setProperty('color', brandOColor);
+              });
+            }
+            // Hide every SYMBOL glyph (badge planet/aspect glyphs AND any in an open
+            // interpretation card) in the clone: html2canvas mis-renders the Noto symbol
+            // font's vertical baseline (the glyph floats high), so we stamp them back with
+            // the 2D API below. Use !important so the span's COMPUTED visibility is actually
+            // hidden (beats the .astro-glyph class — html2canvas-pro gates painting on
+            // that), and neutralise any ink belt-and-braces. visibility:hidden keeps the
+            // layout box, so surrounding sizing is unaffected.
+            el.querySelectorAll<HTMLElement>('.astro-glyph').forEach((g) => {
+              g.style.setProperty('visibility', 'hidden', 'important');
+              g.style.setProperty('color', 'transparent', 'important');
+              g.style.setProperty('text-shadow', 'none', 'important');
+              g.style.setProperty('-webkit-text-stroke', '0', 'important');
+            });
+            // The popup close (✕) button is UI chrome, not part of the shared image.
+            el.querySelectorAll<HTMLElement>('.maplibregl-popup-close-button').forEach(
+              (b) => b.style.setProperty('display', 'none', 'important'),
+            );
+          },
+        });
+        ctx.drawImage(overlay, 0, 0, W, H);
+
+        // Re-stamp the badge symbol glyphs (hidden in the clone above) at their real
+        // on-screen positions. Read from the LIVE badges (the clone's hidden state
+        // doesn't affect these rects). Pin the bundled symbol face with a QUOTED family
+        // so canvas font matching picks the @font-face, not a colour-emoji fallback;
+        // strip the U+FE0E text-presentation selector (unreliable in canvas); and centre
+        // the measured INK, since the em-box centre sits a touch high for this font.
+        const frameRect = frameEl.getBoundingClientRect();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        frameEl
+          .querySelectorAll<HTMLElement>('.astro-glyph')
+          .forEach((g) => {
+            const gr = g.getBoundingClientRect();
+            if (gr.width <= 0 || gr.height <= 0) return;
+            const char = (g.textContent ?? '').replace(/\uFE0E/g, '');
+            if (!char) return;
+            const cs = getComputedStyle(g);
+            const px = parseFloat(cs.fontSize) || 11;
+            ctx.font = `${px * scale}px "Noto Sans Symbols", sans-serif`;
+            ctx.fillStyle = cs.color;
+            const cx = (gr.left + gr.width / 2 - frameRect.left) * scale;
+            const cyBox = (gr.top + gr.height / 2 - frameRect.top) * scale;
+            // 'alphabetic' baseline: ink spans [cy − ascent, cy + descent]; shift the pen
+            // so the ink midpoint lands on the box centre. Fall back to the box centre if
+            // metrics are unavailable.
+            const m = ctx.measureText(char);
+            const asc = m.actualBoundingBoxAscent;
+            const desc = m.actualBoundingBoxDescent;
+            const cy =
+              Number.isFinite(asc) && Number.isFinite(desc)
+                ? cyBox + (asc - desc) / 2
+                : cyBox;
+            ctx.fillText(char, cx, cy);
+          });
+      } catch (err) {
+        // Overlay compositing is best-effort — a failure still yields the map image.
+        console.warn('[share] overlay capture failed; exporting map only', err);
+      }
+
+      return await new Promise<Blob | null>((resolve) =>
+        out.toBlob((b) => resolve(b), 'image/png'),
+      );
+    },
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   // The greatest-eclipse / sub-lunar maximum marker (a styled DOM marker, distinct
@@ -2394,8 +2624,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
       // their aspect/planetB props give them distinct group keys and badge faces.
       const ang = computeLineBadges(map, pinShift(data.angleLines.features), BADGE_INSET, false, 'ang');
-      const hudRects =
-        reuseHudRects && hudRectsRef.current
+      // While the Share frame is armed, badges hug the frame edges and ignore the HUD
+      // panels (Share window etc.) — EXCEPT the on-map attribution disclosure, which is
+      // in the exported image, so they still dodge that one.
+      const hudRects = frameActiveRef.current
+        ? readHudRects(map, SHARE_AVOID_SELECTORS)
+        : reuseHudRects && hudRectsRef.current
           ? hudRectsRef.current
           : (hudRectsRef.current = readHudRects(map));
       const dodged = dodgeBadges(
@@ -2625,6 +2859,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // still lets you zoom right in for fine placement.
         maxZoom: 22,
         attributionControl: false,
+        // Keep the WebGL back-buffer readable so the Share/Export tool can draw the
+        // map canvas into an export bitmap (getCanvas().drawImage). The cost is a
+        // small, one-time GPU memory bump — negligible for this app's frame rate.
+        // (maplibre-gl v5 groups WebGL context flags under canvasContextAttributes.)
+        canvasContextAttributes: { preserveDrawingBuffer: true },
       });
     } catch (err) {
       console.error('[map] MapLibre could not initialise WebGL', err);
@@ -3153,7 +3392,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const onLpStart = (e: TouchEvent) => {
       clearLp();
-      if (measureActive || slideActive) return; // those tools own their gestures
+      // Those tools own their gestures; the Share frame suppresses the long-press too
+      // so a hold while composing can't drop/remove the pin (matches the desktop guard).
+      if (measureActive || slideActive || frameActive) return;
       if (e.touches.length !== 1) return; // 2nd finger = pan/zoom, not a hold
       const t0 = e.touches[0];
       lpStart = { x: t0.clientX, y: t0.clientY };
@@ -3172,7 +3413,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const onLpEnd = () => clearLp();
     const handleContext = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
-      if (measureActive || slideActive) return;
+      // While the Share frame is armed, right-click exits it (handled by the frame
+      // effect) rather than dropping/removing the pin here.
+      if (measureActive || slideActive || frameActive) return;
       // A touch long-press already fired the action; drop the synthesized contextmenu
       // some platforms emit right after, so it doesn't double-fire (remove → drop-natal).
       if (Date.now() - lpFiredAt < 700) return;
@@ -3208,7 +3451,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       lineCardPopup.remove();
       lineCardPopupRef.current = null;
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, slideActive, flyToZenith, t, labels]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, slideActive, frameActive, flyToZenith, t, labels]);
 
   // The pinned card describes ONE selection at one place — close it whenever
   // the selected eclipse changes or eclipses mode exits (the builder closure's
@@ -3227,6 +3470,101 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // would drop an in-progress segment); the live `update` reads the ref.
   const measureSnapRef = useRef(false);
   measureSnapRef.current = measureSnap ?? false;
+
+  // ── Share/Export frame ─────────────────────────────────────────────────────
+  // When the Share tool is armed, inset the map view to a centred box of the chosen
+  // aspect ratio (a margin all round leaves the HUD clear), so the framed region is
+  // exactly what `captureFrame` exports. The map canvas AND its projected overlays
+  // (edge labels, pin, local-horizon wheel) live inside .map-frame, so insetting
+  // both confines the lines and keeps the overlays in register with the smaller view.
+  // `cap` is the reserved caption-band height (css px); the map/badges are inset by it
+  // at the bottom so they don't sit behind the caption.
+  const [frameInset, setFrameInset] = useState<
+    { l: number; t: number; r: number; b: number; cap: number } | null
+  >(null);
+  useEffect(() => {
+    if (!frameActive || !frameAspect) {
+      setFrameInset(null);
+      return;
+    }
+    const compute = () => {
+      const host = frameRef.current?.parentElement;
+      if (!host) return;
+      const { width: W, height: H } = host.getBoundingClientRect();
+      if (W <= 0 || H <= 0) return;
+      const m = 0.1; // ~10% margin each side
+      const usableW = W * (1 - 2 * m);
+      const usableH = H * (1 - 2 * m);
+      let boxW: number;
+      let boxH: number;
+      if (usableW / usableH > frameAspect) {
+        boxH = usableH;
+        boxW = boxH * frameAspect;
+      } else {
+        boxW = usableW;
+        boxH = boxW / frameAspect;
+      }
+      const ix = Math.round((W - boxW) / 2);
+      const iy = Math.round((H - boxH) / 2);
+      // The band is a fraction of the frame WIDTH; for wide (landscape ~16:9) frames
+      // that reads too tall, so halve it there. Floored so it stays legible on small frames.
+      const landscape = !!frameAspect && frameAspect >= 1.3;
+      const bandFrac = landscape ? SHARE_CAPTION_BAND_FRAC * 0.5 : SHARE_CAPTION_BAND_FRAC;
+      const cap = frameCaption ? Math.max(Math.round(boxW * bandFrac), 22) : 0;
+      setFrameInset({ l: ix, t: iy, r: ix, b: iy, cap });
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, [frameActive, frameAspect, frameCaption]);
+
+  // Match the GL viewport to the inset container once it's laid out (layout effect
+  // so there's no flash of the old size), and again when the frame clears.
+  useLayoutEffect(() => {
+    mapRef.current?.resize();
+  }, [frameInset]);
+
+  // Right-click exits the Share frame, mirroring Measure/Slide.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !frameActive) return;
+    const onCtx = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault();
+      onFrameCancel?.();
+    };
+    map.on('contextmenu', onCtx);
+    return () => {
+      map.off('contextmenu', onCtx);
+    };
+  }, [frameActive, onFrameCancel]);
+
+  // While the Share frame is armed, the redundant "AstroLina" credit is CSS-hidden (the
+  // watermark already brands the image); also lift its now-orphaned " | " separator out
+  // of the attribution so the disclosure reads cleanly (e.g. "© OpenStreetMap"). Restore
+  // it on exit — skipped if maplibre rebuilt the attribution meanwhile (it then has its
+  // own fresh separator), so we never throw or duplicate.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!frameActive || !map) return;
+    const btn = map.getContainer().querySelector('.acg-credits-btn');
+    if (!btn) return;
+    const isSep = (n: ChildNode | null): n is ChildNode =>
+      !!n && n.nodeType === 3 && /\|/.test(n.textContent ?? '');
+    const sep = isSep(btn.previousSibling)
+      ? btn.previousSibling
+      : isSep(btn.nextSibling)
+        ? btn.nextSibling
+        : null;
+    if (!sep) return;
+    const parent = sep.parentElement;
+    const anchor = sep.nextSibling;
+    sep.remove();
+    return () => {
+      if (!parent?.isConnected) return;
+      if (anchor && anchor.parentElement === parent) parent.insertBefore(sep, anchor);
+      else if (!anchor) parent.appendChild(sep);
+    };
+  }, [frameActive]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -3879,6 +4217,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }
   return (
     <>
+      {/* The Share/Export capture frame. Insetting it (when the Share tool arms a
+          frame) shrinks the working map view while the surrounding HUD stays put.
+          It holds every map-projected layer — the GL canvas, the edge labels, the
+          pin/markers, the local-horizon wheel — so they shrink and stay in register
+          together, and so a single `captureFrame` rasterises them as one unit. */}
+      <div
+        ref={frameRef}
+        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}`}
+        style={
+          frameInset
+            ? ({
+                left: frameInset.l,
+                top: frameInset.t,
+                right: frameInset.r,
+                bottom: frameInset.b,
+                '--share-caption-h': `${frameInset.cap}px`,
+              } as CSSProperties)
+            : undefined
+        }
+      >
       <div ref={containerRef} className="map-container" />
       {glStatus !== 'ok' && (
         // The map is WebGL-only, so a missing/lost context leaves the container a
@@ -4108,6 +4466,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           bearing={originNorthDeg}
         />
       )}
+      {/* Share/Export footer — real DOM inside the frame, so it's captured WYSIWYG and
+          the map/edge-labels are inset above the caption band rather than drawn over it.
+          The watermark is mandatory; the caption shows when its toggle is on. */}
+      {frameActive && (
+        <div className="share-footer" aria-hidden="true">
+          {frameCaption && frameCaptionText ? (
+            <div className="share-caption">
+              <span className="share-caption-text">{frameCaptionText}</span>
+            </div>
+          ) : null}
+          {/* The export watermark. The open core stamps a plain "astrolina.org" credit;
+              a downstream build (Pro) swaps in its wordmark + font via setShareBrand. */}
+          <span className="share-watermark">{getShareBrand().render()}</span>
+        </div>
+      )}
+      </div>
       {/* Subtle escape hatch once deeply zoomed in (LS labels at full radius): a
           low-opacity pill, brighter on hover, that eases back to a wide overview. Kept
           visible while the zoom guide is open so its click mission stays completable. */}

@@ -87,6 +87,11 @@ export const topNav = {
       'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
     slideToolbarHint:
       'Drag east / west to slide the world under the fixed lines · right-click resets',
+    shareItem: 'Share',
+    shareHint:
+      'Frame the map and export it as a PNG — pick an aspect ratio, choose what to include, then download or copy. Everything happens in your browser.',
+    shareToolbarHint:
+      'Pan and zoom to compose inside the frame · right-click to exit',
   },
 
   view: {

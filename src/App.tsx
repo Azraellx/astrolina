@@ -37,6 +37,7 @@ import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
 import { TeleportHud } from './components/TeleportHud/TeleportHud';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
+import { ShareHud } from './components/ShareHud/ShareHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
@@ -397,7 +398,7 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 }));
 
 export default function App() {
-  const { t } = useT();
+  const { t, labels } = useT();
   const [charts, setCharts] = useState<StoredChart[]>(() => {
     const loaded = loadCharts();
     return loaded.length > 0 ? loaded : seedCharts;
@@ -675,6 +676,94 @@ export default function App() {
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
+  // Share/Export capture-frame aspect ratio (width / height), persisted. Only consulted
+  // while the Share tool is armed (mapTool === 'share'); the ShareHud picks the preset.
+  const [shareAspect, setShareAspect] = useState<number>(() => {
+    const n = parseFloat(localStorage.getItem('astro:share-aspect:v1') ?? '');
+    return Number.isFinite(n) && n > 0 ? n : 16 / 9; // default landscape 16:9
+  });
+  // Share/Export caption fields, persisted. The pin, edge labels and watermark are now
+  // always included (no toggles); only WHICH parts of the caption appear is configurable.
+  // The caption fields are lifted here (not kept in ShareHud) because the Map reserves a
+  // footer band for the caption while the frame is armed.
+  const [shareCaptionFields, setShareCaptionFields] = useState<{
+    name: boolean;
+    date: boolean;
+    time: boolean;
+    location: boolean;
+    calculations: boolean;
+  }>(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem('astro:share-caption:v1') ?? '{}');
+      return {
+        name: p.name !== false,
+        date: p.date !== false,
+        time: p.time !== false,
+        location: p.location !== false,
+        // The calculation systems are off by default — they're a power-user detail.
+        calculations: p.calculations === true,
+      };
+    } catch {
+      return { name: true, date: true, time: true, location: true, calculations: false };
+    }
+  });
+  const toggleShareCaptionField = useCallback(
+    (k: 'name' | 'date' | 'time' | 'location' | 'calculations') => {
+      setShareCaptionFields((p) => {
+        const next = { ...p, [k]: !p[k] };
+        try {
+          localStorage.setItem('astro:share-caption:v1', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [],
+  );
+  // The active calculation systems, exactly as the "Info" view (InfoBar) lists them —
+  // for the optional "calculations" caption field.
+  const shareCalcText = useMemo(() => {
+    const parts = [labels.lineSystem(lineSystem)];
+    if (lineSystem === 'celestial') parts.push(labels.coordSystem(coordSystem));
+    if (advancedWheel) parts.push(labels.houseSystem(houseSystem));
+    if (advancedWheel && zodiacMode !== 'tropical')
+      parts.push(t(`settings.zodiac.${zodiacMode}.label`));
+    parts.push(labels.nodeType(nodeType));
+    return parts.join(' · ');
+  }, [labels, t, lineSystem, coordSystem, houseSystem, zodiacMode, nodeType, advancedWheel]);
+  // Caption text for the Share footer — only the enabled fields, joined. Date/time are
+  // formatted in UTC so the birth clock time isn't shifted by the viewer's zone. Blank
+  // with no chart or no fields enabled (the Map then reserves no caption band).
+  const shareCaptionText = useMemo(() => {
+    if (!current) return '';
+    const dt = new Date(
+      Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute),
+    );
+    const parts: string[] = [];
+    if (shareCaptionFields.name) parts.push(displayName(current.name));
+    if (shareCaptionFields.date)
+      parts.push(
+        new Intl.DateTimeFormat('en', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        }).format(dt),
+      );
+    if (shareCaptionFields.time)
+      parts.push(
+        new Intl.DateTimeFormat('en', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+          timeZone: 'UTC',
+        }).format(dt),
+      );
+    if (shareCaptionFields.location) parts.push(current.birthplace.label);
+    if (shareCaptionFields.calculations) parts.push(shareCalcText);
+    return parts.join('  ·  ');
+  }, [current, shareCaptionFields, shareCalcText]);
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
   const [measureSnap, setMeasureSnap] = useState(false);
   // Whether the Slide tool can run right now (kept in a ref so the early-declared
@@ -893,6 +982,8 @@ export default function App() {
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
         case 'y': if (advancedWheel) toggleSlide(); break;
+        // Share/Export — ungated, so no advanced-mode gate (unlike Slide).
+        case 'e': setMapTool((tl) => (tl === 'share' ? 'off' : 'share')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
         default: {
@@ -2360,6 +2451,20 @@ export default function App() {
     setMapTool('off');
     setSlideDt(0);
   }, []);
+  // Share/Export tool: right-click on the map exits the capture frame. Stable so the
+  // Map's frame effect (which depends on it) isn't torn down on unrelated re-renders.
+  const stopShare = useCallback(() => {
+    setMapTool('off');
+  }, []);
+  // Pick an aspect preset and remember it for next time.
+  const setShareAspectPersist = useCallback((ratio: number) => {
+    setShareAspect(ratio);
+    try {
+      localStorage.setItem('astro:share-aspect:v1', String(ratio));
+    } catch {
+      /* ignore */
+    }
+  }, []);
   // Slide needs a natal cage to spin: not available when the natal linework is hidden
   // (eclipses-only) or an overlay is promoted (the cage is the overlay then, not the
   // resampled natal chart). Geodetic is handled by an auto-switch in toggleSlide.
@@ -2750,6 +2855,14 @@ export default function App() {
         slideActive={sliding}
         onSlide={setSlideDt}
         onSlideCancel={stopSlide}
+        // Share/Export: arm the capture frame (inset the working view to the chosen
+        // aspect ratio); right-click exits. captureFrame (MapHandle) does the export.
+        // When the caption is on, the Map reserves a footer band so labels clear it.
+        frameActive={mapTool === 'share'}
+        frameAspect={mapTool === 'share' ? shareAspect : null}
+        frameCaption={mapTool === 'share' && shareCaptionText !== ''}
+        frameCaptionText={shareCaptionText}
+        onFrameCancel={stopShare}
         onMissionEvent={recordMission}
         // Force the Zoom-out button to stay put while the zoom guide is up so the user
         // can still complete its click mission even after scrolling out manually — but
@@ -3019,6 +3132,17 @@ export default function App() {
           hideLsCompass={hideLsCompass}
           setHideLsCompass={setHideLsCompass}
           localSpaceOrigin={localSpaceOrigin}
+        />
+      )}
+      {mapTool === 'share' && (
+        <ShareHud
+          onClose={stopShare}
+          shareAspect={shareAspect}
+          setShareAspect={setShareAspectPersist}
+          captionFields={shareCaptionFields}
+          onToggleCaptionField={toggleShareCaptionField}
+          current={current}
+          onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
         />
       )}
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here

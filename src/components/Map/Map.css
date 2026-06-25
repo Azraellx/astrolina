@@ -29,6 +29,117 @@
   background-color: #d6e4f4;
 }
 
+/* Share/Export capture frame. Normally fills the whole map area (inset:0), so the
+   non-framed layout is byte-for-byte unchanged. The Share tool insets it (explicit
+   left/top/right/bottom set inline) to a centred aspect-ratio box. Deliberately has
+   NO z-index, so it forms no stacking context: its children keep their existing
+   stacking, and the app HUD (rendered later, with its own z-index) stays above. */
+.map-frame {
+  position: absolute;
+  inset: 0;
+}
+/* While framing: a crisp ring marks the export region, and a large spread shadow
+   dims the bare map margin around it (a viewfinder scrim). The HUD panels sit above
+   this in the stacking order, so they stay bright and usable. */
+.map-frame.framed {
+  outline: 1.5px solid rgba(255, 255, 255, 0.82);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 0 9999px rgba(128, 128, 128, 0.6);
+  transition: box-shadow 0.15s ease;
+}
+/* Hide the zoom / compass controls (top-right) while composing a share — they'd just
+   clutter the frame. The map attribution / credits (bottom-right) stays: it's a real
+   on-map disclosure the user is composing with, so it's part of the exported image. */
+.map-frame.framed .maplibregl-ctrl-top-right {
+  display: none;
+}
+/* …but the attribution's "AstroLina" credits button is redundant while framing — the
+   export already carries the AstroLina watermark — so hide just that part, keeping the
+   data credit (© OpenStreetMap etc.). The export also strips its trailing separator
+   (see Map.tsx captureFrame onclone). */
+.map-frame.framed .acg-credits-btn {
+  display: none;
+}
+/* Pull the bottom-right disclosure 50% closer to the frame edge while framing (base
+   edge gap is var(--edge,16px); halve it) so it tucks tighter into the exported image.
+   Needs !important + higher specificity to beat the base rule's !important. */
+.map-frame.framed .maplibregl-ctrl-bottom-right > .maplibregl-ctrl {
+  margin: 0 calc(var(--edge, 16px) / 2) calc(var(--edge, 16px) / 2) 0 !important;
+}
+
+/* When the caption band is reserved, inset the map view + its edge labels by the band
+   height (--share-caption-h) so linework and labels render ABOVE the caption, not behind
+   it. (The base .map-container is inset:0/height:100%; override height so bottom wins.) */
+.map-frame.framed .map-container {
+  height: auto;
+  bottom: var(--share-caption-h, 0px);
+}
+.map-frame.framed .acg-edge-badges {
+  bottom: var(--share-caption-h, 0px);
+}
+
+/* Share/Export footer (caption band + watermark), real DOM inside the frame so it's
+   captured WYSIWYG. Non-interactive, so it never blocks composing the shot. */
+.share-footer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.share-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--share-caption-h, 0px);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  /* room on the right for the watermark */
+  padding: 0 22% 0 calc(var(--share-caption-h, 0px) * 0.5);
+  /* Near-opaque so the band reads solidly in the export even over a transparent
+     backdrop (flat 2D has no container background behind the reserved strip). */
+  background: rgba(8, 10, 18, 0.9);
+  color: rgba(255, 255, 255, 0.96);
+  /* Scales with the band but clamped so it stays legible on tiny frames and doesn't
+     get oversized on huge ones. */
+  font:
+    600 clamp(10px, calc(var(--share-caption-h, 16px) * 0.42), 19px) / 1 system-ui,
+    -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.share-caption-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The export watermark. The open core stamps a plain "astrolina.org" credit in the
+   inherited system font — deliberately NO font-family / text-transform / letter-spacing
+   here, so a downstream build (Pro) can layer those on for its wordmark without a
+   specificity fight. White letters for legibility over the map. */
+.share-watermark {
+  position: absolute;
+  right: 12px;
+  bottom: 9px;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+/* With a caption band present, center the watermark inside it on the right and scale
+   its size to the band (clamped) so it never overflows a short band. */
+.map-frame.has-caption .share-watermark {
+  bottom: 0;
+  right: calc(var(--share-caption-h, 0px) * 0.5);
+  height: var(--share-caption-h, 0px);
+  display: flex;
+  align-items: center;
+  font-size: clamp(10px, calc(var(--share-caption-h, 0px) * 0.36), 15px);
+  text-shadow: none;
+}
+
 /* WebGL fallback notice. Shown in place of the (blank) map when the browser can't
    give us a WebGL context, or loses it at runtime. Plain DOM, no WebGL, so it
    always renders. Sits above the map but below the modal layer; it's the only
@@ -262,10 +373,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The bundled symbol font sits a touch low; nudge badge glyphs up ~10% to optically
-   centre them (matching the SVG-mode glyph in the chart wheel). */
+/* The bundled symbol font sits a touch low; nudge badge glyphs up to optically centre
+   them (matching the SVG-mode glyph in the chart wheel). Use a fixed px, not a %: badge
+   glyphs are a fixed 11px, and a percentage is resolved against the glyph's (very tall)
+   intrinsic line box by html2canvas during a Share export — which shoved the glyph far
+   too high in the exported PNG. 1px ≈ the original ~10% and renders identically in both. */
 .acg-badge .astro-glyph {
-  transform: translateY(-10%);
+  transform: translateY(-1px);
 }
 
 /* ── Zenith hover tooltip ────────────────────────────────────────────

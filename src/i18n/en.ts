@@ -37,6 +37,7 @@ import { missions } from './en/missions';
 import { profile } from './en/profile';
 import { teleportHud } from './en/teleportHud';
 import { localSpaceHud } from './en/localSpaceHud';
+import { shareHud } from './en/shareHud';
 import { synastryHud } from './en/synastryHud';
 import { wheel } from './en/wheel';
 
@@ -63,6 +64,7 @@ export const en = {
   profile,
   teleportHud,
   localSpaceHud,
+  shareHud,
   synastryHud,
   wheel,
 } as const;

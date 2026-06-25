@@ -36,7 +36,7 @@ import './TopNav.css';
 
 // The on-map mapping tool, owned here now that the Tools dropdown lives in the
 // top bar (was MappingToolsHud).
-export type MapTool = 'off' | 'measure' | 'slide';
+export type MapTool = 'off' | 'measure' | 'slide' | 'share';
 
 interface TopNavProps {
   mapState: MapState;
@@ -244,6 +244,12 @@ function ToolMenuIcon({ tool }: { tool: MapTool }) {
           <path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2" />
           <path d="m15.194 13.707 3.814 1.86-1.86 3.814" />
           <path d="M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-5 10-5c4.838 0 8.873 1.718 9.8 4" />
+        </>
+      ) : tool === 'share' ? (
+        <>
+          {/* crop frame — the Share/Export capture region */}
+          <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+          <path d="M18 22V8a2 2 0 0 0-2-2H2" />
         </>
       ) : (
         /* wrench — neutral "tools" affordance */
@@ -567,6 +573,7 @@ export function TopNav({
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
+  const framing = tool === 'share';
   const locationText = locationLabel ?? undefined;
   // Fade only while a non-natal pin upgrades to a NEW, more accurate address (App
   // sets `fadeLocation` only when the resolved label differs from the text already
@@ -716,6 +723,19 @@ export function TopNav({
             >
               {(close) => (
                 <>
+                  {/* Share / Export — first in the menu. Ungated (available to everyone,
+                      like Measure): frames the map view and exports a PNG client-side. */}
+                  <ToolItem
+                    label={t('topNav.tools.shareItem')}
+                    icon={<ToolMenuIcon tool="share" />}
+                    hint={t('topNav.tools.shareHint')}
+                    hotkey="E"
+                    checked={framing}
+                    onToggle={() => {
+                      setTool(framing ? 'off' : 'share');
+                      close();
+                    }}
+                  />
                   <ToolItem
                     label={t('topNav.tools.measureItem')}
                     icon={<ToolMenuIcon tool="measure" />}
@@ -893,7 +913,7 @@ export function TopNav({
           the chart's birth location. One reused island. The place name is hidden
           here while the Coordinates view is open — it moves into that window
           instead — but the measure readout always shows. */}
-      {(measuring || sliding || (locationLabel && !showCoords)) && (
+      {(measuring || sliding || framing || (locationLabel && !showCoords)) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
           {measuring ? (
             <>
@@ -941,6 +961,10 @@ export function TopNav({
                 {t('topNav.tools.slideToolbarHint')}
               </span>
             )
+          ) : framing ? (
+            <span className="topnav-toolbar-hint">
+              {t('topNav.tools.shareToolbarHint')}
+            </span>
           ) : pinned ? (
             <TipButton
               type="button"
