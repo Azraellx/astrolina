@@ -4,8 +4,8 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-// The movable "Share / Export" window (Tools ▸ Share). Opening it arms the capture
-// frame on the map (App sets mapTool='share'); this window picks the frame's aspect
+// The movable "Capture" window (Tools ▸ Capture). Opening it arms the capture
+// frame on the map (App sets mapTool='capture'); this window picks the frame's aspect
 // ratio and which caption fields appear, then renders the framed view to a PNG —
 // downloaded or copied to the clipboard — entirely client-side via captureFrame. The
 // pin, edge labels and watermark are always included; the caption fields live in App
@@ -18,15 +18,14 @@ import { useTouchLayout } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
-import { displayName, type StoredChart } from '../../lib/chartLibrary';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles,
-// so the window frosts/recolors with the theme for free; ShareHud.css adds the rest.
+// so the window frosts/recolors with the theme for free; CaptureHud.css adds the rest.
 import '../TimelineHud/TimelineHud.css';
 import '../LocationHud/LocationHud.css';
-import './ShareHud.css';
+import './CaptureHud.css';
 
 // Its own saved position, independent of the other floating windows.
-const POS_KEY = 'astro:share-pos:v1';
+const POS_KEY = 'astro:capture-pos:v1';
 
 // The capture-frame aspect presets (width / height). Kept as exact constants so the
 // active-state comparison against App's stored ratio is a near-equality check.
@@ -44,16 +43,6 @@ export interface CaptionFields {
   calculations: boolean;
 }
 const CAPTION_KEYS = ['name', 'date', 'time', 'location', 'calculations'] as const;
-
-function fileNameFor(c: StoredChart | null): string {
-  const slug = c
-    ? displayName(c.name)
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-    : '';
-  return `astrolina-${slug || 'map'}.png`;
-}
 
 // Whether this device/browser can share an image FILE via the OS share sheet (Web Share
 // Level 2). Fully client-side — no upload, no server. True on iOS/Android and capable
@@ -184,30 +173,35 @@ function TipBtn({
   );
 }
 
-interface ShareHudProps {
+interface CaptureHudProps {
   onClose: () => void;
   /** Current capture-frame aspect ratio (width / height); drives the map's frame. */
-  shareAspect: number;
+  captureAspect: number;
   /** Pick an aspect preset (persisted by App). */
-  setShareAspect: (ratio: number) => void;
+  setCaptureAspect: (ratio: number) => void;
   /** Controlled caption-field toggles (owned by App; the Map renders the caption band). */
   captionFields: CaptionFields;
   onToggleCaptionField: (key: keyof CaptionFields) => void;
-  /** The active chart — used only for the download filename. */
-  current: StoredChart | null;
+  /** Controlled "Extras" toggles (owned by App): the planet / angle position panel. */
+  extras: { planets: boolean; angles: boolean; balance: boolean };
+  onToggleExtra: (key: 'planets' | 'angles' | 'balance') => void;
+  /** The download / share filename (App derives it from the shown caption fields). */
+  fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
   onCapture: () => Promise<Blob | null>;
 }
 
-export function ShareHud({
+export function CaptureHud({
   onClose,
-  shareAspect,
-  setShareAspect,
+  captureAspect,
+  setCaptureAspect,
   captionFields,
   onToggleCaptionField,
-  current,
+  extras,
+  onToggleExtra,
+  fileName,
   onCapture,
-}: ShareHudProps) {
+}: CaptureHudProps) {
   const { t } = useT();
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
@@ -248,13 +242,13 @@ export function ShareHud({
         setFailed(true);
         return;
       }
-      downloadBlob(blob, fileNameFor(current));
+      downloadBlob(blob, fileName);
     } catch {
       setFailed(true);
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, current]);
+  }, [busy, onCapture, fileName]);
 
   const onCopy = useCallback(async () => {
     if (busy) return;
@@ -280,14 +274,14 @@ export function ShareHud({
           setFailed(true);
           return;
         }
-        downloadBlob(blob, fileNameFor(current));
+        downloadBlob(blob, fileName);
       }
     } catch {
       setFailed(true);
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, current]);
+  }, [busy, onCapture, fileName]);
 
   const onShare = useCallback(async () => {
     if (busy) return;
@@ -300,14 +294,14 @@ export function ShareHud({
         setFailed(true);
         return;
       }
-      const file = new File([blob], fileNameFor(current), { type: 'image/png' });
+      const file = new File([blob], fileName, { type: 'image/png' });
       if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
         // Opens the native OS share sheet (Save Image / Messages / Mail / …) — entirely
         // client-side, no upload or server. The blob never leaves the device until the
         // user picks a target.
         await navigator.share({ files: [file], title: 'AstroLina' });
       } else {
-        downloadBlob(blob, fileNameFor(current));
+        downloadBlob(blob, fileName);
       }
     } catch (e) {
       // Dismissing the share sheet rejects with AbortError — that's a cancel, not a failure.
@@ -315,12 +309,12 @@ export function ShareHud({
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, current]);
+  }, [busy, onCapture, fileName]);
 
   return (
     <div
       ref={hudRef}
-      className={`timeline-hud location-hud share-hud${dragging ? ' thud-dragging' : ''}`}
+      className={`timeline-hud location-hud capture-hud${dragging ? ' thud-dragging' : ''}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
@@ -336,7 +330,7 @@ export function ShareHud({
           onMouseLeave={hideGripTip}
         >
           <span className="hud-grip" aria-hidden="true" />
-          <span className="location-title">{t('shareHud.title')}</span>
+          <span className="location-title">{t('captureHud.title')}</span>
         </div>
         <HoverTip
           pos={dragging ? null : gripTipPos}
@@ -356,7 +350,7 @@ export function ShareHud({
           type="button"
           className="location-close"
           onClick={onClose}
-          aria-label={t('shareHud.closeAria')}
+          aria-label={t('captureHud.closeAria')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
             <path d="M5 5l14 14M19 5L5 19" />
@@ -364,79 +358,94 @@ export function ShareHud({
         </button>
       </div>
 
-      <div className="location-ls share-hud-body">
-        <div className="share-hud-label">{t('shareHud.aspect.label')}</div>
-        <div className="location-ls-seg share-hud-seg" role="group">
+      <div className="location-ls capture-hud-body">
+        <div className="capture-hud-label">{t('captureHud.aspect.label')}</div>
+        <div className="location-ls-seg capture-hud-seg" role="group">
           {ASPECTS.map((a) => {
-            const active = Math.abs(shareAspect - a.ratio) < 0.001;
+            const active = Math.abs(captureAspect - a.ratio) < 0.001;
             return (
               <TipBtn
                 key={a.key}
                 className={`location-ls-seg-btn ${active ? 'active' : ''}`}
-                onClick={() => setShareAspect(a.ratio)}
+                onClick={() => setCaptureAspect(a.ratio)}
                 ariaPressed={active}
-                title={t(`shareHud.aspect.${a.key}`)}
-                hint={t(`shareHud.aspect.${a.key}Hint`)}
+                title={t(`captureHud.aspect.${a.key}`)}
+                hint={t(`captureHud.aspect.${a.key}Hint`)}
               >
-                {t(`shareHud.aspect.${a.key}`)}
+                {t(`captureHud.aspect.${a.key}`)}
               </TipBtn>
             );
           })}
         </div>
 
-        <div className="share-hud-label">{t('shareHud.caption.label')}</div>
+        <div className="capture-hud-label">{t('captureHud.extras.label')}</div>
+        {(['planets', 'angles', 'balance'] as const).map((k) => (
+          <TipBtn
+            key={k}
+            className={`location-ls-toggle ${extras[k] ? 'on' : 'off'}`}
+            onClick={() => onToggleExtra(k)}
+            ariaPressed={extras[k]}
+            title={t(`captureHud.extras.${k}`)}
+            hint={t(`captureHud.extras.${k}Hint`)}
+          >
+            <EyeIcon open={extras[k]} />
+            <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
+          </TipBtn>
+        ))}
+
+        <div className="capture-hud-label">{t('captureHud.caption.label')}</div>
         {CAPTION_KEYS.map((k) => (
           <TipBtn
             key={k}
             className={`location-ls-toggle ${captionFields[k] ? 'on' : 'off'}`}
             onClick={() => onToggleCaptionField(k)}
             ariaPressed={captionFields[k]}
-            title={t(`shareHud.caption.${k}`)}
-            hint={t(`shareHud.caption.${k}Hint`)}
+            title={t(`captureHud.caption.${k}`)}
+            hint={t(`captureHud.caption.${k}Hint`)}
           >
             <EyeIcon open={captionFields[k]} />
-            <span className="location-ls-name">{t(`shareHud.caption.${k}`)}</span>
+            <span className="location-ls-name">{t(`captureHud.caption.${k}`)}</span>
           </TipBtn>
         ))}
 
-        <div className="share-hud-actions">
+        <div className="capture-hud-actions">
           <TipBtn
-            className="location-ls-fly share-hud-btn"
+            className="location-ls-fly capture-hud-btn"
             onClick={onDownload}
             disabled={busy}
-            title={t('shareHud.download.title')}
-            hint={t('shareHud.download.hint')}
+            title={t('captureHud.download.title')}
+            hint={t('captureHud.download.hint')}
           >
             <DownloadIcon />
-            <span>{t('shareHud.download.title')}</span>
+            <span>{t('captureHud.download.title')}</span>
           </TipBtn>
           <TipBtn
-            className="location-ls-fly share-hud-btn"
+            className="location-ls-fly capture-hud-btn"
             onClick={onCopy}
             disabled={busy}
-            title={t('shareHud.copy.title')}
-            hint={t('shareHud.copy.hint')}
+            title={t('captureHud.copy.title')}
+            hint={t('captureHud.copy.hint')}
           >
             <CopyIcon />
-            <span>{copied ? t('shareHud.copy.done') : t('shareHud.copy.title')}</span>
+            <span>{copied ? t('captureHud.copy.done') : t('captureHud.copy.title')}</span>
           </TipBtn>
           {/* Native share — touch devices only (desktop has Download/Copy). */}
           {supportsShare && (
             <TipBtn
-              className="location-ls-fly share-hud-btn"
+              className="location-ls-fly capture-hud-btn"
               onClick={onShare}
               disabled={busy}
-              title={t('shareHud.share.title')}
-              hint={t('shareHud.share.hint')}
+              title={t('captureHud.share.title')}
+              hint={t('captureHud.share.hint')}
             >
               <ShareIcon />
-              <span>{t('shareHud.share.title')}</span>
+              <span>{t('captureHud.share.title')}</span>
             </TipBtn>
           )}
         </div>
         {(busy || failed) && (
-          <div className="share-hud-status" role="status">
-            {busy ? t('shareHud.busy') : t('shareHud.failed')}
+          <div className="capture-hud-status" role="status">
+            {busy ? t('captureHud.busy') : t('captureHud.failed')}
           </div>
         )}
       </div>

@@ -29,8 +29,8 @@
   background-color: #d6e4f4;
 }
 
-/* Share/Export capture frame. Normally fills the whole map area (inset:0), so the
-   non-framed layout is byte-for-byte unchanged. The Share tool insets it (explicit
+/* Capture frame. Normally fills the whole map area (inset:0), so the
+   non-framed layout is byte-for-byte unchanged. The Capture tool insets it (explicit
    left/top/right/bottom set inline) to a centred aspect-ratio box. Deliberately has
    NO z-index, so it forms no stacking context: its children keep their existing
    stacking, and the app HUD (rendered later, with its own z-index) stays above. */
@@ -49,7 +49,7 @@
     0 0 0 9999px rgba(128, 128, 128, 0.6);
   transition: box-shadow 0.15s ease;
 }
-/* Hide the zoom / compass controls (top-right) while composing a share — they'd just
+/* Hide the zoom / compass controls (top-right) while composing a capture — they'd just
    clutter the frame. The map attribution / credits (bottom-right) stays: it's a real
    on-map disclosure the user is composing with, so it's part of the exported image. */
 .map-frame.framed .maplibregl-ctrl-top-right {
@@ -69,46 +69,54 @@
   margin: 0 calc(var(--edge, 16px) / 2) calc(var(--edge, 16px) / 2) 0 !important;
 }
 
-/* When the caption band is reserved, inset the map view + its edge labels by the band
-   height (--share-caption-h) so linework and labels render ABOVE the caption, not behind
-   it. (The base .map-container is inset:0/height:100%; override height so bottom wins.) */
+/* While framing, inset the map view + its edge labels so linework/labels render WITHIN the
+   exported region, never behind the chrome carved out of it: by the caption band height at
+   the bottom (--capture-caption-h, always reserved) and by the Extras panel on the left
+   (landscape) or top (square/portrait) when shown (--capture-extra-left/-top, else 0). The
+   base .map-container is inset:0/width:100%/height:100%; override width/height to auto so the
+   left/top/bottom insets win. */
 .map-frame.framed .map-container {
+  width: auto;
   height: auto;
-  bottom: var(--share-caption-h, 0px);
+  left: var(--capture-extra-left, 0px);
+  top: var(--capture-extra-top, 0px);
+  bottom: var(--capture-caption-h, 0px);
 }
 .map-frame.framed .acg-edge-badges {
-  bottom: var(--share-caption-h, 0px);
+  left: var(--capture-extra-left, 0px);
+  top: var(--capture-extra-top, 0px);
+  bottom: var(--capture-caption-h, 0px);
 }
 
-/* Share/Export footer (caption band + watermark), real DOM inside the frame so it's
+/* Capture footer (caption band + watermark), real DOM inside the frame so it's
    captured WYSIWYG. Non-interactive, so it never blocks composing the shot. */
-.share-footer {
+.capture-footer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-.share-caption {
+.capture-caption {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: var(--share-caption-h, 0px);
+  height: var(--capture-caption-h, 0px);
   box-sizing: border-box;
   display: flex;
   align-items: center;
   /* room on the right for the watermark */
-  padding: 0 22% 0 calc(var(--share-caption-h, 0px) * 0.5);
-  /* Near-opaque so the band reads solidly in the export even over a transparent
+  padding: 0 22% 0 calc(var(--capture-caption-h, 0px) * 0.5);
+  /* Fully opaque so the band reads solidly in the export even over a transparent
      backdrop (flat 2D has no container background behind the reserved strip). */
-  background: rgba(8, 10, 18, 0.9);
+  background: rgb(8, 10, 18);
   color: rgba(255, 255, 255, 0.96);
   /* Scales with the band but clamped so it stays legible on tiny frames and doesn't
      get oversized on huge ones. */
   font:
-    600 clamp(10px, calc(var(--share-caption-h, 16px) * 0.42), 19px) / 1 system-ui,
+    600 clamp(10px, calc(var(--capture-caption-h, 16px) * 0.42), 19px) / 1 system-ui,
     -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
-.share-caption-text {
+.capture-caption-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,7 +125,7 @@
    inherited system font — deliberately NO font-family / text-transform / letter-spacing
    here, so a downstream build (Pro) can layer those on for its wordmark without a
    specificity fight. White letters for legibility over the map. */
-.share-watermark {
+.capture-watermark {
   position: absolute;
   right: 12px;
   bottom: 9px;
@@ -130,13 +138,13 @@
 }
 /* With a caption band present, center the watermark inside it on the right and scale
    its size to the band (clamped) so it never overflows a short band. */
-.map-frame.has-caption .share-watermark {
+.map-frame.has-caption .capture-watermark {
   bottom: 0;
-  right: calc(var(--share-caption-h, 0px) * 0.5);
-  height: var(--share-caption-h, 0px);
+  right: calc(var(--capture-caption-h, 0px) * 0.5);
+  height: var(--capture-caption-h, 0px);
   display: flex;
   align-items: center;
-  font-size: clamp(10px, calc(var(--share-caption-h, 0px) * 0.36), 15px);
+  font-size: clamp(10px, calc(var(--capture-caption-h, 0px) * 0.36), 15px);
   text-shadow: none;
 }
 
@@ -376,7 +384,7 @@
 /* The bundled symbol font sits a touch low; nudge badge glyphs up to optically centre
    them (matching the SVG-mode glyph in the chart wheel). Use a fixed px, not a %: badge
    glyphs are a fixed 11px, and a percentage is resolved against the glyph's (very tall)
-   intrinsic line box by html2canvas during a Share export — which shoved the glyph far
+   intrinsic line box by html2canvas during a capture — which shoved the glyph far
    too high in the exported PNG. 1px ≈ the original ~10% and renders identically in both. */
 .acg-badge .astro-glyph {
   transform: translateY(-1px);

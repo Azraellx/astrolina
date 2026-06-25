@@ -1,0 +1,98 @@
+/*
+ * Capture "Extras" panel — the opaque planet/angle position list overlaid inside the
+ * capture frame. Mirrors the caption band's treatment (opaque, the map insets to clear
+ * it). Docked LEFT for landscape (column-wrap → grows wider) or TOP for square/portrait
+ * (row-wrap → grows taller); it never scrolls (a static PNG can't), so overflowing
+ * content wraps into more columns/rows up to a capped fraction of the frame.
+ */
+
+.capture-extras {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-content: flex-start;
+  gap: 3px 16px; /* row-gap (between rows) · column-gap (between columns/items) */
+  padding: 7px 9px;
+  /* Fully opaque: the user composes lines BEHIND it, and in flat-2D export there's no
+     backdrop fill behind the panel strip, so any alpha would read as a translucent void. */
+  background: rgb(8, 10, 18);
+  color: rgba(255, 255, 255, 0.96);
+  pointer-events: none;
+  overflow: hidden;
+  /* Scale with the frame (via the caption band's height var, which tracks frame size)
+     so the readout stays proportional across export resolutions. */
+  font-size: clamp(9px, calc(var(--capture-caption-h, 18px) * 0.36), 13px);
+  line-height: 1.45;
+}
+
+/* Landscape: left rail, full height down to the caption band; wraps into columns. */
+.capture-extras-left {
+  top: 0;
+  left: 0;
+  bottom: var(--capture-caption-h, 0px);
+  width: max-content;
+  /* A stable floor so the rail never collapses to a sliver on short content. */
+  min-width: 12em;
+  max-width: 46%;
+  flex-flow: column wrap;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Square/portrait: top band, full width; wraps into rows. */
+.capture-extras-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: max-content;
+  max-height: 46%;
+  flex-flow: row wrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cx-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  /* A touch of breathing room below each row, on top of the flex row-gap. */
+  padding-bottom: 0.2em;
+}
+
+/* Planet glyph + sign glyph: scale with the row font (the components hard-set px, so
+   render the chars directly and size in em here). The angle code reuses .cx-glyph for
+   the same leading-column width but is plain text, not an .astro-glyph. */
+.capture-extras .astro-glyph {
+  font-size: 1.08em;
+}
+.cx-glyph {
+  display: inline-block;
+  min-width: 1.25em;
+  text-align: center;
+}
+.cx-code {
+  font-weight: 700;
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+}
+.cx-name {
+  font-weight: 600;
+}
+.cx-lon {
+  /* Reserve the widest "DD°MM' ♐ Sagittarius" (with a little margin) so the live
+     (hover-relocated) sign/degree can never change a row's width — that per-row resizing is
+     what made the left rail expand and contract (jitter) as the cursor moved over the map. */
+  min-width: 10em;
+  opacity: 0.92;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Balance rows: category glyph + label + (count) + a constellation of member planet glyphs. */
+.cx-count {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.cx-bodies {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}

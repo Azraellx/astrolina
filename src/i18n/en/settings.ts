@@ -280,7 +280,10 @@ export const settings = {
     },
     chartLines: {
       title: 'Eclipse Chart',
-      hint: 'Planet and angle lines for the chart of the eclipse maximum, framed at that moment’s own sky — see where the eclipse-time lines run relative to the path.',
+      // NOTE: deliberately describes only the wheel ring — the eclipse-time MAP lines
+      // are a hidden, Shift-click-only feature (see EclipseHud + the hidden-features
+      // log) and must not be hinted at here.
+      hint: 'The chart of the eclipse maximum — the sky framed at that instant — added to the chart wheel as a second ring beside the natal chart.',
     },
     isoStep: {
       // Spacing of the dashed equal-magnitude contours around the path.

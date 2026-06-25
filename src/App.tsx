@@ -37,7 +37,7 @@ import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
 import { TeleportHud } from './components/TeleportHud/TeleportHud';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
-import { ShareHud } from './components/ShareHud/ShareHud';
+import { CaptureHud } from './components/CaptureHud/CaptureHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
@@ -54,6 +54,7 @@ import { isTouchLayout } from './lib/touch';
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
 import { SEED_BIRTHS } from './lib/birthData';
+import { planetRank, visibleAngleSpecs, buildCaptureBalance } from './lib/astro/format';
 import {
   offsetHoursAt,
   zoneLabelAt,
@@ -148,7 +149,8 @@ import { generateNightShade } from './lib/astro/nightShade';
 import { loadAspectOrbs, saveAspectOrbs, DEFAULT_ASPECT_ORBS } from './lib/aspectPrefs';
 import {
   loadAngleProgression,
-  loadEclipseChartLines,
+  loadEclipseChart,
+  loadEclipseMapLines,
   loadEclipseId,
   loadEclipseIsoStep,
   loadEclipseNatalLines,
@@ -172,7 +174,8 @@ import {
   loadZodiacMode,
   saveZodiacMode,
   saveAngleProgression,
-  saveEclipseChartLines,
+  saveEclipseChart,
+  saveEclipseMapLines,
   saveEclipseId,
   saveEclipseIsoStep,
   saveEclipseNatalLines,
@@ -683,8 +686,17 @@ export default function App() {
   const [eclipseIsoStep, setEclipseIsoStep] = useState<EclipseIsoStep>(() =>
     loadEclipseIsoStep(),
   );
-  const [showEclipseChartLines, setShowEclipseChartLines] = useState(() =>
-    loadEclipseChartLines(),
+  // The eclipse CHART: the overlay ring drawn in the chart wheel (ExpandedChartSidebar)
+  // for the sky at the eclipse maximum. Toggled by a plain click on the HUD's eye.
+  const [showEclipseChart, setShowEclipseChart] = useState(() =>
+    loadEclipseChart(),
+  );
+  // HIDDEN FEATURE (cheat): the eclipse-time planet/angle LINES on the map. Decoupled
+  // from the chart above so a normal click shows the wheel ring WITHOUT the map lines;
+  // only a Shift+click on the same toggle flips this on (see EclipseHud + the
+  // hidden-features log). Off by default.
+  const [showEclipseMapLines, setShowEclipseMapLines] = useState(() =>
+    loadEclipseMapLines(),
   );
   const [showEclipseNatalLines, setShowEclipseNatalLines] = useState(() =>
     loadEclipseNatalLines(),
@@ -692,17 +704,17 @@ export default function App() {
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
-  // Share/Export capture-frame aspect ratio (width / height), persisted. Only consulted
-  // while the Share tool is armed (mapTool === 'share'); the ShareHud picks the preset.
-  const [shareAspect, setShareAspect] = useState<number>(() => {
-    const n = parseFloat(localStorage.getItem('astro:share-aspect:v1') ?? '');
+  // Capture-frame aspect ratio (width / height), persisted. Only consulted
+  // while the Capture tool is armed (mapTool === 'capture'); the CaptureHud picks the preset.
+  const [captureAspect, setCaptureAspect] = useState<number>(() => {
+    const n = parseFloat(localStorage.getItem('astro:capture-aspect:v1') ?? '');
     return Number.isFinite(n) && n > 0 ? n : 16 / 9; // default landscape 16:9
   });
-  // Share/Export caption fields, persisted. The pin, edge labels and watermark are now
+  // Capture caption fields, persisted. The pin, edge labels and watermark are now
   // always included (no toggles); only WHICH parts of the caption appear is configurable.
-  // The caption fields are lifted here (not kept in ShareHud) because the Map reserves a
+  // The caption fields are lifted here (not kept in CaptureHud) because the Map reserves a
   // footer band for the caption while the frame is armed.
-  const [shareCaptionFields, setShareCaptionFields] = useState<{
+  const [captureCaptionFields, setCaptureCaptionFields] = useState<{
     name: boolean;
     date: boolean;
     time: boolean;
@@ -710,7 +722,7 @@ export default function App() {
     calculations: boolean;
   }>(() => {
     try {
-      const p = JSON.parse(localStorage.getItem('astro:share-caption:v1') ?? '{}');
+      const p = JSON.parse(localStorage.getItem('astro:capture-caption:v1') ?? '{}');
       return {
         name: p.name !== false,
         date: p.date !== false,
@@ -723,12 +735,12 @@ export default function App() {
       return { name: true, date: true, time: true, location: true, calculations: false };
     }
   });
-  const toggleShareCaptionField = useCallback(
+  const toggleCaptureCaptionField = useCallback(
     (k: 'name' | 'date' | 'time' | 'location' | 'calculations') => {
-      setShareCaptionFields((p) => {
+      setCaptureCaptionFields((p) => {
         const next = { ...p, [k]: !p[k] };
         try {
-          localStorage.setItem('astro:share-caption:v1', JSON.stringify(next));
+          localStorage.setItem('astro:capture-caption:v1', JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -737,9 +749,38 @@ export default function App() {
     },
     [],
   );
+  // Capture "Extras" overlay toggles (planet / angle positions), persisted. Both default
+  // OFF — unlike the caption, the panel is shown only when at least one is enabled.
+  const [captureExtras, setCaptureExtras] = useState<{
+    planets: boolean;
+    angles: boolean;
+    balance: boolean;
+  }>(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem('astro:capture-extras:v1') ?? '{}');
+      return {
+        planets: p.planets === true,
+        angles: p.angles === true,
+        balance: p.balance === true,
+      };
+    } catch {
+      return { planets: false, angles: false, balance: false };
+    }
+  });
+  const toggleCaptureExtra = useCallback((k: 'planets' | 'angles' | 'balance') => {
+    setCaptureExtras((p) => {
+      const next = { ...p, [k]: !p[k] };
+      try {
+        localStorage.setItem('astro:capture-extras:v1', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
   // The active calculation systems, exactly as the "Info" view (InfoBar) lists them —
   // for the optional "calculations" caption field.
-  const shareCalcText = useMemo(() => {
+  const captureCalcText = useMemo(() => {
     const parts = [labels.lineSystem(lineSystem)];
     if (lineSystem === 'celestial') parts.push(labels.coordSystem(coordSystem));
     if (advancedWheel) parts.push(labels.houseSystem(houseSystem));
@@ -748,38 +789,65 @@ export default function App() {
     parts.push(labels.nodeType(nodeType));
     return parts.join(' · ');
   }, [labels, t, lineSystem, coordSystem, houseSystem, zodiacMode, nodeType, advancedWheel]);
-  // Caption text for the Share footer — only the enabled fields, joined. Date/time are
-  // formatted in UTC so the birth clock time isn't shifted by the viewer's zone. Blank
-  // with no chart or no fields enabled (the Map then reserves no caption band).
-  const shareCaptionText = useMemo(() => {
-    if (!current) return '';
+  // The formatted value of every caption field, computed once. The caption joins the
+  // ENABLED ones (below) and the download filename reuses the same values, so the two can
+  // never drift. Date/time are formatted in UTC so the birth clock time isn't shifted by
+  // the viewer's zone. Null with no chart.
+  const captureFields = useMemo(() => {
+    if (!current) return null;
     const dt = new Date(
       Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute),
     );
-    const parts: string[] = [];
-    if (shareCaptionFields.name) parts.push(displayName(current.name));
-    if (shareCaptionFields.date)
-      parts.push(
-        new Intl.DateTimeFormat('en', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          timeZone: 'UTC',
-        }).format(dt),
-      );
-    if (shareCaptionFields.time)
-      parts.push(
-        new Intl.DateTimeFormat('en', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hourCycle: 'h23',
-          timeZone: 'UTC',
-        }).format(dt),
-      );
-    if (shareCaptionFields.location) parts.push(current.birthplace.label);
-    if (shareCaptionFields.calculations) parts.push(shareCalcText);
-    return parts.join('  ·  ');
-  }, [current, shareCaptionFields, shareCalcText]);
+    return {
+      name: displayName(current.name),
+      date: new Intl.DateTimeFormat('en', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(dt),
+      time: new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+        timeZone: 'UTC',
+      }).format(dt),
+      // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
+      tzLabel: formatUtcOffset(current.tzOffset),
+      location: current.birthplace.label,
+      calculations: captureCalcText,
+    };
+  }, [current, captureCalcText]);
+  // Caption text for the Capture footer — only the enabled fields, in display order,
+  // joined. Blank with no chart or no fields enabled (the Map then reserves no band).
+  const captureCaptionText = useMemo(() => {
+    if (!captureFields) return '';
+    return (['name', 'date', 'time', 'location', 'calculations'] as const)
+      .filter((k) => captureCaptionFields[k])
+      // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
+      // other field renders as-is. The offset is appended only here, so the filename — which
+      // reads the bare value from captureFields — never picks it up.
+      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]))
+      .join('  ·  ');
+  }, [captureFields, captureCaptionFields]);
+  // Download / share filename: track the FIRST shown caption field, walking the priority
+  // order name → date → time → location (calculations is intentionally skipped — too verbose
+  // for a filename). Keep walking past any field that slugs to nothing (e.g. a non-Latin
+  // name); if none of the four are shown or yield a usable slug, use a generic name.
+  const captureFileName = useMemo(() => {
+    let slug = '';
+    if (captureFields) {
+      for (const k of ['name', 'date', 'time', 'location'] as const) {
+        if (!captureCaptionFields[k]) continue;
+        slug = captureFields[k]
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (slug) break;
+      }
+    }
+    return `astrolina-${slug || 'capture'}.png`;
+  }, [captureFields, captureCaptionFields]);
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
   const [measureSnap, setMeasureSnap] = useState(false);
   // Whether the Slide tool can run right now (kept in a ref so the early-declared
@@ -998,8 +1066,8 @@ export default function App() {
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
         case 'y': if (advancedWheel) toggleSlide(); break;
-        // Share/Export — ungated, so no advanced-mode gate (unlike Slide).
-        case 'e': setMapTool((tl) => (tl === 'share' ? 'off' : 'share')); break;
+        // Capture — ungated, so no advanced-mode gate (unlike Slide).
+        case 'e': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
         default: {
@@ -1144,9 +1212,10 @@ export default function App() {
   useEffect(() => saveSynastryMethod(synastryMethod), [synastryMethod]);
   useEffect(() => saveEclipseId(eclipseId), [eclipseId]);
   useEffect(() => saveEclipseIsoStep(eclipseIsoStep), [eclipseIsoStep]);
+  useEffect(() => saveEclipseChart(showEclipseChart), [showEclipseChart]);
   useEffect(
-    () => saveEclipseChartLines(showEclipseChartLines),
-    [showEclipseChartLines],
+    () => saveEclipseMapLines(showEclipseMapLines),
+    [showEclipseMapLines],
   );
   useEffect(
     () => saveEclipseNatalLines(showEclipseNatalLines),
@@ -1802,10 +1871,12 @@ export default function App() {
     const progressionType =
       overlayMode === 'tertiary-progressed' ? 'tertiary' : 'secondary';
     if (overlayMode === 'eclipses') {
-      // The optional "eclipse chart lines": planet/angle lines for the sky at
-      // the eclipse maximum — a transit overlay pinned to that instant.
-      // (resolvedEclipse non-null implies the lazy eclipses module is in.)
-      if (!showEclipseChartLines || !resolvedEclipse || !eclipsesMod) return null;
+      // The eclipse CHART: the sky at the eclipse maximum as a transit overlay pinned
+      // to that instant. This layer feeds the bi-wheel's overlay ring; whether its
+      // planet/angle lines also reach the MAP is gated separately (mapOverlay, below)
+      // behind the hidden Shift cheat. (resolvedEclipse non-null implies the lazy
+      // eclipses module is in.)
+      if (!showEclipseChart || !resolvedEclipse || !eclipsesMod) return null;
       return buildOverlay(
         current,
         'eclipses',
@@ -1846,7 +1917,7 @@ export default function App() {
     primaryRate,
     userPrimaryRate,
     effTransitFrame,
-    showEclipseChartLines,
+    showEclipseChart,
     resolvedEclipse,
     eclipsesMod,
     t,
@@ -1958,6 +2029,16 @@ export default function App() {
         : EMPTY_FC,
     };
   }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowOverlayZenith, coordSystem, lineSystem, theme]);
+
+  // The overlay layer as it reaches the MAP (and the plugin context). For every mode
+  // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are a
+  // HIDDEN FEATURE (cheat): withheld from the map unless showEclipseMapLines is on
+  // (a Shift+click on the Eclipse-Chart toggle — see EclipseHud + the hidden-features
+  // log). The wheel's overlay ring is unaffected — it reads overlayLayer directly — so
+  // a plain click still shows the eclipse chart in the wheel, just never on the map.
+  // Withheld from the plugin context too, so a plugin can't act on lines no one can see.
+  const mapOverlay =
+    overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlay;
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -2383,6 +2464,47 @@ export default function App() {
     : promoteOverlay && displayOverlayAngles
       ? displayOverlayAngles
       : displayAngles;
+  // Capture "Extras" rows: the SAME planet/angle readout the wheel sidebar shows, filtered
+  // by the on-map planet + line-type toggles so the panel matches what's drawn. lonToZodiac
+  // (in the panel) formats each from these longitudes, so the two readouts can't diverge.
+  const captureExtraPlanets = useMemo(
+    () =>
+      wheelPlanets
+        .filter((p) => visiblePlanets.has(p.name))
+        .sort((a, b) => planetRank(a.name) - planetRank(b.name))
+        .map((p) => ({ name: p.name, lon: p.lon })),
+    [wheelPlanets, visiblePlanets],
+  );
+  const captureExtraAngles = useMemo(
+    () =>
+      wheelAngles
+        ? visibleAngleSpecs(visibleLineTypes).map((s) => ({
+            code: s.code,
+            name: t(s.nameKey),
+            lon: wheelAngles[s.key],
+            color: s.color,
+          }))
+        : [],
+    [wheelAngles, visibleLineTypes, t],
+  );
+  // Balance: element + modality tally over the shown planets (same as the wheel sidebar).
+  const captureBalance = useMemo(
+    () => buildCaptureBalance(captureExtraPlanets, t),
+    [captureExtraPlanets, t],
+  );
+  // Null (no panel, no inset) unless the Capture tool is armed and an enabled extra has rows.
+  // Balance tallies the shown planets, so it's meaningful only when there's at least one.
+  const captureFrameExtras =
+    mapTool === 'capture' &&
+    ((captureExtras.planets && captureExtraPlanets.length > 0) ||
+      (captureExtras.angles && captureExtraAngles.length > 0) ||
+      (captureExtras.balance && captureExtraPlanets.length > 0))
+      ? {
+          planets: captureExtras.planets ? captureExtraPlanets : [],
+          angles: captureExtras.angles ? captureExtraAngles : [],
+          balance: captureExtras.balance ? captureBalance : [],
+        }
+      : null;
 
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
@@ -2513,16 +2635,16 @@ export default function App() {
     setMapTool('off');
     setSlideDt(0);
   }, []);
-  // Share/Export tool: right-click on the map exits the capture frame. Stable so the
+  // Capture tool: right-click on the map exits the capture frame. Stable so the
   // Map's frame effect (which depends on it) isn't torn down on unrelated re-renders.
-  const stopShare = useCallback(() => {
+  const stopCapture = useCallback(() => {
     setMapTool('off');
   }, []);
   // Pick an aspect preset and remember it for next time.
-  const setShareAspectPersist = useCallback((ratio: number) => {
-    setShareAspect(ratio);
+  const setCaptureAspectPersist = useCallback((ratio: number) => {
+    setCaptureAspect(ratio);
     try {
-      localStorage.setItem('astro:share-aspect:v1', String(ratio));
+      localStorage.setItem('astro:capture-aspect:v1', String(ratio));
     } catch {
       /* ignore */
     }
@@ -2812,8 +2934,8 @@ export default function App() {
       angleLines: promoted || hideNatalLinework ? EMPTY_FC : angleLines,
       parans: hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans,
       starParans,
-      overlayLines: promoted ? null : (overlay?.lines ?? null),
-      overlayParans: promoted ? null : (overlay?.parans ?? null),
+      overlayLines: promoted ? null : (mapOverlay?.lines ?? null),
+      overlayParans: promoted ? null : (mapOverlay?.parans ?? null),
       flyTo: extFlyTo,
       setTargetDate,
       // The exclusion-aware setter (not the raw setOverlayMode) so an extension HUD that
@@ -2835,7 +2957,7 @@ export default function App() {
       angleLines,
       parans,
       starParans,
-      overlay,
+      mapOverlay,
       promoted,
       hideNatalLinework,
       extFlyTo,
@@ -2891,7 +3013,7 @@ export default function App() {
               ? promoted.eclipticLine
               : eclipticLine
         }
-        overlay={promoted ? null : overlay}
+        overlay={promoted ? null : mapOverlay}
         eclipse={eclipseMapData}
         eclipseTip={eclipseTip}
         eclipseCard={eclipseCard}
@@ -2919,14 +3041,14 @@ export default function App() {
         slideActive={sliding}
         onSlide={setSlideDt}
         onSlideCancel={stopSlide}
-        // Share/Export: arm the capture frame (inset the working view to the chosen
+        // Capture: arm the capture frame (inset the working view to the chosen
         // aspect ratio); right-click exits. captureFrame (MapHandle) does the export.
         // When the caption is on, the Map reserves a footer band so labels clear it.
-        frameActive={mapTool === 'share'}
-        frameAspect={mapTool === 'share' ? shareAspect : null}
-        frameCaption={mapTool === 'share' && shareCaptionText !== ''}
-        frameCaptionText={shareCaptionText}
-        onFrameCancel={stopShare}
+        frameActive={mapTool === 'capture'}
+        frameAspect={mapTool === 'capture' ? captureAspect : null}
+        frameCaptionText={captureCaptionText}
+        frameExtras={captureFrameExtras}
+        onFrameCancel={stopCapture}
         onMissionEvent={recordMission}
         // Force the Zoom-out button to stay put while the zoom guide is up so the user
         // can still complete its click mission even after scrolling out manually — but
@@ -3151,8 +3273,10 @@ export default function App() {
           contacts={eclipseContactList}
           showNatalLines={showEclipseNatalLines}
           setShowNatalLines={setShowEclipseNatalLines}
-          showChartLines={showEclipseChartLines}
-          setShowChartLines={setShowEclipseChartLines}
+          showChart={showEclipseChart}
+          setShowChart={setShowEclipseChart}
+          showMapLines={showEclipseMapLines}
+          setShowMapLines={setShowEclipseMapLines}
           isoStep={eclipseIsoStep}
           setIsoStep={setEclipseIsoStep}
         />
@@ -3199,14 +3323,16 @@ export default function App() {
           localSpaceOrigin={localSpaceOrigin}
         />
       )}
-      {mapTool === 'share' && (
-        <ShareHud
-          onClose={stopShare}
-          shareAspect={shareAspect}
-          setShareAspect={setShareAspectPersist}
-          captionFields={shareCaptionFields}
-          onToggleCaptionField={toggleShareCaptionField}
-          current={current}
+      {mapTool === 'capture' && (
+        <CaptureHud
+          onClose={stopCapture}
+          captureAspect={captureAspect}
+          setCaptureAspect={setCaptureAspectPersist}
+          captionFields={captureCaptionFields}
+          onToggleCaptionField={toggleCaptureCaptionField}
+          extras={captureExtras}
+          onToggleExtra={toggleCaptureExtra}
+          fileName={captureFileName}
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
         />
       )}

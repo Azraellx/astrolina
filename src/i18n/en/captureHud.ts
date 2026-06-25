@@ -4,13 +4,13 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-// The movable "Share / Export" window (Tools ▸ Share): pick a capture frame aspect
+// The movable "Capture" window (Tools ▸ Capture): pick a capture frame aspect
 // ratio and which caption fields appear, then download the framed map as a PNG or copy
 // it to the clipboard. The map, pin, edge labels and watermark are always included;
 // everything is rendered client-side — no server round-trip.
-export const shareHud = {
-  title: 'Share / Export',
-  closeAria: 'Close Share',
+export const captureHud = {
+  title: 'Capture',
+  closeAria: 'Close Capture',
   aspect: {
     label: 'Frame',
     square: '1:1',
@@ -19,6 +19,17 @@ export const shareHud = {
     portraitHint: 'Portrait frame (4:5) — the tall format for phone feeds.',
     landscape: '16:9',
     landscapeHint: 'Landscape frame (16:9) — wide, for slides and headers.',
+  },
+  extras: {
+    label: 'Details',
+    planets: 'Planets',
+    planetsHint:
+      'Overlay each planet’s sign position inside the frame — a panel on the left for 16:9, along the top for 1:1 and 4:5.',
+    angles: 'Angles',
+    anglesHint: 'Add the chart angles (Asc, MC, IC, Dsc…) to that panel, after the planets.',
+    balance: 'Balance',
+    balanceHint:
+      'Add the element + modality balance — which planets fall in Fire/Earth/Air/Water and Cardinal/Fixed/Mutable.',
   },
   caption: {
     label: 'Caption',

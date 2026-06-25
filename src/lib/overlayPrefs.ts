@@ -136,11 +136,15 @@ export function saveTransitFrame(f: TransitFrame) {
 
 // ── Eclipses overlay ─────────────────────────────────────────────────────────
 // The selected eclipse (a catalog id, "YYYY-MM-DD" of greatest eclipse), the
-// magnitude-isoline interval, and the two display toggles: the natal chart's
-// map linework (on by default) and the "eclipse chart lines" overlay.
+// magnitude-isoline interval, and the display toggles: the natal chart's map
+// linework (on by default), the eclipse CHART (the overlay ring in the chart
+// wheel), and — HIDDEN — the eclipse-time planet/angle LINES on the map.
 const ECLIPSE_ID_KEY = 'astro:eclipse-id:v1';
 const ECLIPSE_ISO_STEP_KEY = 'astro:eclipse-iso-step:v1';
-const ECLIPSE_CHART_LINES_KEY = 'astro:eclipse-chart-lines:v1';
+// Legacy key name ('…-chart-lines…') kept so existing prefs survive: it now backs
+// the eclipse CHART (wheel ring) ALONE — the map lines split off to their own key.
+const ECLIPSE_CHART_KEY = 'astro:eclipse-chart-lines:v1';
+const ECLIPSE_MAP_LINES_KEY = 'astro:eclipse-map-lines:v1';
 const ECLIPSE_NATAL_LINES_KEY = 'astro:eclipse-natal-lines:v1';
 
 export type EclipseIsoStep = 10 | 20 | 25;
@@ -163,11 +167,22 @@ export function saveEclipseIsoStep(step: EclipseIsoStep) {
   localStorage.setItem(ECLIPSE_ISO_STEP_KEY, String(step));
 }
 
-export function loadEclipseChartLines(): boolean {
-  return localStorage.getItem(ECLIPSE_CHART_LINES_KEY) === '1';
+export function loadEclipseChart(): boolean {
+  return localStorage.getItem(ECLIPSE_CHART_KEY) === '1';
 }
-export function saveEclipseChartLines(show: boolean) {
-  localStorage.setItem(ECLIPSE_CHART_LINES_KEY, show ? '1' : '0');
+export function saveEclipseChart(show: boolean) {
+  localStorage.setItem(ECLIPSE_CHART_KEY, show ? '1' : '0');
+}
+
+// HIDDEN FEATURE (cheat): the eclipse-time planet/angle lines on the MAP. Reachable
+// only by Shift+clicking the Eclipse-Chart toggle (see EclipseHud) — a plain click
+// shows the chart in the wheel but never draws these lines. Off by default, and not
+// surfaced anywhere in the UI. Catalogued in the project's hidden-features log.
+export function loadEclipseMapLines(): boolean {
+  return localStorage.getItem(ECLIPSE_MAP_LINES_KEY) === '1';
+}
+export function saveEclipseMapLines(show: boolean) {
+  localStorage.setItem(ECLIPSE_MAP_LINES_KEY, show ? '1' : '0');
 }
 
 // Kept separate from the time overlays' Natal Chart toggle: that one PROMOTES

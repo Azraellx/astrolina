@@ -50,24 +50,16 @@ import {
   type Dignity,
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
+import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import './ExpandedChartSidebar.css';
 
-// Astrology's conventional luminary-first ordering: Moon, Sun, then outward from
-// the Sun (Mercury → Pluto), with the calculated points last. Drives the planet
-// list's two-column flow (Moon/Sun, Mercury/Venus, Mars/Jupiter, …).
-const PLANET_ORDER: PlanetName[] = [
-  'Moon', 'Sun',
-  'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto',
-  'NorthNode', 'SouthNode', 'Lilith', 'Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta',
-];
-function planetRank(name: PlanetName): number {
-  const i = PLANET_ORDER.indexOf(name);
-  return i === -1 ? PLANET_ORDER.length : i;
-}
+// (PLANET_ORDER / planetRank and the compact longitude format now live in
+// lib/astro/format.ts — shared with the Capture extras panel so the two readouts
+// can't drift.)
 
 // "Out of bounds": declination past the Sun's maximum — the true obliquity of
 // the chart's date, not a fixed 23°26′ (a fixed value would flag the SUN itself
@@ -98,30 +90,28 @@ function fmtDM(deg: number, signed = false): string {
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
 function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
   const { labels } = useT();
-  const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
-  let signIdx = Math.floor(lonDeg / 30);
-  const inSign = lonDeg % 30;
-  const d = Math.floor(inSign);
-  const mFull = (inSign - d) * 60;
-  const m = Math.floor(mFull);
-  let dd = d;
-  let mm = m;
-  let ss = Math.round((mFull - m) * 60);
-  if (ss === 60) { ss = 0; mm += 1; }
-  if (mm === 60) { mm = 0; dd += 1; }
-  // The seconds cascade can carry 29°59'59.6" up to a full 30°: that is 0° of
-  // the NEXT sign, never "30°" of this one.
-  if (dd === 30 && advanced) { dd = 0; signIdx = (signIdx + 1) % 12; }
-  // Compact branch ROUNDS to the minute (like SignLon, which replaces this
-  // column on narrow panels — the two must not disagree at the width cutoff),
-  // with the same 60'-and-sign rollover.
-  let cd = d;
-  let cm = Math.round(mFull);
-  if (cm === 60) { cm = 0; cd += 1; }
-  if (cd === 30 && !advanced) { cd = 0; signIdx = (signIdx + 1) % 12; }
-  const dms = advanced
-    ? `${dd}°${pad2(mm)}'${pad2(ss)}"`
-    : `${cd}°${pad2(cm)}'`;
+  // Compact form (minute precision) is shared with the Capture extras panel via
+  // lonToZodiac, so the two readouts can't disagree at this column's width cutoff.
+  const compact = lonToZodiac(lon);
+  let signIdx = compact.signIdx;
+  let dms = compact.degMin;
+  if (advanced) {
+    const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
+    signIdx = Math.floor(lonDeg / 30);
+    const inSign = lonDeg % 30;
+    const d = Math.floor(inSign);
+    const mFull = (inSign - d) * 60;
+    const m = Math.floor(mFull);
+    let dd = d;
+    let mm = m;
+    let ss = Math.round((mFull - m) * 60);
+    if (ss === 60) { ss = 0; mm += 1; }
+    if (mm === 60) { mm = 0; dd += 1; }
+    // The seconds cascade can carry 29°59'59.6" up to a full 30°: that is 0° of
+    // the NEXT sign, never "30°" of this one.
+    if (dd === 30) { dd = 0; signIdx = (signIdx + 1) % 12; }
+    dms = `${dd}°${pad2(mm)}'${pad2(ss)}"`;
+  }
   return (
     <>
       {dms}{' '}
@@ -608,21 +598,14 @@ export function ExpandedChartSidebar({
   // list below (no separate heading), so the readout still lists them even
   // though they now also live in the wheel — every row gated by the same
   // line-type toggles as its map line.
-  const shownAngleRows: {
-    code: 'Mc' | 'Ic' | 'As' | 'Ds' | 'Vx' | 'Avx';
-    key: 'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex';
-    name: string;
-    lon: number;
-    color: string;
-  }[] = angles
-    ? [
-        { code: 'Mc' as const, key: 'mc' as const, name: t('expandedSidebar.angle.midheaven'), lon: angles.mc, color: 'var(--cool)' },
-        { code: 'Ic' as const, key: 'ic' as const, name: t('expandedSidebar.angle.imumCoeli'), lon: angles.ic, color: 'var(--cool)' },
-        { code: 'As' as const, key: 'asc' as const, name: t('expandedSidebar.angle.ascendant'), lon: angles.asc, color: 'var(--accent)' },
-        { code: 'Ds' as const, key: 'dsc' as const, name: t('expandedSidebar.angle.descendant'), lon: angles.dsc, color: 'var(--accent)' },
-        { code: 'Vx' as const, key: 'vertex' as const, name: t('expandedSidebar.angle.vertex'), lon: angles.vertex, color: 'var(--text-muted)' },
-        { code: 'Avx' as const, key: 'antivertex' as const, name: t('expandedSidebar.angle.antivertex'), lon: angles.antivertex, color: 'var(--text-muted)' },
-      ].filter((a) => visibleAngles.has(a.code))
+  const shownAngleRows = angles
+    ? visibleAngleSpecs(visibleLineTypes).map((s) => ({
+        code: s.code,
+        key: s.key,
+        name: t(s.nameKey),
+        lon: angles[s.key],
+        color: s.color,
+      }))
     : [];
 
   // The out-of-bounds limit IS the Sun's maximum declination — the true
