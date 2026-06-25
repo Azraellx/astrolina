@@ -67,7 +67,6 @@ const ANGLE_HINTS: { key: AngleKey }[] = [
   { key: 'Vx' },
   { key: 'Avx' },
 ];
-const VERTEX_KEYS = new Set<AngleKey>(['Vx', 'Avx']);
 
 // A hovered hint: the SVG anchor (px = user units, since the viewBox is 1:1), the
 // element's radius (for the tag's standoff), and the tag's text + accent color.
@@ -614,28 +613,35 @@ export function WheelSvg({
         color: angleColor(h.key),
       }))
     : [];
-  // The overlay chart's angles, marked in the outer (overlay) ring — same
-  // toggles. The Vertex axis stays off this ring: a directed overlay's Vertex
-  // is not directed, so marking it would misplace it.
-  const overlayAngleLonByKey: Record<'As' | 'Ds' | 'Mc' | 'Ic', number> | null =
+  // The overlay chart's angles, marked in the outer (overlay) ring — same toggles
+  // as the natal angle marks. The Vertex axis rides along now: a directed
+  // overlay's Vertex point IS directed (re-derived from the advanced RAMC — see
+  // ephemeris.directedAngles), a real point shown alongside the natal Vertex; a
+  // transit/synastry overlay shows its own relocated Vertex.
+  const overlayAngleLonByKey: Record<AngleKey, number> | null =
     overlayAngles
-      ? { As: overlayAngles.asc, Ds: overlayAngles.dsc, Mc: overlayAngles.mc, Ic: overlayAngles.ic }
+      ? {
+          As: overlayAngles.asc,
+          Ds: overlayAngles.dsc,
+          Mc: overlayAngles.mc,
+          Ic: overlayAngles.ic,
+          Vx: overlayAngles.vertex,
+          Avx: overlayAngles.antivertex,
+        }
       : null;
   const overlayAngleMarks =
     showAngleMarks && overlayAngleLonByKey
-      ? (ANGLE_HINTS.filter((h) => !VERTEX_KEYS.has(h.key)) as { key: 'As' | 'Ds' | 'Mc' | 'Ic' }[])
-          .filter(
-            (h) =>
-              Number.isFinite(overlayAngleLonByKey[h.key]) &&
-              (!visibleAngles || visibleAngles.has(h.key)),
-          )
-          .map((h) => ({
-            ...h,
-            title: t(`wheel.angles.${h.key}.title`),
-            sub: t(`wheel.angles.${h.key}.sub`),
-            lon: overlayAngleLonByKey[h.key],
-            color: angleColor(h.key),
-          }))
+      ? ANGLE_HINTS.filter(
+          (h) =>
+            Number.isFinite(overlayAngleLonByKey[h.key]) &&
+            (!visibleAngles || visibleAngles.has(h.key)),
+        ).map((h) => ({
+          ...h,
+          title: t(`wheel.angles.${h.key}.title`),
+          sub: t(`wheel.angles.${h.key}.sub`),
+          lon: overlayAngleLonByKey[h.key],
+          color: angleColor(h.key),
+        }))
       : [];
 
   // Spread overlapping planets along the ring so their glyphs and readouts

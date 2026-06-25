@@ -421,13 +421,13 @@ export interface EclipseDetails {
 
 export function buildEclipseDetails(
   resolved: ResolvedEclipse,
-  /** Sidereal display offset (radians) for the zodiac READOUT. The returned
-   *  lonRad stays tropical: the natal-contact search compares it against
-   *  tropical natal longitudes — a deliberate doctrine choice. (Under the
-   *  per-epoch sidereal convention the eclipse-to-natal separation differs
-   *  from the tropical one by the precession between the two epochs, so in
-   *  sidereal mode the contacts list and the bi-wheel's cross list can show
-   *  different orbs for one pair; documented in calculation-methods.md.) */
+  /** Sidereal display offset (radians) for the zodiac READOUT only. The
+   *  returned lonRad stays tropical; the caller (App's eclipseContactList)
+   *  applies the per-epoch ayanamsa to BOTH the eclipse degree (eclipse epoch)
+   *  and the natal points (birth epoch) before the contact search, so the
+   *  contacts list reads in the active zodiac like every other overlay — and,
+   *  unlike the old tropical-only doctrine, now agrees with the bi-wheel's
+   *  cross list (documented in calculation-methods.md). */
   ayanRad = 0,
 ): EclipseDetails {
   const jd = resolved.event.maximum;

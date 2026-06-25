@@ -28,7 +28,7 @@ import {
   type PlanetPosition,
 } from '../ephemeris';
 import type { StoredChart } from '../chartLibrary';
-import { compositeEquatorial } from './composite';
+import { compositeEquatorial, solveCompositeFrameJd } from './composite';
 import type { TFn } from '../../i18n';
 
 export type OverlayMode =
@@ -67,6 +67,22 @@ export const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>([
   'tertiary-progressed',
   'primary-directions',
   'cyclo',
+]);
+
+// Overlay modes unavailable on a COMPOSITE chart — leaving Transits + Eclipses
+// only. A composite is a symbolic midpoint construct with no real sky moment, so
+// the progression/direction techniques (and the relationship-generating Synastry
+// overlay) have no real referent to advance; transits and eclipses stay valid
+// because the transiting/eclipse body is real and forms a genuine current-sky
+// aspect to the composite points regardless. Davison charts keep the full set
+// (they ARE a real averaged moment). See docs/calculation-methods.md.
+export const COMPOSITE_BLOCKED_OVERLAYS = new Set<OverlayMode>([
+  'progressed',
+  'tertiary-progressed',
+  'solar-arc',
+  'primary-directions',
+  'cyclo',
+  'synastry',
 ]);
 
 // The relationship-chart method the Synastry overlay's "Generate" button uses.
@@ -539,9 +555,12 @@ export function buildOverlay(
     }
     case 'synastry': {
       if (!partner) return null;
-      const pjd = birthDataToJD(partner);
-      // A composite partner overlays its midpoint positions; its stored moment
-      // is only the sidereal-frame anchor (which gmst below reads normally).
+      // A composite partner overlays its midpoint positions; its frame is the
+      // live ASC-midpoint solve (not the stored minute), which gmst/obliquity
+      // below read normally. Any other partner uses its own moment.
+      const pjd = partner.composite
+        ? solveCompositeFrameJd(partner.composite)
+        : birthDataToJD(partner);
       const positions = partner.composite
         ? compositeEquatorial(partner.composite, nodeType, obliquity(pjd))
         : getPlanetPositions(pjd, nodeType);

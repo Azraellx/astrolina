@@ -20,6 +20,7 @@ import type { FeatureCollection } from 'geojson';
 import type { StoredChart } from '../chartLibrary';
 import type { OverlayMode } from '../astro/timeline';
 import type { PlanetName, NodeType, HouseSystem } from '../ephemeris';
+import type { ZodiacMode } from '../astro/ayanamsa';
 
 /**
  * A read-only snapshot of map/chart state plus action callbacks, handed to each
@@ -35,6 +36,9 @@ export interface MapExtensionContext {
   visiblePlanets: ReadonlySet<PlanetName>;
   nodeType: NodeType;
   houseSystem: HouseSystem;
+  /** Effective zodiac mode (Advanced ▸ Zodiac; 'tropical' unless Advanced is on),
+   *  so a dated HUD can read its list in the chart's active zodiac. */
+  zodiacMode: ZodiacMode;
   overlayMode: OverlayMode;
   /** Effective linework the map is actually drawing (promotion / eclipse-toggle
    *  resolved), so a report can never reference a line that isn't on screen. */

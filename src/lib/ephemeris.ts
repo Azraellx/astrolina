@@ -985,6 +985,9 @@ export function relocate(
  *     the arc and re-derives MC/ASC at the SAME latitude and obliquity (the audited
  *     angle engine the map frame already uses), giving the forward "MC advances
  *     ~1°/yr" motion rather than a declination-frozen RA shift or a rigid rotation.
+ *   - The Vertex/Anti-Vertex are re-derived from the advanced RAMC in BOTH frames
+ *     ('long' uses the RAMC that culminates the directed MC), so the directed ring
+ *     shows a real directed Vertex point — never the natal Vertex arc-shifted.
  * `arc`/`frame` absent (transits / synastry / Natal-Frame progressed) → `base`.
  * See docs/calculation-methods.md, "Directed-overlay angles".
  */
@@ -1001,9 +1004,33 @@ export function directedAngles(
   if (frame === 'long') {
     const asc = norm2pi(base.asc + arc);
     const mc = norm2pi(base.mc + arc);
-    return { ...base, asc, mc, dsc: norm2pi(asc + Math.PI), ic: norm2pi(mc + Math.PI) };
+    // The Vertex has no clean longitude advance (adding the arc to it would
+    // misplace it — an angle has no declination to hold), so it is re-derived
+    // from the RAMC that culminates the directed MC: the SAME advanced RAMC the
+    // map's 'long' frame uses (timeline.ramcOfLong = RA of the directed MC).
+    const eps = obliquity(angleJd);
+    const advRamc = eclipticToRaDec(mc, 0, eps).ra;
+    const d = relocate(angleJd, latDeg, ((advRamc - gmstRadians(angleJd)) * 180) / Math.PI, system);
+    return {
+      ...base,
+      asc,
+      mc,
+      dsc: norm2pi(asc + Math.PI),
+      ic: norm2pi(mc + Math.PI),
+      vertex: d.vertex,
+      antivertex: d.antivertex,
+    };
   }
-  // 'ramc': advance the RAMC by the arc and re-derive the angles at the same place.
+  // 'ramc': advance the RAMC by the arc and re-derive ALL angles — including the
+  // Vertex — at the same place.
   const d = relocate(angleJd, latDeg, lngDeg + (arc * 180) / Math.PI, system);
-  return { ...base, asc: d.asc, mc: d.mc, dsc: d.dsc, ic: d.ic };
+  return {
+    ...base,
+    asc: d.asc,
+    mc: d.mc,
+    dsc: d.dsc,
+    ic: d.ic,
+    vertex: d.vertex,
+    antivertex: d.antivertex,
+  };
 }

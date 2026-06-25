@@ -26,7 +26,7 @@ import {
 import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { jdToCivil } from '../../lib/ephemeris';
-import { solveCompositeJd } from '../../lib/astro/composite';
+import { solveCompositeFrameJd } from '../../lib/astro/composite';
 import {
   DateTimeFields,
   BIRTH_YEAR_MIN,
@@ -366,11 +366,11 @@ export function BirthDataFields({
       composite: initial?.composite,
     };
     if (initial?.composite) {
-      // The stored moment IS the composite's sidereal frame (the parents'
-      // midpoint — see lib/astro/composite.ts). Re-solve it on every save so
+      // The stored moment IS the composite's angle frame (the ASC-midpoint of
+      // the parents — see lib/astro/composite.ts). Re-solve it on every save so
       // no edit path can desync the frame from that documented convention;
       // the moment fields are disabled above to match.
-      Object.assign(chart, jdToCivil(solveCompositeJd(initial.composite)), {
+      Object.assign(chart, jdToCivil(solveCompositeFrameJd(initial.composite)), {
         tzOffset: 0,
         tzIana: 'UTC',
         tzManual: true,

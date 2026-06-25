@@ -87,6 +87,9 @@ interface SidebarProps {
   setShowZenith: (v: boolean) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
+  /** Sidereal zodiac active (Advanced ▸ Zodiac ≠ tropical) — hides Geodetic,
+   *  which is tropical-only by definition. */
+  siderealActive: boolean;
   coordSystem: CoordSystem;
   setCoordSystem: (c: CoordSystem) => void;
   houseSystem: HouseSystem;
@@ -741,6 +744,7 @@ export function Sidebar({
   setShowZenith,
   lineSystem,
   setLineSystem,
+  siderealActive,
   coordSystem,
   setCoordSystem,
   houseSystem,
@@ -996,7 +1000,11 @@ export function Sidebar({
               next to "Mundane". */}
           <h2>{t('settings.headings.lineSystem')}</h2>
           <ul className="theme-list">
-            {LINE_SYSTEM_VALUES.map((value) => (
+            {LINE_SYSTEM_VALUES.filter(
+              // Geodetic (Mundane) is tropical-only — hidden in sidereal mode
+              // (mirrors how local space is withheld in geodetic mode).
+              (value) => value !== 'geodetic' || !siderealActive,
+            ).map((value) => (
               <HintOption
                 key={value}
                 selected={lineSystem === value}

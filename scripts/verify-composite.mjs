@@ -7,9 +7,10 @@
 // Verifies the composite-midpoints math in src/lib/astro/composite.ts
 // (replicated here — the app module imports the browser ephemeris, which
 // doesn't load under Node): shorter-arc midpoints incl. the 0°-Aries wrap and
-// the exactly-opposed tie-break, node antipodality, the sidereal-frame solver
-// (gmst(jd*) equals the midpoint frame at machine precision; the stored-minute
-// quantization stays ≤ 0.13°), and a/b symmetry.
+// the exactly-opposed tie-break, node antipodality, the ASC-midpoint frame
+// solver (the composite Ascendant equals the shorter-arc midpoint of the two
+// natal Ascendants, and the solved jd stays within a half sidereal day of the
+// Davison midpoint), sub-polar robustness, and a/b symmetry.
 //
 // Run: npm run verify:composite
 import swe from '@swisseph/node';
@@ -45,22 +46,38 @@ function shortArcMidLon(a, b, tieRef) {
 
 const lonOf = (jd, planet) =>
   wrap2pi(calculatePosition(jd, planet, FLAG).longitude * D2R);
-// Greenwich apparent sidereal time, the same way ephemeris.ts reads it (ARMC
-// at lat/lng 0).
-const gmst = (jd) => wrap2pi(calculateHouses(jd, 0, 0, HouseSystem.WholeSign).armc * D2R);
+// One chart's Ascendant (radians), the same way ephemeris.ts's relocate reads
+// it (Swiss calculateHouses; the Ascendant is house-system-independent).
+const ascendant = (jd, lat, lng) =>
+  wrap2pi(calculateHouses(jd, lat, lng, HouseSystem.Placidus).ascendant * D2R);
 
-// Mirrors composite.ts solveCompositeJd. The 5e-9 break matches the
-// representation floor: one ULP of a modern jd is ~3e-9 rad of sidereal angle.
+// Mirrors relationship.ts midpointLng (the stored composite place's longitude).
+const midLngDeg = (a, b) => {
+  const diff = ((b - a + 540) % 360) - 180;
+  const mid = a + diff / 2;
+  return (((mid % 360) + 540) % 360) - 180;
+};
+
 const SIDEREAL_DAY = 0.9972695663;
-function solveCompositeJd(jdA, jdB) {
-  const target = shortArcMidLon(gmst(jdA), gmst(jdB));
-  let jd = (jdA + jdB) / 2;
-  for (let i = 0; i < 6; i++) {
-    const err = wrapPi(target - gmst(jd));
-    if (Math.abs(err) < 5e-9) break;
-    jd += (err / TWO_PI) * SIDEREAL_DAY;
+
+// Mirrors composite.ts solveCompositeFrameJd: the jd whose Ascendant at the
+// midpoint place equals the shorter-arc midpoint of the two natal Ascendants.
+// Bisection over one sidereal day (the Ascendant sweeps a full turn there).
+function solveCompositeFrameJd(jdA, latA, lngA, jdB, latB, lngB) {
+  const target = shortArcMidLon(ascendant(jdA, latA, lngA), ascendant(jdB, latB, lngB));
+  const midLat = (latA + latB) / 2;
+  const midLng = midLngDeg(lngA, lngB);
+  const davMid = (jdA + jdB) / 2;
+  let lo = davMid - SIDEREAL_DAY / 2;
+  let hi = davMid + SIDEREAL_DAY / 2;
+  const asc0 = ascendant(lo, midLat, midLng);
+  const rel = wrap2pi(target - asc0);
+  for (let i = 0; i < 40 && hi - lo > 1e-7; i++) {
+    const mid = (lo + hi) / 2;
+    if (wrap2pi(ascendant(mid, midLat, midLng) - asc0) < rel) lo = mid;
+    else hi = mid;
   }
-  return jd;
+  return (lo + hi) / 2;
 }
 
 let failures = 0;
@@ -71,7 +88,9 @@ const check = (label, ok, detail = '') => {
 
 // Parents: Jim Lewis (the seed chart) and a 1948 London birth.
 const jdA = julianDay(1941, 6, 5, 13.5); // 09:30 EDT = 13:30 UT
+const latA = 40.71, lngA = -74.01; // parent A's birthplace
 const jdB = julianDay(1948, 3, 12, 8.25);
+const latB = 51.51, lngB = -0.13; // parent B's birthplace (London)
 
 // (1) Composite Sun is the shorter-arc midpoint of the parents' Suns.
 const sunA = lonOf(jdA, Planet.Sun);
@@ -111,25 +130,33 @@ check(
   Math.abs(wrapPi(snMid - nnMid - Math.PI)) < 1e-9,
 );
 
-// (5) Frame solver: gmst(jd*) hits the midpoint frame; jd* stays near the
-// Davison midpoint; the stored-minute rounding keeps the frame within 0.13°.
-const target = shortArcMidLon(gmst(jdA), gmst(jdB));
-const jdStar = solveCompositeJd(jdA, jdB);
+// (5) Frame solver: the composite Ascendant at the midpoint place equals the
+// shorter-arc midpoint of the two natal Ascendants (Solar Fire / Hand), and the
+// solved jd stays inside the half-sidereal-day window the bisection searches.
+const target = shortArcMidLon(ascendant(jdA, latA, lngA), ascendant(jdB, latB, lngB));
+const midLat = (latA + latB) / 2;
+const midLng = midLngDeg(lngA, lngB);
+const jdStar = solveCompositeFrameJd(jdA, latA, lngA, jdB, latB, lngB);
+const ascResidual = Math.abs(wrapPi(ascendant(jdStar, midLat, midLng) - target));
 check(
-  'solver: gmst(jd*) = frame midpoint (≤ jd ULP floor)',
-  Math.abs(wrapPi(gmst(jdStar) - target)) < 5e-9,
-  `residual ${Math.abs(wrapPi(gmst(jdStar) - target)).toExponential(1)} rad`,
+  'solver: composite Ascendant = shorter-arc midpoint of the natal Ascendants',
+  ascResidual < 1e-6,
+  `residual ${(ascResidual * R2D * 3600).toFixed(2)}″`,
 );
 check(
-  'solver stays near the Davison midpoint',
-  Math.abs(jdStar - (jdA + jdB) / 2) < 0.6,
+  'solver stays within ½ sidereal day of the Davison midpoint',
+  Math.abs(jdStar - (jdA + jdB) / 2) <= SIDEREAL_DAY / 2 + 1e-9,
   `${((jdStar - (jdA + jdB) / 2) * 24).toFixed(2)} h offset`,
 );
-const jdRounded = Math.round(jdStar * 1440) / 1440; // nearest minute
+// (5b) Sub-polar robustness: a high midpoint latitude still solves — bisection
+// holds where the Ascendant's rate is sharply nonlinear (Newton would overshoot).
+const polarStar = solveCompositeFrameJd(jdA, 64.1, -21.9, jdB, 59.9, 10.7);
+const polarTarget = shortArcMidLon(ascendant(jdA, 64.1, -21.9), ascendant(jdB, 59.9, 10.7));
 check(
-  'minute quantization ≤ 0.13° of frame',
-  Math.abs(wrapPi(gmst(jdRounded) - target)) * R2D <= 0.13,
-  `${(Math.abs(wrapPi(gmst(jdRounded) - target)) * R2D).toFixed(4)}°`,
+  'solver converges at a sub-polar midpoint latitude (~62°N)',
+  Math.abs(
+    wrapPi(ascendant(polarStar, (64.1 + 59.9) / 2, midLngDeg(-21.9, 10.7)) - polarTarget),
+  ) < 1e-5,
 );
 
 // (6) Symmetry: swapping the parents changes nothing — including at the
@@ -140,7 +167,7 @@ check(
 );
 check(
   'a/b symmetry (frame solver)',
-  Math.abs(solveCompositeJd(jdB, jdA) - jdStar) < 1e-8,
+  Math.abs(solveCompositeFrameJd(jdB, latB, lngB, jdA, latA, lngA) - jdStar) < 1e-6,
 );
 check(
   'a/b symmetry at the exact tie (no tieRef)',

@@ -120,6 +120,7 @@ import {
   tagLabelsBy,
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
+  COMPOSITE_BLOCKED_OVERLAYS,
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
@@ -128,7 +129,11 @@ import {
   type TransitFrame,
 } from './lib/astro/timeline';
 import { buildComposite, buildDavison } from './lib/astro/relationship';
-import { compositeEcliptic, compositeEquatorial } from './lib/astro/composite';
+import {
+  compositeEcliptic,
+  compositeEquatorial,
+  solveCompositeFrameJd,
+} from './lib/astro/composite';
 import {
   ayanamsaRad,
   shiftAngles,
@@ -621,6 +626,17 @@ export default function App() {
       ? 'off'
       : m;
   });
+  // A composite chart can't carry a progression / direction / synastry overlay
+  // (no real moment to advance — Q11), so making one active resets a blocked mode
+  // to None. One guarded spot covers chart switch, generate, import, and load-time
+  // restore; the menu + 'o'-cycle already hide these modes, so this only fires on a
+  // stale combo, and the no-op updater bails when nothing needs changing.
+  useEffect(() => {
+    if (current?.composite) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOverlayMode((m) => (COMPOSITE_BLOCKED_OVERLAYS.has(m) ? 'off' : m));
+    }
+  }, [current]);
   // The active Overlay-menu EXTENSION (registerOverlayExtension), single-select and
   // mutually exclusive with overlayMode. Restored only if the id still matches a
   // registered extension, so a stale id from a removed plugin activates nothing. The
@@ -852,9 +868,9 @@ export default function App() {
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     // The 'o' cycle follows the Overlay menu order (OVERLAY_MODES); the advanced-tier
     // overlays are included only while Advanced is on, matching the menu's tier filter.
-    const overlayCycle: OverlayMode[] = advancedWheel
-      ? OVERLAY_MODES
-      : OVERLAY_MODES.filter((m) => !ADVANCED_OVERLAY_MODES.has(m));
+    const overlayCycle: OverlayMode[] = (
+      advancedWheel ? OVERLAY_MODES : OVERLAY_MODES.filter((m) => !ADVANCED_OVERLAY_MODES.has(m))
+    ).filter((m) => !(current?.composite && COMPOSITE_BLOCKED_OVERLAYS.has(m)));
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
       (el.tagName === 'INPUT' ||
@@ -1027,10 +1043,17 @@ export default function App() {
   // withholds local space in geodetic mode for the same reason). Entering Mundane closes
   // the view (like turning Advanced off); opening the view drops back to the celestial
   // frame (mirrors the slide tool, which also can't run in geodetic — see toggleSlide).
-  const setLineSystemSafe = useCallback((next: LineSystem) => {
-    if (next === 'geodetic') setShowLocalSpace(false);
-    setLineSystem(next);
-  }, []);
+  const setLineSystemSafe = useCallback(
+    (next: LineSystem) => {
+      // Geodetic (Mundane) maps the TROPICAL zodiac onto Earth's longitudes by
+      // definition — there is no sidereal variant — so it is unavailable in
+      // sidereal mode (mirrors how it is withheld alongside local space / slide).
+      if (next === 'geodetic' && effZodiacMode !== 'tropical') return;
+      if (next === 'geodetic') setShowLocalSpace(false);
+      setLineSystem(next);
+    },
+    [effZodiacMode],
+  );
   const setShowLocalSpaceSafe = useCallback(
     (v: boolean) => {
       if (v && lineSystem === 'geodetic') setLineSystem('celestial');
@@ -1038,6 +1061,11 @@ export default function App() {
     },
     [lineSystem],
   );
+  // Switching INTO sidereal while Mundane is active drops back to the celestial
+  // frame (geodetic is tropical-only — see setLineSystemSafe).
+  useEffect(() => {
+    if (effZodiacMode !== 'tropical' && lineSystem === 'geodetic') setLineSystem('celestial');
+  }, [effZodiacMode, lineSystem]);
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -1187,8 +1215,17 @@ export default function App() {
     };
   }, [visiblePlanets, wheelExpanded]);
 
+  // For a composite the frame is derived LIVE from the parents (the ASC-midpoint
+  // solve — see lib/astro/composite.ts), not read back from the stored civil
+  // minute, so every composite (old or new — no data migration) renders with the
+  // current angle method. Any other chart just uses its own moment.
   const jd = useMemo(
-    () => (current ? birthDataToJD(current) : 0),
+    () =>
+      current
+        ? current.composite
+          ? solveCompositeFrameJd(current.composite)
+          : birthDataToJD(current)
+        : 0,
     [current],
   );
   // A composite chart's positions are the parents' longitude midpoints, not a
@@ -2193,15 +2230,39 @@ export default function App() {
   // for the Sidebar's contacts list. Targets are the user's visible bodies
   // plus the RADIX angles — birthAngles, not the pin-relocated ones: the
   // contact doctrine reads the birth chart, and a relocated Asc would make
-  // the list silently change as the pin moves.
+  // the list silently change as the pin moves. The list reads in the chart's
+  // active zodiac, PER-EPOCH: the eclipse degree shifts by the ayanamsa at the
+  // eclipse moment, the radix points by the ayanamsa at birth — they differ by
+  // the inter-epoch precession, the same convention every other overlay uses
+  // (tropical → both ayanamsas 0, so the list is byte-identical to before).
   const eclipseContactList = useMemo<EclipseContact[] | null>(() => {
-    if (overlayMode !== 'eclipses' || !eclipseDetails || !eclipsesMod) return null;
+    if (overlayMode !== 'eclipses' || !eclipseDetails || !resolvedEclipse || !eclipsesMod)
+      return null;
+    const eclipseAyan = ayanamsaRad(resolvedEclipse.event.maximum, effZodiacMode);
+    const natalShift = ayanamsaRad(jd, effZodiacMode);
+    const radix = birthAngles
+      ? shiftAngles(birthAngles, natalShift, effHouseSystem === 'whole')
+      : null;
     return eclipsesMod.eclipseContacts(
-      eclipseDetails.lonRad,
-      ecliptic.filter((p) => visiblePlanets.has(p.name)),
-      birthAngles ? { asc: birthAngles.asc, mc: birthAngles.mc } : null,
+      eclipseDetails.lonRad - eclipseAyan,
+      shiftEclipticPositions(
+        ecliptic.filter((p) => visiblePlanets.has(p.name)),
+        natalShift,
+      ),
+      radix ? { asc: radix.asc, mc: radix.mc } : null,
     );
-  }, [overlayMode, eclipseDetails, eclipsesMod, ecliptic, visiblePlanets, birthAngles]);
+  }, [
+    overlayMode,
+    eclipseDetails,
+    resolvedEclipse,
+    eclipsesMod,
+    ecliptic,
+    visiblePlanets,
+    birthAngles,
+    jd,
+    effZodiacMode,
+    effHouseSystem,
+  ]);
   // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the natal
   // angles. Time-based overlays (transits / synastry) have a genuine second moment →
   // relocate(jd) at the active point. The directed overlays (solar-arc, primary,
@@ -2262,9 +2323,10 @@ export default function App() {
   // each ring by ITS OWN epoch's ayanamsa (the sidereal frame rides the
   // stars, so the natal ring and a transit ring decades later shift by
   // slightly different amounts — standard sidereal practice). The equatorial
-  // tables (advancedCoords/angleCoords) and the eclipse-contact math keep
-  // consuming the tropical `ecliptic`/`angles` above: their values are
-  // frame-independent physics, and shifted input would corrupt them.
+  // tables (advancedCoords/angleCoords) keep consuming the tropical
+  // `ecliptic`/`angles` above — RA/dec/azimuth are frame-independent physics,
+  // and shifted input would corrupt them — but the eclipse-contact list now
+  // reads per-epoch in the active zodiac (it shifts its own inputs, above).
   const natalAyan = useMemo(() => ayanamsaRad(jd, effZodiacMode), [jd, effZodiacMode]);
   const overlayAyan = useMemo(
     () => (overlayLayer ? ayanamsaRad(overlayLayer.jd, effZodiacMode) : 0),
@@ -2744,6 +2806,7 @@ export default function App() {
       visiblePlanets,
       nodeType,
       houseSystem,
+      zodiacMode: effZodiacMode,
       overlayMode,
       lines: hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines,
       angleLines: promoted || hideNatalLinework ? EMPTY_FC : angleLines,
@@ -2766,6 +2829,7 @@ export default function App() {
       visiblePlanets,
       nodeType,
       houseSystem,
+      effZodiacMode,
       overlayMode,
       lines,
       angleLines,
@@ -2933,6 +2997,7 @@ export default function App() {
           setShowZenith={setShowZenith}
           lineSystem={lineSystem}
           setLineSystem={setLineSystemSafe}
+          siderealActive={effZodiacMode !== 'tropical'}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
           houseSystem={houseSystem}

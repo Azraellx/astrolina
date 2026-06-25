@@ -13,7 +13,7 @@
 import type { BirthData } from '../birthData';
 import { birthDataToJD, jdToCivil } from '../ephemeris';
 import { NAME_HARD_LIMIT, type CompositeParents } from '../chartLibrary';
-import { solveCompositeJd } from './composite';
+import { solveCompositeFrameJd } from './composite';
 
 // Shorter-arc mean of two longitudes (degrees), normalized to [-180, 180). Averaging
 // raw longitudes breaks when a pair straddles the ±180° meridian (e.g. +170 and −170
@@ -71,7 +71,7 @@ export function buildComposite(
   b: BirthData,
 ): BirthData & { composite: CompositeParents } {
   const parents: CompositeParents = { a: snapshot(a), b: snapshot(b) };
-  const { year, month, day, hour, minute } = jdToCivil(solveCompositeJd(parents));
+  const { year, month, day, hour, minute } = jdToCivil(solveCompositeFrameJd(parents));
   return {
     name: `Composite: ${a.name} & ${b.name}`.slice(0, NAME_HARD_LIMIT),
     year,

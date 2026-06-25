@@ -90,19 +90,22 @@ Conventions:
   are the sidereal sign boundaries starting at the sidereal Ascendant's sign.
   Equal and the quadrant systems shift uniformly (their geometry is
   zodiac-independent).
-- **Geodetic (Mundane) lines stay tropical** — that technique maps the
-  *tropical* zodiac onto Earth's longitudes by definition here (see the
-  Geodetic section's conventions); a sidereal-geodetic variant would be a
-  separate convention.
+- **Geodetic (Mundane) is tropical-only and unavailable in sidereal mode** —
+  that technique maps the *tropical* zodiac onto Earth's longitudes by
+  definition here (see the Geodetic section's conventions); a sidereal-geodetic
+  variant would be a separate convention. So the Geodetic option is hidden and
+  the line frame falls back to Celestial whenever a sidereal zodiac is active.
 - The equatorial/horizontal tables (RA, declination, azimuth, altitude) read
   identically either way, and WITHIN one chart aspect orbs are unchanged (a
   uniform shift cancels in every separation). CROSS-chart separations — the
   bi-wheel's overlay-to-natal aspects — differ from tropical by the precession
   between the two epochs, which is precisely the per-epoch convention's point.
-- **The eclipse Contacts list stays tropical** (the 3°-orb eclipse-degree
-  doctrine is applied in the tropical frame), so in sidereal mode its orbs can
-  differ from the bi-wheel's cross-aspect orbs for the same pair by the
-  inter-epoch precession.
+- **The eclipse Contacts list reads in the active zodiac**, per-epoch like every
+  other overlay: the eclipse degree shifts by the ayanamsa at the eclipse moment
+  and the natal points by the ayanamsa at birth, so in sidereal mode an
+  eclipse-to-natal contact (3° orb) differs from the tropical one by the
+  inter-epoch precession — and now agrees with the bi-wheel's cross-aspect orb
+  for the same pair (the two disagreed when contacts were frozen to tropical).
 
 ## Relationship charts (Davison & Composite)
 
@@ -123,27 +126,54 @@ overlays — is ordinary natal math.
   composite Sun. Bodies resolve only when both parents can compute them, and
   the lunar nodes follow the sidebar's mean/true setting; the South Node
   midpoint stays exactly antipodal to the North Node midpoint by construction.
-- **The map frame** (which fixes every MC/IC/ASC/DSC line, the relocated
-  angles, all ten house systems, parans, and local space) is the
-  **shorter-arc midpoint of the two charts' Greenwich sidereal times**. It is
-  realized as a real stored moment: the UT minute nearest the Davison
-  time-midpoint whose sidereal time matches that midpoint frame (the
-  minute-rounding quantizes the frame by at most ±0.13°). Because the stored
-  moment IS the frame, the whole rendering pipeline — celestial and geodetic —
-  treats a composite like any chart; only the planet positions are overridden.
+- **The angle frame** (which fixes every MC/IC/ASC/DSC line, the relocated
+  angles, all ten house systems, parans, and local space) uses the
+  **ASC-midpoint method** (matching Solar Fire and Robert Hand): the composite
+  Ascendant is the **shorter-arc midpoint of the two natal Ascendants**, and the
+  MC and houses are derived from the RAMC that yields that Ascendant at the
+  geographic-midpoint latitude. The frame is realized as a real stored moment —
+  the instant whose Ascendant equals that midpoint — so the whole rendering
+  pipeline treats a composite like any chart; only the planet positions are
+  overridden. (This replaced an earlier RAMC/sidereal-time-midpoint method that
+  derived both angles from the midpoint of the two charts' Greenwich sidereal
+  times; that produced composite angles unrelated to the partners' own
+  Ascendants and is no longer used.)
 - **The reference place** is the same geographic midpoint Davison uses,
   labeled "Space".
-- **Time overlays** over a composite: transits (and the Returns snap) compare
-  the moving sky against the composite positions — a composite "solar return"
-  is the transiting Sun back on the composite Sun. The directed overlays
-  (solar arc, primary directions) direct the composite positions rigidly, with
-  the arc keyed to the stored anchor moment's real Sun (so the arc is zero at
-  the anchor and grows at the usual solar rate). Secondary/tertiary
-  progressions and cyclo*carto*graphy read the real progressed/transiting sky
-  over the composite frame — the "progressed composite" technique of
-  re-midpointing two progressed charts is **not** what they compute.
+- **Time overlays** over a composite are limited to **Transits and Eclipses**
+  (see "Forecasting overlays on relationship charts" below): the transiting or
+  eclipse body is real and forms a genuine current-sky contact with the composite
+  positions — a composite "solar return" is the transiting Sun back on the
+  composite Sun. The progression/direction techniques (secondary & tertiary
+  progressions, solar arc, primary directions, cyclocartography) and the Synastry
+  overlay are disabled on a composite: a midpoint construct has no real moment to
+  advance.
 - **No motion**: composite points have no speed, so retrograde/station badges
   don't apply.
+
+## Forecasting overlays on relationship charts
+
+Which forecasting overlays are valid depends on whether the relationship chart is
+a real moment. A forecasting technique is only as sound as the underlying
+astrological technique it maps; an astrocartography line is just the geographic
+projection of a chart factor, so projecting an incoherent technique onto a map
+does not make it valid.
+
+- **Davison** is a real chart — a real averaged moment in real time — so it can
+  be legitimately progressed and directed, exactly like a natal chart. It keeps
+  the **full overlay set**: Transits, Eclipses, Secondary & Tertiary
+  Progressions, Solar Arc, Primary Directions, and Cyclocartography.
+- **Composite (midpoints)** is a symbolic midpoint construct with **no real
+  moment**, so progressions, solar arc, and primary directions have no real
+  referent to advance — they could only be faked by borrowing a real moment,
+  which AstroLina declines to do. A composite therefore supports **Transits and
+  Eclipses only**: the transiting/eclipse body is real and forms a genuine
+  current-sky aspect to the composite points regardless of whether those points
+  correspond to a real moment. The Synastry overlay is likewise disabled on a
+  composite.
+
+Therefore: Davison supports the full overlay set; composite supports Transits and
+Eclipses only. This is a deliberate accuracy-first design stance.
 
 ## House systems
 
@@ -160,7 +190,7 @@ The **Vx** and **Avx** toggles sit with the line filters (below As/Ds) and behav
 - **On the map**, a body's **Vx line** joins every place where that body stands exactly on the local prime vertical's western crossing (the Avx line its eastern) — curves traced by `tan(lat) = tan(dec)/cos(H)`, the prime-vertical counterpart of the rising/setting equation, drawn a touch thinner than the ASC/DSC lines and badged Vx/Avx at the viewport edge. Each curve runs from the body's zenith point to its antipode, spiking poleward a quarter-turn from the zenith. Every vertex is verified to sit exactly on the prime vertical, west or east as labelled.
 - **In the chart**, the same toggles add the relocated chart's **Vertex point** (the ecliptic ∩ prime-vertical intersection, the Swiss Ephemeris value — its axis verified against Robert Hand's closed form, its western branch from the point's azimuth) to the wheel marks, the readout list, and the Advanced table. As with rising lines vs the rising degree, the body's Vx **line** is an in-mundo event, while the chart's Vertex **point** is its ecliptic reading; In Zodiaco projection aligns the two conventions.
 
-One geometric caution: near the **equator** the prime vertical approaches the celestial equator, so the chart Vertex collapses toward an equinox point (0° Aries / 0° Libra) and moves erratically as sidereal time advances — the same family of degeneracy the Ascendant suffers near the poles, mirrored into the tropics (the horizon at 80°N is the prime vertical at 10°S). Tropical-latitude Vertex readings deserve the same skeptical eye as polar-latitude house cusps. On the bi-wheel, the Vertex marks only the **natal** ring: a directed overlay's Vertex is not directed by the arc, so marking it would misplace it.
+One geometric caution: near the **equator** the prime vertical approaches the celestial equator, so the chart Vertex collapses toward an equinox point (0° Aries / 0° Libra) and moves erratically as sidereal time advances — the same family of degeneracy the Ascendant suffers near the poles, mirrored into the tropics (the horizon at 80°N is the prime vertical at 10°S). Tropical-latitude Vertex readings deserve the same skeptical eye as polar-latitude house cusps. On the bi-wheel, the Vertex is marked on **both** rings: the natal Vertex and a **directed** Vertex point. The directed one is re-derived from the **advanced RAMC** (the RAMC that culminates the directed MC) — not by adding the arc to the natal Vertex's longitude, which has no declination to hold and would misplace it — so it tracks the directed angles (the MC advancing ~1°/yr) in both the longitude and RAMC frames. Keeping the natal Vertex alongside keeps the equator caution above in view. On the **map**, a directed overlay's per-body Vx/Avx **lines** are unchanged — still drawn from the directed bodies, exactly like the directed MC/ASC lines.
 
 ### Houses at extreme latitudes
 

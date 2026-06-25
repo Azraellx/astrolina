@@ -7,27 +7,30 @@
 // Composite-midpoints relationship charts. A composite has NO real moment: each
 // body sits at the shorter-arc midpoint of the two parents' zodiacal
 // longitudes, on the ecliptic (latitude 0). The chart still STORES a real
-// moment, though — the minute whose Greenwich sidereal time best matches the
-// shorter-arc midpoint of the parents' sidereal times — so every frame-driven
-// consumer (gmst, relocated angles, all eight house systems via Swiss, parans,
-// local space, the timeline) runs the ordinary natal pipeline untouched; only
-// the PLANET POSITIONS branch to the midpoint math here (App's two position
-// memos, the directed overlays' natal base, the Returns snap).
+// moment, though — the minute that realizes the composite ASC-midpoint frame
+// (below) — so every frame-driven consumer (gmst, relocated angles, all ten
+// house systems via Swiss, parans, local space, the timeline) runs the ordinary
+// natal pipeline untouched; only the PLANET POSITIONS branch to the midpoint
+// math here (App's two position memos, the directed overlays' natal base, the
+// Returns snap).
 //
 // Conventions (see docs/calculation-methods.md):
 //  - shorter-arc planet midpoints; an exactly-opposed pair takes the side
 //    nearer the composite Sun
 //  - planets on the ecliptic (latitude 0)
-//  - sidereal frame = shorter-arc midpoint of the parents' sidereal times,
-//    realized as a real UT minute (quantization ≤ ±0.13° of frame)
+//  - angle frame = the ASC-MIDPOINT method: the composite Ascendant is the
+//    shorter-arc midpoint of the two natal Ascendants, and the MC + houses
+//    derive from the RAMC that yields it at the geographic-midpoint latitude
+//    (matches Solar Fire / Robert Hand). Realized as a real stored UT minute.
 //  - reference place = the same geographic midpoint Davison uses
 import {
   birthDataToJD,
   bodyLonSpeed,
   eclipticToRaDec,
-  gmstRadians,
   PLANET_NAMES,
+  relocate,
   type EclipticPosition,
+  type HouseSystem,
   type NodeType,
   type PlanetName,
   type PlanetPosition,
@@ -156,28 +159,63 @@ function compositeBodySun(parents: CompositeParents): number | null {
   return a && b ? shortArcMidLon(a.lon, b.lon) : null;
 }
 
-// Mean solar days per sidereal day — converts a sidereal-angle error into the
-// civil-time step that cancels it.
+// Mean solar days per sidereal day.
 const SIDEREAL_DAY = 0.9972695663;
 
+// Shorter-arc mean of two longitudes (degrees) — the SAME signed-difference
+// formula relationship.ts's midpointLng uses for the stored composite place, so
+// the frame is solved at exactly the longitude the chart is stored at (an
+// antimeridian pair would otherwise desync). Latitude is a plain mean.
+function midLngDeg(a: number, b: number): number {
+  const diff = ((b - a + 540) % 360) - 180;
+  const mid = a + diff / 2;
+  return (((mid % 360) + 540) % 360) - 180;
+}
+
 /**
- * The composite chart's stored nominal moment: the instant nearest the
- * Davison time-midpoint whose Greenwich apparent sidereal time equals the
- * shorter-arc midpoint of the parents' sidereal times. Newton on the (linear,
- * 2π-per-sidereal-day) gmst converges to the representation floor — one ULP
- * of a modern jd is ~3e-9 rad of sidereal angle, hence the 5e-9 break. The
- * caller then rounds to a storable civil minute anyway, which quantizes the
- * frame by at most ±0.13° (documented convention).
+ * The composite chart's stored nominal moment, realizing the ASC-MIDPOINT angle
+ * frame: the composite Ascendant is the shorter-arc midpoint of the two natal
+ * Ascendants (each cast at its own parent's place), and the returned jd is the
+ * instant — at the geographic-midpoint place — whose Ascendant equals that
+ * midpoint. The MC, every house system, parans, local space and the map lines
+ * then fall out of this one stored moment via the ordinary natal pipeline, so
+ * the MC is "derived from the RAMC at the midpoint latitude" (Solar Fire / Hand).
+ *
+ * The Ascendant sweeps a full turn over one sidereal day, monotonically at any
+ * sub-polar latitude, so exactly one jd in [davisonMid ± ½ sidereal day] hits
+ * the target. Bisection is robust where d(asc)/d(time) is wildly nonlinear near
+ * the poles (Newton would overshoot the bracket). The caller rounds to a civil
+ * minute, quantizing the frame slightly — the same convention as before.
  */
-export function solveCompositeJd(parents: CompositeParents): number {
+export function solveCompositeFrameJd(
+  parents: CompositeParents,
+  system: HouseSystem = 'placidus',
+): number {
+  const pa = parents.a.birthplace;
+  const pb = parents.b.birthplace;
   const jdA = birthDataToJD(parents.a);
   const jdB = birthDataToJD(parents.b);
-  const target = shortArcMidLon(gmstRadians(jdA), gmstRadians(jdB));
-  let jd = (jdA + jdB) / 2;
-  for (let i = 0; i < 6; i++) {
-    const err = wrapPi(target - gmstRadians(jd));
-    if (Math.abs(err) < 5e-9) break;
-    jd += (err / TWO_PI) * SIDEREAL_DAY;
+  // The composite Ascendant: shorter-arc midpoint of the two NATAL Ascendants.
+  // The Ascendant is house-system-independent, so a fixed system is fine here.
+  const ascA = relocate(jdA, pa.lat, pa.lng, system).asc;
+  const ascB = relocate(jdB, pb.lat, pb.lng, system).asc;
+  const target = shortArcMidLon(ascA, ascB);
+  const midLat = (pa.lat + pb.lat) / 2;
+  const midLng = midLngDeg(pa.lng, pb.lng);
+  // Find the jd whose Ascendant (at the midpoint place) equals `target`. With
+  // asc0 = the Ascendant at the window's start, h(jd) = wrap2pi(asc(jd) − asc0)
+  // climbs 0 → 2π monotonically across the window; the root is where it reaches
+  // `rel`. Only interior points are sampled, so the single 2π wrap (at the far
+  // edge) never lands on a probe, and plain bisection on h converges.
+  const davMid = (jdA + jdB) / 2;
+  let lo = davMid - SIDEREAL_DAY / 2;
+  let hi = davMid + SIDEREAL_DAY / 2;
+  const asc0 = relocate(lo, midLat, midLng, system).asc;
+  const rel = wrap2pi(target - asc0);
+  for (let i = 0; i < 40 && hi - lo > 1e-7; i++) {
+    const mid = (lo + hi) / 2;
+    if (wrap2pi(relocate(mid, midLat, midLng, system).asc - asc0) < rel) lo = mid;
+    else hi = mid;
   }
-  return jd;
+  return (lo + hi) / 2;
 }

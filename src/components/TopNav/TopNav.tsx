@@ -16,6 +16,7 @@ import type { MapState } from '../TimelineHud/TimelineHud';
 import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
+  COMPOSITE_BLOCKED_OVERLAYS,
   type OverlayMode,
 } from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
@@ -825,6 +826,10 @@ export function TopNav({
                   {/* Synastry + Eclipses need the 'adv' tier: filtered out below it (or a disabled
                       teaser if the build nudges), tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
                   {OVERLAY_MODES.filter((mode) => {
+                    // Composite charts allow Transits + Eclipses only — a midpoint
+                    // construct has no real moment to progress/direct (Q11).
+                    if (current?.composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode))
+                      return false;
                     const req = ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new';
                     return tierMet(planTier, req) || shouldShowNudge(req);
                   }).map((mode) => {
