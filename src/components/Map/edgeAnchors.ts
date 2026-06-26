@@ -449,3 +449,109 @@ export function dodgeBadges(
     };
   });
 }
+
+// Measured half-extents (px) of a badge's rendered box, keyed by badge key.
+export interface BadgeSize {
+  hw: number;
+  hh: number;
+}
+
+// Spread the edge labels apart so they don't overlap — used ONLY while the Capture frame
+// is armed. The live map lets you pan to disambiguate stacked labels; a static export can't,
+// so before capturing we relax the labels off each other for legibility. Unlike dodgeBadges
+// (which keeps a label ON its line, sliding it along to clear a panel), this deliberately lets
+// a label drift OFF its exit point to make room: a few passes of AABB separation push each
+// overlapping pair apart along its axis of least overlap, and after every pass each label is
+// re-seated inside the frame and off the avoid-rects (the on-map attribution). When the frame
+// is too crowded to separate everything, residual overlap is tolerated — the relaxation simply
+// doesn't fully converge — rather than shoving labels out of the shot.
+//
+// `sizes` carries each badge's measured box (keyed by badge key). A badge with no measurement
+// (e.g. one that just appeared and has no DOM yet) falls back to a generous default box and is
+// corrected on the next recompute. Because the sizes are intrinsic (content-, not position-,
+// dependent) and the anchors derive only from the camera, the result is a fixed point: a
+// settled camera re-spreads to the identical layout, so there's no measure→resize feedback.
+export function spreadBadges(
+  badges: LineBadge[],
+  sizes: Map<string, BadgeSize>,
+  rects: AvoidRect[],
+  w: number,
+  h: number,
+  inset: number,
+): LineBadge[] {
+  if (badges.length < 2) return badges;
+  const DEF_HW = 30; // fallback box for an unmeasured (just-appeared) badge
+  const DEF_HH = 11;
+  const GAP = 4; // clear gap kept between two label boxes (and off the avoid-rects)
+  const ITERATIONS = 24;
+
+  const items = badges.map((b) => {
+    const s = sizes.get(b.key);
+    return { x: b.x, y: b.y, hw: s?.hw ?? DEF_HW, hh: s?.hh ?? DEF_HH };
+  });
+  type Item = (typeof items)[number];
+
+  // Keep a box's centre inside the safe rect, accounting for its own extents. A box wider
+  // or taller than the frame just centres on that axis (best effort).
+  const clamp = (it: Item) => {
+    const minX = inset + it.hw;
+    const maxX = w - inset - it.hw;
+    const minY = inset + it.hh;
+    const maxY = h - inset - it.hh;
+    it.x = minX <= maxX ? Math.min(Math.max(it.x, minX), maxX) : w / 2;
+    it.y = minY <= maxY ? Math.min(Math.max(it.y, minY), maxY) : h / 2;
+  };
+
+  // Push a box clear of any avoid-rect (the on-map attribution) along its least-penetration
+  // axis, so a spread label never lands on the credits — the one panel still in the export.
+  const avoid = (it: Item) => {
+    for (const r of rects) {
+      const penX = it.hw + GAP + (r.right - r.left) / 2 - Math.abs(it.x - (r.left + r.right) / 2);
+      const penY = it.hh + GAP + (r.bottom - r.top) / 2 - Math.abs(it.y - (r.top + r.bottom) / 2);
+      if (penX <= 0 || penY <= 0) continue;
+      if (penX < penY) it.x += it.x < (r.left + r.right) / 2 ? -penX : penX;
+      else it.y += it.y < (r.top + r.bottom) / 2 ? -penY : penY;
+    }
+  };
+
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    let moved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const ox = a.hw + b.hw + GAP - Math.abs(dx);
+        const oy = a.hh + b.hh + GAP - Math.abs(dy);
+        if (ox <= 0 || oy <= 0) continue;
+        moved = true;
+        if (ox < oy) {
+          // Separate horizontally. A dead-on vertical stack (dx≈0) has no preferred side,
+          // so nudge deterministically by index (j>i ⇒ a left, b right) to break the tie.
+          const dir = dx !== 0 ? (dx < 0 ? -1 : 1) : -1;
+          const push = (ox / 2) * dir;
+          a.x -= push;
+          b.x += push;
+        } else {
+          const dir = dy !== 0 ? (dy < 0 ? -1 : 1) : -1;
+          const push = (oy / 2) * dir;
+          a.y -= push;
+          b.y += push;
+        }
+      }
+    }
+    // Re-seat every box off the avoid-rects and back inside the frame after each relaxation
+    // pass, so all the constraints settle together (clamp last so on-screen always wins).
+    for (const it of items) {
+      avoid(it);
+      clamp(it);
+    }
+    if (!moved) break;
+  }
+
+  return badges.map((b, i) => {
+    const it = items[i];
+    return it.x === b.x && it.y === b.y ? b : { ...b, x: it.x, y: it.y };
+  });
+}

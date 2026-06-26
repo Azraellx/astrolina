@@ -57,6 +57,11 @@ const PLANET_FILTERS: PlanetName[] = [...TRADITIONAL_PLANETS, ...NODE_NAMES];
 interface SidebarProps {
   /** Touch only: dismiss the settings takeover (there's no `S` hotkey on a touch screen). */
   onClose?: () => void;
+  /** Touch only: true while the dock is sliding out (parent keeps it mounted through the
+   *  close animation). Drives the `is-closing` slide-out keyframe; `onSlideOutEnd` fires
+   *  when that animation finishes so the parent can unmount. */
+  closing?: boolean;
+  onSlideOutEnd?: () => void;
   visiblePlanets: Set<PlanetName>;
   togglePlanet: (p: PlanetName) => void;
   setAllPlanets: (bodies: PlanetName[], visible: boolean) => void;
@@ -767,6 +772,8 @@ export function Sidebar({
   openSection,
   setOpenSection,
   onClose,
+  closing,
+  onSlideOutEnd,
 }: SidebarProps) {
   const { t, labels, locale, setLocale } = useT();
   const touch = useTouchLayout();
@@ -803,7 +810,14 @@ export function Sidebar({
   const roadsRiversOn = showRoads || showRivers;
 
   return (
-    <aside className="sidebar">
+    <aside
+      className={`sidebar${closing ? ' is-closing' : ''}`}
+      onAnimationEnd={(e) => {
+        // Only the dock's OWN slide-out should trigger the deferred unmount — ignore child
+        // animations that bubble up (e.g. the Advanced shimmer) and the slide-in on open.
+        if (closing && e.target === e.currentTarget) onSlideOutEnd?.();
+      }}
+    >
       {touch && (
         <button type="button" className="sidebar-close" onClick={() => onClose?.()} aria-label="Close settings">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

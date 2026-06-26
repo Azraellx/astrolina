@@ -126,18 +126,28 @@ overlays — is ordinary natal math.
   composite Sun. Bodies resolve only when both parents can compute them, and
   the lunar nodes follow the sidebar's mean/true setting; the South Node
   midpoint stays exactly antipodal to the North Node midpoint by construction.
-- **The angle frame** (which fixes every MC/IC/ASC/DSC line, the relocated
-  angles, all ten house systems, parans, and local space) uses the
-  **ASC-midpoint method** (matching Solar Fire and Robert Hand): the composite
-  Ascendant is the **shorter-arc midpoint of the two natal Ascendants**, and the
-  MC and houses are derived from the RAMC that yields that Ascendant at the
-  geographic-midpoint latitude. The frame is realized as a real stored moment —
-  the instant whose Ascendant equals that midpoint — so the whole rendering
-  pipeline treats a composite like any chart; only the planet positions are
-  overridden. (This replaced an earlier RAMC/sidereal-time-midpoint method that
-  derived both angles from the midpoint of the two charts' Greenwich sidereal
-  times; that produced composite angles unrelated to the partners' own
-  Ascendants and is no longer used.)
+- **The wheel angles and houses** use the **midpoint method à la Robert Hand**:
+  every angle and house cusp is the **shorter-arc midpoint of the two parents' own
+  angles/cusps** (each cast at its own parent's place). So the composite
+  **Ascendant** is the exact midpoint of the two natal Ascendants and the composite
+  **Midheaven** is the exact midpoint of the two natal Midheavens — both read true
+  on the wheel (matching Solar Fire / Hand). Opposite points are kept exact
+  (`Ds = As + 180°`, `Ic = Mc + 180°`), and the cusp midpoints keep cusp 1 = Asc
+  and cusp 10 = MC for quadrant systems.
+- **The map frame** (which fixes every MC/IC/ASC/DSC line, parans, and local space)
+  is a single sky-frame — one RAMC — **anchored on the Midheaven**: the instant
+  whose Greenwich sidereal time culminates the composite MC at the geographic
+  midpoint. Because the MC↔RAMC mapping carries no latitude term, the map is fixed
+  by sidereal time alone. From one RAMC the Ascendant and Midheaven are not
+  independent, so **no single frame can place both on their midpoints**: the map is
+  anchored on the MC, so its meridian **MC/IC lines pass through the wheel's
+  Midheaven, but its ASC/DSC lines do not pass through the wheel's Ascendant** (the
+  unavoidable cost of the midpoint angles not forming one coherent sky-frame). The
+  frame is realized as a real stored moment, so the map pipeline treats a composite
+  like any chart; only the planet positions and the wheel angles are overridden.
+  (An earlier method derived *both* angles from the midpoint of the two charts'
+  Greenwich sidereal times, producing composite angles unrelated to the partners'
+  own; it is no longer used.)
 - **The reference place** is the same geographic midpoint Davison uses,
   labeled "Space".
 - **Time overlays** over a composite are limited to **Transits and Eclipses**

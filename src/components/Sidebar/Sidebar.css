@@ -57,6 +57,15 @@ html[data-mapstate='natal-pinned'] .sidebar {
        the notch — an accepted trade, matching the edge-hugging corner HUD.) */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+    /* Slide in from the right edge on open. Pairs with the .settings-nub `right` transition
+       (same 0.18s ease), so the nub really does ride the panel's edge in. */
+    animation: sb-dock-slide-in 0.18s ease;
+  }
+  /* Slide back out while closing. The app keeps the dock mounted until this animation ends
+     (Sidebar's onAnimationEnd → onSlideOutEnd unmounts it); `forwards` holds it off-screen for
+     the frame between the animation finishing and React unmounting, so there's no snap-back. */
+  .sidebar.is-closing {
+    animation: sb-dock-slide-out 0.18s ease forwards;
   }
   /* Touch-only close affordance (no `S` hotkey on a phone): a wide tap target, right-aligned
      at the top of the dock, above the accordion headers. Kept short vertically — a full 44px
@@ -86,9 +95,33 @@ html[data-mapstate='natal-pinned'] .sidebar {
   }
 }
 
-/* Touch-only quick-open tab on the right edge (rendered by the app only while the dock
-   is closed) — a one-tap alternative to View ▸ Settings. Sits just under the dock's
-   z-index so it slides "behind" the panel as it opens. */
+/* Touch settings-dock slide (referenced only inside @media (pointer: coarse) above). The dock
+   is 200px wide, docked flush to the right edge, so translateX(100%) parks it just off-screen
+   to the right — html/body overflow:hidden keeps that from showing a scrollbar. */
+@keyframes sb-dock-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes sb-dock-slide-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+/* Reduced motion: collapse the slide to an instant cut, but keep a NON-zero duration (not
+   `animation: none`) so the onAnimationEnd that unmounts the closing dock still fires. The nub
+   loses its glide and snaps with the panel. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar.is-closing {
+    animation-duration: 0.01ms;
+  }
+  .settings-nub {
+    transition: color 0.14s, background 0.14s;
+  }
+}
+
+/* Touch-only quick-toggle tab on the right edge — a one-tap alternative to View ▸ Settings.
+   It persists while the dock is open (see `.is-open`), riding to the panel's left edge to
+   act as a second close affordance beside the header ×. */
 .settings-nub {
   position: fixed;
   right: 0;
@@ -108,7 +141,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
   color: var(--text-muted);
   cursor: pointer;
   box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
-  transition: color 0.14s, background 0.14s;
+  transition: color 0.14s, background 0.14s, right 0.18s ease;
+}
+/* While the dock is open, ride to its left edge (the dock is 200px wide, flush right) so the
+   nub stays reachable as a close affordance instead of hiding behind the panel. The short
+   `right` transition reads as the handle being pushed out by the opening panel. */
+.settings-nub.is-open {
+  right: 200px;
 }
 .settings-nub:hover,
 .settings-nub:focus-visible {

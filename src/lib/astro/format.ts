@@ -113,3 +113,27 @@ export function buildCaptureBalance(
     })),
   ];
 }
+
+// The Balance GRID (Capture wheel view): the bodies bucketed into the 12 element×modality
+// cells, for the grid graphic drawn beneath the capture wheel. Rows are the four elements,
+// columns the three modalities — 4×3 = the 12 signs, a clean bijection, so each cell is one
+// sign. Same element/modality logic as buildCaptureBalance above, just cross-tabulated.
+export const BALANCE_ELEMENTS = ['fire', 'earth', 'air', 'water'] as const;
+export const BALANCE_MODALITIES = ['cardinal', 'fixed', 'mutable'] as const;
+// [elementIndex 0..3][modalityIndex 0..2] → the bodies in that cell (in input order).
+export type BalanceGrid = PlanetName[][][];
+
+export function buildBalanceGrid(
+  planets: { name: PlanetName; lon: number }[],
+): BalanceGrid {
+  const grid: BalanceGrid = BALANCE_ELEMENTS.map(() =>
+    BALANCE_MODALITIES.map(() => [] as PlanetName[]),
+  );
+  for (const p of planets) {
+    const idx = signIndex(p.lon);
+    const e = BALANCE_ELEMENTS.indexOf(signElement(idx));
+    const m = BALANCE_MODALITIES.indexOf(signModality(idx));
+    grid[e][m].push(p.name);
+  }
+  return grid;
+}

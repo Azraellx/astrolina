@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
+import { captureExportGate } from '../../lib/captureGate';
 import { useTouchLayout } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
@@ -141,6 +142,7 @@ function TipBtn({
   disabled,
   title,
   hint,
+  advanced,
   children,
 }: {
   className: string;
@@ -149,6 +151,8 @@ function TipBtn({
   disabled?: boolean;
   title: string;
   hint: string;
+  /** Show the "ADV" tag on the tip headline — marks the action as Advanced-only. */
+  advanced?: boolean;
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top');
@@ -168,7 +172,7 @@ function TipBtn({
       >
         {children}
       </button>
-      <HoverTip pos={pos} placement="top" title={title} hint={hint} />
+      <HoverTip pos={pos} placement="top" title={title} hint={hint} advanced={advanced} />
     </>
   );
 }
@@ -182,9 +186,14 @@ interface CaptureHudProps {
   /** Controlled caption-field toggles (owned by App; the Map renders the caption band). */
   captionFields: CaptionFields;
   onToggleCaptionField: (key: keyof CaptionFields) => void;
-  /** Controlled "Extras" toggles (owned by App): the planet / angle position panel. */
-  extras: { planets: boolean; angles: boolean; balance: boolean };
-  onToggleExtra: (key: 'planets' | 'angles' | 'balance') => void;
+  /** Controlled Details view (owned by App): none (no panel) / the wheel chart / the position
+   *  list. 'none' is the default; picking wheel or list shows at least the planets. */
+  view: 'none' | 'wheel' | 'list';
+  onSetView: (view: 'none' | 'wheel' | 'list') => void;
+  /** Controlled optional-group toggles (owned by App). Planets are the baseline of any view
+   *  (no toggle); these add the chart angles and the element·modality balance on top. */
+  extras: { angles: boolean; balance: boolean };
+  onToggleExtra: (key: 'angles' | 'balance') => void;
   /** The download / share filename (App derives it from the shown caption fields). */
   fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
@@ -197,6 +206,8 @@ export function CaptureHud({
   setCaptureAspect,
   captionFields,
   onToggleCaptionField,
+  view,
+  onSetView,
   extras,
   onToggleExtra,
   fileName,
@@ -225,6 +236,22 @@ export function CaptureHud({
   const [canShareFiles] = useState(canShareImageFiles);
   const supportsShare = touchLayout && canShareFiles;
 
+  // Optional downstream gate (e.g. Pro makes export an Advanced-account feature). When export is
+  // locked for this user, the three actions divert to the gate's upsell (the account takeover)
+  // and their tips carry the ADV tag. Read per render — the lock (a plan flag) only changes on a
+  // reload, so this is a stable, synchronous read; ungated builds get null → false, behaving as before.
+  const exportLocked = captureExportGate()?.isLocked() ?? false;
+  // Funnel every export through this first: if locked, run the gate's action and tell the caller
+  // to stop. Reads the gate fresh so it can't go stale inside the memoised handlers.
+  const divertIfLocked = useCallback(() => {
+    const gate = captureExportGate();
+    if (gate?.isLocked()) {
+      gate.onLocked();
+      return true;
+    }
+    return false;
+  }, []);
+
   // Warm the html2canvas-pro chunk on open so the first capture is quick enough to stay
   // within the tap's transient activation — required for Web Share / clipboard on mobile.
   useEffect(() => {
@@ -232,6 +259,7 @@ export function CaptureHud({
   }, []);
 
   const onDownload = useCallback(async () => {
+    if (divertIfLocked()) return;
     if (busy) return;
     setBusy(true);
     setFailed(false);
@@ -248,9 +276,10 @@ export function CaptureHud({
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName]);
+  }, [busy, onCapture, fileName, divertIfLocked]);
 
   const onCopy = useCallback(async () => {
+    if (divertIfLocked()) return;
     if (busy) return;
     setBusy(true);
     setFailed(false);
@@ -281,9 +310,10 @@ export function CaptureHud({
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName]);
+  }, [busy, onCapture, fileName, divertIfLocked]);
 
   const onShare = useCallback(async () => {
+    if (divertIfLocked()) return;
     if (busy) return;
     setBusy(true);
     setFailed(false);
@@ -309,7 +339,7 @@ export function CaptureHud({
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName]);
+  }, [busy, onCapture, fileName, divertIfLocked]);
 
   return (
     <div
@@ -379,19 +409,36 @@ export function CaptureHud({
         </div>
 
         <div className="capture-hud-label">{t('captureHud.extras.label')}</div>
-        {(['planets', 'angles', 'balance'] as const).map((k) => (
-          <TipBtn
-            key={k}
-            className={`location-ls-toggle ${extras[k] ? 'on' : 'off'}`}
-            onClick={() => onToggleExtra(k)}
-            ariaPressed={extras[k]}
-            title={t(`captureHud.extras.${k}`)}
-            hint={t(`captureHud.extras.${k}Hint`)}
-          >
-            <EyeIcon open={extras[k]} />
-            <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
-          </TipBtn>
-        ))}
+        <div className="location-ls-seg capture-hud-seg" role="group">
+          {(['none', 'wheel', 'list'] as const).map((v) => (
+            <TipBtn
+              key={v}
+              className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
+              onClick={() => onSetView(v)}
+              ariaPressed={view === v}
+              title={t(`captureHud.view.${v}`)}
+              hint={t(`captureHud.view.${v}Hint`)}
+            >
+              {t(`captureHud.view.${v}`)}
+            </TipBtn>
+          ))}
+        </div>
+        {/* Optional groups, meaningful only once a view is chosen ('none' draws nothing). Planets
+            aren't here — they're the always-on baseline of any view; these add on top of them. */}
+        {view !== 'none' &&
+          (['angles', 'balance'] as const).map((k) => (
+            <TipBtn
+              key={k}
+              className={`location-ls-toggle ${extras[k] ? 'on' : 'off'}`}
+              onClick={() => onToggleExtra(k)}
+              ariaPressed={extras[k]}
+              title={t(`captureHud.extras.${k}`)}
+              hint={t(`captureHud.extras.${k}Hint`)}
+            >
+              <EyeIcon open={extras[k]} />
+              <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
+            </TipBtn>
+          ))}
 
         <div className="capture-hud-label">{t('captureHud.caption.label')}</div>
         {CAPTION_KEYS.map((k) => (
@@ -413,6 +460,7 @@ export function CaptureHud({
             className="location-ls-fly capture-hud-btn"
             onClick={onDownload}
             disabled={busy}
+            advanced={exportLocked}
             title={t('captureHud.download.title')}
             hint={t('captureHud.download.hint')}
           >
@@ -423,6 +471,7 @@ export function CaptureHud({
             className="location-ls-fly capture-hud-btn"
             onClick={onCopy}
             disabled={busy}
+            advanced={exportLocked}
             title={t('captureHud.copy.title')}
             hint={t('captureHud.copy.hint')}
           >
@@ -435,6 +484,7 @@ export function CaptureHud({
               className="location-ls-fly capture-hud-btn"
               onClick={onShare}
               disabled={busy}
+              advanced={exportLocked}
               title={t('captureHud.share.title')}
               hint={t('captureHud.share.hint')}
             >

@@ -41,7 +41,7 @@ Set against full-featured desktop software, these are the deliberate gaps:
   tropical by definition (so it's unavailable in sidereal mode). Its conventions
   are documented in
   [Calculation Methods](calculation-methods.md).
-- **Relationship charts.** Synastry (two charts overlaid), Davison, and composite-midpoint charts all ship; the composite's conventions (shorter-arc planet midpoints on the ecliptic, an ASC-midpoint angle frame) are documented in [Calculation Methods](calculation-methods.md).
+- **Relationship charts.** Synastry (two charts overlaid), Davison, and composite-midpoint charts all ship; the composite's conventions (shorter-arc planet and angle midpoints à la Robert Hand, with the map frame anchored on the composite Midheaven) are documented in [Calculation Methods](calculation-methods.md).
 - **A hand-curated historical atlas.** Birthplaces are geocoded and timezones resolved from open data, not from a proprietary hand-curated historical atlas (see Accuracy & limitations).
 - **Date entry before 1800.** The birth-data form accepts years 1800–2200. An imported chart with an earlier date still computes its planets, nodes, and Lilith, but its asteroids are omitted (see [Calculation Methods](calculation-methods.md) for why).
 - **Hypothetical bodies.** Transpluto and the Uranian points are omitted (there is no consensus ephemeris for them), and centaurs beyond Chiron aren't bundled.

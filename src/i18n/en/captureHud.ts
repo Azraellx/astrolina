@@ -20,13 +20,21 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Landscape frame (16:9) — wide, for slides and headers.',
   },
+  view: {
+    none: 'None',
+    noneHint: 'No chart details in the frame — just the map, pin, edge labels and caption.',
+    wheel: 'Wheel',
+    wheelHint:
+      'Show the chart as a wheel inside the frame — the same wheel as the sidebar. The Planets / Angles toggles fill it in; Balance adds the element·modality grid below it.',
+    list: 'List',
+    listHint:
+      'Show the chart as a list of planet / angle positions (and the element·modality tally), the same rows as the sidebar.',
+  },
   extras: {
     label: 'Details',
-    planets: 'Planets',
-    planetsHint:
-      'Overlay each planet’s sign position inside the frame — a panel on the left for 16:9, along the top for 1:1 and 4:5.',
+    // Planets are the always-on baseline of any view (no toggle); angles/balance add on top.
     angles: 'Angles',
-    anglesHint: 'Add the chart angles (Asc, MC, IC, Dsc…) to that panel, after the planets.',
+    anglesHint: 'Add the chart angles (Asc, MC, IC, Dsc…) to the panel, after the planets.',
     balance: 'Balance',
     balanceHint:
       'Add the element + modality balance — which planets fall in Fire/Earth/Air/Water and Cardinal/Fixed/Mutable.',

@@ -21,6 +21,14 @@
   overflow: hidden;
 }
 
+/* The Local Space window carries far less than the Teleport search (no results list),
+   so it runs 30% narrower than the shared 320px base (224px). Overrides both width and
+   max-width; placed after .location-hud so the equal-specificity rule wins on source order. */
+.local-space-hud {
+  width: 224px;
+  max-width: 224px;
+}
+
 .location-header {
   display: flex;
   align-items: center;

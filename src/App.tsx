@@ -49,12 +49,16 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
-import { isTouchLayout } from './lib/touch';
+import { isTouchLayout, useTouchLayout } from './lib/touch';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
 import { SEED_BIRTHS } from './lib/birthData';
-import { planetRank, visibleAngleSpecs, buildCaptureBalance } from './lib/astro/format';
+import { planetRank, visibleAngleSpecs, buildCaptureBalance, buildBalanceGrid } from './lib/astro/format';
+import type {
+  CaptureFrameExtras,
+  CaptureWheelAngleKey,
+} from './components/CaptureExtras/CaptureExtras';
 import {
   offsetHoursAt,
   zoneLabelAt,
@@ -131,6 +135,7 @@ import {
 } from './lib/astro/timeline';
 import { buildComposite, buildDavison } from './lib/astro/relationship';
 import {
+  compositeAngles,
   compositeEcliptic,
   compositeEquatorial,
   solveCompositeFrameJd,
@@ -534,6 +539,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(
     () => !isTouchLayout() && localStorage.getItem('astro:view-settings:v1') !== '0',
   );
+  // The settings dock mounts on open. On touch it slides in/out (see Sidebar.css); to let the
+  // CLOSE animation play, keep it mounted through the slide-out and unmount only when that
+  // animation ends (Sidebar's onSlideOutEnd). On desktop there's no animation, so it unmounts
+  // immediately when closed — exactly as before. `settingsTouch` is the reactive twin of the
+  // isTouchLayout() used for the initial state above.
+  const settingsTouch = useTouchLayout();
+  const [settingsMounted, setSettingsMounted] = useState(showSettings);
+  useEffect(() => {
+    if (showSettings) setSettingsMounted(true);
+    else if (!settingsTouch) setSettingsMounted(false);
+    // touch + closing: stay mounted; onSlideOutEnd unmounts after the slide-out.
+  }, [showSettings, settingsTouch]);
   // The active-systems status chip (View ▸ Info), above the map attribution.
   // Off by default (like the Location window) — an opt-in detail, not always-on chrome.
   const [showInfo, setShowInfo] = useState(
@@ -749,29 +766,43 @@ export default function App() {
     },
     [],
   );
-  // Capture "Extras" overlay toggles (planet / angle positions), persisted. Both default
-  // OFF — unlike the caption, the panel is shown only when at least one is enabled.
+  // Capture details: pick a view (none / wheel / list) and which optional groups it carries.
+  // 'none' is the default — no details panel at all. Choosing a view ALWAYS shows the planets
+  // (they're the baseline of any view — there's no planets toggle); angles + balance are the
+  // optional adds. (v2 key; a stale `planets` field from earlier builds is just ignored here.)
   const [captureExtras, setCaptureExtras] = useState<{
-    planets: boolean;
+    view: 'none' | 'wheel' | 'list';
     angles: boolean;
     balance: boolean;
   }>(() => {
     try {
-      const p = JSON.parse(localStorage.getItem('astro:capture-extras:v1') ?? '{}');
+      const p = JSON.parse(localStorage.getItem('astro:capture-extras:v2') ?? '{}');
       return {
-        planets: p.planets === true,
+        view: p.view === 'wheel' ? 'wheel' : p.view === 'list' ? 'list' : 'none',
         angles: p.angles === true,
         balance: p.balance === true,
       };
     } catch {
-      return { planets: false, angles: false, balance: false };
+      return { view: 'none', angles: false, balance: false };
     }
   });
-  const toggleCaptureExtra = useCallback((k: 'planets' | 'angles' | 'balance') => {
+  const toggleCaptureExtra = useCallback((k: 'angles' | 'balance') => {
     setCaptureExtras((p) => {
       const next = { ...p, [k]: !p[k] };
       try {
-        localStorage.setItem('astro:capture-extras:v1', JSON.stringify(next));
+        localStorage.setItem('astro:capture-extras:v2', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+  const setCaptureView = useCallback((view: 'none' | 'wheel' | 'list') => {
+    setCaptureExtras((p) => {
+      if (p.view === view) return p;
+      const next = { ...p, view };
+      try {
+        localStorage.setItem('astro:capture-extras:v2', JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -1284,10 +1315,12 @@ export default function App() {
     };
   }, [visiblePlanets, wheelExpanded]);
 
-  // For a composite the frame is derived LIVE from the parents (the ASC-midpoint
-  // solve — see lib/astro/composite.ts), not read back from the stored civil
-  // minute, so every composite (old or new — no data migration) renders with the
-  // current angle method. Any other chart just uses its own moment.
+  // For a composite the MAP frame is derived LIVE from the parents (the
+  // MC-midpoint solve — see lib/astro/composite.ts), not read back from the
+  // stored civil minute, so every composite (old or new — no data migration)
+  // renders with the current method. Any other chart just uses its own moment.
+  // (The wheel ANGLES are independent midpoints — see the birthAngles memo /
+  // compositeAngles below.)
   const jd = useMemo(
     () =>
       current
@@ -2293,16 +2326,23 @@ export default function App() {
     if (resolved) setMeasureColor(resolved);
   }, [coordSource, theme]);
 
+  // A composite's wheel angles are independent shorter-arc midpoints of the two
+  // parents' own angles/cusps (à la Robert Hand) — so BOTH the Ascendant and the
+  // Midheaven read as the exact midpoint, which the single MC-anchored map frame
+  // can't do. They don't relocate (a midpoint construct has no frame to move), so
+  // a composite ignores the active pin here; the MAP lines still follow jd/gmst.
   const birthAngles = useMemo(
     () =>
       current
-        ? relocate(jd, current.birthplace.lat, current.birthplace.lng, effHouseSystem)
+        ? current.composite
+          ? compositeAngles(current.composite, effHouseSystem)
+          : relocate(jd, current.birthplace.lat, current.birthplace.lng, effHouseSystem)
         : null,
     [jd, current, effHouseSystem],
   );
   const angles = useMemo(
     () =>
-      activePoint && current
+      activePoint && current && !current.composite
         ? relocate(jd, activePoint.lat, activePoint.lng, effHouseSystem)
         : birthAngles,
     [jd, activePoint, current, birthAngles, effHouseSystem],
@@ -2492,19 +2532,47 @@ export default function App() {
     () => buildCaptureBalance(captureExtraPlanets, t),
     [captureExtraPlanets, t],
   );
-  // Null (no panel, no inset) unless the Capture tool is armed and an enabled extra has rows.
-  // Balance tallies the shown planets, so it's meaningful only when there's at least one.
-  const captureFrameExtras =
-    mapTool === 'capture' &&
-    ((captureExtras.planets && captureExtraPlanets.length > 0) ||
-      (captureExtras.angles && captureExtraAngles.length > 0) ||
-      (captureExtras.balance && captureExtraPlanets.length > 0))
-      ? {
-          planets: captureExtras.planets ? captureExtraPlanets : [],
-          angles: captureExtras.angles ? captureExtraAngles : [],
-          balance: captureExtras.balance ? captureBalance : [],
-        }
-      : null;
+  // Wheel view payload: the on-map-visible bodies as full positions (the wheel does its own
+  // ordering/relaxation), the visible angle codes mapped to the wheel's keys, and the
+  // element×modality grid — each gated by its toggle below.
+  const captureWheelPlanets = useMemo(
+    () => wheelPlanets.filter((p) => visiblePlanets.has(p.name)),
+    [wheelPlanets, visiblePlanets],
+  );
+  const captureWheelAngles = useMemo<Set<CaptureWheelAngleKey>>(
+    () => new Set(visibleAngleSpecs(visibleLineTypes).map((s) => s.code)),
+    [visibleLineTypes],
+  );
+  const captureBalanceGrid = useMemo(
+    () => buildBalanceGrid(captureExtraPlanets),
+    [captureExtraPlanets],
+  );
+  const emptyWheelAngles = useMemo<Set<CaptureWheelAngleKey>>(() => new Set(), []);
+  // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
+  // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
+  // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
+  const captureFrameExtras: CaptureFrameExtras | null =
+    mapTool !== 'capture' || captureExtras.view === 'none'
+      ? null
+      : captureExtras.view === 'wheel'
+        ? wheelAngles
+          ? {
+              view: 'wheel',
+              angles: wheelAngles,
+              planets: captureWheelPlanets, // baseline of any view — no planets toggle
+              visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
+              balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
+            }
+          : null
+        : captureExtraPlanets.length > 0 ||
+            (captureExtras.angles && captureExtraAngles.length > 0)
+          ? {
+              view: 'list',
+              planets: captureExtraPlanets, // baseline — always shown in a chosen view
+              angles: captureExtras.angles ? captureExtraAngles : [],
+              balance: captureExtras.balance ? captureBalance : [],
+            }
+          : null;
 
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
@@ -3086,8 +3154,10 @@ export default function App() {
           )}
         </div>
       )}
-      {showSettings && (
+      {settingsMounted && (
         <Sidebar
+          closing={!showSettings}
+          onSlideOutEnd={() => setSettingsMounted(false)}
           visiblePlanets={visiblePlanets}
           togglePlanet={togglePlanet}
           setAllPlanets={setAllPlanets}
@@ -3143,9 +3213,7 @@ export default function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
-      {!showSettings && (
-        <SettingsNub onOpen={() => setShowSettings(true)} />
-      )}
+      <SettingsNub open={showSettings} onToggle={() => setShowSettings((v) => !v)} />
       <TopNav
         mapState={coordSource}
         pinned={pinned != null}
@@ -3330,6 +3398,8 @@ export default function App() {
           setCaptureAspect={setCaptureAspectPersist}
           captionFields={captureCaptionFields}
           onToggleCaptionField={toggleCaptureCaptionField}
+          view={captureExtras.view}
+          onSetView={setCaptureView}
           extras={captureExtras}
           onToggleExtra={toggleCaptureExtra}
           fileName={captureFileName}

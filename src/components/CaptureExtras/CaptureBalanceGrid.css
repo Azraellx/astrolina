@@ -1,0 +1,57 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* The element×modality balance grid under the Capture wheel. A 4-column layout: a
+   narrow leading column for the element glyphs, then three equal modality columns.
+   Sized off the caption-band height var (like the rest of the capture overlay) so it
+   scales proportionally across export resolutions. */
+.capture-balance-grid {
+  display: grid;
+  grid-template-columns: auto repeat(3, 1fr);
+  gap: 1px;
+  margin-top: 6px;
+  /* Hairline separators between cells: the gap shows the panel backdrop through it. */
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: clamp(8px, calc(var(--capture-caption-h, 18px) * 0.34), 12px);
+}
+
+/* Every header + body cell sits on the opaque panel colour, so the 1px grid gaps read
+   as faint dividers. */
+.cbg-corner,
+.cbg-head,
+.cbg-cell {
+  background: rgb(8, 10, 18);
+  min-height: 1.7em;
+  padding: 2px;
+}
+
+/* Header cells centre their single category glyph. */
+.cbg-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cbg-head-glyph {
+  font-size: 1.25em;
+  line-height: 1;
+}
+
+/* Body cells: the planet glyphs that fall in this element+modality, wrapping to
+   multiple rows when a cell is crowded. */
+.cbg-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1px 3px;
+}
+.cbg-body {
+  font-size: 1.05em;
+  line-height: 1;
+}

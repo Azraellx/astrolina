@@ -305,9 +305,11 @@
 }
 /* While a tool is armed the trigger pulses — an accent halo ripple on the button
    plus a synced scale beat on the icon — so it's obvious at a glance that a map
-   tool is live (it's easy to forget Measure/Slide is on). Each beat returns to the
-   resting .active accent, and the animation stops entirely the moment the tool is
-   cleared. Honors reduced-motion (the static .active accent still marks it). */
+   tool is live (it's easy to forget Measure/Slide is on). The halo uses the pin-state
+   colour (--map-accent-rgb: gray/blue/orange/green), matching this map-state trigger's
+   resting .active accent, so the pulse never diverges to the steady brand accent. The
+   animation stops entirely the moment the tool is cleared. Honors reduced-motion (the
+   static .active accent still marks it). */
 .topnav-tool.active {
   animation: topnav-tool-pulse 0.75s ease-out infinite;
 }
@@ -317,13 +319,13 @@
 }
 @keyframes topnav-tool-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.5);
+    box-shadow: 0 0 0 0 rgba(var(--map-accent-rgb), 0.5);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(var(--accent-rgb), 0);
+    box-shadow: 0 0 0 6px rgba(var(--map-accent-rgb), 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
+    box-shadow: 0 0 0 0 rgba(var(--map-accent-rgb), 0);
   }
 }
 @keyframes topnav-tool-icon-beat {

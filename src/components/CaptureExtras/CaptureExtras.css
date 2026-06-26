@@ -96,3 +96,49 @@
   align-items: baseline;
   gap: 2px;
 }
+
+/* ── Wheel view ─────────────────────────────────────────────────────────────
+   The Details panel can instead hold the chart wheel + (optional) balance grid as a
+   single top-left cluster, rather than the wrapping list of rows. Override the list's
+   flex-wrap so the cluster just anchors at the top-left and the rail/band sizes to it. */
+.capture-extras.capture-extras-wheel {
+  flex-flow: column nowrap;
+  gap: 0;
+}
+/* Landscape: a left rail exactly as wide as the wheel cluster (drop the list's text-rail
+   min/max width floors). */
+.capture-extras.capture-extras-wheel.capture-extras-left {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+}
+.cx-wheel-cluster {
+  display: flex;
+}
+/* Landscape (left rail): wheel on top, balance grid stacked below it (grid stretches to
+   the wheel width). */
+.cx-wheel-cluster-left {
+  flex-direction: column;
+  align-items: stretch;
+}
+/* Square / portrait (top band): wheel on the left, balance grid beside it on the right. */
+.cx-wheel-cluster-top {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+/* Keep the wheel at its intrinsic size; never let the flex row squeeze it. */
+.cx-wheel-cluster-top .wheel-svg-wrap {
+  flex-shrink: 0;
+}
+/* Beside the wheel the grid aligns to its top edge — drop the stacked layout's top gap. */
+.cx-wheel-cluster-top .capture-balance-grid {
+  margin-top: 0;
+}
+/* The wheel uses the interactive renderer (so it draws the angle codes), but in the static
+   capture it must stay inert — it sits in the opaque panel, off the live map. Block pointer
+   events so it never captures a pan or pops its hover tag. */
+.capture-extras-wheel .wheel-svg,
+.capture-extras-wheel .wheel-svg * {
+  pointer-events: none !important;
+}

@@ -454,6 +454,13 @@ interface WheelSvgProps {
    * one. Opt-in so the minimap stays static — only the expanded sidebar sets it.
    */
   interactive?: boolean;
+  /**
+   * Force the per-planet degree·sign·minute readout ring on below the usual
+   * READOUT_MIN size gate (still skipped if the wheel is geometrically too tight —
+   * rReadout ≤ 30). For the Capture wheel, which is smaller than a sidebar wheel
+   * but still wants the readout when there's room.
+   */
+  readouts?: boolean;
 }
 
 export function WheelSvg({
@@ -468,6 +475,7 @@ export function WheelSvg({
   aspectOrbs = DEFAULT_ASPECT_ORBS,
   visibleAngles,
   interactive = false,
+  readouts = false,
 }: WheelSvgProps) {
   const { t, labels } = useT();
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
@@ -538,8 +546,9 @@ export function WheelSvg({
   // ~15% to give the degree value more breathing room from the planet circle).
   const rReadout = detailed ? rPlanets - 39 - bandGrow / 3 : 0;
   // The degree·sign·minute readout appears once the wheel is large enough to read
-  // it — the single wheel's second size tier (no longer tied to Advanced).
-  const showReadouts = detailed && rReadout > 30 && size >= READOUT_MIN;
+  // it — the single wheel's second size tier (no longer tied to Advanced). The Capture
+  // wheel opts in below that size gate (`readouts`), still bounded by the geometric guard.
+  const showReadouts = detailed && rReadout > 30 && (size >= READOUT_MIN || readouts);
   // Dedicated house ring: a band just inside the planet glyphs — or inside the
   // readout ring when Advanced is on — holding the cusp spokes and house
   // numbers so nothing else overlaps them. Its two borders (houseRingOuter and

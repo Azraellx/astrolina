@@ -556,7 +556,7 @@ export function buildOverlay(
     case 'synastry': {
       if (!partner) return null;
       // A composite partner overlays its midpoint positions; its frame is the
-      // live ASC-midpoint solve (not the stored minute), which gmst/obliquity
+      // live MC-midpoint solve (not the stored minute), which gmst/obliquity
       // below read normally. Any other partner uses its own moment.
       const pjd = partner.composite
         ? solveCompositeFrameJd(partner.composite)

@@ -7,16 +7,24 @@
 import { useTouchLayout } from '../../lib/touch';
 import './Sidebar.css';
 
-// A small tab on the right edge (touch only) that opens the settings dock — a quick
-// alternative to View ▸ Settings on a phone/tablet. The app renders it only while the
-// dock is closed; it hides itself off touch.
-export function SettingsNub({ onOpen }: { onOpen: () => void }) {
+// A small tab on the right edge (touch only) that toggles the settings dock — a quick
+// alternative to View ▸ Settings on a phone/tablet. It persists while the dock is open,
+// riding to the panel's left edge so it doubles as a second close affordance beside the
+// header ×. Hides itself off touch.
+export function SettingsNub({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const touch = useTouchLayout();
   if (!touch) return null;
   return (
-    <button type="button" className="settings-nub" onClick={onOpen} aria-label="Open settings">
+    <button
+      type="button"
+      className={`settings-nub${open ? ' is-open' : ''}`}
+      onClick={onToggle}
+      aria-label={open ? 'Close settings' : 'Open settings'}
+      aria-expanded={open}
+    >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M14 7l-5 5 5 5" />
+        {/* Chevron points inward (‹) to pull the dock in when closed, outward (›) to push it back when open. */}
+        <path d={open ? 'M10 7l5 5-5 5' : 'M14 7l-5 5 5 5'} />
       </svg>
     </button>
   );

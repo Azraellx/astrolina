@@ -5,28 +5,35 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Composite-midpoints relationship charts. A composite has NO real moment: each
-// body sits at the shorter-arc midpoint of the two parents' zodiacal
-// longitudes, on the ecliptic (latitude 0). The chart still STORES a real
-// moment, though — the minute that realizes the composite ASC-midpoint frame
-// (below) — so every frame-driven consumer (gmst, relocated angles, all ten
-// house systems via Swiss, parans, local space, the timeline) runs the ordinary
-// natal pipeline untouched; only the PLANET POSITIONS branch to the midpoint
-// math here (App's two position memos, the directed overlays' natal base, the
-// Returns snap).
+// body sits at the shorter-arc midpoint of the two parents' zodiacal longitudes,
+// on the ecliptic (latitude 0). The WHEEL ANGLES + houses are likewise the
+// shorter-arc midpoints of the two parents' own angles/cusps (à la Robert Hand).
+// The chart still STORES a real moment, though — the minute that realizes the
+// composite MAP frame (the MC-midpoint, below) — so the gmst-driven consumers
+// (the map lines, parans, local space, the timeline) run the ordinary natal
+// pipeline untouched; the PLANET POSITIONS and the WHEEL ANGLES branch to the
+// midpoint math here (App's position memos + compositeAngles, the directed
+// overlays' natal base, the Returns snap).
 //
 // Conventions (see docs/calculation-methods.md):
 //  - shorter-arc planet midpoints; an exactly-opposed pair takes the side
 //    nearer the composite Sun
 //  - planets on the ecliptic (latitude 0)
-//  - angle frame = the ASC-MIDPOINT method: the composite Ascendant is the
-//    shorter-arc midpoint of the two natal Ascendants, and the MC + houses
-//    derive from the RAMC that yields it at the geographic-midpoint latitude
-//    (matches Solar Fire / Robert Hand). Realized as a real stored UT minute.
+//  - wheel angles + houses = shorter-arc midpoints of the two parents' angles and
+//    cusps (à la Robert Hand): the composite Ascendant and Midheaven are each the
+//    exact midpoint of the two natal ones (see compositeAngles)
+//  - MAP frame = the MC-MIDPOINT: a single RAMC whose Midheaven is that angle
+//    midpoint. MC↔RAMC is latitude-free, so the map is fixed by sidereal time
+//    alone. (One RAMC can't put both the ASC and MC on their midpoints, so the
+//    map's ASC/DSC lines won't pass through the wheel's midpoint Ascendant — the
+//    meridian MC/IC lines do.) Realized as a real stored UT minute.
 //  - reference place = the same geographic midpoint Davison uses
 import {
   birthDataToJD,
   bodyLonSpeed,
   eclipticToRaDec,
+  gmstRadians,
+  obliquity,
   PLANET_NAMES,
   relocate,
   type EclipticPosition,
@@ -34,10 +41,12 @@ import {
   type NodeType,
   type PlanetName,
   type PlanetPosition,
+  type RelocatedAngles,
 } from '../ephemeris';
 import type { CompositeParents } from '../chartLibrary';
 
 const TWO_PI = 2 * Math.PI;
+const DEG2RAD = Math.PI / 180;
 const wrap2pi = (a: number) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
 // Signed wrap to (−π, π].
 const wrapPi = (a: number) => {
@@ -173,19 +182,23 @@ function midLngDeg(a: number, b: number): number {
 }
 
 /**
- * The composite chart's stored nominal moment, realizing the ASC-MIDPOINT angle
- * frame: the composite Ascendant is the shorter-arc midpoint of the two natal
- * Ascendants (each cast at its own parent's place), and the returned jd is the
- * instant — at the geographic-midpoint place — whose Ascendant equals that
- * midpoint. The MC, every house system, parans, local space and the map lines
- * then fall out of this one stored moment via the ordinary natal pipeline, so
- * the MC is "derived from the RAMC at the midpoint latitude" (Solar Fire / Hand).
+ * The composite chart's stored nominal moment, realizing the MAP frame: the
+ * composite Midheaven is the shorter-arc midpoint of the two natal Midheavens
+ * (each cast at its own parent's place), and the returned jd is the instant
+ * whose Greenwich sidereal time culminates that midpoint MC at the
+ * geographic-midpoint meridian. The map lines, parans and local space then fall
+ * out of this one stored moment via the ordinary natal pipeline.
  *
- * The Ascendant sweeps a full turn over one sidereal day, monotonically at any
- * sub-polar latitude, so exactly one jd in [davisonMid ± ½ sidereal day] hits
- * the target. Bisection is robust where d(asc)/d(time) is wildly nonlinear near
- * the poles (Newton would overshoot the bracket). The caller rounds to a civil
- * minute, quantizing the frame slightly — the same convention as before.
+ * The MC is anchored (not the ASC) because MC↔RAMC carries no latitude term, so
+ * the frame is fixed by sidereal time alone. The wheel's Ascendant is a separate
+ * independent midpoint (see compositeAngles); one RAMC can't place both the ASC
+ * and the MC on their midpoints, so the map's ASC/DSC lines won't pass through
+ * the wheel Ascendant — the meridian MC/IC lines do.
+ *
+ * GMST sweeps a full turn over one sidereal day, monotonically and near-linearly,
+ * so exactly one jd in [davisonMid ± ½ sidereal day] hits the target; the lone 2π
+ * wrap sits at `hi` and, since only interior points are sampled, never lands on a
+ * probe. The caller rounds to a civil minute, quantizing the frame slightly.
  */
 export function solveCompositeFrameJd(
   parents: CompositeParents,
@@ -195,27 +208,65 @@ export function solveCompositeFrameJd(
   const pb = parents.b.birthplace;
   const jdA = birthDataToJD(parents.a);
   const jdB = birthDataToJD(parents.b);
-  // The composite Ascendant: shorter-arc midpoint of the two NATAL Ascendants.
-  // The Ascendant is house-system-independent, so a fixed system is fine here.
-  const ascA = relocate(jdA, pa.lat, pa.lng, system).asc;
-  const ascB = relocate(jdB, pb.lat, pb.lng, system).asc;
-  const target = shortArcMidLon(ascA, ascB);
-  const midLat = (pa.lat + pb.lat) / 2;
-  const midLng = midLngDeg(pa.lng, pb.lng);
-  // Find the jd whose Ascendant (at the midpoint place) equals `target`. With
-  // asc0 = the Ascendant at the window's start, h(jd) = wrap2pi(asc(jd) − asc0)
-  // climbs 0 → 2π monotonically across the window; the root is where it reaches
-  // `rel`. Only interior points are sampled, so the single 2π wrap (at the far
-  // edge) never lands on a probe, and plain bisection on h converges.
   const davMid = (jdA + jdB) / 2;
+  const midLng = midLngDeg(pa.lng, pb.lng);
+  // The composite Midheaven: shorter-arc midpoint of the two NATAL Midheavens.
+  // The MC is house-system-independent, so a fixed system is fine here.
+  const mcA = relocate(jdA, pa.lat, pa.lng, system).mc;
+  const mcB = relocate(jdB, pb.lat, pb.lng, system).mc;
+  const targetMC = shortArcMidLon(mcA, mcB);
+  // MC longitude → its RAMC (ecliptic→equatorial at latitude 0 — latitude-free).
+  // Obliquity is read once at davMid: it moves <1e-7° across the ½-sidereal-day
+  // window, and it's the same obliquity Swiss uses for ARMC→MC, so the round-trip
+  // is self-consistent to float noise.
+  const eps = obliquity(davMid);
+  const targetRamc = eclipticToRaDec(targetMC, 0, eps).ra;
+  // Local RAMC at the midpoint meridian = gmst(jd) + midLng; invert for gmst.
+  const targetGmst = wrap2pi(targetRamc - midLng * DEG2RAD);
   let lo = davMid - SIDEREAL_DAY / 2;
   let hi = davMid + SIDEREAL_DAY / 2;
-  const asc0 = relocate(lo, midLat, midLng, system).asc;
-  const rel = wrap2pi(target - asc0);
+  const g0 = gmstRadians(lo);
+  const rel = wrap2pi(targetGmst - g0);
   for (let i = 0; i < 40 && hi - lo > 1e-7; i++) {
     const mid = (lo + hi) / 2;
-    if (wrap2pi(relocate(mid, midLat, midLng, system).asc - asc0) < rel) lo = mid;
+    if (wrap2pi(gmstRadians(mid) - g0) < rel) lo = mid;
     else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+/**
+ * The composite chart's WHEEL angles, à la Robert Hand: every angle and house
+ * cusp is the shorter-arc midpoint of the two parents' OWN angles/cusps (each
+ * cast at its own parent's place). This decouples the wheel from the map frame
+ * (solveCompositeFrameJd), so BOTH the Ascendant and the Midheaven read as the
+ * exact midpoint of the two natal ones — which a single sky-frame can't do.
+ * Opposite points are derived (dsc = asc + 180°, ic = mc + 180°, antivertex =
+ * vertex + 180°) so the axes stay straight; the cusp midpoints keep cusp 1 = asc
+ * and cusp 10 = mc for quadrant systems by construction.
+ */
+export function compositeAngles(
+  parents: CompositeParents,
+  system: HouseSystem = 'placidus',
+): RelocatedAngles {
+  const pa = parents.a.birthplace;
+  const pb = parents.b.birthplace;
+  const a = relocate(birthDataToJD(parents.a), pa.lat, pa.lng, system);
+  const b = relocate(birthDataToJD(parents.b), pb.lat, pb.lng, system);
+  const asc = shortArcMidLon(a.asc, b.asc);
+  const mc = shortArcMidLon(a.mc, b.mc);
+  const vertex = shortArcMidLon(a.vertex, b.vertex);
+  const cusps = a.cusps.map((c, i) => shortArcMidLon(c, b.cusps[i] ?? c));
+  return {
+    asc,
+    mc,
+    dsc: wrap2pi(asc + Math.PI),
+    ic: wrap2pi(mc + Math.PI),
+    cusps,
+    vertex,
+    antivertex: wrap2pi(vertex + Math.PI),
+    // A parent above the polar circle falls back to Porphyry cusps; surface it so
+    // the wheel's house-system note still fires for the midpoint cusps.
+    fallback: a.fallback || b.fallback,
+  };
 }

@@ -21,10 +21,8 @@ import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
 import {
   CaptureExtras,
-  type CaptureExtraPlanet,
-  type CaptureExtraAngle,
+  type CaptureFrameExtras,
 } from '../CaptureExtras/CaptureExtras';
-import type { BalanceSeg } from '../../lib/astro/format';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
@@ -55,8 +53,10 @@ import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
   computeLineBadges,
   dodgeBadges,
+  spreadBadges,
   clipSegmentToView,
   type AvoidRect,
+  type BadgeSize,
   type LineBadge,
 } from './edgeAnchors';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
@@ -118,6 +118,10 @@ const ANGLE_CODE: Record<LineType, string> = {
 // How far inside the viewport edge the badges anchor (px). Small, since badges
 // then dodge the HUD panels rather than relying on a wide margin.
 const BADGE_INSET = 16;
+// While the Capture frame is armed, anchor + clamp the edge badges with a tighter gap so
+// they tuck closer to the frame edge in the exported still — mirroring the attribution
+// disclosure's halved capture margin (see .map-frame.framed in Map.css).
+const CAPTURE_BADGE_INSET = BADGE_INSET / 2;
 
 // HUD panels the edge badges should slide clear of, so a label is never hidden.
 const HUD_SELECTORS = [
@@ -1135,13 +1139,10 @@ interface MapProps {
    *  reserved while framing — it carries the watermark — so blank text just renders an empty
    *  band with the watermark, not a missing band. */
   frameCaptionText?: string;
-  /** Optional "Extras" overlay (planet/angle positions) drawn inside the frame — docked
-   *  left for landscape, top for square/portrait. Null = no panel (and no inset). */
-  frameExtras?: {
-    planets: CaptureExtraPlanet[];
-    angles: CaptureExtraAngle[];
-    balance: BalanceSeg[];
-  } | null;
+  /** Optional "Details" overlay drawn inside the frame — the position LIST or the chart
+   *  WHEEL (+ balance grid), docked left for landscape, top for square/portrait. Null = no
+   *  panel (and no inset). */
+  frameExtras?: CaptureFrameExtras | null;
   /** Esc while the Capture frame is armed exits the tool. */
   onFrameCancel?: () => void;
   /** Emits map-originated onboarding mission events (measure point/snap, zoom-out click,
@@ -2400,6 +2401,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               (cl?.contains('maplibregl-marker') && !!el.querySelector?.('.map-pin'))
             )
               return true;
+            // The chart WHEEL (Details ▸ Wheel) is colour-styled via CSS vars + the bundled
+            // glyph font, neither of which survive html2canvas's SVG-to-image serialisation.
+            // It's rasterised separately below (styles inlined) and its glyphs re-stamped, so
+            // keep the whole wheel subtree out of this pass.
+            if (cl?.contains('wheel-svg') || el.closest?.('.wheel-svg')) return true;
             return false;
           },
           // Mutate only the CLONE (no live flash): drop the viewfinder ring/scrim so
@@ -2457,6 +2463,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             el.querySelectorAll<HTMLElement>('.maplibregl-popup-close-button').forEach(
               (b) => b.style.setProperty('display', 'none', 'important'),
             );
+            // The wheel SVG is dropped from this pass (ignoreElements) and rasterised
+            // separately onto the 2D canvas. But removing it from the clone collapses the
+            // flex cluster, which would SHIFT the balance grid beside/below it into the
+            // wheel's vacated space — while the grid's glyphs, re-stamped from the LIVE DOM,
+            // stay put, so the grid's cell boxes/lines would land in the wrong spot. Pin the
+            // wheel wrapper to its live size so the clone's layout (and the grid) is unchanged.
+            const liveWrap = frameEl.querySelector('.wheel-svg-wrap');
+            if (liveWrap) {
+              const lw = liveWrap.getBoundingClientRect();
+              el.querySelectorAll<HTMLElement>('.wheel-svg-wrap').forEach((w) => {
+                w.style.setProperty('width', `${lw.width}px`, 'important');
+                w.style.setProperty('height', `${lw.height}px`, 'important');
+                w.style.setProperty('flex', '0 0 auto', 'important');
+              });
+            }
           },
         });
         ctx.drawImage(overlay, 0, 0, W, H);
@@ -2468,6 +2489,61 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // strip the U+FE0E text-presentation selector (unreliable in canvas); and centre
         // the measured INK, since the em-box centre sits a touch high for this font.
         const frameRect = frameEl.getBoundingClientRect();
+
+        // 2.5) The chart WHEEL (Details ▸ Wheel) — kept out of html2canvas above. Rasterise it
+        //      by cloning the live SVG, inlining every computed style (so the CSS-class + var
+        //      colours resolve to concrete values the serialised SVG can render), stripping the
+        //      glyph <text> (re-stamped with the others below, so the clone needs no symbol
+        //      font), then drawImage at the wheel's frame-relative rect. Best-effort: a failure
+        //      just leaves the wheel's shapes out, but the glyphs + grid still stamp.
+        const liveWheel = frameEl.querySelector('svg.wheel-svg');
+        if (liveWheel) {
+          try {
+            const wr = liveWheel.getBoundingClientRect();
+            if (wr.width > 0 && wr.height > 0) {
+              const clone = liveWheel.cloneNode(true) as SVGSVGElement;
+              const liveEls = [liveWheel, ...liveWheel.querySelectorAll('*')];
+              const cloneEls = [clone, ...clone.querySelectorAll('*')];
+              const WHEEL_STYLE_PROPS = [
+                'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity',
+                'stroke-dasharray', 'stroke-linejoin', 'stroke-linecap', 'opacity', 'color',
+                'font-size', 'font-weight', 'font-style', 'font-family', 'letter-spacing',
+                'text-anchor', 'dominant-baseline', 'paint-order', 'visibility',
+              ];
+              const n = Math.min(liveEls.length, cloneEls.length);
+              for (let i = 0; i < n; i++) {
+                const cs = getComputedStyle(liveEls[i] as Element);
+                const st = (cloneEls[i] as SVGElement).style;
+                for (const pr of WHEEL_STYLE_PROPS) st.setProperty(pr, cs.getPropertyValue(pr));
+              }
+              // Glyphs (planet + sign) are re-stamped from the LIVE DOM below — drop them from
+              // the clone so they don't double-draw (and the clone needs no embedded font).
+              clone.querySelectorAll('.astro-glyph').forEach((g) => g.remove());
+              clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+              clone.setAttribute('width', String(wr.width));
+              clone.setAttribute('height', String(wr.height));
+              const svgStr = new XMLSerializer().serializeToString(clone);
+              const wheelImg = new Image();
+              await new Promise<void>((resolve) => {
+                wheelImg.onload = () => resolve();
+                wheelImg.onerror = () => resolve();
+                wheelImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+              });
+              if (wheelImg.width > 0) {
+                ctx.drawImage(
+                  wheelImg,
+                  (wr.left - frameRect.left) * scale,
+                  (wr.top - frameRect.top) * scale,
+                  wr.width * scale,
+                  wr.height * scale,
+                );
+              }
+            }
+          } catch (e) {
+            console.warn('[capture] wheel rasterise failed', e);
+          }
+        }
+
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         frameEl
@@ -2491,7 +2567,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             const cs = getComputedStyle(g);
             const px = parseFloat(cs.fontSize) || 11;
             ctx.font = `${px * scale}px "Noto Sans Symbols", sans-serif`;
-            ctx.fillStyle = cs.color;
+            // The wheel's glyphs are SVG <text> (colour in `fill`); the list/badge glyphs are
+            // HTML spans (colour in `color`). Source whichever this element uses.
+            ctx.fillStyle =
+              g.namespaceURI === 'http://www.w3.org/2000/svg' ? cs.fill : cs.color;
             const cx = (gr.left + gr.width / 2 - frameRect.left) * scale;
             const cyBox = (gr.top + gr.height / 2 - frameRect.top) * scale;
             // 'alphabetic' baseline: ink spans [cy − ascent, cy + descent]; shift the pen
@@ -2750,13 +2829,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // local-space sections below still run per frame: the compass and paran
     // rows track the camera live and are far cheaper.
     if (!map.isMoving()) {
-      const natal = computeLineBadges(map, pinShift(data.lines.features), BADGE_INSET, false);
+      // Tighter edge gap while framing (the exported still wants the labels hugging the edge).
+      const inset = frameActiveRef.current ? CAPTURE_BADGE_INSET : BADGE_INSET;
+      const natal = computeLineBadges(map, pinShift(data.lines.features), inset, false);
       const ov = data.overlay?.lines
-        ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
+        ? computeLineBadges(map, data.overlay.lines.features, inset, true)
         : [];
       // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
       // their aspect/planetB props give them distinct group keys and badge faces.
-      const ang = computeLineBadges(map, pinShift(data.angleLines.features), BADGE_INSET, false, 'ang');
+      const ang = computeLineBadges(map, pinShift(data.angleLines.features), inset, false, 'ang');
       // While the Capture frame is armed, badges hug the frame edges and ignore the HUD
       // panels (Capture window etc.) — EXCEPT the on-map attribution disclosure, which is
       // in the exported image, so they still dodge that one.
@@ -2765,14 +2846,39 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         : reuseHudRects && hudRectsRef.current
           ? hudRectsRef.current
           : (hudRectsRef.current = readHudRects(map));
-      const dodged = dodgeBadges(
+      let placed = dodgeBadges(
         natal.concat(ov, ang),
         hudRects,
         cont.clientWidth,
         cont.clientHeight,
-        BADGE_INSET,
+        inset,
       );
-      setBadges((cur) => (sameBadges(cur, dodged) ? cur : dodged));
+      // While the Capture frame is armed, the export is a STILL — overlapping labels can't be
+      // disambiguated by panning, so spread them apart for legibility. Measure each badge's
+      // real box from the live DOM (keyed by data-bkey) so wide aspect/node labels separate
+      // correctly; sizes are intrinsic, so this stays a fixed point (no measure→resize loop).
+      if (frameActiveRef.current) {
+        // `globalThis.Map`: in this file the bare name `Map` is the component itself.
+        const sizes = new globalThis.Map<string, BadgeSize>();
+        frameRef.current
+          ?.querySelector('.acg-edge-badges')
+          ?.querySelectorAll<HTMLElement>('.acg-badge[data-bkey]')
+          .forEach((el) => {
+            sizes.set(el.dataset.bkey as string, {
+              hw: el.offsetWidth / 2,
+              hh: el.offsetHeight / 2,
+            });
+          });
+        placed = spreadBadges(
+          placed,
+          sizes,
+          hudRects,
+          cont.clientWidth,
+          cont.clientHeight,
+          inset,
+        );
+      }
+      setBadges((cur) => (sameBadges(cur, placed) ? cur : placed));
     }
 
     // Paran centre badges: one per visible paran, parked on its latitude row at the
@@ -3614,7 +3720,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // `cap` is the reserved caption-band height (css px); the map/badges are inset by it
   // at the bottom so they don't sit behind the caption.
   const [frameInset, setFrameInset] = useState<
-    { l: number; t: number; r: number; b: number; cap: number } | null
+    { l: number; t: number; r: number; b: number; cap: number; boxW: number } | null
   >(null);
   useEffect(() => {
     if (!frameActive || !frameAspect) {
@@ -3647,7 +3753,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // The footer band is always reserved while framing — it's the watermark's backdrop,
       // shown even when no caption field is enabled (so the caption text is just blank).
       const cap = Math.max(Math.round(boxW * bandFrac), 22);
-      setFrameInset({ l: ix, t: iy, r: ix, b: iy, cap });
+      // boxW is kept so the wheel view can size its wheel to a fraction of the frame width.
+      setFrameInset({ l: ix, t: iy, r: ix, b: iy, cap, boxW: Math.round(boxW) });
     };
     compute();
     window.addEventListener('resize', compute);
@@ -3662,6 +3769,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const captureLandscape = !!frameAspect && frameAspect >= 1.3;
   const showExtras = frameActive && !!frameExtras;
   const extraSide: 'left' | 'top' = captureLandscape ? 'left' : 'top';
+  // Wheel-view diameter: ~28% of the frame width, but floored at 280px so the per-planet
+  // degree·sign·minute readout ring has room to render (below ~280px it self-hides), and
+  // capped so it doesn't dominate huge frames. Square/portrait frames dock the panel as a
+  // roomy TOP band (not a narrow left rail), where the wheel reads cramped at the landscape
+  // size — so enlarge it ~22% there. Derived from the fixed frame box (not the panel inset),
+  // so it can't feed back into the measure→resize loop.
+  const wheelSize = frameInset
+    ? Math.round(
+        Math.min(460, Math.max(280, frameInset.boxW * 0.28)) * (extraSide === 'top' ? 1.4 : 1),
+      )
+    : extraSide === 'top'
+      ? 420
+      : 300;
   const [extraSize, setExtraSize] = useState(0);
   const onExtraMeasure = useCallback((px: number) => {
     // Round + equality-guard so a steady ResizeObserver tick can't loop with resize().
@@ -4549,6 +4669,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <TipButton
               type="button"
               key={b.key}
+              data-bkey={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
               style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
@@ -4561,6 +4682,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           ) : (
             <span
               key={b.key}
+              data-bkey={b.key}
               className="acg-badge"
               style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
             >
@@ -4632,9 +4754,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       {showExtras && frameExtras && (
         <CaptureExtras
           orientation={extraSide}
-          planets={frameExtras.planets}
-          angles={frameExtras.angles}
-          balance={frameExtras.balance}
+          data={frameExtras}
+          wheelSize={wheelSize}
           onMeasure={onExtraMeasure}
         />
       )}
