@@ -42,7 +42,9 @@ html[data-mapstate='natal-pinned'] .sidebar {
     position: fixed;
     top: 0;
     right: 0;
-    width: 200px; /* same content width as the desktop window, docked flush to the right edge */
+    /* 200px content + the side-notch inset so the options clear a notch-on-the-right landscape
+       hold; env() is 0 in portrait / on desktop, so it stays exactly 200px there. */
+    width: calc(200px + env(safe-area-inset-right));
     height: 100vh;
     height: 100dvh;
     max-height: none;
@@ -51,12 +53,14 @@ html[data-mapstate='natal-pinned'] .sidebar {
     border-bottom: none;
     border-right: none;
     z-index: 40;
-    /* Clear the status bar / home-indicator vertically only. NO padding-right: the panel docks
-       flush to the right edge, reclaiming the ~44px the symmetric landscape safe-area inset
-       otherwise wastes here. (On a notch-on-the-right hold the options' right edge would sit near
-       the notch — an accepted trade, matching the edge-hugging corner HUD.) */
+    /* Clear the status bar / home-indicator (top/bottom) AND the side notch (right) so the settings
+       options are always tappable — a notch-on-the-right landscape hold previously tucked them under
+       the cutout. (iOS reports a SYMMETRIC landscape inset, so this also pads the no-notch hold —
+       accepted now in exchange for reliable taps; the dock widens by the same inset above so the
+       200px content area is preserved.) */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+    padding-right: env(safe-area-inset-right);
     /* Slide in from the right edge on open. Pairs with the .settings-nub `transform` transition
        (same 200px distance, duration + ease) — both are transform-driven (compositor), so the
        nub really does ride the panel's edge in, locked to it on mobile. */

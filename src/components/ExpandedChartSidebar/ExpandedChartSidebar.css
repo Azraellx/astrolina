@@ -15,6 +15,11 @@
   background: rgba(var(--bg-panel), 0.98);
   border-right: 1px solid rgba(var(--tint), 0.1);
   color: var(--text-strong);
+  /* Standalone PWA: keep the Hide button + content out from under the device notch — top in
+     portrait (full-width here), left in landscape (this panel hugs the left edge). env() is 0 on a
+     non-notched device, so it's a no-op there. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
   /* Row layout: a scrolling content column plus a fixed drag strip on the
      right, so the resize handle never sits under the scrollbar. */
   display: flex;
