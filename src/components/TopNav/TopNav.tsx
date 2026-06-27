@@ -29,7 +29,7 @@ import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
-import { useTouchLayout } from '../../lib/touch';
+import { useTouchLayout, useNarrowNav } from '../../lib/touch';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -256,6 +256,61 @@ function ToolMenuIcon({ tool }: { tool: MapTool }) {
         /* wrench — neutral "tools" affordance */
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
       )}
+    </svg>
+  );
+}
+
+// Overlay & View triggers show a text label on roomy viewports and collapse to an
+// icon-only button on a narrow (phone-width) screen — both are always in the DOM and CSS
+// swaps which one shows (see the `@media (max-width: 600px)` rules), so there's no JS read.
+function NavMenuLabel({ text, icon }: { text: string; icon: ReactNode }) {
+  return (
+    <>
+      <span className="navmenu-label-text">{text}</span>
+      <span className="navmenu-label-icon" aria-hidden="true">
+        {icon}
+      </span>
+    </>
+  );
+}
+
+// Stacked sheets — the Overlay menu (synastry / eclipses / transits layered on the map).
+function OverlayIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5" />
+      <path d="m3 17 9 5 9-5" />
+    </svg>
+  );
+}
+
+// Eye — the View menu (what's shown on the map: coordinates, minimap, guides, info…).
+function ViewIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -607,6 +662,9 @@ export function TopNav({
   // (the chart name) is wider than the right. The row hugs its content, so we shift
   // the whole bar by half the left/right width difference (grid gaps cancel out).
   // Disabled while the sidebar is expanded — that layout is left-anchored, not centred.
+  // The compact (phone-width) nav spans the full viewport and is centred by CSS, so the JS
+  // pill-recentring shift below is skipped there — it would push the full-width bar off-screen.
+  const narrow = useNarrowNav();
   const barRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const bar = barRef.current;
@@ -619,7 +677,7 @@ export function TopNav({
       // can size themselves to it ×2 on touch, instead of a fixed viewport %. offsetWidth is the
       // layout width (ignores the centring translateX below). See TimelineHud/EclipseHud CSS.
       document.documentElement.style.setProperty('--topnav-width', `${bar.offsetWidth}px`);
-      if (chartExpanded) {
+      if (chartExpanded || narrow) {
         bar.style.transform = '';
         return;
       }
@@ -633,7 +691,7 @@ export function TopNav({
     ro.observe(left);
     ro.observe(right);
     return () => ro.disconnect();
-  }, [chartExpanded]);
+  }, [chartExpanded, narrow]);
 
   return (
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
@@ -818,7 +876,12 @@ export function TopNav({
               )}
             </NavMenu>
 
-            <NavMenu label={t('topNav.overlay.menuLabel')} active={overlayActive} className="navmenu-mapstate">
+            <NavMenu
+              label={<NavMenuLabel text={t('topNav.overlay.menuLabel')} icon={<OverlayIcon />} />}
+              ariaLabel={t('topNav.overlay.menuLabel')}
+              active={overlayActive}
+              className="navmenu-mapstate"
+            >
               {(close) => (
                 <>
                   {/* Explicit "None" row (selected whenever no overlay is shown) is
@@ -907,7 +970,11 @@ export function TopNav({
               )}
             </NavMenu>
 
-            <NavMenu label={t('topNav.view.menuLabel')} className="navmenu-steady">
+            <NavMenu
+              label={<NavMenuLabel text={t('topNav.view.menuLabel')} icon={<ViewIcon />} />}
+              ariaLabel={t('topNav.view.menuLabel')}
+              className="navmenu-steady"
+            >
               {/* Built-ins + add-on extensions, hotkey items first then hotkey-less
                   ones (see orderedViewItems). */}
               {orderedViewItems.map((it) => (

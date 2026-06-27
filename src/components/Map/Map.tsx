@@ -22,6 +22,7 @@ import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geo
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
+import { isTouchLayout } from '../../lib/touch';
 import {
   CaptureExtras,
   type CaptureFrameExtras,
@@ -133,7 +134,8 @@ const HUD_SELECTORS = [
   '.thud-measure', // the timeline's overlay-mode nub (protrudes above the bar)
   '.synastry-hud', // bottom synastry bar (same slot as the timeline; its tag is inline)
   '.sidebar',
-  '.app-header',
+  '.profile-window', // username + plan-badge strip (top-left, or bottom-left on touch)
+  '.app-header', // coordinates readout (top-left; present only while the Coordinates view is on)
   '.chart-wheel',
   '.expanded-sidebar',
   '.maplibregl-ctrl-top-right',
@@ -3805,9 +3807,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!host) return;
       const { width: W, height: H } = host.getBoundingClientRect();
       if (W <= 0 || H <= 0) return;
-      const m = 0.1; // ~10% margin each side
-      const usableW = W * (1 - 2 * m);
-      const usableH = H * (1 - 2 * m);
+      // Mobile uses the cramped screen more fully than the symmetric desktop margin: a PORTRAIT
+      // screen drops the side margins so the frame spans the full width; a LANDSCAPE screen pins the
+      // frame toward the bottom (below) so the top nav bar can't clip it. Desktop stays centred.
+      const touch = isTouchLayout();
+      const screenPortrait = H > W;
+      const mx = touch && screenPortrait ? 0 : 0.1; // horizontal margin fraction
+      const my = 0.1; // vertical margin fraction
+      const usableW = W * (1 - 2 * mx);
+      const usableH = H * (1 - 2 * my);
       let boxW: number;
       let boxH: number;
       if (usableW / usableH > frameAspect) {
@@ -3818,7 +3826,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         boxH = boxW / frameAspect;
       }
       const ix = Math.round((W - boxW) / 2);
-      const iy = Math.round((H - boxH) / 2);
+      // Landscape mobile: pin the frame flush to the bottom (no margin — like the full-bleed
+      // portrait sides) so it clears the top nav and uses the most space; else centre vertically.
+      const bottomAlign = touch && !screenPortrait;
+      const iyb = bottomAlign ? 0 : Math.round((H - boxH) / 2);
+      const iy = bottomAlign ? Math.round(H - boxH - iyb) : Math.round((H - boxH) / 2);
       // The band is a fraction of the frame WIDTH; for wide (landscape ~16:9) frames
       // that reads too tall, so halve it there. Floored so it stays legible on small frames.
       const landscape = !!frameAspect && frameAspect >= 1.3;
@@ -3827,7 +3839,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // shown even when no caption field is enabled (so the caption text is just blank).
       const cap = Math.max(Math.round(boxW * bandFrac), 22);
       // boxW is kept so the wheel view can size its wheel to a fraction of the frame width.
-      setFrameInset({ l: ix, t: iy, r: ix, b: iy, cap, boxW: Math.round(boxW) });
+      setFrameInset({ l: ix, t: iy, r: ix, b: iyb, cap, boxW: Math.round(boxW) });
     };
     compute();
     window.addEventListener('resize', compute);

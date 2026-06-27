@@ -139,6 +139,10 @@ html[data-mapstate='natal-pinned'] .sidebar {
   border-right: none;
   border-radius: 10px 0 0 10px;
   background: rgba(var(--bg-panel), 0.94);
+  /* Frosted glass like the top nav + overlay bars. Without it the nub sat as a flat tint over the
+     map, reading heavier/thicker than the rest of the HUD. -webkit- so it frosts on iOS too. */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   color: var(--text-muted);
   cursor: pointer;
   /* Kill the browser's blue/grey tap-flash on this touch-only control — it doesn't need one. */
@@ -156,7 +160,15 @@ html[data-mapstate='natal-pinned'] .sidebar {
 .settings-nub.is-open {
   transform: translate(-200px, -50%);
 }
-.settings-nub:hover,
+/* Hover tint only where a real pointer can actually hover. The nub is touch-only, and on touch a
+   tap leaves :hover STUCK (sticky hover) — so after opening the dock the nub stayed darkened and
+   never reverted. Gating on (hover: hover) drops the tint on touch; keyboard focus still shows it. */
+@media (hover: hover) {
+  .settings-nub:hover {
+    color: var(--text-strong);
+    background: rgb(var(--bg-menu));
+  }
+}
 .settings-nub:focus-visible {
   color: var(--text-strong);
   background: rgb(var(--bg-menu));
@@ -449,7 +461,11 @@ html[data-mapstate='natal-pinned'] .sidebar {
   padding: 3px 8px;
   border: none;
   background: rgba(var(--tint), 0.05);
-  color: var(--text-dim);
+  /* --text-muted, not --text-dim: the un-picked unit needs to stay legible. On Earth especially,
+     --text-dim is a muted brown that reads too low-contrast on the parchment panel; --text-muted
+     has more contrast against every theme's panel, and the picked unit still stands out via its
+     accent background + --text-strong below. */
+  color: var(--text-muted);
   font: inherit;
   font-size: 10px;
   font-weight: 600;

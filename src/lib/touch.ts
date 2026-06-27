@@ -39,25 +39,28 @@ function mediaStore(query: string): {
 // large landscape tablet is still a coarse-pointer device and SHOULD get the touch
 // layout (you can't hover regardless of screen size).
 const touch = mediaStore('(pointer: coarse)');
-// Portrait — used only by the rotate gate. We support landscape only for now.
-const portrait = mediaStore('(orientation: portrait)');
+// Narrow viewport (phone-width / small windows) — drives the compact, full-width top-nav
+// layout (icon-only menus). Width-based, not orientation: a landscape phone and a portrait
+// tablet both have room for the labelled nav, so only genuinely narrow widths compact. 600px
+// matches the ChartManager breakpoint and sits just under the 640px stacking convention.
+const narrowNav = mediaStore('(max-width: 600px)');
 
 /** Non-reactive read: is this a coarse-pointer (touch) device? */
 export function isTouchLayout(): boolean {
   return touch.getSnapshot();
 }
-/** Non-reactive read: is the viewport currently portrait? */
-export function isPortrait(): boolean {
-  return portrait.getSnapshot();
+/** Non-reactive read: is the viewport narrow enough for the compact top-nav layout? */
+export function isNarrowNav(): boolean {
+  return narrowNav.getSnapshot();
 }
 
 /** Reactive read of whether this is a coarse-pointer (touch) device. */
 export function useTouchLayout(): boolean {
   return useSyncExternalStore(touch.subscribe, touch.getSnapshot, () => false);
 }
-/** Reactive read of whether the viewport is currently portrait. */
-export function usePortrait(): boolean {
-  return useSyncExternalStore(portrait.subscribe, portrait.getSnapshot, () => false);
+/** Reactive read of whether the viewport is narrow enough for the compact top-nav layout. */
+export function useNarrowNav(): boolean {
+  return useSyncExternalStore(narrowNav.subscribe, narrowNav.getSnapshot, () => false);
 }
 
 // A physical keyboard can't be detected by any standard web API, so we INFER one: the

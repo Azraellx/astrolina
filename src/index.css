@@ -289,6 +289,17 @@ span.astro-glyph {
     inset 0 1px 0 rgba(240, 226, 192, 0.12);
 }
 
+/* The info-bar + settings nub hardcode the heavier 0.94 fill (like the bars), which over Earth's
+   dark-parchment --bg-panel reads darker/thicker than the rest of the (0.72 + blur) Earth chrome —
+   notably heavier than the nav. Bring their TONE in line with .timeline-hud above. Kept separate
+   from that rule so their own box-shadows (the nub's left-edge lift) stay intact. */
+:root[data-theme='vintage'] .info-bar,
+:root[data-theme='vintage'] .settings-nub {
+  background: rgba(var(--bg-panel), 0.72);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
 /* Same denser-than-the-bar fill for the drawer on Earth — at the shared 0.72 panel
    value it read too see-through for the small toggle chip. */
 :root[data-theme='vintage'] .thud-drawer {
@@ -483,6 +494,16 @@ body,
   .top-left-stack {
     top: auto;
     bottom: var(--edge, 16px);
+  }
+}
+
+/* Portrait phones: the map's attribution/credits footer becomes a full-width centred bar pinned
+   along the very bottom (see Map.css). Lift the bottom-left profile strip just clear of it — a
+   small gap above the footer, matching the screen-edge padding (on touch --edge is 3px, so both
+   otherwise hug the bottom). 28px ≈ the ~24px footer chip + a few px, in step with .info-bar. */
+@media (pointer: coarse) and (max-width: 600px) {
+  .top-left-stack {
+    bottom: calc(var(--edge, 3px) + 28px);
   }
 }
 

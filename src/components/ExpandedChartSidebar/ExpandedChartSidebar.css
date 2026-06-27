@@ -870,6 +870,26 @@
   }
 }
 
+/* Portrait phones: the expanded chart sidebar takes the WHOLE width — there's no room to show the
+   map beside it — so it spans the viewport and drops the drag-resize handle (nothing to size
+   against). Users dismiss it with the on-panel close button (.es-close-btn) to see the map again.
+   The width:100% beats the inline px width set in the TSX; the settings nub (z-39) and its dock
+   (z-40) still float above this panel (z-30), so planets can be filtered while it's open. */
+@media (pointer: coarse) and (max-width: 600px) {
+  .expanded-sidebar {
+    width: 100% !important;
+  }
+  .es-drag-handle {
+    display: none;
+  }
+  /* The fixed full-width panel can't be widened to reveal the Azimuth/Altitude columns, so the TSX
+     forces them on here — let the advanced table take its natural width (instead of width:100%) so
+     it overflows the panel and scrolls sideways via .es-adv-scroll's overflow-x:auto. */
+  .es-adv-table {
+    width: max-content;
+  }
+}
+
 .es-drag-handle:hover,
 .es-drag-handle:active {
   background: rgba(var(--accent-rgb), 0.1);

@@ -600,11 +600,14 @@ export default function App() {
   const [teleportTarget, setTeleportTarget] = useState<{ lat: number; lng: number } | null>(
     null,
   );
-  // Overlay ▸ Display ▸ Timeline: when off, the bottom timeline collapses to just
-  // its draggable nub (no ruler/transport).
-  const [showTimeline, setShowTimeline] = useState(
+  // Shared "overlay bar expanded?" preference across ALL bottom overlay bars (timeline,
+  // synastry, eclipses). The eye on any bar's nub toggles it, so collapsing one bar and then
+  // cycling (O / dropdown) to another keeps the same collapsed-vs-expanded view. Collapsed =
+  // just the draggable nub (no ruler/transport/picker). Persisted under the original key.
+  const [overlayExpanded, setOverlayExpanded] = useState(
     () => localStorage.getItem('astro:show-timeline:v1') !== '0',
   );
+  const toggleOverlayExpanded = () => setOverlayExpanded((v) => !v);
   // Overlay ▸ Display ▸ Zenith: draw the overlay bodies' sub-planetary (zenith)
   // stamps on the map. Off by default. When off, the overlay edge labels also stop
   // being click-to-fly targets — their zenith point isn't shown, so there's nothing
@@ -1222,8 +1225,8 @@ export default function App() {
     localStorage.setItem('astro:sidebar-section:v1', sidebarSection ?? 'none');
   }, [sidebarSection]);
   useEffect(() => {
-    localStorage.setItem('astro:show-timeline:v1', showTimeline ? '1' : '0');
-  }, [showTimeline]);
+    localStorage.setItem('astro:show-timeline:v1', overlayExpanded ? '1' : '0');
+  }, [overlayExpanded]);
   useEffect(() => {
     localStorage.setItem(
       'astro:show-overlay-zenith:v1',
@@ -3314,8 +3317,8 @@ export default function App() {
           charts={charts}
           currentId={current?.id ?? null}
           overlayMeasure={overlayLayer?.measure ?? null}
-          showTimeline={showTimeline}
-          onToggleTimeline={() => setShowTimeline((v) => !v)}
+          showTimeline={overlayExpanded}
+          onToggleTimeline={toggleOverlayExpanded}
           onSnapReturn={snapToReturn}
           transitFrame={transitFrame}
           setTransitFrame={setTransitFrame}
@@ -3336,6 +3339,8 @@ export default function App() {
       {overlayMode === 'synastry' && (
         <SynastryHud
           partner={partner}
+          expanded={overlayExpanded}
+          onToggleExpanded={toggleOverlayExpanded}
           onPickPartner={() => setPickingPartner(true)}
           method={synastryMethod}
           setMethod={setSynastryMethod}
@@ -3358,6 +3363,8 @@ export default function App() {
       {overlayMode === 'eclipses' && (
         <EclipseHud
           catalog={eclipseCatalog}
+          expanded={overlayExpanded}
+          onToggleExpanded={toggleOverlayExpanded}
           selected={eclipseRow}
           onSelect={onEclipseSelect}
           onLocate={() => {

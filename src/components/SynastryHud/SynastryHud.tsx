@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { chartTag, displayName, type StoredChart } from '../../lib/chartLibrary';
 import type { RelationshipMethod } from '../../lib/astro/timeline';
 import { useMovableHud } from '../../lib/useMovableHud';
@@ -32,6 +32,10 @@ function cityOf(c: StoredChart): string {
 interface SynastryHudProps {
   /** The chart currently being compared, or null until one is chosen. */
   partner: StoredChart | null;
+  /** Shared overlay-bar expanded state (App-owned): the nub's eye toggles it, so the
+   *  collapsed/expanded view carries across overlay switches (O / dropdown). */
+  expanded: boolean;
+  onToggleExpanded: () => void;
   /** Open the regular chart browser to pick/add the comparison partner — the same
    *  add/select flow as the nav, with the active chart excluded (handled by App). */
   onPickPartner: () => void;
@@ -56,6 +60,8 @@ interface SynastryHudProps {
  */
 export function SynastryHud({
   partner,
+  expanded,
+  onToggleExpanded,
   onPickPartner,
   method,
   setMethod,
@@ -64,7 +70,6 @@ export function SynastryHud({
   generateBlock,
 }: SynastryHudProps) {
   const { t, fmt } = useT();
-  const [expanded, setExpanded] = useState(true); // nub eye: body shown?
   const ref = useRef<HTMLDivElement>(null);
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
@@ -120,7 +125,7 @@ export function SynastryHud({
           tip={t(expanded ? 'synastryHud.barToggle.hide' : 'synastryHud.barToggle.show')}
           aria-label={t(expanded ? 'synastryHud.barToggle.hide' : 'synastryHud.barToggle.show')}
           aria-pressed={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={onToggleExpanded}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >

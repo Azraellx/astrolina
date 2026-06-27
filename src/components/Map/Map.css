@@ -780,6 +780,15 @@
   margin: 0 !important;
 }
 
+/* Portrait phones: the top nav becomes a full-width bar across the top (TopNav.css), so it now
+   sits over the top-right corner where the +/- zoom controls live. Push the controls down below
+   the nav (~44px tall) so they clear it; the max() keeps them under a notch's safe-area too. */
+@media (pointer: coarse) and (max-width: 600px) {
+  .maplibregl-ctrl-top-right {
+    top: calc(max(var(--edge, 3px), env(safe-area-inset-top)) + 58px) !important;
+  }
+}
+
 /* The compass (reset bearing/tilt) only makes sense on the rotatable 3D globe;
    hide it in flat 2D, where the map is locked north-up (the `.proj-2d` class is
    toggled on the map container by applyProjection). */
@@ -829,6 +838,26 @@
 /* Hide the collapse (i) button — text is always visible so the toggle is redundant */
 .maplibregl-ctrl-attrib-button {
   display: none !important;
+}
+
+/* Portrait phones: turn the bottom-right attribution chip into a full-width, centred footer bar
+   pinned along the very bottom — its left/right edges flush to the screen edges — so the
+   bottom-left profile strip (lifted above it in index.css) no longer collides with a
+   right-anchored chip. Width-gated on touch; the capture-frame override above stays more specific,
+   so an exported still keeps the normal corner attribution. */
+@media (pointer: coarse) and (max-width: 600px) {
+  .maplibregl-ctrl-bottom-right {
+    left: 0; /* both edges anchored → the corner container spans the full width */
+    right: 0;
+  }
+  .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib {
+    float: none !important;
+    width: 100%;
+    margin-right: 0 !important; /* drop the right gutter so the bar reaches both screen edges */
+    box-sizing: border-box;
+    text-align: center; /* centre the credit text */
+    border-radius: 0 !important; /* full-bleed bar: square the corners at the screen edges */
+  }
 }
 
 /* Nav control group: stack vertically (+, -, compass top→bottom) */

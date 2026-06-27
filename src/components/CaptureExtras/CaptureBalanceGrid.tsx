@@ -18,6 +18,7 @@ import {
   BALANCE_MODALITIES,
   type BalanceGrid,
 } from '../../lib/astro/format';
+import { useT } from '../../i18n';
 import './CaptureBalanceGrid.css';
 
 // Element tints, matching the expanded sidebar's Balance palette (es-el-* in
@@ -36,14 +37,20 @@ const MODALITY_COLORS: Record<(typeof BALANCE_MODALITIES)[number], string> = {
 };
 
 export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
+  const { t } = useT();
   return (
     <div className="capture-balance-grid" aria-hidden="true">
-      {/* Header row: empty corner, then the three modality glyphs. */}
+      {/* Header row: empty corner, then the three modality glyphs + names. */}
       <div className="cbg-corner" />
       {BALANCE_MODALITIES.map((m) => (
         <div className="cbg-head cbg-col-head" key={`h-${m}`}>
           <span className="astro-glyph cbg-head-glyph" style={{ color: MODALITY_COLORS[m] }}>
             {MODALITY_GLYPHS[m]}
+          </span>
+          {/* The modality glyphs aren't widely recognised (unlike the element triangles), so spell
+              the name out beside each one. The element row heads stay glyph-only. */}
+          <span className="cbg-head-name" style={{ color: MODALITY_COLORS[m] }}>
+            {t(`expandedSidebar.modality.${m}`)}
           </span>
         </div>
       ))}

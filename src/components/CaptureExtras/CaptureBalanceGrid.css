@@ -41,6 +41,17 @@
   font-size: 1.25em;
   line-height: 1;
 }
+/* Modality column heads pair the (obscure) glyph with its spelled-out name; small gap, no wrap. */
+.cbg-col-head {
+  gap: 0.32em;
+}
+.cbg-head-name {
+  font-size: 0.82em;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
 
 /* Body cells: the planet glyphs that fall in this element+modality, wrapping to
    multiple rows when a cell is crowded. */

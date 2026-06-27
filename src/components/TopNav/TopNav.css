@@ -487,6 +487,20 @@ button.topnav-status:hover {
   color: var(--map-accent);
 }
 
+/* Overlay/View trigger content: a text label on roomy viewports, with an icon twin that
+   stays hidden until the nav compacts to icon-only at phone widths (see the @media block at
+   the end of this file). Tools has no text label — it's icon-only in every orientation. */
+.navmenu-label-text {
+  display: inline;
+}
+.navmenu-label-icon {
+  display: none;
+  align-items: center;
+}
+.navmenu-label-icon svg {
+  display: block;
+}
+
 .navmenu-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -660,4 +674,68 @@ button.topnav-status:hover {
   padding: 6px 8px;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* ── Compact (phone-width) top nav ────────────────────────────────────────────
+   At narrow viewports the labelled, content-sized island can't fit, so the bar spans the
+   full width as ONE row: the Overlay/View menus collapse to icons (Tools already is), the
+   chart name truncates, and the centre status pill stays. The JS pill-recentring shift is
+   disabled at this width (useNarrowNav in TopNav.tsx) — the bar is centred by spanning
+   edge-to-edge instead, so the inline transform is cleared. Mirrors the 640px stacking
+   convention used elsewhere; 600px keeps landscape phones + portrait tablets on the normal nav. */
+@media (max-width: 600px) {
+  /* Stretch the absolutely-positioned stack across the viewport (minus the edge gutters):
+     setting both left + right with width:auto spans it. The --es-width nudge and the
+     translateX(-50%) centring are dropped — neither is needed at full width. */
+  .topnav-stack {
+    left: var(--edge, 8px);
+    right: var(--edge, 8px);
+    transform: none;
+  }
+  .topnav {
+    width: 100%;
+  }
+  /* Consistent spread: name (left) · status pill (centre) · icon menus (right), at content-
+     independent positions so the bar's parts always sit in the same place in portrait. Extra RIGHT
+     padding keeps the right-pinned View trigger clear of the bar's rounded bottom-right corner
+     (40px radius) so it doesn't bleed over the edge; the left stays at the base gutter. */
+  .topnav-row {
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    padding: 7px 24px 7px 10px;
+  }
+  /* Close the gap between the name and the sidebar toggle: park the name at the END of its (wide)
+     left track — right beside the toggle — so the slack falls to its left instead of between them.
+     The initials/year themselves are right-aligned in ChartSwitcher.css so the block reads flush. */
+  .topnav-chart {
+    justify-self: end;
+  }
+  /* Menus go icon-only: hide the word, show the glyph. */
+  .navmenu-label-text {
+    display: none;
+  }
+  .navmenu-label-icon {
+    display: inline-flex;
+  }
+  /* Square-ish icon triggers, matching the icon-only Tools button's tighter padding. */
+  .topnav-right .navmenu-trigger {
+    padding: 0 8px;
+  }
+  /* The right-zone menus sit hard against the screen edge, so anchor their dropdowns to the
+     right — they open inward and can't spill off-screen — and never exceed the viewport. */
+  .topnav-right .navmenu-panel {
+    left: auto;
+    right: 0;
+    max-width: calc(100vw - 2 * var(--edge, 8px));
+  }
+}
+
+/* Sub-402px phones: the wide right-zone menus force the grid and squeeze the left (name) track
+   until the right-aligned name/year overflows the rounded left corner. Rather than keep taking that
+   width from the side tracks, trim the centre status pill's reserved min-width (108px → 100px) so a
+   little goes back to the side tracks while the pill stays a stable, non-jittery size. */
+@media (max-width: 401px) {
+  .topnav-status {
+    min-width: 80px;
+  }
 }

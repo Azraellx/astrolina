@@ -23,7 +23,7 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
-import { isTouchLayout } from '../../lib/touch';
+import { isTouchLayout, useNarrowNav } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
@@ -535,6 +535,13 @@ export function ExpandedChartSidebar({
     // Rein in a width saved under the old (wider) cap, and fit a narrower viewport.
     return Math.max(min, Math.min(base, maxSidebarWidth()));
   });
+
+  // Portrait phones pin this sidebar to the full viewport width and drop the resize handle (see the
+  // CSS), so the width-gated Azimuth/Altitude columns could never be revealed by dragging it wider.
+  // Force them on in that mode and let the advanced table scroll sideways instead (the CSS switches
+  // .es-adv-table to max-content there so it overflows into the existing .es-adv-scroll).
+  const narrow = useNarrowNav();
+  const fixedFullWidth = isTouchLayout() && narrow;
 
   useEffect(() => {
     localStorage.setItem(WIDTH_KEY, String(width));
@@ -1082,7 +1089,9 @@ export function ExpandedChartSidebar({
         // form; past the second, the Azimuth + Altitude columns also fit. Below a
         // cutoff the heavier content drops back so a narrow panel still fits.
         const advFullSign = width >= 530;
-        const advExtraCols = width >= 640;
+        // Past 640px the Azimuth + Altitude columns fit; OR force them when the panel is pinned
+        // full-width in portrait (can't be widened), where the table scrolls sideways instead.
+        const advExtraCols = width >= 640 || fixedFullWidth;
         // Advanced view: one planet per row across labelled coordinate columns.
         // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
         // from advancedCoords (computed for the relocated observer).

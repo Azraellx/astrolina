@@ -898,14 +898,21 @@
      Hit List). Width-forcing all of them stretched the measure readout AND blew the movable
      windows out to the bar's min-width (~600px). The positive .thud-bar marker (set ONLY on the
      TimelineHud root) scopes this to the real overlay bar, robust to any new .timeline-hud reuser. */
+  /* Lift above the profile box (z-20) — including the collapsed nub — so it's never hidden behind
+     the profile where they meet at the bottom of the screen. Matches the eclipse/synastry overlays. */
   .timeline-hud.thud-bar {
+    z-index: 21;
+  }
+  /* Force the full width only while EXPANDED. Collapsed (eye off) the bar is just its nub pill, which
+     must keep its natural content size — otherwise the bar's min-width held the lone nub stretched
+     way too wide. Mirrors .eclipse-hud:not(.is-collapsed). */
+  .timeline-hud.thud-bar:not(.thud-collapsed) {
     left: 50%;
     /* Floor the width at --overlay-bar-min-w (tweak it in index.css). The inner min() clamps that
        floor to the screen (minus edge padding) so a narrow phone can't force horizontal overflow;
        max-width keeps the same ceiling for content-driven growth. */
     min-width: min(var(--overlay-bar-min-w, 520px), calc(100vw - 2 * var(--edge, 3px)));
     max-width: calc(100vw - 2 * var(--edge, 3px));
-    z-index: 21;
   }
   /* Tighten the rows vertically so the bar is shorter — the transport buttons and the scrubber
      sit closer together. The returns/setting rows keep their top:0 hug under the row above. */

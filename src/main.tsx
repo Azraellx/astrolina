@@ -10,7 +10,6 @@ import './index.css'
 import App from './App.tsx'
 import { I18nProvider } from './i18n'
 import { initEphemeris } from './lib/ephemeris'
-import { mountRotateGate } from './components/RotateGate/mount'
 
 // The index.html inline script starts the progress bar at page load (so it moves
 // during the JS-bundle download too) and exposes window.__load. Here we drive the
@@ -32,12 +31,6 @@ const setStatus = (s: string) => {
 
 w.__loadTaken?.() // the JS bundle is in — stop the early generic status hint
 setStatus('Starting the engine…')
-
-// Show the "rotate to landscape" gate as early as possible — even while the engine
-// loads — so a touch user holding the device in portrait is told to turn it right
-// away rather than after the ephemeris finishes. Its own <body> root, so it's
-// independent of the App tree below. No-op on desktop / in landscape.
-mountRotateGate()
 
 // If the engine (WASM) download runs long, reassure that it's a one-time fetch.
 let reachedData = false

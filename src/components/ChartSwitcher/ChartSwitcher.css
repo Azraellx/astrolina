@@ -204,3 +204,22 @@
 .new-chart:hover {
   background: rgba(var(--accent-brand-rgb), 0.1);
 }
+
+/* Portrait top nav: the trigger is inset within the full-width bar, so the dropdown (anchored to
+   the trigger's left) clips against the screen edge. Pin it to the screen's left edge just below
+   the nav — like the sidebar's left-docked trigger, which never clips — and clamp it to the
+   viewport width. Scoped to .topnav so the expanded sidebar's switcher is left as-is. */
+@media (max-width: 600px) {
+  .topnav .switcher-menu {
+    position: fixed;
+    top: calc(max(var(--edge, 3px), env(safe-area-inset-top)) + 50px);
+    left: var(--edge, 3px);
+    max-width: calc(100vw - 2 * var(--edge, 3px));
+  }
+  /* Portrait shows just the initials over the year — right-align both so they share a clean right
+     edge that sits flush toward the sidebar toggle (the name block is parked at its track's end in
+     TopNav.css, closing the gap to the toggle). */
+  .topnav .switcher-trigger .label {
+    align-items: flex-end;
+  }
+}

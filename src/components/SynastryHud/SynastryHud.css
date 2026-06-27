@@ -509,3 +509,12 @@
     justify-content: center;
   }
 }
+
+/* Touch: lift the bar above the profile box (the top-left/bottom-left stack is z-20) — including the
+   collapsed nub — so the profile never paints over it where they meet at the bottom of the screen.
+   The timeline + eclipse overlays already do this on touch; synastry was missing it. */
+@media (pointer: coarse) {
+  .synastry-hud {
+    z-index: 21;
+  }
+}

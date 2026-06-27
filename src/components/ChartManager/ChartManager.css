@@ -382,8 +382,14 @@
   padding: 0;
 }
 
-/* Stack the panes on narrow viewports. */
+/* Stack the panes on narrow viewports: the names list on top, the add/edit form below. */
 @media (max-width: 600px) {
+  /* Cap the whole modal short of the viewport so it reads as a centred dialog with margin around
+     it, not a near-full-screen sheet. The form pane scrolls within whatever height is left after
+     the list slice (overrides the taller touch cap above, which only needs to keep ✕ on-screen). */
+  .chart-manager {
+    max-height: 72dvh;
+  }
   .cm-body {
     flex-direction: column;
   }
@@ -391,6 +397,11 @@
     width: auto;
     border-right: none;
     border-bottom: 1px solid rgba(var(--tint), 0.08);
-    max-height: 38vh;
+    /* DEFINITE height (not max-height): the list <ul> is absolutely positioned so it adds no
+       intrinsic height, so a bare max-height would collapse this pane to just the search row.
+       A fixed slice gives the scrolling list real room; the form pane below takes the rest and
+       scrolls its own fields (overflow-y:auto), since both can't fit unscrolled in portrait. */
+    height: 32dvh;
+    flex-shrink: 0;
   }
 }

@@ -57,6 +57,11 @@ const ISO_STEPS: EclipseIsoStep[] = [10, 20, 25];
 interface EclipseHudProps {
   /** The full chronological merged catalog (1800–2399, solar + lunar). */
   catalog: EclipseCatalogRow[];
+  /** Shared overlay-bar expanded state (App-owned): the nub's eye toggles it, so the
+   *  collapsed/expanded view carries across overlay switches (O / dropdown). The body still
+   *  waits for the lazy eclipse data (see `ready`/`showBody`) so it never flashes blank. */
+  expanded: boolean;
+  onToggleExpanded: () => void;
   /** The selected eclipse — never null while the overlay is active. */
   selected: EclipseCatalogRow | null;
   /** `source` lets the App fly to menu picks but keep ‹ › stepping still. */
@@ -97,6 +102,8 @@ interface EclipseHudProps {
  */
 export function EclipseHud({
   catalog,
+  expanded,
+  onToggleExpanded,
   selected,
   onSelect,
   onLocate,
@@ -113,15 +120,13 @@ export function EclipseHud({
 }: EclipseHudProps) {
   const { t, fmt, labels } = useT();
   const [open, setOpen] = useState(false); // picker menu
-  // The eclipse module is lazy-loaded on first open; until its chunk lands, every
-  // data prop is empty (`catalog === []`, `selected`/`details === null`), which would
-  // otherwise render the bar EXPANDED but blank — an empty zero-width picker, disabled
-  // steppers, no vitals (the "artifact shapes"). So gate the initial expand on the data
-  // being in: start COLLAPSED while loading (a clean nub), then auto-expand the moment
-  // the catalog lands (effect below). Warm re-entries (module already loaded) have
-  // `ready` true at mount, so they start expanded with no flicker.
+  // The eclipse module is lazy-loaded on first open; until its chunk lands, every data prop is
+  // empty (`catalog === []`, `selected`/`details === null`), which would render an EXPANDED body
+  // blank — an empty zero-width picker, disabled steppers, no vitals (the "artifact shapes"). The
+  // expand preference is shared (App, via `expanded`), but the body must still wait for the data:
+  // show it only once the catalog is in, so a collapsed pref OR a cold load both read as a clean nub.
   const ready = catalog.length > 0;
-  const [expanded, setExpanded] = useState(ready); // nub eye: body shown?
+  const showBody = expanded && ready;
   const [query, setQuery] = useState('');
   const [bodyFilter, setBodyFilter] = useState<BodyFilter>('all');
   const [typeFilter, setTypeFilter] = useState<EclipseCatalogRow['kind'] | 'all'>('all');
@@ -145,13 +150,6 @@ export function EclipseHud({
     show: showSign,
     hide: hideSign,
   } = useHoverTip<HTMLElement>('top');
-
-  // Open the bar up the instant the lazy eclipse data lands (cold first open mounted
-  // collapsed). Keyed on `ready` so it fires once on the load edge — a no-op on warm
-  // re-entries (already expanded), and it then leaves the user's eye toggle alone.
-  useEffect(() => {
-    if (ready) setExpanded(true);
-  }, [ready]);
 
   useEffect(() => {
     if (!open) return;
@@ -221,7 +219,7 @@ export function EclipseHud({
   return (
     <div
       className={`eclipse-hud${dragging ? ' dragging' : ''}${
-        expanded ? '' : ' is-collapsed'
+        showBody ? '' : ' is-collapsed'
       }`}
       ref={ref}
       style={
@@ -236,7 +234,7 @@ export function EclipseHud({
       <div className="eclipse-hud-nub" {...handleProps}>
         <span className="hud-grip" aria-hidden="true" />
         <span className="eclipse-hud-nub-label">{t('eclipseHud.title')}</span>
-        {!expanded && selected && (
+        {!showBody && selected && (
           <span className="eclipse-hud-nub-sel">
             {fmtRowDate(selected.id, fmt)} ·{' '}
             <span className="astro-glyph" aria-hidden="true">
@@ -252,7 +250,7 @@ export function EclipseHud({
           tip={t(expanded ? 'eclipseHud.barToggle.hide' : 'eclipseHud.barToggle.show')}
           aria-label={t(expanded ? 'eclipseHud.barToggle.hide' : 'eclipseHud.barToggle.show')}
           aria-pressed={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={onToggleExpanded}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -270,7 +268,7 @@ export function EclipseHud({
         </span>
       </div>
 
-      {expanded && (
+      {showBody && (
         <div className="eclipse-hud-body">
           {/* Selection: ‹  [date · type ▾]  ›  ⌖ */}
           <div className="eclipse-hud-controls">

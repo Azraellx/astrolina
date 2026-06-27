@@ -18,6 +18,7 @@ import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useNarrowNav } from '../../lib/touch';
 import './ChartSwitcher.css';
 
 // The dropdown is a quick-switch shortlist; the full searchable list lives in the
@@ -40,6 +41,16 @@ function fmtBirthDate(c: StoredChart, fmt: Formatters): string {
   return `${c.day} ${fmt.monthName(c.month)} ${c.year}`;
 }
 
+// First + last initials — the ultra-compact portrait top bar shows these (with the tag icon)
+// over just the birth year, since the full name + date don't fit the narrow bar.
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  const lead = parts[0]?.charAt(0) ?? '';
+  const tail = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) ?? '' : '';
+  return (lead + tail).toUpperCase();
+}
+
 export function ChartSwitcher({
   current,
   charts,
@@ -50,6 +61,8 @@ export function ChartSwitcher({
   compact = false,
 }: ChartSwitcherProps) {
   const { t, fmt } = useT();
+  // Portrait top bar (compact + narrow): collapse the label to initials + year only.
+  const narrow = useNarrowNav();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // The trigger's hover tip. Suppressed while the menu is open so the rich card
@@ -111,10 +124,14 @@ export function ChartSwitcher({
               {current ? (
                 <>
                   <TagIcon tag={chartTag(current)} className="tag-icon" />
-                  {/* Compact (top bar): hard-cap the name length. Expanded sidebar:
-                      show the full name and let CSS ellipsis trim it to the available
-                      width, so it reveals more as the sidebar is widened. */}
-                  {compact ? displayName(current.name) : current.name}
+                  {/* Portrait top bar (compact + narrow): just the initials — the name + date
+                      don't fit. Compact landscape: hard-cap the name. Expanded sidebar: the full
+                      name, let CSS ellipsis trim it so it reveals more as the sidebar widens. */}
+                  {compact
+                    ? narrow
+                      ? initials(current.name)
+                      : displayName(current.name)
+                    : current.name}
                 </>
               ) : (
                 t('chartSwitcher.noChart')
@@ -142,9 +159,15 @@ export function ChartSwitcher({
           </span>
           {current && (
             <span className="meta">
-              {fmtBirthDate(current, fmt)} ·{' '}
-              {current.birthplace.label.split(',')[0]}
-              {current.tzUncertain && <span className="uncertain">⚠</span>}
+              {compact && narrow ? (
+                current.year
+              ) : (
+                <>
+                  {fmtBirthDate(current, fmt)} ·{' '}
+                  {current.birthplace.label.split(',')[0]}
+                  {current.tzUncertain && <span className="uncertain">⚠</span>}
+                </>
+              )}
             </span>
           )}
         </span>

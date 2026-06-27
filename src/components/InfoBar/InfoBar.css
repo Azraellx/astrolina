@@ -18,7 +18,9 @@
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
-  background: rgba(var(--bg-panel), 0.78);
+  /* Match the top nav + overlay bars' glass recipe (rgba(bg-panel,0.94) + blur(6px)). The old
+     0.78 + blur(4) read as a heavier flat tint than the rest of the HUD across all themes. */
+  background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 5px;
   font-family: inherit;
@@ -26,7 +28,8 @@
   letter-spacing: 0.02em;
   color: var(--text-muted);
   white-space: nowrap;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 /* Each value is a bare button that highlights on its own hover. */
@@ -48,4 +51,14 @@
 
 .info-bar-dot {
   color: var(--text-faint);
+}
+
+/* Mobile: --edge collapses to 3px, so the attribution footer drops to the very bottom. The
+   desktop 44px is a fixed value tuned to the roomier desktop --edge (16px), which leaves an
+   oversized gap once the footer drops. Track the footer down so the chip keeps a small gap
+   above it (matching the screen-edge padding). 28px ≈ the ~24px attribution chip + a few px. */
+@media (pointer: coarse) {
+  .info-bar {
+    bottom: calc(var(--edge, 3px) + 28px);
+  }
 }
