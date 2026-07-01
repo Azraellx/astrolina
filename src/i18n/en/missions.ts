@@ -53,8 +53,11 @@ export const missions = {
   measureBasics: {
     // "{ruler}" is rendered as the measure-tool (ruler) icon.
     subtitle: 'How to use the {ruler} measure tool',
-    holdPoint: 'to create a point',
-    shiftSnap: 'over a line to snap to it',
+    // "{drag}" renders as an inline Drag gesture pill (see MissionGuide's renderLabel), so with the
+    // leading Click pill this reads "Click and ✥ Drag to draw a line".
+    drawLine: 'and {drag} to draw a line',
+    touchDrawLine: 'to draw a line',
+    shiftSnap: 'over a line while measuring to snap onto it — the exact distance to that line',
     rightCancel: 'to cancel the tool',
     // Touch instruction text (the gesture pill changes too — see lib/missions.ts).
     touchSnap: 'then drag over a line to snap',
@@ -66,7 +69,7 @@ export const missions = {
     subtitle: 'How to quickly {zoom} zoom',
     zoomOut: 'the ‘Zoom Out’ button',
     quickZoom: 'to create a zoom window',
-    perspective: 'to change perspective (in 3D)',
+    perspective: 'to change perspective (in 3D globe projection view only)',
     touchQuickZoom: 'to zoom in or out',
   },
 } as const;

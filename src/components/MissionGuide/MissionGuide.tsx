@@ -14,9 +14,29 @@ import { ClickIcon } from '../ui/ClickIcon';
 import { TapIcon } from '../ui/TapIcon';
 import { DragIcon } from '../ui/DragIcon';
 import { PinchIcon } from '../ui/PinchIcon';
+import { ZoomIcon } from '../ui/ZoomIcon';
 import { isTouchLayout, useTouchLayout } from '../../lib/touch';
 import { useT } from '../../i18n';
+import type { TFn } from '../../i18n';
 import './MissionGuide.css';
+
+// A mission instruction line: any "{drag}" token becomes an inline Drag gesture pill (the same
+// .ui-tip-hotkey chrome as the leading gesture pill), the rest renders as text — the label twin of
+// the subtitle's icon-token pass, so an instruction can name a second gesture inline (e.g.
+// "Click and {drag} to draw a line"). Plain labels (no token) render as a single text span.
+function renderLabel(text: string, t: TFn) {
+  return text.split(/(\{\w+\})/).map((part, i) => {
+    if (part === '{drag}') {
+      return (
+        <span key={i} className="ui-tip-hotkey mg-gesture">
+          <DragIcon className="mg-click-icon" />
+          <span>{t('missions.gesture.drag')}</span>
+        </span>
+      );
+    }
+    return part ? <span key={i}>{part}</span> : null;
+  });
+}
 
 const MAX_W = 360;
 
@@ -77,28 +97,6 @@ function RulerIcon() {
       <path d="m11.5 9.5 2-2" />
       <path d="m8.5 6.5 2-2" />
       <path d="m17.5 15.5 2-2" />
-    </svg>
-  );
-}
-
-// A magnifying-glass icon — used in the subtitle wherever its text carries a "{zoom}"
-// token.
-function ZoomIcon() {
-  return (
-    <svg
-      className="mg-sub-icon"
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="M21 21l-4.35-4.35" />
     </svg>
   );
 }
@@ -270,7 +268,7 @@ export function MissionGuide({
           if (token) {
             if (token[1] === 'pin') return <PinIcon key={i} />;
             if (token[1] === 'ruler') return <RulerIcon key={i} />;
-            if (token[1] === 'zoom') return <ZoomIcon key={i} />;
+            if (token[1] === 'zoom') return <ZoomIcon key={i} className="mg-sub-icon" />;
             return null;
           }
           const text = part.trim();
@@ -289,13 +287,19 @@ export function MissionGuide({
           const labelKey = touch && m.touchLabelKey ? m.touchLabelKey : m.labelKey;
           const g = GESTURES[gesture];
           // Distinct touch icons per gesture family: a pinch glyph, a drag glyph, else
-          // the finger tap glyph. (Desktop always uses the cursor ClickIcon below.)
+          // the finger tap glyph.
           const TouchIcon =
             gesture === 'pinch'
               ? PinchIcon
               : gesture === 'touch-drag' || gesture === 'two-finger'
                 ? DragIcon
                 : TapIcon;
+          // Desktop: the cursor for click gestures, but the 4-way DRAG glyph for the drag ones
+          // (Shift-drag, right-drag, …) so the icon names the ACTION rather than the mouse.
+          const DesktopIcon =
+            gesture === 'shift-drag' || gesture === 'right-drag' || gesture === 'hold'
+              ? DragIcon
+              : ClickIcon;
           const state = na ? 'na' : done ? 'done' : '';
           return (
             <li key={m.id} className={`mg-item ${state}`}>
@@ -311,11 +315,11 @@ export function MissionGuide({
                     (touch ? (
                       <TouchIcon className="mg-click-icon" />
                     ) : (
-                      <ClickIcon className="mg-click-icon" />
+                      <DesktopIcon className="mg-click-icon" />
                     ))}
                   {g.afterKey && <span>{t(g.afterKey)}</span>}
                 </span>{' '}
-                {t(labelKey)}
+                {renderLabel(t(labelKey), t)}
               </span>
             </li>
           );

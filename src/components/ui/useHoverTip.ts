@@ -64,12 +64,16 @@ export function bindTouchTip(
   el: HTMLElement,
   show: () => void,
   hide: () => void,
-  { pointer = false }: { pointer?: boolean } = {},
+  { pointer = false, tapReveal = false }: { pointer?: boolean; tapReveal?: boolean } = {},
 ): { cleanup: () => void; recentTouch: () => boolean } {
   let touchedAt = 0;
   let timer: number | null = null;
   let start: { x: number; y: number } | null = null;
   let suppressClick = false;
+  // tapReveal only: whether this trigger's tip is open, and whether the in-flight
+  // touch turned into a scroll (so touchend can tell a tap from a drag).
+  let shown = false;
+  let moved = false;
   const clear = () => {
     if (timer != null) {
       clearTimeout(timer);
@@ -77,17 +81,45 @@ export function bindTouchTip(
     }
   };
   const recentTouch = () => Date.now() - touchedAt < EMULATED_MOUSE_MS;
+
+  // tapReveal dismissal: while a tapped-open tip is showing, the next touch that lands
+  // OUTSIDE the trigger (a tap elsewhere, or the start of a scroll) closes it. The
+  // document listener is bound only while shown, so it costs nothing at rest.
+  const onDocTouch = (e: TouchEvent) => {
+    if (e.target instanceof Node && el.contains(e.target)) return;
+    dismiss();
+  };
+  const reveal = () => {
+    if (shown) return;
+    shown = true;
+    show();
+    document.addEventListener('touchstart', onDocTouch, { capture: true, passive: true });
+  };
+  const dismiss = () => {
+    if (!shown) return;
+    shown = false;
+    hide();
+    document.removeEventListener('touchstart', onDocTouch, { capture: true });
+  };
+
   const onStart = (e: TouchEvent) => {
     touchedAt = Date.now();
     suppressClick = false;
+    moved = false;
     const t = e.touches[0];
     start = t ? { x: t.clientX, y: t.clientY } : null;
     clear();
-    timer = window.setTimeout(() => {
-      timer = null;
-      suppressClick = true; // the release-click is consumed by the hold
-      show();
-    }, LONG_PRESS_MS);
+    // Buttons / map controls keep "hold to reveal": a plain tap must ACT, so only a
+    // deliberate long-press shows the tip. tapReveal triggers are inert (a glyph/label
+    // with no click), so a single tap reveals instead — no long-press, which on iOS
+    // raises the text-selection callout over the glyph and breaks the tip flow.
+    if (!tapReveal) {
+      timer = window.setTimeout(() => {
+        timer = null;
+        suppressClick = true; // the release-click is consumed by the hold
+        show();
+      }, LONG_PRESS_MS);
+    }
   };
   const onMove = (e: TouchEvent) => {
     const t = e.touches[0];
@@ -96,19 +128,36 @@ export function bindTouchTip(
       Math.abs(t.clientX - start.x) > MOVE_CANCEL_PX ||
       Math.abs(t.clientY - start.y) > MOVE_CANCEL_PX
     ) {
-      clear(); // scrolling/dragging, not holding
-      hide();
+      moved = true;
+      clear(); // scrolling/dragging, not holding/tapping
+      if (tapReveal) dismiss();
+      else hide();
     }
   };
   const onEnd = () => {
     touchedAt = Date.now();
     clear();
-    hide();
+    if (tapReveal) {
+      // A tap (no scroll) toggles the tip open/closed; a scroll already dismissed above.
+      if (!moved) {
+        suppressClick = true; // swallow the emulated click this tap fires
+        if (shown) dismiss();
+        else reveal();
+      }
+    } else {
+      hide();
+    }
   };
-  // Swallow exactly the one click a completed long-press would otherwise fire. A
-  // capture-phase listener that stops propagation runs before React's delegated
-  // click reaches the trigger's own onClick, so the control isn't activated. Only
-  // armed by a fired long-press; a plain tap leaves the flag false and clicks act.
+  const onCancel = () => {
+    touchedAt = Date.now();
+    clear();
+    if (tapReveal) dismiss();
+    else hide();
+  };
+  // Swallow exactly the one click a completed long-press (or a tapReveal tap) would
+  // otherwise fire. A capture-phase listener that stops propagation runs before React's
+  // delegated click reaches the trigger's own onClick, so the control isn't activated.
+  // A plain (hold-to-reveal) tap leaves the flag false and clicks act.
   const onClickCapture = (e: MouseEvent) => {
     if (!suppressClick) return;
     suppressClick = false;
@@ -126,8 +175,12 @@ export function bindTouchTip(
   el.addEventListener('touchstart', onStart, { passive: true });
   el.addEventListener('touchmove', onMove, { passive: true });
   el.addEventListener('touchend', onEnd);
-  el.addEventListener('touchcancel', onEnd);
+  el.addEventListener('touchcancel', onCancel);
   el.addEventListener('click', onClickCapture, true);
+  // Inert tap triggers also suppress the iOS long-press text-selection / callout on the
+  // glyph or label itself (see .ui-tip-tap), so an accidental hold never raises the
+  // copy/paste menu over it.
+  if (tapReveal) el.classList.add('ui-tip-tap');
   if (pointer) {
     el.addEventListener('mouseenter', onEnter);
     el.addEventListener('mouseleave', hide);
@@ -138,11 +191,13 @@ export function bindTouchTip(
     recentTouch,
     cleanup: () => {
       clear();
+      dismiss(); // drops the document listener if this tip is still open
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
-      el.removeEventListener('touchcancel', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
       el.removeEventListener('click', onClickCapture, true);
+      if (tapReveal) el.classList.remove('ui-tip-tap');
       if (pointer) {
         el.removeEventListener('mouseenter', onEnter);
         el.removeEventListener('mouseleave', hide);
@@ -159,7 +214,10 @@ export function bindTouchTip(
 // (bindTouchTip) to the same ref, so every tip gains "hold to reveal" with no
 // per-call wiring. (Plain DOM triggers that aren't React-rendered call bindTouchTip
 // directly instead — see the MapLibre nav-control tips in Map.tsx.)
-export function useHoverTip<T extends HTMLElement>(placement: TipPlacement = 'left') {
+export function useHoverTip<T extends HTMLElement>(
+  placement: TipPlacement = 'left',
+  { tapReveal = false }: { tapReveal?: boolean } = {},
+) {
   const ref = useRef<T>(null);
   const [pos, setPos] = useState<TipPos | null>(null);
   // Latest placement, read at show-time, so the mount-once touch effect below
@@ -192,11 +250,12 @@ export function useHoverTip<T extends HTMLElement>(placement: TipPlacement = 'le
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const { cleanup, recentTouch } = bindTouchTip(el, showNow, hide);
+    const { cleanup, recentTouch } = bindTouchTip(el, showNow, hide, { tapReveal });
     recentTouchRef.current = recentTouch;
     return cleanup;
     // Mount-once: bind to the trigger a single time. showNow/hide close only over
-    // stable refs + setPos, so the first-render copies behave identically forever.
+    // stable refs + setPos, so the first-render copies behave identically forever;
+    // tapReveal is static per call site, so reading it once at bind is correct.
   }, []);
 
   return { ref, pos, show, hide };

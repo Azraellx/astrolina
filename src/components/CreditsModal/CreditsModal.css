@@ -11,7 +11,10 @@
 .credits-modal {
   width: 100%;
   max-width: 580px;
-  max-height: calc(100vh - 40px);
+  /* 100% of the safe-area-padded .modal-backdrop content box — equals the old calc(100vh - 40px)
+     when there are no insets (desktop/browser), but on a notched standalone PWA it stays within the
+     safe area so the header + close ✕ never hide under the notch. Content scrolls inside. */
+  max-height: 100%;
   background: rgba(var(--bg-menu), 0.98);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 10px;

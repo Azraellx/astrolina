@@ -30,6 +30,11 @@ export const captureHud = {
     list: 'List',
     listHint:
       'Show the chart as a list of planet / angle positions (and the element·modality tally), the same rows as the sidebar.',
+    // Shown in place of the wheel/list control on phones, where a phone-sized frame is too small
+    // to render either legibly (the info “i” beside the Details heading reveals it).
+    phoneTitle: 'Not available on phones',
+    phoneHint:
+      'A phone-sized frame is too small to show the wheel or list clearly, so details stay off here. For the full chart, open the sidebar (its wheel and positions) and capture that separately if you’d like an accompanying image.',
   },
   extras: {
     label: 'Details',

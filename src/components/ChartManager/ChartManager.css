@@ -33,7 +33,9 @@
 @media (pointer: coarse) {
   .chart-manager {
     min-height: 0;
-    max-height: calc(100dvh - 24px);
+    /* Fit the safe-area-padded .modal-backdrop content box so the header ✕ stays on-screen and clear
+       of the notch on a standalone PWA (the list body scrolls within). */
+    max-height: 100%;
   }
 }
 

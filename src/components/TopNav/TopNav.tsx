@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -28,7 +29,13 @@ import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { ClickIcon } from '../ui/ClickIcon';
+import { DragIcon } from '../ui/DragIcon';
+import { TapIcon } from '../ui/TapIcon';
+import { PinchIcon } from '../ui/PinchIcon';
+import { ZoomIcon } from '../ui/ZoomIcon';
 import { useT } from '../../i18n';
+import type { TFn } from '../../i18n';
 import { useTouchLayout, useNarrowNav } from '../../lib/touch';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
@@ -38,6 +45,107 @@ import './TopNav.css';
 // The on-map mapping tool, owned here now that the Tools dropdown lives in the
 // top bar (was MappingToolsHud).
 export type MapTool = 'off' | 'measure' | 'slide' | 'capture';
+
+// ── Tool-readout hint pills ───────────────────────────────────────────────────
+// The secondary bar's usage hints carry {token} placeholders that render as small yellow gesture
+// pills — the same .ui-tip-hotkey chip the tooltips + mission gestures use, so a gesture reads the
+// same everywhere. The pills are DEVICE-AWARE, mirroring the mission-guide swap: on a pointer the
+// cursor glyph + "Click" (and a magnifying glass for "Zoom"); on touch the finger glyph + "Tap"
+// (and a pinch glyph for "Zoom"). "Pan"/"Drag" share the 4-way glyph on both. The {escExit} /
+// {rightExit} tokens add a "· Esc / Right-click to exit" tail wrapped in .topnav-hint-exit; being a
+// keyboard/mouse shortcut it's CSS-hidden on a BARE touch device (no Esc / right button, via the
+// has-keyboard rule the tooltip hotkey chips use) but kept on desktop and touch-with-keyboard. A
+// plugin tool's readout (a plain tokenised string) flows through the same renderer for free.
+function HintKey({ children }: { children: ReactNode }) {
+  return <span className="ui-tip-hotkey mg-gesture topnav-hint-key">{children}</span>;
+}
+function hintPill(token: string, t: TFn, touch: boolean): ReactNode | null {
+  const clickIcon = touch ? (
+    <TapIcon className="topnav-hint-icon" />
+  ) : (
+    <ClickIcon className="topnav-hint-icon" />
+  );
+  const clickWord = touch ? t('topNav.tools.hintKey.tap') : t('topNav.tools.hintKey.click');
+  switch (token) {
+    case '{click}':
+      return <HintKey>{clickIcon}<span>{clickWord}</span></HintKey>;
+    case '{doubleClick}':
+      return (
+        <HintKey>
+          <span>{t('topNav.tools.hintKey.double')}</span>
+          {clickIcon}
+          <span>{clickWord}</span>
+        </HintKey>
+      );
+    case '{drag}':
+      return (
+        <HintKey>
+          <DragIcon className="topnav-hint-icon" />
+          <span>{t('topNav.tools.hintKey.drag')}</span>
+        </HintKey>
+      );
+    case '{pan}':
+      return (
+        <HintKey>
+          <DragIcon className="topnav-hint-icon" />
+          <span>{t('topNav.tools.hintKey.pan')}</span>
+        </HintKey>
+      );
+    case '{zoom}':
+      return (
+        <HintKey>
+          {touch ? (
+            <PinchIcon className="topnav-hint-icon" />
+          ) : (
+            <ZoomIcon className="topnav-hint-icon" />
+          )}
+          <span>{t('topNav.tools.hintKey.zoom')}</span>
+        </HintKey>
+      );
+    // Exit tails: a keyboard/mouse shortcut, so the whole clause is wrapped in .topnav-hint-exit and
+    // CSS-hidden on a bare touch device (no Esc / right button) — a touch device with a keyboard
+    // keeps it. Desktop always shows it.
+    case '{escExit}':
+      return (
+        <span className="topnav-hint-exit">
+          {' · '}
+          <HintKey><span>{t('topNav.tools.hintKey.esc')}</span></HintKey>{' '}
+          {t('topNav.tools.hintKey.toExit')}
+        </span>
+      );
+    case '{rightExit}':
+      return (
+        <span className="topnav-hint-exit">
+          {' · '}
+          <HintKey>
+            <span>{t('topNav.tools.hintKey.right')}</span>
+            <ClickIcon className="topnav-hint-icon" />
+            <span>{t('topNav.tools.hintKey.click')}</span>
+          </HintKey>{' '}
+          {t('topNav.tools.hintKey.toExit')}
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+// Render a tool readout into the shared .topnav-toolbar-hint chrome: a tokenised string becomes text
+// with device-aware pills swapped in for each {token}; a ready-made node (a plugin could pass one)
+// renders as-is.
+function ToolHintText({ text }: { text: ReactNode }) {
+  const { t } = useT();
+  const touch = useTouchLayout();
+  if (typeof text !== 'string') {
+    return <span className="topnav-toolbar-hint">{text}</span>;
+  }
+  return (
+    <span className="topnav-toolbar-hint">
+      {text.split(/(\{\w+\})/).map((part, i) => (
+        <Fragment key={i}>{hintPill(part, t, touch) ?? part}</Fragment>
+      ))}
+    </span>
+  );
+}
 
 interface TopNavProps {
   mapState: MapState;
@@ -1032,9 +1140,7 @@ export function TopNav({
                   <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
                 </div>
               ) : (
-                <span className="topnav-toolbar-hint">
-                  {t('topNav.tools.toolbarHint')}
-                </span>
+                <ToolHintText text={t('topNav.tools.toolbarHint')} />
               )}
               {/* Persistent snap toggle — TOUCH ONLY: the finger-reachable stand-in for
                   holding Shift to lock the endpoint onto a chart line. Desktop keeps the
@@ -1061,16 +1167,12 @@ export function TopNav({
                 </span>
               </div>
             ) : (
-              <span className="topnav-toolbar-hint">
-                {t('topNav.tools.slideToolbarHint')}
-              </span>
+              <ToolHintText text={t('topNav.tools.slideToolbarHint')} />
             )
           ) : framing ? (
-            <span className="topnav-toolbar-hint">
-              {t('topNav.tools.captureToolbarHint')}
-            </span>
+            <ToolHintText text={t('topNav.tools.captureToolbarHint')} />
           ) : extReadout ? (
-            <span className="topnav-toolbar-hint">{extReadout}</span>
+            <ToolHintText text={extReadout} />
           ) : pinned ? (
             <TipButton
               type="button"

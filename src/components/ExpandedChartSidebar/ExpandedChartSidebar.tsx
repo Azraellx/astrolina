@@ -268,7 +268,7 @@ function TipGlyph({
   hint?: string;
   children: ReactNode;
 }) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right');
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right', { tapReveal: true });
   return (
     <>
       <span
@@ -358,7 +358,7 @@ function AdvHeader({
   title?: string;
   hint: string;
 }) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right');
+  const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right', { tapReveal: true });
   return (
     <th
       ref={ref}
@@ -385,7 +385,7 @@ function TipHeading({
   hint: string;
   children: ReactNode;
 }) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right');
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('right', { tapReveal: true });
   return (
     <h3>
       <span
@@ -437,6 +437,7 @@ function BalanceRow({
       <TipSpan
         className="es-balance-cat"
         placement="top"
+        tapReveal
         tip={
           <span className="es-tip-title">
             <span className="astro-glyph">{seg.glyph}</span> {seg.label}
@@ -455,6 +456,7 @@ function BalanceRow({
             key={p.name}
             className="es-balance-body"
             placement="top"
+            tapReveal
             tip={
               <span className="es-tip-title">
                 <PlanetGlyph planet={p.name} size={13} /> {labels.planet(p.name)}
@@ -970,6 +972,7 @@ export function ExpandedChartSidebar({
                         aspectOrbs={aspectOrbs}
                         visibleAspects={visibleAspects}
                         visibleAngles={visibleAngles}
+                        readouts={fixedFullWidth}
                         interactive
                       />
                       {overlayName && (
@@ -988,6 +991,7 @@ export function ExpandedChartSidebar({
                         aspectOrbs={aspectOrbs}
                         visibleAspects={visibleAspects}
                         visibleAngles={visibleAngles}
+                        readouts={fixedFullWidth}
                         interactive
                       />
                     </>
@@ -1004,6 +1008,10 @@ export function ExpandedChartSidebar({
                       overlayAngles={overlayAngles}
                       visibleAspects={visibleAspects}
                       visibleAngles={visibleAngles}
+                      // Portrait phone: the panel can't be dragged wider, so the wheel never reaches
+                      // READOUT_MIN — force the per-point degree·sign·minute readouts on (still
+                      // geometry-guarded), which also draws the house ring in tighter to fit them.
+                      readouts={fixedFullWidth}
                       interactive
                     />
                   )
@@ -1334,6 +1342,7 @@ export function ExpandedChartSidebar({
                       <TipSpan
                         className={`es-dignity es-dignity-${d}`}
                         placement="top"
+                        tapReveal
                         tip={term.charAt(0).toUpperCase() + term.slice(1)}
                         hint={t(`expandedSidebar.dignityDesc.${d}`)}
                       >

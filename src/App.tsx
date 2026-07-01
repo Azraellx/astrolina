@@ -52,7 +52,7 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
-import { isTouchLayout, useTouchLayout } from './lib/touch';
+import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
@@ -2610,13 +2610,19 @@ export default function App() {
     [captureExtraPlanets],
   );
   const emptyWheelAngles = useMemo<Set<CaptureWheelAngleKey>>(() => new Set(), []);
+  // Phones can't fit the wheel/list details in a phone-sized frame, so the details view is forced
+  // to 'none' there (the CaptureHud hides the control + explains why). This EFFECTIVE view drives
+  // the frame and the HUD without touching the stored preference, so a desktop 'wheel'/'list'
+  // choice survives a detour through a phone.
+  const capturePhone = usePhone();
+  const captureViewEff: 'none' | 'wheel' | 'list' = capturePhone ? 'none' : captureExtras.view;
   // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
   // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
   // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
   const captureFrameExtras: CaptureFrameExtras | null =
-    mapTool !== 'capture' || captureExtras.view === 'none'
+    mapTool !== 'capture' || captureViewEff === 'none'
       ? null
-      : captureExtras.view === 'wheel'
+      : captureViewEff === 'wheel'
         ? wheelAngles
           ? {
               view: 'wheel',
@@ -3066,7 +3072,7 @@ export default function App() {
   }, [mapTool]);
 
   // While ANY map tool is active (a built-in armed tool OR an open tool extension), tag the document
-  // so click-catching map overlays can opt out — e.g. the journal markers stop opening their window
+  // so click-catching map overlays can opt out — e.g. a marker overlay stops opening its window
   // on click, letting the tool own the gesture (the click falls through to that spot). Neutral signal.
   useEffect(() => {
     const active = mapTool !== 'off' || getToolExtensions().some((ext) => openTools.has(ext.id));
@@ -3717,7 +3723,7 @@ export default function App() {
           setCaptureAspect={setCaptureAspectPersist}
           captionFields={captureCaptionFields}
           onToggleCaptionField={toggleCaptureCaptionField}
-          view={captureExtras.view}
+          view={captureViewEff}
           onSetView={setCaptureView}
           extras={captureExtras}
           onToggleExtra={toggleCaptureExtra}

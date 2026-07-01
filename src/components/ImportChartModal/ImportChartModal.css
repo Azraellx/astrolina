@@ -9,7 +9,9 @@
 .import-modal {
   width: 100%;
   max-width: 560px;
-  max-height: calc(100vh - 40px);
+  /* Fit the safe-area-padded .modal-backdrop content box (= calc(100vh - 40px) with no insets), so
+     the top-right ✕ stays clear of the notch on a standalone PWA. Body scrolls within. */
+  max-height: 100%;
   background: rgba(var(--bg-menu), 0.98);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 10px;

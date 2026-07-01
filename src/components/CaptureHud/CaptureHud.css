@@ -28,6 +28,36 @@
 .capture-hud-label:not(:first-child) {
   margin-top: 6px;
 }
+/* The "Details" heading when it carries the phone-only info "i": lay the label + icon in a row.
+   The base label's 0.62 dim is lifted to the text span alone, so the icon (its own group) stays
+   legible instead of being doubly dimmed by the parent's opacity. */
+.capture-hud-label-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 1;
+}
+.capture-hud-label-info > span {
+  opacity: 0.62;
+}
+/* Circled-"i" beside the Details heading on phones — a muted, help-cursor affordance that reveals
+   why the wheel/list picker is unavailable. Reset the button chrome; it's an inert tip trigger. */
+.capture-hud-info {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  cursor: help;
+  transition: color 0.12s;
+}
+.capture-hud-info:hover,
+.capture-hud-info:focus-visible {
+  color: var(--text);
+  outline: none;
+}
 
 /* Toggle groups (extras: Angles/Balance; caption: Name/Date/Time/Location/Calculations) laid out
    two-up instead of a single tall column — the window is wide enough (248px) and it halves the

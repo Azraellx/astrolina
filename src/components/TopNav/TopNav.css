@@ -80,7 +80,38 @@
 .topnav-toolbar-hint {
   font-size: 11px;
   color: var(--text-muted);
-  white-space: nowrap;
+  text-align: center;
+  /* Wrap rather than overflow when the pill-laden hint is wider than the screen: the cap is
+     viewport-relative, so a roomy desktop bar keeps it on one line while a phone wraps it. Line
+     height leaves room for the inline pills when they land on a wrapped row. */
+  max-width: calc(100vw - 2 * var(--edge, 8px) - 24px);
+  line-height: 1.75;
+}
+/* A yellow hotkey/gesture pill inside the readout — the shared .ui-tip-hotkey chip (steady brand
+   accent) laid out inline with its cursor / 4-way icon. Self-contained layout (doesn't lean on
+   .mg-gesture's rule); the .mg-gesture CLASS is still set on it, only to earn the touch-visibility
+   exemption in HoverTip.css. Centred on the text line, kept intact as the hint wraps around it. */
+.topnav-toolbar-hint .topnav-hint-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+  margin: 0 1px;
+}
+.topnav-toolbar-hint .topnav-hint-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+/* The "· Esc / Right-click to exit" tail ({escExit}/{rightExit}) is a keyboard/mouse shortcut, so
+   hide the WHOLE clause (separator + pill + words, as one wrapper) on a bare touch device with no Esc
+   / right button — the same has-keyboard gate the tooltip hotkey chips + menu-shortcut badges use. On
+   desktop (fine pointer) the media query doesn't apply, so it always shows; a touch device WITH a
+   keyboard latches has-keyboard on the first physical keydown and shows it too. */
+@media (pointer: coarse) {
+  html:not(.has-keyboard) .topnav-hint-exit {
+    display: none;
+  }
 }
 
 /* Measure result: endpoints (start → end lat-long) above the angle/distance. */
@@ -563,7 +594,7 @@ button.topnav-status:hover {
   background: transparent;
 }
 /* A tier-locked teaser is NOT greyed (it's a clickable upgrade prompt, distinguished only by its
-   ADV/PRO badge): it never gets the .disabled class, so it keeps the normal .navmenu-item look,
+   ADV / gated-tier badge): it never gets the .disabled class, so it keeps the normal .navmenu-item look,
    pointer, and hover. Clicking it opens the account/upgrade flow (see the row components). */
 /* Checkmark toggles (the View menu) keep normal text color when on — only the
    ✓ marker signals the state, not an accent tint. */
@@ -688,21 +719,34 @@ button.topnav-status:hover {
      setting both left + right with width:auto spans it. The --es-width nudge and the
      translateX(-50%) centring are dropped — neither is needed at full width. */
   .topnav-stack {
-    left: var(--edge, 8px);
-    right: var(--edge, 8px);
+    /* How far the bar's top box bleeds UP past the screen edge (clipped away by #root's
+       overflow:hidden). Consumed twice — once here to shift the box up, once in .topnav's
+       padding-top to hold the controls in place — so it's a single knob for the effect. */
+    --topnav-bleed: 16px;
+    /* Span the FULL device width — no side gutter — so the bar reaches both screen edges flush. */
+    left: 0;
+    right: 0;
     transform: none;
-    /* Anchor the bar's top edge at the very top of the screen (the notch offset moves to .topnav's
-       padding below). This pulls the notch strip INSIDE the bar's bounding box, so the map's edge
-       labels dodge BELOW the bar instead of landing in the notch above it. */
-    top: 0;
+    /* Bleed the bar's top edge UP past the screen top so its top border + top corners sit off-screen
+       (clipped) and the bar reads flush with the very top — melding into the notch strip rather than
+       showing a bordered edge below it. The controls are held in place by adding the same bleed into
+       .topnav's padding-top below, and the box shifting up keeps the bar's BOTTOM (and the secondary
+       toolbar under it) exactly where they were. Pulling the notch strip inside the bar's box also
+       makes the map's edge labels dodge BELOW the bar, not into the notch above it. */
+    top: calc(-1 * var(--topnav-bleed));
   }
   .topnav {
     width: 100%;
-    /* Pad the controls down clear of the notch while the bar's BACKGROUND extends up to the screen
-       top. The notch inset reserves more height than the controls need for clearance, so sit them
-       ~20% higher than the full inset (×0.8) — closer to the notch, reclaiming the dead gap — while
-       the bar's background still covers the whole notch strip above them. */
-    padding-top: max(var(--edge, 3px), calc(env(safe-area-inset-top) * 0.8));
+    /* Square the TOP corners so the full-width bar melds seamlessly into the top screen edge; the
+       bottom corners keep their 40px sweep down into the map. */
+    border-radius: 0 0 40px 40px;
+    /* Pad the controls down clear of the notch while the bar's BACKGROUND extends up past the screen
+       top (the --topnav-bleed above). The notch inset reserves more height than the controls need for
+       clearance, so sit them ~20% higher than the full inset (×0.8) — closer to the notch, reclaiming
+       the dead gap — plus the bleed, which lands them at the same on-screen spot as the box shifts up. */
+    padding-top: calc(
+      var(--topnav-bleed) + max(var(--edge, 3px), calc(env(safe-area-inset-top) * 0.8))
+    );
   }
   /* Consistent spread: name (left) · status pill (centre) · icon menus (right), at content-
      independent positions so the bar's parts always sit in the same place in portrait. Extra RIGHT

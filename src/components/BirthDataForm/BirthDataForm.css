@@ -14,7 +14,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  /* Pad by the safe-area insets (installed PWA on a notched phone) so a centred modal — and its
+     top-right close ✕ — is never covered by the status bar / notch (top) or the home indicator
+     (bottom), and clears the rounded corners in landscape. env() is 0 in the browser and on
+     non-notched devices, so the effective padding stays 20px there (desktop unchanged). Modals
+     that cap near full height use max-height:100% so they fit this padded box rather than overflow
+     it (which, when centred, would push their top back under the notch). */
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
 
 .birth-form {

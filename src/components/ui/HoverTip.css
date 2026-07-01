@@ -60,6 +60,18 @@
   }
 }
 
+/* Tap-to-reveal triggers (inert glyphs/labels wired with useHoverTip's tapReveal — the
+   kernel adds this class): on touch, suppress the iOS long-press text-selection and the
+   copy/paste·look-up callout so a hold can't hijack the glyph. A single tap reveals the
+   tip instead (see bindTouchTip). Touch-only, so a mouse can still select the text. */
+@media (pointer: coarse) {
+  .ui-tip-tap {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 /* Title + hotkey share one row; a hint (if any) wraps on its own line below. */
 .ui-tip-headline {
   display: flex;

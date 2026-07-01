@@ -4131,6 +4131,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     ): { lng: number; lat: number } => snapToNearestLine(map, point) ?? lngLat;
 
     let origin: { lng: number; lat: number } | null = null;
+    // Whether the current drag has drawn a non-zero segment yet — gates the "draw a line" mission
+    // credit below, so a click/tap alone (origin only, 0 km) can never complete it.
+    let drewLine = false;
     // Last cursor position during a drag, kept so a Shift press/release can re-run the
     // snap at the current spot WITHOUT a mouse move — otherwise the snap only updates
     // on the next mousemove, so Shift seems to do nothing until you wiggle the cursor.
@@ -4159,8 +4162,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       } else {
         cur = pointFor(point, lngLat);
       }
+      const info = measureBetween(origin, cur);
       setSegment(origin, cur);
-      onMeasure?.(measureBetween(origin, cur));
+      onMeasure?.(info);
+      // "Draw a line" mission: only credit a REAL drag — tick it off the first time the segment has
+      // non-zero length, so a bare click/tap (0 km) can't beat it.
+      if (!drewLine && info.km > 0) {
+        drewLine = true;
+        onMissionEvent?.('measure-point');
+      }
     };
 
     const onDown = (e: maplibregl.MapMouseEvent) => {
@@ -4171,9 +4181,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       lastPoint = e.point;
       lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
       origin = pointFor(e.point, lastLngLat);
+      drewLine = false;
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
-      onMissionEvent?.('measure-point');
     };
     const onMove = (e: maplibregl.MapMouseEvent) => {
       lastPoint = e.point;
@@ -4197,9 +4207,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       lastPoint = e.point;
       lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
       origin = pointFor(e.point, lastLngLat);
+      drewLine = false;
       setSegment(origin, origin);
       onMeasure?.(measureBetween(origin, origin));
-      onMissionEvent?.('measure-point');
     };
     const onTouchMove = (e: maplibregl.MapTouchEvent) => {
       if (e.points.length !== 1) return;

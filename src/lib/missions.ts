@@ -123,9 +123,13 @@ export const MISSION_SETS: readonly MissionSet[] = [
     missions: [
       {
         id: 'measure-point',
-        gesture: 'hold',
+        gesture: 'click',
         touchGesture: 'touch-drag',
-        labelKey: 'missions.measureBasics.holdPoint',
+        // The "{drag}" token in this label renders as a second (Drag) gesture pill — see
+        // MissionGuide's renderLabel — so it reads "Click and ✥ Drag to draw a line". Touch keeps its
+        // single "Touch & drag" pill, so it uses a plain (token-free) instruction instead.
+        labelKey: 'missions.measureBasics.drawLine',
+        touchLabelKey: 'missions.measureBasics.touchDrawLine',
         event: 'measure-point',
       },
       {

@@ -893,6 +893,20 @@
   .es-adv-table {
     width: max-content;
   }
+  /* The wheel diameter is bounded by this section's width (it can't be dragged wider here), so
+     reclaim most of the side padding to give the wheel a little more room — enough headroom for
+     the per-point degree readouts (forced on via the TSX) to fit without crowding. */
+  .es-section-wheel {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  /* Since that table now scrolls sideways, the Point column has room for the full body/angle name
+     beside its glyph again — restore it here (the compact rule below hides .es-name to fit the
+     WIDTH-constrained simple list + landscape panel, which don't scroll). Higher specificity than
+     that rule (0,4,0 > 0,3,0), so it wins; scoped to the advanced table's point cell only. */
+  .expanded-sidebar.es-compact .es-adv-point .es-name {
+    display: inline;
+  }
 }
 
 .es-drag-handle:hover,

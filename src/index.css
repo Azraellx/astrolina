@@ -393,12 +393,21 @@ body,
   text-size-adjust: 100%;
 }
 
-/* The map fills the screen via position:absolute; inset:0. Anchor that to #root — now a full-height
-   dvh box — instead of the layout viewport, which on iOS standalone PORTRAIT can be shorter than the
-   screen (the unused bottom band). position:relative adds NO stacking context (no z-index set), so
-   the position:fixed HUDs still resolve against the viewport and nothing else reflows. */
+/* Fill the whole screen edge-to-edge — including UNDER the iOS home indicator in the installed
+   (standalone) PWA. There, in PORTRAIT, height:100dvh / 100% resolve SHORT of the screen by the
+   bottom safe-area inset, leaving an unused band along the bottom (the TOP already reaches under the
+   notch because the black-translucent status bar pushes content to the true top; nothing does the
+   equivalent at the bottom). position:fixed + inset:0 sizes #root to the INITIAL CONTAINING BLOCK,
+   which — with viewport-fit=cover — is the true full screen in BOTH orientations, independent of the
+   vh/dvh quirk. height:auto lets the top/bottom insets drive the box (an explicit height would
+   over-constrain and win over bottom:0). The map (.map-frame, position:absolute; inset:0) then fills
+   #root to every edge. A fixed root establishes a stacking context, but the whole app lives inside
+   #root so their relative order is unchanged; and a plain position:fixed sets NO containing block for
+   fixed descendants, so the fixed HUDs still anchor to the viewport (= #root's box here) as before. */
 #root {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  height: auto;
 }
 
 /* Touch: screen space is tight, so pull every edge-anchored HUD element in close to the screen

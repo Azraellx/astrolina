@@ -44,6 +44,14 @@ const touch = mediaStore('(pointer: coarse)');
 // tablet both have room for the labelled nav, so only genuinely narrow widths compact. 600px
 // matches the ChartManager breakpoint and sits just under the 640px stacking convention.
 const narrowNav = mediaStore('(max-width: 600px)');
+// A PHONE-sized touch device: a coarse pointer whose screen is small in whichever way it's held
+// (portrait width ≤ 600, or landscape height ≤ 600). Unlike narrowNav this catches a landscape
+// phone too, while still excluding tablets (both dimensions stay well above 600). Drives features
+// that need real screen estate to degrade gracefully on phones without also dropping on tablets.
+// Comma = OR, so it matches a phone in BOTH orientations but a tablet in NEITHER.
+const phone = mediaStore(
+  '(pointer: coarse) and (max-width: 600px), (pointer: coarse) and (max-height: 600px)',
+);
 
 /** Non-reactive read: is this a coarse-pointer (touch) device? */
 export function isTouchLayout(): boolean {
@@ -53,6 +61,10 @@ export function isTouchLayout(): boolean {
 export function isNarrowNav(): boolean {
   return narrowNav.getSnapshot();
 }
+/** Non-reactive read: is this a phone-sized touch device (small in either orientation)? */
+export function isPhone(): boolean {
+  return phone.getSnapshot();
+}
 
 /** Reactive read of whether this is a coarse-pointer (touch) device. */
 export function useTouchLayout(): boolean {
@@ -61,6 +73,10 @@ export function useTouchLayout(): boolean {
 /** Reactive read of whether the viewport is narrow enough for the compact top-nav layout. */
 export function useNarrowNav(): boolean {
   return useSyncExternalStore(narrowNav.subscribe, narrowNav.getSnapshot, () => false);
+}
+/** Reactive read of whether this is a phone-sized touch device (small in either orientation). */
+export function usePhone(): boolean {
+  return useSyncExternalStore(phone.subscribe, phone.getSnapshot, () => false);
 }
 
 // A physical keyboard can't be detected by any standard web API, so we INFER one: the

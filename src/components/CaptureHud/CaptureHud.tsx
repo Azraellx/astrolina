@@ -15,7 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
-import { useTouchLayout } from '../../lib/touch';
+import { useTouchLayout, usePhone } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
@@ -101,6 +101,40 @@ function ShareIcon() {
       <path d="M16 6l-4-4-4 4" />
       <path d="M12 2v13" />
     </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}
+
+// The circled-"i" shown IN PLACE of the wheel/list control on phones (where a phone-sized frame
+// can't render either legibly): a tap/hover reveals a .ui-tip explaining the omission. tapReveal →
+// a single tap shows it on touch (no long-press, which iOS would turn into a text-selection).
+function DetailsInfo({ title, hint }: { title: string; hint: string }) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top', { tapReveal: true });
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="capture-hud-info"
+        aria-label={title}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <InfoIcon />
+      </button>
+      <HoverTip pos={pos} placement="top" title={title} hint={hint} />
+    </>
   );
 }
 
@@ -207,6 +241,9 @@ export function CaptureHud({
   const touchLayout = useTouchLayout();
   const [canShareFiles] = useState(canShareImageFiles);
   const supportsShare = touchLayout && canShareFiles;
+  // Phones can't fit the wheel/list details in a phone-sized frame, so the picker is replaced by
+  // an explanatory "i" and the view is forced to 'none' upstream (App passes view='none' here).
+  const phone = usePhone();
 
   // Optional downstream gate (e.g. a build makes export an account-only feature). While the user is
   // locked the three actions divert to the gate's upsell (the account takeover, see divertIfLocked).
@@ -366,21 +403,33 @@ export function CaptureHud({
           })}
         </div>
 
-        <div className="capture-hud-label">{t('captureHud.extras.label')}</div>
-        <div className="location-ls-seg capture-hud-seg" role="group">
-          {(['none', 'wheel', 'list'] as const).map((v) => (
-            <TipBtn
-              key={v}
-              className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
-              onClick={() => onSetView(v)}
-              ariaPressed={view === v}
-              title={t(`captureHud.view.${v}`)}
-              hint={t(`captureHud.view.${v}Hint`)}
-            >
-              {t(`captureHud.view.${v}`)}
-            </TipBtn>
-          ))}
+        <div className={`capture-hud-label${phone ? ' capture-hud-label-info' : ''}`}>
+          <span>{t('captureHud.extras.label')}</span>
+          {phone && (
+            <DetailsInfo
+              title={t('captureHud.view.phoneTitle')}
+              hint={t('captureHud.view.phoneHint')}
+            />
+          )}
         </div>
+        {/* Phones can't fit the wheel/list in a phone-sized frame, so the picker is dropped there
+            (view is forced to 'none' upstream); the "i" beside the heading explains it instead. */}
+        {!phone && (
+          <div className="location-ls-seg capture-hud-seg" role="group">
+            {(['none', 'wheel', 'list'] as const).map((v) => (
+              <TipBtn
+                key={v}
+                className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
+                onClick={() => onSetView(v)}
+                ariaPressed={view === v}
+                title={t(`captureHud.view.${v}`)}
+                hint={t(`captureHud.view.${v}Hint`)}
+              >
+                {t(`captureHud.view.${v}`)}
+              </TipBtn>
+            ))}
+          </div>
+        )}
         {/* Optional groups, meaningful only once a view is chosen ('none' draws nothing). Planets
             aren't here — they're the always-on baseline of any view; these add on top of them.
             Laid out two-up (see the caption grid below). */}

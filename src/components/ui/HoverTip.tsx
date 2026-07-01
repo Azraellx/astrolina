@@ -143,6 +143,7 @@ export function TipSpan({
   hotkey,
   advanced,
   placement = 'bottom',
+  tapReveal,
   children,
   ...rest
 }: {
@@ -152,9 +153,13 @@ export function TipSpan({
   /** Show an "ADV" tag on the tip headline — marks the trigger as an Advanced-only control. */
   advanced?: boolean;
   placement?: TipPlacement;
+  /** Inert triggers only (no click action): reveal the tip on a single TAP on touch,
+   *  rather than a long-press — which on iOS raises the text-selection callout over the
+   *  glyph/label. Leave off for anything with an action. */
+  tapReveal?: boolean;
   children?: ReactNode;
 } & HTMLAttributes<HTMLSpanElement>) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>(placement);
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>(placement, { tapReveal });
   return (
     <>
       <span

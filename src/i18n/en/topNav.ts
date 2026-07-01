@@ -79,19 +79,34 @@ export const topNav = {
     measure: 'Measure distance',
     measureItem: 'Measure',
     measureHint: 'Click and drag on the map to measure great-circle distance',
-    toolbarHint: 'Click and drag on the map to measure · snaps to nearby lines',
+    // Tool-readout hints (secondary bar). {click}/{doubleClick}/{drag}/{pan}/{zoom} render as yellow
+    // gesture pills — DEVICE-AWARE (click↔tap, zoom magnifying-glass↔pinch) via TopNav's ToolHintText;
+    // the "·" is a plain separator. {escExit}/{rightExit} append a "· … to exit" tail shown only where
+    // there's a keyboard/mouse (hidden on a bare touch device — no Esc / right button).
+    toolbarHint: '{click} and {drag} on the map to measure{rightExit}',
     slideItem: 'Slide',
     slideHint:
       'Slide the world under the fixed natal lines — advances time to show how parans build through the day. Works in flat or globe view.',
     slideUnavailable:
       'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
-    slideToolbarHint:
-      'Drag east / west to slide the world under the fixed lines · right-click resets',
+    slideToolbarHint: '{pan} to slide the world under the fixed lines{rightExit}',
     captureItem: 'Capture',
     captureHint:
       'Frame the map and export it as a PNG — pick an aspect ratio, choose what to include, then download or copy.',
-    captureToolbarHint:
-      'Pan and zoom to compose inside the frame · press Esc to exit',
+    captureToolbarHint: '{pan} and {zoom} to compose inside the frame{escExit}',
+    // Words inside the readout gesture pills (the device-appropriate icon is added by the renderer).
+    // esc/right/toExit build the desktop-only "· Esc / Right-click to exit" tail.
+    hintKey: {
+      click: 'Click',
+      tap: 'Tap',
+      double: 'Double',
+      drag: 'Drag',
+      pan: 'Pan',
+      zoom: 'Zoom',
+      esc: 'Esc',
+      right: 'Right',
+      toExit: 'to exit',
+    },
   },
 
   view: {

@@ -37,12 +37,32 @@ export function effectiveCenterX(): number {
   return window.innerWidth / 2 + es / 4;
 }
 
-// Clamp a top-left so the bar (w×h) stays fully on screen with a margin.
+// Gap kept below the top nav cluster when a HUD is pushed clear of it.
+const NAV_CLEARANCE = 8;
+
+// The top command bar + its tool readout, as one on-screen rect — or null when it isn't mounted
+// (or is off-screen). A floated HUD must stay clear of this: parked UNDER the bar its drag grip
+// can't be grabbed, and since positions persist that makes it stuck. It bites hardest in portrait,
+// where the bar spans the FULL width, so there's nowhere beside it to leave the HUD reachable.
+function topNavRect(): DOMRect | null {
+  const r = document.querySelector('.topnav-stack')?.getBoundingClientRect();
+  return r && r.height > 0 && r.bottom > 0 ? r : null;
+}
+
+// Clamp a top-left so the bar (w×h) stays fully on screen with a margin — and, when it would
+// horizontally overlap the top nav cluster, sits BELOW that cluster (never tucked under it, where
+// the grip is unreachable). The overlap test keeps desktop corner placement free: only a HUD that
+// actually sits across the (centred) bar is pushed down; in portrait the full-width bar overlaps
+// every HUD, so all of them clear it.
 function clampPos(x: number, y: number, w: number, h: number): { x: number; y: number } {
-  return {
-    x: Math.min(Math.max(x, 4), Math.max(4, window.innerWidth - w - 4)),
-    y: Math.min(Math.max(y, TOP_MARGIN), Math.max(TOP_MARGIN, window.innerHeight - h - 4)),
-  };
+  const cx = Math.min(Math.max(x, 4), Math.max(4, window.innerWidth - w - 4));
+  let top = TOP_MARGIN;
+  const nav = topNavRect();
+  if (nav && cx < nav.right && cx + w > nav.left) {
+    top = Math.max(top, nav.bottom + NAV_CLEARANCE);
+  }
+  const cy = Math.min(Math.max(y, top), Math.max(top, window.innerHeight - h - 4));
+  return { x: cx, y: cy };
 }
 
 export interface MovableHud {
