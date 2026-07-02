@@ -105,6 +105,15 @@
   color: var(--text-muted);
 }
 
+/* The note shown under the moment inputs while the TIME is left empty (which is
+   how an unknown birth time is entered): explains the noon anchor + hidden layers. */
+.time-unknown-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
 /* A captioned "Tag" field to the right of the time inputs (a DateTimeFields `trailing`
    slot): the caption reuses .moment-caption to line up with the Date / Time captions,
    and the toggle sits under it (so its baseline matches the input boxes). The toggle is
@@ -141,6 +150,21 @@
   color: var(--tag-star);
   border-color: var(--tag-star);
   background: rgba(var(--tag-star-rgb), 0.12);
+}
+/* The system 'shared' tag (a link-received chart) shown highlighted in its red —
+   pressing removes the tag and the button reverts to the Star toggle. */
+.tag-toggle--shared[aria-pressed='true'] {
+  color: var(--tag-shared);
+  border-color: var(--tag-shared);
+  background: rgba(var(--tag-shared-rgb), 0.12);
+}
+/* The system 'space' tag (an app-generated chart) shown highlighted in its slate —
+   a FIXED mark: same chrome, but informational (hover explains), not a button. */
+.tag-toggle--space.is-fixed {
+  color: var(--tag-space);
+  border-color: var(--tag-space);
+  background: rgba(var(--tag-space-rgb), 0.12);
+  cursor: help;
 }
 /* Let the star follow the button's colour (muted/gold) instead of its intrinsic gold. */
 .tag-toggle .tag-glyph {

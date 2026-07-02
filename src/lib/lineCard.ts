@@ -9,6 +9,11 @@
 // local-circumstances card. Pure HTML composition over the clicked feature's
 // properties; everything interpolated comes from our own catalogs and enums,
 // nothing user-authored reaches this HTML.
+//
+// The raw TEXT (title + body, no HTML) is factored into lineReading() below, so
+// any other surface that composes its own presentation — a per-location reader,
+// a list, an export — draws from the same single interpretation source instead
+// of scraping this card's HTML.
 import type { TFn } from '../i18n';
 import type { PlanetName } from './ephemeris';
 import type { LineType } from './astro/lines';
@@ -47,6 +52,130 @@ export interface LineCardDistance {
   type: 'pin' | 'natal';
 }
 
+/** The raw interpretation text for one line — plain strings, no HTML. */
+export interface LineReading {
+  title: string;
+  body: string;
+}
+
+/**
+ * The plain-text interpretation behind a line feature — the {title, body} the
+ * HTML card decorates. `layerId` follows the map's layer-id conventions
+ * ('acg-lines…', 'angle-lines-layer', 'parans…', 'local-space…',
+ * 'star-lines-layer', 'ecliptic…'); `props` is the feature's properties bag.
+ * Null where a line has no reading (eclipse curves keep their own click card).
+ */
+export function lineReading(
+  layerId: string,
+  props: Record<string, unknown>,
+  t: TFn,
+): LineReading | null {
+  if (layerId.startsWith('eclipse')) return null;
+
+  if (layerId.startsWith('ecliptic')) {
+    return { title: t('lineMeanings.eclipticTitle'), body: t('lineMeanings.ecliptic') };
+  }
+
+  if (layerId.startsWith('local-space')) {
+    const planet = props.planet as PlanetName;
+    const name = t(`planets.${planet}.name`);
+    return {
+      title: t('lineMeanings.localSpaceTitle', { planet: name }),
+      body: t('lineMeanings.localSpace', {
+        planet: name,
+        theme: t(`planets.${planet}.theme`),
+      }),
+    };
+  }
+
+  if (layerId.startsWith('parans')) {
+    const planetA = props.planetA as PlanetName;
+    const planetB = props.planetB as PlanetName;
+    const a = t(`planets.${planetA}.name`);
+    const b = t(`planets.${planetB}.name`);
+    return {
+      title: t('lineMeanings.paranTitle', { a, b }),
+      body: t('lineMeanings.paran', {
+        a,
+        b,
+        angleA: String(props.angleA),
+        angleB: String(props.angleB),
+        themeA: t(`planets.${planetA}.theme`),
+        themeB: t(`planets.${planetB}.theme`),
+      }),
+    };
+  }
+
+  if (layerId === 'angle-lines-layer') {
+    const angle = props.lineType as LineType;
+    const essence = t(`lineMeanings.angleEssence.${angle}`);
+    if (props.kind === 'aspect') {
+      const planet = props.planet as PlanetName;
+      // Name the line by the angle it actually is (its `branch`) — matching the
+      // hover tip and edge badge — not the MC/ASC-convention relabel in lineType.
+      const { aspect, angle: aspAngle } = aspectBranchReading(
+        props.aspect as AspectKind,
+        props.branch as LineType,
+      );
+      const name = t(`planets.${planet}.name`);
+      const aspectName = t(`expandedSidebar.aspect.${aspect}.name`);
+      const aspectWord = aspectName.toLowerCase();
+      return {
+        // Plain-text title ("Venus Trine MC"); the card re-composes its own with
+        // the glyph-font aspect symbol spliced in.
+        title: t('lineMeanings.aspectTitle', { planet: name, aspect: aspectName, angle: aspAngle }),
+        body:
+          `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: aspAngle })} ` +
+          `${t(`lineMeanings.aspect.kind.${aspect}`)} ` +
+          t('lineMeanings.aspect.pointer', { planet: name, angle: aspAngle }),
+      };
+    }
+    if (props.kind === 'midpoint') {
+      const a = t(`planets.${props.planet as PlanetName}.name`);
+      const b = t(`planets.${props.planetB as PlanetName}.name`);
+      return {
+        title: t('lineMeanings.midpointTitle', { a, b, angle }),
+        body: t('lineMeanings.midpoint', { a, b, angle, essence }),
+      };
+    }
+    return null;
+  }
+
+  if (layerId === 'star-lines-layer') {
+    const star = String(props.star);
+    const angle = props.lineType as LineType;
+    return {
+      title: t('lineMeanings.starTitle', { star, angle }),
+      body: t('lineMeanings.star', {
+        star,
+        // Every catalog star has a one-line signature; the template weaves it
+        // between the frame and the angle essence.
+        theme: t(`lineMeanings.starThemes.${star as StarName}`),
+        essence: t(`lineMeanings.angleEssence.${angle}`),
+      }),
+    };
+  }
+
+  if (layerId.startsWith('acg-lines')) {
+    const planet = props.planet as PlanetName;
+    const angle = props.lineType as LineType;
+    if (!planet || !angle) return null;
+    const name = t(`planets.${planet}.name`);
+    // Bespoke texts cover the four primary angles; the Vertex-axis lines read
+    // through the generic theme + essence frame (high-level by design).
+    const body =
+      BESPOKE.has(planet) && angle !== 'VX' && angle !== 'AVX'
+        ? t(`lineMeanings.meanings.${planet as BespokePlanet}.${angle as 'MC' | 'IC' | 'ASC' | 'DSC'}`)
+        : t('lineMeanings.generic', {
+            theme: t(`planets.${planet}.theme`),
+            essence: t(`lineMeanings.angleEssence.${angle}`),
+          });
+    return { title: t(`lineMeanings.title.${angle}`, { planet: name }), body };
+  }
+
+  return null;
+}
+
 // The teardrop map-pin glyph as inline HTML — the card is composed as an HTML string, so we
 // can't drop in the React <PinIcon>. Same shape as the mission-guide pin mark.
 const PIN_ICON_SVG =
@@ -70,7 +199,9 @@ function distanceLine(dist: LineCardDistance, t: TFn): string {
 /**
  * The interpretation card for a clicked line feature, or null where a line has
  * no reading (eclipse curves keep their own click card). `props` is the raw
- * feature properties bag from queryRenderedFeatures.
+ * feature properties bag from queryRenderedFeatures. The text comes from
+ * lineReading() above; this wraps it in the card HTML and decorates the title
+ * with the body/star glyphs.
  */
 export function buildLineCard(
   layerId: string,
@@ -78,7 +209,8 @@ export function buildLineCard(
   t: TFn,
   dist?: LineCardDistance | null,
 ): string | null {
-  if (layerId.startsWith('eclipse')) return null;
+  const reading = lineReading(layerId, props, t);
+  if (!reading) return null;
 
   // Pre-render the distance row once (identical for every card type); the local card() below
   // splices it in just above the disclaimer. Closing over it keeps each card() call a plain
@@ -105,62 +237,34 @@ export function buildLineCard(
   if (isNoteTag(props.tag)) notes.push(t(`lineMeanings.overlayNote.${props.tag}`));
   const footer = t('lineMeanings.footer');
 
-  if (layerId.startsWith('ecliptic')) {
-    return card(t('lineMeanings.eclipticTitle'), t('lineMeanings.ecliptic'), [footer]);
+  if (layerId.startsWith('ecliptic') || layerId === 'star-lines-layer') {
+    // Star titles carry a plain star mark (no body glyph exists for a star).
+    const title =
+      layerId === 'star-lines-layer'
+        ? `<span class="line-card-glyph" style="color:${typeof props.color === 'string' ? props.color : 'inherit'}">★</span>` +
+          reading.title
+        : reading.title;
+    return card(title, reading.body, [footer]);
   }
 
   if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
-    const name = t(`planets.${planet}.name`);
-    return card(
-      glyph(planet, props.color) + t('lineMeanings.localSpaceTitle', { planet: name }),
-      t('lineMeanings.localSpace', {
-        planet: name,
-        theme: t(`planets.${planet}.theme`),
-      }),
-      [...notes, footer],
-    );
+    return card(glyph(planet, props.color) + reading.title, reading.body, [...notes, footer]);
   }
 
   if (layerId.startsWith('parans')) {
-    const planetA = props.planetA as PlanetName;
-    const planetB = props.planetB as PlanetName;
-    const a = t(`planets.${planetA}.name`);
-    const b = t(`planets.${planetB}.name`);
-    return card(
-      t('lineMeanings.paranTitle', { a, b }),
-      t('lineMeanings.paran', {
-        a,
-        b,
-        angleA: String(props.angleA),
-        angleB: String(props.angleB),
-        themeA: t(`planets.${planetA}.theme`),
-        themeB: t(`planets.${planetB}.theme`),
-      }),
-      [...notes, footer],
-    );
+    return card(reading.title, reading.body, [...notes, footer]);
   }
 
   if (layerId === 'angle-lines-layer') {
-    const angle = props.lineType as LineType;
-    const essence = t(`lineMeanings.angleEssence.${angle}`);
     if (props.kind === 'aspect') {
       const planet = props.planet as PlanetName;
-      // Name the line by the angle it actually is (its `branch`) — matching the
-      // hover tip and edge badge — not the MC/ASC-convention relabel in lineType.
       const { aspect, angle: aspAngle } = aspectBranchReading(
         props.aspect as AspectKind,
         props.branch as LineType,
       );
       const name = t(`planets.${planet}.name`);
-      // Capitalized aspect name ("Sextile") for the heading; lower-cased for the
-      // in-sentence body copy.
       const aspectName = t(`expandedSidebar.aspect.${aspect}.name`);
-      const aspectWord = aspectName.toLowerCase();
-      const body =
-        `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: aspAngle })} ` +
-        `${t(`lineMeanings.aspect.kind.${aspect}`)} ` +
-        t('lineMeanings.aspect.pointer', { planet: name, angle: aspAngle });
       return card(
         glyph(planet, props.color) +
           t('lineMeanings.aspectTitle', {
@@ -170,56 +274,18 @@ export function buildLineCard(
             aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span> ${aspectName}`,
             angle: aspAngle,
           }),
-        body,
+        reading.body,
         [...notes, footer],
       );
     }
-    if (props.kind === 'midpoint') {
-      const a = t(`planets.${props.planet as PlanetName}.name`);
-      const b = t(`planets.${props.planetB as PlanetName}.name`);
-      return card(
-        t('lineMeanings.midpointTitle', { a, b, angle }),
-        t('lineMeanings.midpoint', { a, b, angle, essence }),
-        [...notes, footer],
-      );
-    }
-    return null;
-  }
-
-  if (layerId === 'star-lines-layer') {
-    const star = String(props.star);
-    const angle = props.lineType as LineType;
-    return card(
-      `<span class="line-card-glyph" style="color:${typeof props.color === 'string' ? props.color : 'inherit'}">★</span>` +
-        t('lineMeanings.starTitle', { star, angle }),
-      t('lineMeanings.star', {
-        star,
-        // Every catalog star has a one-line signature; the template weaves it
-        // between the frame and the angle essence.
-        theme: t(`lineMeanings.starThemes.${star as StarName}`),
-        essence: t(`lineMeanings.angleEssence.${angle}`),
-      }),
-      [footer],
-    );
+    // Midpoint — plain title.
+    return card(reading.title, reading.body, [...notes, footer]);
   }
 
   if (layerId.startsWith('acg-lines')) {
     const planet = props.planet as PlanetName;
-    const angle = props.lineType as LineType;
-    if (!planet || !angle) return null;
-    const name = t(`planets.${planet}.name`);
-    const title = glyph(planet, props.color) + t(`lineMeanings.title.${angle}`, { planet: name });
-    // Bespoke texts cover the four primary angles; the Vertex-axis lines read
-    // through the generic theme + essence frame (high-level by design).
-    const body =
-      BESPOKE.has(planet) && angle !== 'VX' && angle !== 'AVX'
-        ? t(`lineMeanings.meanings.${planet as BespokePlanet}.${angle as 'MC' | 'IC' | 'ASC' | 'DSC'}`)
-        : t('lineMeanings.generic', {
-            theme: t(`planets.${planet}.theme`),
-            essence: t(`lineMeanings.angleEssence.${angle}`),
-          });
     if (props.pair) notes.unshift(t('lineMeanings.nodePair'));
-    return card(title, body, [...notes, footer]);
+    return card(glyph(planet, props.color) + reading.title, reading.body, [...notes, footer]);
   }
 
   return null;

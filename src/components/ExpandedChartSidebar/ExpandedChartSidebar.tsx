@@ -34,6 +34,7 @@ import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import {
+  ARIES_FRAME,
   WheelSvg,
   computeAspects,
   computeCrossAspects,
@@ -51,6 +52,7 @@ import {
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
+import { publishLeftDock, retireLeftDock } from '../../lib/leftDock';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
@@ -174,6 +176,10 @@ interface ExpandedChartSidebarProps {
    *  wheel shows an empty "NO CHART" ring instead of a chart. `angles` is null then, so
    *  the state title, overlay caption, and aspect toggles fall away with it. */
   noChart?: boolean;
+  /** Birth time unknown: `angles` is null (there are none), but the planets still read
+   *  by sign — the wheel renders planets-only on the neutral Aries frame, the angle
+   *  list rows stay away, and a note in the wheel corner says why. */
+  planetsOnly?: boolean;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
   /** Line-type toggles from the Map Filter; gate which angles show in the wheel + list. */
@@ -513,6 +519,7 @@ export function ExpandedChartSidebar({
   overlayKind,
   promotedLabel,
   noChart = false,
+  planetsOnly = false,
   visiblePlanets,
   visibleLineTypes,
   advancedCoords,
@@ -550,12 +557,13 @@ export function ExpandedChartSidebar({
   }, [width]);
 
   // Publish the live panel width so the map edge-glow insets its left edge to
-  // the visible map area (right of this sidebar). Reset to 0 when collapsed.
+  // the visible map area (right of this sidebar). Through the left-dock
+  // registry (lib/leftDock.ts) rather than a raw --es-width write, so another
+  // docked panel can be open at the same time without the two fighting over
+  // the var; retiring on unmount recomputes it from whatever remains.
   useEffect(() => {
-    document.documentElement.style.setProperty('--es-width', `${width}px`);
-    return () => {
-      document.documentElement.style.setProperty('--es-width', '0px');
-    };
+    publishLeftDock('expanded-sidebar', width);
+    return () => retireLeftDock('expanded-sidebar');
   }, [width]);
 
   const [visibleAspects, setVisibleAspects] = useState<Set<AspectCategory>>(
@@ -589,6 +597,10 @@ export function ExpandedChartSidebar({
   // Whether a drawable overlay ring exists — the Dual toggle (and the dual
   // layout it controls) only mean anything when there's a second wheel to split.
   const hasOverlay = !!shownOverlay && shownOverlay.length > 0 && !!overlayAngles;
+  // The frame the wheel renders on: real angles, or — when the birth time is
+  // unknown and there are none — the neutral Aries frame (planets-only wheel).
+  // Everything that shows angle VALUES keeps reading `angles` (null → hidden).
+  const frame = angles ?? (planetsOnly ? ARIES_FRAME : null);
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
   // which angle marks (As/Ds/Mc/Ic) the wheel draws.
@@ -774,7 +786,7 @@ export function ExpandedChartSidebar({
             />
           </div>
           <div className="es-header-actions">
-            {angles && hasOverlay && (
+            {frame && hasOverlay && (
               <TipButton
                 type="button"
                 className={`es-advanced-toggle ${dualWheels ? 'on' : 'off'}`}
@@ -936,19 +948,24 @@ export function ExpandedChartSidebar({
               {/* Use the wheel's empty top corners: the chart-state title (left,
                   always) and, when an overlay is on, its caption (right — in
                   Dual Wheels the caption sits between the wheels instead). */}
-              {angles && (
+              {frame && (
                 <div className="es-wheel-corner es-wheel-corner-left">
                   <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
                     {wheelTitle}
                   </span>
-                  {angles.fallback && (
+                  {frame.fallback && (
                     <span className="es-house-fallback">
                       {t('expandedSidebar.houseFallback')}
                     </span>
                   )}
+                  {planetsOnly && !angles && (
+                    <span className="es-house-fallback">
+                      {t('expandedSidebar.timeUnknownNote')}
+                    </span>
+                  )}
                 </div>
               )}
-              {angles && overlayName && !showDual && (
+              {frame && overlayName && !showDual && (
                 <div className="es-wheel-corner es-wheel-corner-right">
                   <span className="es-overlay-caption es-overlay-dashed">
                     {overlayName}
@@ -959,13 +976,13 @@ export function ExpandedChartSidebar({
                 className={`es-wheel-pane${showDual ? ' es-wheel-pane-dual' : ''}`}
                 ref={wheelPaneRef}
               >
-                {angles ? (
+                {frame ? (
                   showDual ? (
                     <>
                       <WheelSvg
                         size={wheelSize}
 
-                        angles={angles}
+                        angles={frame}
                         planets={shownPlanets}
                         detailed={true}
                         advanced={advanced}
@@ -974,6 +991,7 @@ export function ExpandedChartSidebar({
                         visibleAngles={visibleAngles}
                         readouts={fixedFullWidth}
                         interactive
+                        planetsOnly={planetsOnly && !angles}
                       />
                       {overlayName && (
                         <div className="es-dual-caption">
@@ -998,7 +1016,7 @@ export function ExpandedChartSidebar({
                   ) : (
                     <WheelSvg
                       size={wheelSize}
-                      angles={angles}
+                      angles={frame}
 
                       planets={shownPlanets}
                       detailed={true}
@@ -1013,6 +1031,7 @@ export function ExpandedChartSidebar({
                       // geometry-guarded), which also draws the house ring in tighter to fit them.
                       readouts={fixedFullWidth}
                       interactive
+                      planetsOnly={planetsOnly && !angles}
                     />
                   )
                 ) : noChart ? (
@@ -1030,7 +1049,7 @@ export function ExpandedChartSidebar({
             </>
           );
         })()}
-        {angles && (
+        {frame && (
           <div className="es-aspect-toggles">
             {ASPECT_TOGGLES.map((tg) => {
               const on = visibleAspects.has(tg.key);
@@ -1056,7 +1075,7 @@ export function ExpandedChartSidebar({
       {/* Planet + angle readout below the wheel — no heading. Planets come
           first, then the visible angles (Mc, Ic, As, Ds) tack onto the end of
           the same list. The angles also render in the wheel above. */}
-      {angles && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (() => {
+      {frame && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (() => {
         // Simple view: planets then angles in one row-by-row two-column grid
         // (even index → left, odd → right), so the angles flow straight on from
         // the last planet.
@@ -1259,7 +1278,7 @@ export function ExpandedChartSidebar({
         );
       })()}
 
-      {angles && shownPlanets.length > 0 && (() => {
+      {frame && shownPlanets.length > 0 && (() => {
         // Element/modality tallies (always shown) + essential dignities (Advanced
         // only — domicile/detriment/etc. is a denser read) over the SHOWN bodies
         // (the map filter decides what counts, like every list in this panel).

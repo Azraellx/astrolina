@@ -43,6 +43,10 @@ export const expandedSidebar = {
   // drawn instead — so the wheel never silently shows a different system.
   houseFallback: 'Porphyry cusps — chosen system undefined at this latitude',
 
+  // Shown under the wheel-state title on a planets-only wheel. Kept terse — the
+  // chart form's note carries the full explanation of the degrade.
+  timeUnknownNote: 'Birth time unknown',
+
   // Pre-1970 timezone DST caution glyph in the meta row.
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',

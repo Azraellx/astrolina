@@ -18,7 +18,7 @@
 import type { ReactNode } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { StoredChart } from '../chartLibrary';
-import type { OverlayMode } from '../astro/timeline';
+import type { AngleProgression, OverlayMode, PrimaryRate } from '../astro/timeline';
 import type { PlanetName, NodeType, HouseSystem } from '../ephemeris';
 import type { ZodiacMode } from '../astro/ayanamsa';
 
@@ -74,6 +74,12 @@ export interface MapExtensionContext {
    *  so a dated HUD can read its list in the chart's active zodiac. */
   zodiacMode: ZodiacMode;
   overlayMode: OverlayMode;
+  /** The Progressions/Directions settings the directed overlays advance by
+   *  (Chart-Angle method, Primary-Directions rate + user rate), so an extension
+   *  reading a directed overlay can reproduce its arc exactly. */
+  angleProgression: AngleProgression;
+  primaryRate: PrimaryRate;
+  userPrimaryRate: number;
   /** Effective linework the map is actually drawing (promotion / eclipse-toggle
    *  resolved), so a report can never reference a line that isn't on screen. */
   lines: FeatureCollection;
@@ -127,10 +133,20 @@ export interface MapExtension {
   id: string;
   /** View-menu label, already localized (extensions own their own strings). */
   label: string;
+  /** Where the extension's TOGGLE lives (default 'view' = a View-menu row).
+   *  'timeline-drawer' puts it in the time-overlay bar's display drawer instead
+   *  (beside the Natal/Zenith toggles): available only while a timeline overlay
+   *  is active (leaving those overlays closes it), and — unlike the View menu's
+   *  nudge policy — NEVER teased: un-entitled users simply don't see the row. */
+  surface?: 'view' | 'timeline-drawer';
   /** localStorage key to persist open/closed; omit for a non-persisted HUD. */
   storageKey?: string;
   /** Single-key shortcut shown in the View menu (optional). */
   hotkey?: string;
+  /** A short description of the feature for the toggle's hover tip, already
+   *  localized (optional; shown where the surface renders tips — currently the
+   *  timeline-drawer rows). */
+  hint?: string;
   /** Whether it starts open the first time (before any persisted state). */
   defaultOpen?: boolean;
   /** Defaults to 'core'. A 'gated' extension is subject to the entitlement resolver. */

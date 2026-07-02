@@ -13,6 +13,7 @@ import {
   NAME_SOFT_LIMIT_STARRED,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { timeUnknown } from '../../lib/birthData';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -124,6 +125,9 @@ export function ChartSwitcher({
               {current ? (
                 <>
                   <TagIcon tag={chartTag(current)} className="tag-icon" />
+                  {timeUnknown(current) && (
+                    <TagIcon tag="unknown" className="tag-icon" />
+                  )}
                   {/* Portrait top bar (compact + narrow): just the initials — the name + date
                       don't fit. Compact landscape: hard-cap the name. Expanded sidebar: the full
                       name, let CSS ellipsis trim it so it reveals more as the sidebar widens. */}
@@ -200,6 +204,9 @@ export function ChartSwitcher({
                 >
                   <span className="chart-name">
                     <TagIcon tag={chartTag(c)} className="tag-icon" />
+                    {timeUnknown(c) && (
+                      <TagIcon tag="unknown" className="tag-icon" />
+                    )}
                     {/* Starred rows show a star badge, so cap their name a little
                         shorter to leave room for it. */}
                     {displayName(

@@ -15,7 +15,7 @@
    synastry mode. */
 .synastry-hud {
   position: absolute;
-  bottom: var(--edge, 16px);
+  bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   z-index: 13;

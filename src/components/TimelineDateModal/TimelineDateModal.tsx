@@ -46,6 +46,13 @@ interface TimelineDateModalProps {
    *  matching the old field, which let any entered moment through unclamped. */
   yearMin: number;
   yearMax: number;
+  /** Hide the time fields — for callers where only the DATE matters (a
+   *  day-scale pick): the applied instant keeps the seeded time-of-day, and
+   *  showing hour/minute boxes would just confuse. */
+  dateOnly?: boolean;
+  /** Header title override — defaults to the "Set date & time" string; a
+   *  date-only caller passes its own (e.g. "Pick a date"). */
+  title?: string;
   /** Receives the chosen moment as a stored UTC instant. */
   onApply: (ms: number) => void;
   onClose: () => void;
@@ -60,6 +67,8 @@ export function TimelineDateModal({
   zoneLabel,
   yearMin,
   yearMax,
+  dateOnly = false,
+  title,
   onApply,
   onClose,
 }: TimelineDateModalProps) {
@@ -92,10 +101,10 @@ export function TimelineDateModal({
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
         role="dialog"
-        aria-label={t('timeline.datePicker.title')}
+        aria-label={title ?? t('timeline.datePicker.title')}
       >
         <header className="tdm-header">
-          <h2>{t('timeline.datePicker.title')}</h2>
+          <h2>{title ?? t('timeline.datePicker.title')}</h2>
           <button
             type="button"
             className="tdm-close"
@@ -112,6 +121,7 @@ export function TimelineDateModal({
           yearMin={yearMin}
           yearMax={yearMax}
           timeSuffix={zoneLabel}
+          dateOnly={dateOnly}
         />
 
         <p className="tdm-hint">

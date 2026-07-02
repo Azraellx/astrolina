@@ -8,7 +8,8 @@
 
 .chart-wheel {
   position: absolute;
-  bottom: 16px;
+  /* + the reserved bottom band (the sky band), when one is up. */
+  bottom: calc(16px + var(--sky-band-h, 0px));
   left: 16px;
   z-index: 10;
   width: 242px;

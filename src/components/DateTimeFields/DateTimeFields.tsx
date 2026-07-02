@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { HoverTip } from '../ui/HoverTip';
 import { tipPosFor, type TipPos } from '../ui/useHoverTip';
+import { InfoTip } from '../Sidebar/Sidebar';
 import './DateTimeFields.css';
 
 // A calendar moment as plain civil fields — the shape every date/time picker in the
@@ -48,6 +49,10 @@ interface SpinInputProps {
    *  flags invalid (red) with this text as a hover tooltip, so the limit is shown
    *  rather than silently corrected. (Arrows/wheel still nudge within range.) */
   outOfRangeHint?: string;
+  /** When provided, the box can be CLEARED: erasing its content and leaving (blur /
+   *  Enter) calls this instead of snapping back to the old value — for fields where
+   *  "no value" is meaningful (an unknown birth time). */
+  onClear?: () => void;
   onChange: (v: number) => void;
 }
 
@@ -63,6 +68,7 @@ export function SpinInput({
   placeholder,
   ariaLabel,
   outOfRangeHint,
+  onClear,
   onChange,
 }: SpinInputProps) {
   const ref = useRef<HTMLInputElement>(null);
@@ -97,6 +103,10 @@ export function SpinInput({
     const n = Number(draft);
     if (!Number.isNaN(n) && draft.trim() !== '') {
       onChange(outOfRangeHint ? n : Math.max(min, Math.min(max, n)));
+    } else if (draft.trim() === '' && onClear) {
+      // The user erased the box and left it: a clearable field goes back to
+      // "no value" instead of snapping to what it held before.
+      onClear();
     }
     setDraft(null);
   };
@@ -171,6 +181,14 @@ interface DateTimeFieldsProps<V extends PartialMoment> {
   yearHint?: string;
   /** Optional element rendered right after the minute input — e.g. a zone label. */
   timeSuffix?: ReactNode;
+  /** Let the TIME boxes (hour/minute) be CLEARED back to empty — for callers where
+   *  "no time" is meaningful (the birth form treats an empty time as unknown). The
+   *  timeline date modal omits it, so its full moment can never lose a field. */
+  timeClearable?: boolean;
+  /** Hide the time fields entirely — for callers where only the DATE is
+   *  meaningful (a day-scale pick). The emitted value keeps whatever hour/minute
+   *  it was seeded with; `timeSuffix`/`timeClearable` are moot while hidden. */
+  dateOnly?: boolean;
   /** Optional column rendered to the right of the time inputs (e.g. the birth form's
    *  Star toggle). The timeline date modal omits it. */
   trailing?: ReactNode;
@@ -188,6 +206,8 @@ export function DateTimeFields<V extends PartialMoment>({
   yearMax = BIRTH_YEAR_MAX,
   yearHint,
   timeSuffix,
+  timeClearable = false,
+  dateOnly = false,
   trailing,
 }: DateTimeFieldsProps<V>) {
   const { t } = useT();
@@ -239,8 +259,19 @@ export function DateTimeFields<V extends PartialMoment>({
           />
         </div>
       </label>
+      {!dateOnly && (
       <label className="moment-time">
-        <span className="moment-caption">{t('chartForm.timeLabel')}</span>
+        <span className="moment-caption">
+          {t('chartForm.timeLabel')}
+          {/* The (i) carries what the old "(local, 24h)" suffix said — plus, where
+              the time is clearable (the birth form), that blank = unknown. */}
+          <InfoTip
+            title={t('chartForm.timeLabel')}
+            hint={t(
+              timeClearable ? 'chartForm.timeInfo.hintBlank' : 'chartForm.timeInfo.hint',
+            )}
+          />
+        </span>
         <div className="spin-group">
           <SpinInput
             value={hour}
@@ -250,6 +281,7 @@ export function DateTimeFields<V extends PartialMoment>({
             width="40px"
             placeholder="HH"
             ariaLabel={t('chartForm.hour')}
+            onClear={timeClearable ? () => patch({ hour: null }) : undefined}
             onChange={(h) => patch({ hour: h })}
           />
           <span className="sep">:</span>
@@ -261,11 +293,13 @@ export function DateTimeFields<V extends PartialMoment>({
             width="48px"
             placeholder="MM"
             ariaLabel={t('chartForm.minute')}
+            onClear={timeClearable ? () => patch({ minute: null }) : undefined}
             onChange={(mi) => patch({ minute: mi })}
           />
           {timeSuffix != null && <span className="moment-tz">{timeSuffix}</span>}
         </div>
       </label>
+      )}
       {trailing}
     </div>
   );

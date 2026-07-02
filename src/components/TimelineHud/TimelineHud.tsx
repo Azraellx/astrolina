@@ -35,6 +35,7 @@ import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { shouldShowNudge, nudgeAction } from '../../lib/plan';
+import { getMapExtensions, isEntitled } from '../../lib/extensions/mapExtensions';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -81,6 +82,9 @@ interface TimelineHudProps {
   transitFrame: TransitFrame;
   setTransitFrame: (f: TransitFrame) => void;
   lineSystem: LineSystem;
+  /** The chart has no real natal frame to hold (its birth time is unknown), so the
+   *  framing is forced to Absolute upstream — the switch shows that, disabled. */
+  frameLocked?: boolean;
   /** The overlay's two display toggles, relocated from Settings ▸ Display into the
    *  bar's right-side drawer: the natal chart linework and this overlay's zenith
    *  stamps. (Synastry/eclipses don't render this HUD, so they keep their own UI.) */
@@ -88,6 +92,12 @@ interface TimelineHudProps {
   setShowNatal: (v: boolean) => void;
   showOverlayZenith: boolean;
   setShowOverlayZenith: (v: boolean) => void;
+  /** Registered map extensions surfaced in THIS bar's display drawer
+   *  (surface 'timeline-drawer'): their open-state + toggle, shared with the
+   *  View-menu plumbing. Entitlement-gated with no teaser — un-entitled rows
+   *  simply don't render. */
+  openExtensions: ReadonlySet<string>;
+  onToggleExtension: (id: string) => void;
   /** Chart-Angle method (Solar Arc / Progressed / Tertiary) and the Primary-Directions
    *  rate, relocated from the Calculations tab into this bar's bottom settings row —
    *  each shown only for the overlay that consumes it. */
@@ -308,10 +318,13 @@ export function TimelineHud({
   transitFrame,
   setTransitFrame,
   lineSystem,
+  frameLocked = false,
   showNatal,
   setShowNatal,
   showOverlayZenith,
   setShowOverlayZenith,
+  openExtensions,
+  onToggleExtension,
   angleProgression,
   setAngleProgression,
   primaryRate,
@@ -520,14 +533,16 @@ export function TimelineHud({
 
   const touch = useTouchLayout();
   // Modes that render a settings/returns second row — on touch the display toggles ride on the
-  // RIGHT of that row rather than spawning a separate third row. Cyclo (and any future mode with
-  // no second row) falls back to a dedicated toggle row below.
+  // RIGHT of that row rather than spawning a separate third row. (Every current time mode has
+  // one — cyclo's is its blend-legend row; a future mode without one falls back to a dedicated
+  // toggle row below.)
   const hasSettingsRow =
     overlayMode === 'transits' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'progressed' ||
     overlayMode === 'tertiary-progressed' ||
-    overlayMode === 'primary-directions';
+    overlayMode === 'primary-directions' ||
+    overlayMode === 'cyclo';
   // The two display toggles (Natal linework + this overlay's Zenith stamps). On desktop they
   // live in the right-side slide-out drawer; on touch we drop that drawer and lay these inline
   // in a bottom row of the bar (there's room now the bar is wider) — same buttons either way.
@@ -573,6 +588,33 @@ export function TimelineHud({
           <span className="thud-drawer-toggle-name">{zenithLabel}</span>
         </TipButton>
       )}
+      {/* Extensions surfaced in this drawer (surface 'timeline-drawer') — e.g. a
+          downstream build's gated add-on. Entitlement-gated with NO teaser: an
+          un-entitled user simply doesn't see the row. A gated row carries the
+          gated-tier tag in its hover tip (like the Zenith toggle carries ADV). */}
+      {getMapExtensions()
+        .filter((ext) => ext.surface === 'timeline-drawer' && isEntitled(ext))
+        .map((ext) => {
+          const open = openExtensions.has(ext.id);
+          return (
+            <TipButton
+              key={ext.id}
+              type="button"
+              className={`thud-drawer-toggle ${open ? 'on' : 'off'}`}
+              placement="top"
+              gated={ext.tier === 'gated'}
+              tip={ext.label}
+              hint={ext.hint}
+              aria-label={ext.label}
+              aria-pressed={open}
+              onClick={() => onToggleExtension(ext.id)}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <EyeIcon open={open} />
+              <span className="thud-drawer-toggle-name">{ext.label}</span>
+            </TipButton>
+          );
+        })}
     </>
   );
   // Touch: reuse the desktop display drawer INLINE — used ONLY on the transits returns row, whose
@@ -840,7 +882,11 @@ export function TimelineHud({
               than hidden. The button is floored to one width (see .thud-positioning-btn)
               so toggling Relative↔Absolute can't nudge the bar wider. */}
           {(advanced || advNudge) && (() => {
-            const posEnabled = lineSystem === 'celestial';
+            // frameLocked (no real natal frame — unknown birth time): the frame is
+            // forced to Absolute upstream, so show that value disabled with its own
+            // explanation rather than the stored (ignored) preference.
+            const posEnabled = lineSystem === 'celestial' && !frameLocked;
+            const shownFrame = frameLocked ? 'transit-moment' : transitFrame;
             return (
               <div className="thud-positioning">
                 <span className="thud-mode-label">{t('settings.headings.positioning')}</span>
@@ -853,21 +899,23 @@ export function TimelineHud({
                   // default, so it isn't flagged as an advanced choice.
                   advanced={posEnabled && transitFrame === 'transit-moment'}
                   // Enabled: tip names the CURRENT framing + its meaning. Disabled
-                  // (non-Celestial lines): explain why framing has no effect here.
+                  // (non-Celestial lines / locked frame): explain why.
                   tip={
-                    posEnabled
-                      ? t(`settings.positioning.${transitFrame}.label`)
+                    posEnabled || frameLocked
+                      ? t(`settings.positioning.${shownFrame}.label`)
                       : t('settings.headings.positioning')
                   }
                   hint={
                     posEnabled
                       ? t(`settings.positioning.${transitFrame}.hint`)
-                      : t('timeline.positioning.disabled')
+                      : frameLocked
+                        ? t('timeline.positioning.lockedNoTime')
+                        : t('timeline.positioning.disabled')
                   }
                   aria-label={
-                    posEnabled
+                    posEnabled || frameLocked
                       ? `${t('settings.headings.positioning')}: ${t(
-                          `settings.positioning.${transitFrame}.label`,
+                          `settings.positioning.${shownFrame}.label`,
                         )}`
                       : t('settings.headings.positioning')
                   }
@@ -884,7 +932,9 @@ export function TimelineHud({
                       );
                   }}
                 >
-                  {posEnabled ? t(`settings.positioning.${transitFrame}.label`) : '—'}
+                  {posEnabled || frameLocked
+                    ? t(`settings.positioning.${shownFrame}.label`)
+                    : '—'}
                 </TipButton>
               </div>
             );
@@ -940,8 +990,43 @@ export function TimelineHud({
         </div>
       )}
 
-      {/* Touch fallback: for modes WITHOUT a settings/returns second row (e.g. cyclo) the
-          toggles get their own row here. Every other mode puts them on its existing second row
+      {/* CCG blend legend — cyclo's bottom row: names the body split behind its MIXED
+          line tags (the personal planets read secondary-progressed and tag Sp; everything
+          else transits and tags Tr). Also gives this bar the same three-row height as the
+          other overlay bars, so the right-edge display drawer fits beside it. */}
+      {overlayMode === 'cyclo' && (
+        <div className="thud-row thud-setting-row">
+          <div className="thud-cyclo-legend">
+            <span className="thud-mode-label">{t('timeline.cyclo.label')}</span>
+            <TipSpan
+              className="thud-cyclo-item"
+              placement="top"
+              tapReveal
+              tip={t('timeline.cyclo.spTip')}
+              hint={t('timeline.cyclo.spHint')}
+            >
+              <span className="thud-cyclo-tag">Sp</span>
+              {t('timeline.cyclo.spName')}
+            </TipSpan>
+            <span className="thud-returns-divider" aria-hidden="true" />
+            <TipSpan
+              className="thud-cyclo-item"
+              placement="top"
+              tapReveal
+              tip={t('timeline.cyclo.trTip')}
+              hint={t('timeline.cyclo.trHint')}
+            >
+              <span className="thud-cyclo-tag">Tr</span>
+              {t('timeline.cyclo.trName')}
+            </TipSpan>
+          </div>
+          {/* Roomy second row — toggles sit inline (no chevron); only transits needs the drawer. */}
+          {touch && displayToggles}
+        </div>
+      )}
+
+      {/* Touch fallback: for a mode WITHOUT a settings/returns second row the toggles get
+          their own row here. Every current mode puts them on its existing second row
           (above) — no separate third row. The slide-out drawer is desktop-only. */}
       {touch && !hasSettingsRow && (
         <div className="thud-row thud-display-row">{displayToggles}</div>

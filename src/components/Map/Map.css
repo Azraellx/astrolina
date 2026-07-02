@@ -278,7 +278,9 @@
      --zoom-out-clearance is added inside the calc (not outside the max) so desktop's no-bar rest
      stays at 160px while the lift still kicks in once a tall bar would reach the chip. Mobile
      drops the 160px floor and rests in the gutter instead (see the coarse-pointer rule below). */
-  bottom: max(160px, calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance)));
+  /* + the reserved bottom band (the sky band): the pill is a map-frame SIBLING,
+     so it doesn't lift with the frame's inset and needs the var itself. */
+  bottom: calc(var(--sky-band-h, 0px) + max(160px, calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance))));
   transform: translateX(-50%);
   z-index: 7;
   display: inline-flex;
@@ -318,7 +320,7 @@
    bar is up, where that clearance reads as a comfortable bottom-edge inset. */
 @media (pointer: coarse) {
   .map-zoom-out {
-    bottom: calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance));
+    bottom: calc(var(--sky-band-h, 0px) + var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance));
   }
 }
 .map-zoom-out:focus-visible {

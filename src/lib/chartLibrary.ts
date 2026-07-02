@@ -8,9 +8,11 @@ import type { BirthData } from './birthData';
 import { notifyChartsChanged } from './extensions/chartSync';
 
 /** A chart's organizing tag. 'star' is user-assigned (the only one the UI offers);
- *  'space' is a system tag set by in-app chart generation (no manual control yet).
- *  'none' is the default — and what an absent `tag` field means on older records. */
-export type ChartTag = 'none' | 'star' | 'space';
+ *  'space' is a system tag set by in-app chart generation (fixed — no manual control);
+ *  'shared' is a system tag set on charts that arrive through a share link (the one
+ *  system tag the editor lets you remove). 'none' is the default — and what an
+ *  absent `tag` field means on older records. */
+export type ChartTag = 'none' | 'star' | 'space' | 'shared';
 
 /** A composite-midpoints chart's parents, snapshotted at generation so the
  *  composite stays intact if a parent chart is later edited or deleted. */

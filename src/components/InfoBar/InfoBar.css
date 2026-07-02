@@ -12,7 +12,8 @@
 .info-bar {
   position: fixed;
   right: var(--edge, 16px);
-  bottom: 44px;
+  /* + the reserved bottom band (the sky band), when one is up. */
+  bottom: calc(44px + var(--sky-band-h, 0px));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -59,6 +60,6 @@
    above it (matching the screen-edge padding). 28px ≈ the ~24px attribution chip + a few px. */
 @media (pointer: coarse) {
   .info-bar {
-    bottom: calc(var(--edge, 3px) + 28px);
+    bottom: calc(var(--edge, 3px) + 28px + var(--sky-band-h, 0px));
   }
 }

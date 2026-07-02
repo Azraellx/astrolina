@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   getMapExtensions,
   isEntitled,
@@ -39,6 +39,9 @@ import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
 import { TeleportHud } from './components/TeleportHud/TeleportHud';
+import { SkyBand, SKY_BAND_H_COMPACT } from './components/SkyBand/SkyBand';
+import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
+import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
@@ -52,11 +55,16 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
-import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
+import { isPhone, isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
-import { SEED_BIRTHS } from './lib/birthData';
+import { SEED_BIRTHS, timeUnknown } from './lib/birthData';
+import {
+  buildShareUrl,
+  consumeShareParam,
+  matchesSharedChart,
+} from './lib/shareState';
 import { planetRank, visibleAngleSpecs, buildCaptureBalance, buildBalanceGrid } from './lib/astro/format';
 import type {
   CaptureFrameExtras,
@@ -128,7 +136,7 @@ import {
   tagLabelsBy,
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
-  COMPOSITE_BLOCKED_OVERLAYS,
+  overlayBlockedFor,
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
@@ -420,11 +428,32 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 
 export default function App() {
   const { t, labels } = useT();
+  // A share link (?c=…) restores a chart + view. Consumed exactly once at boot
+  // (the param is stripped from the address bar); malformed tokens decode to
+  // null and the app boots normally. The chart lands in the library like an
+  // import, carrying the system 'shared' tag (the red gift) so link-received
+  // charts are marked and filterable — unless a chart with the EXACT same name +
+  // birth data is already there, in which case that one is simply selected (no
+  // duplicate).
+  const [sharedBoot] = useState(() => consumeShareParam());
   const [charts, setCharts] = useState<StoredChart[]>(() => {
     const loaded = loadCharts();
-    return loaded.length > 0 ? loaded : seedCharts;
+    const base = loaded.length > 0 ? loaded : seedCharts;
+    if (!sharedBoot) return base;
+    const match = base.find((c) => matchesSharedChart(c, sharedBoot.chart));
+    return match
+      ? base
+      : [
+          { ...sharedBoot.chart, id: newChartId(), createdAt: Date.now(), tag: 'shared' },
+          ...base,
+        ];
   });
   const [currentId, setCurrentId] = useState<string | null>(() => {
+    if (sharedBoot) {
+      // The shared chart: the pre-existing twin, else the one just prepended.
+      const match = charts.find((c) => matchesSharedChart(c, sharedBoot.chart));
+      return match?.id ?? charts[0]?.id ?? null;
+    }
     const stored = loadCurrentId();
     return stored ?? charts[0]?.id ?? null;
   });
@@ -432,6 +461,11 @@ export default function App() {
     () => charts.find((c) => c.id === currentId) ?? charts[0] ?? null,
     [charts, currentId],
   );
+  // Birth TIME unknown (timeKnown === false): the stored 12:00 is a placeholder, so
+  // every time-of-day-dependent layer below degrades — the angular linework, parans,
+  // local space, star lines, houses and relocated angles all suppress; the date-robust
+  // content (planets by sign, eclipse geometry, the transiting sky) stays.
+  const noTime = timeUnknown(current);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -525,7 +559,8 @@ export default function App() {
     () => localStorage.getItem('astro:show-labels:v1') !== '0',
   );
   const [hover, setHover] = useState<Point | null>(null);
-  const [pinned, setPinned] = useState<Point | null>(null);
+  // A restored share link re-places its pin (label resolves on the next hover).
+  const [pinned, setPinned] = useState<Point | null>(() => sharedBoot?.pin ?? null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
@@ -569,6 +604,11 @@ export default function App() {
   // it defaults OFF.
   const [showTeleport, setShowTeleport] = useState(
     () => localStorage.getItem('astro:view-teleport:v1') === '1',
+  );
+  // Sky Times (View ▸ Sky times): the day's rise/culminate/set clock at the
+  // active point — the bottom sky band. On-demand, so it defaults OFF.
+  const [showSkyTimes, setShowSkyTimes] = useState(
+    () => localStorage.getItem('astro:view-skytimes:v1') === '1',
   );
   // The expanded wheel's Advanced reading mode (degree rim, aspect grid,
   // coordinate tables). Lifted here — same storage key the sidebar always
@@ -658,15 +698,16 @@ export default function App() {
       : m;
   });
   // A composite chart can't carry a progression / direction / synastry overlay
-  // (no real moment to advance — Q11), so making one active resets a blocked mode
-  // to None. One guarded spot covers chart switch, generate, import, and load-time
-  // restore; the menu + 'o'-cycle already hide these modes, so this only fires on a
-  // stale combo, and the no-op updater bails when nothing needs changing.
+  // (no real moment to advance — Q11), and an unknown-birth-time chart can't carry
+  // any technique that advances its natal moment — so making such a chart active
+  // resets a blocked mode to None. One guarded spot covers chart switch, generate,
+  // import, and load-time restore; the menu + 'o'-cycle already hide these modes, so
+  // this only fires on a stale combo, and the no-op updater bails when nothing needs
+  // changing.
   useEffect(() => {
-    if (current?.composite) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOverlayMode((m) => (COMPOSITE_BLOCKED_OVERLAYS.has(m) ? 'off' : m));
-    }
+    const blocked = overlayBlockedFor(current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOverlayMode((m) => (blocked(m) ? 'off' : m));
   }, [current]);
   // The active Overlay-menu EXTENSION (registerOverlayExtension), single-select and
   // mutually exclusive with overlayMode. Restored only if the id still matches a
@@ -960,7 +1001,13 @@ export default function App() {
   // the returns row) + the right-side drawer's overlay-Zenith toggle. Default while Advanced
   // is OFF (their UI is hidden then; see TimelineHud), raw restored when on. (The drawer's
   // Natal toggle is NOT gated — always available, reads raw showNatal.)
-  const effTransitFrame = advancedWheel ? transitFrame : 'relative-to-natal';
+  // With the birth time unknown there is no natal RAMC to hold, so the transit map
+  // is forced to the absolute sky-of-the-moment frame (the only one that's real).
+  const effTransitFrame: TransitFrame = noTime
+    ? 'transit-moment'
+    : advancedWheel
+      ? transitFrame
+      : 'relative-to-natal';
   const effShowOverlayZenith = advancedWheel && showOverlayZenith;
   // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
   // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
@@ -980,7 +1027,7 @@ export default function App() {
     // overlays are included only while Advanced is on, matching the menu's tier filter.
     const overlayCycle: OverlayMode[] = (
       advancedWheel ? OVERLAY_MODES : OVERLAY_MODES.filter((m) => !ADVANCED_OVERLAY_MODES.has(m))
-    ).filter((m) => !(current?.composite && COMPOSITE_BLOCKED_OVERLAYS.has(m)));
+    ).filter((m) => !overlayBlockedFor(current)(m));
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
       (el.tagName === 'INPUT' ||
@@ -1087,6 +1134,9 @@ export default function App() {
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
         case 'g': setShowTeleport((v) => !v); break;
+        // Sky Times is an 'adv'-tier view (matches its View-menu row); the band
+        // doesn't render on phones, so the key is inert there too.
+        case 'h': if (advancedWheel && !isPhone()) setShowSkyTimes((v) => !v); break;
         case 'l':
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
           // celestial frame (matches the View-menu toggle + the slide tool).
@@ -1169,6 +1219,7 @@ export default function App() {
     if (!on) {
       setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
       setShowLocalSpace(false);
+      setShowSkyTimes(false);
       setOverlayMode((m) => (ADVANCED_OVERLAY_MODES.has(m) ? 'off' : m));
     }
     setAdvancedWheel(on);
@@ -1247,6 +1298,37 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:view-teleport:v1', showTeleport ? '1' : '0');
   }, [showTeleport]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-skytimes:v1', showSkyTimes ? '1' : '0');
+  }, [showSkyTimes]);
+  // The Sky Band occupies REAL layout space along the bottom. Hidden on phones
+  // (the bottom edge is already crowded there and the band is hover-driven) and
+  // while the Capture tool owns the map-frame insets. The map gets the height as
+  // a PROP (inline style + resize land on one commit); the rest of the bottom
+  // furniture shifts via the bottom-dock var, published here in a LAYOUT effect
+  // so it moves in the same paint.
+  const phoneLayout = usePhone();
+  const skyBandVisible = showSkyTimes && !phoneLayout && mapTool !== 'capture';
+  // The band's expandable TRACK (a downstream build's registered center — see
+  // lib/extensions/skyBandTrack.ts; the open core registers none, so its band
+  // is always the compact row). The expanded/compact switch is owned here (not
+  // in the band) because the reserved height — the map's bottomInset and the
+  // furniture var — must track it. Entitlement-gated with no teaser.
+  const [skyBandTrackOn, setSkyBandTrackOn] = useState(
+    () => localStorage.getItem('astro:skyband-track:v1') !== '0',
+  );
+  useEffect(() => {
+    localStorage.setItem('astro:skyband-track:v1', skyBandTrackOn ? '1' : '0');
+  }, [skyBandTrackOn]);
+  const skyBandTrackExt = getSkyBandTrack();
+  const skyBandTrackAvailable = !!skyBandTrackExt && isSkyBandTrackEntitled(skyBandTrackExt);
+  const skyBandTrackShown = skyBandTrackAvailable && skyBandTrackOn;
+  const skyBandH =
+    skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : SKY_BAND_H_COMPACT;
+  useLayoutEffect(() => {
+    publishBottomDock('sky-band', skyBandVisible ? skyBandH : 0);
+    return () => retireBottomDock('sky-band');
+  }, [skyBandVisible, skyBandH]);
   useEffect(() => {
     localStorage.setItem('astro:view-local-space:v1', showLocalSpace ? '1' : '0');
   }, [showLocalSpace]);
@@ -1427,12 +1509,16 @@ export default function App() {
   // for off-ecliptic bodies); In-Mundo keeps true sky positions. The wheel keeps
   // using `positions`/`ecliptic` (longitude is identical either way).
   const linePositions = useMemo(() => {
+    // Unknown birth time: no positions reach the line generators, so the angular
+    // lines, parans, zenith stamps, aspect/midpoint lines and star parans all empty
+    // in one stroke. The WHEEL keeps `positions`/`ecliptic` (planets by sign hold).
+    if (noTime) return [];
     const jdEff = sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd;
     return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
       ? projectOntoEcliptic(slidPositions, jdEff)
       : slidPositions;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, ephemerisEpoch]);
+  }, [noTime, lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, ephemerisEpoch]);
 
   // Maps a meridian's RA to a geographic longitude (deg). Celestial: RA − GMST
   // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
@@ -1473,7 +1559,7 @@ export default function App() {
   );
   const allLocalSpace = useMemo(
     () =>
-      localSpaceOrigin
+      localSpaceOrigin && !noTime
         ? generateLocalSpace(
             slidPositions, // true-sky positions, never ecliptic-projected (Q3a)
             gmst,
@@ -1481,7 +1567,7 @@ export default function App() {
             localSpaceOrigin.lng,
           )
         : EMPTY_FC,
-    [slidPositions, gmst, localSpaceOrigin],
+    [slidPositions, gmst, localSpaceOrigin, noTime],
   );
   const allZenith = useMemo(
     () => generateZenithStamps(linePositions, meridianLng),
@@ -1490,7 +1576,12 @@ export default function App() {
   // The ecliptic great circle for the chart instant — a fixed reference (passes
   // through the Sun's zenith), independent of planet visibility, so not filtered.
   // (Named *Line to avoid colliding with the `ecliptic` projection-mode variable.)
-  const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
+  // Its geographic anchor is the chart minute's sidereal time, so it suppresses
+  // with the rest of the linework when the birth time is unknown.
+  const eclipticLine = useMemo(
+    () => (noTime ? EMPTY_FC : generateEcliptic(jd, meridianLng)),
+    [noTime, jd, meridianLng],
+  );
 
   // Which bundled fixed-star set draws (the showStarLines toggle is declared up top
   // with the other hotkey-driven settings).
@@ -1508,7 +1599,7 @@ export default function App() {
   // positions for the chart instant, through the same meridian mapping as the
   // planet lines (so they follow Celestial vs Mundane like everything else).
   const starLines = useMemo(() => {
-    if (!effShowStarLines || !current) return EMPTY_FC;
+    if (!effShowStarLines || !current || noTime) return EMPTY_FC;
     return generateStarLines(
       starsOfDate(jd, starSet),
       meridianLng,
@@ -1517,7 +1608,7 @@ export default function App() {
       // gets its own tint (and the baked star sprite matches).
       STAR_LINE_COLORS[theme],
     );
-  }, [effShowStarLines, current, jd, starSet, meridianLng, lineSystem, eps, theme]);
+  }, [effShowStarLines, current, noTime, jd, starSet, meridianLng, lineSystem, eps, theme]);
 
   const lines = useMemo(
     () =>
@@ -1554,6 +1645,7 @@ export default function App() {
       thetaDeg: dtHours * SIDEREAL_DEG_PER_HOUR,
       dtHours,
       clock: `${hh}:${mm} ${label}`,
+      ms: slidMs,
     };
   }, [mapTool, slideDt, current]);
 
@@ -1936,6 +2028,12 @@ export default function App() {
 
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
+    // Belt-and-braces for the stale-mode reset effect above: a mode this chart can't
+    // carry (composite / unknown birth time) never builds a layer. And a SYNASTRY
+    // partner whose own birth time is unknown has no real angular sky to overlay —
+    // their noon placeholder would draw confident lines — so that layer stays off too.
+    if (overlayBlockedFor(current)(overlayMode)) return null;
+    if (overlayMode === 'synastry' && timeUnknown(partner)) return null;
     // Tertiary Progressed is its own Overlay mode; map it to the tertiary day-clock
     // buildOverlay reads (every other mode resolves to the default secondary clock).
     const progressionType =
@@ -2393,21 +2491,24 @@ export default function App() {
   // Midheaven read as the exact midpoint, which the single MC-anchored map frame
   // can't do. They don't relocate (a midpoint construct has no frame to move), so
   // a composite ignores the active pin here; the MAP lines still follow jd/gmst.
+  // With the birth time unknown both stay null — houses and angles are functions of
+  // the exact minute, and every consumer (readouts, wheel, tables, eclipse radix,
+  // capture extras) already has a null path.
   const birthAngles = useMemo(
     () =>
-      current
+      current && !noTime
         ? current.composite
           ? compositeAngles(current.composite, effHouseSystem)
           : relocate(jd, current.birthplace.lat, current.birthplace.lng, effHouseSystem)
         : null,
-    [jd, current, effHouseSystem],
+    [jd, current, noTime, effHouseSystem],
   );
   const angles = useMemo(
     () =>
-      activePoint && current && !current.composite
+      activePoint && current && !current.composite && !noTime
         ? relocate(jd, activePoint.lat, activePoint.lng, effHouseSystem)
         : birthAngles,
-    [jd, activePoint, current, birthAngles, effHouseSystem],
+    [jd, activePoint, current, noTime, birthAngles, effHouseSystem],
   );
   // Where the eclipse degree strikes the natal chart (conj/square/opp, 3°),
   // for the Sidebar's contacts list. Targets are the user's visible bodies
@@ -2997,6 +3098,10 @@ export default function App() {
       return next;
     });
   }, []);
+  // Extensions surfaced in the timeline bar's drawer show only WHILE the bar is
+  // up — but their open state (and its persistence) survives, like the drawer's
+  // other toggles: cycle overlays off and back on and the HUD returns as left.
+  // The gate is applied where the HUDs render (below), not by closing them here.
   // Force a registered extension OPEN (vs. the toggle above) — handed to extensions via the
   // context as openExtension, e.g. a map overlay opening its companion HUD on a marker click.
   const openExtensionById = useCallback((id: string) => {
@@ -3143,12 +3248,17 @@ export default function App() {
       { type: 'FeatureCollection', features: angleFeatures },
       theme,
     );
-    const natalStarLines = generateStarLines(
-      starsOfDate(jd, starSet),
-      meridianLng,
-      lineSystem === 'geodetic' ? eps : null,
-      STAR_LINE_COLORS[theme],
-    );
+    // Unknown birth time: the natal families above are already empty (linePositions
+    // is emptied at the source), but the star lines generate from the catalog + jd
+    // alone, so they need their own gate here.
+    const natalStarLines = noTime
+      ? EMPTY_FC
+      : generateStarLines(
+          starsOfDate(jd, starSet),
+          meridianLng,
+          lineSystem === 'geodetic' ? eps : null,
+          STAR_LINE_COLORS[theme],
+        );
     // Overlay (transits / progressions / synastry / …), if one is active — the same generators on
     // the overlay's positions/frame, tagged, unfiltered. Mirrors the `overlay` memo below sans filters.
     let overlayLines: FeatureCollection | null = null;
@@ -3212,6 +3322,7 @@ export default function App() {
     overlayLayer,
     allParans,
     allLocalSpace,
+    noTime,
   ]);
 
   // The line "spotlight": when set, the <Map> dims and draws only the lines
@@ -3319,6 +3430,9 @@ export default function App() {
       houseSystem,
       zodiacMode: effZodiacMode,
       overlayMode,
+      angleProgression,
+      primaryRate,
+      userPrimaryRate,
       // The FULL effective linework (NOT spotlight-narrowed): a consumer measures every
       // visible line and decides proximity itself; the spotlight only narrows the <Map> draw.
       lines: effLines,
@@ -3353,6 +3467,9 @@ export default function App() {
       houseSystem,
       effZodiacMode,
       overlayMode,
+      angleProgression,
+      primaryRate,
+      userPrimaryRate,
       lines,
       angleLines,
       parans,
@@ -3404,7 +3521,11 @@ export default function App() {
         distanceRef={distanceRef}
         // First-load framing centres on the active chart's birthplace (read once
         // at mount inside Map); later chart switches recenter via their own flyTo.
+        // A restored share link's exact camera wins over that framing.
         initialCenter={current ? current.birthplace : null}
+        initialView={sharedBoot?.view ?? null}
+        // The Sky Band reserves a bottom layout band — the GL frame lifts above it.
+        bottomInset={skyBandVisible ? skyBandH : 0}
         theme={theme}
         projection={projection}
         showRoads={showRoads}
@@ -3455,6 +3576,9 @@ export default function App() {
           />
           {showCoords && (
             <header className="app-header">
+              {noTime && (
+                <p className="tz-warning">{t('common.timeUnknownBanner')}</p>
+              )}
               {current?.tzUncertain && (
                 <p className="tz-warning">{t('common.tzWarning')}</p>
               )}
@@ -3571,6 +3695,8 @@ export default function App() {
         setShowInfo={setShowInfo}
         showTeleport={showTeleport}
         setShowTeleport={setShowTeleport}
+        showSkyTimes={showSkyTimes}
+        setShowSkyTimes={setShowSkyTimes}
         showLocalSpace={showLocalSpace}
         setShowLocalSpace={setShowLocalSpaceSafe}
         planTier={planTier}
@@ -3616,6 +3742,9 @@ export default function App() {
           transitFrame={transitFrame}
           setTransitFrame={setTransitFrame}
           lineSystem={lineSystem}
+          frameLocked={noTime}
+          openExtensions={openExtensions}
+          onToggleExtension={toggleExtension}
           advanced={advancedWheel}
           showNatal={showNatal}
           setShowNatal={setShowNatal}
@@ -3695,6 +3824,27 @@ export default function App() {
           onClose={() => setShowTeleport(false)}
         />
       )}
+      {skyBandVisible && (
+        <SkyBand
+          // The day clock reads at the placed pin, else the chart's birthplace.
+          point={pinned ?? (current ? current.birthplace : null)}
+          placeLabel={
+            pinned
+              ? isNatalPin
+                ? (current?.birthplace.label ?? null)
+                : pinnedLabel
+              : (current?.birthplace.label ?? null)
+          }
+          visiblePlanets={visiblePlanets}
+          nodeType={nodeType}
+          trackShown={skyBandTrackShown}
+          onToggleTrack={() => setSkyBandTrackOn((v) => !v)}
+          // While the Slide tool spins the sky, the track's time cursor follows
+          // the slid instant — the clock shifts with the spin.
+          slideMs={slide?.ms ?? null}
+          onClose={() => setShowSkyTimes(false)}
+        />
+      )}
       {showLocalSpace && (
         <LocalSpaceHud
           onClose={() => setShowLocalSpaceSafe(false)}
@@ -3729,13 +3879,30 @@ export default function App() {
           onToggleExtra={toggleCaptureExtra}
           fileName={captureFileName}
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
+          // Share link: the chart + this camera + the pin as a ?c= URL. A composite
+          // isn't shareable (its planets are parent midpoints, not a castable
+          // moment), so the button hides for one.
+          shareLink={
+            current && !current.composite
+              ? () =>
+                  buildShareUrl({
+                    chart: current,
+                    view: mapRef.current?.getView() ?? null,
+                    pin: pinned ? { lat: pinned.lat, lng: pinned.lng } : null,
+                  })
+              : null
+          }
         />
       )}
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
-          with no edits to this file. Entitled → the HUD (the menu hides it otherwise). */}
+          with no edits to this file. Entitled → the HUD (the menu hides it
+          otherwise). A 'timeline-drawer'-surface extension renders only while a
+          time overlay's bar is up; its OPEN state stays put across overlay
+          cycles, like the drawer's other toggles. */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getMapExtensions().map((ext) =>
-        openExtensions.has(ext.id) ? (
+        openExtensions.has(ext.id) &&
+        (ext.surface !== 'timeline-drawer' || isTimeMode) ? (
           <Fragment key={ext.id}>
             {isEntitled(ext)
               ? ext.render(extensionCtx, () => toggleExtension(ext.id))
@@ -3779,6 +3946,7 @@ export default function App() {
           isNatalPin={isNatalPin}
           angles={wheelAngles}
           planets={wheelPlanets}
+          planetsOnly={noTime}
           // CCG never rides as an overlay ring/caption either (no coherent chart to
           // show alongside the natal) — isCyclo drops it whether or not it's promoted.
           overlayPlanets={promoteOverlay || isCyclo ? null : displayOverlayEcliptic}
@@ -3828,6 +3996,7 @@ export default function App() {
             planets={wheelPlanets}
             visiblePlanets={visiblePlanets}
             noChart={noChart}
+            planetsOnly={noTime}
           />
         )
       )}

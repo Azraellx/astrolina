@@ -36,11 +36,29 @@ export const timeline = {
     hide: 'Hide display toggles',
   },
 
+  // The CCG blend legend (cyclo's bottom row): which bodies read progressed (Sp)
+  // vs transiting (Tr) — the split behind the mode's mixed on-map line tags.
+  cyclo: {
+    label: 'Blend',
+    spName: 'Personal planets progressed',
+    spTip: 'Sp — secondary progressed',
+    spHint:
+      'Sun, Moon, Mercury, Venus and Mars read at their secondary-progressed positions — the day-for-a-year pace keeps them readable beside the outers. Their lines carry the Sp tag.',
+    trName: 'Outer bodies transiting',
+    trTip: 'Tr — transiting',
+    trHint:
+      'Everything from Jupiter outward — plus the nodes, Lilith, Chiron and the asteroids — reads at its real transiting position. Their lines carry the Tr tag.',
+  },
+
   // The Positioning flip-switch in the transits returns row. When the line system
   // isn't Celestial the switch is disabled — this tip explains why framing is moot.
+  // lockedNoTime: disabled because the chart's birth time is unknown, so the frame
+  // is forced to Absolute (there is no natal frame to hold).
   positioning: {
     disabled:
       'Only Celestial lines have a sidereal-time frame to switch — Mundane and Geodetic lines key off zodiacal longitude, so framing has no effect.',
+    lockedNoTime:
+      'Birth time unknown — there is no natal frame to hold, so the map shows the absolute sky of the moment.',
   },
 
   // Timeline scale picker (the <select>).

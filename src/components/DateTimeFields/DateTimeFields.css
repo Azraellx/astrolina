@@ -31,6 +31,12 @@
   text-transform: uppercase;
 }
 
+/* The (i) after the Local Time caption (explains 24h + blank-means-unknown). */
+.moment-caption .orb-info {
+  margin-left: 4px;
+  vertical-align: -2px;
+}
+
 .spin-group {
   display: flex;
   align-items: center;

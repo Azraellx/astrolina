@@ -12,11 +12,25 @@ export interface BirthData {
   hour: number;
   minute: number;
   tzOffset: number;
+  /**
+   * False when the birth TIME is not actually known: hour/minute then hold a
+   * local-noon placeholder (12:00) so the moment stays computable, and every
+   * time-of-day-dependent layer (angles, houses, the angular map lines, parans,
+   * local space…) must degrade honestly rather than render a confident noon
+   * chart. Absent (or true) means the time is real — so every chart saved
+   * before this field existed keeps meaning what it always did.
+   */
+  timeKnown?: boolean;
   birthplace: {
     label: string;
     lat: number;
     lng: number;
   };
+}
+
+/** True when a chart's birth TIME is unknown (see BirthData.timeKnown; absent = known). */
+export function timeUnknown(b: BirthData | null | undefined): boolean {
+  return !!b && b.timeKnown === false;
 }
 
 // The charts a fresh install starts with, in display order; the first is the

@@ -12,7 +12,7 @@
    picker for synastry). */
 .timeline-hud {
   position: absolute;
-  bottom: var(--edge, 16px);
+  bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
   /* When the expanded chart sidebar is open it publishes its width as --es-width; we
      shift the WHOLE bar right by a quarter of that (not half — full recentering
      over-shot) so it "pops out" from behind the sidebar as a single unit. We
@@ -408,6 +408,39 @@
 }
 .thud-rate .calc-user-rate-input {
   width: 64px;
+}
+
+/* CCG blend legend (cyclo's bottom row): the Sp/Tr body split behind the mode's
+   mixed line tags. Informational — hover each item for the full split. */
+.thud-cyclo-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.thud-cyclo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: help;
+  transition: color 0.12s;
+}
+.thud-cyclo-item:hover {
+  color: var(--text-strong);
+}
+/* The two-letter tag chip, echoing the on-map "Sp ☉ MC" / "Tr ♃ ASC" labels. */
+.thud-cyclo-tag {
+  padding: 1px 5px;
+  border: 1px solid rgba(var(--tint), 0.2);
+  border-radius: 4px;
+  background: rgba(var(--tint), 0.06);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-strong);
 }
 
 .thud-return-group {

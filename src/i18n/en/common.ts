@@ -15,6 +15,9 @@ export const common = {
   locationFallbackOcean: 'Ocean',
   // Pre-1970 timezone DST caution (App header + expanded sidebar).
   tzWarning: '⚠ Pre-1970 timezone outside US/EU: verify DST against an atlas',
+  // Unknown-birth-time banner (App header / coordinates window). Kept terse —
+  // the chart form's note carries the full explanation of the degrade.
+  timeUnknownBanner: 'Birth time unknown',
   // Spelled-out cardinal direction words. (The single-letter DMS readout codes in
   // coordFormat.ts stay language-neutral as cartographic convention; these are here
   // for any spelled-out use and for locales where the letters differ.)

@@ -461,7 +461,31 @@ interface WheelSvgProps {
    * but still wants the readout when there's room.
    */
   readouts?: boolean;
+  /**
+   * Planets on the zodiac ring only: no houses, cusps, angle axes, or angle
+   * marks — for a chart whose angles aren't real (the birth time is unknown, so
+   * the ASC/MC and every house are functions of a minute nobody has). Pair with
+   * ARIES_FRAME so the zodiac reads in the classic sign order; planet-to-planet
+   * aspects still draw (they don't depend on the time of day).
+   */
+  planetsOnly?: boolean;
 }
+
+/**
+ * The neutral frame for a planets-only wheel: 0° Aries takes the due-left anchor
+ * the Ascendant normally holds. The angle values exist only to satisfy the frame
+ * shape — planetsOnly suppresses everything that would draw them — and the empty
+ * cusps keep every house-driven loop naturally empty.
+ */
+export const ARIES_FRAME: RelocatedAngles = {
+  asc: 0,
+  dsc: Math.PI,
+  mc: (3 * Math.PI) / 2,
+  ic: Math.PI / 2,
+  vertex: 0,
+  antivertex: Math.PI,
+  cusps: [],
+};
 
 export function WheelSvg({
   size,
@@ -476,6 +500,7 @@ export function WheelSvg({
   visibleAngles,
   interactive = false,
   readouts = false,
+  planetsOnly = false,
 }: WheelSvgProps) {
   const { t, labels } = useT();
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
@@ -556,7 +581,11 @@ export function WheelSvg({
   const houseRingOuter = detailed
     ? (showReadouts ? rReadout - 28 - bandGrow / 3 : rPlanets - 22)
     : 0;
-  const houseBand = detailed ? Math.min(24, Math.max(0, houseRingOuter - 12)) : 0;
+  // planetsOnly zeroes the band: the house ring circle, hover zones, cusp lines
+  // and numbers are all gated on houseBand > 0, so they fall away together while
+  // the inner radii (houseRingInner = houseRingOuter) stay geometrically sane.
+  const houseBand =
+    detailed && !planetsOnly ? Math.min(24, Math.max(0, houseRingOuter - 12)) : 0;
   const houseRingInner = houseRingOuter - houseBand;
   const rAspectRing = detailed ? houseRingInner : rPlanets - 22;
   const rInner = detailed ? houseRingInner : rPlanets - 22;
@@ -592,7 +621,7 @@ export function WheelSvg({
   // rather than a separate list. Each keeps its hover hint (ANGLE_HINTS) and its
   // axis colour — As/Ds gold, Mc/Ic cool — and joins the planet spread below so
   // an angle is never stacked on top of a planet it's conjunct.
-  const showAngleMarks = interactive && detailed;
+  const showAngleMarks = interactive && detailed && !planetsOnly;
   const angleLonByKey: Record<AngleKey, number> = {
     As: angles.asc,
     Ds: angles.dsc,
@@ -779,6 +808,7 @@ export function WheelSvg({
           the 12 house sectors read across the whole wheel (drawn early → behind
           the planets, aspects, and bolder cusp marks). */}
       {detailed &&
+        !planetsOnly &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
           const inner = svgPos(lon, angles.asc, rInner, cx, cy);
@@ -883,6 +913,7 @@ export function WheelSvg({
           The sign is read from the zodiac band, so no sign glyph here. */}
       {detailed &&
         advanced &&
+        !planetsOnly &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
           const pos = svgPos(lon, angles.asc, rOuter + 12, cx, cy);
@@ -988,30 +1019,35 @@ export function WheelSvg({
           );
         })}
 
-      <line
-        x1={cx - rOuter}
-        y1={cy}
-        x2={cx + rOuter}
-        y2={cy}
-        className="angle asc-dsc"
-      />
-      {detailed ? (
+      {/* The two angle axes — meaningless without a real birth minute, so the
+          planets-only wheel draws neither. */}
+      {!planetsOnly && (
         <line
-          x1={mcOuter.x}
-          y1={mcOuter.y}
-          x2={icOuter.x}
-          y2={icOuter.y}
-          className="angle mc-ic"
-        />
-      ) : (
-        <line
-          x1={cx}
-          y1={cy - rOuter}
-          x2={cx}
-          y2={cy + rOuter}
-          className="angle mc-ic"
+          x1={cx - rOuter}
+          y1={cy}
+          x2={cx + rOuter}
+          y2={cy}
+          className="angle asc-dsc"
         />
       )}
+      {!planetsOnly &&
+        (detailed ? (
+          <line
+            x1={mcOuter.x}
+            y1={mcOuter.y}
+            x2={icOuter.x}
+            y2={icOuter.y}
+            className="angle mc-ic"
+          />
+        ) : (
+          <line
+            x1={cx}
+            y1={cy - rOuter}
+            x2={cx}
+            y2={cy + rOuter}
+            className="angle mc-ic"
+          />
+        ))}
 
       {/* The expanded wheel intentionally omits the ASC/MC/DSC/IC degree
           callouts — those positions are listed in the sidebar. Advanced mode

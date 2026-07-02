@@ -114,6 +114,15 @@ function InfoIcon() {
   );
 }
 
+function LinkIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
 // The circled-"i" shown IN PLACE of the wheel/list control on phones (where a phone-sized frame
 // can't render either legibly): a tap/hover reveals a .ui-tip explaining the omission. tapReveal →
 // a single tap shows it on touch (no long-press, which iOS would turn into a text-selection).
@@ -208,6 +217,10 @@ interface CaptureHudProps {
   fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
   onCapture: () => Promise<Blob | null>;
+  /** Build a shareable ?c= URL of the current chart + camera (lib/shareState) —
+   *  read lazily on click so it always carries the freshest view. Null hides the
+   *  "Copy link" button (e.g. a composite chart, which a link can't recast). */
+  shareLink?: (() => string) | null;
 }
 
 export function CaptureHud({
@@ -222,6 +235,7 @@ export function CaptureHud({
   onToggleExtra,
   fileName,
   onCapture,
+  shareLink,
 }: CaptureHudProps) {
   const { t } = useT();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
@@ -235,6 +249,7 @@ export function CaptureHud({
   });
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   // Show the native Share button only on touch devices that can share image files — on
   // desktop the Download / Copy buttons cover it, so Share is just clutter there.
@@ -321,6 +336,21 @@ export function CaptureHud({
       setBusy(false);
     }
   }, [busy, onCapture, fileName, divertIfLocked]);
+
+  // Copy the shareable chart URL (plain text — no capture involved). The link is
+  // built lazily so it carries the camera as it is at the click.
+  const onCopyLink = useCallback(async () => {
+    if (divertIfLocked()) return;
+    if (!shareLink) return;
+    setFailed(false);
+    try {
+      await navigator.clipboard.writeText(shareLink());
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1800);
+    } catch {
+      setFailed(true);
+    }
+  }, [shareLink, divertIfLocked]);
 
   const onShare = useCallback(async () => {
     if (divertIfLocked()) return;
@@ -503,6 +533,20 @@ export function CaptureHud({
             >
               <ShareIcon />
               <span>{t('captureHud.share.title')}</span>
+            </TipBtn>
+          )}
+          {/* Copy a shareable ?c= URL of this chart + view (no image involved). */}
+          {shareLink && (
+            <TipBtn
+              className="location-ls-fly capture-hud-btn"
+              onClick={onCopyLink}
+              disabled={busy}
+              advanced={exportGated}
+              title={t('captureHud.link.title')}
+              hint={t('captureHud.link.hint')}
+            >
+              <LinkIcon />
+              <span>{linkCopied ? t('captureHud.link.done') : t('captureHud.link.title')}</span>
             </TipBtn>
           )}
         </div>

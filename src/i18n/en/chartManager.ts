@@ -17,12 +17,16 @@ export const chartManager = {
   searchPlaceholder: 'Search names or places…',
   searchLabel: 'Search charts',
   clearSearch: 'Clear search',
-  // Tag-filter chips under the search box (narrow the list by tag).
+  // Tag-filter chips under the search box (narrow the list by tag). Unknown is
+  // the derived birth-time-unknown mark (grey "?"), not a stored tag; Shared is
+  // the red gift on charts that arrived through a share link.
   filter: {
     label: 'Filter by tag',
     all: 'All',
     starred: 'Star',
     space: 'Space',
+    unknown: 'Unknown',
+    shared: 'Share',
   },
   // Empty-state row when no charts have been saved.
   empty: 'No saved charts yet.',

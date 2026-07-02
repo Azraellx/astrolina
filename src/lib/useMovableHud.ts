@@ -37,6 +37,17 @@ export function effectiveCenterX(): number {
   return window.innerWidth / 2 + es / 4;
 }
 
+// A reserved LAYOUT band along the viewport bottom (the sky band — see
+// lib/bottomDock.ts): the drag clamp and the snap-home spot both sit above it,
+// exactly as the docked bars' CSS does via the same var.
+function bottomReserve(): number {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--sky-band-h'),
+    ) || 0
+  );
+}
+
 // Gap kept below the top nav cluster when a HUD is pushed clear of it.
 const NAV_CLEARANCE = 8;
 
@@ -61,7 +72,10 @@ function clampPos(x: number, y: number, w: number, h: number): { x: number; y: n
   if (nav && cx < nav.right && cx + w > nav.left) {
     top = Math.max(top, nav.bottom + NAV_CLEARANCE);
   }
-  const cy = Math.min(Math.max(y, top), Math.max(top, window.innerHeight - h - 4));
+  const cy = Math.min(
+    Math.max(y, top),
+    Math.max(top, window.innerHeight - bottomReserve() - h - 4),
+  );
   return { x: cx, y: cy };
 }
 
@@ -180,10 +194,12 @@ export function useMovableHud(
     const el = barRef.current;
     if (!el) return;
     if (opts.floating) return; // free-floating windows stay put — no dock/snap
-    // Snap home if released near the docked bottom-centre.
+    // Snap home if released near the docked bottom-centre (which sits above any
+    // reserved bottom band, matching the bars' CSS `bottom: calc(--edge + var)`).
     const r = el.getBoundingClientRect();
     const nearX = Math.abs(r.left + r.width / 2 - effectiveCenterX()) < SNAP_DIST;
-    const nearBottom = Math.abs(r.bottom - (window.innerHeight - DOCK_BOTTOM)) < SNAP_DIST;
+    const nearBottom =
+      Math.abs(r.bottom - (window.innerHeight - bottomReserve() - DOCK_BOTTOM)) < SNAP_DIST;
     if (nearX && nearBottom) setPos(null);
   };
 

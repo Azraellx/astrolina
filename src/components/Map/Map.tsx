@@ -449,6 +449,9 @@ export interface SlideInfo {
   dtHours: number;
   /** Resulting wall-clock time at the birthplace, in the chart's zone — e.g. "18:42 EDT". */
   clock: string;
+  /** The slid instant itself (epoch ms UT) — for surfaces that project it onto
+   *  their own clock (the sky band's time cursor follows the spin through it). */
+  ms: number;
 }
 
 // Earth turns 360° relative to the fixed stars in one sidereal day (23.9344696 h),
@@ -1154,6 +1157,15 @@ interface MapProps {
    *  continental box centred here (read once; later chart switches recenter via
    *  their own flyTo). Absent → the North-America fallback frame. */
   initialCenter?: { lat: number; lng: number } | null;
+  /** An EXACT first-load camera (a restored share link's view). When present it
+   *  wins over the initialCenter continental framing. Read once at mount. */
+  initialView?: { lat: number; lng: number; zoom: number } | null;
+  /** Height (px) of a reserved LAYOUT band along the viewport bottom (e.g. a
+   *  docked bar): the whole map frame lifts above it and the GL viewport
+   *  re-fits. 0/absent = the frame reaches the bottom edge as usual. Carried as
+   *  a prop (not a CSS var) so the inline style and the resize() layout effect
+   *  land on the same commit. Ignored while the Capture frame owns the insets. */
+  bottomInset?: number;
   theme: Theme;
   /** Flat Mercator ('2d') or 3D globe ('3d'). */
   projection: MapProjectionMode;
@@ -1255,6 +1267,9 @@ export interface MapHandle {
    *  zoomed out (keeping the current zoom otherwise); with `zoom`, sets it exactly
    *  (so the Location search can frame a country wide vs a city tight). */
   flyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** The current camera (centre + zoom) — e.g. to encode into a share link.
+   *  Null before the map exists. */
+  getView: () => { lat: number; lng: number; zoom: number } | null;
   /** Like flyTo, but first stashes the current view as the Location "go back"
    *  target (so a search jump can be undone). The method keeps its "teleport"
    *  name — it describes the camera mechanic, not the (renamed) view. Returns the
@@ -2339,6 +2354,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   pinType,
   distanceRef,
   initialCenter,
+  initialView,
+  bottomInset = 0,
   theme,
   projection,
   showRoads = true,
@@ -2391,6 +2408,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const map = mapRef.current;
       if (!map) return;
       flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+    },
+    getView: () => {
+      const map = mapRef.current;
+      if (!map) return null;
+      const c = map.getCenter();
+      return { lat: c.lat, lng: c.lng, zoom: map.getZoom() };
     },
     teleportTo: (lat: number, lng: number, zoom?: number) => {
       const map = mapRef.current;
@@ -3280,9 +3303,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // Open framed on a continental box centred on the active chart's birthplace
         // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
         // once at mount; fitBoundsOptions keeps the continent off the very edges and
-        // clear of the +/− controls in the top-right corner.
-        bounds: firstLoadBounds(initialCenter),
-        fitBoundsOptions: { padding: 24 },
+        // clear of the +/− controls in the top-right corner. A restored share
+        // link's exact camera (initialView) wins over the continental framing.
+        ...(initialView
+          ? { center: [initialView.lng, initialView.lat] as [number, number], zoom: initialView.zoom }
+          : { bounds: firstLoadBounds(initialCenter), fitBoundsOptions: { padding: 24 } }),
         // MapLibre's hard ceiling. OpenFreeMap vector tiles only carry data to
         // z14, so past that the map overzooms (scales z14 tiles — blurrier) but
         // still lets you zoom right in for fine placement.
@@ -4028,10 +4053,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }, [showExtras]);
 
   // Match the GL viewport to the inset container once it's laid out (layout effect so
-  // there's no flash of the old size), and again when the frame or extras inset changes.
+  // there's no flash of the old size), and again when the frame, extras inset, or the
+  // reserved bottom band changes. bottomInset arrives as an inline style on the same
+  // commit, so the container already has its final height when this measures it.
   useLayoutEffect(() => {
     mapRef.current?.resize();
-  }, [frameInset, extraSize]);
+  }, [frameInset, extraSize, bottomInset]);
 
   // Esc exits whichever map tool is armed — the keyboard counterpart to the right-click
   // cancel that Measure/Slide already have, and Capture's primary exit. It calls each
@@ -4765,7 +4792,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 '--capture-extra-left': `${showExtras && extraSide === 'left' ? extraSize : 0}px`,
                 '--capture-extra-top': `${showExtras && extraSide === 'top' ? extraSize : 0}px`,
               } as CSSProperties)
-            : undefined
+            : bottomInset
+              ? // A reserved bottom layout band (e.g. a docked bar): the whole frame —
+                // canvas, edge badges, markers, attribution — lifts above it as one
+                // unit, and the resize layout effect re-fits the GL viewport.
+                { bottom: bottomInset }
+              : undefined
         }
       >
       <div ref={containerRef} className="map-container" />

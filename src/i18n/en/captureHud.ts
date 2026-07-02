@@ -76,6 +76,12 @@ export const captureHud = {
     hint: 'Copy the framed view to the clipboard, ready to paste.',
     done: 'Copied',
   },
+  // "Copy link" — a shareable URL that reopens this chart and view (no image).
+  link: {
+    title: 'Copy link',
+    hint: 'Copy a link that opens this chart and view — the birth details travel in the link, so only share it with people who may see them.',
+    done: 'Link copied',
+  },
   busy: 'Rendering…',
   failed: 'Export failed — please try again.',
 } as const;

@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
-import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
+import { ARIES_FRAME, WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { NoChartWheel } from '../Wheel/NoChartWheel';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -32,6 +32,10 @@ interface ChartWheelProps {
   /** A promoted overlay with no coherent chart (Cyclo·cartography, Natal hidden): show
    *  an empty "NO CHART" wheel instead of a chart. `angles` is null in this state. */
   noChart?: boolean;
+  /** Birth time unknown: `angles` is null (there are none), but the planets still
+   *  read by sign — render the planets-only wheel on the neutral Aries frame
+   *  instead of the no-chart placeholder. */
+  planetsOnly?: boolean;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
@@ -57,12 +61,16 @@ export function ChartWheel({
   planets,
   visiblePlanets,
   noChart = false,
+  planetsOnly = false,
 }: ChartWheelProps) {
   const { t } = useT();
   const [enlarged, setEnlarged] = useState(false);
   const { ref: resizeRef, pos: resizeTipPos, show: showResizeTip, hide: hideResizeTip } =
     useHoverTip<HTMLButtonElement>();
   const shownPlanets = planets.filter((p) => visiblePlanets.has(p.name));
+  // The frame the wheel actually renders on: real angles, or — when the birth
+  // time is unknown and there are none — the neutral Aries frame (planets-only).
+  const frame = angles ?? (planetsOnly ? ARIES_FRAME : null);
   const wheelClass = isNatalPin
     ? 'natal-pinned'
     : pinned
@@ -73,7 +81,7 @@ export function ChartWheel({
 
   return (
     <aside className={`chart-wheel ${wheelClass} ${enlarged ? 'enlarged' : ''}`}>
-      {angles && (
+      {frame && (
         <>
           <button
             ref={resizeRef}
@@ -107,14 +115,15 @@ export function ChartWheel({
           />
         </>
       )}
-      {angles ? (
+      {frame ? (
         <div className="chart-wheel-svg-wrap">
           <WheelSvg
             size={enlarged ? ENLARGED_SIZE : COMPACT_SIZE}
-            angles={angles}
+            angles={frame}
             planets={shownPlanets}
             detailed={enlarged}
             visibleAspects={NO_ASPECTS}
+            planetsOnly={planetsOnly && !angles}
           />
         </div>
       ) : noChart ? (

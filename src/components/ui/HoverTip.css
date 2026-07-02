@@ -122,10 +122,11 @@
   }
 }
 
-/* "ADV" tag on a tip headline — marks the trigger as an Advanced-only control. Same advanced
-   red gradient as the menu tier badge / settings tab; sits beside the title like the hotkey
-   chip, with a white label for contrast on the red. */
-.ui-tip-adv {
+/* "ADV" / gated-tier tag on a tip headline — marks the trigger as a tier-gated control.
+   Same gradients as the menu tier badges; sits beside the title like the hotkey chip,
+   with a white label for contrast. */
+.ui-tip-adv,
+.ui-tip-gated {
   padding: 1px 6px;
   border-radius: 4px;
   background: linear-gradient(
@@ -138,4 +139,12 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+.ui-tip-gated {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--gated-rgb), 0.5),
+    var(--gated)
+  );
 }

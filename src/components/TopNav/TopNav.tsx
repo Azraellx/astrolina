@@ -17,7 +17,7 @@ import type { MapState } from '../TimelineHud/TimelineHud';
 import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
-  COMPOSITE_BLOCKED_OVERLAYS,
+  overlayBlockedFor,
   type OverlayMode,
 } from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
@@ -36,7 +36,7 @@ import { PinchIcon } from '../ui/PinchIcon';
 import { ZoomIcon } from '../ui/ZoomIcon';
 import { useT } from '../../i18n';
 import type { TFn } from '../../i18n';
-import { useTouchLayout, useNarrowNav } from '../../lib/touch';
+import { useTouchLayout, useNarrowNav, usePhone } from '../../lib/touch';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -201,6 +201,8 @@ interface TopNavProps {
   setShowInfo: (v: boolean) => void;
   showTeleport: boolean;
   setShowTeleport: (v: boolean) => void;
+  showSkyTimes: boolean;
+  setShowSkyTimes: (v: boolean) => void;
   showLocalSpace: boolean;
   setShowLocalSpace: (v: boolean) => void;
   /** The user's plan tier (src/lib/plan.ts). Gates the menu items by tier — Slide (Tools),
@@ -690,6 +692,8 @@ export function TopNav({
   setShowInfo,
   showTeleport,
   setShowTeleport,
+  showSkyTimes,
+  setShowSkyTimes,
   showLocalSpace,
   setShowLocalSpace,
   planTier,
@@ -712,6 +716,9 @@ export function TopNav({
   // partition is stable, so each group keeps its declared order (e.g. Guides stays
   // above Info).
   const touch = useTouchLayout();
+  // The Sky Times band never renders on phones (the bottom edge is already
+  // crowded there), so its View row hides too — no dead toggle.
+  const phone = usePhone();
   const viewItems: {
     id: string;
     label: string;
@@ -724,17 +731,24 @@ export function TopNav({
     { id: 'minimap', label: t('topNav.view.minimap'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
     { id: 'teleport', label: t('topNav.view.teleport'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
+    ...(!phone
+      ? [{ id: 'skyTimes', label: t('topNav.view.skyTimes'), hotkey: 'H', tier: 'adv' as PlanTier, checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) }]
+      : []),
     { id: 'localSpace', label: t('topNav.view.localSpace'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
-    ...getMapExtensions().map((ext) => ({
-      id: ext.id,
-      label: ext.label,
-      hotkey: ext.hotkey,
-      tier: tierOfEntitlement(ext.tier),
-      checked: openExtensions.has(ext.id),
-      onToggle: () => onToggleExtension(ext.id),
-    })),
+    ...getMapExtensions()
+      // Only 'view'-surface extensions get a View-menu row; 'timeline-drawer'
+      // ones toggle from the time-overlay bar's display drawer instead.
+      .filter((ext) => (ext.surface ?? 'view') === 'view')
+      .map((ext) => ({
+        id: ext.id,
+        label: ext.label,
+        hotkey: ext.hotkey,
+        tier: tierOfEntitlement(ext.tier),
+        checked: openExtensions.has(ext.id),
+        onToggle: () => onToggleExtension(ext.id),
+      })),
   ];
   // Items above the user's tier (e.g. Local Space needs 'adv') normally drop out of the menu —
   // unless the build's nudge policy opts to show them as a disabled upgrade teaser (then they
@@ -1029,10 +1043,11 @@ export function TopNav({
                   {/* Synastry + Eclipses need the 'adv' tier: filtered out below it (or a disabled
                       teaser if the build nudges), tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
                   {OVERLAY_MODES.filter((mode) => {
-                    // Composite charts allow Transits + Eclipses only — a midpoint
-                    // construct has no real moment to progress/direct (Q11).
-                    if (current?.composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode))
-                      return false;
+                    // Some charts can't carry every overlay — a composite has no real
+                    // moment to progress/direct (Q11), and an unknown-birth-time chart
+                    // has no natal moment to advance. One shared predicate with App's
+                    // 'o'-cycle and stale-mode reset, so the three never disagree.
+                    if (overlayBlockedFor(current)(mode)) return false;
                     const req = ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new';
                     return tierMet(planTier, req) || shouldShowNudge(req);
                   }).map((mode) => {

@@ -23,7 +23,7 @@ import {
   type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
-import { TipButton } from '../ui/HoverTip';
+import { TipButton, TipSpan } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { jdToCivil } from '../../lib/ephemeris';
 import { solveCompositeFrameJd } from '../../lib/astro/composite';
@@ -92,15 +92,26 @@ export function BirthDataFields({
   const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
   // A new chart starts with empty date/time fields (null) rather than "today" —
   // pre-filling a real-looking date reads as a half-entered chart you're editing.
-  // Editing an existing chart loads its saved values.
+  // Editing an existing chart loads its saved values — EXCEPT an unknown-time
+  // chart's 12:00 placeholder, which reopens as the empty time it really is
+  // (leaving the time empty is exactly how "unknown" is expressed here).
   const [year, setYear] = useState<number | null>(initial?.year ?? null);
   const [month, setMonth] = useState<number | null>(initial?.month ?? null);
   const [day, setDay] = useState<number | null>(initial?.day ?? null);
-  const [hour, setHour] = useState<number | null>(initial?.hour ?? null);
-  const [minute, setMinute] = useState<number | null>(initial?.minute ?? null);
+  const [hour, setHour] = useState<number | null>(
+    initial ? (initial.timeKnown === false ? null : initial.hour) : null,
+  );
+  const [minute, setMinute] = useState<number | null>(
+    initial ? (initial.timeKnown === false ? null : initial.minute) : null,
+  );
   // Organizing tag. Only Star is user-assignable (a None ⇄ Star toggle); the system
   // 'space' tag is set by future in-app tools, never here.
   const [tag, setTag] = useState<ChartTag>(initial?.tag ?? 'none');
+  // An EMPTY time is how an unknown birth time is entered: both boxes blank →
+  // the chart saves timeKnown: false anchored at local noon, and every
+  // time-of-day-dependent layer downstream degrades honestly. The list marks
+  // such charts with the grey "?" tag (system-derived, like 'space').
+  const noTime = hour == null && minute == null;
 
   const [locationQuery, setLocationQuery] = useState(
     initial?.birthplace.label ?? '',
@@ -137,10 +148,12 @@ export function BirthDataFields({
   // manually" reveals the editable inputs (for raw-coordinate / rectified charts).
   const [showCoordInputs, setShowCoordInputs] = useState(false);
 
-  // If a birthplace is chosen while the date is still blank, fill it with "now" so the
-  // time zone (which needs a complete moment) is editable straight away — the user can
-  // then adjust the date. Guarded on every field being empty, so it never overwrites a
-  // date you've already started entering.
+  // If a birthplace is chosen while the date is still blank, fill the DATE with
+  // "today" so the time zone (which anchors at noon until a time is typed) is
+  // editable straight away — the user can then adjust it. The TIME stays empty on
+  // purpose: an empty time means "unknown", so pre-filling it would silently claim
+  // a birth minute nobody entered. Guarded on every field being empty, so it never
+  // overwrites a date you've already started entering.
   useEffect(() => {
     if (
       !selectedPlace ||
@@ -157,8 +170,6 @@ export function BirthDataFields({
     setYear(now.getFullYear());
     setMonth(now.getMonth() + 1);
     setDay(now.getDate());
-    setHour(now.getHours());
-    setMinute(now.getMinutes());
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [selectedPlace, year, month, day, hour, minute]);
 
@@ -170,28 +181,25 @@ export function BirthDataFields({
   const [zoneOverride, setZoneOverride] = useState<string | null>(
     initial?.tzManual ? (initial.tzIana ?? null) : null,
   );
-  // A DST-aware offset needs the whole moment, so detection waits until every
-  // date/time field is filled (a new chart starts empty); the inline null checks
-  // also narrow the fields to numbers for the resolver.
+  // A DST-aware offset needs a whole moment, so detection waits for the DATE; an
+  // empty TIME resolves at local noon — exactly the placeholder an unknown-time
+  // chart stores, so what the picker shows is what the chart math will use.
+  const effHour = hour ?? 12;
+  const effMinute = minute ?? 0;
   const detected = useMemo(
     () =>
-      selectedPlace &&
-      year != null &&
-      month != null &&
-      day != null &&
-      hour != null &&
-      minute != null
+      selectedPlace && year != null && month != null && day != null
         ? resolveBirthTimezone(
             selectedPlace.lat,
             selectedPlace.lng,
             year,
             month,
             day,
-            hour,
-            minute,
+            effHour,
+            effMinute,
           )
         : null,
-    [selectedPlace, year, month, day, hour, minute],
+    [selectedPlace, year, month, day, effHour, effMinute],
   );
   // The zone actually in effect (override if set, else detected) and its resolved
   // offset/DST-confidence. Recomputing the override here keeps it DST-aware as the
@@ -205,12 +213,10 @@ export function BirthDataFields({
       zoneOverride !== detected?.iana &&
       year != null &&
       month != null &&
-      day != null &&
-      hour != null &&
-      minute != null
-        ? resolveZoneInfo(zoneOverride, year, month, day, hour, minute)
+      day != null
+        ? resolveZoneInfo(zoneOverride, year, month, day, effHour, effMinute)
         : detected,
-    [zoneOverride, detected, year, month, day, hour, minute],
+    [zoneOverride, detected, year, month, day, effHour, effMinute],
   );
   const effectiveZone = effective?.iana ?? null;
   const effectiveOffset = effective?.offsetHours ?? 0;
@@ -321,14 +327,15 @@ export function BirthDataFields({
       setError(t('chartForm.errorNoName'));
       return;
     }
-    if (
-      year == null ||
-      month == null ||
-      day == null ||
-      hour == null ||
-      minute == null
-    ) {
+    if (year == null || month == null || day == null) {
       setError(t('chartForm.errorNoDate'));
+      return;
+    }
+    // The time is optional (empty = unknown), but minutes without an hour is an
+    // incomplete entry, not a statement — block it with an explanation. An hour
+    // without minutes reads as on-the-hour (:00), the way people say times.
+    if (hour == null && minute != null) {
+      setError(t('chartForm.errorPartialTime'));
       return;
     }
     // The year box doesn't auto-clamp to the data range (so a typo isn't silently
@@ -353,8 +360,12 @@ export function BirthDataFields({
       year,
       month,
       day,
-      hour,
-      minute,
+      // An empty time saves the local-noon placeholder; a bare hour saves :00.
+      hour: noTime ? 12 : (hour as number),
+      minute: noTime ? 0 : (minute ?? 0),
+      // Only ever stored as an explicit false — a known time stays an absent field,
+      // so older records and this form mean the same thing (see lib/birthData.ts).
+      timeKnown: noTime ? false : undefined,
       tzOffset: effectiveOffset,
       tzIana: effectiveZone ?? undefined,
       tzManual: manual,
@@ -426,6 +437,7 @@ export function BirthDataFields({
             min: BIRTH_YEAR_MIN,
             max: BIRTH_YEAR_MAX,
           })}
+          timeClearable
           onChange={(v) => {
             setYear(v.year);
             setMonth(v.month);
@@ -435,30 +447,79 @@ export function BirthDataFields({
           }}
           trailing={
             // A "Tag" field to the right of the time inputs: a caption (aligned with the
-            // Date / Time captions) over a Star toggle whose label sits inside the button.
-            // Only Star is user-assignable; 'space' is never set here.
+            // Date / Time captions) over the tag toggle. Normally a Star toggle (the only
+            // user-ASSIGNABLE tag). A chart carrying a SYSTEM tag shows that here instead:
+            // 'shared' (a link-received chart) is highlighted and REMOVABLE — pressing
+            // clears it and the button reverts to the plain Star toggle — while 'space'
+            // (an app-generated chart) is a fixed mark, shown but not editable.
             <div className="tag-field">
               <span className="moment-caption">{t('chartForm.tag.caption')}</span>
-              <TipButton
-                type="button"
-                className="tag-toggle"
-                aria-pressed={tag === 'star'}
-                onClick={() => setTag((prev) => (prev === 'star' ? 'none' : 'star'))}
-                placement="top"
-                tip={
-                  <>
-                    <TagIcon tag="star" className="tag-icon" />
-                    {t('chartForm.tag.assignTitle')}
-                  </>
-                }
-                hint={t('chartForm.tag.assignHint')}
-              >
-                <TagIcon tag="star" className="tag-toggle-icon" />
-                <span className="tag-toggle-label">{t('chartForm.tag.label')}</span>
-              </TipButton>
+              {tag === 'shared' ? (
+                <TipButton
+                  type="button"
+                  className="tag-toggle tag-toggle--shared"
+                  aria-pressed={true}
+                  onClick={() => setTag('none')}
+                  placement="top"
+                  tip={
+                    <>
+                      <TagIcon tag="shared" className="tag-icon" />
+                      {t('chartForm.tag.removeSharedTitle')}
+                    </>
+                  }
+                  hint={t('chartForm.tag.removeSharedHint')}
+                >
+                  <TagIcon tag="shared" className="tag-toggle-icon" />
+                  <span className="tag-toggle-label">{t('chartForm.tag.sharedLabel')}</span>
+                </TipButton>
+              ) : tag === 'space' ? (
+                <TipSpan
+                  className="tag-toggle tag-toggle--space is-fixed"
+                  placement="top"
+                  tapReveal
+                  tip={
+                    <>
+                      <TagIcon tag="space" className="tag-icon" />
+                      {t('chartForm.tag.spaceTitle')}
+                    </>
+                  }
+                  hint={t('chartForm.tag.spaceHint')}
+                >
+                  <TagIcon tag="space" className="tag-toggle-icon" />
+                  <span className="tag-toggle-label">{t('chartForm.tag.spaceLabel')}</span>
+                </TipSpan>
+              ) : (
+                <TipButton
+                  type="button"
+                  className="tag-toggle"
+                  aria-pressed={tag === 'star'}
+                  onClick={() => setTag((prev) => (prev === 'star' ? 'none' : 'star'))}
+                  placement="top"
+                  tip={
+                    <>
+                      <TagIcon tag="star" className="tag-icon" />
+                      {t('chartForm.tag.assignTitle')}
+                    </>
+                  }
+                  hint={t('chartForm.tag.assignHint')}
+                >
+                  <TagIcon tag="star" className="tag-toggle-icon" />
+                  <span className="tag-toggle-label">{t('chartForm.tag.label')}</span>
+                </TipButton>
+              )}
             </div>
           }
         />
+        {/* An EMPTY time means "birth time unknown" (never for a composite — its
+            moment is synthesized). The note appears once the user has moved PAST
+            the time — they've started on the birthplace with the boxes still
+            blank — and says what will happen on save, so the grey "?" tag and the
+            hidden lines never surprise anyone. */}
+        {!initial?.composite &&
+          noTime &&
+          (selectedPlace != null || locationQuery.trim() !== '') && (
+            <p className="time-unknown-note">{t('chartForm.timeUnknown.hint')}</p>
+          )}
         </fieldset>
 
         <label className="location-field">

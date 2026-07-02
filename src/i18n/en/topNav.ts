@@ -115,6 +115,8 @@ export const topNav = {
     minimap: 'Minimap',
     settings: 'Settings',
     teleport: 'Teleport',
+    // The daily rise/culminate/set clock at the active point (the bottom sky band).
+    skyTimes: 'Sky Times',
     localSpace: 'Local Space',
     info: 'Info',
     // Opens the guides as a reference — a glossary of the map controls you can revisit.

@@ -14,6 +14,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useHoverTip, type TipPlacement, type TipPos } from './useHoverTip';
 import { glyphify } from './glyphify';
+import { tierLabel } from '../../lib/plan';
 import './HoverTip.css';
 
 // Margin kept between a tip and the viewport edge when nudging it back on-screen.
@@ -30,6 +31,7 @@ export function HoverTip({
   hint,
   hotkey,
   advanced,
+  gated,
 }: {
   pos: TipPos | null;
   placement?: TipPlacement;
@@ -38,6 +40,10 @@ export function HoverTip({
   hotkey?: ReactNode;
   /** Show an "ADV" tag on the headline — marks the trigger as an Advanced-only control. */
   advanced?: boolean;
+  /** Show the gated-tier tag on the headline (the label a downstream build gives
+   *  its top rung via setGatedTierLabel — see lib/plan) — marks the trigger as a
+   *  gated-tier control. */
+  gated?: boolean;
 }) {
   const cardRef = useRef<HTMLSpanElement>(null);
 
@@ -77,6 +83,7 @@ export function HoverTip({
           {title}
         </span>
         {advanced && <span className="ui-tip-adv">ADV</span>}
+        {gated && <span className="ui-tip-gated">{tierLabel('gated')}</span>}
         {hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>}
       </span>
       {/* String hints get their astro symbols re-rendered in the glyph font. */}
@@ -98,6 +105,7 @@ export function TipButton({
   hint,
   hotkey,
   advanced,
+  gated,
   placement = 'bottom',
   children,
   ...rest
@@ -106,6 +114,7 @@ export function TipButton({
   hint?: ReactNode;
   hotkey?: string;
   advanced?: boolean;
+  gated?: boolean;
   placement?: TipPlacement;
   children?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -129,6 +138,7 @@ export function TipButton({
         hint={hint}
         hotkey={hotkey}
         advanced={advanced}
+        gated={gated}
       />
     </>
   );

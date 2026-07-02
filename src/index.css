@@ -117,13 +117,18 @@ span.astro-glyph {
   --pin-stroke: #0a0a0f;
   --label-halo: rgba(10, 10, 15, 0.95);
 
-  /* Chart tags: a steady gold star and a cool slate for the (system) "space" tag.
-     Fixed hues, so the marks read the same across themes and never follow the
-     map-state accent. */
+  /* Chart tags: a steady gold star, a cool slate for the (system) "space" tag, a
+     warm red for the (system) "shared" gift, and a neutral grey for the (system)
+     "unknown" birth-time mark. Fixed hues, so the marks read the same across
+     themes and never follow the map-state accent. */
   --tag-star: #f5b83d;
   --tag-star-rgb: 245, 184, 61;
   --tag-space: #7fa8d4;
   --tag-space-rgb: 127, 168, 212;
+  --tag-shared: #e0574f;
+  --tag-shared-rgb: 224, 87, 79;
+  --tag-unknown: #9a9aa6;
+  --tag-unknown-rgb: 154, 154, 166;
 
   color: var(--text-strong);
   background: var(--bg-page);
@@ -352,7 +357,8 @@ span.astro-glyph {
 }
 
 /* Chart-tag glyphs (TagIcon): colour is intrinsic to the tag (gold star, slate
-   planet) and set here; per-context classes (e.g. .tag-icon) handle size/spacing. */
+   planet, red gift) and set here; per-context classes (e.g. .tag-icon) handle
+   size/spacing. */
 .tag-glyph {
   flex: 0 0 auto;
 }
@@ -361,6 +367,12 @@ span.astro-glyph {
 }
 .tag-glyph--space {
   color: var(--tag-space);
+}
+.tag-glyph--shared {
+  color: var(--tag-shared);
+}
+.tag-glyph--unknown {
+  color: var(--tag-unknown);
 }
 /* Tag shown as a prefix before a chart name (My Charts list + top-bar picker). */
 .tag-icon {
@@ -441,7 +453,9 @@ body,
   position: fixed;
   top: 0;
   right: 0;
-  bottom: 0;
+  /* Lifts above a reserved bottom layout band (the sky band), like its left
+     edge insets to the expanded chart panel. */
+  bottom: var(--sky-band-h, 0px);
   left: var(--es-width, 0px);
   z-index: 4;
   pointer-events: none;
@@ -515,7 +529,9 @@ body,
 @media (pointer: coarse) and (max-width: 880px) {
   .top-left-stack {
     top: auto;
-    bottom: var(--edge, 16px);
+    /* + the reserved bottom band: matters on 600-880px tablets, which get the
+       sky band (phones don't render it, so the var is 0 there). */
+    bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
   }
 }
 
@@ -525,7 +541,8 @@ body,
    otherwise hug the bottom). 28px ≈ the ~24px footer chip + a few px, in step with .info-bar. */
 @media (pointer: coarse) and (max-width: 600px) {
   .top-left-stack {
-    bottom: calc(var(--edge, 3px) + 28px);
+    /* --sky-band-h is 0 on phones (no band); kept for symmetry with the tablet rule. */
+    bottom: calc(var(--edge, 3px) + 28px + var(--sky-band-h, 0px));
   }
 }
 

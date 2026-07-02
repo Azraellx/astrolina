@@ -45,29 +45,25 @@ export type OverlayMode =
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
 // Overlay modes in MENU + cycle order — the SINGLE source the Overlay dropdown (TopNav)
-// maps over and App's 'o'-key cycle derives from. Transits, the event/relationship overlays
-// (eclipses, synastry) and solar arc lead; the progressed / directional techniques follow.
+// maps over and App's 'o'-key cycle derives from. Transits leads, then the symbolic
+// clocks fast-to-slow (CCG, the progressions, the directions); the event/relationship
+// overlays (eclipses, synastry) close the list.
 export const OVERLAY_MODES: OverlayKind[] = [
   'transits',
-  'eclipses',
-  'synastry',
-  'solar-arc',
+  'cyclo',
   'progressed',
   'tertiary-progressed',
+  'solar-arc',
   'primary-directions',
-  'cyclo',
+  'eclipses',
+  'synastry',
 ];
 
-// The overlay modes that require the 'adv' plan tier — the LAST THREE of OVERLAY_MODES
-// (tertiary progressions, primary directions, cyclocartography). The leading five (transits,
-// eclipses, synastry, solar arc, secondary progressed) are baseline. These are hidden from
+// The overlay modes that require the 'adv' plan tier — ONLY synastry (the last of
+// OVERLAY_MODES); every technique overlay is baseline. Tier-gated modes are hidden from
 // the menu + the 'o' cycle below the tier, ADV-badged when shown, and switched off if
-// Advanced is turned off. Keep in sync with OVERLAY_MODES — this is the tier source of truth.
-export const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>([
-  'tertiary-progressed',
-  'primary-directions',
-  'cyclo',
-]);
+// Advanced is turned off. This is the tier source of truth.
+export const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>(['synastry']);
 
 // Overlay modes unavailable on a COMPOSITE chart — leaving Transits + Eclipses
 // only. A composite is a symbolic midpoint construct with no real sky moment, so
@@ -84,6 +80,33 @@ export const COMPOSITE_BLOCKED_OVERLAYS = new Set<OverlayMode>([
   'cyclo',
   'synastry',
 ]);
+
+// Overlay modes unavailable when the chart's birth TIME is unknown (timeKnown === false):
+// every technique that ADVANCES the natal moment — the stored noon placeholder would
+// progress/direct a moment that was never real. Transits + eclipses stay (the transiting
+// sky and eclipse geometry are real regardless of the birth minute), and synastry stays
+// (the partner's linework is the partner's own; the natal side is already suppressed).
+export const TIME_UNKNOWN_BLOCKED_OVERLAYS = new Set<OverlayMode>([
+  'progressed',
+  'tertiary-progressed',
+  'solar-arc',
+  'primary-directions',
+  'cyclo',
+]);
+
+/** The overlay modes a given chart cannot carry — the union of the composite and
+ *  unknown-birth-time blocks. The one predicate behind the Overlay menu, the 'o'
+ *  cycle, and the stale-mode reset, so the three can never disagree. */
+export function overlayBlockedFor(
+  chart: { composite?: unknown; timeKnown?: boolean } | null,
+): (mode: OverlayMode) => boolean {
+  if (!chart) return () => false;
+  const composite = !!chart.composite;
+  const noTime = chart.timeKnown === false;
+  return (mode) =>
+    (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) ||
+    (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode));
+}
 
 // The relationship-chart method the Synastry overlay's "Generate" button uses.
 // 'davison' is a real moment+place (cast like any chart); 'composite' (midpoint of

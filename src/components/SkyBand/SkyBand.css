@@ -1,0 +1,270 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ *
+ * The Sky Band — the bottom bar that occupies REAL layout space (the map takes
+ * a matching bottomInset; the rest of the bottom furniture shifts up via
+ * --sky-band-h, lib/bottomDock.ts). The CORE band is the compact row: the body
+ * legend on the left (glyph + name, hover = the four times) and the context
+ * column on the right. A downstream build's registered TRACK (the expandable
+ * center — lib/extensions/skyBandTrack.ts) renders into .sky-band-center and
+ * ships its own styles. Own class — deliberately NOT the .timeline-hud chrome.
+ * z-index 6: above the shifted base furniture (edge glow 4, info chip 5),
+ * below every draggable window (12+).
+ */
+
+.sky-band {
+  position: fixed;
+  left: var(--es-width, 0px);
+  right: 0;
+  bottom: 0;
+  height: var(--sky-band-h, 28px);
+  z-index: 6;
+  display: flex;
+  align-items: stretch;
+  background: rgba(var(--bg-menu), 0.97);
+  border-top: 1px solid rgba(var(--tint), 0.16);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* ── LEFT: the body legend ── */
+/* Expanded (a track is showing): a column-flowing grid, 4 rows tall. */
+.sky-band-legend {
+  flex: none;
+  display: grid;
+  grid-template-rows: repeat(4, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  column-gap: 10px;
+  align-items: center;
+  padding: 2px 12px 2px 10px;
+  border-right: 1px solid rgba(var(--tint), 0.12);
+  overflow: hidden;
+}
+
+/* Compact (no track): the same entries flow inline on one row. */
+.sky-band.is-compact .sky-band-legend {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  padding: 0 10px;
+  border-right: none;
+}
+
+.sky-band-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: help;
+  line-height: 1;
+}
+
+.sky-band-body:hover {
+  background: rgba(var(--tint), 0.1);
+}
+
+.sky-band-body.is-dim {
+  opacity: 0.45;
+}
+
+.sky-band-body-name {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── CENTER: the registered track's slot ── */
+.sky-band-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+/* ── Hover-tip content: colored glyph prefix + text ── */
+.sky-band-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sky-band-tip-x {
+  color: var(--text-faint);
+}
+
+/* The per-body times card (the legend hover's hint). */
+.sky-band-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-band-card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sky-band-card-kind {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.sky-band-card-note {
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+/* ── RIGHT: the context column ── */
+.sky-band-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 3px 10px;
+  border-left: 1px solid rgba(var(--tint), 0.12);
+}
+
+.sky-band.is-compact .sky-band-side {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.sky-band-side-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.sky-band.is-compact .sky-band-side-row {
+  gap: 5px;
+}
+
+.sky-band-place {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.sky-band-day {
+  font-size: 11.5px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-band-day-btn,
+.sky-band-close,
+.sky-band-track-toggle {
+  border: 1px solid rgba(var(--tint), 0.16);
+  background: rgba(var(--tint), 0.05);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sky-band-day-btn:hover:not(:disabled),
+.sky-band-close:hover,
+.sky-band-track-toggle:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.32);
+}
+
+.sky-band-today {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+/* Already on today: the button stays visible, just inert and greyed. */
+.sky-band-today:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The zone is information, not an action — a clock icon + plain text with a
+   hover note. */
+.sky-band-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.sky-band-zone-icon {
+  flex: none;
+  opacity: 0.8;
+}
+
+/* The registered track's eye-toggle — accent-lit while the track is up. */
+.sky-band-track-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sky-band-track-eye {
+  flex: none;
+}
+
+.sky-band-track-toggle.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* The close ✕ — a direct child on the band's far-right edge (after the context
+   column), vertically centred whatever the band height. */
+.sky-band-close {
+  font-size: 14px;
+  padding: 1px 8px 3px;
+  align-self: center;
+  margin: 0 8px 0 2px;
+  flex: none;
+}
+
+/* The day readout AS the picker button: the pill chrome with the strong,
+   tabular date text kept. */
+.sky-band-day-btn.sky-band-day {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty state (no chart, no pin). */
+.sky-band-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+}

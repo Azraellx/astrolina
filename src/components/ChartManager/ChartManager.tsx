@@ -12,6 +12,7 @@ import {
   type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { timeUnknown } from '../../lib/birthData';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
@@ -26,10 +27,14 @@ function fmtBirth(c: StoredChart, fmt: Formatters): string {
 }
 
 // The tag-filter chips shown under the search box; 'all' clears the filter.
+// 'unknown' filters by the DERIVED time-unknown mark (timeKnown === false), not
+// the stored tag — a chart can be starred AND time-unknown.
 const FILTER_CHIPS = [
   { value: 'all', labelKey: 'chartManager.filter.all' },
   { value: 'star', labelKey: 'chartManager.filter.starred' },
   { value: 'space', labelKey: 'chartManager.filter.space' },
+  { value: 'unknown', labelKey: 'chartManager.filter.unknown' },
+  { value: 'shared', labelKey: 'chartManager.filter.shared' },
 ] as const;
 
 interface ChartManagerProps {
@@ -84,7 +89,7 @@ export function ChartManager({
   const touch = useTouchLayout();
   const [query, setQuery] = useState('');
   // Tag filter for the list; 'all' shows everything. Independent of the search box.
-  const [tagFilter, setTagFilter] = useState<'all' | ChartTag>('all');
+  const [tagFilter, setTagFilter] = useState<'all' | ChartTag | 'unknown'>('all');
   // The chart loaded in the right-hand form (null = adding a new one).
   const [editing, setEditing] = useState<StoredChart | null>(
     () => charts.find((c) => c.id === initialEditId) ?? null,
@@ -134,7 +139,8 @@ export function ChartManager({
   const matches = useMemo(() => {
     let result = [...charts].sort((a, b) => chartRecency(b) - chartRecency(a));
     if (excludeId) result = result.filter((c) => c.id !== excludeId);
-    if (tagFilter !== 'all')
+    if (tagFilter === 'unknown') result = result.filter((c) => timeUnknown(c));
+    else if (tagFilter !== 'all')
       result = result.filter((c) => chartTag(c) === tagFilter);
     if (q)
       result = result.filter(
@@ -151,9 +157,15 @@ export function ChartManager({
     [charts, q],
   );
   const showAddRow = q !== '' && !exactNameExists;
-  // The Space filter chip appears only once at least one chart carries that (system) tag.
+  // The Space / Unknown / Shared filter chips appear only once at least one chart
+  // carries that (system) mark — nobody filters by a mark none of their charts have.
   const hasSpace = useMemo(
     () => charts.some((c) => chartTag(c) === 'space'),
+    [charts],
+  );
+  const hasUnknown = useMemo(() => charts.some((c) => timeUnknown(c)), [charts]);
+  const hasShared = useMemo(
+    () => charts.some((c) => chartTag(c) === 'shared'),
     [charts],
   );
 
@@ -250,7 +262,10 @@ export function ChartManager({
               aria-label={t('chartManager.filter.label')}
             >
               {FILTER_CHIPS.filter(
-                (c) => c.value !== 'space' || hasSpace,
+                (c) =>
+                  (c.value !== 'space' || hasSpace) &&
+                  (c.value !== 'unknown' || hasUnknown) &&
+                  (c.value !== 'shared' || hasShared),
               ).map(({ value, labelKey }) => (
                 <button
                   key={value}
@@ -305,6 +320,9 @@ export function ChartManager({
                   >
                     <span className="cm-row-name">
                       <TagIcon tag={chartTag(c)} className="tag-icon" />
+                      {timeUnknown(c) && (
+                        <TagIcon tag="unknown" className="tag-icon" />
+                      )}
                       {displayName(c.name)}
                     </span>
                     <span className="cm-row-meta">
