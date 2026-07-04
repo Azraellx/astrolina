@@ -32,6 +32,21 @@ const setStatus = (s: string) => {
 w.__loadTaken?.() // the JS bundle is in — stop the early generic status hint
 setStatus('Starting the engine…')
 
+// DEPLOY-SKEW SELF-HEAL: a page from a previous build can outlive a deploy (the
+// service-worker swap purges the old precache mid-session), so a lazy chunk's
+// preload of an old hashed asset 404s — or worse, the SPA fallback answers it
+// with index.html and the import dies on a MIME error. Vite reports exactly
+// this as `vite:preloadError`; one reload lands on the fresh build. The
+// session flag stops a reload loop if the failure is something persistent
+// (offline mid-fetch, a genuinely broken deploy) rather than skew.
+window.addEventListener('vite:preloadError', (event) => {
+  const KEY = 'astro:preload-error-reloaded:v1'
+  if (sessionStorage.getItem(KEY) === '1') return // second failure — let it surface
+  sessionStorage.setItem(KEY, '1')
+  event.preventDefault() // swallow the throw; the reload supersedes it
+  window.location.reload()
+})
+
 // If the engine (WASM) download runs long, reassure that it's a one-time fetch.
 let reachedData = false
 const slowTimer = window.setTimeout(() => {
