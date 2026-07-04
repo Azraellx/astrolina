@@ -321,6 +321,63 @@ export function saveLsHideCompass(v: boolean) {
   localStorage.setItem(LS_HIDE_COMPASS_KEY, v ? '1' : '0');
 }
 
+// The Local Space window's CAPTURE section: options that shape the framed export.
+// A gated-tier surface (lib/plan), visible and applied only while the Capture tool
+// is armed (App gates each option on the window being open, the frame being up AND
+// the plan reaching the gated rung — dropping any of the three restores the map, so
+// nothing can "stick" past the session or a tier lapse; the prefs persist for the
+// next capture).
+//
+// "Hide map (transparent)": blank the basemap under the local-space lines so they
+// stand alone — the export keeps the transparency (a see-through PNG for laying
+// over a floor plan or any backdrop of the user's own).
+const LS_HIDE_MAP_KEY = 'astro:ls-hide-map:v1';
+export function loadLsHideMap(): boolean {
+  return localStorage.getItem(LS_HIDE_MAP_KEY) === '1';
+}
+export function saveLsHideMap(v: boolean) {
+  localStorage.setItem(LS_HIDE_MAP_KEY, v ? '1' : '0');
+}
+
+// "Hide line arrows": drop the direction arrows riding along the local-space lines
+// for cleaner linework in the framed export.
+const LS_HIDE_ARROWS_KEY = 'astro:ls-hide-arrows:v1';
+export function loadLsHideArrows(): boolean {
+  return localStorage.getItem(LS_HIDE_ARROWS_KEY) === '1';
+}
+export function saveLsHideArrows(v: boolean) {
+  localStorage.setItem(LS_HIDE_ARROWS_KEY, v ? '1' : '0');
+}
+
+// Capture ▸ per-overlay visibility: the registered map overlays (see
+// lib/extensions/mapOverlays, MapOverlay.captureToggle) the user has hidden from
+// captures — stored as a JSON array of overlay ids. Like the options above, the
+// hide applies only while the Capture tool is armed (App gates it); the set
+// persists so the next capture opens with the same choices.
+const CAPTURE_HIDE_OVERLAYS_KEY = 'astro:capture-hide-overlays:v1';
+export function loadCaptureHiddenOverlays(): Set<string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(CAPTURE_HIDE_OVERLAYS_KEY) ?? '[]');
+    return new Set(Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+export function saveCaptureHiddenOverlays(ids: ReadonlySet<string>) {
+  localStorage.setItem(CAPTURE_HIDE_OVERLAYS_KEY, JSON.stringify([...ids]));
+}
+
+// "Standard labels": label the local-space lines like the chart's other lines —
+// badges anchor where each line exits the frame (instead of on the ring around the
+// origin) and drop the bearing degrees from their faces.
+const LS_EDGE_LABELS_KEY = 'astro:ls-edge-labels:v1';
+export function loadLsEdgeLabels(): boolean {
+  return localStorage.getItem(LS_EDGE_LABELS_KEY) === '1';
+}
+export function saveLsEdgeLabels(v: boolean) {
+  localStorage.setItem(LS_EDGE_LABELS_KEY, v ? '1' : '0');
+}
+
 // (The 'progressed' vs 'tertiary-progressed' choice is now two separate Overlay-menu
 // modes — see OverlayMode / loadOverlayMode — so there's no separate clock pref.)
 

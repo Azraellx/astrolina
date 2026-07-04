@@ -37,6 +37,7 @@ import { missions } from './en/missions';
 import { profile } from './en/profile';
 import { teleportHud } from './en/teleportHud';
 import { localSpaceHud } from './en/localSpaceHud';
+import { aspectLinesHud } from './en/aspectLinesHud';
 import { skyTimes } from './en/skyTimes';
 import { captureHud } from './en/captureHud';
 import { synastryHud } from './en/synastryHud';
@@ -65,6 +66,7 @@ export const en = {
   profile,
   teleportHud,
   localSpaceHud,
+  aspectLinesHud,
   skyTimes,
   captureHud,
   synastryHud,

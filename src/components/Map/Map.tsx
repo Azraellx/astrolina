@@ -341,7 +341,8 @@ interface LocalSpaceBadge {
    *  'out' badge prints its bearing — the 'in' half is just "LS + glyph". */
   out: boolean;
   /** This half's bearing in the E=0 / N=90 convention, as degrees + arcminutes
-   *  (e.g. "45°23'"). Static. Shown on the outgoing badge only. */
+   *  (e.g. "45°23'"). Static. Shown on the outgoing badge only — and blanked ('')
+   *  in the Capture "Standard labels" mode, whose faces match the ACG badges. */
   azLabel: string;
 }
 
@@ -1173,6 +1174,19 @@ interface MapProps {
   showRoads?: boolean;
   showRivers?: boolean;
   showLabels?: boolean;
+  /** Blank the whole basemap (Local Space ▸ Capture ▸ "Hide map"), leaving the GL
+   *  canvas transparent behind the chart linework — so a Capture exports a
+   *  see-through PNG the user can lay over external imagery (a floor plan, their
+   *  own map). Overrides the detail toggles above while on. */
+  hideBasemap?: boolean;
+  /** Hide the direction arrows riding the local-space lines (Local Space ▸
+   *  Capture ▸ "Hide line arrows") — cleaner linework in the framed export. */
+  hideLsArrows?: boolean;
+  /** Label the local-space lines like the chart's other lines (Local Space ▸
+   *  Capture ▸ "Standard labels"): each badge anchors at its line's outermost
+   *  visible point — hugging the frame edge like the ACG edge badges — instead of
+   *  on the ring around the origin, and drops the bearing degrees from its face. */
+  lsEdgeLabels?: boolean;
   /** When true, click-drag on the map measures great-circle distance (and map
    *  panning is suspended for the duration). */
   measureActive?: boolean;
@@ -1231,6 +1245,11 @@ interface MapProps {
   /** The read-only map/chart snapshot handed to registered map overlays (registerMapOverlay),
    *  rendered as positioned DOM inside the frame by MapOverlayHost. Omit to draw no overlays. */
   overlayCtx?: MapExtensionContext;
+  /** Registered-overlay ids to withhold from the map — the Capture window's
+   *  per-overlay visibility toggles (MapOverlay.captureToggle). App passes the set
+   *  only while the Capture tool is armed, so every overlay returns the moment
+   *  the tool closes. Absent/empty = draw all. */
+  hiddenOverlayIds?: ReadonlySet<string>;
   /** When true a line "spotlight" is active: the tool owns the pin gestures, so
    *  the map suppresses its own double-click pin-drop and right-click pin-remove, and broadcasts
    *  double-clicks ({@link MAP_DBLCLICK_EVENT}) for the tool to re-place its centre. The line
@@ -1373,6 +1392,27 @@ function addArrowLayer(
 // Filter expression for one direction-tagged local-space half.
 const lsDir = (d: 'out' | 'in'): ExpressionSpecification =>
   ['==', ['get', 'direction'], d] as unknown as ExpressionSpecification;
+
+// The local-space direction-arrow layers (added via addArrowLayer in
+// setupCustomLayers), togglable as one set — the Local Space window's Capture-time
+// "Hide line arrows" option. Covers the natal AND overlay variants.
+const LS_ARROW_LAYER_IDS = [
+  'local-space-arrows-out',
+  'local-space-arrows-in',
+  'local-space-ov-arrows-out',
+  'local-space-ov-arrows-in',
+] as const;
+
+function applyLsArrowVisibility(map: maplibregl.Map, hidden: boolean): void {
+  try {
+    for (const id of LS_ARROW_LAYER_IDS) {
+      if (map.getLayer(id))
+        map.setLayoutProperty(id, 'visibility', hidden ? 'none' : 'visible');
+    }
+  } catch {
+    /* style not parsed yet — the load handler reasserts the current state */
+  }
+}
 const lineTypeIs = (t: 'ASC' | 'DSC'): ExpressionSpecification =>
   ['==', ['get', 'lineType'], t] as unknown as ExpressionSpecification;
 
@@ -2361,6 +2401,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   showRoads = true,
   showRivers = true,
   showLabels = true,
+  hideBasemap = false,
+  hideLsArrows = false,
+  lsEdgeLabels = false,
   measureActive,
   measureSnap,
   measureColor,
@@ -2383,6 +2426,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onMapClick,
   onDetailZoomChange,
   overlayCtx,
+  hiddenOverlayIds,
   spotlightActive,
   spotlightAiming,
 }: MapProps, ref) {
@@ -2463,12 +2507,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       //    container (the GL canvas is transparent there), so paint it first or the
       //    export would have a transparent void. In flat 2D the basemap is opaque and
       //    this is a harmless no-op (the container background is unset/transparent).
-      const containerBg = containerRef.current
-        ? getComputedStyle(containerRef.current).backgroundColor
-        : '';
-      if (containerBg && containerBg !== 'rgba(0, 0, 0, 0)' && containerBg !== 'transparent') {
-        ctx.fillStyle = containerBg;
-        ctx.fillRect(0, 0, W, H);
+      //    While the basemap is hidden (Local Space ▸ "Hide map") stand down entirely:
+      //    a transparent background IS the export — nothing may pre-fill the bitmap.
+      //    (Read off the container class the hideBasemap effect maintains — the same
+      //    signal the checkerboard CSS keys on — rather than a reactive prop ref.)
+      if (!containerRef.current?.classList.contains('basemap-hidden')) {
+        const containerBg = containerRef.current
+          ? getComputedStyle(containerRef.current).backgroundColor
+          : '';
+        if (containerBg && containerBg !== 'rgba(0, 0, 0, 0)' && containerBg !== 'transparent') {
+          ctx.fillStyle = containerBg;
+          ctx.fillRect(0, 0, W, H);
+        }
       }
 
       // 1) The map itself: draw the live WebGL canvas straight in. Reliable because
@@ -2569,8 +2619,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           onclone: (_doc: Document, el: HTMLElement) => {
             el.style.outline = 'none';
             el.style.boxShadow = 'none';
+            // Set with priority: the "Hide map" transparency checkerboard (Map.css,
+            // .basemap-hidden) is an !important rule, which a plain inline style
+            // would lose to — baking the checker into the export.
             el.querySelectorAll<HTMLElement>('.map-container').forEach((c) => {
-              c.style.background = 'transparent';
+              c.style.setProperty('background', 'transparent', 'important');
             });
             // html2canvas measures text a hair wider than the browser, so a caption that
             // fits on screen (no ellipsis) can lose a letter or two to its overflow:hidden +
@@ -2817,7 +2870,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // the measure layers with the latest map-state accent.
   const measureColorRef = useRef(measureColor);
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
-  const detailRef = useRef({ showRoads, showRivers, showLabels });
+  const detailRef = useRef({ showRoads, showRivers, showLabels, hideBasemap });
+  // Current local-space arrow visibility, read inside the same handlers (a style
+  // reload rebuilds every custom layer visible, so it must be reasserted there).
+  const hideLsArrowsRef = useRef(hideLsArrows);
+  // Current LS label mode, read inside computeBadges (bound once, refs only).
+  const lsEdgeLabelsRef = useRef(lsEdgeLabels);
   // The eclipse local-circumstances closures, read inside the long-lived hover
   // and click handlers (they change with each selected eclipse; refs avoid
   // re-binding).
@@ -2851,7 +2909,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     spotlightActiveRef.current = !!spotlightActive;
     spotlightAimingRef.current = !!spotlightAiming;
     measureColorRef.current = measureColor;
-    detailRef.current = { showRoads, showRivers, showLabels };
+    detailRef.current = { showRoads, showRivers, showLabels, hideBasemap };
+    hideLsArrowsRef.current = hideLsArrows;
+    lsEdgeLabelsRef.current = lsEdgeLabels;
     eclipseTipRef.current = eclipseTip;
     eclipseCardRef.current = eclipseCard;
     lineCardRef.current = lineCard;
@@ -3083,7 +3143,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
     // the origin at the outward (toward-planet) azimuth — measured from the on-screen
     // north direction so it stays correct under rotation/tilt. Hidden when the origin
-    // is on the globe's far side.
+    // is on the globe's far side. (The Capture-time "Standard labels" mode swaps the
+    // ring anchor for the line's outermost visible point — see edgeMode below.)
     const lsbadges: LocalSpaceBadge[] = [];
     // The LS lines + origin are pinned natal linework, so shift them by −θ too while
     // sliding (the lines converge at origin−θ on screen, matching the rendered source).
@@ -3120,6 +3181,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         }
         return null;
       };
+      // The mirror of lsPinwardEntry for the "Standard labels" mode: the OUTERMOST
+      // visible point of a half-line walked from the pin outward — where it exits the
+      // (inset) view, or its tip when fully visible. Anchoring there makes an LS badge
+      // hug the frame edge exactly like the chart lines' edge badges.
+      const lsOutermostVisible = (coords: number[][]): { x: number; y: number } | null => {
+        let prev: { x: number; y: number } | null = null;
+        let outermost: { x: number; y: number } | null = null;
+        for (let i = 0; i < coords.length; i++) {
+          const c = coords[i];
+          const cur = isOccluded(map, c[0], c[1]) ? null : map.project([c[0], c[1]]);
+          if (prev && cur) {
+            const seg = clipSegmentToView(prev, cur, w, h, BADGE_INSET);
+            if (seg) outermost = seg.far; // keeps advancing to the last visible point
+          }
+          prev = cur;
+        }
+        return outermost;
+      };
+      // Capture ▸ "Standard labels": anchor every LS badge at its line's outermost
+      // visible point (edge-hugging, like the ACG badges) and blank the bearing off
+      // its face, so LS lines read exactly like the rest of the chart's linework.
+      const edgeMode = lsEdgeLabelsRef.current;
       const seen = new Set<string>();
       for (const f of lsFeats) {
         const lp = f.properties;
@@ -3155,7 +3238,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           p.y >= BADGE_INSET &&
           p.y <= h - BADGE_INSET;
         let placed: { x: number; y: number } | null;
-        if (inView(ringPt)) {
+        if (edgeMode) {
+          placed = lsOutermostVisible(f.geometry.coordinates);
+        } else if (inView(ringPt)) {
           placed = ringPt;
         } else if (inView(oc)) {
           const seg = clipSegmentToView(oc, ringPt, w, h, BADGE_INSET);
@@ -3174,7 +3259,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           planet: lp.planet,
           color: lp.color,
           out,
-          azLabel,
+          // Standard-labels mode blanks the bearing so the face matches the ACG badges.
+          azLabel: edgeMode ? '' : azLabel,
         });
       }
       // Per-badge half-extents for separation: in a capture STILL the export can't be panned to
@@ -3201,9 +3287,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (ocOnScreen && lsbadges.length > 1) {
         const lsItems = lsbadges.map((b) => {
           const s = lsSizes.get(b.key);
-          // Per-direction floor (the 'out' pill carries a bearing, so it's much wider); the measured
+          // Per-face floor (a pill printing its bearing is much wider; in the standard-labels
+          // mode none do — azLabel is blanked — so every floor is narrow); the measured
           // box (capture) can only WIDEN it. + LS_BADGE_GAP so neighbours clear by a hair.
-          const hw = Math.max(s?.hw ?? 0, b.out ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W) + LS_BADGE_GAP;
+          const hw = Math.max(s?.hw ?? 0, b.azLabel ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W) + LS_BADGE_GAP;
           const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
           const vx = b.x - oc.x;
           const vy = b.y - oc.y;
@@ -3428,10 +3515,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ZENITH_DISC_COLORS[themeRef.current],
         ECLIPSE_LABEL_HALO[themeRef.current],
       );
+      applyLsArrowVisibility(map, hideLsArrowsRef.current);
       pushData(map, dataRef.current, true);
       // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
-      // basemap of its own). A no-op online.
-      if (!navigator.onLine) void installWorldFallback(map, themeRef.current);
+      // basemap of its own). A no-op online. The outline lands async, so re-run the
+      // detail toggles after it: a live basemap blank must catch it too.
+      if (!navigator.onLine)
+        void installWorldFallback(map, themeRef.current).then(() => {
+          if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
+        });
       computeBadgesRef.current();
       // The internal map ref is live now — let MapOverlayHost subscribe to a real instance.
       setMapReady(true);
@@ -3523,8 +3615,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
+      applyLsArrowVisibility(map, hideLsArrowsRef.current);
       pushData(map, dataRef.current, true);
-      if (!navigator.onLine) void installWorldFallback(map, theme);
+      if (!navigator.onLine)
+        void installWorldFallback(map, theme).then(() => {
+          if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
+        });
       computeBadges();
     });
   }, [theme, computeBadges]);
@@ -4606,13 +4702,41 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     }
   }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, slideActive, computeBadges, spinPaint]);
 
-  // Toggle basemap road / river / foliage visibility live (theme reloads reapply
-  // via the style.load handler above).
+  // Toggle basemap road / river / foliage visibility — and the whole-basemap blank
+  // (Local Space ▸ "Hide map") — live (theme reloads reapply via the style.load
+  // handler above).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    applyDetailToggles(map, { showRoads, showRivers, showLabels });
-  }, [showRoads, showRivers, showLabels]);
+    if (!map) return;
+    map.getContainer().classList.toggle('basemap-hidden', hideBasemap);
+    // Deliberately NOT gated on isStyleLoaded(): that probe also reports false
+    // during ordinary tile/source churn (which the chart's own data pushes cause),
+    // so gating on it silently dropped toggles flipped mid-churn — e.g. the map
+    // blank applied right after the Capture frame resizes the view. The apply
+    // guards itself (parsed style or no-op) and the load handler covers pre-parse.
+    applyDetailToggles(map, { showRoads, showRivers, showLabels, hideBasemap });
+  }, [showRoads, showRivers, showLabels, hideBasemap]);
+
+  // Toggle the local-space direction arrows live (the Local Space window's
+  // Capture-time "Hide line arrows" option). Style reloads reapply via the
+  // load/style.load handlers, which rebuild the arrow layers visible. Not gated
+  // on isStyleLoaded() (false during ordinary tile/source churn — it would drop
+  // mid-churn toggles); pre-parse, getLayer finds nothing and this no-ops.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    applyLsArrowVisibility(map, hideLsArrows);
+  }, [hideLsArrows]);
+
+  // Re-anchor the LS labels when the Capture-time "Standard labels" mode flips —
+  // computeBadges reads the mode through lsEdgeLabelsRef (synced by the commit
+  // effect above, which runs before this one), so a recompute is all it takes.
+  // computeBadges is safe at any readiness (projection probes are guarded), so
+  // no style gate — one would drop flips made during tile/source churn.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    computeBadgesRef.current();
+  }, [lsEdgeLabels]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -4996,7 +5120,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           return (
             // Clicking an LS label flies to the local-space origin — where the lines
             // converge (the pin). Both halves show LS + glyph; only the outgoing
-            // (toward-planet) half also prints its bearing (degrees + arcminutes).
+            // (toward-planet) half also prints its bearing (degrees + arcminutes) —
+            // blanked in the Capture "Standard labels" mode, whose faces match the
+            // chart's edge badges.
             <TipButton
               type="button"
               key={b.key}
@@ -5013,7 +5139,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             >
               <span className="acg-badge-prefix">LS</span>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              {b.out && <span className="ls-deg">{b.azLabel}</span>}
+              {b.out && b.azLabel && <span className="ls-deg">{b.azLabel}</span>}
             </TipButton>
           );
         })}
@@ -5022,7 +5148,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           frame and re-projected on every camera move. Add-ons attach here with no edits to
           this file; rendered only when an overlay context is supplied. */}
       {overlayCtx && (
-        <MapOverlayHost mapRef={mapRef} ready={mapReady} moving={mapMoving} ctx={overlayCtx} />
+        <MapOverlayHost
+          mapRef={mapRef}
+          ready={mapReady}
+          moving={mapMoving}
+          hiddenIds={hiddenOverlayIds}
+          ctx={overlayCtx}
+        />
       )}
       {!hideCompass && compassP !== null && originScreen && (
         <LocalHorizonWheel

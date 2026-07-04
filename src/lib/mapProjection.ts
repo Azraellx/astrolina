@@ -16,8 +16,11 @@
 import maplibregl, { LngLat } from 'maplibre-gl';
 
 // True iff the map is currently drawn as a 3D globe (vs. flat mercator).
+// Optional-chained: getProjection() is undefined until the style loads (the map
+// starts flat, so "not a globe" is the right pre-load answer) — overlay code calls
+// this unconditionally, and an early rAF/effect pass must not crash on it.
 function isGlobe(map: maplibregl.Map): boolean {
-  return map.getProjection().type === 'globe';
+  return map.getProjection()?.type === 'globe';
 }
 
 /**

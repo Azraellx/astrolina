@@ -40,8 +40,30 @@
    so it runs 30% narrower than the shared 320px base (224px). Overrides both width and
    max-width; placed after .location-hud so the equal-specificity rule wins on source order. */
 .local-space-hud {
-  width: 224px;
-  max-width: 224px;
+  /* Wide enough for the square fly-to-origin action beside the stacked origin
+     buttons (see .location-ls-top) without squeezing their labels. */
+  width: 280px;
+  max-width: 280px;
+}
+
+/* The Aspect Lines window (Settings ▸ Advanced ▸ Lines ▸ Aspect Lines ▸ Filters &
+   orbs). Its orb rows are the settings panel's StepperField (.calc-user-rate,
+   styled in Sidebar.css — always bundled); trim their top margin to sit in this
+   window's tighter column, and keep the filter glyphs from inheriting the row's
+   text color when dimmed. */
+.aspect-lines-hud {
+  width: 280px;
+  max-width: 280px;
+}
+.aspect-lines-hud .calc-user-rate {
+  margin: 1px 4px;
+}
+.al-filter-glyphs {
+  color: var(--text-faint);
+  /* Clear air between the label and its glyphs, and between the glyph pair
+     (⚹ △) — they read cramped at the toggle's font size otherwise. */
+  margin-left: 7px;
+  letter-spacing: 0.3em;
 }
 
 .location-header {
@@ -400,6 +422,30 @@ html[data-mapstate='hover'] .location-ls-seg-pin.active {
   color: var(--neutral);
   border-color: rgba(var(--neutral-rgb), 0.5);
   background: rgba(var(--neutral-rgb), 0.1);
+}
+
+/* Local Space top row: the square fly-to-origin action LEFT of the origin segmented
+   control. align-items:stretch sizes the square off the stacked pair's full height
+   (aspect-ratio squares it up), so it reads as the window's primary action while the
+   origin buttons keep their own shape. The row carries the seg's old side padding. */
+.location-ls-top {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 1px 4px 3px;
+}
+.location-ls-top .location-ls-seg {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+.location-ls-fly-square {
+  flex: 0 0 auto;
+  align-self: stretch;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  justify-content: center;
 }
 
 /* "Fly to origin" action — same shape as the back/forward button. */

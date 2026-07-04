@@ -17,7 +17,7 @@ import { getToolExtensions } from './lib/extensions/toolExtensions';
 import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
-import { type PlanTier, planTierFor } from './lib/plan';
+import { type PlanTier, planTierFor, tierMet } from './lib/plan';
 import type {
   Feature,
   FeatureCollection,
@@ -48,6 +48,7 @@ import {
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
+import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
@@ -168,7 +169,15 @@ import { buildLineCard, type LineCardDistance } from './lib/lineCard';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
 import { generateNightShade } from './lib/astro/nightShade';
-import { loadAspectOrbs, saveAspectOrbs, DEFAULT_ASPECT_ORBS } from './lib/aspectPrefs';
+import {
+  loadAspectOrbs,
+  saveAspectOrbs,
+  DEFAULT_ASPECT_ORBS,
+  loadAspectLineFilters,
+  saveAspectLineFilters,
+  aspectLinePasses,
+  DEFAULT_ASPECT_LINE_FILTERS,
+} from './lib/aspectPrefs';
 import {
   loadAngleProgression,
   loadEclipseChart,
@@ -182,6 +191,10 @@ import {
   loadLsOrigin,
   loadLsHideInbound,
   loadLsHideCompass,
+  loadCaptureHiddenOverlays,
+  loadLsHideArrows,
+  loadLsEdgeLabels,
+  loadLsHideMap,
   loadOverlayStep,
   loadOrbZoneUnit,
   loadOrbZoneVal,
@@ -209,6 +222,10 @@ import {
   saveLsOrigin,
   saveLsHideInbound,
   saveLsHideCompass,
+  saveCaptureHiddenOverlays,
+  saveLsHideArrows,
+  saveLsEdgeLabels,
+  saveLsHideMap,
   saveOverlayStep,
   saveOrbZoneUnit,
   saveOrbZoneVal,
@@ -532,6 +549,22 @@ export default function App() {
   const [showMidpointLines, setShowMidpointLines] = useState(
     () => localStorage.getItem('astro:show-midpoint-lines:v1') === '1',
   );
+  // The Aspect Lines window (Settings ▸ Advanced ▸ Lines ▸ Aspect Lines ▸ Filters
+  // & orbs) — a gated-tier surface. Stale-restore guard like showLocalSpace: the
+  // open flag only restores when the toggles it lives behind are also persisted on
+  // (the render additionally gates on the plan tier below).
+  const [showAspectLinesHud, setShowAspectLinesHud] = useState(
+    () =>
+      localStorage.getItem('astro:aspectlines-open:v1') === '1' &&
+      localStorage.getItem('astro:show-aspect-lines:v1') === '1' &&
+      localStorage.getItem('astro:advanced:v1') === '1',
+  );
+  // Display filters for the map's aspect lines (the window's Filters section).
+  // The raw pref persists; the EFFECTIVE value (defaults unless the plan reaches
+  // the gated rung) is derived below, next to the tier flag.
+  const [aspectLineFilters, setAspectLineFilters] = useState(loadAspectLineFilters);
+  // Stable close handler for the window (kept out of the render JSX).
+  const closeAspectLinesHud = useCallback(() => setShowAspectLinesHud(false), []);
   const [coordSystem, setCoordSystem] = useState<CoordSystem>(() =>
     localStorage.getItem('astro:coord-system:v1') === 'zodiaco'
       ? 'zodiaco'
@@ -867,6 +900,24 @@ export default function App() {
       return next;
     });
   }, []);
+  // Capture ▸ per-overlay visibility: registered map overlays the user hides from
+  // captures (MapOverlay.captureToggle — e.g. an add-on's plotted markers). The set
+  // persists, but it reaches the Map ONLY while the tool is armed (see the Map's
+  // hiddenOverlayIds below), so every overlay returns the moment Capture closes.
+  const [captureHiddenOverlays, setCaptureHiddenOverlays] = useState(
+    loadCaptureHiddenOverlays,
+  );
+  useEffect(
+    () => saveCaptureHiddenOverlays(captureHiddenOverlays),
+    [captureHiddenOverlays],
+  );
+  const toggleCaptureOverlay = useCallback((id: string) => {
+    setCaptureHiddenOverlays((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
   // The active calculation systems, exactly as the "Info" view (InfoBar) lists them —
   // for the optional "calculations" caption field.
   const captureCalcText = useMemo(() => {
@@ -1020,6 +1071,15 @@ export default function App() {
   // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier
   // visibility + tier badges.
   const planTier: PlanTier = planTierFor(advancedWheel);
+  // Whether the plan reaches the GATED rung — the tier the Local Space Capture
+  // section and the Aspect Lines window belong to (lib/plan). Hoisted here so the
+  // memos below can read it; also keeps tierMet calls out of the render JSX.
+  const gatedTierMet = tierMet(planTier, 'gated');
+  // Effective aspect-line filters: the stored pref applies only once the plan
+  // reaches the gated rung — a stale pref can never hide lines below it.
+  const effAspectLineFilters = gatedTierMet
+    ? aspectLineFilters
+    : DEFAULT_ASPECT_LINE_FILTERS;
 
   // Global keyboard shortcuts. Space centers the map on the active pin (or drops
   // a natal pin and centers if none is set); 'b' toggles the chart sidebar; the
@@ -1277,6 +1337,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:show-midpoint-lines:v1', showMidpointLines ? '1' : '0');
   }, [showMidpointLines]);
+  useEffect(() => {
+    localStorage.setItem('astro:aspectlines-open:v1', showAspectLinesHud ? '1' : '0');
+  }, [showAspectLinesHud]);
+  useEffect(() => saveAspectLineFilters(aspectLineFilters), [aspectLineFilters]);
   useEffect(() => {
     localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
   }, [showRoads]);
@@ -1566,6 +1630,25 @@ export default function App() {
   useEffect(() => saveLsHideInbound(hideLsInbound), [hideLsInbound]);
   const [hideLsCompass, setHideLsCompass] = useState(loadLsHideCompass);
   useEffect(() => saveLsHideCompass(hideLsCompass), [hideLsCompass]);
+  // The Local Space window's CAPTURE section: export-shaping options, a gated-tier
+  // surface (lib/plan). Where they're passed to the Map, all three prefs are gated
+  // on the Local Space window being OPEN, the Capture tool being ARMED, and the plan
+  // reaching the GATED rung — dropping any of the three restores the map instantly,
+  // so a blanked basemap / hidden arrows / relabelled badges can never "stick" past
+  // the framing session or a tier lapse (the prefs persist for the next capture).
+  //
+  // "Hide line arrows": drop the direction arrows riding the local-space lines, for
+  // cleaner linework in the framed export.
+  const [hideLsArrows, setHideLsArrows] = useState(loadLsHideArrows);
+  useEffect(() => saveLsHideArrows(hideLsArrows), [hideLsArrows]);
+  // "Standard labels": label the local-space lines like the chart's other lines —
+  // badges hug the frame edges, without the bearing degrees on their faces.
+  const [lsEdgeLabels, setLsEdgeLabels] = useState(loadLsEdgeLabels);
+  useEffect(() => saveLsEdgeLabels(lsEdgeLabels), [lsEdgeLabels]);
+  // "Hide map (transparent)": blank the basemap under the local-space lines so the
+  // capture exports a see-through PNG (overlay it on a floor plan etc.).
+  const [hideLsMap, setHideLsMap] = useState(loadLsHideMap);
+  useEffect(() => saveLsHideMap(hideLsMap), [hideLsMap]);
   // Local space radiates from the placed pin (relocated local space) — or the
   // birthplace, either when nothing is pinned or when the Origin setting pins
   // it home explicitly. Also the anchor for the LS ring labels.
@@ -1684,8 +1767,18 @@ export default function App() {
     if (effShowAspectLines) {
       // (The generator drops the South Node itself while the North Node is
       // visible — antipodal duplicate set, same spirit as mergeNodeParans.)
+      // The display filters (the Aspect Lines window) apply HERE, at the push
+      // site, so midpoint features below are never touched and everything
+      // downstream (map layers, edge badges, hover tips) follows for free.
       features.push(
-        ...generateAspectLines(vis, meridianLng, effCoordSystem, eps).features,
+        ...generateAspectLines(vis, meridianLng, effCoordSystem, eps).features.filter(
+          (f) =>
+            aspectLinePasses(
+              effAspectLineFilters,
+              f.properties.aspect,
+              f.properties.lineType,
+            ),
+        ),
       );
     }
     if (effShowMidpointLines) {
@@ -1705,6 +1798,7 @@ export default function App() {
   }, [
     effShowAspectLines,
     effShowMidpointLines,
+    effAspectLineFilters,
     current,
     lineSystem,
     coordSystem,
@@ -3256,7 +3350,8 @@ export default function App() {
     const effCoordSystem: CoordSystem = lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
     // Natal: allLines / allParans / allLocalSpace are ALREADY unfiltered; aspects + midpoints are
     // regenerated here from the FULL body set (not the visible subset), all line types; star lines
-    // are generated regardless of the Fixed Stars toggle.
+    // are generated regardless of the Fixed Stars toggle. The aspect-line display
+    // filters are intentionally NOT applied either — this is the everything set.
     const natalLines = withDarkMoon(allLines, theme);
     const angleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
       ...generateAspectLines(linePositions, meridianLng, effCoordSystem, eps).features,
@@ -3510,6 +3605,9 @@ export default function App() {
       <Map
         ref={mapRef}
         overlayCtx={extensionCtx}
+        // Registered-overlay hides apply only while the Capture tool is armed —
+        // closing it always restores every overlay, whatever the persisted set says.
+        hiddenOverlayIds={mapTool === 'capture' ? captureHiddenOverlays : undefined}
         // Line families are narrowed to the spotlight (applySpot: passthrough when off, all
         // hidden while aiming, only the in-radius lines once a centre is set). The eff* values
         // already resolve the eclipse "hide natal" toggle + the promoted-overlay swap.
@@ -3527,6 +3625,12 @@ export default function App() {
         localSpaceCross={spotlightActive ? EMPTY_FC : effLocalSpaceCross}
         localSpaceOrigin={spotlightActive ? null : effLocalSpaceOrigin}
         hideCompass={hideLsCompass}
+        // The Capture-section options apply only while Local Space is on, the Capture
+        // frame is armed AND the plan reaches the gated rung — dropping any of the
+        // three restores the map (no "sticking").
+        hideBasemap={showLocalSpace && mapTool === 'capture' && hideLsMap && gatedTierMet}
+        hideLsArrows={showLocalSpace && mapTool === 'capture' && hideLsArrows && gatedTierMet}
+        lsEdgeLabels={showLocalSpace && mapTool === 'capture' && lsEdgeLabels && gatedTierMet}
         zenith={spotlightActive ? EMPTY_FC : effZenith}
         nadir={spotlightActive ? EMPTY_FC : effNadir}
         ecliptic={spotlightActive ? null : effEcliptic}
@@ -3642,6 +3746,8 @@ export default function App() {
           setParanOrbDeg={setParanOrbDeg}
           aspectOrbs={aspectOrbs}
           setAspectOrbs={setAspectOrbs}
+          aspectHudOpen={showAspectLinesHud}
+          setAspectHudOpen={setShowAspectLinesHud}
           showAdvancedTab={advancedWheel}
           showStarLines={showStarLines}
           setShowStarLines={setShowStarLines}
@@ -3881,7 +3987,30 @@ export default function App() {
           setHideLsInbound={setHideLsInbound}
           hideLsCompass={hideLsCompass}
           setHideLsCompass={setHideLsCompass}
+          captureActive={mapTool === 'capture'}
+          hideLsArrows={hideLsArrows}
+          setHideLsArrows={setHideLsArrows}
+          lsEdgeLabels={lsEdgeLabels}
+          setLsEdgeLabels={setLsEdgeLabels}
+          hideLsMap={hideLsMap}
+          setHideLsMap={setHideLsMap}
+          planTier={planTier}
           localSpaceOrigin={localSpaceOrigin}
+        />
+      )}
+      {/* The Aspect Lines window (gated tier): opened from Settings ▸ Advanced ▸
+          Lines ▸ Aspect Lines ▸ "Filters & orbs…". Gated on the aspect lines
+          actually drawing AND the plan reaching the gated rung, so turning the
+          lines off, leaving Advanced, or a tier lapse closes it (the open pref
+          persists for when the gates return). Raw aspectOrbs is correct here —
+          the window can only exist while Advanced is on, where eff === raw. */}
+      {effShowAspectLines && gatedTierMet && showAspectLinesHud && (
+        <AspectLinesHud
+          onClose={closeAspectLinesHud}
+          filters={aspectLineFilters}
+          setFilters={setAspectLineFilters}
+          aspectOrbs={aspectOrbs}
+          setAspectOrbs={setAspectOrbs}
         />
       )}
       {mapTool === 'capture' && (
@@ -3895,6 +4024,8 @@ export default function App() {
           onSetView={setCaptureView}
           extras={captureExtras}
           onToggleExtra={toggleCaptureExtra}
+          hiddenOverlays={captureHiddenOverlays}
+          onToggleOverlay={toggleCaptureOverlay}
           fileName={captureFileName}
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
           // Share link: the chart + this camera + the pin as a ?c= URL. A composite

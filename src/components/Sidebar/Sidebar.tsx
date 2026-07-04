@@ -36,6 +36,7 @@ import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
 import { orbZoneMax, type StarSetPref, type DistanceUnit } from '../../lib/overlayPrefs';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
+import { planTierFor, tierMet, tierLabel, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import {
@@ -84,6 +85,10 @@ interface SidebarProps {
   setParanOrbDeg: (deg: number) => void;
   aspectOrbs: AspectOrbs;
   setAspectOrbs: (o: AspectOrbs) => void;
+  /** The Aspect Lines window's open state (a gated-tier surface — the sub-row
+   *  that opens it renders per the plan ladder's visibility rules). */
+  aspectHudOpen: boolean;
+  setAspectHudOpen: (v: boolean) => void;
   showStarLines: boolean;
   setShowStarLines: (v: boolean) => void;
   starSet: StarSetPref;
@@ -360,6 +365,8 @@ export function HintMenu<V extends string>({
   onChange,
   options,
   note,
+  tier,
+  locked,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -372,6 +379,15 @@ export function HintMenu<V extends string>({
     disabled?: boolean;
   }[];
   note?: string;
+  /** The plan tier this WHOLE control belongs to — its badge renders on the
+   *  trigger, exactly like the nav menus' plan-gated rows (see lib/plan). */
+  tier?: PlanTier;
+  /** Tier-locked teaser (the user hasn't reached `tier`): the trigger keeps its
+   *  normal look (plus the badge) but a click routes to the nudge action (the
+   *  account/upgrade flow) instead of opening the panel — so the control can't
+   *  be opened or changed. Callers decide visibility (tierMet || shouldShowNudge),
+   *  like the nav menus. */
+  locked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -474,7 +490,13 @@ export function HintMenu<V extends string>({
         ref={triggerRef}
         type="button"
         className={`thud-select calc-menu-trigger ${open ? 'open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (locked) {
+            nudgeAction(); // tier-locked teaser → the account/upgrade flow
+            return;
+          }
+          setOpen((v) => !v);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -486,6 +508,11 @@ export function HintMenu<V extends string>({
           )}
           {current?.label ?? ''}
         </span>
+        {/* The nav menus' tier badge, on the trigger — nothing for the baseline
+            tier, or a gated tier whose downstream label is unset. */}
+        {tier && tier !== 'new' && tierLabel(tier) && (
+          <span className={`navmenu-tier tier-${tier}`}>{tierLabel(tier)}</span>
+        )}
         <span className="thud-select-caret" aria-hidden="true">
           ▾
         </span>
@@ -780,6 +807,8 @@ export function Sidebar({
   setParanOrbDeg,
   aspectOrbs,
   setAspectOrbs,
+  aspectHudOpen,
+  setAspectHudOpen,
   showStarLines,
   setShowStarLines,
   starSet,
@@ -849,6 +878,16 @@ export function Sidebar({
   // Roads and rivers now share one toggle: "on" if either basemap layer shows,
   // and clicking flips both together.
   const roadsRiversOn = showRoads || showRivers;
+
+  // The plan tier, derived from the Advanced flag exactly as App derives it (a
+  // downstream resolver may lift it further — see lib/plan). Gates the Calculation
+  // tab's House-system + Zodiac dropdowns (teased nav-menu-style below the tier)
+  // and the Advanced tab's Aspect Lines window opener (gated rung).
+  const planTier = planTierFor(showAdvancedTab);
+  const advUnlocked = tierMet(planTier, 'adv');
+  const gatedUnlocked = tierMet(planTier, 'gated');
+  // The gated rung's compact badge — '' in builds that set no label, so guard renders.
+  const gatedBadge = tierLabel('gated');
 
   return (
     <aside
@@ -1100,15 +1139,50 @@ export function Sidebar({
             ))}
           </ul>
 
+          {/* House system + zodiac frame, relocated here from the Advanced tab —
+              calculation choices belong together. Houses only shape the wheel's
+              cusps and the zodiac is a display frame (neither moves a map line).
+              BOTH dropdowns belong to the ADV rung: badged like the nav menus'
+              plan-gated rows and LOCKED whole (the trigger won't open — a click
+              routes to the account/upgrade flow) until the plan reaches it, or
+              hidden entirely when the build doesn't nudge. While locked, the
+              zodiac trigger also DISPLAYS tropical — the effective frame (App
+              coerces the same way) — so a stale sidereal pref can't show as
+              selected while it isn't actually applied. */}
+          {(advUnlocked || shouldShowNudge('adv')) && (
+            <>
+              <h2>{t('settings.headings.houseSystem')}</h2>
+              <HintMenu
+                value={houseSystem}
+                onChange={setHouseSystem}
+                options={houseSystemOptions}
+                tier="adv"
+                locked={!advUnlocked}
+              />
+
+              <h2>{t('settings.headings.zodiac')}</h2>
+              <HintMenu
+                value={advUnlocked ? zodiacMode : 'tropical'}
+                onChange={setZodiacMode}
+                options={(['tropical', 'lahiri', 'fagan-bradley'] as const).map((m) => ({
+                  value: m,
+                  label: t(`settings.zodiac.${m}.label`),
+                  hint: t(`settings.zodiac.${m}.hint`),
+                }))}
+                tier="adv"
+                locked={!advUnlocked}
+              />
+            </>
+          )}
         </div>
       )}
 
-      {/* Advanced: the chart wheel's READING preferences — house system, zodiac
-          frame, aspect orbs. None of these move a single map line (houses only
-          shape the wheel's cusps; the zodiac is a display frame; orbs gate the
-          aspect lists), which is the membership rule for this tab. It appears
-          whenever Advanced mode is on (showAdvancedTab), regardless of whether the
-          expanded chart sidebar is open. */}
+      {/* Advanced: the chart wheel's READING preferences — display toggles and
+          aspect orbs. None of these move a single map line (orbs gate the aspect
+          lists), which is the membership rule for this tab. (House system + zodiac
+          frame moved to the Calculation tab, where the sidereal frames tease the
+          ADV rung instead of hiding.) It appears whenever Advanced mode is on
+          (showAdvancedTab), regardless of whether the expanded chart sidebar is open. */}
       {showAdvancedTab && (
         <button
           type="button"
@@ -1200,28 +1274,6 @@ export function Sidebar({
               <span className="name">{t('settings.parans.title')}</span>
             </TipToggle>
             <TipToggle
-              className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
-              onClick={() => setShowAspectLines(!showAspectLines)}
-              ariaPressed={showAspectLines}
-              title={t('settings.aspectLines.title')}
-              hotkey="Shift A"
-              hint={t('settings.aspectLines.hint')}
-            >
-              <EyeIcon open={showAspectLines} />
-              <span className="name">{t('settings.aspectLines.title')}</span>
-            </TipToggle>
-            <TipToggle
-              className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
-              onClick={() => setShowMidpointLines(!showMidpointLines)}
-              ariaPressed={showMidpointLines}
-              title={t('settings.midpointLines.title')}
-              hotkey="Shift M"
-              hint={t('settings.midpointLines.hint')}
-            >
-              <EyeIcon open={showMidpointLines} />
-              <span className="name">{t('settings.midpointLines.title')}</span>
-            </TipToggle>
-            <TipToggle
               className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
               onClick={() => setShowStarLines(!showStarLines)}
               ariaPressed={showStarLines}
@@ -1252,26 +1304,60 @@ export function Sidebar({
                 />
               </li>
             )}
+            <TipToggle
+              className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
+              onClick={() => setShowMidpointLines(!showMidpointLines)}
+              ariaPressed={showMidpointLines}
+              title={t('settings.midpointLines.title')}
+              hotkey="Shift M"
+              hint={t('settings.midpointLines.hint')}
+            >
+              <EyeIcon open={showMidpointLines} />
+              <span className="name">{t('settings.midpointLines.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
+              onClick={() => setShowAspectLines(!showAspectLines)}
+              ariaPressed={showAspectLines}
+              title={t('settings.aspectLines.title')}
+              hotkey="Shift A"
+              hint={t('settings.aspectLines.hint')}
+            >
+              <EyeIcon open={showAspectLines} />
+              <span className="name">{t('settings.aspectLines.title')}</span>
+            </TipToggle>
+            {/* The Aspect Lines window opener — reveals while the toggle is on
+                (like the star-set row under Fixed Stars). A GATED-rung control
+                (lib/plan): badged, shown once the plan reaches the rung or as a
+                clickable upgrade teaser when the build nudges it, hidden
+                otherwise. */}
+            {showAspectLines && (gatedUnlocked || shouldShowNudge('gated')) && (
+              <TipToggle
+                className={`thud-select calc-menu-trigger aspect-hud-open ${gatedUnlocked && aspectHudOpen ? 'open' : ''}`}
+                onClick={() => {
+                  if (!gatedUnlocked) {
+                    nudgeAction(); // tier-locked teaser → the account/upgrade flow
+                    return;
+                  }
+                  setAspectHudOpen(!aspectHudOpen);
+                }}
+                ariaPressed={gatedUnlocked && aspectHudOpen}
+                title={t('settings.aspectLines.openHud')}
+                hint={t('settings.aspectLines.openHudHint')}
+              >
+                <span className="calc-menu-value">{t('settings.aspectLines.openHud')}</span>
+                {gatedBadge && (
+                  <span className="navmenu-tier tier-gated">{gatedBadge}</span>
+                )}
+              </TipToggle>
+            )}
           </ul>
 
-          <h2>{t('settings.headings.houseSystem')}</h2>
-          <HintMenu
-            value={houseSystem}
-            onChange={setHouseSystem}
-            options={houseSystemOptions}
-          />
-
-          <h2>{t('settings.headings.zodiac')}</h2>
-          <HintMenu
-            value={zodiacMode}
-            onChange={setZodiacMode}
-            options={(['tropical', 'lahiri', 'fagan-bradley'] as const).map((m) => ({
-              value: m,
-              label: t(`settings.zodiac.${m}.label`),
-              hint: t(`settings.zodiac.${m}.hint`),
-            }))}
-          />
-
+          {/* The compact orb editor stands down while the Aspects window is actually
+              MOUNTED (toggle on + tier reached + open) — that window lays every orb
+              out at once, so showing both would be two live editors of one store. */}
+          {!(showAspectLines && gatedUnlocked && aspectHudOpen) && (
+            <>
           <h2 className="orb-heading">
             {t('settings.headings.aspectOrbs')}
             <InfoTip
@@ -1342,6 +1428,8 @@ export function Sidebar({
                 aspect: t(`expandedSidebar.aspect.${orbPick}.name`),
               })}
             />
+          )}
+            </>
           )}
         </div>
       )}

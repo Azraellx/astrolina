@@ -8,7 +8,9 @@
 // (Advanced ▸ Aspect orbs). The defaults reproduce the original behaviour
 // exactly: one flat 7° across the majors, no luminary widening. Persisted as
 // one JSON blob; values clamp to sane ranges on load so a hand-edited store
-// can't wedge the wheel.
+// can't wedge the wheel. Also home to the aspect-line display filters (below).
+import type { AspectKind } from './astro/angleAspects';
+import type { LineType } from './astro/lines';
 
 export type AspectName =
   | 'conjunction'
@@ -80,4 +82,71 @@ export function saveAspectOrbs(o: AspectOrbs) {
 /** The widest reachable orb — normalizes the aspect lines' opacity fade. */
 export function maxAspectOrb(o: AspectOrbs): number {
   return Math.max(...ASPECT_NAMES.map((n) => o.orbs[n])) + o.luminaryBonus;
+}
+
+// ── Aspect-line display filters (the Aspect Lines window) ───────────────────
+// Which of the map's aspect lines draw. Quality note: every drawn line reads
+// simultaneously as an aspect to one angle and its 180−a complement to the
+// opposite angle (sextile↔trine, square↔square — see astro/angleAspects
+// ASPECT_COMPLEMENT), so sextile and trine are ONE harmonious family and the
+// square family stands alone as the challenging one. A gated-tier surface
+// (lib/plan): App applies the DEFAULTS unless the plan reaches that rung, so a
+// stale pref can never hide lines for a tier that hasn't reached it.
+export interface AspectLineFilters {
+  /** The sextile/trine family. */
+  harmonious: boolean;
+  /** The square family. */
+  challenging: boolean;
+  /** Lines labeled to the MC axis (each also readable from the IC). */
+  mcAxis: boolean;
+  /** Lines labeled to the ASC (horizon) axis (each also readable from the DSC). */
+  ascAxis: boolean;
+}
+
+export const DEFAULT_ASPECT_LINE_FILTERS: AspectLineFilters = {
+  harmonious: true,
+  challenging: true,
+  mcAxis: true,
+  ascAxis: true,
+};
+
+const FILTERS_KEY = 'astro:aspect-line-filters:v1';
+
+const boolOr = (v: unknown, fallback: boolean) =>
+  typeof v === 'boolean' ? v : fallback;
+
+export function loadAspectLineFilters(): AspectLineFilters {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY);
+    if (!raw) return DEFAULT_ASPECT_LINE_FILTERS;
+    const p = JSON.parse(raw) as Partial<AspectLineFilters>;
+    return {
+      harmonious: boolOr(p.harmonious, true),
+      challenging: boolOr(p.challenging, true),
+      mcAxis: boolOr(p.mcAxis, true),
+      ascAxis: boolOr(p.ascAxis, true),
+    };
+  } catch {
+    return DEFAULT_ASPECT_LINE_FILTERS;
+  }
+}
+
+export function saveAspectLineFilters(f: AspectLineFilters) {
+  localStorage.setItem(FILTERS_KEY, JSON.stringify(f));
+}
+
+/** Whether one aspect-line feature passes the display filters. Stable under the
+ *  generator's MC/ASC relabeling: quality tests 'square' vs not-square (the
+ *  complement maps sextile↔trine within the harmonious family), and the axis
+ *  tests the displayed lineType. VX/AVX-branch lines are never relabeled and
+ *  pass both axis tests untouched. */
+export function aspectLinePasses(
+  f: AspectLineFilters,
+  aspect: AspectKind,
+  lineType: LineType,
+): boolean {
+  if (aspect === 'square' ? !f.challenging : !f.harmonious) return false;
+  if (lineType === 'MC') return f.mcAxis;
+  if (lineType === 'ASC') return f.ascAxis;
+  return true;
 }

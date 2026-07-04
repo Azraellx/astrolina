@@ -27,11 +27,14 @@ interface MapOverlayHostProps {
   /** True while the camera animates — forwarded to overlays so they can fade out in motion
    *  (the same `mapMoving` signal the edge badges use). */
   moving: boolean;
+  /** Overlay ids to withhold from the map — the Capture window's per-overlay
+   *  visibility toggles (see MapOverlay.captureToggle). Absent/empty = draw all. */
+  hiddenIds?: ReadonlySet<string>;
   /** The read-only snapshot handed to each overlay. */
   ctx: MapExtensionContext;
 }
 
-export function MapOverlayHost({ mapRef, ready, moving, ctx }: MapOverlayHostProps) {
+export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOverlayHostProps) {
   // A frame counter bumped (throttled to one rAF) on every camera move, so the overlays
   // re-render and re-project as the user pans/zooms.
   const [version, setVersion] = useState(0);
@@ -60,7 +63,9 @@ export function MapOverlayHost({ mapRef, ready, moving, ctx }: MapOverlayHostPro
     };
   }, [mapRef, ready]);
 
-  const overlays = getMapOverlays().filter(isOverlayEntitled);
+  const overlays = getMapOverlays()
+    .filter(isOverlayEntitled)
+    .filter((o) => !hiddenIds?.has(o.id));
   if (overlays.length === 0) return null;
 
   const map = mapRef.current;

@@ -20,16 +20,38 @@ export const localSpaceHud = {
     birthplaceHint:
       'The lines stay anchored to the birthplace even while a pin is down.',
   },
+  // The eye toggles are named for the THING they show (noun + eye, like the Capture
+  // window's caption fields): eye open = drawn, eye closed = hidden. The key names
+  // keep their storage polarity ("hide…") — renaming them would orphan saved prefs.
   hideInbound: {
-    title: 'Hide inbound lines',
-    hint: 'Drop the half of each local-space line pointing away from the planet (toward its antipode), leaving only the bearing toward it.',
+    title: 'Inbound lines',
+    hint: 'The half of each local-space line pointing away from the planet (toward its antipode). Toggle off to keep only the bearing toward the planet.',
   },
   hideCompass: {
-    title: 'Hide compass',
-    hint: 'Hide the local-horizon compass wheel that fades in at the origin once you zoom in.',
+    title: 'Compass',
+    hint: 'The local-horizon compass wheel that fades in at the origin once you zoom in.',
   },
   flyToOrigin: {
     title: 'Fly to origin',
     hint: 'Drop into the local horizon: fly the camera to the origin the lines radiate from.',
+  },
+  // The Capture section: export-shaping options, shown only while the Capture tool
+  // is armed (the "i" beside the heading explains the empty state).
+  capture: {
+    label: 'Capture',
+    infoTitle: 'Capture options',
+    infoHint: 'Extra controls for the framed export — they appear (and apply) only while the Capture tool is armed (Tools ▸ Capture).',
+  },
+  hideArrows: {
+    title: 'Line arrows',
+    hint: 'The direction arrows riding along each local-space line. Toggle off for cleaner linework in the export.',
+  },
+  edgeLabels: {
+    title: 'Standard labels',
+    hint: 'Label the local-space lines like the rest of the chart: badges hug the frame edges instead of ringing the origin, without the bearing degrees on their faces.',
+  },
+  hideMap: {
+    title: 'Map (transparent)',
+    hint: 'Toggle off to blank the basemap so only the lines remain — the export keeps a transparent background, ready to lay over a floor plan or your own backdrop. The map returns when Capture or Local Space closes.',
   },
 } as const;

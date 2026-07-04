@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
+import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
 import { useTouchLayout, usePhone } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
@@ -158,6 +159,7 @@ function TipBtn({
   title,
   hint,
   advanced,
+  gated,
   children,
 }: {
   className: string;
@@ -170,6 +172,8 @@ function TipBtn({
   hint: string;
   /** Show the "ADV" tag on the tip headline — marks the action as Advanced-only. */
   advanced?: boolean;
+  /** Show the gated-tier tag on the tip headline — marks a gated-rung control (lib/plan). */
+  gated?: boolean;
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top');
@@ -190,7 +194,7 @@ function TipBtn({
       >
         {children}
       </button>
-      <HoverTip pos={pos} placement="top" title={title} hint={hint} advanced={advanced} />
+      <HoverTip pos={pos} placement="top" title={title} hint={hint} advanced={advanced} gated={gated} />
     </>
   );
 }
@@ -213,6 +217,10 @@ interface CaptureHudProps {
    *  (no toggle); these add the chart angles and the element·modality balance on top. */
   extras: { angles: boolean; balance: boolean };
   onToggleExtra: (key: 'angles' | 'balance') => void;
+  /** Registered-overlay ids currently hidden from captures (MapOverlay.captureToggle);
+   *  owned by App, which withholds them from the map only while the tool is armed. */
+  hiddenOverlays: ReadonlySet<string>;
+  onToggleOverlay: (id: string) => void;
   /** The download / share filename (App derives it from the shown caption fields). */
   fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
@@ -233,6 +241,8 @@ export function CaptureHud({
   onSetView,
   extras,
   onToggleExtra,
+  hiddenOverlays,
+  onToggleOverlay,
   fileName,
   onCapture,
   shareLink,
@@ -480,6 +490,38 @@ export function CaptureHud({
             ))}
           </div>
         )}
+        {/* Per-overlay visibility — one toggle per registered map overlay that opts in
+            (MapOverlay.captureToggle), entitlement-gated like the overlay itself. The
+            hide applies only WHILE the tool is armed: App reverts the map to every
+            overlay the moment Capture closes, so nothing set here can stick. Labels
+            arrive from the registration, already localized. */}
+        {(() => {
+          const overlayToggles = getMapOverlays().filter(
+            (o) => o.captureToggle && isOverlayEntitled(o),
+          );
+          if (overlayToggles.length === 0) return null;
+          return (
+            <div className="capture-hud-toggle-grid">
+              {overlayToggles.map((o) => {
+                const shown = !hiddenOverlays.has(o.id);
+                return (
+                  <TipBtn
+                    key={o.id}
+                    className={`location-ls-toggle ${shown ? 'on' : 'off'}`}
+                    onClick={() => onToggleOverlay(o.id)}
+                    ariaPressed={shown}
+                    gated={o.tier === 'gated'}
+                    title={o.captureToggle!.title}
+                    hint={o.captureToggle!.hint}
+                  >
+                    <EyeIcon open={shown} className="location-ls-eye" size={14} />
+                    <span className="location-ls-name">{o.captureToggle!.title}</span>
+                  </TipBtn>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         <div className="capture-hud-label">{t('captureHud.caption.label')}</div>
         <div className="capture-hud-toggle-grid">

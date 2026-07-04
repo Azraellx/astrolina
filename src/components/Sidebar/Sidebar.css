@@ -423,6 +423,18 @@ html[data-mapstate='natal-pinned'] .sidebar {
   padding: 4px 8px 2px;
 }
 
+/* The Aspect Lines window opener — a sub-row revealed under the Aspect Lines
+   toggle, inset like the star-set row; no caret (it opens a window, not a menu),
+   the tier badge riding the right edge. */
+.aspect-hud-open {
+  width: calc(100% - 16px);
+  margin: 2px 8px 4px;
+}
+.aspect-hud-open .calc-menu-value {
+  flex: 1;
+  min-width: 0;
+}
+
 /* The orb-zone StepperFields stack as full-width rows (their own top margins
    provide the rhythm). */
 .orb-zone-steppers {

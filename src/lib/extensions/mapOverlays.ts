@@ -65,6 +65,12 @@ export interface MapOverlay {
   id: string;
   /** Defaults to 'core'. A 'gated' overlay is subject to the shared entitlement resolver. */
   tier?: Entitlement;
+  /** Opt in to a per-overlay visibility toggle in the Capture window (its Details
+   *  section), so a user can drop this overlay's markers from a framed export.
+   *  Strings arrive already localized — extensions own their own strings. The hide
+   *  applies only WHILE the Capture tool is armed (App reverts the map to every
+   *  overlay the moment it closes); omit to keep the overlay always drawn. */
+  captureToggle?: { title: string; hint: string };
   /** The positioned DOM, re-rendered on every map move. */
   render: (api: MapOverlayApi) => ReactNode;
 }

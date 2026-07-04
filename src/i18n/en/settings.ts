@@ -69,6 +69,10 @@ export const settings = {
   aspectLines: {
     title: 'Aspect Lines',
     hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the Asc doubles as a sextile to the Dsc; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
+    // The gated-tier "open the Aspects window" sub-row (shows while the toggle is on).
+    openHud: 'Customize',
+    openHudHint:
+      'Open the Aspects window: filter the map’s lines by quality and axis, and set every aspect orb at once.',
   },
   midpointLines: {
     title: 'Midpoint Lines',

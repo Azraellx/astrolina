@@ -29,6 +29,21 @@
   background-color: #d6e4f4;
 }
 
+/* Local Space ▸ "Hide map (transparent)": every basemap layer is blanked (see
+   basemapStyle applyDetailToggles), leaving the GL canvas see-through behind the
+   chart linework. Live, show the image-editor checkerboard as the "this area is
+   transparent" signal — !important so it also replaces the globe-void colors above.
+   The pattern never reaches an export: captureFrame skips its backdrop fill while
+   the basemap is hidden, and its onclone forces this background transparent (with
+   priority) before rasterising. */
+.map-container.basemap-hidden {
+  background: repeating-conic-gradient(
+      rgba(128, 128, 128, 0.18) 0% 25%,
+      rgba(128, 128, 128, 0.05) 0% 50%
+    )
+    0 0 / 22px 22px !important;
+}
+
 /* Capture frame. Normally fills the whole map area (inset:0), so the
    non-framed layout is byte-for-byte unchanged. The Capture tool insets it (explicit
    left/top/right/bottom set inline) to a centred aspect-ratio box. Deliberately has
