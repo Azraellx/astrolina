@@ -1167,6 +1167,11 @@ interface MapProps {
    *  a prop (not a CSS var) so the inline style and the resize() layout effect
    *  land on the same commit. Ignored while the Capture frame owns the insets. */
   bottomInset?: number;
+  /** Width (px) of a reserved LAYOUT band along the viewport LEFT (a docked panel
+   *  that claims its own column, e.g. a left-docked document view): the map frame
+   *  shrinks out from under it and the GL viewport re-fits. Same prop-not-var
+   *  reasoning as {@link bottomInset}; likewise ignored under the Capture frame. */
+  leftInset?: number;
   theme: Theme;
   /** Flat Mercator ('2d') or 3D globe ('3d'). */
   projection: MapProjectionMode;
@@ -1325,25 +1330,29 @@ function snapshotView(map: maplibregl.Map): SavedView {
   };
 }
 
-// Fly the camera to lng/lat at `zoom`, nudged clear of the left-docked expanded
-// sidebar (its width is published as --es-width on <html>): shift right by a
-// quarter-width so the target lands where the centered nav/timeline bars sit
-// rather than behind the panel. Shared by flyTo / teleportTo and the paran / LS /
-// zenith label clicks.
+// Fly the camera to lng/lat at `zoom`, nudged clear of a left-docked panel (its
+// width is published as --es-width on <html>): shift right by a quarter-width so
+// the target lands where the centered nav/timeline bars sit rather than behind the
+// panel. A panel that RESERVES its width already shrank the GL viewport out from
+// under itself (`leftInset`), so that portion needs no nudge — only the OVERLAID
+// remainder (--es-width beyond the reserved inset) does. Shared by flyTo /
+// teleportTo and the paran / LS / zenith label clicks.
 function flyWithSidebarOffset(
   map: maplibregl.Map,
   lng: number,
   lat: number,
   zoom: number,
+  leftInset: number,
 ) {
   const esWidth =
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
     ) || 0;
+  const overlaid = Math.max(0, esWidth - leftInset);
   map.flyTo({
     center: [lng, lat],
     zoom,
-    offset: [esWidth / 4, 0],
+    offset: [overlaid / 4, 0],
     essential: true,
   });
 }
@@ -2396,6 +2405,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   initialCenter,
   initialView,
   bottomInset = 0,
+  leftInset = 0,
   theme,
   projection,
   showRoads = true,
@@ -2446,12 +2456,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // pre-jump camera here; teleportBack() swaps current<->saved so the same button
   // toggles between the two locations (two-deep, like browser back/forward).
   const teleportBackRef = useRef<SavedView | null>(null);
+  // The reserved left inset in a ref, so the stable (deps []) fly handlers read the
+  // current reserved width at call time without re-creating.
+  const leftInsetRef = useRef(leftInset);
+  useEffect(() => {
+    leftInsetRef.current = leftInset;
+  }, [leftInset]);
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat: number, lng: number, zoom?: number) => {
       const map = mapRef.current;
       if (!map) return;
-      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current);
     },
     getView: () => {
       const map = mapRef.current;
@@ -2464,7 +2480,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!map) return null;
       // Remember where we are so "Go back" can return here.
       teleportBackRef.current = snapshotView(map);
-      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current);
       // [lng, lat] -> {lat, lng}: the pre-jump centre "Go back" now targets.
       const c = teleportBackRef.current.center;
       return { lat: c[1], lng: c[0] };
@@ -2957,7 +2973,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // so shift the geographic target by the same −θ to land on the point as drawn
     // (badge clicks pass natal-frame coordinates).
     const lngAdj = slideActiveRef.current ? lng - spinDegRef.current : lng;
-    flyWithSidebarOffset(map, lngAdj, lat, Math.max(map.getZoom(), 4));
+    flyWithSidebarOffset(map, lngAdj, lat, Math.max(map.getZoom(), 4), leftInsetRef.current);
   }, []);
 
   // Clicking a paran badge flies to that paran's intersection; clicking the SAME
@@ -4085,7 +4101,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const screenPortrait = H > W;
       const mx = touch && screenPortrait ? 0 : 0.1; // horizontal margin fraction
       const my = 0.1; // vertical margin fraction
-      const usableW = W * (1 - 2 * mx);
+      // A reserved left column (a docked panel that shrank the map) is unusable space:
+      // the Capture frame itself ignores that inset, so fit + centre the frame in the
+      // VISIBLE area to its right — the same "use the room you actually have" move as the
+      // cramped mobile screen — so the whole frame stays on-screen instead of hiding
+      // under the dock. availW collapses to the full width when nothing is docked.
+      const availW = Math.max(0, W - leftInset);
+      const usableW = availW * (1 - 2 * mx);
       const usableH = H * (1 - 2 * my);
       let boxW: number;
       let boxH: number;
@@ -4096,7 +4118,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         boxW = usableW;
         boxH = boxW / frameAspect;
       }
-      const ix = Math.round((W - boxW) / 2);
+      // Horizontal insets from each host edge. With a reserved left column the frame
+      // skews TOWARD the dock — a 25/75 padding split of the leftover width, not a
+      // 50/50 centre — since sitting nearer the dock reads more naturally than floating
+      // dead-centre in the visible strip. Plain centre (50/50) when nothing is docked.
+      const freeW = availW - boxW;
+      const leftPadFrac = leftInset > 0 ? 0.25 : 0.5;
+      const il = Math.round(leftInset + freeW * leftPadFrac);
+      const ir = Math.round(W - il - boxW);
       // Landscape mobile: pin the frame flush to the bottom (no margin — like the full-bleed
       // portrait sides) so it clears the top nav and uses the most space; else centre vertically.
       const bottomAlign = touch && !screenPortrait;
@@ -4110,12 +4139,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // shown even when no caption field is enabled (so the caption text is just blank).
       const cap = Math.max(Math.round(boxW * bandFrac), 22);
       // boxW is kept so the wheel view can size its wheel to a fraction of the frame width.
-      setFrameInset({ l: ix, t: iy, r: ix, b: iyb, cap, boxW: Math.round(boxW) });
+      setFrameInset({ l: il, t: iy, r: ir, b: iyb, cap, boxW: Math.round(boxW) });
     };
     compute();
     window.addEventListener('resize', compute);
     return () => window.removeEventListener('resize', compute);
-  }, [frameActive, frameAspect]);
+  }, [frameActive, frameAspect, leftInset]);
 
   // The Capture "Extras" panel (planet/angle positions) docks LEFT for landscape frames
   // and TOP otherwise; it measures its own content and reports the cross-axis px here, and
@@ -4149,12 +4178,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }, [showExtras]);
 
   // Match the GL viewport to the inset container once it's laid out (layout effect so
-  // there's no flash of the old size), and again when the frame, extras inset, or the
-  // reserved bottom band changes. bottomInset arrives as an inline style on the same
-  // commit, so the container already has its final height when this measures it.
+  // there's no flash of the old size), and again when the frame, extras inset, or a
+  // reserved bottom/left band changes. Both insets arrive as inline styles on the same
+  // commit, so the container already has its final size when this measures it.
   useLayoutEffect(() => {
     mapRef.current?.resize();
-  }, [frameInset, extraSize, bottomInset]);
+  }, [frameInset, extraSize, bottomInset, leftInset]);
 
   // Esc exits whichever map tool is armed — the keyboard counterpart to the right-click
   // cancel that Measure/Slide already have, and Capture's primary exit. It calls each
@@ -4916,11 +4945,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 '--capture-extra-left': `${showExtras && extraSide === 'left' ? extraSize : 0}px`,
                 '--capture-extra-top': `${showExtras && extraSide === 'top' ? extraSize : 0}px`,
               } as CSSProperties)
-            : bottomInset
-              ? // A reserved bottom layout band (e.g. a docked bar): the whole frame —
-                // canvas, edge badges, markers, attribution — lifts above it as one
+            : bottomInset || leftInset
+              ? // A reserved bottom and/or left layout band (e.g. a docked bar or a
+                // left-docked panel): the whole frame — canvas, edge badges, markers,
+                // attribution — lifts above / shrinks in from the reserved edge as one
                 // unit, and the resize layout effect re-fits the GL viewport.
-                { bottom: bottomInset }
+                {
+                  bottom: bottomInset || undefined,
+                  left: leftInset || undefined,
+                }
               : undefined
         }
       >

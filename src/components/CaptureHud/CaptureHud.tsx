@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
+import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
 import { useTouchLayout, usePhone } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -101,6 +102,17 @@ function ShareIcon() {
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
       <path d="M16 6l-4-4-4 4" />
       <path d="M12 2v13" />
+    </svg>
+  );
+}
+
+function FilePlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M12 18v-6" />
+      <path d="M9 15h6" />
     </svg>
   );
 }
@@ -260,6 +272,7 @@ export function CaptureHud({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [sinkDone, setSinkDone] = useState(false);
   const [failed, setFailed] = useState(false);
   // Show the native Share button only on touch devices that can share image files — on
   // desktop the Download / Copy buttons cover it, so Share is just clutter there.
@@ -402,6 +415,43 @@ export function CaptureHud({
     }
   }, [busy, onCapture, fileName, divertIfLocked, t]);
 
+  // Optional registered destination (lib/extensions/captureSink) — a fourth action
+  // that hands the frame to whatever surface registered it. Deliberately NOT diverted
+  // through the capture-export gate: a sink only offers itself while its own (already
+  // entitlement-gated) surface is active, whereas the gate covers the generic export
+  // actions, whose availability is otherwise universal. Read fresh each render so the
+  // button tracks the sink's own activity (e.g. it withdraws once its target is full).
+  const sink = getCaptureSink();
+  const sinkActive = sink != null && sink.isActive();
+  const onSendToSink = useCallback(async () => {
+    const s = getCaptureSink();
+    if (!s || busy) return;
+    setBusy(true);
+    setFailed(false);
+    setSinkDone(false);
+    try {
+      const blob = await onCapture();
+      if (!blob) {
+        setFailed(true);
+        return;
+      }
+      await s.onCapture(blob);
+      setSinkDone(true);
+      setTimeout(() => setSinkDone(false), 1800);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, onCapture]);
+
+  // How many action buttons render this frame — download + copy are always in;
+  // share, copy-link and the sink each add one when present. Drives the row
+  // layout (CSS keys off data-actions): ≤3 stay one row; 4 splits 2+2, 5 → 3+2,
+  // 6 → 3+3 (the grid fills top row first at 3 columns).
+  const actionCount =
+    2 + (supportsShare ? 1 : 0) + (shareLink ? 1 : 0) + (sinkActive ? 1 : 0);
+
   return (
     <div
       ref={hudRef}
@@ -540,7 +590,7 @@ export function CaptureHud({
           ))}
         </div>
 
-        <div className="capture-hud-actions">
+        <div className="capture-hud-actions" data-actions={actionCount}>
           <TipBtn
             className="location-ls-fly capture-hud-btn"
             onClick={onDownload}
@@ -589,6 +639,20 @@ export function CaptureHud({
             >
               <LinkIcon />
               <span>{linkCopied ? t('captureHud.link.done') : t('captureHud.link.title')}</span>
+            </TipBtn>
+          )}
+          {/* Registered destination (captureSink) — labels arrive from the registration,
+              already localized; failures share the generic status line below. */}
+          {sink != null && sinkActive && (
+            <TipBtn
+              className="location-ls-fly capture-hud-btn"
+              onClick={onSendToSink}
+              disabled={busy}
+              title={sink.label}
+              hint={sink.hint}
+            >
+              <FilePlusIcon />
+              <span>{sinkDone ? sink.doneLabel : sink.label}</span>
             </TipBtn>
           )}
         </div>

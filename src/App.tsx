@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   getMapExtensions,
   isEntitled,
@@ -47,6 +47,7 @@ import {
 } from './components/SkyBand/SkyBand';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
+import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
@@ -1408,6 +1409,10 @@ export default function App() {
     publishBottomDock('sky-band', skyBandVisible ? skyBandH : 0);
     return () => retireBottomDock('sky-band');
   }, [skyBandVisible, skyBandH]);
+  // The widest RESERVED left dock (lib/leftDock) — a panel claiming its own column
+  // rather than overlaying. Read into state (not the --es-width var) so the map's
+  // inset arrives as a prop on the same commit as its resize (see lib/leftDock).
+  const reservedLeftInset = useSyncExternalStore(subscribeReservedLeftInset, getReservedLeftInset);
   useEffect(() => {
     localStorage.setItem('astro:view-local-space:v1', showLocalSpace ? '1' : '0');
   }, [showLocalSpace]);
@@ -3200,6 +3205,11 @@ export default function App() {
     return open;
   });
   const toggleExtension = useCallback((id: string) => {
+    // A left-column extension and the expanded chart panel both own the left edge —
+    // opening one closes the other. Safe in both toggle directions: when closing this
+    // extension the panel is already down (it couldn't have coexisted), so it's a no-op.
+    const ext0 = getMapExtensions().find((e) => e.id === id);
+    if (ext0?.reservesLeftColumn) setWheelExpanded(false);
     setOpenExtensions((prev) => {
       const next = new Set(prev);
       const nowOpen = !next.has(id);
@@ -3217,6 +3227,8 @@ export default function App() {
   // Force a registered extension OPEN (vs. the toggle above) — handed to extensions via the
   // context as openExtension, e.g. a map overlay opening its companion HUD on a marker click.
   const openExtensionById = useCallback((id: string) => {
+    const ext0 = getMapExtensions().find((e) => e.id === id);
+    if (ext0?.reservesLeftColumn) setWheelExpanded(false); // left-column takeover — see toggleExtension
     setOpenExtensions((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -3274,6 +3286,11 @@ export default function App() {
       return next;
     });
   }, []);
+
+  // Arm the built-in capture tool — handed to extensions via the context as openCapture, e.g. a HUD
+  // offering "grab the current map view" toward a registered capture destination. Idempotent while
+  // armed; the effect below then closes any open tool extension, keeping the one-active-tool rule.
+  const openCaptureTool = useCallback(() => setMapTool('capture'), []);
 
   // Arming a built-in tool closes any open tool extension, so only ONE tool is ever active. One-way
   // (clearing extensions can't re-arm a built-in), so it can't loop with toggleTool's disarm above.
@@ -3565,6 +3582,7 @@ export default function App() {
       setOverlayMode: selectOverlay,
       openExtension: openExtensionById,
       openTool: openToolById,
+      openCapture: openCaptureTool,
       setLineSpotlight,
       collectAllLines,
     }),
@@ -3596,6 +3614,7 @@ export default function App() {
       selectOverlay,
       openExtensionById,
       openToolById,
+      openCaptureTool,
       collectAllLines,
     ],
   );
@@ -3648,6 +3667,9 @@ export default function App() {
         initialView={sharedBoot?.view ?? null}
         // The Sky Band reserves a bottom layout band — the GL frame lifts above it.
         bottomInset={skyBandVisible ? skyBandH : 0}
+        // A docked panel that reserves a left column (lib/leftDock) — the GL frame
+        // shrinks in from the left so the panel sits in its own space, not over the map.
+        leftInset={reservedLeftInset}
         theme={theme}
         projection={projection}
         showRoads={showRoads}
@@ -4046,12 +4068,15 @@ export default function App() {
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
           with no edits to this file. Entitled → the HUD (the menu hides it
           otherwise). A 'timeline-drawer'-surface extension renders only while a
-          time overlay's bar is up; its OPEN state stays put across overlay
-          cycles, like the drawer's other toggles. */}
+          time overlay's bar is up; a left-column extension (reservesLeftColumn)
+          yields while the expanded chart panel — the other left-edge owner — is
+          up. Either way the OPEN state stays put (like the drawer's toggles), so
+          the extension returns when the gating condition clears. */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getMapExtensions().map((ext) =>
         openExtensions.has(ext.id) &&
-        (ext.surface !== 'timeline-drawer' || isTimeMode) ? (
+        (ext.surface !== 'timeline-drawer' || isTimeMode) &&
+        (!ext.reservesLeftColumn || !wheelExpanded) ? (
           <Fragment key={ext.id}>
             {isEntitled(ext)
               ? ext.render(extensionCtx, () => toggleExtension(ext.id))

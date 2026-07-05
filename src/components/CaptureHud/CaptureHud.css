@@ -102,17 +102,28 @@
   background: rgba(var(--accent-brand-rgb), 0.22);
 }
 
-/* Action buttons (Download / Copy / Share) share one row, each an equal-width column
-   (icon over label) so all are identical in size whether there are two (desktop) or
-   three (touch, with Share). Stacking keeps even the longest label fitting at 1/3 width. */
+/* Action buttons (Download / Copy / Share / Copy link / the sink) — an equal-width
+   grid, each cell an icon over its label. The column count keys off data-actions so
+   the row never crowds: up to 3 stay on one line; 4 splits 2+2, 5 → 3+2, 6 → 3+3
+   (row-major fill puts the extra on the top row at 3 columns). Every button stays
+   the same width within a layout, so labels stay legible and aligned. */
 .capture-hud-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr; /* 1 button */
   align-items: stretch;
   gap: 7px;
   margin-top: 4px;
 }
+.capture-hud-actions[data-actions='2'],
+.capture-hud-actions[data-actions='4'] {
+  grid-template-columns: repeat(2, 1fr);
+}
+.capture-hud-actions[data-actions='3'],
+.capture-hud-actions[data-actions='5'],
+.capture-hud-actions[data-actions='6'] {
+  grid-template-columns: repeat(3, 1fr);
+}
 .capture-hud-btn {
-  flex: 1 1 0;
   min-width: 0;
   margin: 0;
   flex-direction: column;

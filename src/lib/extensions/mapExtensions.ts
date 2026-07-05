@@ -113,6 +113,10 @@ export interface MapExtensionContext {
    *  {@link openExtension}: lets one HUD launch a companion tool — e.g. a HUD opening a map tool
    *  already positioned at a chosen point. */
   openTool: (id: string) => void;
+  /** Arm the built-in frame-capture tool (the same action as its Tools-menu entry / hotkey);
+   *  idempotent while already armed. Lets a HUD offer "grab the current map view" — pair with a
+   *  registered capture destination (lib/extensions/captureSink) to receive the frame. */
+  openCapture: () => void;
   /** Focus the linework to a radius around a point: dims the basemap and reveals only the lines
    *  passing within `radiusKm` of the spotlight's `center` (a null center dims + hides all lines;
    *  passing null clears it). Everything else on the map is untouched — purely a view treatment. */
@@ -151,6 +155,11 @@ export interface MapExtension {
   defaultOpen?: boolean;
   /** Defaults to 'core'. A 'gated' extension is subject to the entitlement resolver. */
   tier?: Entitlement;
+  /** The extension docks a panel that RESERVES the left column (shrinks the map out
+   *  from under it — see lib/leftDock `reserve`). The host treats it as mutually
+   *  exclusive with the built-in expanded chart panel, since both own the left edge:
+   *  opening either closes the other. */
+  reservesLeftColumn?: boolean;
   /** The HUD, rendered when the extension is open AND entitled. */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
 }

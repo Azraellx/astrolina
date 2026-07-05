@@ -9,7 +9,9 @@
 .chart-info-panel {
   position: absolute;
   top: 120px;
-  left: 16px;
+  /* Clears a reserved left column (lib/leftDock `--es-width`), like the app header
+     and the on-map wheel; 16px from the map's own left edge when nothing is docked. */
+  left: calc(var(--es-width, 0px) + 16px);
   z-index: 10;
   width: 240px;
   max-height: calc(100vh - 120px - 360px - 16px);

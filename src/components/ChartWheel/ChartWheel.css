@@ -14,7 +14,10 @@
      already includes any inset it pads itself by, so env() is max'd against band+16,
      never added on top. */
   bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--sky-band-h, 0px) + 16px));
-  left: 16px;
+  /* Clears a reserved left column (a docked panel that shrinks the map — lib/leftDock
+     `--es-width`) just as the bottom clears the reserved sky band; 16px from the map's
+     own left edge when nothing is docked. */
+  left: calc(var(--es-width, 0px) + 16px);
   z-index: 10;
   width: 242px;
   padding: 10px 14px 12px;
