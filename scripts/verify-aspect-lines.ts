@@ -15,10 +15,11 @@
 //    longitude) — NEVER from a geometric inversion of the mean ra/dec, which
 //    for wide pairs lands whole degrees away (the sentinel below shows the
 //    gap it would introduce).
-//  - mundo: aspect offsets are measured in RIGHT ASCENSION from the same mean
-//    RA that draws the body's own angle lines, and pair midpoints are the
-//    bodily mean-RA/mean-declination points (the module's documented
-//    convention, which the composite bodies themselves now share).
+//  - mundo: ASPECT points are the body advanced by ±aspect in ecliptic
+//    longitude with its ecliptic LATITUDE retained (both signs are distinct
+//    lines and both are drawn), and pair MIDPOINTS are the bodily
+//    mean-RA/mean-declination points. Both keep the body off the ecliptic —
+//    the convention the composite bodies themselves share.
 //  - natal charts: positions carry nothing, so both frames reproduce the
 //    long-standing geometric round-trip exactly (verify-angle-aspects.mjs
 //    holds the external goldens for that path).
@@ -29,6 +30,7 @@ import {
   obliquity,
   projectOntoEcliptic,
   raDecToEclipticLon,
+  shiftEclipticLongitude,
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
@@ -52,6 +54,32 @@ const wrap2pi = (a: number) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
 // Angular difference in degrees, mod 360, mapped to [0, 180].
 const angErr = (a: number, b: number) =>
   Math.abs((((a - b + 180) % 360) + 360) % 360 - 180);
+
+// Latitude (deg) where a dense line feature crosses a target longitude (deg),
+// linearly interpolated across the first segment that straddles it. Coordinates
+// are unwrapped past ±180 for continuity (a horizon curve near 126°E can be
+// stored as ≈−234°), so the target is shifted into each segment's world copy
+// before testing. Segments that jump the antimeridian (|Δlng| > 180) are skipped.
+// NaN if the line never crosses.
+function crossingLat(
+  feature: Feature<LineString, AngleOverlayLineProps>,
+  targetLng: number,
+): number {
+  const cs = feature.geometry.coordinates;
+  for (let i = 1; i < cs.length; i++) {
+    const a = cs[i - 1][0];
+    const b = cs[i][0];
+    if (Math.abs(b - a) > 180 || a === b) continue;
+    const t = targetLng - 360 * Math.round((targetLng - a) / 360);
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    if (t >= lo && t <= hi) {
+      const f = (t - a) / (b - a);
+      return cs[i - 1][1] + f * (cs[i][1] - cs[i - 1][1]);
+    }
+  }
+  return NaN;
+}
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -132,17 +160,32 @@ const mcBranch = (fs: AspectFeature[], planet: PlanetName, aspect: string) =>
   );
 }
 
-// (2) MUNDO aspect lines on the midpoint chart: offsets measured in RA from
-// the body's own mean RA (the exact RA that anchors its base MC/IC lines), the
-// virtual point being the ecliptic degree holding that RA.
+// (2) MUNDO aspect lines on the midpoint chart: the virtual point is the body
+// advanced by ±aspect in ECLIPTIC LONGITUDE with its latitude retained
+// (shiftEclipticLongitude), and BOTH signs are drawn as distinct lines — not an
+// RA offset, and never projected onto the ecliptic (latitude 0).
 {
   const fs = generateAspectLines(mundo, mer, 'mundo', eps).features;
   for (const name of ['Moon', 'Jupiter', 'Saturn', 'Neptune'] as PlanetName[]) {
     const p = byName(mundo, name);
-    const got = mcBranch(fs, name, 'square');
+    // The two square/MC-branch lines are the +90 and −90 latitude-retained points.
+    const mcs = fs.filter(
+      (f) =>
+        f.properties.planet === name &&
+        f.properties.kind === 'aspect' &&
+        f.properties.branch === 'MC' &&
+        f.properties.aspect === 'square',
+    );
+    const wantRas = [90, -90].map(
+      (d) => shiftEclipticLongitude(p, d * DEG2RAD, eps).ra * RAD2DEG,
+    );
     check(
-      `mundo: ${name} square virtual point sits at mean RA + 90°`,
-      angErr(got.properties.targetLng, (p.ra + 90 * DEG2RAD) * RAD2DEG) < 1e-6,
+      `mundo: ${name} square draws BOTH ± points at the latitude-retained RAs`,
+      mcs.length === 2 &&
+        wantRas.every((w) =>
+          mcs.some((f) => angErr(f.properties.targetLng, w) < 1e-6),
+        ),
+      `RAs ${mcs.map((f) => f.properties.targetLng.toFixed(2)).join(', ')} vs ${wantRas.map((w) => w.toFixed(2)).join(', ')}`,
     );
   }
 }
@@ -219,16 +262,90 @@ const mcBranch = (fs: AspectFeature[], planet: PlanetName, aspect: string) =>
   );
 }
 
-// (6) The base lines and the aspect lines agree on the composite frame: the
-// virtual point of a mundo aspect and the body's own line family are anchored
-// by RAs exactly one aspect apart, so their meridians are parallel offsets.
+// (6) MUNDO: the trine draws both ±120 latitude-retained points; each virtual
+// point's RA is the ecliptic-longitude shift of the body (NOT RA ± 120, which
+// was the old projected-onto-ecliptic convention this replaced).
 {
   const fs = generateAspectLines(mundo, mer, 'mundo', eps).features;
   const sun = byName(mundo, 'Sun');
-  const trine = mcBranch(fs, 'Sun', 'trine');
+  const mcs = fs.filter(
+    (f) =>
+      f.properties.planet === 'Sun' &&
+      f.properties.kind === 'aspect' &&
+      f.properties.branch === 'MC' &&
+      f.properties.aspect === 'trine',
+  );
+  const wantRas = [120, -120].map(
+    (d) => shiftEclipticLongitude(sun, d * DEG2RAD, eps).ra * RAD2DEG,
+  );
   check(
-    'mundo: aspect meridian offset equals the aspect angle (Sun trine)',
-    angErr(trine.properties.targetLng, (sun.ra + 120 * DEG2RAD) * RAD2DEG) < 1e-6,
+    'mundo: Sun trine draws both ± points (ecliptic-longitude shift, latitude retained)',
+    mcs.length === 2 &&
+      wantRas.every((w) => mcs.some((f) => angErr(f.properties.targetLng, w) < 1e-6)),
+  );
+}
+
+// (7) Regression fixture from an external audit (Solar Fire / Matrix Horizons vs
+// AstroLina) of a high-latitude Pluto — the case that exposed the in-mundo bug.
+// Pluto RA 169°14′, dec +19°07′ (ecliptic λ ≈ 12°32′ Vir, β ≈ +13°19′); the
+// chart's GMST puts Pluto's own MC line at 126°E. The reference programs place
+// the aspect point at λ±90 with the planet's latitude RETAINED, which yields four
+// square meridians (a pair to the MC and a pair to the IC) and rising/setting
+// crossings well off the equator — where the old projected method collapsed them
+// to a single meridian (~143°W) and 0°N parans.
+{
+  const epsL = 23.4367 * DEG2RAD;
+  const GMST = 43.2333; // deg — Pluto/MC at 126°E means RA − GMST = 126
+  const merL = (ra: number) => {
+    const x = ra * RAD2DEG - GMST;
+    return ((x + 180) % 360 + 360) % 360 - 180;
+  };
+  const pluto: PlanetPosition = {
+    name: 'Pluto',
+    ra: (169 + 14 / 60) * DEG2RAD,
+    dec: (19 + 7 / 60) * DEG2RAD,
+  };
+  const fs = generateAspectLines([pluto], merL, 'mundo', epsL)
+    .features as Feature<LineString, AngleOverlayLineProps>[];
+  const sqBranch = (branch: string) =>
+    fs.filter(
+      (f) =>
+        f.properties.kind === 'aspect' &&
+        f.properties.aspect === 'square' &&
+        f.properties.branch === branch,
+    );
+  const matches = (vals: number[], targets: number[], tol: number) =>
+    vals.length === targets.length &&
+    targets.every((tg) => vals.some((v) => angErr(v, tg) < tol));
+
+  const mcLngs = sqBranch('MC').map((f) => f.properties.targetLng);
+  check(
+    'Lina fixture: square/MC meridians at 150.4°W and 25.7°E (both ± points)',
+    matches(mcLngs, [-150.4, 25.7], 0.5),
+    `got ${mcLngs.map((x) => x.toFixed(1)).join(', ') || '—'}`,
+  );
+  const icLngs = sqBranch('IC').map((f) => f.properties.targetLng);
+  check(
+    'Lina fixture: square/IC meridians at 29.6°E and 154.3°W',
+    matches(icLngs, [29.6, -154.3], 0.5),
+    `got ${icLngs.map((x) => x.toFixed(1)).join(', ') || '—'}`,
+  );
+  // The headline bug: aspect parans collapsing onto the equator. The +90 point's
+  // rising branch (sub-point near 150°W) must cross Pluto's own MC meridian
+  // (126°E) near 35°N — not 0°N.
+  const ascFeats = sqBranch('ASC');
+  const ascPlus = ascFeats.reduce(
+    (best, f) =>
+      angErr(f.properties.targetLng, -150.4) < angErr(best.properties.targetLng, -150.4)
+        ? f
+        : best,
+    ascFeats[0],
+  );
+  const latAsc = ascPlus ? crossingLat(ascPlus, 126) : NaN;
+  check(
+    'Lina fixture: +90 rising branch crosses 126°E near 35°N (not the equator)',
+    Number.isFinite(latAsc) && Math.abs(latAsc - 35.1) < 1.5,
+    `got ${Number.isFinite(latAsc) ? latAsc.toFixed(1) + '°' : 'no crossing'}`,
   );
 }
 

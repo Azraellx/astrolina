@@ -273,8 +273,10 @@ export function computeLineBadges(
     const prefix = tag ?? '';
     // aspect/planetB join the key so each aspect or midpoint line labels its own
     // ends — they all share a planet + lineType within one body's set. `branch`
-    // separates an aspect's two same-label sides (e.g. both trine-MC meridians).
-    const key = `${planet}|${lineType}|${prefix}|${aspect ?? ''}|${branch ?? ''}|${planetB ?? ''}`;
+    // separates an aspect's two same-label sides (e.g. both trine-MC meridians);
+    // targetLng separates the two same-branch lines an in-mundo aspect draws for
+    // its +a and −a points (the two square-MC meridians at different longitudes).
+    const key = `${planet}|${lineType}|${prefix}|${aspect ?? ''}|${branch ?? ''}|${planetB ?? ''}|${targetLng ?? ''}`;
     const meta: LineMeta = {
       color, planet, lineType, prefix, pair, aspect, branch, planetB, targetLng, targetLat,
     };

@@ -71,6 +71,10 @@ function check(name, actual, expected, tolDeg = 1e-6) {
     `${ok ? 'PASS' : 'FAIL'}  ${name}  (err ${err.toExponential(2)}°)`,
   );
 }
+function checkTrue(name, ok, detail = '') {
+  if (!ok) failures++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
+}
 
 // Einstein 1879-03-14 11:30 LMT Ulm — same fixture as verify-relocate.mjs.
 const jd0 = julianDay(1879, 3, 14, 0, CalendarType.Gregorian);
@@ -115,26 +119,73 @@ check(
   );
 }
 
-// 3. In mundo square: eclipticLonOfRA inverts RA(λ,0), so the virtual point's
-//    RA lands exactly Sun.ra + 90°.
+// 3. IN-MUNDO square (latitude RETAINED): the map's mundo mode advances the body
+//    by 90° of ecliptic longitude WITHOUT dropping its ecliptic latitude — the
+//    virtual point is (λ+90, β), matching Solar Fire / Matrix Horizons. Tested
+//    end-to-end with Pluto (well off the ecliptic): stand on that point's meridian
+//    at 47°N and Swiss's culminating ecliptic degree is eclipticLonOfRA of the
+//    point's RA. Because the point carries latitude, that MC is NOT 90° from
+//    Pluto, so the mundo line sits measurably off the zodiacal square-MC line —
+//    exactly the difference the audit flagged.
 {
-  const lonV = eclipticLonOfRA(sun.ra + 90 * DEG2RAD, eps);
-  const v = eclipticToRaDec(lonV, 0, eps);
-  check('mundo: RA(virtual) − RA(Sun) = 90°', (v.ra - sun.ra) * RAD2DEG, 90);
+  const pEcl = calculatePosition(jd, Planet.Pluto, FLAG);
+  const pEqu = calculatePosition(jd, Planet.Pluto, FLAG | CalculationFlag.Equatorial);
+  const pl = { lon: pEcl.longitude * DEG2RAD, lat: pEcl.latitude * DEG2RAD };
+  const vm = eclipticToRaDec(wrap2pi(pl.lon + 90 * DEG2RAD), pl.lat, eps); // β retained
+  const lngM = ((((vm.ra - gmst) * RAD2DEG + 180) % 360) + 360) % 360 - 180;
+  const hM = calculateHouses(jd, 47.0, lngM, HouseSystem.Placidus);
+  check(
+    'mundo square: MC on the (λ+90, β) line = eclipticLonOfRA(that point’s RA)',
+    hM.mc,
+    eclipticLonOfRA(vm.ra, eps) * RAD2DEG,
+    1e-3,
+  );
+  const sepMC = Math.abs(
+    ((hM.mc - (pl.lon * RAD2DEG + 90) + 180) % 360 + 360) % 360 - 180,
+  );
+  const betaDeg = pl.lat * RAD2DEG;
+  if (Math.abs(betaDeg) > 0.5) {
+    checkTrue(
+      'mundo square carries latitude: MC differs from the zodiacal +90°',
+      sepMC > 0.2,
+      `${sepMC.toFixed(2)}° off, β=${betaDeg.toFixed(2)}°`,
+    );
+  } else {
+    console.log(
+      `SKIP  mundo-vs-zodiacal discriminator (β=${betaDeg.toFixed(2)}° too small on this date)`,
+    );
+  }
 }
 
-// 4. Antipodal symmetry (the positive-offset sufficiency argument): the
-//    sextile point of a body's antipode is the antipode of the body's own
-//    sextile point — so South Node aspect lines duplicate the North Node's.
+// 4. Antipodal symmetry (justifies dropping the South Node — its aspect set
+//    coincides with the North Node's): a point's four lines equal its antipode's
+//    lines with MC↔IC and ASC↔DSC swapped, in either frame. In ZODIACO the +a
+//    and −a points are exact antipodes (so one +a point suffices per aspect); in
+//    MUNDO they are NOT (the antipode negates the latitude), which is precisely
+//    why the mundo generator draws BOTH signs.
 {
   const a = 60 * DEG2RAD;
   const p1 = eclipticToRaDec(wrap2pi(sun.lon + a), 0, eps);
   const p2 = eclipticToRaDec(wrap2pi(sun.lon + Math.PI + a), 0, eps);
-  check('antipode: ΔRA = 180°', (p2.ra - p1.ra) * RAD2DEG, 180);
-  check('antipode: dec negated', (p2.dec + p1.dec) * RAD2DEG, 0, 1e-9);
-  const m1 = eclipticLonOfRA(sun.ra + a, eps);
-  const m2 = eclipticLonOfRA(sun.ra + Math.PI + a, eps);
-  check('mundo antipode: Δλ = 180°', (m2 - m1) * RAD2DEG, 180);
+  check('zodiaco antipode: ΔRA = 180°', (p2.ra - p1.ra) * RAD2DEG, 180);
+  check('zodiaco antipode: dec negated', (p2.dec + p1.dec) * RAD2DEG, 0, 1e-9);
+  // A latitude-carrying body: its +a and −a mundo points are distinct (not the
+  // same line), so both must be drawn. Use Pluto (well off the ecliptic).
+  const pEcl = calculatePosition(jd, Planet.Pluto, FLAG);
+  const beta = pEcl.latitude * DEG2RAD;
+  const lon = pEcl.longitude * DEG2RAD;
+  const vPlus = eclipticToRaDec(wrap2pi(lon + a), beta, eps);
+  const vMinus = eclipticToRaDec(wrap2pi(lon - a), beta, eps);
+  // Angular RA separation in [0, 180]: neither ~0 (same line) nor ~180 (antipodal
+  // → one would substitute for the other). It is ~2a skewed by the latitude.
+  const dRa = Math.abs(
+    (((vPlus.ra - vMinus.ra) * RAD2DEG + 180) % 360 + 360) % 360 - 180,
+  );
+  checkTrue(
+    'mundo: the +a and −a points are distinct, non-antipodal lines (both drawn)',
+    dRa > 1 && dRa < 179,
+    `ΔRA ${dRa.toFixed(1)}°`,
+  );
 }
 
 // 5. END-TO-END (zodiacal square MC): stand on the virtual point's meridian

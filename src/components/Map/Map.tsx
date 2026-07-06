@@ -1073,11 +1073,30 @@ function lineAtPoint(
   // crosses the polar circle along one line.
   const polarKey = Math.abs(hoverLat) > POLAR_LAT ? 'p' : '';
   return {
-    id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${polarKey}`,
+    // targetLng joins the id so the popup re-renders when the hover moves between
+    // an aspect's two same-label branches (e.g. the two square-MC meridians an
+    // in-mundo aspect draws), which share label/planet but sit at different points.
+    id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${f.properties.targetLng ?? ''}|${polarKey}`,
     html,
     layerId: f.layer.id,
     props: f.properties,
   };
+}
+
+// Cap how far the FLAT map can zoom out so the viewport never spans more than one
+// world (360° of longitude). Below that, MapLibre's world copies repeat and each
+// line draws in every copy — a meridian at 126°E reappearing at 234°W, etc. The
+// world is 512·2^zoom px wide, so the zoom where it just fills the container is
+// z = log2(width / 512); pin minZoom there (setMinZoom clamps the current zoom up
+// if needed). The globe shows a single copy inherently, so it keeps minZoom 0.
+function applyMinZoom(map: maplibregl.Map, mode: MapProjectionMode): void {
+  if (mode === '3d') {
+    map.setMinZoom(0);
+    return;
+  }
+  const w = map.getContainer().clientWidth;
+  if (w <= 0) return;
+  map.setMinZoom(Math.max(0, Math.log2(w / 512)));
 }
 
 // Apply a projection mode to the live map: swap mercator↔globe, gate rotate/tilt
@@ -1098,6 +1117,7 @@ function applyProjection(map: maplibregl.Map, mode: MapProjectionMode): void {
     map.setBearing(0);
     map.setPitch(0);
   }
+  applyMinZoom(map, mode);
 }
 
 interface MapProps {
@@ -3602,6 +3622,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // in container coordinates), so the cache is stale the same way.
     map.on('resize', () => {
       hudRectsRef.current = null;
+      // The flat-map zoom floor is width-dependent (log2(width/512)), so recompute
+      // it whenever the container resizes or the phone rotates.
+      applyMinZoom(map, projectionRef.current);
       scheduleBadgesRef.current();
     });
 

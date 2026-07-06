@@ -8,38 +8,38 @@
 //
 // Both techniques reduce to the same trick: every one of their lines is one of
 // the four standard angle lines (MC/IC/ASC/DSC) of a VIRTUAL POINT, so we build
-// that point and reuse `generateLines` unchanged.
+// that point and reuse `generateLines` unchanged. The aspect itself is always an
+// ECLIPTIC-LONGITUDE relation (60°/90°/120°); the Zodiacal / In-Mundo setting
+// decides only whether the virtual point keeps the body's ecliptic latitude.
 //
-//  - Aspect lines: the virtual point sits one aspect (60°/90°/120°) ahead of
-//    the planet on the ecliptic. Positive offsets suffice: the point at λ+60
-//    yields four lines that, between them, carry every ±60/±120 relation to
-//    both ends of each axis (the antipodal point's lines are the same set with
-//    MC↔IC, ASC↔DSC swapped). Conjunctions are skipped (they ARE the base
-//    planet lines), and so are oppositions (opposite the MC = conjunct the IC,
-//    another base line).
+//  - Aspect lines — the virtual point is the planet advanced by ±aspect in
+//    ecliptic longitude. Conjunctions are skipped (they ARE the base planet
+//    lines) and so are oppositions (opposite the MC = conjunct the IC).
 //
-//    LABELS follow the astrologers' convention (Solar Maps et al.) of reading
-//    every line as an aspect to the MC or the ASC: the λ+60 point's IC line —
-//    where the MC sits 120° behind the planet — is labeled "trine MC", not
-//    "sextile IC" (one line, two equivalent readings; the hover tip shows
-//    both). Each (planet, aspect, angle) therefore appears twice, once per
-//    side, exactly like the two squares-to-MC in any aspect-line atlas.
+//    · zodiaco: the point is a DEGREE on the ecliptic (latitude → 0). The +a
+//      and −a degrees are exact antipodes, so a single +a point suffices: its
+//      four lines carry every ±a relation to both ends of each axis (its IC/DSC
+//      lines coincide with the −a point's MC/ASC lines). We label each line by
+//      the reading it also holds as an aspect to the MC or ASC — the +60 point's
+//      IC line, where the MC sits 120° behind the planet, stores "trine MC" —
+//      and `aspectBranchReading` recovers the geometry-true reading ("sextile
+//      Ic") for the hover tip, badge, and card.
+//
+//    · mundo: the point is the BODY, its ecliptic latitude RETAINED (the same
+//      longitude shift a solar-arc direction applies). Off the ecliptic the +a
+//      and −a points are no longer antipodal, so BOTH are drawn and each emits
+//      four distinct lines. This is what reproduces the reference programs'
+//      PAIRED aspect lines (two squares-to-MC at different longitudes) and their
+//      off-equator crossings; projecting the point onto the ecliptic instead
+//      (latitude → 0) collapses those crossings onto the equator and shifts the
+//      meridians several degrees. The relabel above still applies, so the shared
+//      consumers read every line by its own angle unchanged.
 //
 //  - Midpoint lines: the virtual point is the pair's midpoint; its four lines
 //    keep their own angle labels ("Su/Mo IC" is the far midpoint culminating).
-//
-// The measuring frame follows the Zodiacal / In-Mundo setting:
-//  - zodiaco: aspect offsets and midpoints are taken along ECLIPTIC LONGITUDE,
-//    and the virtual point sits on the ecliptic.
-//  - mundo:   along RIGHT ASCENSION. For ASPECTS the virtual point is the
-//    ecliptic degree whose RA is planet.ra + aspect (eclipticLonOfRA is the
-//    exact inverse of RA(λ, 0)) — the ASC and MC are ecliptic points by
-//    definition, so the aspect references the ecliptic degree holding the
-//    angle. For MIDPOINTS the virtual point is the BODILY midpoint — mean RA
-//    AND mean declination of the two bodies — matching how reference software
-//    (e.g. Solar Maps) places mundane midpoint lines; projecting it onto the
-//    ecliptic instead would shift the horizon lines by several degrees of
-//    longitude for declination-separated pairs.
+//    zodiaco averages the two ecliptic longitudes on the ecliptic; mundo takes
+//    the BODILY midpoint — mean RA AND mean declination of the two bodies —
+//    matching how reference software places mundane midpoint lines.
 //
 // Celestial vs geodetic needs no handling here: the injected `meridianLng`
 // already maps RA to geographic longitude for either system.
@@ -48,9 +48,9 @@ import {
   PLANET_CODES,
   PLANET_COLORS,
   PLANET_NAMES,
-  eclipticLonOfRA,
   eclipticToRaDec,
   raDecToEclipticLon,
+  shiftEclipticLongitude,
   type CoordSystem,
   type PlanetName,
   type PlanetPosition,
@@ -211,31 +211,41 @@ export function generateAspectLines(
   for (const p of src) {
     for (const aspect of ASPECT_KINDS) {
       const a = ASPECT_DEG[aspect] * DEG2RAD;
-      const lon =
+      // The virtual point(s) whose angle lines carry this aspect. zodiaco uses a
+      // single ecliptic degree (latitude 0): the +a and −a degrees are antipodes,
+      // so one point's four lines already carry every ±a reading. mundo advances
+      // the BODY by ±a in ecliptic longitude with its latitude retained (a
+      // solar-arc-style shift); off the ecliptic the two signs are distinct
+      // lines, so both are drawn (see the module header).
+      const points =
         coordSystem === 'zodiaco'
-          ? bodyLon(p, eps) + a
-          : eclipticLonOfRA(p.ra + a, eps);
-      const { ra, dec } = eclipticToRaDec(wrap2pi(lon), 0, eps);
-      const v = virtualPointLines(p.name, ra, dec, meridianLng);
-      for (const f of v.features) {
-        const own = f.properties.lineType;
-        // Relabel the far-side lines to the MC/ASC reading: the +a point's IC
-        // line is the (180−a)-to-MC line, its DSC line the (180−a)-to-ASC.
-        const farSide = own === 'IC' || own === 'DSC';
-        const angle: LineType = own === 'IC' ? 'MC' : own === 'DSC' ? 'ASC' : own;
-        const shown = farSide ? ASPECT_COMPLEMENT[aspect] : aspect;
-        features.push({
-          ...f,
-          properties: {
-            ...f.properties,
-            lineType: angle,
-            branch: own,
-            kind: 'aspect',
-            aspect: shown,
-            ...lineTarget(own, v.subLng, v.subLat),
-            label: `${PLANET_CODES[p.name]} ${ASPECT_GLYPHS[shown]} ${angle}`,
-          },
-        });
+          ? [eclipticToRaDec(wrap2pi(bodyLon(p, eps) + a), 0, eps)]
+          : [1, -1].map((sign) => {
+              const vp = shiftEclipticLongitude(p, sign * a, eps);
+              return { ra: vp.ra, dec: vp.dec };
+            });
+      for (const { ra, dec } of points) {
+        const v = virtualPointLines(p.name, ra, dec, meridianLng);
+        for (const f of v.features) {
+          const own = f.properties.lineType;
+          // Relabel the far-side lines to the MC/ASC reading: the +a point's IC
+          // line is the (180−a)-to-MC line, its DSC line the (180−a)-to-ASC.
+          const farSide = own === 'IC' || own === 'DSC';
+          const angle: LineType = own === 'IC' ? 'MC' : own === 'DSC' ? 'ASC' : own;
+          const shown = farSide ? ASPECT_COMPLEMENT[aspect] : aspect;
+          features.push({
+            ...f,
+            properties: {
+              ...f.properties,
+              lineType: angle,
+              branch: own,
+              kind: 'aspect',
+              aspect: shown,
+              ...lineTarget(own, v.subLng, v.subLat),
+              label: `${PLANET_CODES[p.name]} ${ASPECT_GLYPHS[shown]} ${angle}`,
+            },
+          });
+        }
       }
     }
   }
