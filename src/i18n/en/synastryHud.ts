@@ -30,7 +30,7 @@ export const synastryHud = {
     },
     composite: {
       label: 'Comp. Midpoints',
-      hint: 'Every planet and angle at the midpoint of the two charts (planets on the ecliptic); the map frame follows the composite Midheaven.',
+      hint: 'Every planet and angle at the midpoint of the two charts, each planet carrying a real latitude and declination. The map frame follows the composite Midheaven.',
     },
   },
   generate: {

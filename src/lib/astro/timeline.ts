@@ -94,18 +94,25 @@ export const TIME_UNKNOWN_BLOCKED_OVERLAYS = new Set<OverlayMode>([
   'cyclo',
 ]);
 
-/** The overlay modes a given chart cannot carry — the union of the composite and
- *  unknown-birth-time blocks. The one predicate behind the Overlay menu, the 'o'
- *  cycle, and the stale-mode reset, so the three can never disagree. */
+/** The overlay modes a given chart cannot carry — the composite block, the
+ *  unknown-birth-time block, and the Davison synastry block. The one predicate
+ *  behind the Overlay menu, the 'o' cycle, and the stale-mode reset, so they can
+ *  never disagree. */
 export function overlayBlockedFor(
-  chart: { composite?: unknown; timeKnown?: boolean } | null,
+  chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
 ): (mode: OverlayMode) => boolean {
   if (!chart) return () => false;
   const composite = !!chart.composite;
   const noTime = chart.timeKnown === false;
+  // A Davison is a locally-generated relationship chart: real natal math (so no
+  // `composite` payload) but system-tagged 'space' by the relationship generator.
+  // You can't add a partner to a chart that is already a two-person relationship
+  // chart, so Synastry is barred on it — the same reason a composite bars it.
+  const davison = !composite && chart.tag === 'space';
   return (mode) =>
     (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) ||
-    (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode));
+    (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode)) ||
+    (davison && mode === 'synastry');
 }
 
 // The auxiliary line families that derive from a chart's body set (as opposed to
