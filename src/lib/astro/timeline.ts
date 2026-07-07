@@ -108,6 +108,35 @@ export function overlayBlockedFor(
     (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode));
 }
 
+// The auxiliary line families that derive from a chart's body set (as opposed to
+// the primary angle lines): aspect-to-angle lines, midpoint lines, paran lines,
+// and fixed-star lines.
+export type AuxFamily = 'aspect' | 'midpoint' | 'paran' | 'star';
+
+// Which auxiliary families are INCOHERENT under a given overlay and so must be
+// suppressed. Cyclocartography is the sole blocker today: its "sky" stitches two
+// instants together (progressed personal planets + transiting outers), so any
+// construct that needs a single simultaneous moment breaks —
+//   · a paran is two bodies angular at ONE moment; across two epochs no such
+//     moment exists, so paran rows would be meaningless.
+//   · a midpoint collapses two bodies into ONE point; averaging a progressed and
+//     a transiting position joins two epochs into a single place — incoherent.
+// Aspect-to-angle and star lines stay allowed: each is a PER-BODY construct (a
+// body's own position aspecting/marking an angle) needing no cross-body
+// simultaneity, so each Cyclo body stands on its own well-defined position.
+export const AUX_BLOCKED_OVERLAYS: Record<AuxFamily, ReadonlySet<OverlayMode>> = {
+  aspect: new Set<OverlayMode>(),
+  midpoint: new Set<OverlayMode>(['cyclo']),
+  paran: new Set<OverlayMode>(['cyclo']),
+  star: new Set<OverlayMode>(),
+};
+
+/** Whether auxiliary family `f` is suppressed under overlay mode `m`. The one
+ *  predicate shared by the map's family generation and the sidebar toggle
+ *  gray-out, so the drawn set and the UI can never disagree. */
+export const overlayAuxBlocked = (m: OverlayMode, f: AuxFamily): boolean =>
+  AUX_BLOCKED_OVERLAYS[f].has(m);
+
 // The relationship-chart method the Synastry overlay's "Generate" button uses.
 // 'davison' is a real moment+place (cast like any chart); 'composite' (midpoint of
 // every planet between the two charts) is not yet wired — it needs precomputed
@@ -176,8 +205,8 @@ const CYCLO_PROGRESSED: ReadonlySet<string> = new Set([
 
 /** Cyclo*carto*graphy's per-body label tag: each feature names its actual
  *  SOURCE — "Sp" on the progressed personal planets, "Tr" on the transiting
- *  outers — rather than the mode. (A paran that PAIRS the two sets has no
- *  single source and keeps the mode tag "Cy"; see the App's paran tagger.) */
+ *  outers — rather than the mode. (Cyclo draws no parans or midpoint lines — its
+ *  two epochs share no single sky-moment — so no cross-source pairing arises.) */
 export const cycloBodyTag = (planet: PlanetName): string =>
   CYCLO_PROGRESSED.has(planet) ? 'Sp' : 'Tr';
 
@@ -631,8 +660,8 @@ export function buildOverlay(
 // code so overlay lines read e.g. "Tr ♂ MC". Tr transits · Sp secondary
 // progressions · Tp tertiary progressions · Sa solar arc · Sy synastry · Ec eclipse
 // chart. Cyclo is the exception: its features carry per-body SOURCE tags (cycloBodyTag
-// — Sp/Tr), and 'Cy' appears only on a paran pairing a progressed body with a
-// transiting one.
+// — Sp/Tr) rather than this mode prefix; it draws no parans or midpoint lines, so its
+// 'Cy' entry here is retained only for Record completeness and is applied to no feature.
 export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   transits: 'Tr',
   progressed: 'Sp',

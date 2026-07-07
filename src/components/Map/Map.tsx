@@ -927,6 +927,7 @@ function lineLabelHtml(
       // colorB carries the same light-theme Moon swap as props.color (see
       // App.withDarkMoon), so a "Sun/Moon" tip stays readable on Glass/Earth.
       row =
+        pre +
         glyphHtml(planet, props.color as string) +
         labels.planet(planet) +
         `<span class="cross-tip-x">/</span>` +
@@ -947,6 +948,7 @@ function lineLabelHtml(
         `<span class="astro-glyph cross-tip-glyph">${ASPECT_GLYPHS[a]}</span>`;
       const aspectWord = t(`expandedSidebar.aspect.${aspect}.name`);
       row =
+        pre +
         glyphHtml(planet, props.color as string) +
         `${labels.planet(planet)} ` +
         aspHtml(aspect) +
@@ -957,6 +959,7 @@ function lineLabelHtml(
     // Fixed-star line: ★ in the shared star tint, then "Name MC" like the
     // planet rows (star names are proper nouns, shown as-is).
     row =
+      pre +
       `<span class="cross-tip-glyph" style="color:${props.color}">★</span>` +
       `${props.star} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
@@ -1768,21 +1771,27 @@ function setupCustomLayers(
 
   // "Aspects to angles" overlays (aspect lines and/or midpoint lines — the two
   // toggles stack, concatenated into this one source). Added before the base
-  // acg-lines so those stay on top; thinner + long-dashed so the set reads as
-  // "derived from" the solid base lines (the [4,3] dash is longer than any
-  // timeline-overlay pattern).
+  // acg-lines so those stay on top; thinner + DOTTED (round-capped) so the set
+  // reads as "derived" from the solid base lines AND — since these lines follow
+  // the active frame (natal, or the overlay's own aspects/midpoints when an
+  // overlay is up) — stays distinct from the DASHED overlay primary lines that
+  // share that frame. The fixed-star lines are dotted too, but carry their ✦
+  // beads + starlight tint (and butt-cap fine dashes) to tell the two apart.
   map.addSource('angle-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'angle-lines-layer',
     source: 'angle-lines',
     type: 'line',
-    // Full opacity like every chart line; the thinner width + dash alone mark
-    // the set as "derived" from the solid base lines.
+    // Round caps turn the zero-length dashes into crisp round dots.
+    layout: { 'line-cap': 'round' },
+    // Full opacity like every chart line; the thinner width + round-dot pattern
+    // mark the set as "derived" and keep it distinct from both the solid base
+    // lines and the dashed overlays.
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 0.9,
+      'line-width': 1,
       'line-opacity': 1,
-      'line-dasharray': [4, 3],
+      'line-dasharray': [0, 2],
     },
   });
 

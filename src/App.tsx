@@ -157,6 +157,7 @@ import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
   overlayBlockedFor,
+  overlayAuxBlocked,
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
@@ -2422,17 +2423,117 @@ export default function App() {
     ephemerisEpoch,
   ]);
 
+  // The active overlay's drawing frame — its bodies (ecliptic-projected in
+  // zodiaco/geodetic, true-sky otherwise), the meridian mapping, its label prefix,
+  // and its epoch's obliquity. One source shared by the overlay's auxiliary line
+  // families (aspect/midpoint/star) so they can't drift from the base overlay lines.
+  const overlayFrame = useMemo(() => {
+    if (!overlayLayer) return null;
+    const ovEps = obliquity(overlayLayer.jd);
+    const ovPositions =
+      lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        : overlayLayer.positions;
+    const ovMeridianLng: MeridianLng =
+      lineSystem === 'geodetic'
+        ? (raM) => (eclipticLonOfRA(raM, ovEps) * 180) / Math.PI
+        : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
+    return {
+      ovPositions,
+      ovMeridianLng,
+      ovEps,
+      prefix: OVERLAY_LABEL_PREFIX[overlayLayer.kind],
+      isCyclo: overlayLayer.kind === 'cyclo',
+      jd: overlayLayer.jd,
+    };
+  }, [overlayLayer, coordSystem, lineSystem]);
+
+  // One-frame rule: when an overlay is active the auxiliary families (aspect,
+  // midpoint, paran, star) render from the OVERLAY's frame and the natal set is
+  // hidden — never both. Independent of the Natal display toggle, which keeps
+  // governing only the primary angle lines' dual display. Eclipses are excluded:
+  // their map linework is a separate opt-in (showEclipseMapLines / hideNatalLinework).
+  const overlayAux = !!overlayLayer && overlayMode !== 'eclipses';
+
+  // The overlay frame's aspect + midpoint lines — the overlay counterpart of the
+  // natal `angleLines` memo, replacing it while an overlay is active. Tagged with the
+  // overlay prefix (per-body Sp/Tr on Cyclocartography, whose aspect-to-angle lines
+  // each have one well-defined source body). Midpoint lines are suppressed on
+  // Cyclocartography — a midpoint would average two epochs into a single point.
+  const overlayAngleLines = useMemo<
+    FeatureCollection<LineString, AngleOverlayLineProps>
+  >(() => {
+    if (!overlayFrame || !overlayAux) return EMPTY_FC;
+    if (!effShowAspectLines && !effShowMidpointLines) return EMPTY_FC;
+    const { ovPositions, ovMeridianLng, ovEps, prefix, isCyclo } = overlayFrame;
+    const effCoordSystem: CoordSystem =
+      lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
+    const vis = ovPositions.filter((p) => visiblePlanets.has(p.name));
+    const features: Feature<LineString, AngleOverlayLineProps>[] = [];
+    if (effShowAspectLines) {
+      features.push(
+        ...generateAspectLines(vis, ovMeridianLng, effCoordSystem, ovEps).features.filter(
+          (f) =>
+            aspectLinePasses(
+              effAspectLineFilters,
+              f.properties.aspect,
+              f.properties.lineType,
+            ),
+        ),
+      );
+    }
+    if (effShowMidpointLines && !overlayAuxBlocked(overlayMode, 'midpoint')) {
+      features.push(
+        ...generateMidpointLines(vis, ovMeridianLng, effCoordSystem, ovEps).features,
+      );
+    }
+    const fc: FeatureCollection<LineString, AngleOverlayLineProps> = {
+      type: 'FeatureCollection',
+      features: features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
+    };
+    return withDarkMoon(
+      isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix),
+      theme,
+    );
+  }, [
+    overlayFrame,
+    overlayAux,
+    overlayMode,
+    effShowAspectLines,
+    effShowMidpointLines,
+    effAspectLineFilters,
+    lineSystem,
+    coordSystem,
+    visiblePlanets,
+    visibleLineTypes,
+    theme,
+  ]);
+
+  // The overlay frame's fixed-star lines — star positions precessed to the overlay's
+  // own epoch (the natal set uses the natal epoch). Replaces the natal star lines
+  // while an overlay is active. Cyclocartography reads its bodies at the transit
+  // instant, so its stars carry the 'Tr' epoch tag.
+  const overlayStarLines = useMemo(() => {
+    if (!overlayFrame || !overlayAux || !effShowStarLines) return EMPTY_FC;
+    const { ovMeridianLng, ovEps, prefix, isCyclo, jd: ovJd } = overlayFrame;
+    return tagLabels(
+      generateStarLines(
+        starsOfDate(ovJd, starSet),
+        ovMeridianLng,
+        lineSystem === 'geodetic' ? ovEps : null,
+        STAR_LINE_COLORS[theme],
+      ),
+      isCyclo ? 'Tr' : prefix,
+    );
+  }, [overlayFrame, overlayAux, effShowStarLines, starSet, lineSystem, theme]);
+
   const overlay = useMemo<OverlayData | null>(() => {
     if (!overlayLayer) return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     // CCG names each feature's actual source — Sp on the progressed personal
-    // planets, Tr on the transiting outers — instead of one mode tag. A paran
-    // PAIRING the two sets has no single source and keeps the mode tag "Cy".
+    // planets, Tr on the transiting outers — instead of one mode tag. (It draws no
+    // parans or midpoint lines: its two epochs share no single sky-moment.)
     const isCyclo = overlayLayer.kind === 'cyclo';
-    const paranCycloTag = (p: ParanProps) => {
-      const a = cycloBodyTag(p.planetA);
-      return a === cycloBodyTag(p.planetB) ? a : 'Cy';
-    };
     const ovPositions =
       lineSystem === 'geodetic' || coordSystem === 'zodiaco'
         ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
@@ -2456,15 +2557,12 @@ export default function App() {
           theme,
         ),
       ),
-      parans: effShowParans
+      // Parans are suppressed under Cyclocartography (no single sky-moment across its
+      // two epochs); hidden here rather than drawn incoherent — see overlayAuxBlocked.
+      parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
             filterParans(
-              isCyclo
-                ? tagLabelsBy(
-                    generateParans(ovPositions, ovMeridianLng),
-                    paranCycloTag,
-                  )
-                : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
+              tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -2614,10 +2712,6 @@ export default function App() {
         : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
     // Promoted CCG keeps the per-body source tags (see the overlay memo above).
     const isCyclo = overlayLayer.kind === 'cyclo';
-    const paranCycloTag = (p: ParanProps) => {
-      const a = cycloBodyTag(p.planetA);
-      return a === cycloBodyTag(p.planetB) ? a : 'Cy';
-    };
     const pLines = mergeNodePairs(
       withDarkMoon(
         filterLines(
@@ -2649,15 +2743,11 @@ export default function App() {
       : EMPTY_FC;
     return {
       lines: pLines,
-      parans: effShowParans
+      // Parans suppressed under Cyclocartography (see the overlay memo above).
+      parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
             filterParans(
-              isCyclo
-                ? tagLabelsBy(
-                    generateParans(ovPositions, ovMeridianLng),
-                    paranCycloTag,
-                  )
-                : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
+              tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -3487,7 +3577,9 @@ export default function App() {
   // rows; the conventional reading is a per-location list). Follows the star-lines
   // toggle/set and, in Mundane mode, the same ecliptic projection.
   const starParans = useMemo(() => {
-    if (!effShowStarLines || !current) return EMPTY_FC;
+    // Natal star × planet parans; hidden while an overlay is active (one-frame rule —
+    // these are the natal frame's own parans).
+    if (!effShowStarLines || !current || overlayAux) return EMPTY_FC;
     const stars = starsOfDate(jd, starSet).map((s) => {
       if (lineSystem !== 'geodetic') return s;
       const lon = raDecToEclipticLon(s.ra, s.dec, eps);
@@ -3499,7 +3591,7 @@ export default function App() {
       meridianLng,
       STAR_LINE_COLORS[theme],
     );
-  }, [effShowStarLines, current, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
+  }, [effShowStarLines, current, overlayAux, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
 
   // ── Map-HUD extensions ────────────────────────────────────────────────────
   // Features registered via registerMapExtension() (e.g. add-ons in a downstream
@@ -3703,20 +3795,22 @@ export default function App() {
     let overlayLines: FeatureCollection | null = null;
     let overlayParans: FeatureCollection | null = null;
     let overlayLocalSpace: FeatureCollection | null = null;
+    // One-frame rule: when an overlay is active its auxiliary families REPLACE the
+    // natal ones in the complete set, so a reveal/report reads the active frame.
+    let angleLinesOut: FeatureCollection = natalAngleLines;
+    let starLinesOut: FeatureCollection = natalStarLines;
+    let paransOut: FeatureCollection = allParans;
     if (overlayLayer) {
       const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
       const isCyclo = overlayLayer.kind === 'cyclo';
-      const paranCycloTag = (p: ParanProps) => {
-        const a = cycloBodyTag(p.planetA);
-        return a === cycloBodyTag(p.planetB) ? a : 'Cy';
-      };
+      const ovEps = obliquity(overlayLayer.jd);
       const ovPositions =
         lineSystem === 'geodetic' || coordSystem === 'zodiaco'
           ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
           : overlayLayer.positions;
       const ovMeridianLng: MeridianLng =
         lineSystem === 'geodetic'
-          ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
+          ? (raM) => (eclipticLonOfRA(raM, ovEps) * 180) / Math.PI
           : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
       overlayLines = withDarkMoon(
         isCyclo
@@ -3724,8 +3818,9 @@ export default function App() {
           : tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
         theme,
       );
-      overlayParans = isCyclo
-        ? tagLabelsBy(generateParans(ovPositions, ovMeridianLng), paranCycloTag)
+      // Parans suppressed under Cyclocartography (no single sky-moment across epochs).
+      overlayParans = overlayAuxBlocked(overlayLayer.kind, 'paran')
+        ? null
         : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix);
       overlayLocalSpace = withDarkMoon(
         generateLocalSpace(
@@ -3736,12 +3831,42 @@ export default function App() {
         ),
         theme,
       );
+      if (overlayAux) {
+        // Aspect + midpoint (midpoint dropped on Cyclo) + star, on the overlay frame.
+        const ovAngleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
+          ...generateAspectLines(ovPositions, ovMeridianLng, effCoordSystem, ovEps).features,
+          ...(overlayAuxBlocked(overlayLayer.kind, 'midpoint')
+            ? []
+            : generateMidpointLines(ovPositions, ovMeridianLng, effCoordSystem, ovEps).features),
+        ];
+        const ovAngleFc: FeatureCollection<LineString, AngleOverlayLineProps> = {
+          type: 'FeatureCollection',
+          features: ovAngleFeatures,
+        };
+        angleLinesOut = withDarkMoon(
+          isCyclo
+            ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
+            : tagLabels(ovAngleFc, prefix),
+          theme,
+        );
+        starLinesOut = tagLabels(
+          generateStarLines(
+            starsOfDate(overlayLayer.jd, starSet),
+            ovMeridianLng,
+            lineSystem === 'geodetic' ? ovEps : null,
+            STAR_LINE_COLORS[theme],
+          ),
+          isCyclo ? 'Tr' : prefix,
+        );
+        // Natal parans hidden while an overlay is active; the overlay's live in overlayParans.
+        paransOut = EMPTY_FC;
+      }
     }
     return {
       lines: natalLines,
-      angleLines: natalAngleLines,
-      parans: allParans,
-      starLines: natalStarLines,
+      angleLines: angleLinesOut,
+      parans: paransOut,
+      starLines: starLinesOut,
       localSpace: allLocalSpace,
       overlayLines,
       overlayParans,
@@ -3759,6 +3884,7 @@ export default function App() {
     jd,
     starSet,
     overlayLayer,
+    overlayAux,
     allParans,
     allLocalSpace,
     noTime,
@@ -3800,9 +3926,27 @@ export default function App() {
   // proximity itself; the <Map> narrows each line family through the spotlight (applySpot) and
   // drops the non-line families while a spotlight is active, for a lines-only reveal on a dim map.
   const effLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
-  const effAngleLines = promoted || hideNatalLinework ? EMPTY_FC : angleLines;
-  const effParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
-  const effStarLines = promoted || hideNatalLinework ? EMPTY_FC : starLines;
+  // Auxiliary families follow the ACTIVE FRAME (one-frame rule): the overlay's own
+  // aspect/midpoint/star/paran set when an overlay is active, the natal set otherwise —
+  // never both, and independent of the Natal display toggle (which the promoted swap
+  // of the PRIMARY lines still honors). Eclipses keep the natal set (overlayAux false).
+  const effAngleLines = hideNatalLinework
+    ? EMPTY_FC
+    : overlayAux
+      ? overlayAngleLines
+      : angleLines;
+  const effStarLines = hideNatalLinework
+    ? EMPTY_FC
+    : overlayAux
+      ? overlayStarLines
+      : starLines;
+  const effParans = hideNatalLinework
+    ? EMPTY_FC
+    : promoted
+      ? promoted.parans
+      : overlayAux
+        ? EMPTY_FC
+        : parans;
   const effLocalSpace = hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
   const effLocalSpaceCross = hideNatalLinework
     ? EMPTY_FC
@@ -3914,6 +4058,9 @@ export default function App() {
       angleLines,
       parans,
       starLines,
+      overlayAux,
+      overlayAngleLines,
+      overlayStarLines,
       localSpace,
       starParans,
       mapOverlay,
@@ -4067,6 +4214,7 @@ export default function App() {
           setShowAspectLines={setShowAspectLines}
           showMidpointLines={showMidpointLines}
           setShowMidpointLines={setShowMidpointLines}
+          overlayMode={overlayMode}
           showOrbZones={showOrbZones}
           setShowOrbZones={setShowOrbZones}
           orbZoneVal={orbZoneVal}

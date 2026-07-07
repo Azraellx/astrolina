@@ -66,6 +66,10 @@ export const settings = {
   parans: {
     title: 'Parans',
     hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map.',
+    // Shown on the grayed toggle while Cyclocartography is active (its "sky" mixes
+    // progressed and transiting bodies, so no single simultaneous moment exists).
+    blockedCyclo:
+      'No single sky-moment — parans aren’t defined across two epochs (Cyclocartography reads progressed and transiting bodies together).',
   },
   // Local Space + its origin selector live in the Local Space view (i18n localSpaceHud).
   aspectLines: {
@@ -79,6 +83,10 @@ export const settings = {
   midpointLines: {
     title: 'Midpoint Lines',
     hint: 'Lines where the midpoint of two visible bodies sits exactly on an angle (e.g. Su/Mo MC). In Mundo uses the bodily midpoint (mean RA and declination); In Zodiaco the classic longitude midpoint. Narrow the planet filter to keep the set readable.',
+    // Shown on the grayed toggle while Cyclocartography is active (a midpoint would
+    // average a progressed and a transiting body into one point — incoherent).
+    blockedCyclo:
+      'A midpoint here would average a progressed and a transiting body into one point — incoherent across two epochs.',
   },
   zenithNadir: {
     title: 'Zenith/Nadirs',

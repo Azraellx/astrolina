@@ -27,8 +27,10 @@ import {
   type PlanetName,
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
+import { overlayAuxBlocked } from '../../lib/astro/timeline';
 import type {
   AngleProgression,
+  OverlayMode,
   PrimaryRate,
 } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
@@ -77,6 +79,10 @@ interface SidebarProps {
   setShowAspectLines: (v: boolean) => void;
   showMidpointLines: boolean;
   setShowMidpointLines: (v: boolean) => void;
+  /** The active overlay mode — grays the Parans & Midpoint toggles on
+   *  Cyclocartography, where those families have no single sky-moment (see
+   *  overlayAuxBlocked). */
+  overlayMode: OverlayMode;
   showOrbZones: boolean;
   setShowOrbZones: (v: boolean) => void;
   orbZoneVal: number;
@@ -264,6 +270,8 @@ function TipToggle({
   hint,
   hotkey,
   ariaPressed,
+  disabled = false,
+  disabledHint,
   children,
 }: {
   className: string;
@@ -275,6 +283,11 @@ function TipToggle({
   /** Optional keyboard shortcut, shown as the yellow pill in the tip. */
   hotkey?: ReactNode;
   ariaPressed?: boolean;
+  /** Grayed, non-toggling state that KEEPS its hover tip (aria-disabled, not the
+   *  native attribute, so the tip still fires) — used to explain via `disabledHint`
+   *  why a family is unavailable under the active overlay. */
+  disabled?: boolean;
+  disabledHint?: string;
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
@@ -283,9 +296,12 @@ function TipToggle({
       <button
         ref={ref}
         type="button"
-        className={className}
-        onClick={(e) => (e.shiftKey && onShiftClick ? onShiftClick() : onClick())}
-        aria-pressed={ariaPressed}
+        className={disabled ? `${className} disabled` : className}
+        onClick={(e) =>
+          disabled ? undefined : e.shiftKey && onShiftClick ? onShiftClick() : onClick()
+        }
+        aria-pressed={disabled ? undefined : ariaPressed}
+        aria-disabled={disabled || undefined}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}
@@ -293,7 +309,12 @@ function TipToggle({
       >
         {children}
       </button>
-      <ChoiceTip pos={pos} title={title} hint={hint} hotkey={hotkey} />
+      <ChoiceTip
+        pos={pos}
+        title={title}
+        hint={disabled && disabledHint ? disabledHint : hint}
+        hotkey={disabled ? undefined : hotkey}
+      />
     </li>
   );
 }
@@ -816,6 +837,7 @@ export function Sidebar({
   setShowAspectLines,
   showMidpointLines,
   setShowMidpointLines,
+  overlayMode,
   showOrbZones,
   setShowOrbZones,
   orbZoneVal,
@@ -1318,6 +1340,8 @@ export function Sidebar({
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
+              disabled={overlayAuxBlocked(overlayMode, 'paran')}
+              disabledHint={t('settings.parans.blockedCyclo')}
               title={t('settings.parans.title')}
               hotkey="Shift P"
               hint={t('settings.parans.hint')}
@@ -1360,6 +1384,8 @@ export function Sidebar({
               className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
               onClick={() => setShowMidpointLines(!showMidpointLines)}
               ariaPressed={showMidpointLines}
+              disabled={overlayAuxBlocked(overlayMode, 'midpoint')}
+              disabledHint={t('settings.midpointLines.blockedCyclo')}
               title={t('settings.midpointLines.title')}
               hotkey="Shift M"
               hint={t('settings.midpointLines.hint')}

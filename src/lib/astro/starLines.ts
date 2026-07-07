@@ -95,6 +95,9 @@ export interface StarLineProps {
   lineType: LineType;
   color: string;
   label: string;
+  // Overlay frame prefix (Tr/Sp/Tp/Sa/Pd/Cy/Sy) when these star lines belong to
+  // an active overlay's frame; absent for the natal chart's own star lines.
+  tag?: string;
 }
 
 // Past this declination a star is circumpolar over most of the inhabited world:

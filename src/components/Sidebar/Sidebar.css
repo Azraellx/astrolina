@@ -419,6 +419,22 @@ html[data-mapstate='natal-pinned'] .sidebar {
   background: rgba(var(--accent-rgb), 0.08);
 }
 
+/* A family toggle grayed out because it isn't coherent under the active overlay
+   (e.g. parans / midpoints under Cyclocartography). Non-interactive, but keeps its
+   hover tip — which explains why — since it's aria-disabled, not natively disabled. */
+.tech-toggle.disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: rgba(var(--tint), 0.08);
+  background: transparent;
+}
+.tech-toggle.disabled:hover {
+  background: transparent;
+}
+.tech-toggle.disabled:hover::after {
+  content: none;
+}
+
 /* Rows revealed under a Filters toggle (orb-zone widths, the star-set and
    local-space-origin pickers). */
 .orb-zone-row {

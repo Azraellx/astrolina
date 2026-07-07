@@ -349,5 +349,46 @@ const mcBranch = (fs: AspectFeature[], planet: PlanetName, aspect: string) =>
   );
 }
 
+// ── Overlay frame (one-frame rule) ────────────────────────────────────────────
+// While an overlay is active the App feeds these SAME generators the overlay's own
+// positions (here a transit set) instead of the natal ones. The math is frame-
+// agnostic, so the zodiaco virtual point must still recover the body's longitude ±
+// the aspect, and pair midpoints must still generate. (Single-frame SELECTION and the
+// Cyclocartography MIDPOINT suppression are App-wiring policy — see
+// docs/core-integration-seams.md L23 — not generator math.)
+{
+  const trJd = jdFrame + 3653; // a distinct transit epoch, same machinery
+  const tr = getPlanetPositions(trJd, 'mean');
+  const epsTr = obliquity(trJd);
+  const merTr = (ra: number) => ra * RAD2DEG; // GMST = 0 → lng ≡ RA°
+  const asp = generateAspectLines(tr, merTr, 'zodiaco', epsTr)
+    .features as AspectFeature[];
+  const sun = byName(tr, 'Sun');
+  const sunLon = (raDecToEclipticLon(sun.ra, sun.dec, epsTr) * RAD2DEG + 360) % 360;
+  const sunTrineMc = mcBranch(asp, 'Sun', 'trine');
+  const vpLon = sunTrineMc
+    ? (raDecToEclipticLon(
+        sunTrineMc.properties.targetLng * DEG2RAD,
+        sunTrineMc.properties.targetLat * DEG2RAD,
+        epsTr,
+      ) *
+        RAD2DEG +
+        360) %
+      360
+    : NaN;
+  check(
+    'overlay frame: transit Sun trine-MC virtual point = Sun lon + 120° (zodiaco)',
+    Number.isFinite(vpLon) && angErr(vpLon, sunLon + 120) < 0.5,
+    `vp ${Number.isFinite(vpLon) ? vpLon.toFixed(1) : '—'}° vs ${((sunLon + 120) % 360).toFixed(1)}°`,
+  );
+  const mids = generateMidpointLines(tr, merTr, 'zodiaco', epsTr)
+    .features as AspectFeature[];
+  check(
+    'overlay frame: transit midpoint lines generate on the overlay set',
+    mids.some((f) => f.properties.kind === 'midpoint'),
+    `${mids.length} midpoint features`,
+  );
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

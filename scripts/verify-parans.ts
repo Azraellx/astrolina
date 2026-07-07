@@ -481,5 +481,48 @@ console.log(`generated parans: ${props.length}`);
   );
 }
 
+// ── Overlay frame (one-frame rule) ────────────────────────────────────────────
+// While an overlay is active the App feeds the paran generator that overlay's OWN
+// single frame (transits/progressions/…), and the natal set is hidden. The generator
+// is frame-agnostic, so single-frame simultaneity must hold on a transit set exactly
+// as on the natal one, and every row must pair two bodies of that ONE set. (The
+// SELECTION — natal parans hidden under any overlay — and the Cyclocartography
+// suppression are App-wiring policy: docs/core-integration-seams.md L23, not generator
+// math, so they're covered by the seam doc + manual QA rather than this unit.)
+{
+  const trJd = jd + 3653; // ~10 years on: a distinct sky, same battery of bodies
+  const trGmst = gmstRadians(trJd);
+  const trPos = getPlanetPositions(trJd, 'mean').filter((p) => BODY_SET.includes(p.name));
+  const trByName = new Map(trPos.map((p) => [p.name, p]));
+  const trLng: MeridianLng = (ra) => ((ra - trGmst) * 180) / Math.PI;
+  const trProps = generateParans(trPos, trLng).features.map((f) => f.properties as ParanProps);
+  let worstHorizon = 0;
+  let worstMeridian = 0;
+  let single = true;
+  for (const p of trProps) {
+    if (!trByName.has(p.planetA) || !trByName.has(p.planetB)) {
+      single = false;
+      continue;
+    }
+    const A = trByName.get(p.planetA)!;
+    const B = trByName.get(p.planetB)!;
+    const { latitude: lat, intersectionLng: lng } = p;
+    const altB = Math.abs(altitudeOf(trJd, B.ra, B.dec, lat, lng));
+    if (altB > worstHorizon) worstHorizon = altB;
+    if (p.angleA === 'MC' || p.angleA === 'IC') {
+      const H = normDelta(gastRad(trJd) + lng * DEG2RAD - A.ra);
+      const err = p.angleA === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
+      if (err > worstMeridian) worstMeridian = err;
+    } else {
+      const altA = Math.abs(altitudeOf(trJd, A.ra, A.dec, lat, lng));
+      if (altA > worstHorizon) worstHorizon = altA;
+    }
+  }
+  console.log(`overlay-frame parans generated: ${trProps.length}`);
+  check('overlay frame: every paran pairs two bodies of the single overlay set', single);
+  check('overlay frame: horizon body altitude 0 at intersection (transit set)', worstHorizon < 1e-9, `max ${worstHorizon.toExponential(2)} rad`);
+  check('overlay frame: meridian body on MC/IC at intersection (transit set)', worstMeridian < 1e-9, `max ${worstMeridian.toExponential(2)} rad`);
+}
+
 console.log(failures === 0 ? '\nverify-parans: ALL PASS' : `\nverify-parans: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
