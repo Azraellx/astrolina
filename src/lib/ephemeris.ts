@@ -57,7 +57,8 @@ export type PlanetName =
   | 'Ceres'
   | 'Pallas'
   | 'Juno'
-  | 'Vesta';
+  | 'Vesta'
+  | 'Fortune';
 
 export const TRADITIONAL_PLANETS: PlanetName[] = [
   'Sun',
@@ -89,7 +90,18 @@ export const ASTEROID_NAMES: PlanetName[] = [
 
 export const EXTRA_BODIES: PlanetName[] = [...NODE_NAMES, ...ASTEROID_NAMES];
 
-export const PLANET_NAMES: PlanetName[] = [...TRADITIONAL_PLANETS, ...EXTRA_BODIES];
+// Derived zodiacal points (Lots) — not sampled bodies. They carry a longitude
+// only (built from the chart's own angles/positions), so they are injected by
+// the app rather than returned by the Swiss sweep, and are plotted but not
+// aspected. Listed LAST in the canonical order. Extensible: further Lots join
+// here on the same plumbing.
+export const POINTS: PlanetName[] = ['Fortune'];
+
+export const PLANET_NAMES: PlanetName[] = [
+  ...TRADITIONAL_PLANETS,
+  ...EXTRA_BODIES,
+  ...POINTS,
+];
 
 // Planet display names moved to the i18n catalog (src/i18n/en/planets.ts); resolve
 // them via useT().labels.planet(name). The PlanetName union + order arrays stay here.
@@ -113,6 +125,7 @@ export const PLANET_CODES: Record<PlanetName, string> = {
   Pallas: 'Pa',
   Juno: 'Jn',
   Vesta: 'Vs',
+  Fortune: 'Fo',
 };
 
 export const PLANET_COLORS: Record<PlanetName, string> = {
@@ -134,6 +147,7 @@ export const PLANET_COLORS: Record<PlanetName, string> = {
   Pallas: '#8a8ed4',
   Juno: '#d8a358',
   Vesta: '#e0b890',
+  Fortune: '#e6b422',
 };
 
 export interface PlanetPosition {
@@ -348,9 +362,10 @@ export type NodeType = 'mean' | 'true';
 const nodeId = (t: NodeType) => (t === 'true' ? LunarPoint.TrueNode : LunarPoint.MeanNode);
 
 // PlanetName → Swiss body id. SouthNode is handled separately (Swiss has no
-// south-node body — it is the antipode of the north node). NorthNode resolves
-// via nodeId() because it depends on the mean/true convention.
-const BODY_ID: Record<Exclude<PlanetName, 'SouthNode'>, number> = {
+// south-node body — it is the antipode of the north node). Fortune is a derived
+// point with no Swiss body at all — it is injected by the app, never sampled.
+// NorthNode resolves via nodeId() because it depends on the mean/true convention.
+const BODY_ID: Record<Exclude<PlanetName, 'SouthNode' | 'Fortune'>, number> = {
   Sun: Planet.Sun,
   Moon: Planet.Moon,
   Mercury: Planet.Mercury,
@@ -535,6 +550,9 @@ export interface BodySample {
 // Exported for the midpoint-chart math, which needs each parent's native
 // four-coordinate sample per body (same drop-a-body-on-null semantics).
 export function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample | null {
+  // Fortune is a derived point (built from the Ascendant, which Swiss doesn't
+  // give here) — never sampled; the app injects it after the chart is assembled.
+  if (name === 'Fortune') return null;
   if (name === 'SouthNode') {
     // The south node is the antipode of the north node (on the ecliptic, lat 0).
     const nn = sampleBody(jd, 'NorthNode', nodeType);
@@ -571,6 +589,7 @@ export function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): Bo
 // single Swiss call, used to bracket a station without sampleBody's full two-frame
 // work. Returns null if the body has no data here (edge of coverage).
 function longitudeSpeedAt(jd: number, name: PlanetName, nodeType: NodeType): number | null {
+  if (name === 'Fortune') return null; // derived point — no Swiss body to sample
   if (name === 'SouthNode') return longitudeSpeedAt(jd, 'NorthNode', nodeType);
   const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
   try {
@@ -715,6 +734,7 @@ export function bodyLonSpeed(
   name: PlanetName,
   nodeType: NodeType = 'mean',
 ): { lon: number; speed: number } | null {
+  if (name === 'Fortune') return null; // derived point — no Swiss body to sample
   if (name === 'SouthNode') {
     const nn = bodyLonSpeed(jd, 'NorthNode', nodeType);
     return nn && { lon: norm2pi(nn.lon + Math.PI), speed: nn.speed };
@@ -795,6 +815,54 @@ export function getHorizontalCoords(
     out.set(p.name, { ra, az, alt });
   }
   return out;
+}
+
+// ── Part of Fortune (Lot of Fortune) ────────────────────────────────────────
+// A derived zodiacal point, not a sampled body. Its longitude is the Ascendant
+// plus the Moon–Sun arc — reflected across the Ascendant for a night birth under
+// the sect-based convention. Built from the Ascendant, it is a longitude only,
+// with no mundane sky position of its own (drawn like a latitude-0 point), and
+// it is undefined when the birth time (hence the Ascendant) is unknown.
+
+// Which light leads the formula: sect-based flips it by day/night; the Ptolemaic
+// convention uses the day formula regardless of sect.
+export type FortuneFormula = 'sect' | 'ptolemaic';
+
+// A day birth is the Sun on OR above the true horizon at the birth place/instant
+// (inclusive boundary: altitude exactly 0 counts as day, for a deterministic
+// answer at the sunrise/sunset edge). Reuses the horizontal conversion so the
+// sect test agrees with the Advanced table's altitudes to the arcminute.
+export function isDayBirth(
+  ecliptic: EclipticPosition[],
+  gmst: number,
+  eps: number,
+  latDeg: number,
+  lngDeg: number,
+): boolean {
+  const sun = getHorizontalCoords(ecliptic, gmst, eps, latDeg, lngDeg).get('Sun');
+  return sun ? sun.alt >= 0 : true; // no Sun sample (shouldn't happen) → day
+}
+
+// The Lot of Fortune's ecliptic longitude (radians). Sect-based: day births use
+// Asc + Moon − Sun, night births reflect it to Asc + Sun − Moon; Ptolemaic uses
+// the day formula always. All inputs and the result are radians.
+export function partOfFortuneLon(
+  ascLon: number,
+  sunLon: number,
+  moonLon: number,
+  day: boolean,
+  formula: FortuneFormula,
+): number {
+  const useDay = formula === 'ptolemaic' ? true : day;
+  return norm2pi(useDay ? ascLon + moonLon - sunLon : ascLon + sunLon - moonLon);
+}
+
+// Wrap a Lot longitude as a latitude-0 position for the line pipeline, carrying
+// its longitude of record so the In-Zodiaco projection is idempotent (and so the
+// map lines place it by its zodiac degree, exactly like a lunar node).
+export function fortunePosition(lon: number, eps: number): PlanetPosition {
+  const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+  return { name: 'Fortune', ra, dec, lon, lat: 0 };
 }
 
 export interface AngleCoords {

@@ -21,6 +21,7 @@ export const PLANET_ORDER: PlanetName[] = [
   'Moon', 'Sun',
   'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto',
   'NorthNode', 'SouthNode', 'Lilith', 'Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta',
+  'Fortune',
 ];
 export function planetRank(name: PlanetName): number {
   const i = PLANET_ORDER.indexOf(name);

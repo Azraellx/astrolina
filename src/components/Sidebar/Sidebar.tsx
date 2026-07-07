@@ -17,8 +17,10 @@ import {
   ASTEROID_NAMES,
   NODE_NAMES,
   PLANET_COLORS,
+  POINTS,
   TRADITIONAL_PLANETS,
   type CoordSystem,
+  type FortuneFormula,
   type HouseSystem,
   type LineSystem,
   type NodeType,
@@ -104,6 +106,8 @@ interface SidebarProps {
   siderealActive: boolean;
   coordSystem: CoordSystem;
   setCoordSystem: (c: CoordSystem) => void;
+  fortuneFormula: FortuneFormula;
+  setFortuneFormula: (f: FortuneFormula) => void;
   houseSystem: HouseSystem;
   setHouseSystem: (h: HouseSystem) => void;
   zodiacMode: ZodiacMode;
@@ -166,6 +170,7 @@ function ShiftTapTag() {
 // settings.* catalog (via makeEnumLabels), the same maps the InfoBar chip reads. The
 // arrays preserve display order. Proper-noun house eponyms stay verbatim in the catalog.
 const COORD_SYSTEM_VALUES: CoordSystem[] = ['mundo', 'zodiaco'];
+const FORTUNE_FORMULA_VALUES: FortuneFormula[] = ['sect', 'ptolemaic'];
 
 const LINE_SYSTEM_VALUES: LineSystem[] = ['celestial', 'geodetic'];
 
@@ -214,25 +219,30 @@ function ChoiceTip({
   title,
   hint,
   hotkey,
+  advanced,
 }: {
   pos: { left: number; top: number } | null;
   title: ReactNode;
   hint: string;
   hotkey?: ReactNode;
+  /** Show the "ADV" tag on the headline — marks the control as Advanced-only. */
+  advanced?: boolean;
 }) {
   if (!pos) return null;
+  const hasHeadlineExtras = hotkey != null || advanced;
   return createPortal(
     <span
       className="ui-tip-box ui-tip choice-tip"
       style={{ left: pos.left, top: pos.top }}
       aria-hidden="true"
     >
-      {hotkey ? (
-        // Title + the shared yellow hotkey pill (.ui-tip-hotkey, see HoverTip.css)
-        // share one row; the hint wraps below.
+      {hasHeadlineExtras ? (
+        // Title shares one row with the ADV tag and/or the shared yellow hotkey pill
+        // (.ui-tip-adv / .ui-tip-hotkey, see HoverTip.css); the hint wraps below.
         <span className="ui-tip-headline">
           <span className="ui-tip-title">{title}</span>
-          <span className="ui-tip-hotkey">{hotkey}</span>
+          {advanced && <span className="ui-tip-adv">ADV</span>}
+          {hotkey != null && <span className="ui-tip-hotkey">{hotkey}</span>}
         </span>
       ) : (
         <span className="ui-tip-title">{title}</span>
@@ -322,7 +332,16 @@ function HintOption({
 // the rest of the settings use (ChoiceTip: title + hint, popped to the left), so
 // its shape matches every other hover in the panel rather than the shared
 // HoverTip's plainer, title-only box.
-export function InfoTip({ title, hint }: { title: string; hint: string }) {
+export function InfoTip({
+  title,
+  hint,
+  advanced,
+}: {
+  title: string;
+  hint: string;
+  /** Tag the tip's headline with "ADV" (an Advanced-only control). */
+  advanced?: boolean;
+}) {
   const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>();
   return (
     <span
@@ -349,7 +368,7 @@ export function InfoTip({ title, hint }: { title: string; hint: string }) {
         <path d="M12 11v6" />
         <path d="M12 7.5v.5" />
       </svg>
-      <ChoiceTip pos={pos} title={title} hint={hint} />
+      <ChoiceTip pos={pos} title={title} hint={hint} advanced={advanced} />
     </span>
   );
 }
@@ -822,6 +841,8 @@ export function Sidebar({
   siderealActive,
   coordSystem,
   setCoordSystem,
+  fortuneFormula,
+  setFortuneFormula,
   houseSystem,
   setHouseSystem,
   zodiacMode,
@@ -1045,6 +1066,37 @@ export function Sidebar({
               />
             ))}
           </ul>
+
+          {/* Points (the Part of Fortune) — an advanced calculated Lot that draws
+              lines only In-Zodiaco (and geodetic, which also projects onto the
+              ecliptic). A Lot has no sky position, so In-Mundo can't place it —
+              there the whole section (heading included) is hidden, keeping the
+              filter list to what the current projection can actually draw. Because
+              the section only appears where Fortune DOES draw, its (i) hint needn't
+              explain the projection at all — just the Lot and its relocation. */}
+          {(lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
+            <>
+              <h2 className="info-heading">
+                {t('settings.headings.points')}
+                <InfoTip
+                  title={t('settings.headings.points')}
+                  hint={t('settings.points.hint')}
+                  advanced
+                />
+              </h2>
+              <ul className="planet-grid">
+                {POINTS.map((p) => (
+                  <PlanetToggle
+                    key={p}
+                    planet={p}
+                    on={visiblePlanets.has(p)}
+                    onToggle={() => togglePlanet(p)}
+                    onShiftClick={() => setAllPlanets(POINTS, !visiblePlanets.has(p))}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
 
           <h2>{t('settings.headings.angles')}</h2>
           <ul className="line-type-grid">
@@ -1352,6 +1404,28 @@ export function Sidebar({
               </TipToggle>
             )}
           </ul>
+
+          {/* Part of Fortune formula: the sect-based (day/night) default vs the
+              fixed Ptolemaic convention — a genuine historical divide whose two
+              results can land on different continents, so the choice is explicit.
+              Shown only where Fortune draws (In-Zodiaco / geodetic), matching its
+              Points filter section, so it's absent when the Lot itself is. */}
+          {(lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
+            <>
+              <h2>{t('settings.headings.fortuneFormula')}</h2>
+              <ul className="theme-list">
+                {FORTUNE_FORMULA_VALUES.map((value) => (
+                  <HintOption
+                    key={value}
+                    selected={fortuneFormula === value}
+                    onSelect={() => setFortuneFormula(value)}
+                    label={labels.fortuneFormula(value)}
+                    hint={labels.fortuneFormulaHint(value)}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
 
           {/* The compact orb editor stands down while the Aspects window is actually
               MOUNTED (toggle on + tier reached + open) — that window lays every orb

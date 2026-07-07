@@ -12,6 +12,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   PLANET_COLORS,
+  POINTS,
   type EclipticPosition,
   type PlanetName,
   type RelocatedAngles,
@@ -161,6 +162,11 @@ const ASPECT_TYPES: {
 
 const isLuminary = (name: string) => name === 'Sun' || name === 'Moon';
 
+// Derived points (Lots such as the Part of Fortune) are plotted on the wheel but
+// not aspected: they have no body, and aspecting a computed longitude is a
+// separate doctrine we don't draw. Drop them from every aspect pass.
+const aspectable = (p: EclipticPosition) => !POINTS.includes(p.name);
+
 // The tightest aspect (if any) between two ecliptic longitudes (radians).
 // `widen` adds the luminary bonus to every limit (set when either body is a
 // luminary).
@@ -189,10 +195,11 @@ function aspectBetween(
 }
 
 export function computeAspects(
-  planets: EclipticPosition[],
+  allPlanets: EclipticPosition[],
   orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
 ): Aspect[] {
   const out: Aspect[] = [];
+  const planets = allPlanets.filter(aspectable);
   for (let i = 0; i < planets.length; i++) {
     for (let j = i + 1; j < planets.length; j++) {
       const a = planets[i];
@@ -216,10 +223,11 @@ export function computeAspects(
 // read like an opposition). List-only: they have no zodiacal chord to draw in
 // the wheel, so only the sidebar's aspect tables consume them.
 export function computeDeclinationAspects(
-  planets: EclipticPosition[],
+  allPlanets: EclipticPosition[],
   orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
 ): Aspect[] {
   const out: Aspect[] = [];
+  const planets = allPlanets.filter(aspectable);
   const R2D = 180 / Math.PI;
   for (let i = 0; i < planets.length; i++) {
     for (let j = i + 1; j < planets.length; j++) {
@@ -257,11 +265,13 @@ export function computeDeclinationAspects(
 // conjunct natal Sun"), so it lands in the result's `a` slot and reads first in
 // the lists. The separation math is symmetric; only the labeling order matters.
 export function computeCrossAspects(
-  subject: EclipticPosition[],
-  natal: EclipticPosition[],
+  subjectAll: EclipticPosition[],
+  natalAll: EclipticPosition[],
   orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
 ): Aspect[] {
   const out: Aspect[] = [];
+  const subject = subjectAll.filter(aspectable);
+  const natal = natalAll.filter(aspectable);
   for (const a of subject) {
     for (const b of natal) {
       const asp = aspectBetween(

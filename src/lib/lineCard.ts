@@ -33,6 +33,7 @@ const BESPOKE_PLANETS = [
   'Sun', 'Moon', 'Mercury', 'Venus', 'Mars',
   'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto',
   'NorthNode', 'SouthNode', 'Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta', 'Lilith',
+  'Fortune',
 ] as const;
 type BespokePlanet = (typeof BESPOKE_PLANETS)[number];
 const BESPOKE: ReadonlySet<PlanetName> = new Set<PlanetName>(BESPOKE_PLANETS);

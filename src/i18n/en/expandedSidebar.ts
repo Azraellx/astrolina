@@ -184,7 +184,7 @@ export const expandedSidebar = {
     dragHint: 'Local-space globe — drag to rotate, double-click to reset',
     // Flat/3D dial toggle beside the "Local space" caption. Default is the 3D globe
     // (toggle off); turning it on switches the dials to the flat 2D compass.
-    flat: 'Flatten',
+    flat: 'Flat',
     flatTip: 'Flat compass',
     flatHint:
       'Show the two local-space dials as flat 2D compasses (azimuth around a ring) instead of the default rotatable 3D globes (which also show each body’s altitude).',

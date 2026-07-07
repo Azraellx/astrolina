@@ -14,12 +14,12 @@ import type { ReactNode } from 'react';
 
 // The glyphChars.ts character set: planets/nodes and the conjunction/opposition
 // aspects (U+2609-260D, 263D, 263F, 2640-2646), signs (2648-2653), asteroids/
-// Lilith and the sextile (26B3-26B9), square/trine shapes (25A1, 25B3), and
-// Pluto Form Two (2BD3). Each glyph may carry the U+FE0E text-style selector
-// (matched alongside its base, outside the class, to keep the class free of
-// combining characters).
+// Lilith and the sextile (26B3-26B9), square/trine shapes (25A1, 25B3), the Part
+// of Fortune (2297), and Pluto Form Two (2BD3). Each glyph may carry the U+FE0E
+// text-style selector (matched alongside its base, outside the class, to keep the
+// class free of combining characters).
 const GLYPH_RUN =
-  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹□△⯓]︎?)+)/;
+  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△⯓]︎?)+)/;
 
 export function glyphify(text: string): ReactNode {
   const parts = text.split(GLYPH_RUN);

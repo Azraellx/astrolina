@@ -70,7 +70,7 @@ export function LocalSpaceCompass({
   const c = size / 2;
   const R = size / 2 - 18 * k; // tick ring; cardinals sit outside it
   const rPlanets = R - 15 * k; // glyph ring, pulled in so the discs (r≈11k) clear the rim
-  const rAz = rPlanets - 31 * k; // azimuth readout keeps its gap, so it moves in with the glyphs
+  const rAz = rPlanets - 25 * k; // degrees line — clear of the glyph (minutes step further in)
   // Inner aspect circle — fixed off the rim (R), NOT tied to the glyph/readout rings, so
   // pulling those inward doesn't cost the aspect web any circumference (it has room to spare).
   const rInner = (R - 47 * k) * 0.75;
@@ -217,6 +217,12 @@ export function LocalSpaceCompass({
         const spokeOut = azPos(da, R);
         const spokeIn = azPos(da, rInner);
         const r = 11 * k;
+        // The azimuth readout in two parts stepping RADIALLY inward: degrees nearest
+        // the glyph, arcminutes a line further toward the centre (following the
+        // spoke), so it stays narrow rather than sprawling across one long line.
+        const azDM = fmtDM(cd.az);
+        const azCut = azDM.indexOf('°') + 1;
+        const azMinPos = azPos(da, rAz - 16 * k - 2);
         return (
           <g
             key={p.name}
@@ -257,8 +263,9 @@ export function LocalSpaceCompass({
                 color={PLANET_COLORS[p.name]}
               />
             </g>
-            {/* The body's azimuth (degrees + arcminutes) inside its glyph, echoing
-                the degree readouts on the main chart wheel. */}
+            {/* The body's azimuth — degrees nearest the glyph, arcminutes stepped a
+                line further toward the centre along the spoke, echoing the degree
+                readouts on the main chart wheel. */}
             <text
               x={azPosTxt.x}
               y={azPosTxt.y}
@@ -268,7 +275,18 @@ export function LocalSpaceCompass({
               textAnchor="middle"
               dominantBaseline="central"
             >
-              {fmtDM(cd.az)}
+              {azDM.slice(0, azCut)}
+            </text>
+            <text
+              x={azMinPos.x}
+              y={azMinPos.y}
+              className="lsc-az"
+              style={{ fontSize: 7.5 * k, strokeWidth: 2.2 * k }}
+              fill={PLANET_COLORS[p.name]}
+              textAnchor="middle"
+              dominantBaseline="central"
+            >
+              {azDM.slice(azCut)}
             </text>
           </g>
         );

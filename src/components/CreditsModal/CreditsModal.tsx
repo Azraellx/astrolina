@@ -110,8 +110,8 @@ const CREDIT_GROUPS: CreditGroup[] = [
     titleKey: 'typeSoftware',
     items: [
       {
-        name: 'Noto Sans Symbols & Symbols 2',
-        href: 'https://github.com/notofonts/symbols',
+        name: 'Noto Sans Symbols & Math',
+        href: 'https://github.com/notofonts',
         license: 'SIL OFL 1.1',
         noteKey: 'noto',
       },

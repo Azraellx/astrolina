@@ -22,6 +22,7 @@ export const settings = {
     language: 'Language',
     planets: 'Planets',
     asteroids: 'Asteroids',
+    points: 'Points',
     angles: 'Angles',
     lines: 'Lines',
     lineSystem: 'Line system',
@@ -35,6 +36,7 @@ export const settings = {
     positioning: 'Positioning',
     chartAngle: 'Chart Angle',
     magnitudeSteps: 'Magnitude steps',
+    fortuneFormula: 'Part of Fortune',
   },
   // Basemap detail toggles. Roads + rivers share one switch; "Place names" (city
   // and country text) is named to avoid confusion with the ACG line-label badges.
@@ -161,6 +163,23 @@ export const settings = {
       label: 'In Zodiaco',
       hint: 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).',
     },
+  },
+
+  // The Part of Fortune's formula (Advanced ▸ Part of Fortune). Its relocation
+  // caveat lives in the Points heading's (i) hint (points.hint), not as an inline
+  // note; the In-Mundo case needs no words — the whole Points section is hidden there.
+  fortuneFormula: {
+    sect: {
+      label: 'Sect-based (day/night)',
+      hint: 'Day births use Ascendant + Moon − Sun; night births flip to Ascendant + Sun − Moon. The traditional convention.',
+    },
+    ptolemaic: {
+      label: 'Ptolemaic (fixed)',
+      hint: 'Ascendant + Moon − Sun for every chart, day or night. The alternative historical convention.',
+    },
+  },
+  points: {
+    hint: 'The Part of Fortune — a calculated Lot of vitality and worldly ease. Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
   },
 
   nodeType: {

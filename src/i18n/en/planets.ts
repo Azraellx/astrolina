@@ -27,4 +27,5 @@ export const planets = {
   Pallas: { name: 'Pallas', theme: 'Wisdom, strategy, and bright creative problem-solving.' },
   Juno: { name: 'Juno', theme: 'Commitment, partnership, and what you seek in a soulmate.' },
   Vesta: { name: 'Vesta', theme: 'Devotion, focus, and the inner flame you keep sacred.' },
+  Fortune: { name: 'Fortune', theme: 'Ease, flourishing, and where body and worldly life feel blessed.' },
 } as const;

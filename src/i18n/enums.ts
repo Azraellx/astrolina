@@ -15,6 +15,7 @@ import type {
   HouseSystem,
   LineSystem,
   CoordSystem,
+  FortuneFormula,
   NodeType,
 } from '../lib/ephemeris';
 import type {
@@ -49,6 +50,9 @@ export function makeEnumLabels(t: TFn) {
 
     coordSystem: (c: CoordSystem) => t(`settings.coordSystem.${c}.label`),
     coordSystemHint: (c: CoordSystem) => t(`settings.coordSystem.${c}.hint`),
+
+    fortuneFormula: (f: FortuneFormula) => t(`settings.fortuneFormula.${f}.label`),
+    fortuneFormulaHint: (f: FortuneFormula) => t(`settings.fortuneFormula.${f}.hint`),
 
     nodeType: (n: NodeType) => t(`settings.nodeType.${n}.label`),
     nodeTypeHint: (n: NodeType) => t(`settings.nodeType.${n}.hint`),

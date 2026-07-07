@@ -36,6 +36,7 @@
     "verify:relocate": "node scripts/verify-relocate.mjs",
     "verify:cities": "node scripts/harness/run.mjs scripts/verify-cities.ts",
     "verify:composite": "node scripts/verify-composite.mjs",
+    "verify:fortune": "node scripts/verify-fortune.mjs",
     "verify:angle-aspects": "node scripts/verify-angle-aspects.mjs",
     "verify:aspect-lines": "node scripts/harness/run.mjs scripts/verify-aspect-lines.ts",
     "verify:ayanamsa": "node scripts/verify-ayanamsa.mjs",

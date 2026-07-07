@@ -152,6 +152,12 @@ export const lineMeanings = {
       ASC: 'Raw instinct comes to the surface. Magnetic and unapologetic, you are harder to ignore and harder to manage here.',
       DSC: 'You draw intense outsiders and the fiercely independent. Relationships here run on attraction, not obligation.',
     },
+    Fortune: {
+      MC: 'A place of visible thriving. Work and standing flow with unusual ease here, and success feels natural rather than forced.',
+      IC: 'Home and roots feel nourishing here. Comfort, security, and physical wellbeing settle into private life, and the body feels at ease.',
+      ASC: 'One of the strongest lines for vitality. You feel healthy, buoyant, and at home in yourself, and good fortune finds you without much effort.',
+      DSC: 'Wellbeing comes through others here. Partners and close bonds bring ease, prosperity, and a shared sense of flourishing.',
+    },
   },
 
   // Aspect lines: frame + per-kind flavor, then the pointer back to the

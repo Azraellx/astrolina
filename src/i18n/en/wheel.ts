@@ -63,6 +63,7 @@ export const wheel = {
     Pallas: 'Wisdom · strategy',
     Juno: 'Commitment · partnership',
     Vesta: 'Focus · devotion',
+    Fortune: 'Fortune · vitality · ease',
   },
   // The chart angles, keyed by the label drawn on the wheel. Vx/Avx (the
   // Vertex axis) appear only with Advanced ▸ Vertex axis switched on.

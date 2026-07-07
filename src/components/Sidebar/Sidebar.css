@@ -513,7 +513,8 @@ html[data-mapstate='natal-pinned'] .sidebar {
 
 /* The (i) beside the Aspect orbs heading — its hover tip carries the section's
    explanation, keeping the panel itself compact. */
-.orb-heading {
+.orb-heading,
+.info-heading {
   display: flex;
   align-items: center;
   gap: 6px;

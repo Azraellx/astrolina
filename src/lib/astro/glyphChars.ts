@@ -33,6 +33,9 @@ export const PLANET_GLYPHS: Record<PlanetName, string> = {
   Pallas: '⚴' + VS_TEXT, // ⚴
   Juno: '⚵' + VS_TEXT, // ⚵
   Vesta: '⚶' + VS_TEXT, // ⚶
+  Fortune: '⊗' + VS_TEXT, // ⊗ Part of Fortune (U+2297 CIRCLED TIMES — the X sits
+  // INSIDE the circle, the conventional Lot symbol; U+29BB's X spills past the rim).
+  // Bundled from Noto Sans Math (subset-font.sh).
 };
 
 // The 12 zodiac signs, indexed 0 (Aries, U+2648) … 11 (Pisces, U+2653).

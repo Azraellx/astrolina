@@ -94,14 +94,17 @@ import {
   eclipticLonOfRA,
   eclipticToRaDec,
   ensureAsteroidEphemeris,
+  fortunePosition,
   getAngleCoords,
   getEclipticPositions,
   getHorizontalCoords,
   getPlanetPositions,
   gmstRadians,
+  isDayBirth,
   jdToCivil,
   needsAsteroidEphemeris,
   obliquity,
+  partOfFortuneLon,
   PLANET_NAMES,
   projectOntoEcliptic,
   raDecToEclipticLon,
@@ -109,6 +112,8 @@ import {
   toEclipticPositions,
   TRADITIONAL_PLANETS,
   type CoordSystem,
+  type EclipticPosition,
+  type FortuneFormula,
   type HouseSystem,
   type LineSystem,
   type NodeType,
@@ -538,7 +543,10 @@ export default function App() {
     } catch {
       // Corrupt payload — fall through to the default set.
     }
-    return new Set(TRADITIONAL_PLANETS);
+    // Default set for a fresh visitor: the traditional planets plus the Part of
+    // Fortune (on by default so the Lot is discoverable — it shows on the wheel
+    // always, and its map lines appear the moment the projection is In-Zodiaco).
+    return new Set<PlanetName>([...TRADITIONAL_PLANETS, 'Fortune']);
   });
   useEffect(() => {
     localStorage.setItem(
@@ -588,6 +596,11 @@ export default function App() {
     localStorage.getItem('astro:coord-system:v1') === 'zodiaco'
       ? 'zodiaco'
       : 'mundo',
+  );
+  const [fortuneFormula, setFortuneFormula] = useState<FortuneFormula>(() =>
+    localStorage.getItem('astro:fortune-formula:v1') === 'ptolemaic'
+      ? 'ptolemaic'
+      : 'sect',
   );
   const [houseSystem, setHouseSystem] = useState<HouseSystem>(() => {
     const v = localStorage.getItem('astro:house-system:v1');
@@ -1067,6 +1080,7 @@ export default function App() {
   // these effective values; the (hidden) Sidebar/InfoBar keep the raw ones.
   const effHouseSystem = advancedWheel ? houseSystem : 'placidus';
   const effZodiacMode = advancedWheel ? zodiacMode : 'tropical';
+  const effFortuneFormula = advancedWheel ? fortuneFormula : 'sect';
   const effShowParans = advancedWheel && showParans;
   const effShowAspectLines = advancedWheel && showAspectLines;
   const effShowMidpointLines = advancedWheel && showMidpointLines;
@@ -1358,6 +1372,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
   }, [coordSystem]);
+  useEffect(() => {
+    localStorage.setItem('astro:fortune-formula:v1', fortuneFormula);
+  }, [fortuneFormula]);
   useEffect(() => {
     localStorage.setItem('astro:house-system:v1', houseSystem);
   }, [houseSystem]);
@@ -1706,6 +1723,39 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noTime, lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, ephemerisEpoch]);
 
+  // Part of Fortune — a derived zodiacal point (the Ascendant plus the Moon–Sun
+  // arc, sect-aware). It is not a sampled body, so it is injected here rather than
+  // flowing from the Swiss sweep. It has no sky position, so it only appears in
+  // In-Zodiaco (and geodetic); it needs the Ascendant, so it is absent when the
+  // birth time is unknown; and it is a single-birth-moment idea, so composites are
+  // out of scope. `fortuneDay` is the natal sect (Sun above the birthplace horizon).
+  const fortuneDay = useMemo(
+    () =>
+      current && !current.composite && !noTime
+        ? isDayBirth(ecliptic, gmst, eps, current.birthplace.lat, current.birthplace.lng)
+        : null,
+    [current, noTime, ecliptic, gmst, eps],
+  );
+  // The MAP's Fortune is fixed to the NATAL Ascendant and drawn like a body: its
+  // offset from the Ascendant is the Moon–Sun arc, so a relocated Fortune would
+  // sit the same distance from the relocated Ascendant — the natal degree is the
+  // only honest map treatment. (Natal Asc via the same relocate() birthAngles uses
+  // below; recomputed locally to keep this before the line pipeline.)
+  const fortuneMapPos = useMemo(() => {
+    if (fortuneDay == null || !current || current.composite) return null;
+    const sun = ecliptic.find((p) => p.name === 'Sun');
+    const moon = ecliptic.find((p) => p.name === 'Moon');
+    if (!sun || !moon) return null;
+    const { asc } = relocate(
+      jd,
+      current.birthplace.lat,
+      current.birthplace.lng,
+      effHouseSystem,
+    );
+    const lon = partOfFortuneLon(asc, sun.lon, moon.lon, fortuneDay, effFortuneFormula);
+    return fortunePosition(lon, eps);
+  }, [fortuneDay, current, ecliptic, jd, effHouseSystem, effFortuneFormula, eps]);
+
   // Maps a meridian's RA to a geographic longitude (deg). Celestial: RA − GMST
   // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
   // independent of time. Injected into the line/zenith generators.
@@ -1717,10 +1767,15 @@ export default function App() {
     [lineSystem, eps, gmst],
   );
 
-  const allLines = useMemo(
-    () => generateLines(linePositions, meridianLng),
-    [linePositions, meridianLng],
-  );
+  // Fortune joins the angle-line generator ONLY (never `linePositions`), and only
+  // In-Zodiaco/geodetic — so it draws its four angle lines without leaking into
+  // mundo lines, parans, zenith stamps, or the aspect/midpoint families.
+  const allLines = useMemo(() => {
+    const inZodiaco = lineSystem === 'geodetic' || coordSystem === 'zodiaco';
+    const src =
+      fortuneMapPos && inZodiaco ? [...linePositions, fortuneMapPos] : linePositions;
+    return generateLines(src, meridianLng);
+  }, [linePositions, meridianLng, fortuneMapPos, lineSystem, coordSystem]);
   const allParans = useMemo(
     () => generateParans(linePositions, meridianLng),
     [linePositions, meridianLng],
@@ -2900,6 +2955,19 @@ export default function App() {
     () => shiftEclipticPositions(ecliptic, natalAyan),
     [ecliptic, natalAyan],
   );
+  // The WHEEL's Fortune is recomputed from the RELOCATED Ascendant (angles.asc) —
+  // it moves as the map pin moves — but with the NATAL sect, so it never re-flips
+  // at the sunrise line. Kept out of the shared `ecliptic` (so it stays out of the
+  // Advanced equatorial table and eclipse contacts); shifted by the natal ayanamsa
+  // like the rest of the ring. Plotted, not aspected (see WheelSvg `aspectable`).
+  const fortuneWheelPos = useMemo<EclipticPosition | null>(() => {
+    if (fortuneDay == null || !angles || !current || current.composite) return null;
+    const sun = ecliptic.find((p) => p.name === 'Sun');
+    const moon = ecliptic.find((p) => p.name === 'Moon');
+    if (!sun || !moon) return null;
+    const lon = partOfFortuneLon(angles.asc, sun.lon, moon.lon, fortuneDay, effFortuneFormula);
+    return shiftEclipticPositions([{ name: 'Fortune', lon, lat: 0 }], natalAyan)[0];
+  }, [fortuneDay, angles, current, ecliptic, effFortuneFormula, natalAyan]);
   const displayAngles = useMemo(
     () =>
       angles ? shiftAngles(angles, natalAyan, effHouseSystem === 'whole') : angles,
@@ -2937,11 +3005,19 @@ export default function App() {
   // angles fall away with it.
   const isCyclo = overlayMode === 'cyclo';
   const noChart = promoteOverlay && isCyclo;
-  const wheelPlanets = noChart
-    ? []
-    : promoteOverlay && displayOverlayEcliptic
-      ? displayOverlayEcliptic
-      : displayEcliptic;
+  // Memoized so appending Fortune (a fresh array on the common natal path) doesn't
+  // hand the wheel + capture memos a new reference every render.
+  const wheelPlanets = useMemo(
+    () =>
+      noChart
+        ? []
+        : promoteOverlay && displayOverlayEcliptic
+          ? displayOverlayEcliptic
+          : fortuneWheelPos
+            ? [...displayEcliptic, fortuneWheelPos]
+            : displayEcliptic,
+    [noChart, promoteOverlay, displayOverlayEcliptic, displayEcliptic, fortuneWheelPos],
+  );
   const wheelAngles = noChart
     ? null
     : promoteOverlay && displayOverlayAngles
@@ -4017,6 +4093,8 @@ export default function App() {
           siderealActive={effZodiacMode !== 'tropical'}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
+          fortuneFormula={fortuneFormula}
+          setFortuneFormula={setFortuneFormula}
           houseSystem={houseSystem}
           setHouseSystem={setHouseSystem}
           zodiacMode={zodiacMode}

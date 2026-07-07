@@ -949,7 +949,8 @@
 }
 
 /* Local-space section header: the "Local space" caption on the left, the 2D/3D
-   dial toggle (the shared es-advanced-toggle switch) on the right edge. */
+   dial toggle (the shared es-advanced-toggle switch) on the right, vertically
+   centered with the title. */
 .es-ls-head {
   display: flex;
   align-items: center;
