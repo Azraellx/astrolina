@@ -33,12 +33,19 @@ import type {
   OverlayMode,
   PrimaryRate,
 } from '../../lib/astro/timeline';
-import { THEMES, type Theme } from '../../lib/theme';
+import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
-import { orbZoneMax, type StarSetPref, type DistanceUnit } from '../../lib/overlayPrefs';
+import {
+  orbZoneMax,
+  paranOrbMax,
+  PARAN_ORB_MIN,
+  PARAN_ORB_STEP,
+  type StarSetPref,
+  type DistanceUnit,
+} from '../../lib/overlayPrefs';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { planTierFor, tierMet, tierLabel, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
@@ -89,8 +96,8 @@ interface SidebarProps {
   setOrbZoneVal: (v: number) => void;
   orbZoneUnit: DistanceUnit;
   setOrbZoneUnit: (u: DistanceUnit) => void;
-  paranOrbDeg: number;
-  setParanOrbDeg: (deg: number) => void;
+  paranOrbVal: number;
+  setParanOrbVal: (v: number) => void;
   aspectOrbs: AspectOrbs;
   setAspectOrbs: (o: AspectOrbs) => void;
   /** The Aspect Lines window's open state (a gated-tier surface — the sub-row
@@ -779,15 +786,24 @@ function PlanetToggle({
   on,
   onToggle,
   onShiftClick,
+  theme,
 }: {
   planet: PlanetName;
   on: boolean;
   onToggle: () => void;
   /** Shift+click handler — used for "show / hide all planets". */
   onShiftClick?: () => void;
+  theme: Theme;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   const { labels } = useT();
+  // Lilith's muted purple is hard to read against Earth's dark-brown settings panel,
+  // so its glyph in this list (only) uses a brighter lavender on Earth. Every other
+  // body — and every theme but Earth — keeps its canonical PLANET_COLORS tint.
+  const glyphColor =
+    planet === 'Lilith' && theme === 'vintage'
+      ? LILITH_PANEL_GLYPH_EARTH
+      : PLANET_COLORS[planet];
   return (
     <li>
       <button
@@ -803,7 +819,7 @@ function PlanetToggle({
         <PlanetGlyph
           planet={planet}
           size={14}
-          color={PLANET_COLORS[planet]}
+          color={glyphColor}
           className="planet-toggle-icon"
         />
         <span className="name">{labels.planet(planet)}</span>
@@ -812,7 +828,7 @@ function PlanetToggle({
         pos={pos}
         title={
           <span className="planet-tip-title">
-            <PlanetGlyph planet={planet} size={14} color={PLANET_COLORS[planet]} />
+            <PlanetGlyph planet={planet} size={14} color={glyphColor} />
             {labels.planet(planet)}
           </span>
         }
@@ -844,8 +860,8 @@ export function Sidebar({
   setOrbZoneVal,
   orbZoneUnit,
   setOrbZoneUnit,
-  paranOrbDeg,
-  setParanOrbDeg,
+  paranOrbVal,
+  setParanOrbVal,
   aspectOrbs,
   setAspectOrbs,
   aspectHudOpen,
@@ -1070,6 +1086,7 @@ export function Sidebar({
                 onShiftClick={() =>
                   setAllPlanets(PLANET_FILTERS, !visiblePlanets.has(p))
                 }
+                theme={theme}
               />
             ))}
           </ul>
@@ -1085,6 +1102,7 @@ export function Sidebar({
                 onShiftClick={() =>
                   setAllPlanets(ASTEROID_NAMES, !visiblePlanets.has(p))
                 }
+                theme={theme}
               />
             ))}
           </ul>
@@ -1114,6 +1132,7 @@ export function Sidebar({
                     on={visiblePlanets.has(p)}
                     onToggle={() => togglePlanet(p)}
                     onShiftClick={() => setAllPlanets(POINTS, !visiblePlanets.has(p))}
+                    theme={theme}
                   />
                 ))}
               </ul>
@@ -1322,12 +1341,12 @@ export function Sidebar({
                 />
                 <StepperField
                   id="orb-zone-paran"
-                  label={t('settings.orbZones.paranLabel')}
-                  value={paranOrbDeg}
-                  onChange={setParanOrbDeg}
-                  min={0.25}
-                  max={5}
-                  step={0.25}
+                  label={`${t('settings.orbZones.paranLabel')} (${orbZoneUnit})`}
+                  value={paranOrbVal}
+                  onChange={setParanOrbVal}
+                  min={PARAN_ORB_MIN}
+                  max={paranOrbMax(orbZoneUnit)}
+                  step={PARAN_ORB_STEP}
                   ariaLabel={t('settings.orbZones.paranAria')}
                 />
               </li>

@@ -306,6 +306,13 @@ const HORIZON_WHEEL_SIZE = 480;
 const COMPASS_MIN_SCALE = 0.5;
 const COMPASS_FADE_FRACTION = 0.25;
 const COMPASS_MAX_OPACITY = 0.92;
+// The compass's on-screen scale at a given zoom (0.5 → 1 across COMPASS_ZOOM→CLOSE_ZOOM), and
+// the "Mask Lines" clip circle's radius (px): ~30% wider than the compass radius at that zoom.
+const compassScaleAt = (zoom: number) =>
+  COMPASS_MIN_SCALE +
+  (1 - COMPASS_MIN_SCALE) *
+    Math.min(1, Math.max(0, (zoom - COMPASS_ZOOM) / (CLOSE_ZOOM - COMPASS_ZOOM)));
+const maskRadiusAt = (zoom: number) => (HORIZON_WHEEL_SIZE * compassScaleAt(zoom) * 1.3) / 2;
 const LS_BADGE_RADIUS_PX = 74;
 const LS_RADIUS_ZOOM_MIN = 2;
 const LS_RADIUS_MAX_SCALE = 4;
@@ -332,6 +339,10 @@ const LS_BADGE_GAP = 1;
 // Closest a crowded label may slide toward the origin (px) — keeps a clear zone around the centre
 // where all the lines converge, so staggered labels never pile on the origin pin / compass hub.
 const LS_BADGE_MIN_RAD = 26;
+// Gap (px) past the badge's edge — along the ray toward the origin — where the transparent
+// "Degrees" label is parked, so each bearing reads as its line's degree and clears the pill
+// (whose width varies with the optional name). Added to the measured half-extent, not the centre.
+const LS_LINE_DEG_GAP = 26;
 interface LocalSpaceBadge {
   key: string;
   x: number;
@@ -345,6 +356,13 @@ interface LocalSpaceBadge {
    *  (e.g. "45°23'"). Static. Shown on the outgoing badge only — and blanked ('')
    *  in the Capture "Standard labels" mode, whose faces match the ACG badges. */
   azLabel: string;
+  /** This half's bearing, ALWAYS populated (unlike azLabel, which the standard-labels mode
+   *  blanks) — the transparent "Degrees" toggle prints it along the line toward the origin. */
+  bearing: string;
+  /** Screen anchor for the along-the-line "Degrees" label — just past this badge's edge toward
+   *  the origin (badge x/y is the pill centre). Set once the layout settles, else undefined. */
+  degX?: number;
+  degY?: number;
 }
 
 // Resolve crowding among the LS labels by sliding each one ALONG ITS OWN LINE (the ray out from the
@@ -400,6 +418,51 @@ function spreadLsBadgesRadial(
         } else {
           a.rad -= mag;
           b.rad += mag;
+        }
+        seat(a);
+        seat(b);
+      }
+    }
+  }
+}
+
+// The mask-mode twin of spreadLsBadgesRadial: the badges sit on a FIXED-radius rim, so de-overlap
+// by nudging them ALONG the rim (changing angle, not radius) while pulling each back toward its
+// line's true bearing — a crowded fan spreads around the circle instead of sliding off it.
+function spreadLsBadgesAngular(
+  items: { x: number; y: number; ang: number; ang0: number; hw: number; hh: number }[],
+  ocx: number,
+  ocy: number,
+  radius: number,
+  iterations: number,
+): void {
+  const ATTRACT = 0.12; // fraction of the way back to the line's true bearing reclaimed each pass
+  const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a)); // → [-π, π]
+  const seat = (it: (typeof items)[number]) => {
+    it.x = ocx + radius * Math.sin(it.ang);
+    it.y = ocy - radius * Math.cos(it.ang);
+  };
+  for (const it of items) seat(it);
+  for (let iter = 0; iter < iterations; iter++) {
+    for (const it of items) {
+      it.ang += wrap(it.ang0 - it.ang) * ATTRACT;
+      seat(it);
+    }
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        const ox = a.hw + b.hw - Math.abs(b.x - a.x);
+        const oy = a.hh + b.hh - Math.abs(b.y - a.y);
+        if (ox <= 0 || oy <= 0) continue;
+        // Turn the pixel overlap into an arc nudge and push the pair apart around the rim.
+        const push = (Math.min(ox, oy) / 2 + 0.5) / radius;
+        if (wrap(b.ang - a.ang) >= 0) {
+          a.ang -= push;
+          b.ang += push;
+        } else {
+          a.ang += push;
+          b.ang -= push;
         }
         seat(a);
         seat(b);
@@ -924,8 +987,8 @@ function lineLabelHtml(
     const planet = props.planet as PlanetName;
     if (props.kind === 'midpoint') {
       const pb = props.planetB as PlanetName;
-      // colorB carries the same light-theme Moon swap as props.color (see
-      // App.withDarkMoon), so a "Sun/Moon" tip stays readable on Glass/Earth.
+      // colorB carries the same light-theme colour swap as props.color (see
+      // App.withThemeLineColors), so a "Sun/Moon" tip stays readable on Glass/Earth.
       row =
         pre +
         glyphHtml(planet, props.color as string) +
@@ -1214,6 +1277,17 @@ interface MapProps {
   /** Hide the direction arrows riding the local-space lines (Local Space ▸
    *  Capture ▸ "Hide line arrows") — cleaner linework in the framed export. */
   hideLsArrows?: boolean;
+  /** Transparent (Local Space) export mode is on. Folds together the whole clean-export
+   *  treatment: clip the local-space lines to a circle ~30% wider than the horizon compass and
+   *  anchor their badges on that rim (a self-contained compass rose, only while the compass is
+   *  shown), and render those badges glyph-only (no "LS" prefix) and ~50% larger. */
+  lsTransparent?: boolean;
+  /** Transparent export, "Label Name": print each local-space planet's name after its glyph
+   *  (e.g. "♂ Mars") on the badge. */
+  lsLabelName?: boolean;
+  /** Transparent export, "Degrees": print each local-space line's bearing along the line, just
+   *  inside its badge toward the origin (the focal point where the rose converges). */
+  lsLineDeg?: boolean;
   /** Label the local-space lines like the chart's other lines (Local Space ▸
    *  Capture ▸ "Standard labels"): each badge anchors at its line's outermost
    *  visible point — hugging the frame edge like the ACG edge badges — instead of
@@ -1244,10 +1318,17 @@ interface MapProps {
   frameActive?: boolean;
   /** Capture-frame aspect ratio (width / height). null = no frame. */
   frameAspect?: number | null;
-  /** The caption text (chart name · birth date · place). The footer band itself is ALWAYS
+  /** The caption text (chart name · birth date · place). The footer band itself is normally
    *  reserved while framing — it carries the watermark — so blank text just renders an empty
-   *  band with the watermark, not a missing band. */
+   *  band with the watermark, not a missing band. `noCaption` (below) drops the band entirely. */
   frameCaptionText?: string;
+  /** The caption fields as separate lines (same content as frameCaptionText, unjoined). The
+   *  Transparent export has no footer band, so it stacks these in the frame's top-left instead. */
+  frameCaptionLines?: readonly string[];
+  /** Drop the caption band + watermark from the frame (and its reserved height): a caption-free
+   *  export. Set only by the gated Transparent (Local Space) mode for a clean see-through PNG;
+   *  the watermark is otherwise the mandatory AGPL-7(b) attribution, so this stays gated. */
+  noCaption?: boolean;
   /** Optional "Details" overlay drawn inside the frame — the position LIST or the chart
    *  WHEEL (+ balance grid), docked left for landscape, top for square/portrait. Null = no
    *  panel (and no inset). */
@@ -1326,7 +1407,12 @@ export interface MapHandle {
    *  name — it describes the camera mechanic, not the (renamed) view. Returns the
    *  coordinate "Go back" would now fly to (the pre-jump centre), so the caller can
    *  label it; null if there's no map. */
-  teleportTo: (lat: number, lng: number, zoom?: number) => { lat: number; lng: number } | null;
+  teleportTo: (
+    lat: number,
+    lng: number,
+    zoom?: number,
+    duration?: number,
+  ) => { lat: number; lng: number } | null;
   /** Fly to the stashed "go back" view, swapping it for the current one — so the
    *  same control toggles between the two locations (two-deep back/forward).
    *  Returns the coordinate the NEXT press would fly to (so the caller can label it
@@ -1377,6 +1463,9 @@ function flyWithSidebarOffset(
   lat: number,
   zoom: number,
   leftInset: number,
+  // Optional flight time (ms). Omitted → MapLibre's default flyTo curve. A small value gives a
+  // near-instant hop (the transparent-export toggle wants that; the normal fly stays leisurely).
+  duration?: number,
 ) {
   const esWidth =
     parseFloat(
@@ -1388,6 +1477,7 @@ function flyWithSidebarOffset(
     zoom,
     offset: [overlaid / 4, 0],
     essential: true,
+    ...(duration !== undefined ? { duration } : {}),
   });
 }
 
@@ -1782,16 +1872,21 @@ function setupCustomLayers(
     id: 'angle-lines-layer',
     source: 'angle-lines',
     type: 'line',
-    // Round caps turn the zero-length dashes into crisp round dots.
+    // Round caps round the short dashes off into dots. NB the zero-length "pure
+    // dot" dasharray ([0, N]) at width 1 renders as sub-pixel dots too faint to
+    // read over the basemap (all but invisible) — a leading 0 only works when a
+    // real on-segment follows it as a phase offset (e.g. the node-pair [0, 3, 3]
+    // below). So keep the on-segment > 0 with a hair more width; the round cap
+    // does the rest.
     layout: { 'line-cap': 'round' },
-    // Full opacity like every chart line; the thinner width + round-dot pattern
-    // mark the set as "derived" and keep it distinct from both the solid base
-    // lines and the dashed overlays.
+    // Full opacity like every chart line; the slim width + tight round dots mark
+    // the set as "derived" and keep it distinct from both the solid base lines
+    // and the longer-dashed overlays.
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 1,
+      'line-width': 1.3,
       'line-opacity': 1,
-      'line-dasharray': [0, 2],
+      'line-dasharray': [1, 3],
     },
   });
 
@@ -2312,7 +2407,7 @@ const EMPTY_DATA: FeatureCollection = { type: 'FeatureCollection', features: [] 
 // `freshSources` forces every push: pass it right after setupCustomLayers (initial
 // load and theme/style reloads), where the just-recreated sources hold empty data
 // regardless of what was pushed before.
-function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
+function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOnly = false) {
   if (freshSources || !lastPushed.has(map)) lastPushed.set(map, {});
   const prev = lastPushed.get(map)!;
   const push = (id: string, fc: Parameters<maplibregl.GeoJSONSource['setData']>[0]) => {
@@ -2322,29 +2417,36 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
     src.setData(fc);
     prev[id] = fc;
   };
-  push('acg-lines', data.lines);
-  push('angle-lines', data.angleLines);
-  push('parans', data.parans);
-  push('orb-bands', data.orbBands ?? EMPTY_DATA);
-  push('star-lines', data.starLines ?? EMPTY_DATA);
-  push('night-shade', data.nightShade ?? EMPTY_DATA);
+  // Transparent (Local Space) export shows ONLY the local-space lines — empty every OTHER family
+  // here (data-level, not a per-layer visibility flip), so the hidden lines never draw and never
+  // reach the exported PNG. This INCLUDES the local-space × birth-chart crossing dots (acg-ls-cross):
+  // they mark where an LS line meets a now-hidden natal line, so they'd be orphaned. Only the LS
+  // lines themselves (active + overlay) below keep their real data.
+  const pushGated = (id: string, fc: Parameters<maplibregl.GeoJSONSource['setData']>[0]) =>
+    push(id, lsOnly ? EMPTY_DATA : fc);
+  pushGated('acg-lines', data.lines);
+  pushGated('angle-lines', data.angleLines);
+  pushGated('parans', data.parans);
+  pushGated('orb-bands', data.orbBands ?? EMPTY_DATA);
+  pushGated('star-lines', data.starLines ?? EMPTY_DATA);
+  pushGated('night-shade', data.nightShade ?? EMPTY_DATA);
   push('local-space', data.localSpace);
-  push('acg-ls-cross', data.localSpaceCross);
-  push('acg-zenith', data.zenith);
-  push('acg-nadir', data.nadir);
-  push('ecliptic', data.ecliptic ?? EMPTY_DATA);
-  push('eclipse', data.eclipse ?? EMPTY_DATA);
+  pushGated('acg-ls-cross', data.localSpaceCross);
+  pushGated('acg-zenith', data.zenith);
+  pushGated('acg-nadir', data.nadir);
+  pushGated('ecliptic', data.ecliptic ?? EMPTY_DATA);
+  pushGated('eclipse', data.eclipse ?? EMPTY_DATA);
 
   const ov = data.overlay;
-  push('acg-lines-ov', ov ? ov.lines : EMPTY_DATA);
-  push('parans-ov', ov ? ov.parans : EMPTY_DATA);
+  pushGated('acg-lines-ov', ov ? ov.lines : EMPTY_DATA);
+  pushGated('parans-ov', ov ? ov.parans : EMPTY_DATA);
   push('local-space-ov', ov ? ov.localSpace : EMPTY_DATA);
   // Overlay zenith stamps + the overlay ecliptic — already empty unless Overlay ▸
   // Display ▸ Zenith is on (the App gates ov.zenith / ov.ecliptic), so this just
-  // mirrors the source data.
-  push('acg-zenith-ov', ov ? ov.zenith : EMPTY_DATA);
-  push('acg-nadir-ov', ov ? ov.nadir : EMPTY_DATA);
-  push('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
+  // mirrors the source data (and is emptied entirely in the LS-only transparent export).
+  pushGated('acg-zenith-ov', ov ? ov.zenith : EMPTY_DATA);
+  pushGated('acg-nadir-ov', ov ? ov.nadir : EMPTY_DATA);
+  pushGated('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
 }
 
 // Whether this browser will give us a WebGL context at all. MapLibre renders the
@@ -2453,6 +2555,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   showLabels = true,
   hideBasemap = false,
   hideLsArrows = false,
+  lsTransparent = false,
+  lsLabelName = false,
+  lsLineDeg = false,
   lsEdgeLabels = false,
   measureActive,
   measureSnap,
@@ -2465,7 +2570,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   frameActive,
   frameAspect,
   frameCaptionText,
+  frameCaptionLines = [],
   frameExtras,
+  noCaption,
   onFrameCancel,
   onMissionEvent,
   keepZoomOutVisible,
@@ -2515,12 +2622,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const c = map.getCenter();
       return { lat: c.lat, lng: c.lng, zoom: map.getZoom() };
     },
-    teleportTo: (lat: number, lng: number, zoom?: number) => {
+    teleportTo: (lat: number, lng: number, zoom?: number, duration?: number) => {
       const map = mapRef.current;
       if (!map) return null;
       // Remember where we are so "Go back" can return here.
       teleportBackRef.current = snapshotView(map);
-      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current);
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current, duration);
       // [lng, lat] -> {lat, lng}: the pre-jump centre "Go back" now targets.
       const c = teleportBackRef.current.center;
       return { lat: c[1], lng: c[0] };
@@ -2599,7 +2706,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // html2canvas overlay. Guarded: a degenerate zero rect skips the draw rather than
       // smearing the whole backbuffer across the frame.
       if (mapW > 0 && mapH > 0) {
+        // "Mask Lines": clip the map canvas to the same circle the live view uses (origin +
+        // ~30%-over-compass radius), so the exported linework is a self-contained compass rose.
+        // The DOM overlays below (compass, rim badges) are composited AFTER, unclipped.
+        const os = originScreenRef.current;
+        const doMask = lsTransparentRef.current && os && map.getZoom() >= COMPASS_ZOOM;
+        if (doMask) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(
+            mapX + os.x * scale,
+            mapY + os.y * scale,
+            maskRadiusAt(map.getZoom()) * scale,
+            0,
+            Math.PI * 2,
+          );
+          ctx.clip();
+        }
         ctx.drawImage(mapCanvas, mapX - 1, mapY - 1, mapW + 2, mapH + 2);
+        if (doMask) ctx.restore();
       }
 
       // 2) DOM overlays (pin, edge labels, local-horizon wheel, AND the caption band +
@@ -2945,6 +3070,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const hideLsArrowsRef = useRef(hideLsArrows);
   // Current LS label mode, read inside computeBadges (bound once, refs only).
   const lsEdgeLabelsRef = useRef(lsEdgeLabels);
+  // Transparent-mode flag + the latest projected origin — read inside computeBadges (per-frame
+  // circle clip + rim badges) and captureFrame (clip the exported canvas), both bound once via refs.
+  const lsTransparentRef = useRef(lsTransparent);
+  const originScreenRef = useRef<{ x: number; y: number } | null>(null);
   // The eclipse local-circumstances closures, read inside the long-lived hover
   // and click handlers (they change with each selected eclipse; refs avoid
   // re-binding).
@@ -2981,6 +3110,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     detailRef.current = { showRoads, showRivers, showLabels, hideBasemap };
     hideLsArrowsRef.current = hideLsArrows;
     lsEdgeLabelsRef.current = lsEdgeLabels;
+    lsTransparentRef.current = lsTransparent;
     eclipseTipRef.current = eclipseTip;
     eclipseCardRef.current = eclipseCard;
     lineCardRef.current = lineCard;
@@ -3231,6 +3361,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       setOriginScreen((cur) =>
         cur && cur.x === oc.x && cur.y === oc.y ? cur : { x: oc.x, y: oc.y },
       );
+      originScreenRef.current = { x: oc.x, y: oc.y };
+      // "Circle Mask": clip the GL CANVAS (the LS lines) to a circle ~30% wider than the compass,
+      // centred on the origin — but only while the compass is actually shown (zoomed in enough).
+      // Clip the canvas, NOT the container: the container also holds the bottom-right attribution /
+      // credits control, which must stay visible (and captured) even while the linework is masked.
+      const zoomNow = map.getZoom();
+      const maskActive = lsTransparentRef.current && zoomNow >= COMPASS_ZOOM;
+      const maskR = maskActive ? maskRadiusAt(zoomNow) : 0;
+      const glCanvas = map.getCanvas();
+      if (maskActive) {
+        glCanvas.style.setProperty('clip-path', `circle(${maskR}px at ${oc.x}px ${oc.y}px)`);
+      } else {
+        glCanvas.style.removeProperty('clip-path');
+      }
       const north = screenAngleOfNorth(map, origin.lng, origin.lat);
       setOriginNorthDeg((north * 180) / Math.PI);
       const r = lsBadgeRadius(map.getZoom());
@@ -3306,7 +3450,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           p.y >= BADGE_INSET &&
           p.y <= h - BADGE_INSET;
         let placed: { x: number; y: number } | null;
-        if (edgeMode) {
+        if (maskActive) {
+          // On the mask rim: where this line's ray meets the clip circle.
+          placed = { x: oc.x + maskR * Math.sin(angle), y: oc.y - maskR * Math.cos(angle) };
+        } else if (edgeMode) {
           placed = lsOutermostVisible(f.geometry.coordinates);
         } else if (inView(ringPt)) {
           placed = ringPt;
@@ -3329,6 +3476,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           out,
           // Standard-labels mode blanks the bearing so the face matches the ACG badges.
           azLabel: edgeMode ? '' : azLabel,
+          // The always-present bearing, for the transparent "Degrees" along-the-line label.
+          bearing: azLabel,
         });
       }
       // Per-badge half-extents for separation: in a capture STILL the export can't be panned to
@@ -3347,45 +3496,85 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             });
           });
       }
-      // De-overlap by sliding each label along its OWN line (the ray from the origin oc through its
-      // anchor): we fix the unit direction and let only the radius move, so a crowded fan staggers
-      // in/out along its lines instead of drifting off them. Only when the origin is on-screen — with
-      // it off-screen the rays don't define a sensible centre, so the edge-hugged anchors stand as-is.
+      // De-overlap the badges. Only when the origin is on-screen — off-screen the rays don't define
+      // a sensible centre, so the edge-hugged anchors stand as-is.
       const ocOnScreen = oc.x >= 0 && oc.x <= w && oc.y >= 0 && oc.y <= h;
       if (ocOnScreen && lsbadges.length > 1) {
-        const lsItems = lsbadges.map((b) => {
+        // Per-badge half-extents: a pill printing its bearing is much wider (standard-labels/mask
+        // mode blanks it, so those floors stay narrow); the measured box (capture) can only WIDEN
+        // it. + LS_BADGE_GAP so neighbours clear by a hair.
+        const sized = lsbadges.map((b) => {
           const s = lsSizes.get(b.key);
-          // Per-face floor (a pill printing its bearing is much wider; in the standard-labels
-          // mode none do — azLabel is blanked — so every floor is narrow); the measured
-          // box (capture) can only WIDEN it. + LS_BADGE_GAP so neighbours clear by a hair.
           const hw = Math.max(s?.hw ?? 0, b.azLabel ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W) + LS_BADGE_GAP;
           const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
-          const vx = b.x - oc.x;
-          const vy = b.y - oc.y;
-          const rad0 = Math.hypot(vx, vy) || 1; // rest radius: where this line meets the ring
-          const dx = vx / rad0;
-          const dy = vy / rad0;
-          // Farthest radius along this ray that keeps the badge box inside the inset viewport, so a
-          // label can slide all the way out to its line's edge but never off-screen (no extra clamp).
-          let tx = Infinity;
-          let ty = Infinity;
-          if (dx > 1e-6) tx = (w - BADGE_INSET - hw - oc.x) / dx;
-          else if (dx < -1e-6) tx = (BADGE_INSET + hw - oc.x) / dx;
-          if (dy > 1e-6) ty = (h - BADGE_INSET - hh - oc.y) / dy;
-          else if (dy < -1e-6) ty = (BADGE_INSET + hh - oc.y) / dy;
-          const maxRad = Math.max(rad0, Math.min(tx, ty));
-          const minRad = Math.min(rad0, LS_BADGE_MIN_RAD);
-          return { x: b.x, y: b.y, dx, dy, rad: rad0, rad0, minRad, maxRad, hw, hh, ref: b };
+          return { b, hw, hh };
         });
-        spreadLsBadgesRadial(lsItems, oc.x, oc.y, 60);
-        // Positions are already on-screen (bounded by maxRad along each ray) — write them straight back.
-        for (const it of lsItems) {
-          it.ref.x = it.x;
-          it.ref.y = it.y;
+        if (maskActive) {
+          // On the rim (fixed radius): spread ANGULARLY so pills don't overlap, staying near each
+          // line's bearing. (The radial spread below would slide them off the rim.)
+          const items = sized.map(({ b, hw, hh }) => {
+            const ang = Math.atan2(b.x - oc.x, -(b.y - oc.y));
+            return { x: b.x, y: b.y, ang, ang0: ang, hw, hh, ref: b };
+          });
+          spreadLsBadgesAngular(items, oc.x, oc.y, maskR, 60);
+          for (const it of items) {
+            it.ref.x = it.x;
+            it.ref.y = it.y;
+          }
+        } else {
+          // Slide each label along its OWN line (the ray from oc through its anchor): fix the unit
+          // direction and let only the radius move, so a crowded fan staggers in/out along its lines.
+          const lsItems = sized.map(({ b, hw, hh }) => {
+            const vx = b.x - oc.x;
+            const vy = b.y - oc.y;
+            const rad0 = Math.hypot(vx, vy) || 1; // rest radius: where this line meets the ring
+            const dx = vx / rad0;
+            const dy = vy / rad0;
+            // Farthest radius along this ray that keeps the badge box inside the inset viewport, so a
+            // label can slide all the way out to its line's edge but never off-screen (no extra clamp).
+            let tx = Infinity;
+            let ty = Infinity;
+            if (dx > 1e-6) tx = (w - BADGE_INSET - hw - oc.x) / dx;
+            else if (dx < -1e-6) tx = (BADGE_INSET + hw - oc.x) / dx;
+            if (dy > 1e-6) ty = (h - BADGE_INSET - hh - oc.y) / dy;
+            else if (dy < -1e-6) ty = (BADGE_INSET + hh - oc.y) / dy;
+            const maxRad = Math.max(rad0, Math.min(tx, ty));
+            const minRad = Math.min(rad0, LS_BADGE_MIN_RAD);
+            return { x: b.x, y: b.y, dx, dy, rad: rad0, rad0, minRad, maxRad, hw, hh, ref: b };
+          });
+          spreadLsBadgesRadial(lsItems, oc.x, oc.y, 60);
+          for (const it of lsItems) {
+            it.ref.x = it.x;
+            it.ref.y = it.y;
+          }
         }
+      }
+      // Along-the-line "Degrees" anchor (transparent export): park each bearing just past its
+      // badge's edge on the ray toward the origin, so it reads as that line's degree and clears
+      // the (variable-width) name pill. Offset from the MEASURED half-extent — a fixed offset from
+      // the pill centre would land on the name whenever the line runs toward it (horizontal lines).
+      for (const b of lsbadges) {
+        const vx = oc.x - b.x;
+        const vy = oc.y - b.y;
+        const len = Math.hypot(vx, vy) || 1;
+        const dx = vx / len;
+        const dy = vy / len;
+        const s = lsSizes.get(b.key);
+        const hw = s?.hw ?? LS_BADGE_HALF_W;
+        const hh = s?.hh ?? LS_BADGE_HALF_H;
+        // Distance from the pill centre to its box edge along (dx,dy) — whichever side the ray hits.
+        const tEdge = Math.min(
+          Math.abs(dx) > 1e-6 ? hw / Math.abs(dx) : Infinity,
+          Math.abs(dy) > 1e-6 ? hh / Math.abs(dy) : Infinity,
+        );
+        const off = tEdge + LS_LINE_DEG_GAP;
+        b.degX = b.x + dx * off;
+        b.degY = b.y + dy * off;
       }
     } else {
       setOriginScreen(null);
+      originScreenRef.current = null;
+      map.getCanvas().style.removeProperty('clip-path');
     }
     setLocalSpaceBadges((cur) => (sameBadges(cur, lsbadges) ? cur : lsbadges));
   }, []);
@@ -3584,7 +3773,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ECLIPSE_LABEL_HALO[themeRef.current],
       );
       applyLsArrowVisibility(map, hideLsArrowsRef.current);
-      pushData(map, dataRef.current, true);
+      pushData(map, dataRef.current, true, lsTransparentRef.current);
       // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
       // basemap of its own). A no-op online. The outline lands async, so re-run the
       // detail toggles after it: a live basemap blank must catch it too.
@@ -3687,7 +3876,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
       applyLsArrowVisibility(map, hideLsArrowsRef.current);
-      pushData(map, dataRef.current, true);
+      pushData(map, dataRef.current, true, lsTransparentRef.current);
       if (!navigator.onLine)
         void installWorldFallback(map, theme).then(() => {
           if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
@@ -3709,6 +3898,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       scheduleBadges();
     }
   }, [projection, scheduleBadges]);
+
+  // Toggling transparent mode (which now carries the circle mask) doesn't move the camera, so
+  // recompute the badges right away to apply / clear the clip + re-place the rim badges (a DIRECT
+  // computeBadges, like the lsEdgeLabels effect — a deferred scheduleBadges rAF can be skipped /
+  // cancelled, which is why the flip looked delayed). computeBadges reads lsTransparentRef, synced
+  // by the commit effect that runs before this one.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (!lsTransparent) mapRef.current.getCanvas().style.removeProperty('clip-path');
+    computeBadgesRef.current();
+  }, [lsTransparent]);
+
+  // Toggling the transparent "Label Name" changes each badge pill's width, so recompute the
+  // layout right away — the de-overlap re-measures the live DOM boxes (now wider/narrower) and
+  // re-spaces them. "Degrees" needs no recompute: those labels derive their position from the
+  // badges at render time (origin + each badge's point), so React re-renders them on its own.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    computeBadgesRef.current();
+  }, [lsLabelName]);
 
   // Repaint the measure layers when the map-state accent changes (e.g. pinning a
   // location) without needing a full style reload.
@@ -4154,7 +4363,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // `cap` is the reserved caption-band height (css px); the map/badges are inset by it
   // at the bottom so they don't sit behind the caption.
   const [frameInset, setFrameInset] = useState<
-    { l: number; t: number; r: number; b: number; cap: number; boxW: number } | null
+    { l: number; t: number; r: number; b: number; cap: number; bandH: number; boxW: number } | null
   >(null);
   useEffect(() => {
     if (!frameActive || !frameAspect) {
@@ -4207,16 +4416,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // that reads too tall, so halve it there. Floored so it stays legible on small frames.
       const landscape = !!frameAspect && frameAspect >= 1.3;
       const bandFrac = landscape ? CAPTURE_CAPTION_BAND_FRAC * 0.5 : CAPTURE_CAPTION_BAND_FRAC;
-      // The footer band is always reserved while framing — it's the watermark's backdrop,
+      // The footer band is normally reserved while framing — it's the watermark's backdrop,
       // shown even when no caption field is enabled (so the caption text is just blank).
-      const cap = Math.max(Math.round(boxW * bandFrac), 22);
+      // noCaption (gated Transparent mode) drops it entirely so the map fills to the edge.
+      // The band height whether or not it's drawn. `cap` reserves it in the map inset only when a
+      // band is shown; `bandH` is published regardless so the Transparent brand mark can size +
+      // place itself exactly like the (band-bound) watermark even though no band is reserved there.
+      const bandH = Math.max(Math.round(boxW * bandFrac), 22);
+      const cap = noCaption ? 0 : bandH;
       // boxW is kept so the wheel view can size its wheel to a fraction of the frame width.
-      setFrameInset({ l: il, t: iy, r: ir, b: iyb, cap, boxW: Math.round(boxW) });
+      setFrameInset({ l: il, t: iy, r: ir, b: iyb, cap, bandH, boxW: Math.round(boxW) });
     };
     compute();
     window.addEventListener('resize', compute);
     return () => window.removeEventListener('resize', compute);
-  }, [frameActive, frameAspect, leftInset]);
+  }, [frameActive, frameAspect, leftInset, noCaption]);
 
   // The Capture "Extras" panel (planet/angle positions) docks LEFT for landscape frames
   // and TOP otherwise; it measures its own content and reports the cross-axis px here, and
@@ -4226,16 +4440,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const captureLandscape = !!frameAspect && frameAspect >= 1.3;
   const showExtras = frameActive && !!frameExtras;
   const extraSide: 'left' | 'top' = captureLandscape ? 'left' : 'top';
-  // Wheel-view diameter: ~28% of the frame width, but floored at 280px so the per-planet
-  // degree·sign·minute readout ring has room to render (below ~280px it self-hides), and
-  // capped so it doesn't dominate huge frames. Square/portrait frames dock the panel as a
-  // roomy TOP band (not a narrow left rail), where the wheel reads cramped at the landscape
-  // size — so enlarge it ~22% there. Derived from the fixed frame box (not the panel inset),
-  // so it can't feed back into the measure→resize loop.
+  // Wheel-view diameter, derived from the fixed frame box (not the panel inset, so it can't
+  // feed back into the measure→resize loop). Floored at 280px so the per-planet
+  // degree·sign·minute readout ring has room to render (below ~280px it self-hides) and
+  // capped so it can't dominate huge frames.
+  //  • Square/portrait dock the panel as a roomy TOP band (not a narrow left rail), where
+  //    the wheel reads cramped at the landscape size — so enlarge it ~40% there.
+  //  • Landscape (16:9) docks a narrow LEFT rail. There the wheel scales down only HALF as
+  //    fast as the frame narrows: 0.14·boxW + 230 rather than 0.28·boxW. The two meet at the
+  //    460px cap (boxW ≈ 1643), so wide frames are unchanged, but on smaller laptop frames the
+  //    wheel stays far larger — keeping the inner degree numbers legible instead of collapsing
+  //    toward the 280px floor where the readout ring self-hides.
   const wheelSize = frameInset
-    ? Math.round(
-        Math.min(460, Math.max(280, frameInset.boxW * 0.28)) * (extraSide === 'top' ? 1.4 : 1),
-      )
+    ? extraSide === 'top'
+      ? Math.round(Math.min(460, Math.max(280, frameInset.boxW * 0.28)) * 1.4)
+      : Math.round(Math.min(460, Math.max(280, frameInset.boxW * 0.14 + 230)))
     : extraSide === 'top'
       ? 420
       : 300;
@@ -4276,33 +4495,58 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     return () => window.removeEventListener('keydown', onKey);
   }, [measureActive, slideActive, frameActive, onMeasureCancel, onSlideCancel, onFrameCancel]);
 
-  // While the Capture frame is armed, the redundant "AstroLina" credit is CSS-hidden (the
-  // watermark already brands the image); also lift its now-orphaned " | " separator out
-  // of the attribution so the disclosure reads cleanly (e.g. "© OpenStreetMap"). Restore
-  // it on exit — skipped if maplibre rebuilt the attribution meanwhile (it then has its
-  // own fresh separator), so we never throw or duplicate.
+  // Bottom-right attribution while framing a capture. Normally maplibre shows
+  // "AstroLina | <data credit>" (the AstroLina button opens the credits dialog + carries our
+  // copyright). While composing an export we OWN this line — re-applied on every maplibre
+  // rebuild via an observer, so no orphaned separator can linger:
+  //   • basemap SHOWN (ordinary capture) — the export already brands itself via the caption
+  //     watermark, so drop the AstroLina credit + its separator; ONLY the data credit remains.
+  //   • basemap HIDDEN (Transparent mode) — the half-opacity brand mark (bottom-right, inside the
+  //     frame) carries the attribution, and CSS hides this whole control (.map-frame.transparent),
+  //     so it's not seen here; the BTN we still set below is just a failsafe if that CSS is absent.
+  // Restores the normal "AstroLina | <data>" on exit. The data-credit markup is captured LIVE
+  // from maplibre (never hard-coded), so a style / attribution change carries through untouched.
+  const attribDataRef = useRef('');
   useEffect(() => {
     const map = mapRef.current;
-    if (!frameActive || !map) return;
-    const btn = map.getContainer().querySelector('.acg-credits-btn');
-    if (!btn) return;
-    const isSep = (n: ChildNode | null): n is ChildNode =>
-      !!n && n.nodeType === 3 && /\|/.test(n.textContent ?? '');
-    const sep = isSep(btn.previousSibling)
-      ? btn.previousSibling
-      : isSep(btn.nextSibling)
-        ? btn.nextSibling
-        : null;
-    if (!sep) return;
-    const parent = sep.parentElement;
-    const anchor = sep.nextSibling;
-    sep.remove();
-    return () => {
-      if (!parent?.isConnected) return;
-      if (anchor && anchor.parentElement === parent) parent.insertBefore(sep, anchor);
-      else if (!anchor) parent.appendChild(sep);
+    if (!map || !frameActive) return;
+    const inner = map
+      .getContainer()
+      .querySelector<HTMLElement>('.maplibregl-ctrl-attrib-inner');
+    if (!inner) return;
+    const BTN =
+      '<button type="button" class="acg-credits-btn" aria-haspopup="dialog">AstroLina</button>';
+    // Capture the data credit (everything but the AstroLina button + its joining separator) from
+    // a CLONE, so it works whatever state the live markup is currently in.
+    const clone = inner.cloneNode(true) as HTMLElement;
+    const cbtn = clone.querySelector('.acg-credits-btn');
+    if (cbtn) {
+      const sep = cbtn.nextSibling;
+      cbtn.remove();
+      if (sep && sep.nodeType === 3) {
+        sep.textContent = (sep.textContent ?? '').replace(/^\s*\|\s*/, '');
+      }
+    }
+    const captured = clone.innerHTML.trim();
+    if (captured) attribDataRef.current = captured;
+    const dataCredit = attribDataRef.current;
+    const want = hideBasemap ? BTN : dataCredit || BTN;
+    // Guard on the browser-SERIALIZED result we last wrote (not `want`, which may differ by
+    // attribute order / whitespace) so our own mutation is a no-op but a maplibre rebuild re-applies.
+    let appliedHtml = '';
+    const apply = () => {
+      if (inner.innerHTML === appliedHtml) return;
+      inner.innerHTML = want;
+      appliedHtml = inner.innerHTML;
     };
-  }, [frameActive]);
+    apply();
+    const obs = new MutationObserver(apply);
+    obs.observe(inner, { childList: true, subtree: true, characterData: true });
+    return () => {
+      obs.disconnect();
+      inner.innerHTML = `${BTN}${dataCredit ? ' | ' + dataCredit : ''}`;
+    };
+  }, [frameActive, hideBasemap]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -4780,7 +5024,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.setCenter([baseLng, baseLat]);
       if (baseBearing !== 0) map.setBearing(baseBearing);
       if (basePitch !== 0) map.setPitch(basePitch);
-      pushData(map, dataRef.current, true);
+      pushData(map, dataRef.current, true, lsTransparentRef.current);
       spinDegRef.current = 0;
       setMapMoving(false);
       computeBadgesRef.current();
@@ -4843,7 +5087,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // re-tile just those.
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
-        pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse });
+        pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
         computeBadges();
       }
     } else {
@@ -4863,12 +5107,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         if (slideActiveRef.current) {
           spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
         } else {
-          pushData(map, dataRef.current);
+          pushData(map, dataRef.current, false, lsTransparentRef.current);
           computeBadges();
         }
       });
     }
-  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, slideActive, computeBadges, spinPaint]);
+  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
 
   // Toggle basemap road / river / foliage visibility — and the whole-basemap blank
   // (Local Space ▸ "Hide map") — live (theme reloads reapply via the style.load
@@ -5072,7 +5316,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           together, and so a single `captureFrame` rasterises them as one unit. */}
       <div
         ref={frameRef}
-        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}`}
+        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}${lsTransparent ? ' transparent' : ''}`}
         style={
           frameInset
             ? ({
@@ -5081,6 +5325,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 right: frameInset.r,
                 bottom: frameInset.b,
                 '--capture-caption-h': `${frameInset.cap}px`,
+                // The would-be band height, always set — the Transparent brand mark sizes + places
+                // itself off this so it matches the non-transparent watermark exactly.
+                '--capture-brand-h': `${frameInset.bandH}px`,
                 '--capture-extra-left': `${showExtras && extraSide === 'left' ? extraSize : 0}px`,
                 '--capture-extra-top': `${showExtras && extraSide === 'top' ? extraSize : 0}px`,
               } as CSSProperties)
@@ -5142,7 +5389,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
         aria-hidden="true"
       >
-        {badges.map((b) => {
+        {/* The ACG / aspect / node edge badges label the non-LS lines — hidden in the transparent
+            LS-only export (those lines are emptied at the source), so their labels go too. */}
+        {!lsTransparent && badges.map((b) => {
           const text = badgeTextColor(b.color);
           // A merged lunar-node pair gets a two-tone fill (North Node colour → South Node
           // colour, matching the line) and a dual "NN MC / SN IC" label; every other
@@ -5268,7 +5517,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             </span>
           );
         })}
-        {paranBadges.map((b) => (
+        {/* Paran badges label the (non-LS) paran crossings — likewise hidden in the LS-only export. */}
+        {!lsTransparent && paranBadges.map((b) => (
           <TipButton
             type="button"
             key={b.key}
@@ -5289,6 +5539,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ))}
         {localSpaceBadges.map((b) => {
           const text = badgeTextColor(b.color);
+          // Transparent export enlarges the badges ~50% for the compass-rose look — but only the
+          // OUTBOUND (toward-planet) half; the reciprocal INBOUND half stays regular size.
+          const lgBadge = lsTransparent && b.out;
           return (
             // Clicking an LS label flies to the local-space origin — where the lines
             // converge (the pin). Both halves show LS + glyph; only the outgoing
@@ -5300,7 +5553,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               key={b.key}
               data-lskey={b.key}
               tabIndex={-1}
-              className="acg-badge acg-badge-btn"
+              // Transparent export: glyph-only (drop the "LS" prefix), and ~50% larger on the
+              // outbound half so the compass rose reads big on a floor-plan overlay.
+              className={`acg-badge acg-badge-btn${lgBadge ? ' ls-badge-lg' : ''}`}
               style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() =>
                 localSpaceOrigin &&
@@ -5309,12 +5564,31 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               placement="top"
               tip={t('map.flyToLocalSpaceOrigin')}
             >
-              <span className="acg-badge-prefix">LS</span>
-              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              {!lsTransparent && <span className="acg-badge-prefix">LS</span>}
+              <PlanetGlyph planet={b.planet} size={lgBadge ? 17 : 11} color={text} />
+              {/* Transparent "Label Name": the planet's name after the glyph (e.g. "♂ Mars"). */}
+              {lsLabelName && (
+                <span className="ls-badge-name">{labels.planet(b.planet)}</span>
+              )}
               {b.out && b.azLabel && <span className="ls-deg">{b.azLabel}</span>}
             </TipButton>
           );
         })}
+        {/* Transparent "Degrees": each line's bearing printed DOWN its line — a small label just
+            past the badge toward the origin (where the rose converges). Kept separate from the pill
+            so it never widens it; its anchor (degX/degY) is computed off the measured pill edge. */}
+        {lsLineDeg &&
+          localSpaceBadges.map((b) =>
+            b.bearing && b.degX != null && b.degY != null ? (
+              <span
+                key={`${b.key}-deg`}
+                className="ls-line-deg"
+                style={{ translate: badgePos(b.degX, b.degY), color: b.color }}
+              >
+                {b.bearing}
+              </span>
+            ) : null,
+          )}
       </div>
       {/* Registered map overlays (registerMapOverlay) — positioned DOM drawn inside the
           frame and re-projected on every camera move. Add-ons attach here with no edits to
@@ -5329,18 +5603,24 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         />
       )}
       {!hideCompass && compassP !== null && originScreen && (
-        <LocalHorizonWheel
-          cx={originScreen.x}
-          cy={originScreen.y}
-          size={HORIZON_WHEEL_SIZE}
-          scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
-          opacity={
-            mapMoving
-              ? 0
-              : COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)
-          }
-          bearing={originNorthDeg}
-        />
+        // The dial is placed at the origin's PROJECTED point, which is relative to the GL
+        // canvas. While framing, the canvas + edge badges shift by the Extras-panel inset
+        // (--capture-extra-*); this layer carries the dial so it shifts by the same amount
+        // and stays centred on the origin (see .local-horizon-layer in Map.css).
+        <div className="local-horizon-layer">
+          <LocalHorizonWheel
+            cx={originScreen.x}
+            cy={originScreen.y}
+            size={HORIZON_WHEEL_SIZE}
+            scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
+            opacity={
+              mapMoving
+                ? 0
+                : COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)
+            }
+            bearing={originNorthDeg}
+          />
+        </div>
       )}
       {/* Capture "Extras" panel — opaque planet/angle positions; the map + edge badges
           inset to clear it (left for landscape, top otherwise). Self-measures → onExtraMeasure. */}
@@ -5354,9 +5634,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       )}
       {/* Capture footer — real DOM inside the frame, so it's captured WYSIWYG and
           the map/edge-labels are inset above the caption band rather than drawn over it.
-          The band is always present (it carries the watermark); the caption text line only
-          appears when at least one caption field is enabled. */}
-      {frameActive && (
+          The band carries the watermark + optional caption text. `noCaption` (gated
+          Transparent mode) drops it entirely for a clean see-through export. */}
+      {frameActive && !noCaption && (
         <div className="capture-footer" aria-hidden="true">
           <div className="capture-caption">
             {frameCaptionText ? (
@@ -5368,11 +5648,34 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           <span className="capture-watermark">{getCaptureBrand().render()}</span>
         </div>
       )}
+      {/* Transparent export: no footer band, so the caption rides in the frame's TOP-LEFT
+          instead — each enabled field on its own line, over the map (no band) with a halo for
+          legibility. Real DOM inside the frame, so captureFrame rasterises it WYSIWYG. */}
+      {frameActive && lsTransparent && frameCaptionLines.length > 0 && (
+        <div className="capture-caption-tl" aria-hidden="true">
+          {frameCaptionLines.map((line, i) => (
+            <div key={i} className="capture-caption-tl-line">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Transparent export: no footer band + the credits/copyright control is hidden (CSS, keyed
+          on .map-frame.transparent), so the brand stands alone bottom-right as a subtle half-opacity
+          mark — which carries the attribution. Same brand seam + classes as the footer watermark, so
+          the export's onclone recolours it and its font is awaited the same way. */}
+      {frameActive && lsTransparent && (
+        <span className="capture-watermark capture-watermark-transparent" aria-hidden="true">
+          {getCaptureBrand().render()}
+        </span>
+      )}
       </div>
       {/* Subtle escape hatch once deeply zoomed in (LS labels at full radius): a
           low-opacity pill, brighter on hover, that eases back to a wide overview. Kept
-          visible while the zoom guide is open so its click mission stays completable. */}
-      {(zoom >= CLOSE_ZOOM || keepZoomOutVisible) && (
+          visible while the zoom guide is open so its click mission stays completable —
+          but hidden entirely in the transparent LS export, whose deep zoom is deliberate
+          framing, not the user exploring (App suppresses the matching guide too). */}
+      {!lsTransparent && (zoom >= CLOSE_ZOOM || keepZoomOutVisible) && (
         <button
           type="button"
           className="map-zoom-out"

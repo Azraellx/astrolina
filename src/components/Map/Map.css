@@ -80,13 +80,10 @@
 .map-frame.framed .maplibregl-ctrl-top-right {
   display: none;
 }
-/* …but the attribution's "AstroLina" credits button is redundant while framing — the
-   export already carries the AstroLina watermark — so hide just that part, keeping the
-   data credit (© OpenStreetMap etc.). The export also strips its trailing separator
-   (see Map.tsx captureFrame onclone). */
-.map-frame.framed .acg-credits-btn {
-  display: none;
-}
+/* The attribution's "AstroLina" credit + OSM data credit are managed in JS while framing
+   (Map.tsx's attribution effect): an ordinary capture keeps just the data credit (the export's
+   watermark carries AstroLina), while Transparent mode — no basemap drawn — shows only
+   "AstroLina". So there's no CSS hide here; the effect owns the bottom-right line. */
 /* Pull the bottom-right disclosure 50% closer to the frame edge while framing (base
    edge gap is var(--edge,16px); halve it) so it tucks tighter into the exported image.
    Needs !important + higher specificity to beat the base rule's !important. */
@@ -108,6 +105,22 @@
   bottom: var(--capture-caption-h, 0px);
 }
 .map-frame.framed .acg-edge-badges {
+  left: var(--capture-extra-left, 0px);
+  top: var(--capture-extra-top, 0px);
+  bottom: var(--capture-caption-h, 0px);
+}
+/* The local-horizon dial is placed at the origin's PROJECTED screen point, which is relative
+   to the GL canvas. Framing shifts the canvas + edge badges by the Extras-panel inset
+   (--capture-extra-*); this layer carries the dial so it shifts by the same amount and the
+   compass stays centred on the origin. Spans the frame, z 7 (below the badges' z 8 — see the
+   .acg-edge-badges note), passes clicks through. */
+.local-horizon-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+.map-frame.framed .local-horizon-layer {
   left: var(--capture-extra-left, 0px);
   top: var(--capture-extra-top, 0px);
   bottom: var(--capture-caption-h, 0px);
@@ -146,6 +159,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Transparent export: the caption stacked in the frame's TOP-LEFT (no footer band). One enabled
+   field per line, over the map, with a halo so it stays legible on any backdrop. Sits above the
+   badge layer (z 8) for readability, and is non-interactive so it never blocks composing. */
+.capture-caption-tl {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 68%;
+  pointer-events: none;
+}
+.capture-caption-tl-line {
+  font: 700 15px/1.25 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: rgba(255, 255, 255, 0.97);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 2px rgba(0, 0, 0, 0.7);
+}
 /* The export watermark. The open core stamps a plain "astrolina.org" credit in the
    inherited system font — deliberately NO font-family / text-transform / letter-spacing
    here, so a downstream build can layer those on for its wordmark without a
@@ -161,6 +198,26 @@
   color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
+/* Transparent export: the watermark stands alone at half opacity — a subtle brand mark that
+   carries the attribution now that the credits/copyright control is hidden (below). There's no
+   caption band here, so it mirrors the non-transparent watermark's size + position off
+   --capture-brand-h (the band height that WOULD apply) — identical placement, just no band behind
+   it. Keeps the base text-shadow (the band watermark drops it, but here there's no band backdrop). */
+.capture-watermark-transparent {
+  opacity: 0.5;
+  bottom: 0;
+  right: calc(var(--capture-brand-h, 0px) * 0.5);
+  height: var(--capture-brand-h, 0px);
+  display: flex;
+  align-items: center;
+  font-size: clamp(10px, calc(var(--capture-brand-h, 0px) * 0.36), 15px);
+}
+/* …and hide maplibre's attribution/credits control entirely in Transparent mode — the brand mark
+   above is the sole disclosure. (Ordinary captures keep the control; see the attribution effect.) */
+.map-frame.transparent .maplibregl-ctrl-bottom-right {
+  display: none !important;
+}
+
 /* With a caption band present, center the watermark inside it on the right and scale
    its size to the band (clamped) so it never overflows a short band. */
 .map-frame.has-caption .capture-watermark {
@@ -372,6 +429,14 @@
   opacity: 0.85;
 }
 
+/* Transparent-export LS badges: glyph-only + ~50% larger (the glyph itself is upsized in the JSX;
+   this scales the pill's padding to match), so the local-space compass rose reads big on a
+   floor-plan overlay. */
+.acg-badge.ls-badge-lg {
+  padding: 3px 9px;
+  border-radius: 9px;
+}
+
 .acg-badge-code {
   letter-spacing: 0.02em;
 }
@@ -420,6 +485,38 @@
   letter-spacing: 0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+/* Transparent export, "Label Name": the planet's name printed after the glyph on a local-space
+   badge. Base size suits the regular (inbound) badge's 11px glyph; the enlarged outbound badge
+   (.ls-badge-lg) bumps it to sit alongside its 17px glyph without dwarfing it. */
+.ls-badge-name {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+.acg-badge.ls-badge-lg .ls-badge-name {
+  font-size: 13px;
+}
+
+/* Transparent export, "Degrees": each line's bearing printed ALONG the line, just inside its
+   badge toward the origin. Positioned like a badge (absolute, moved by `translate`) but with no
+   pill — just the line's colour over the map, with a dark halo so it stays legible on any tone. */
+.ls-line-deg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 2px rgba(0, 0, 0, 0.55);
 }
 
 /* The bundled symbol font sits a touch low; nudge badge glyphs up to optically centre

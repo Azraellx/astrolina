@@ -17,6 +17,7 @@ import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
+import { tierMet, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { useTouchLayout, usePhone } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
@@ -44,9 +45,10 @@ export interface CaptionFields {
   date: boolean;
   time: boolean;
   location: boolean;
+  coordinates: boolean;
   calculations: boolean;
 }
-const CAPTION_KEYS = ['name', 'date', 'time', 'location', 'calculations'] as const;
+const CAPTION_KEYS = ['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const;
 
 // Whether this device/browser can share an image FILE via the OS share sheet (Web Share
 // Level 2). Fully client-side — no upload, no server. True on iOS/Android and capable
@@ -168,6 +170,7 @@ function TipBtn({
   ariaPressed,
   ariaLabel,
   disabled,
+  ariaDisabled,
   title,
   hint,
   advanced,
@@ -180,6 +183,9 @@ function TipBtn({
   /** For icon-only buttons whose children carry no text — gives the button an accessible name. */
   ariaLabel?: string;
   disabled?: boolean;
+  /** Soft-disable: greyed + non-actioning (the onClick is guarded) but still focusable/hoverable,
+   *  so its tip can explain WHY it's unavailable — unlike native `disabled`, which suppresses tips. */
+  ariaDisabled?: boolean;
   title: string;
   hint: string;
   /** Show the "ADV" tag on the tip headline — marks the action as Advanced-only. */
@@ -195,9 +201,10 @@ function TipBtn({
         ref={ref}
         type="button"
         className={className}
-        onClick={onClick}
+        onClick={ariaDisabled ? undefined : onClick}
         aria-pressed={ariaPressed}
         aria-label={ariaLabel}
+        aria-disabled={ariaDisabled || undefined}
         disabled={disabled}
         onMouseEnter={show}
         onMouseLeave={hide}
@@ -241,6 +248,27 @@ interface CaptureHudProps {
    *  read lazily on click so it always carries the freshest view. Null hides the
    *  "Copy link" button (e.g. a composite chart, which a link can't recast). */
   shareLink?: (() => string) | null;
+  /** Whether the Local Space view is active — the "Transparent (Local Space)" toggle in the
+   *  Frame section is scoped to it (its export treatment only applies while LS is on), so it
+   *  appears only then. */
+  localSpaceActive: boolean;
+  /** The "Transparent (Local Space)" preset (gated tier): hides the LS line arrows, switches
+   *  them to standard frame-edge labels, and blanks the basemap for a transparent export.
+   *  App applies it only with LS on + Capture armed + the plan reaching the gated rung. */
+  transparentMode: boolean;
+  setTransparentMode: (v: boolean) => void;
+  /** Fly the map to the local-space origin (at the compass's full zoom) — App calls this when
+   *  Transparent turns on, so the always-on circle mask has the horizon rose to frame. */
+  onFlyToOrigin: () => void;
+  /** Transparent-export badge labels — the Details section swaps the wheel/list picker for these
+   *  two toggles while Transparent is on: print each LS planet's name after its glyph, and print
+   *  the line's bearing along the line toward the compass centre. */
+  lsLabelName: boolean;
+  setLsLabelName: (v: boolean) => void;
+  lsLineDeg: boolean;
+  setLsLineDeg: (v: boolean) => void;
+  /** The user's plan tier (lib/plan) — gates the Transparent toggle to the gated rung. */
+  planTier: PlanTier;
 }
 
 export function CaptureHud({
@@ -258,6 +286,15 @@ export function CaptureHud({
   fileName,
   onCapture,
   shareLink,
+  localSpaceActive,
+  transparentMode,
+  setTransparentMode,
+  onFlyToOrigin,
+  lsLabelName,
+  setLsLabelName,
+  lsLineDeg,
+  setLsLineDeg,
+  planTier,
 }: CaptureHudProps) {
   const { t } = useT();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
@@ -282,6 +319,31 @@ export function CaptureHud({
   // Phones can't fit the wheel/list details in a phone-sized frame, so the picker is replaced by
   // an explanatory "i" and the view is forced to 'none' upstream (App passes view='none' here).
   const phone = usePhone();
+
+  // The Transparent (Local Space) toggle belongs to the GATED rung (lib/plan): live for an
+  // entitled user (with the gated tip tag), a click-to-upgrade teaser when the build nudges
+  // that rung, hidden otherwise — the open core never reaches the gated rung, so it ships
+  // hidden there. The eye reads the EFFECTIVE state (App gates the applied value the same
+  // way) so a teased/stale pref never shows it active with nothing applied.
+  const transparentUnlocked = tierMet(planTier, 'gated');
+  const transparentNudge = !transparentUnlocked && shouldShowNudge('gated');
+  const effTransparent = transparentUnlocked && transparentMode;
+  const transparentClick = () => {
+    if (!transparentUnlocked) {
+      nudgeAction(); // teaser → open the upgrade flow instead of toggling
+      return;
+    }
+    const next = !transparentMode;
+    setTransparentMode(next);
+    // Turning it on flies to the LS origin (compass full-size) so the always-on circle mask frames
+    // the horizon rose; turning it off leaves the camera where it is.
+    if (next) onFlyToOrigin();
+  };
+  // While Transparent mode is actually ON (LS up + entitled + set), the export is stripped to a
+  // clean transparent image (App forces the view off, withholds overlays, drops the caption).
+  // So the Details, per-overlay toggles and Caption sections hide; the frame ratio stays free
+  // to pick, and the Transparent toggle + export actions remain.
+  const transparentLocked = localSpaceActive && effTransparent;
 
   // Optional downstream gate (e.g. a build makes export an account-only feature). While the user is
   // locked the three actions divert to the gate's upsell (the account takeover, see divertIfLocked).
@@ -493,32 +555,92 @@ export function CaptureHud({
           })}
         </div>
 
-        <div className={`capture-hud-label${phone ? ' capture-hud-label-info' : ''}`}>
+        {/* Transparent (Local Space): a gated-tier preset for Local-Space captures — hides
+            the line arrows, uses standard frame-edge labels and blanks the basemap for a
+            see-through export. Its effect only applies with Local Space on, so it's shown
+            SOFT-DISABLED (greyed, non-clickable, tip explains) until LS is active; hidden
+            below the gated rung unless the build nudges it. */}
+        {(transparentUnlocked || transparentNudge) && (
+          <TipBtn
+            className={`location-ls-toggle ${effTransparent ? 'on' : 'off'}${
+              localSpaceActive ? '' : ' disabled'
+            }`}
+            onClick={transparentClick}
+            ariaPressed={effTransparent}
+            ariaDisabled={!localSpaceActive}
+            gated
+            title={t('captureHud.transparent.title')}
+            hint={
+              localSpaceActive
+                ? t('captureHud.transparent.hint')
+                : t('captureHud.transparent.needLs')
+            }
+          >
+            <EyeIcon open={effTransparent} className="location-ls-eye" size={14} />
+            <span className="location-ls-name">{t('captureHud.transparent.title')}</span>
+          </TipBtn>
+        )}
+
+        {/* Details heading — shown in both modes. The phone "i" (why no wheel/list) is only
+            relevant to the normal picker, so it's dropped in the transparent branch. */}
+        <div
+          className={`capture-hud-label${
+            phone && !transparentLocked ? ' capture-hud-label-info' : ''
+          }`}
+        >
           <span>{t('captureHud.extras.label')}</span>
-          {phone && (
+          {phone && !transparentLocked && (
             <DetailsInfo
               title={t('captureHud.view.phoneTitle')}
               hint={t('captureHud.view.phoneHint')}
             />
           )}
         </div>
-        {/* Phones can't fit the wheel/list in a phone-sized frame, so the picker is dropped there
-            (view is forced to 'none' upstream); the "i" beside the heading explains it instead. */}
-        {!phone && (
-          <div className="location-ls-seg capture-hud-seg" role="group">
-            {(['none', 'wheel', 'list'] as const).map((v) => (
-              <TipBtn
-                key={v}
-                className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
-                onClick={() => onSetView(v)}
-                ariaPressed={view === v}
-                title={t(`captureHud.view.${v}`)}
-                hint={t(`captureHud.view.${v}Hint`)}
-              >
-                {t(`captureHud.view.${v}`)}
-              </TipBtn>
-            ))}
+        {transparentLocked ? (
+          /* Transparent export: the wheel/list picker is moot (the chart panel is forced off), so
+             the Details section offers two badge-label toggles instead — what each local-space
+             badge prints beyond its glyph: the planet's name, and the line's bearing. */
+          <div className="capture-hud-toggle-grid">
+            <TipBtn
+              className={`location-ls-toggle ${lsLabelName ? 'on' : 'off'}`}
+              onClick={() => setLsLabelName(!lsLabelName)}
+              ariaPressed={lsLabelName}
+              title={t('captureHud.lsLabels.name.title')}
+              hint={t('captureHud.lsLabels.name.hint')}
+            >
+              <EyeIcon open={lsLabelName} className="location-ls-eye" size={14} />
+              <span className="location-ls-name">{t('captureHud.lsLabels.name.title')}</span>
+            </TipBtn>
+            <TipBtn
+              className={`location-ls-toggle ${lsLineDeg ? 'on' : 'off'}`}
+              onClick={() => setLsLineDeg(!lsLineDeg)}
+              ariaPressed={lsLineDeg}
+              title={t('captureHud.lsLabels.degrees.title')}
+              hint={t('captureHud.lsLabels.degrees.hint')}
+            >
+              <EyeIcon open={lsLineDeg} className="location-ls-eye" size={14} />
+              <span className="location-ls-name">{t('captureHud.lsLabels.degrees.title')}</span>
+            </TipBtn>
           </div>
+        ) : (
+          /* Phones can't fit the wheel/list in a phone-sized frame, so the picker is dropped there
+             (view is forced to 'none' upstream); the "i" beside the heading explains it instead. */
+          !phone && (
+            <div className="location-ls-seg capture-hud-seg" role="group">
+              {(['none', 'wheel', 'list'] as const).map((v) => (
+                <TipBtn
+                  key={v}
+                  className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
+                  onClick={() => onSetView(v)}
+                  ariaPressed={view === v}
+                  title={t(`captureHud.view.${v}`)}
+                  hint={t(`captureHud.view.${v}Hint`)}
+                >
+                  {t(`captureHud.view.${v}`)}
+                </TipBtn>
+              ))}
+            </div>
+          )
         )}
         {/* Optional groups, meaningful only once a view is chosen ('none' draws nothing). Planets
             aren't here — they're the always-on baseline of any view; these add on top of them.
@@ -545,7 +667,7 @@ export function CaptureHud({
             hide applies only WHILE the tool is armed: App reverts the map to every
             overlay the moment Capture closes, so nothing set here can stick. Labels
             arrive from the registration, already localized. */}
-        {(() => {
+        {!transparentLocked && (() => {
           const overlayToggles = getMapOverlays().filter(
             (o) => o.captureToggle && isOverlayEntitled(o),
           );
@@ -573,6 +695,8 @@ export function CaptureHud({
           );
         })()}
 
+        {/* Caption section — shown in both modes. The normal export prints it as the footer band;
+            the Transparent export stacks the same fields in the frame's top-left instead. */}
         <div className="capture-hud-label">{t('captureHud.caption.label')}</div>
         <div className="capture-hud-toggle-grid">
           {CAPTION_KEYS.map((k) => (

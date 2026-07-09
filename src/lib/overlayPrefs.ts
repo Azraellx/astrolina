@@ -195,15 +195,19 @@ export function saveEclipseNatalLines(show: boolean) {
 }
 
 // ── Orb-of-influence zones ───────────────────────────────────────────────────
-// The translucent bands around planet angle lines (a ground distance — entered in km
-// or mi, the user's pick) and parans (degrees of latitude, the conventional paran orb).
-// On by default, but gated by Advanced mode (App's `advancedWheel && showOrbZones`), so a
-// fresh account first sees them when it switches to ADV — the same pattern as the
-// zenith/nadir stamps (astro:show-zenith:v1, also `!== '0'`).
+// The translucent bands around planet angle lines and parans, BOTH sized as a GROUND
+// distance entered in the user's chosen unit (km or mi — one shared toggle). The line orb
+// is a perpendicular halo; the paran orb becomes a ± latitude band at render (a paran is a
+// horizontal latitude line, so its km orb converts via ≈111 km per degree — see
+// orbBands.generateOrbBands). On by default, but gated by Advanced mode (App's
+// `advancedWheel && showOrbZones`), so a fresh account first sees them when it switches to
+// ADV — the same pattern as the zenith/nadir stamps (astro:show-zenith:v1, also `!== '0'`).
 const ORB_ZONES_KEY = 'astro:orb-zones:v1';
 const ORB_ZONE_VAL_KEY = 'astro:orb-zone-val:v1';
 const ORB_ZONE_UNIT_KEY = 'astro:orb-zone-unit:v1';
-const PARAN_ORB_DEG_KEY = 'astro:paran-orb-deg:v1';
+// New distance key: the retired 'astro:paran-orb-deg:v1' held DEGREES, so a fresh key keeps
+// an old value from being misread as km/mi (a stale "1" would be a 1 km sliver).
+const PARAN_ORB_VAL_KEY = 'astro:paran-orb-val:v1';
 
 // The line-orb band width is stored in the user's chosen unit; the map converts it to km
 // (generateOrbBands) at render. Round per-unit defaults + a 25-unit step — 325 km ≈ 200 mi
@@ -257,12 +261,41 @@ export function convertOrbZoneVal(val: number, from: DistanceUnit, to: DistanceU
   return clampOrbZone(Math.round(inTarget / ORB_ZONE_STEP) * ORB_ZONE_STEP, to);
 }
 
-export function loadParanOrbDeg(): number {
-  const v = Number(localStorage.getItem(PARAN_ORB_DEG_KEY));
-  return Number.isFinite(v) && v >= 0.25 && v <= 5 ? v : 1;
+// The paran orb, like the line orb, is a ground distance entered in the shared unit (km or
+// mi) and stored in that unit; the map converts it to a latitude band at render. Round
+// per-unit defaults + a 10-unit step — 100 km ≈ 60 mi (each snaps to the other on the 10
+// grid), so toggling units reads as the same width.
+export const PARAN_ORB_STEP = 10;
+export const PARAN_ORB_MIN = 10;
+const PARAN_ORB_MAX: Record<DistanceUnit, number> = { km: 500, mi: 300 };
+const PARAN_ORB_DEFAULT: Record<DistanceUnit, number> = { km: 100, mi: 60 };
+
+/** The max paran-orb distance in the given unit (the floor is the shared PARAN_ORB_MIN). */
+export function paranOrbMax(unit: DistanceUnit): number {
+  return PARAN_ORB_MAX[unit];
 }
-export function saveParanOrbDeg(deg: number) {
-  localStorage.setItem(PARAN_ORB_DEG_KEY, String(deg));
+function clampParanOrb(v: number, unit: DistanceUnit): number {
+  return Math.min(Math.max(v, PARAN_ORB_MIN), PARAN_ORB_MAX[unit]);
+}
+
+/** The paran-orb distance stored in `unit`; defaults to the round per-unit value, range-checked. */
+export function loadParanOrbVal(unit: DistanceUnit): number {
+  const v = Number(localStorage.getItem(PARAN_ORB_VAL_KEY));
+  return Number.isFinite(v) && v >= PARAN_ORB_MIN && v <= PARAN_ORB_MAX[unit]
+    ? v
+    : PARAN_ORB_DEFAULT[unit];
+}
+export function saveParanOrbVal(val: number) {
+  localStorage.setItem(PARAN_ORB_VAL_KEY, String(val));
+}
+
+/** Re-express the paran orb when the unit switches: convert through km, snap to the 10 grid,
+ *  clamp. So 100 km ↔ 60 mi, and any custom value carries across to the nearest round one. */
+export function convertParanOrbVal(val: number, from: DistanceUnit, to: DistanceUnit): number {
+  if (from === to) return val;
+  const km = from === 'mi' ? val * KM_PER_MI : val;
+  const inTarget = to === 'mi' ? km / KM_PER_MI : km;
+  return clampParanOrb(Math.round(inTarget / PARAN_ORB_STEP) * PARAN_ORB_STEP, to);
 }
 
 // Night-side shading (Filters ▸ Night Shading): the hemisphere where the Sun
@@ -321,32 +354,42 @@ export function saveLsHideCompass(v: boolean) {
   localStorage.setItem(LS_HIDE_COMPASS_KEY, v ? '1' : '0');
 }
 
-// The Local Space window's CAPTURE section: options that shape the framed export.
-// A gated-tier surface (lib/plan), visible and applied only while the Capture tool
-// is armed (App gates each option on the window being open, the frame being up AND
-// the plan reaching the gated rung — dropping any of the three restores the map, so
-// nothing can "stick" past the session or a tier lapse; the prefs persist for the
-// next capture).
+// The Local Space window's CAPTURE section: one "Transparent Mode" toggle that shapes the
+// framed export. A gated-tier surface (lib/plan), visible and applied only while the Capture
+// tool is armed (App gates it on the window being open, the frame being up AND the plan
+// reaching the gated rung — dropping any of those restores the map, so it can't "stick" past
+// the session or a tier lapse; the pref persists for the next capture).
 //
-// "Hide map (transparent)": blank the basemap under the local-space lines so they
-// stand alone — the export keeps the transparency (a see-through PNG for laying
-// over a floor plan or any backdrop of the user's own).
-const LS_HIDE_MAP_KEY = 'astro:ls-hide-map:v1';
-export function loadLsHideMap(): boolean {
-  return localStorage.getItem(LS_HIDE_MAP_KEY) === '1';
+// "Transparent Mode": the clean-export preset — hides the line arrows, switches the
+// local-space lines to standard (frame-edge) labels, and blanks the basemap so the export
+// keeps a transparent background (a see-through PNG for laying over a floor plan or any
+// backdrop of the user's own). Replaces the former separate hide-arrows / standard-labels /
+// hide-map prefs; a fresh key, so an old individual value can't be misread as the mode.
+const LS_TRANSPARENT_KEY = 'astro:ls-transparent:v1';
+export function loadLsTransparent(): boolean {
+  return localStorage.getItem(LS_TRANSPARENT_KEY) === '1';
 }
-export function saveLsHideMap(v: boolean) {
-  localStorage.setItem(LS_HIDE_MAP_KEY, v ? '1' : '0');
+export function saveLsTransparent(v: boolean) {
+  localStorage.setItem(LS_TRANSPARENT_KEY, v ? '1' : '0');
 }
 
-// "Hide line arrows": drop the direction arrows riding along the local-space lines
-// for cleaner linework in the framed export.
-const LS_HIDE_ARROWS_KEY = 'astro:ls-hide-arrows:v1';
-export function loadLsHideArrows(): boolean {
-  return localStorage.getItem(LS_HIDE_ARROWS_KEY) === '1';
+// Transparent-export badge labels (shown in the Capture Details section in place of the wheel /
+// list picker): whether each local-space badge prints the planet's name after its glyph, and
+// whether the line's bearing is printed along the line. Both off by default (a glyph-only rose);
+// only meaningful with Transparent mode on (App gates their effect there).
+const LS_LABEL_NAME_KEY = 'astro:ls-label-name:v1';
+export function loadLsLabelName(): boolean {
+  return localStorage.getItem(LS_LABEL_NAME_KEY) === '1';
 }
-export function saveLsHideArrows(v: boolean) {
-  localStorage.setItem(LS_HIDE_ARROWS_KEY, v ? '1' : '0');
+export function saveLsLabelName(v: boolean) {
+  localStorage.setItem(LS_LABEL_NAME_KEY, v ? '1' : '0');
+}
+const LS_LINE_DEG_KEY = 'astro:ls-line-deg:v1';
+export function loadLsLineDeg(): boolean {
+  return localStorage.getItem(LS_LINE_DEG_KEY) === '1';
+}
+export function saveLsLineDeg(v: boolean) {
+  localStorage.setItem(LS_LINE_DEG_KEY, v ? '1' : '0');
 }
 
 // Capture ▸ per-overlay visibility: the registered map overlays (see
@@ -365,17 +408,6 @@ export function loadCaptureHiddenOverlays(): Set<string> {
 }
 export function saveCaptureHiddenOverlays(ids: ReadonlySet<string>) {
   localStorage.setItem(CAPTURE_HIDE_OVERLAYS_KEY, JSON.stringify([...ids]));
-}
-
-// "Standard labels": label the local-space lines like the chart's other lines —
-// badges anchor where each line exits the frame (instead of on the ring around the
-// origin) and drop the bearing degrees from their faces.
-const LS_EDGE_LABELS_KEY = 'astro:ls-edge-labels:v1';
-export function loadLsEdgeLabels(): boolean {
-  return localStorage.getItem(LS_EDGE_LABELS_KEY) === '1';
-}
-export function saveLsEdgeLabels(v: boolean) {
-  localStorage.setItem(LS_EDGE_LABELS_KEY, v ? '1' : '0');
 }
 
 // (The 'progressed' vs 'tertiary-progressed' choice is now two separate Overlay-menu

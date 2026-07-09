@@ -255,6 +255,10 @@ export interface OverlayLayer {
   /** Full spelled-out label for the roomy expanded-view caption, e.g.
    *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 UTC". */
   labelFull: string;
+  /** The overlay's target instant as "YYYY-MM-DD HH:MM" (UTC), for surfaces that want the
+   *  raw date/time without the timeline bar in view (the expanded wheel's overlay caption).
+   *  null for synastry, which has no single instant. */
+  moment: string | null;
   jd: number; // effective JD, for toEclipticPositions in the bi-wheel
   positions: PlanetPosition[];
   gmst: number;
@@ -373,6 +377,9 @@ export function buildOverlay(
   progressionType: ProgressionType = 'secondary',
   t: TFn,
 ): OverlayLayer | null {
+  // The overlay's instant, formatted once for any caption that wants the date/time on its
+  // own (the expanded wheel shows it beside the overlay name). Synastry has no instant.
+  const moment = mode === 'synastry' ? null : fmtDateTimeUTC(targetDate);
   switch (mode) {
     case 'transits': {
       const jd = epochMsToJD(targetDate);
@@ -387,6 +394,7 @@ export function buildOverlay(
           : gmstRadians(jd);
       return {
         kind: mode,
+        moment,
         // The nub already shows "Transits" as the mode name — no readout needed.
         measure: null,
         labelFull: t('timeline.labelFull.transits', {
@@ -461,6 +469,7 @@ export function buildOverlay(
           : c.progressedJD;
       return {
         kind: mode,
+        moment,
         measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
         labelFull: t(
           isTertiary
@@ -517,6 +526,7 @@ export function buildOverlay(
           : c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
       return {
         kind: mode,
+        moment,
         // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
         measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
         labelFull: t('timeline.labelFull.solar-arc', {
@@ -569,6 +579,7 @@ export function buildOverlay(
       const arcDeg = ((arc * 180) / Math.PI).toFixed(1);
       return {
         kind: mode,
+        moment,
         measure: `${arcDeg}°`,
         labelFull: t('timeline.labelFull.primary-directions', { deg: arcDeg }),
         jd: c.birthJD,
@@ -601,6 +612,7 @@ export function buildOverlay(
       });
       return {
         kind: mode,
+        moment,
         measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
         labelFull: t('timeline.labelFull.cyclo', {
           datetime: fmtDateTimeUTC(targetDate),
@@ -630,6 +642,7 @@ export function buildOverlay(
         : getPlanetPositions(pjd, nodeType);
       return {
         kind: mode,
+        moment,
         measure: null,
         labelFull: t('timeline.labelFull.synastry', { partner: partner.name }),
         jd: pjd,
@@ -649,6 +662,7 @@ export function buildOverlay(
       const jd = epochMsToJD(targetDate);
       return {
         kind: mode,
+        moment,
         measure: null,
         labelFull: t('timeline.labelFull.eclipses', {
           datetime: fmtDateTimeUTC(targetDate),

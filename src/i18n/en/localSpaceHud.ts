@@ -35,23 +35,4 @@ export const localSpaceHud = {
     title: 'Fly to origin',
     hint: 'Drop into the local horizon: fly the camera to the origin the lines radiate from.',
   },
-  // The Capture section: export-shaping options, shown only while the Capture tool
-  // is armed (the "i" beside the heading explains the empty state).
-  capture: {
-    label: 'Capture',
-    infoTitle: 'Capture options',
-    infoHint: 'Extra controls for the framed export — they appear (and apply) only while the Capture tool is armed (Tools ▸ Capture).',
-  },
-  hideArrows: {
-    title: 'Line arrows',
-    hint: 'The direction arrows riding along each local-space line. Toggle off for cleaner linework in the export.',
-  },
-  edgeLabels: {
-    title: 'Standard labels',
-    hint: 'Label the local-space lines like the rest of the chart: badges hug the frame edges instead of ringing the origin, without the bearing degrees on their faces.',
-  },
-  hideMap: {
-    title: 'Map (transparent)',
-    hint: 'Toggle off to blank the basemap so only the lines remain — the export keeps a transparent background, ready to lay over a floor plan or your own backdrop. The map returns when Capture or Local Space closes.',
-  },
 } as const;

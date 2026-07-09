@@ -32,6 +32,7 @@ import {
   type SlideInfo,
   type OverlayData,
   SIDEREAL_DEG_PER_HOUR,
+  CLOSE_ZOOM,
 } from './components/Map/Map';
 import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { SettingsNub } from './components/Sidebar/SettingsNub';
@@ -47,7 +48,7 @@ import {
   SKY_BAND_PHONE_CUSHION,
 } from './components/SkyBand/SkyBand';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
-import { MAP_CLICK_EVENT, type MapClickDetail } from './lib/extensions/mapOverlays';
+import { getMapOverlays, MAP_CLICK_EVENT, type MapClickDetail } from './lib/extensions/mapOverlays';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
@@ -206,13 +207,13 @@ import {
   loadLsHideInbound,
   loadLsHideCompass,
   loadCaptureHiddenOverlays,
-  loadLsHideArrows,
-  loadLsEdgeLabels,
-  loadLsHideMap,
+  loadLsTransparent,
+  loadLsLabelName,
+  loadLsLineDeg,
   loadOverlayStep,
   loadOrbZoneUnit,
   loadOrbZoneVal,
-  loadParanOrbDeg,
+  loadParanOrbVal,
   loadPrimaryRate,
   loadShowNightShade,
   loadShowOrbZones,
@@ -237,15 +238,16 @@ import {
   saveLsHideInbound,
   saveLsHideCompass,
   saveCaptureHiddenOverlays,
-  saveLsHideArrows,
-  saveLsEdgeLabels,
-  saveLsHideMap,
+  saveLsTransparent,
+  saveLsLabelName,
+  saveLsLineDeg,
   saveOverlayStep,
   saveOrbZoneUnit,
   saveOrbZoneVal,
   convertOrbZoneVal,
+  convertParanOrbVal,
   KM_PER_MI,
-  saveParanOrbDeg,
+  saveParanOrbVal,
   savePrimaryRate,
   saveShowNightShade,
   saveShowOrbZones,
@@ -265,10 +267,11 @@ import {
   saveCurrentId,
   type StoredChart,
 } from './lib/chartLibrary';
+import { fmtLat, fmtLng } from './lib/coordFormat';
 import {
   applyTheme,
   loadTheme,
-  MOON_LINE_DARK,
+  MAP_LINE_COLOR_OVERRIDES,
   NIGHT_SHADE_STYLE,
   saveTheme,
   STAR_LINE_COLORS,
@@ -310,29 +313,35 @@ const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
 const chartUtcMs = (c: StoredChart) =>
   Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute) - c.tzOffset * 3_600_000;
 
-// The Earth/Glass basemaps are light, so the Moon's pale gray barely shows. On those
-// themes only, swap it for a darker slate (MOON_LINE_DARK, shared from lib/theme so the
-// baked zenith glyph matches). The color is the single source the edge badges, hover
-// tip, crossing-dot blends, AND the zenith disc/stamp all read, so they follow suit.
-// Geometry-agnostic so it covers the line/local-space (LineString) and zenith (Point)
-// sets. Midpoint lines carry a second body (planetB/colorB, read by their hover tip);
-// a Moon there gets the same swap so "Sun/Moon" tips stay readable on light themes.
-function withDarkMoon<G extends Geometry, P extends { planet: PlanetName; color: string }>(
+// Some bodies' PLANET_COLORS tint washes out against a light basemap, so the MAP draws
+// their lines/zeniths in a per-theme override instead (MAP_LINE_COLOR_OVERRIDES from
+// lib/theme — the Moon on both light themes, plus Mercury/Uranus on Earth; shared with
+// the baked zenith glyph so stamps match). The color is the single source the edge
+// badges, hover tip, crossing-dot blends, AND the zenith disc/stamp all read, so they
+// follow suit. Geometry-agnostic so it covers the line/local-space (LineString) and
+// zenith (Point) sets. Midpoint lines carry a second body (planetB/colorB, read by their
+// hover tip); an overridden body there gets the same swap so a "Sun/Moon" tip stays
+// readable on light themes.
+function withThemeLineColors<G extends Geometry, P extends { planet: PlanetName; color: string }>(
   fc: FeatureCollection<G, P>,
   theme: Theme,
 ): FeatureCollection<G, P> {
-  if (theme === 'dark') return fc;
+  const overrides = MAP_LINE_COLOR_OVERRIDES[theme];
+  // Dark (or any theme with no overrides) → nothing to rewrite.
+  if (!Object.keys(overrides).length) return fc;
   return {
     type: 'FeatureCollection',
     features: fc.features.map((f) => {
       const p = f.properties as P & { planetB?: PlanetName; colorB?: string };
-      if (p.planet !== 'Moon' && p.planetB !== 'Moon') return f;
+      const a = overrides[p.planet];
+      const b = p.planetB ? overrides[p.planetB] : undefined;
+      if (!a && !b) return f;
       return {
         ...f,
         properties: {
           ...p,
-          ...(p.planet === 'Moon' ? { color: MOON_LINE_DARK } : null),
-          ...(p.planetB === 'Moon' ? { colorB: MOON_LINE_DARK } : null),
+          ...(a ? { color: a } : null),
+          ...(b ? { colorB: b } : null),
         },
       };
     }),
@@ -723,17 +732,13 @@ export default function App() {
     () => localStorage.getItem('astro:show-timeline:v1') !== '0',
   );
   const toggleOverlayExpanded = () => setOverlayExpanded((v) => !v);
-  // Overlay ▸ Display ▸ Zenith: draw the overlay bodies' sub-planetary (zenith)
-  // stamps on the map. Off by default. When off, the overlay edge labels also stop
-  // being click-to-fly targets — their zenith point isn't shown, so there's nothing
-  // to fly to (the App simply feeds the overlay zenith source no points).
-  const [showOverlayZenith, setShowOverlayZenith] = useState(
-    () => localStorage.getItem('astro:show-overlay-zenith:v1') === '1',
-  );
   // Appearance ▸ Details ▸ Zenith/Nadirs: draw the NATAL bodies' zenith (overhead)
   // stamps, their antipodal nadir (underfoot) stamps, and the ecliptic reference
-  // curve through the Sun's zenith. On by default (the natal counterpart of
-  // showOverlayZenith; gated the same way at the Map props).
+  // curve through the Sun's zenith. On by default. This ONE toggle also governs the
+  // active overlay's own zenith/nadir stamps + ecliptic — they ride the overlay's
+  // primary lines, so they show whenever an overlay is up and this toggle is on (no
+  // separate overlay-zenith control). When off, the overlay edge labels also lose
+  // their click-to-fly target (no zenith point to fly to).
   const [showZenith, setShowZenith] = useState(
     () => localStorage.getItem('astro:show-zenith:v1') !== '0',
   );
@@ -860,6 +865,7 @@ export default function App() {
     date: boolean;
     time: boolean;
     location: boolean;
+    coordinates: boolean;
     calculations: boolean;
   }>(() => {
     try {
@@ -869,15 +875,18 @@ export default function App() {
         date: p.date !== false,
         time: p.time !== false,
         location: p.location !== false,
+        // The full lat/long is a technical detail (the named place is the friendly form),
+        // so it's off by default like the calculation systems below.
+        coordinates: p.coordinates === true,
         // The calculation systems are off by default — they're a power-user detail.
         calculations: p.calculations === true,
       };
     } catch {
-      return { name: true, date: true, time: true, location: true, calculations: false };
+      return { name: true, date: true, time: true, location: true, coordinates: false, calculations: false };
     }
   });
   const toggleCaptureCaptionField = useCallback(
-    (k: 'name' | 'date' | 'time' | 'location' | 'calculations') => {
+    (k: 'name' | 'date' | 'time' | 'location' | 'coordinates' | 'calculations') => {
       setCaptureCaptionFields((p) => {
         const next = { ...p, [k]: !p[k] };
         try {
@@ -988,21 +997,28 @@ export default function App() {
       // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
       tzLabel: formatUtcOffset(current.tzOffset),
       location: current.birthplace.label,
+      // The birthplace's full latitude + longitude (DMS, same format as the corner readout).
+      coordinates: `${fmtLat(current.birthplace.lat)} ${fmtLng(current.birthplace.lng)}`,
       calculations: captureCalcText,
     };
   }, [current, captureCalcText]);
-  // Caption text for the Capture footer — only the enabled fields, in display order,
-  // joined. Blank with no chart or no fields enabled (the Map then reserves no band).
-  const captureCaptionText = useMemo(() => {
-    if (!captureFields) return '';
-    return (['name', 'date', 'time', 'location', 'calculations'] as const)
+  // Caption fields — only the enabled ones, in display order. The footer joins them into one
+  // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
+  // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
+  const captureCaptionLines = useMemo(() => {
+    if (!captureFields) return [] as string[];
+    return (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
       .filter((k) => captureCaptionFields[k])
       // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
       // other field renders as-is. The offset is appended only here, so the filename — which
       // reads the bare value from captureFields — never picks it up.
-      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]))
-      .join('  ·  ');
+      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]));
   }, [captureFields, captureCaptionFields]);
+  // The footer's single-line form: the enabled fields joined.
+  const captureCaptionText = useMemo(
+    () => captureCaptionLines.join('  ·  '),
+    [captureCaptionLines],
+  );
   // Download / share filename: track the FIRST shown caption field, walking the priority
   // order name → date → time → location (calculations is intentionally skipped — too verbose
   // for a filename). Keep walking past any field that slugs to nothing (e.g. a non-Latin
@@ -1088,10 +1104,10 @@ export default function App() {
   const effShowStarLines = advancedWheel && showStarLines;
   const effShowZenith = advancedWheel && showZenith;
   const effShowOrbZones = advancedWheel && showOrbZones;
-  // Transits-bar ADVANCED-ONLY controls: the positioning frame (Relative/Absolute switch in
-  // the returns row) + the right-side drawer's overlay-Zenith toggle. Default while Advanced
-  // is OFF (their UI is hidden then; see TimelineHud), raw restored when on. (The drawer's
-  // Natal toggle is NOT gated — always available, reads raw showNatal.)
+  // Transits-bar ADVANCED-ONLY control: the positioning frame (Relative/Absolute switch in
+  // the returns row). Default while Advanced is OFF (its UI is hidden then; see TimelineHud),
+  // raw restored when on. (The drawer's Natal toggle is NOT gated — always available, reads
+  // raw showNatal.)
   // With the birth time unknown there is no natal RAMC to hold, so the transit map
   // is forced to the absolute sky-of-the-moment frame (the only one that's real).
   const effTransitFrame: TransitFrame = noTime
@@ -1099,7 +1115,6 @@ export default function App() {
     : advancedWheel
       ? transitFrame
       : 'relative-to-natal';
-  const effShowOverlayZenith = advancedWheel && showOverlayZenith;
   // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
   // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
   // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier
@@ -1540,12 +1555,6 @@ export default function App() {
     localStorage.setItem('astro:show-timeline:v1', overlayExpanded ? '1' : '0');
   }, [overlayExpanded]);
   useEffect(() => {
-    localStorage.setItem(
-      'astro:show-overlay-zenith:v1',
-      showOverlayZenith ? '1' : '0',
-    );
-  }, [showOverlayZenith]);
-  useEffect(() => {
     localStorage.setItem('astro:show-zenith:v1', showZenith ? '1' : '0');
   }, [showZenith]);
   useEffect(() => {
@@ -1790,25 +1799,29 @@ export default function App() {
   useEffect(() => saveLsHideInbound(hideLsInbound), [hideLsInbound]);
   const [hideLsCompass, setHideLsCompass] = useState(loadLsHideCompass);
   useEffect(() => saveLsHideCompass(hideLsCompass), [hideLsCompass]);
-  // The Local Space window's CAPTURE section: export-shaping options, a gated-tier
-  // surface (lib/plan). Where they're passed to the Map, all three prefs are gated
-  // on the Local Space window being OPEN, the Capture tool being ARMED, and the plan
-  // reaching the GATED rung — dropping any of the three restores the map instantly,
-  // so a blanked basemap / hidden arrows / relabelled badges can never "stick" past
-  // the framing session or a tier lapse (the prefs persist for the next capture).
-  //
-  // "Hide line arrows": drop the direction arrows riding the local-space lines, for
-  // cleaner linework in the framed export.
-  const [hideLsArrows, setHideLsArrows] = useState(loadLsHideArrows);
-  useEffect(() => saveLsHideArrows(hideLsArrows), [hideLsArrows]);
-  // "Standard labels": label the local-space lines like the chart's other lines —
-  // badges hug the frame edges, without the bearing degrees on their faces.
-  const [lsEdgeLabels, setLsEdgeLabels] = useState(loadLsEdgeLabels);
-  useEffect(() => saveLsEdgeLabels(lsEdgeLabels), [lsEdgeLabels]);
-  // "Hide map (transparent)": blank the basemap under the local-space lines so the
-  // capture exports a see-through PNG (overlay it on a floor plan etc.).
-  const [hideLsMap, setHideLsMap] = useState(loadLsHideMap);
-  useEffect(() => saveLsHideMap(hideLsMap), [hideLsMap]);
+  // The Local Space window's CAPTURE section: a single "Transparent Mode" preset (a
+  // gated-tier surface, lib/plan). Where it's applied to the Map, it's gated on the Local
+  // Space window being OPEN, the Capture tool being ARMED, and the plan reaching the GATED
+  // rung — dropping any of those restores the map instantly, so the transparent export
+  // treatment can never "stick" past the framing session or a tier lapse (the pref persists
+  // for the next capture). ON hides the line arrows, switches to standard (frame-edge)
+  // labels, and blanks the basemap so the export keeps a transparent background.
+  const [transparentMode, setTransparentMode] = useState(loadLsTransparent);
+  useEffect(() => saveLsTransparent(transparentMode), [transparentMode]);
+  // Transparent mode is a per-Capture treatment: whenever Capture isn't the armed tool (it was
+  // just closed, or the user switched to another map tool), drop it so the next Capture session
+  // starts clean rather than silently re-applying last time's transparent export. Fires on mount
+  // too (tool starts 'off'), so any stale-persisted value clears then as well.
+  useEffect(() => {
+    if (mapTool !== 'capture') setTransparentMode(false);
+  }, [mapTool]);
+  // Transparent-export badge labels (Capture Details section, in place of the wheel/list picker):
+  // print each LS planet's name after its glyph, and/or the line's bearing along the line. Both
+  // gated to transparent mode where they're passed to the Map. Off by default (glyph-only rose).
+  const [lsLabelName, setLsLabelName] = useState(loadLsLabelName);
+  useEffect(() => saveLsLabelName(lsLabelName), [lsLabelName]);
+  const [lsLineDeg, setLsLineDeg] = useState(loadLsLineDeg);
+  useEffect(() => saveLsLineDeg(lsLineDeg), [lsLineDeg]);
   // Local space radiates from the placed pin (relocated local space) — or the
   // birthplace, either when nothing is pinned or when the Origin setting pins
   // it home explicitly. Also the anchor for the LS ring labels.
@@ -1818,6 +1831,29 @@ export default function App() {
       (current ? current.birthplace : null),
     [lsOrigin, pinned, current],
   );
+  // Fly-to helper shared by Teleport, Local Space's "fly to origin", and the transparent-export
+  // toggle: hop the camera and stash the jump so it can be undone (Teleport window / Backspace).
+  // `duration` (ms) is optional — omitted keeps MapLibre's default flyTo curve.
+  const teleportToPoint = (
+    lat: number,
+    lng: number,
+    zoom?: number,
+    duration?: number,
+  ) => {
+    const target = mapRef.current?.teleportTo(lat, lng, zoom, duration);
+    if (target) {
+      setLocationReturn('back');
+      setTeleportTarget(target);
+    }
+  };
+  // Turning on the transparent export flies to the local-space origin at the compass's full-size
+  // zoom, so the always-on circle mask has the horizon rose to frame. Same teleport hop as Local
+  // Space's "fly to origin" (undoable the same way), but near-instant — this toggle wants the
+  // frame ready right away, not a leisurely fly.
+  const flyToLsOrigin = () => {
+    if (localSpaceOrigin)
+      teleportToPoint(localSpaceOrigin.lat, localSpaceOrigin.lng, CLOSE_ZOOM, 200);
+  };
   const allLocalSpace = useMemo(
     () =>
       localSpaceOrigin && !noTime
@@ -1927,7 +1963,7 @@ export default function App() {
   const lines = useMemo(
     () =>
       mergeNodePairs(
-        withDarkMoon(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
+        withThemeLineColors(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
       ),
     [allLines, visiblePlanets, visibleLineTypes, theme],
   );
@@ -2005,7 +2041,7 @@ export default function App() {
         ...generateMidpointLines(vis, meridianLng, effCoordSystem, eps).features,
       );
     }
-    return withDarkMoon(
+    return withThemeLineColors(
       {
         type: 'FeatureCollection',
         features: features.filter((f) =>
@@ -2043,7 +2079,7 @@ export default function App() {
   const localSpace = useMemo(
     () =>
       lsActive
-        ? withDarkMoon(
+        ? withThemeLineColors(
             filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound),
             theme,
           )
@@ -2059,7 +2095,7 @@ export default function App() {
   );
   const zenith = useMemo(
     () =>
-      withDarkMoon(filterZenith(allZenith, visiblePlanets, visibleLineTypes), theme),
+      withThemeLineColors(filterZenith(allZenith, visiblePlanets, visibleLineTypes), theme),
     [allZenith, visiblePlanets, visibleLineTypes, theme],
   );
   // The nadir (sub-anti-planetary) stamps: the antipodes of the zeniths, on the IC
@@ -2067,7 +2103,7 @@ export default function App() {
   // the zeniths under the one Zenith/Nadirs filter (showZenith), gated at the Map prop.
   const nadir = useMemo(
     () =>
-      withDarkMoon(
+      withThemeLineColors(
         filterZenith(antipodeStamps(allZenith), visiblePlanets, visibleLineTypes, 'IC'),
         theme,
       ),
@@ -2491,7 +2527,7 @@ export default function App() {
       type: 'FeatureCollection',
       features: features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
     };
-    return withDarkMoon(
+    return withThemeLineColors(
       isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix),
       theme,
     );
@@ -2544,7 +2580,7 @@ export default function App() {
         : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
     return {
       lines: mergeNodePairs(
-        withDarkMoon(
+        withThemeLineColors(
           filterLines(
             isCyclo
               ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) =>
@@ -2569,7 +2605,7 @@ export default function App() {
           )
         : EMPTY_FC,
       localSpace: lsActive
-        ? withDarkMoon(
+        ? withThemeLineColors(
             filterLocalSpace(
               generateLocalSpace(
                 overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
@@ -2583,13 +2619,13 @@ export default function App() {
             theme,
           )
         : EMPTY_FC,
-      // Zenith points for the overlay bodies. When Overlay ▸ Display ▸ Zenith is on
-      // these are drawn as stamps AND each overlay label flies to its zenith on click
+      // Zenith points for the overlay bodies. When the (shared) Zenith/Nadirs toggle is
+      // on these are drawn as stamps AND each overlay label flies to its zenith on click
       // (same MC gating as natal). When off we feed no points: the stamps vanish and,
       // with no fly target, the overlay labels become non-clickable.
-      zenith: effShowOverlayZenith
+      zenith: effShowZenith
         ? tagZeniths(
-            withDarkMoon(
+            withThemeLineColors(
               filterZenith(
                 generateZenithStamps(ovPositions, ovMeridianLng),
                 visiblePlanets,
@@ -2603,9 +2639,9 @@ export default function App() {
       // The antipodal nadir stamps — antipodes of the overlay zeniths, filtered to the
       // IC line (so they follow the IC toggle, as natal nadirs do). Same overlay
       // Zenith/Nadirs gate as the zeniths above.
-      nadir: effShowOverlayZenith
+      nadir: effShowZenith
         ? tagZeniths(
-            withDarkMoon(
+            withThemeLineColors(
               filterZenith(
                 antipodeStamps(generateZenithStamps(ovPositions, ovMeridianLng)),
                 visiblePlanets,
@@ -2620,11 +2656,11 @@ export default function App() {
       // The overlay's ecliptic (zodiac) line — a dotted yellow companion to the natal
       // ecliptic, threading through the overlay Sun's zenith. Shown only when the
       // overlay zeniths are (same gate), since it's the zenith stamps' reference curve.
-      ecliptic: effShowOverlayZenith
+      ecliptic: effShowZenith
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowOverlayZenith, coordSystem, lineSystem, theme]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowZenith, coordSystem, lineSystem, theme]);
 
   // The overlay layer as it reaches the MAP (and the plugin context). For every mode
   // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are
@@ -2675,15 +2711,19 @@ export default function App() {
   const [orbZoneUnit, setOrbZoneUnit] = useState<DistanceUnit>(loadOrbZoneUnit);
   const [orbZoneVal, setOrbZoneVal] = useState(() => loadOrbZoneVal(loadOrbZoneUnit()));
   const orbZoneKm = orbZoneUnit === 'mi' ? orbZoneVal * KM_PER_MI : orbZoneVal;
+  // The paran orb shares the line orb's unit toggle: it's also a distance, converted to km
+  // here (then to a latitude band in generateOrbBands). Switching the unit re-expresses both.
+  const [paranOrbVal, setParanOrbVal] = useState(() => loadParanOrbVal(loadOrbZoneUnit()));
+  const paranOrbKm = orbZoneUnit === 'mi' ? paranOrbVal * KM_PER_MI : paranOrbVal;
   const changeOrbZoneUnit = useCallback((next: DistanceUnit) => {
     setOrbZoneVal((v) => convertOrbZoneVal(v, orbZoneUnit, next));
+    setParanOrbVal((v) => convertParanOrbVal(v, orbZoneUnit, next));
     setOrbZoneUnit(next);
   }, [orbZoneUnit]);
-  const [paranOrbDeg, setParanOrbDeg] = useState(loadParanOrbDeg);
   useEffect(() => saveShowOrbZones(showOrbZones), [showOrbZones]);
   useEffect(() => saveOrbZoneUnit(orbZoneUnit), [orbZoneUnit]);
   useEffect(() => saveOrbZoneVal(orbZoneVal), [orbZoneVal]);
-  useEffect(() => saveParanOrbDeg(paranOrbDeg), [paranOrbDeg]);
+  useEffect(() => saveParanOrbVal(paranOrbVal), [paranOrbVal]);
 
   // Per-aspect orb limits (Advanced ▸ Aspect orbs) for the wheel's aspect
   // grid, aspect lines, and cross-aspect lists.
@@ -2713,7 +2753,7 @@ export default function App() {
     // Promoted CCG keeps the per-body source tags (see the overlay memo above).
     const isCyclo = overlayLayer.kind === 'cyclo';
     const pLines = mergeNodePairs(
-      withDarkMoon(
+      withThemeLineColors(
         filterLines(
           isCyclo
             ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) =>
@@ -2727,7 +2767,7 @@ export default function App() {
       ),
     );
     const pLocalSpace = lsActive
-      ? withDarkMoon(
+      ? withThemeLineColors(
           filterLocalSpace(
             generateLocalSpace(
               overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
@@ -2760,9 +2800,9 @@ export default function App() {
       // Zeniths + ecliptic follow the Zenith toggle here too, so it still has an effect
       // while Natal is hidden: empty when off → the stamps/line vanish and the promoted
       // labels lose their fly target, just like a normal overlay with Zenith off.
-      zenith: effShowOverlayZenith
+      zenith: effShowZenith
         ? tagZeniths(
-            withDarkMoon(
+            withThemeLineColors(
               filterZenith(
                 generateZenithStamps(ovPositions, ovMeridianLng),
                 visiblePlanets,
@@ -2773,7 +2813,7 @@ export default function App() {
             isCyclo ? cycloBodyTag : prefix,
           )
         : EMPTY_FC,
-      eclipticLine: effShowOverlayZenith
+      eclipticLine: effShowZenith
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
       origin: { lat: overlayLayer.originLat, lng: overlayLayer.originLng } as Point,
@@ -2786,7 +2826,7 @@ export default function App() {
     effShowParans,
     lsActive,
     hideLsInbound,
-    effShowOverlayZenith,
+    effShowZenith,
     coordSystem,
     lineSystem,
     theme,
@@ -2803,8 +2843,8 @@ export default function App() {
     if (!effShowOrbZones) return null;
     const bandLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
     const bandParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
-    return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbDeg);
-  }, [effShowOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbDeg]);
+    return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbKm);
+  }, [effShowOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbKm]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -3162,7 +3202,19 @@ export default function App() {
   // the frame and the HUD without touching the stored preference, so a desktop 'wheel'/'list'
   // choice survives a detour through a phone.
   const capturePhone = usePhone();
-  const captureViewEff: 'none' | 'wheel' | 'list' = capturePhone ? 'none' : captureExtras.view;
+  // Transparent (Local Space) export mode is effectively ON only with Local Space up, the
+  // Capture frame armed, the toggle set AND the plan at the gated rung. It strips the export to
+  // a clean transparent image: forces the details view off, withholds every registered map
+  // overlay (journal spots etc.), and drops the caption band + watermark — a bare see-through
+  // PNG (the LS lines + compass) for laying over a floor plan, in whatever frame ratio you pick.
+  const lsTransparent =
+    showLocalSpace && mapTool === 'capture' && transparentMode && gatedTierMet;
+  // Every registered map overlay id — withheld from the frame while lsTransparent (a clean
+  // LS-only export). The registry is populated at startup, so the set is stable.
+  const allCaptureOverlayIds = useMemo(() => new Set(getMapOverlays().map((o) => o.id)), []);
+  // Details view is forced OFF (no panel) in transparent mode, and on phones.
+  const captureViewEff: 'none' | 'wheel' | 'list' =
+    capturePhone || lsTransparent ? 'none' : captureExtras.view;
   // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
   // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
   // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
@@ -3448,9 +3500,11 @@ export default function App() {
   // threshold (the "Zoom out" button appears → detailZoom true). `replace` shows it even
   // if another guide is still open (it would otherwise be lost — detailZoom won't flip
   // again until a zoom-out/in). The set re-surfaces on later zoom-in passes until done.
+  // Skipped in the transparent LS export: it flies deep to frame the compass, and that
+  // deliberate zoom isn't the user exploring, so neither the guide nor its button appear.
   useEffect(() => {
-    if (detailZoom) triggerMission('zoom-threshold', true);
-  }, [detailZoom, triggerMission]);
+    if (detailZoom && !lsTransparent) triggerMission('zoom-threshold', true);
+  }, [detailZoom, lsTransparent, triggerMission]);
 
   const is3d = projection === '3d';
   // Close the live mission guide, persisting its set as complete when every mission is
@@ -3770,12 +3824,12 @@ export default function App() {
     // regenerated here from the FULL body set (not the visible subset), all line types; star lines
     // are generated regardless of the Fixed Stars toggle. The aspect-line display
     // filters are intentionally NOT applied either — this is the everything set.
-    const natalLines = withDarkMoon(allLines, theme);
+    const natalLines = withThemeLineColors(allLines, theme);
     const angleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
       ...generateAspectLines(linePositions, meridianLng, effCoordSystem, eps).features,
       ...generateMidpointLines(linePositions, meridianLng, effCoordSystem, eps).features,
     ];
-    const natalAngleLines = withDarkMoon(
+    const natalAngleLines = withThemeLineColors(
       { type: 'FeatureCollection', features: angleFeatures },
       theme,
     );
@@ -3812,7 +3866,7 @@ export default function App() {
         lineSystem === 'geodetic'
           ? (raM) => (eclipticLonOfRA(raM, ovEps) * 180) / Math.PI
           : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
-      overlayLines = withDarkMoon(
+      overlayLines = withThemeLineColors(
         isCyclo
           ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) => cycloBodyTag(p.planet))
           : tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
@@ -3822,7 +3876,7 @@ export default function App() {
       overlayParans = overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? null
         : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix);
-      overlayLocalSpace = withDarkMoon(
+      overlayLocalSpace = withThemeLineColors(
         generateLocalSpace(
           overlayLayer.positions,
           overlayLayer.gmst,
@@ -3843,7 +3897,7 @@ export default function App() {
           type: 'FeatureCollection',
           features: ovAngleFeatures,
         };
-        angleLinesOut = withDarkMoon(
+        angleLinesOut = withThemeLineColors(
           isCyclo
             ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
             : tagLabels(ovAngleFc, prefix),
@@ -4033,6 +4087,7 @@ export default function App() {
       // drives a core overlay mode also clears any active extension overlay — preserving
       // the Overlay menu's single-select invariant.
       setOverlayMode: selectOverlay,
+      openExtensionIds: openExtensions,
       openExtension: openExtensionById,
       openTool: openToolById,
       openCapture: openCaptureTool,
@@ -4068,6 +4123,7 @@ export default function App() {
       hideNatalLinework,
       extFlyTo,
       selectOverlay,
+      openExtensions,
       openExtensionById,
       openToolById,
       openCaptureTool,
@@ -4082,7 +4138,13 @@ export default function App() {
         overlayCtx={extensionCtx}
         // Registered-overlay hides apply only while the Capture tool is armed —
         // closing it always restores every overlay, whatever the persisted set says.
-        hiddenOverlayIds={mapTool === 'capture' ? captureHiddenOverlays : undefined}
+        hiddenOverlayIds={
+          mapTool === 'capture'
+            ? lsTransparent
+              ? allCaptureOverlayIds // transparent mode: withhold every overlay (journal etc.)
+              : captureHiddenOverlays
+            : undefined
+        }
         // Line families are narrowed to the spotlight (applySpot: passthrough when off, all
         // hidden while aiming, only the in-radius lines once a centre is set). The eff* values
         // already resolve the eclipse "hide natal" toggle + the promoted-overlay swap.
@@ -4100,12 +4162,12 @@ export default function App() {
         localSpaceCross={spotlightActive ? EMPTY_FC : effLocalSpaceCross}
         localSpaceOrigin={spotlightActive ? null : effLocalSpaceOrigin}
         hideCompass={hideLsCompass}
-        // The Capture-section options apply only while Local Space is on, the Capture
-        // frame is armed AND the plan reaches the gated rung — dropping any of the
-        // three restores the map (no "sticking").
-        hideBasemap={showLocalSpace && mapTool === 'capture' && hideLsMap && gatedTierMet}
-        hideLsArrows={showLocalSpace && mapTool === 'capture' && hideLsArrows && gatedTierMet}
-        lsEdgeLabels={showLocalSpace && mapTool === 'capture' && lsEdgeLabels && gatedTierMet}
+        // Transparent (Local Space) — one gated preset driving all three export treatments
+        // (hide basemap + hide arrows + standard labels). lsTransparent also strips the details
+        // view + overlays + caption band (see its definition + the frame props below).
+        hideBasemap={lsTransparent}
+        hideLsArrows={lsTransparent}
+        lsEdgeLabels={lsTransparent}
         zenith={spotlightActive ? EMPTY_FC : effZenith}
         nadir={spotlightActive ? EMPTY_FC : effNadir}
         ecliptic={spotlightActive ? null : effEcliptic}
@@ -4149,7 +4211,18 @@ export default function App() {
         frameActive={mapTool === 'capture'}
         frameAspect={mapTool === 'capture' ? captureAspect : null}
         frameCaptionText={captureCaptionText}
+        // Transparent export: the same fields, unjoined, stacked in the frame's top-left.
+        frameCaptionLines={captureCaptionLines}
         frameExtras={captureFrameExtras}
+        // Transparent mode drops the caption band + watermark for a clean see-through export.
+        noCaption={lsTransparent}
+        // Transparent export: clip the LS lines to a circle ~30% wider than the compass with their
+        // badges on that rim, and render those badges glyph-only (no "LS") and ~50% larger.
+        lsTransparent={lsTransparent}
+        // Transparent badge labels (only meaningful there): planet name after the glyph, and the
+        // line's bearing printed along the line toward the compass centre.
+        lsLabelName={lsTransparent && lsLabelName}
+        lsLineDeg={lsTransparent && lsLineDeg}
         onFrameCancel={stopCapture}
         onMissionEvent={recordMission}
         // Force the Zoom-out button to stay put while the zoom guide is up so the user
@@ -4221,8 +4294,8 @@ export default function App() {
           setOrbZoneVal={setOrbZoneVal}
           orbZoneUnit={orbZoneUnit}
           setOrbZoneUnit={changeOrbZoneUnit}
-          paranOrbDeg={paranOrbDeg}
-          setParanOrbDeg={setParanOrbDeg}
+          paranOrbVal={paranOrbVal}
+          setParanOrbVal={setParanOrbVal}
           aspectOrbs={aspectOrbs}
           setAspectOrbs={setAspectOrbs}
           aspectHudOpen={showAspectLinesHud}
@@ -4357,8 +4430,6 @@ export default function App() {
           advanced={advancedWheel}
           showNatal={showNatal}
           setShowNatal={setShowNatal}
-          showOverlayZenith={showOverlayZenith}
-          setShowOverlayZenith={setShowOverlayZenith}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}
@@ -4414,13 +4485,7 @@ export default function App() {
       )}
       {showTeleport && (
         <TeleportHud
-          onFlyTo={(lat, lng, zoom) => {
-            const target = mapRef.current?.teleportTo(lat, lng, zoom);
-            if (target) {
-              setLocationReturn('back');
-              setTeleportTarget(target);
-            }
-          }}
+          onFlyTo={teleportToPoint}
           onGoBack={() => {
             const target = mapRef.current?.teleportBack();
             if (target) {
@@ -4467,29 +4532,15 @@ export default function App() {
       {showLocalSpace && (
         <LocalSpaceHud
           onClose={() => setShowLocalSpaceSafe(false)}
-          // Fly-to-origin reuses the teleport hop (camera + the back/forward stash),
+          // Fly-to-origin reuses the shared teleport hop (camera + the back/forward stash),
           // so a jump to the origin can be undone from the Teleport window / Backspace.
-          onFlyTo={(lat, lng, zoom) => {
-            const target = mapRef.current?.teleportTo(lat, lng, zoom);
-            if (target) {
-              setLocationReturn('back');
-              setTeleportTarget(target);
-            }
-          }}
+          onFlyTo={teleportToPoint}
           lsOrigin={lsOrigin}
           setLsOrigin={setLsOrigin}
           hideLsInbound={hideLsInbound}
           setHideLsInbound={setHideLsInbound}
           hideLsCompass={hideLsCompass}
           setHideLsCompass={setHideLsCompass}
-          captureActive={mapTool === 'capture'}
-          hideLsArrows={hideLsArrows}
-          setHideLsArrows={setHideLsArrows}
-          lsEdgeLabels={lsEdgeLabels}
-          setLsEdgeLabels={setLsEdgeLabels}
-          hideLsMap={hideLsMap}
-          setHideLsMap={setHideLsMap}
-          planTier={planTier}
           localSpaceOrigin={localSpaceOrigin}
         />
       )}
@@ -4536,6 +4587,18 @@ export default function App() {
                   })
               : null
           }
+          // Transparent (Local Space): the gated-tier preset, moved here from the Local
+          // Space window. Scoped to LS (shown only while it's active); App gates its EFFECT
+          // on showLocalSpace + Capture armed + gatedTierMet at the Map props above.
+          localSpaceActive={showLocalSpace}
+          transparentMode={transparentMode}
+          setTransparentMode={setTransparentMode}
+          onFlyToOrigin={flyToLsOrigin}
+          lsLabelName={lsLabelName}
+          setLsLabelName={setLsLabelName}
+          lsLineDeg={lsLineDeg}
+          setLsLineDeg={setLsLineDeg}
+          planTier={planTier}
         />
       )}
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
@@ -4600,6 +4663,9 @@ export default function App() {
           overlayAngles={promoteOverlay || isCyclo ? null : displayOverlayAngles}
           overlayLabel={
             promoteOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
+          }
+          overlayMoment={
+            promoteOverlay || isCyclo ? null : (overlayLayer?.moment ?? null)
           }
           overlayKind={overlayLayer?.kind ?? null}
           // When promoted CCG leaves nothing to wheel, render the empty "NO CHART" state.

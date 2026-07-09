@@ -14,7 +14,6 @@ import {
 } from 'react';
 import {
   minorStepMs,
-  OVERLAY_LABEL_PREFIX,
   TIME_UNITS,
   type AngleProgression,
   type OverlayMode,
@@ -85,13 +84,12 @@ interface TimelineHudProps {
   /** The chart has no real natal frame to hold (its birth time is unknown), so the
    *  framing is forced to Absolute upstream — the switch shows that, disabled. */
   frameLocked?: boolean;
-  /** The overlay's two display toggles, relocated from Settings ▸ Display into the
-   *  bar's right-side drawer: the natal chart linework and this overlay's zenith
-   *  stamps. (Synastry/eclipses don't render this HUD, so they keep their own UI.) */
+  /** The Natal-linework display toggle, relocated from Settings ▸ Display into the
+   *  bar's right-side drawer. (Synastry/eclipses don't render this HUD, so they keep
+   *  their own UI.) The active overlay's zenith stamps now follow the shared
+   *  Zenith/Nadirs toggle, so they need no separate control here. */
   showNatal: boolean;
   setShowNatal: (v: boolean) => void;
-  showOverlayZenith: boolean;
-  setShowOverlayZenith: (v: boolean) => void;
   /** Registered map extensions surfaced in THIS bar's display drawer
    *  (surface 'timeline-drawer'): their open-state + toggle, shared with the
    *  View-menu plumbing. Entitlement-gated with no teaser — un-entitled rows
@@ -321,8 +319,6 @@ export function TimelineHud({
   frameLocked = false,
   showNatal,
   setShowNatal,
-  showOverlayZenith,
-  setShowOverlayZenith,
   openExtensions,
   onToggleExtension,
   angleProgression,
@@ -449,20 +445,6 @@ export function TimelineHud({
     overlayMode in NUB_LABEL_KEY
       ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
       : t('timeline.nubFallback');
-  // The zenith toggle names the ACTIVE overlay's zenith — "Tr Zenith", "Sp Zenith",
-  // "CCG Zenith" … — using the same two-letter map tag, except cyclo spells out as
-  // "CCG" (its 'Cy' tag is reserved for mixed-source parans). (Moved here verbatim
-  // from the old Settings ▸ Display toggle.)
-  const zenithLabel = (
-    `${
-      overlayMode === 'off'
-        ? ''
-        : overlayMode === 'cyclo'
-          ? 'CCG'
-          : OVERLAY_LABEL_PREFIX[overlayMode]
-    } ${t('settings.overlayZenith.title')}`
-  ).trim();
-
   // A guest/basic user (Advanced off) whom the build nudges sees the advanced overlay-bar toggles
   // as CLICKABLE teasers: rendered with their ADV tag, but a click opens the account flow
   // (nudgeAction) instead of changing any advanced state. Advanced users get the real toggles;
@@ -562,32 +544,9 @@ export function TimelineHud({
         <EyeIcon open={showNatal} />
         <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
       </TipButton>
-      {/* ADVANCED: the overlay Zenith toggle. Shown when Advanced is on (works), OR as a clickable
-          teaser for a nudged guest (advNudge) whose click opens the account flow; its value
-          defaults via effShowOverlayZenith. The Natal toggle above is always available. */}
-      {(advanced || advNudge) && (
-        <TipButton
-          type="button"
-          className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
-          placement="top"
-          advanced
-          tip={zenithLabel}
-          hint={t('settings.overlayZenith.hint')}
-          aria-label={zenithLabel}
-          aria-pressed={showOverlayZenith}
-          onClick={() => {
-            if (advNudge) {
-              nudgeAction(); // teaser → open the account/upgrade flow
-              return;
-            }
-            setShowOverlayZenith(!showOverlayZenith);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <EyeIcon open={showOverlayZenith} />
-          <span className="thud-drawer-toggle-name">{zenithLabel}</span>
-        </TipButton>
-      )}
+      {/* The active overlay's zenith stamps now ride the shared Zenith/Nadirs toggle
+          (Appearance ▸ Details), so this drawer no longer carries an overlay-Zenith
+          toggle — just the Natal toggle above and any drawer extensions below. */}
       {/* Extensions surfaced in this drawer (surface 'timeline-drawer') — e.g. a
           downstream build's gated add-on. Entitlement-gated with NO teaser: an
           un-entitled user simply doesn't see the row. A gated row carries the

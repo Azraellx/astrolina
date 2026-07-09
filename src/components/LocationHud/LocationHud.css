@@ -350,6 +350,16 @@
 .location-ls-toggle.off {
   opacity: 0.5;
 }
+/* Soft-disabled (aria-disabled): more faded than .off and no hover affordance, but still
+   hoverable so its tip can explain why — e.g. the Transparent toggle before Local Space is on. */
+.location-ls-toggle.disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.location-ls-toggle.disabled:hover {
+  background: transparent;
+  color: var(--text);
+}
 .location-ls-eye {
   flex-shrink: 0;
   color: var(--text-muted);

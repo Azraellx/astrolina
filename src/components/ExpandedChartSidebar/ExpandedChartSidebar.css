@@ -1185,6 +1185,32 @@
   text-underline-offset: 3px;
 }
 
+/* The overlay's date/time shown beside its name over the wheel (see ExpandedChartSidebar):
+   dimmer + tabular figures so it reads as secondary data next to the overlay name. */
+.es-overlay-moment {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Dual layout appends the moment INLINE after the name: drop the caption's inline-flex so
+   the name span + " · moment" flow as one line of text (keeping the middot spacing). */
+.es-overlay-caption.es-overlay-inline {
+  display: inline;
+}
+
+/* Non-dual: the moment stacks ABOVE the name in the top-right corner. Lay the corner out as
+   a left-aligned column so the two lines share a left edge; the corner is absolutely placed
+   over the wheel, so this adds no height to the sidebar before the wheel. */
+.es-wheel-corner-right.es-overlay-corner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 1px;
+}
+
 .es-section-cross h3 {
   display: flex;
   align-items: baseline;

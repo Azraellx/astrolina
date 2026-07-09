@@ -170,6 +170,9 @@ interface ExpandedChartSidebarProps {
   overlayPlanets?: EclipticPosition[] | null;
   overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
+  /** The overlay's instant "YYYY-MM-DD HH:MM" (UTC) — shown with the overlay name over the
+   *  wheel so the date/time reads without the timeline bar. null when there's none. */
+  overlayMoment?: string | null;
   /** The active overlay's kind, used to label the wheel caption by tag — cyclo shows
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
@@ -585,6 +588,7 @@ export function ExpandedChartSidebar({
   overlayPlanets,
   overlayAngles,
   overlayLabel,
+  overlayMoment,
   overlayKind,
   promotedLabel,
   noChart = false,
@@ -788,6 +792,10 @@ export function ExpandedChartSidebar({
       ? 'CCG'
       : overlayLabel.split('·')[0].trim()
     : null;
+  // The overlay's date/time (UTC) to show alongside its name over the wheel, so the moment
+  // reads even without the timeline bar in view. A middot splits date · time (matching the
+  // bar's separator convention); "UTC" is kept explicit as the labelFull captions do.
+  const momentText = overlayMoment ? `${overlayMoment.replace(' ', ' · ')} UTC` : null;
 
   const toggleAspect = (cat: AspectCategory) => {
     setVisibleAspects((prev) => {
@@ -1207,7 +1215,17 @@ export function ExpandedChartSidebar({
                 </div>
               )}
               {frame && overlayName && !showDual && (
-                <div className="es-wheel-corner es-wheel-corner-right">
+                <div
+                  // When the overlay moment is shown it stacks ABOVE the name as a
+                  // left-aligned column (es-overlay-corner); the corner is absolutely
+                  // positioned over the wheel, so this never adds sidebar height.
+                  className={`es-wheel-corner es-wheel-corner-right${
+                    momentText ? ' es-overlay-corner' : ''
+                  }`}
+                >
+                  {momentText && (
+                    <span className="es-overlay-moment">{momentText}</span>
+                  )}
                   <span className="es-overlay-caption es-overlay-dashed">
                     {overlayName}
                   </span>
@@ -1239,8 +1257,14 @@ export function ExpandedChartSidebar({
                       />
                       {overlayName && (
                         <div className="es-dual-caption">
-                          <span className="es-overlay-caption es-overlay-dashed">
-                            {overlayName}
+                          {/* Dual layout has room, so the moment is appended INLINE after
+                              the name with a middot separator (only the name keeps the
+                              dotted underline that echoes the map's overlay lines). */}
+                          <span className="es-overlay-caption es-overlay-inline">
+                            <span className="es-overlay-dashed">{overlayName}</span>
+                            {momentText && (
+                              <span className="es-overlay-moment"> · {momentText}</span>
+                            )}
                           </span>
                         </div>
                       )}

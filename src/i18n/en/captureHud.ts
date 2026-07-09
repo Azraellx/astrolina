@@ -21,6 +21,25 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Landscape frame (16:9) — wide, for slides and headers.',
   },
+  // The Local-Space export preset, shown in the Frame section only while Local Space is on.
+  transparent: {
+    title: 'Transparent (Local Space)',
+    hint: 'One switch for a clean local-space export: hides the line arrows, labels the lines like the rest of the chart (badges hug the frame edges, no bearing degrees), and blanks the basemap so the export keeps a transparent background — ready to lay over a floor plan or your own backdrop. Everything returns when Capture or Local Space closes.',
+    // Shown as the tip while the toggle is soft-disabled (Local Space is off).
+    needLs: 'Turn on Local Space (View ▸ Local Space) first — this clean transparent export is built around the local-space compass and lines.',
+  },
+  // Transparent-mode badge labels — the Details section swaps the wheel/list picker for these two
+  // toggles while Transparent is on. Each controls what a local-space badge prints beyond its glyph.
+  lsLabels: {
+    name: {
+      title: 'Label Name',
+      hint: 'Print each planet’s name after its glyph on the local-space badge (e.g. “♂ Mars”).',
+    },
+    degrees: {
+      title: 'Degrees',
+      hint: 'Print each local-space line’s bearing along the line, just inside its badge toward the compass centre.',
+    },
+  },
   view: {
     none: 'None',
     noneHint: 'No chart details in the frame — just the map, pin, edge labels and caption.',
@@ -55,6 +74,8 @@ export const captureHud = {
     timeHint: 'Show the birth time in the caption footer.',
     location: 'Location',
     locationHint: 'Show the birthplace in the caption footer.',
+    coordinates: 'Coordinates',
+    coordinatesHint: 'Show the birthplace’s full latitude and longitude in the caption.',
     calculations: 'Calculations',
     calculationsHint:
       'Show the active calculation systems (the same line as the Info view) in the caption footer.',

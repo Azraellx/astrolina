@@ -4,6 +4,8 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
+import type { PlanetName } from './ephemeris';
+
 export type Theme = 'glass' | 'dark' | 'vintage';
 
 // Earth (vintage) leads the list and is the default; Glass and Dark follow.
@@ -73,9 +75,27 @@ export const ZENITH_DISC_COLORS: Record<Theme, string> = {
 // The Moon's pale gray reads on the dark basemap but barely shows on the light Earth /
 // Glass themes — including over the pale zenith disc, where its baked glyph and ring
 // nearly disappear. On those themes only, the Moon's lines, labels, and zenith
-// glyph/stamp use this darker slate instead. Single source for App's withDarkMoon and
-// the baked zenith glyph (glyphImages.ensureGlyphImages), so they stay in sync.
+// glyph/stamp use this darker slate instead.
 export const MOON_LINE_DARK = '#5b6480';
+
+// Per-theme MAP-LINE colour overrides for bodies whose PLANET_COLORS tint washes out
+// against a given basemap. MAP-ONLY: the wheel, sidebar, cards etc. keep the canonical
+// PLANET_COLORS. Single source for App's line-colour swap (withThemeLineColors) AND the
+// baked zenith glyph (glyphImages.ensureGlyphImages), so lines + stamps stay in sync.
+//  • Moon — pale gray fails on BOTH light basemaps (Glass + Earth).
+//  • Mercury (light mint) / Uranus (light cyan) — only wash into Earth's warm parchment,
+//    so they get a deeper tint there alone.
+// Dark's basemap is dark, so it needs no overrides.
+export const MAP_LINE_COLOR_OVERRIDES: Record<Theme, Partial<Record<PlanetName, string>>> = {
+  dark: {},
+  glass: { Moon: MOON_LINE_DARK },
+  vintage: { Moon: MOON_LINE_DARK, Mercury: '#2e9e82', Uranus: '#2489a8' },
+};
+
+// Lilith's muted purple reads fine on the light map basemap but is hard to make out
+// against Earth's dark-brown SETTINGS panels. The settings-tab planet glyph uses a
+// brighter lavender there — a lone exception; Lilith's map line keeps PLANET_COLORS.
+export const LILITH_PANEL_GLYPH_EARTH = '#b092dc';
 
 // The fixed-star lines' shared tint, per theme: the pale starlight gold reads on
 // the dark basemap but washes out on Glass/Earth, which get a deep antique gold

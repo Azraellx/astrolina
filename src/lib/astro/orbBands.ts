@@ -7,8 +7,9 @@
 // Orb-of-influence bands: a translucent zone around each planet angle line (a
 // GROUND distance, so the band is geodesically honest at every latitude and in
 // both projections — a px-width halo would lie at high latitudes) and a
-// latitude band around each paran (parans carry their orb in degrees of
-// latitude by convention). Rendered as fill polygons under the line layers.
+// latitude band around each paran (its orb arrives as a ground distance too and
+// converts to a ± latitude span, since a paran is a horizontal latitude line).
+// Rendered as fill polygons under the line layers.
 //
 // Geometry rides the lines' own (possibly ±180-unwrapped) longitude frame: the
 // perpendicular offset is computed as a Δlongitude and ADDED to the vertex's
@@ -110,15 +111,15 @@ const PARAN_BAND_OPACITY = 0.045;
 
 /**
  * The combined orb-zone fill set: one polygon per planet angle line (`orbKm`
- * ground distance each side) and one latitude band per paran (`paranOrbDeg`
- * each side). Both inputs are the already-filtered map collections, so the
- * zones always mirror what's visible.
+ * ground distance each side) and one latitude band per paran (`paranOrbKm`
+ * ground distance each side, converted to a latitude span within). Both inputs
+ * are the already-filtered map collections, so the zones always mirror what's visible.
  */
 export function generateOrbBands(
   lines: FeatureCollection<LineString, LineProps>,
   parans: FeatureCollection<LineString, ParanProps>,
   orbKm: number,
-  paranOrbDeg: number,
+  paranOrbKm: number,
 ): FeatureCollection<Polygon, OrbBandProps> {
   const features: Feature<Polygon, OrbBandProps>[] = [];
   if (orbKm > 0) {
@@ -132,7 +133,10 @@ export function generateOrbBands(
       });
     }
   }
-  if (paranOrbDeg > 0) {
+  if (paranOrbKm > 0) {
+    // The paran orb is a ground distance too; a paran is a horizontal latitude line, so
+    // convert it to a ± latitude span here (KM_PER_DEG ≈ km per degree of latitude).
+    const paranOrbDeg = paranOrbKm / KM_PER_DEG;
     // Several parans can share one latitude (node merges aside); collapse them
     // so stacked identical bands don't multiply the fill.
     const seen = new Set<string>();

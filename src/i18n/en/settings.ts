@@ -49,13 +49,9 @@ export const settings = {
       'Shows the basemap’s city and country text. This is separate from the ACG line-label badges, which stay either way.',
   },
   shiftTag: 'Shift',
-  // Overlay ▸ Display toggles — each a show/hide switch with a hover hint, like the
-  // Parans toggle in Map filters. (The Timeline Bar show/hide toggle moved onto the
-  // timeline nub itself — see timeline.barToggle.)
-  overlayZenith: {
-    title: 'Zenith/Nadirs',
-    hint: 'Stamps where each overlay body is directly overhead (its zenith — a circle, on the MC line) and directly underfoot (its antipodal nadir — a diamond, on the IC line).',
-  },
+  // The Natal-linework show/hide toggle in the timeline bar's display drawer. (The
+  // overlay's zenith stamps now ride the shared Zenith/Nadirs toggle, so there's no
+  // separate overlay-zenith key here anymore.)
   natal: {
     title: 'Natal Chart',
     hint: 'The underlying birth chart. Hide it to show just the overlay.',
@@ -133,11 +129,11 @@ export const settings = {
   },
   orbZones: {
     title: 'Orb Zones',
-    hint: 'Shaded influence zones: a band of ground distance around each planet angle line, and a band of latitude around each paran. Influence fades with distance; the edge is a convention, not a cliff.',
-    unitAria: 'Line orb zone distance unit (km or mi)',
+    hint: 'Shaded influence zones: a band of ground distance around each planet angle line and each paran. Influence fades with distance; the edge is a convention, not a cliff.',
+    unitAria: 'Orb zone distance unit (km or mi)',
     lineAria: 'Line orb zone width, each side',
-    paranLabel: 'Parans (°)',
-    paranAria: 'Paran orb, in degrees of latitude each side',
+    paranLabel: 'Parans',
+    paranAria: 'Paran orb width, each side',
   },
 
   theme: {

@@ -105,6 +105,10 @@ export interface MapExtensionContext {
   setTargetDate: (epochMs: number) => void;
   /** Switch the active time-overlay mode (e.g. start a transits overlay). */
   setOverlayMode: (mode: OverlayMode) => void;
+  /** The ids of the HUD extensions currently OPEN — the read half of {@link openExtension},
+   *  so a map overlay can draw only while its companion window is open (a feature whose
+   *  on-map layer follows its View-menu window's open/closed state). */
+  openExtensionIds: ReadonlySet<string>;
   /** Open a registered map-HUD extension by id (no-op if unknown / already open). Lets a
    *  map overlay surface its companion HUD — e.g. clicking a marker opens its window. */
   openExtension: (id: string) => void;
