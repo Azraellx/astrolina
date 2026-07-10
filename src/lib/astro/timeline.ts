@@ -65,6 +65,29 @@ export const OVERLAY_MODES: OverlayKind[] = [
 // Advanced is turned off. This is the tier source of truth.
 export const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>(['synastry']);
 
+// The overlay modes that scrub a moving date — transits + the symbolic clocks. These
+// are the modes that render the timeline bar (and its display drawer, whose toggles
+// claim hotkeys while it's up); synastry and eclipses have no date to scrub.
+export const TIME_OVERLAY_MODES = new Set<OverlayMode>([
+  'transits',
+  'cyclo',
+  'progressed',
+  'tertiary-progressed',
+  'solar-arc',
+  'primary-directions',
+]);
+
+// The overlay modes that PARK while a registered surface owns the viewport
+// (lib/extensions/viewLock): eclipses are pure map-ground geometry (track,
+// limits, visibility hemisphere) and synastry is a two-chart comparison of the
+// map itself — neither carries onto an owning surface. Their Overlay-menu rows
+// HIDE and the 'o' cycle skips them while the lock holds; an owner drops an
+// active one to 'off' on open, so neither can be reached until the lock clears.
+export const VIEW_LOCK_PARKED_OVERLAYS = new Set<OverlayMode>([
+  'eclipses',
+  'synastry',
+]);
+
 // Overlay modes unavailable on a COMPOSITE chart — leaving Transits + Eclipses
 // only. A composite is a symbolic midpoint construct with no real sky moment, so
 // the progression/direction techniques (and the relationship-generating Synastry

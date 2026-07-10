@@ -15,6 +15,7 @@ import {
 import { filterWithinKm } from './lib/lineProximity';
 import { getToolExtensions } from './lib/extensions/toolExtensions';
 import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
+import { getViewLock, useViewLock } from './lib/extensions/viewLock';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
 import { type PlanTier, planTierFor, tierMet } from './lib/plan';
@@ -157,6 +158,8 @@ import {
   tagLabelsBy,
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
+  TIME_OVERLAY_MODES,
+  VIEW_LOCK_PARKED_OVERLAYS,
   overlayBlockedFor,
   overlayAuxBlocked,
   type AngleProgression,
@@ -537,7 +540,10 @@ export default function App() {
   // important for the quadratic midpoint overlay, which would otherwise come
   // back against the full default body set. Unknown names in a stale payload
   // are dropped; an empty array is an intentional "all hidden" and restores.
-  const [visiblePlanets, setVisiblePlanets] = useState<Set<PlanetName>>(() => {
+  // The user's PREFERENCE — what downstream actually shows is the derived
+  // `visiblePlanets` below, which can park frame-dependent points (the Part of
+  // Fortune In Mundo) without disturbing what's stored here.
+  const [visiblePlanetsPref, setVisiblePlanets] = useState<Set<PlanetName>>(() => {
     try {
       const raw = localStorage.getItem('astro:visible-planets:v1');
       if (raw) {
@@ -554,16 +560,17 @@ export default function App() {
       // Corrupt payload — fall through to the default set.
     }
     // Default set for a fresh visitor: the traditional planets plus the Part of
-    // Fortune (on by default so the Lot is discoverable — it shows on the wheel
-    // always, and its map lines appear the moment the projection is In-Zodiaco).
+    // Fortune (on by default so the Lot is discoverable — it shows wherever the
+    // frame is zodiacal: wheel always, map lines the moment the projection is
+    // In-Zodiaco).
     return new Set<PlanetName>([...TRADITIONAL_PLANETS, 'Fortune']);
   });
   useEffect(() => {
     localStorage.setItem(
       'astro:visible-planets:v1',
-      JSON.stringify([...visiblePlanets]),
+      JSON.stringify([...visiblePlanetsPref]),
     );
-  }, [visiblePlanets]);
+  }, [visiblePlanetsPref]);
   const [visibleLineTypes, setVisibleLineTypes] = useState<Set<LineType>>(
     () => new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']),
   );
@@ -628,6 +635,21 @@ export default function App() {
       ? 'geodetic'
       : 'celestial',
   );
+  // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
+  // extensions, sky band). The Part of Fortune is a zodiacal-frame point: In
+  // Mundo it has no map line (its lines exist In-Zodiaco/geodetic only), so
+  // there it reads as toggled OFF everywhere — while the stored preference
+  // above stays put, and the Lot returns exactly as set the moment the frame is
+  // zodiacal again. The Sidebar's checkboxes read the raw preference.
+  const visiblePlanets = useMemo(() => {
+    const zodiacalFrame = lineSystem === 'geodetic' || coordSystem === 'zodiaco';
+    if (zodiacalFrame || !visiblePlanetsPref.has('Fortune')) {
+      return visiblePlanetsPref;
+    }
+    const s = new Set(visiblePlanetsPref);
+    s.delete('Fortune');
+    return s;
+  }, [visiblePlanetsPref, lineSystem, coordSystem]);
   // Basemap detail layers default to shown; the "Details" section toggles them
   // off. (`!== '0'` so a brand-new visitor with no saved value gets them on.)
   const [showRoads, setShowRoads] = useState(
@@ -1087,6 +1109,11 @@ export default function App() {
   // orb widths) stay with the rest of the map state further down.
   const [showStarLines, setShowStarLines] = useState(loadShowStarLines);
   const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
+  // A registered surface owning the viewport (lib/extensions/viewLock) parks the
+  // View-menu windows + their hotkeys; Settings stays available. Reactive here so
+  // the window gates below re-render when the lock flips.
+  const viewLock = useViewLock();
+  const viewParked = viewLock !== null;
   const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
 
   // ── Effective advanced settings ─────────────────────────────────────────────
@@ -1234,73 +1261,117 @@ export default function App() {
       // view/tool hotkeys below; each is mirrored by a "Shift X" pill in the sidebar.
       // (Local space moved to the Location view — plain 'L'.)
       if (e.shiftKey) {
+        // While a registered surface owns the viewport (viewLock), every one of
+        // these stands down: each mirrors a settings row that parks with the
+        // lock — map-surface-only details/projection/zones/stamps/parans, plus
+        // the aspect/midpoint families a viewport owner drops from its drape.
+        const parked = getViewLock() !== null;
         switch (e.key.toLowerCase()) {
           // Advanced ▸ Lines toggles — gated on Advanced mode (no-op while off,
           // like the section that hosts them).
-          case 'p': if (advancedWheel) setShowParans((v) => !v); break;
-          case 'a': if (advancedWheel) setShowAspectLines((v) => !v); break;
-          case 'm': if (advancedWheel) setShowMidpointLines((v) => !v); break;
-          case 's': if (advancedWheel) setShowStarLines((v) => !v); break;
+          case 'p': if (advancedWheel && !parked) setShowParans((v) => !v); break;
+          case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
+          case 'm': if (advancedWheel && !parked) setShowMidpointLines((v) => !v); break;
+          case 's': if (advancedWheel && !parked) setShowStarLines((v) => !v); break;
           // Appearance ▸ Details toggles (always available).
           case 'r':
+            if (parked) break;
             // Roads + rivers move together (one Details switch), so stay in sync.
             setShowRoads((v) => !v);
             setShowRivers((v) => !v);
             break;
-          case 'l': setShowLabels((v) => !v); break;
+          case 'l': if (!parked) setShowLabels((v) => !v); break;
           // Advanced ▸ Display toggles — gated on Advanced mode.
-          case 'o': if (advancedWheel) setShowOrbZones((v) => !v); break;
-          case 'z': if (advancedWheel) setShowZenith((v) => !v); break;
-          // Night Shade lives in Appearance now, so it stays always available.
-          case 'n': setShowNightShade((v) => !v); break;
+          case 'o': if (advancedWheel && !parked) setShowOrbZones((v) => !v); break;
+          case 'z': if (advancedWheel && !parked) setShowZenith((v) => !v); break;
+          // Night Shade lives in Appearance now, so it stays always available
+          // (outside a viewport lock, whose owner shades day/night itself).
+          case 'n': if (!parked) setShowNightShade((v) => !v); break;
           // Appearance ▸ Projection (absolute mode, not a toggle).
           // One key cycles the projection (flat ↔ globe), like 'o' cycles overlays.
-          case 'f': setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
+          case 'f': if (!parked) setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
           default: return;
         }
         e.preventDefault();
         return;
       }
+      // While a time overlay's bar is up (Advanced mode shows its display drawer),
+      // the drawer's toggles claim their keys FIRST: 'n' flips the Natal-linework
+      // toggle, and a drawer-surface extension takes its registered hotkey — both
+      // advertised in the toggles' hover tips. The letters' base actions (N =
+      // overlay off, A = new chart) resume outside those modes.
+      if (advancedWheel && TIME_OVERLAY_MODES.has(overlayMode)) {
+        if (e.key.toLowerCase() === 'n') {
+          setShowNatal((v) => !v);
+          e.preventDefault();
+          return;
+        }
+        const drawerExt = getMapExtensions().find(
+          (x) =>
+            x.surface === 'timeline-drawer' &&
+            x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
+            isEntitled(x),
+        );
+        if (drawerExt) {
+          toggleExtension(drawerExt.id);
+          e.preventDefault();
+          return;
+        }
+      }
       switch (e.key.toLowerCase()) {
-        case 'm': setShowChart((v) => !v); break;
-        case 'c': setShowCoords((v) => !v); break;
-        case 's': setShowSettings((v) => !v); break;
-        case 'g': setShowTeleport((v) => !v); break;
+        // View-menu windows ride the DIGIT row (matching their menu badges); they
+        // stand down while a registered surface owns the viewport (viewLock) —
+        // Settings ('3') stays, so users can keep tuning what the owning
+        // surface shows.
+        case '1': if (!getViewLock()) setShowCoords((v) => !v); break;
+        case '2': if (!getViewLock()) setShowChart((v) => !v); break;
+        case '3': setShowSettings((v) => !v); break;
+        case '4': if (!getViewLock()) setShowTeleport((v) => !v); break;
         // Sky Times is an 'adv'-tier view (matches its View-menu row).
-        case 'h': if (advancedWheel) setShowSkyTimes((v) => !v); break;
+        case 't': if (advancedWheel && !getViewLock()) setShowSkyTimes((v) => !v); break;
         case 'l':
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
           // celestial frame (matches the View-menu toggle + the slide tool).
-          if (advancedWheel) {
+          if (advancedWheel && !getViewLock()) {
             if (lineSystem === 'geodetic') setLineSystem('celestial');
             setShowLocalSpace((v) => !v);
           }
           break;
-        case 'o':
+        case 'o': {
           // Cycling into a core mode supersedes any active extension overlay.
           setActiveOverlayExt(null);
-          setOverlayMode(
-            (mode) =>
-              overlayCycle[(overlayCycle.indexOf(mode) + 1) % overlayCycle.length],
-          );
+          // Overlays a viewport owner can't carry are skipped while one holds
+          // the lock (their Overlay-menu rows hide too).
+          const cycle = getViewLock()
+            ? overlayCycle.filter((m) => !VIEW_LOCK_PARKED_OVERLAYS.has(m))
+            : overlayCycle;
+          setOverlayMode((mode) => cycle[(cycle.indexOf(mode) + 1) % cycle.length]);
           break;
+        }
         case 'n': setActiveOverlayExt(null); setOverlayMode('off'); break;
-        case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
+        case 'm': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
-        case 'y': if (advancedWheel) toggleSlide(); break;
+        case 's': if (advancedWheel) toggleSlide(); break;
         // Capture — ungated, so no advanced-mode gate (unlike Slide).
-        case 'e': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
+        case 'c': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
         default: {
           // A registered map-HUD extension may claim a plain-letter hotkey (its
-          // `hotkey` field, also shown beside it in the View menu). Toggle it —
-          // but only when the user is entitled, so a gated extension the user
-          // can't reach stays a no-op (its HUD wouldn't render anyway).
-          const ext = getMapExtensions().find(
-            (x) => x.hotkey?.toLowerCase() === e.key.toLowerCase() && isEntitled(x),
-          );
+          // `hotkey` field, also shown beside it in the View menu — drawer-surface
+          // extensions are handled above instead, only while their bar is up).
+          // Toggle it — but only when the user is entitled, so a gated extension
+          // the user can't reach stays a no-op (its HUD wouldn't render anyway).
+          // Parked with the rest of the View menu while a surface owns the viewport.
+          const ext = getViewLock()
+            ? undefined
+            : getMapExtensions().find(
+                (x) =>
+                  (x.surface ?? 'view') === 'view' &&
+                  x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
+                  isEntitled(x),
+              );
           if (ext) {
             toggleExtension(ext.id);
             break;
@@ -1322,7 +1393,7 @@ export default function App() {
     // toggleExtension / toggleTool / nudgeSlide are stable useCallbacks declared later in this
     // component; the keydown closure reads them lazily (post-commit), so they're intentionally
     // left out of the deps — listing them here would touch their temporal dead zone during render.
-  }, [current, pinned, toggleSlide, advancedWheel, lineSystem, mapTool]);
+  }, [current, pinned, toggleSlide, advancedWheel, lineSystem, mapTool, overlayMode]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
   // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
@@ -1450,7 +1521,7 @@ export default function App() {
   // a LAYOUT effect so it moves in the same paint.
   const phoneLayout = usePhone();
   const safeBottom = useSafeAreaBottom();
-  const skyBandVisible = showSkyTimes && mapTool !== 'capture';
+  const skyBandVisible = showSkyTimes && mapTool !== 'capture' && !viewParked;
   // The band's expandable TRACK (a downstream build's registered center — see
   // lib/extensions/skyBandTrack.ts; the open core registers none, so its band
   // is always the compact row). The expanded/compact switch is owned here (not
@@ -1593,13 +1664,7 @@ export default function App() {
   }, [playing, stepUnit]);
 
   // Pause if the overlay leaves a time mode (synastry/off have no scrubber).
-  const isTimeMode =
-    overlayMode === 'transits' ||
-    overlayMode === 'progressed' ||
-    overlayMode === 'tertiary-progressed' ||
-    overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions' ||
-    overlayMode === 'cyclo';
+  const isTimeMode = TIME_OVERLAY_MODES.has(overlayMode);
   // Adjusted during render (not in an effect) so we never paint a frame that's
   // still "playing" after the overlay has left a time mode.
   if (!isTimeMode && playing) setPlaying(false);
@@ -2686,13 +2751,7 @@ export default function App() {
   // to stand in for the natal chart. (Only the time overlays expose the Display
   // section that holds this toggle, so it can always be switched back; synastry and
   // "no overlay" leave the natal chart alone.)
-  const isTimeOverlay =
-    overlayMode === 'transits' ||
-    overlayMode === 'progressed' ||
-    overlayMode === 'tertiary-progressed' ||
-    overlayMode === 'solar-arc' ||
-    overlayMode === 'primary-directions' ||
-    overlayMode === 'cyclo';
+  const isTimeOverlay = TIME_OVERLAY_MODES.has(overlayMode);
   const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
   // Eclipses ▸ Display ▸ Natal Chart Lines: unlike the time overlays' Natal
   // toggle (which promotes the overlay to stand in for the chart), turning
@@ -4066,6 +4125,7 @@ export default function App() {
       nodeType,
       houseSystem,
       zodiacMode: effZodiacMode,
+      nightShadeOn: showNightShade,
       overlayMode,
       angleProgression,
       primaryRate,
@@ -4128,6 +4188,7 @@ export default function App() {
       openToolById,
       openCaptureTool,
       collectAllLines,
+      showNightShade,
     ],
   );
 
@@ -4247,7 +4308,7 @@ export default function App() {
             advancedWheel={advancedWheel}
             setAdvancedWheel={setAdvancedMode}
           />
-          {showCoords && (
+          {showCoords && !viewParked && (
             <header className="app-header">
               {noTime && (
                 <p className="tz-warning">{t('common.timeUnknownBanner')}</p>
@@ -4275,7 +4336,9 @@ export default function App() {
         <Sidebar
           closing={!showSettings}
           onSlideOutEnd={() => setSettingsMounted(false)}
-          visiblePlanets={visiblePlanets}
+          // The RAW preference: the checkboxes show what the user chose even
+          // while a frame parks a point (Fortune In Mundo) from the effective set.
+          visiblePlanets={visiblePlanetsPref}
           togglePlanet={togglePlanet}
           setAllPlanets={setAllPlanets}
           visibleLineTypes={visibleLineTypes}
@@ -4391,7 +4454,7 @@ export default function App() {
         activeOverlayExt={activeOverlayExt}
         onSelectOverlayExt={selectOverlayExt}
       />
-      {showInfo && (
+      {showInfo && !viewParked && (
         <InfoBar
           lineSystem={lineSystem}
           coordSystem={coordSystem}
@@ -4483,7 +4546,7 @@ export default function App() {
           setIsoStep={setEclipseIsoStep}
         />
       )}
-      {showTeleport && (
+      {showTeleport && !viewParked && (
         <TeleportHud
           onFlyTo={teleportToPoint}
           onGoBack={() => {
@@ -4529,7 +4592,7 @@ export default function App() {
           onClose={() => setShowSkyTimes(false)}
         />
       )}
-      {showLocalSpace && (
+      {showLocalSpace && !viewParked && (
         <LocalSpaceHud
           onClose={() => setShowLocalSpaceSafe(false)}
           // Fly-to-origin reuses the shared teleport hop (camera + the back/forward stash),
@@ -4547,10 +4610,11 @@ export default function App() {
       {/* The Aspect Lines window (gated tier): opened from Settings ▸ Advanced ▸
           Lines ▸ Aspect Lines ▸ "Filters & orbs…". Gated on the aspect lines
           actually drawing AND the plan reaching the gated rung, so turning the
-          lines off, leaving Advanced, or a tier lapse closes it (the open pref
-          persists for when the gates return). Raw aspectOrbs is correct here —
-          the window can only exist while Advanced is on, where eff === raw. */}
-      {effShowAspectLines && gatedTierMet && showAspectLinesHud && (
+          lines off, leaving Advanced, a tier lapse, or a view lock parks it
+          (the open pref persists for when the gates return). Raw aspectOrbs is
+          correct here — the window can only exist while Advanced is on, where
+          eff === raw. */}
+      {effShowAspectLines && gatedTierMet && showAspectLinesHud && !viewParked && (
         <AspectLinesHud
           onClose={closeAspectLinesHud}
           filters={aspectLineFilters}
@@ -4611,6 +4675,7 @@ export default function App() {
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getMapExtensions().map((ext) =>
         openExtensions.has(ext.id) &&
+        !viewParked &&
         (ext.surface !== 'timeline-drawer' || isTimeMode) &&
         (!ext.reservesLeftColumn || !wheelExpanded) ? (
           <Fragment key={ext.id}>
@@ -4719,7 +4784,8 @@ export default function App() {
           onDeleteChart={handleDelete}
         />
       ) : (
-        showChart && (
+        showChart &&
+        !viewParked && (
           <ChartWheel
             point={activePoint}
             pinned={pinned != null}
@@ -4782,7 +4848,7 @@ export default function App() {
           so only one card shows at a time; closing it lets any unfinished onboarding guide
           resurface on the next gesture. In reference mode the pager flips through the met
           guides — shown only when there's more than one (handled inside MissionGuide). */}
-      {showGuides ? (
+      {showGuides && !viewParked ? (
         <MissionGuide
           reference
           set={guideSets[guideIdx]}

@@ -35,6 +35,7 @@ import type {
 } from '../../lib/astro/timeline';
 import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
+import { useViewLock } from '../../lib/extensions/viewLock';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
@@ -938,6 +939,20 @@ export function Sidebar({
   // and clicking flips both together.
   const roadsRiversOn = showRoads || showRivers;
 
+  // While a registered surface owns the viewport (lib/extensions/viewLock), the
+  // rows that only affect the MAP surface park: basemap details, night shade,
+  // projection, the map-drawn zones/stamps/line-family layers, and the aspect
+  // orb editor those gate. Rows that shape what the owner drapes (planets/angles
+  // filters, Fortune formula, calculation choices) stay.
+  const viewParked = useViewLock() !== null;
+  // The Advanced tab under that lock: Display, Lines and Aspect orbs all park,
+  // leaving only the Fortune-formula choice — which exists in zodiacal frames
+  // alone. When nothing at all would show, the TAB parks, heading included (the
+  // empty-section rule, one level up). Keep in sync with the section conditions
+  // in the tab body below.
+  const advancedTabParked =
+    viewParked && !(lineSystem === 'geodetic' || coordSystem === 'zodiaco');
+
   // The plan tier, derived from the Advanced flag exactly as App derives it (a
   // downstream resolver may lift it further — see lib/plan). Gates the Calculation
   // tab's House-system + Zodiac dropdowns (teased nav-menu-style below the tier)
@@ -993,6 +1008,12 @@ export function Sidebar({
             ))}
           </ul>
 
+          {/* The whole Details section is map-surface-only (basemap linework,
+              basemap text, the map's night shading), so it parks AS A SECTION
+              while a registered surface owns the viewport — an owner brings its
+              own equivalents (e.g. a day/night layer of its own). */}
+          {!viewParked && (
+            <>
           <h2>{t('settings.headings.details')}</h2>
           <ul className="technique-list">
             {/* Roads and rivers share one switch — both are low-emphasis basemap
@@ -1038,20 +1059,26 @@ export function Sidebar({
               <span className="name">{t('settings.nightShade.title')}</span>
             </TipToggle>
           </ul>
+            </>
+          )}
 
-          <h2>{t('settings.headings.projection')}</h2>
-          <ul className="theme-list">
-            {PROJECTION_VALUES.map((value) => (
-              <HintOption
-                key={value}
-                selected={projection === value}
-                onSelect={() => setProjection(value)}
-                label={labels.projection(value)}
-                hint={labels.projectionHint(value)}
-                hotkey={<CycleHotkey label="Shift F" />}
-              />
-            ))}
-          </ul>
+          {!viewParked && (
+            <>
+              <h2>{t('settings.headings.projection')}</h2>
+              <ul className="theme-list">
+                {PROJECTION_VALUES.map((value) => (
+                  <HintOption
+                    key={value}
+                    selected={projection === value}
+                    onSelect={() => setProjection(value)}
+                    label={labels.projection(value)}
+                    hint={labels.projectionHint(value)}
+                    hotkey={<CycleHotkey label="Shift F" />}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
 
           {/* Language sits last, below the map-facing detail + projection controls. */}
           <h2>{t('settings.headings.language')}</h2>
@@ -1276,7 +1303,7 @@ export function Sidebar({
           frame moved to the Calculation tab, where the sidereal frames tease the
           ADV rung instead of hiding.) It appears whenever Advanced mode is on
           (showAdvancedTab), regardless of whether the expanded chart sidebar is open. */}
-      {showAdvancedTab && (
+      {showAdvancedTab && !advancedTabParked && (
         <button
           type="button"
           className="sidebar-header sidebar-header-accent sidebar-accent-advanced"
@@ -1288,11 +1315,17 @@ export function Sidebar({
         </button>
       )}
 
-      {showAdvancedTab && openSection === 'advanced' && (
+      {showAdvancedTab && !advancedTabParked && openSection === 'advanced' && (
         <div className="sidebar-section sidebar-section-accent sidebar-accent-advanced">
           {/* Display + Lines overlay toggles, consolidated into Advanced from
               the Appearance and Map-filter sections. Their Shift-key shortcuts
               still work even while this section is collapsed/hidden. */}
+          {/* The whole Display section draws on the map only (zenith/nadir
+              stamps, orb zones), so while a surface owns the viewport it parks
+              AS A SECTION — hiding every row but leaving the heading would
+              read as a bug. */}
+          {!viewParked && (
+            <>
           <h2>{t('settings.headings.display')}</h2>
           <ul className="technique-list">
             {/* Zenith stamps (overhead, circle) + antipodal nadir stamps
@@ -1352,7 +1385,16 @@ export function Sidebar({
               </li>
             )}
           </ul>
+            </>
+          )}
 
+          {/* Under a view lock the WHOLE section parks, heading included:
+              parans and fixed stars draw on the map only (a viewport owner
+              shows its own named-star layer), and the aspect/midpoint families
+              are illegible at that scale, so the owner drops them from its
+              drape and their toggles follow. */}
+          {!viewParked && (
+            <>
           <h2>{t('settings.headings.lines')}</h2>
           <ul className="technique-list">
             <TipToggle
@@ -1449,6 +1491,8 @@ export function Sidebar({
               </TipToggle>
             )}
           </ul>
+            </>
+          )}
 
           {/* Part of Fortune formula: the sect-based (day/night) default vs the
               fixed Ptolemaic convention — a genuine historical divide whose two
@@ -1474,8 +1518,9 @@ export function Sidebar({
 
           {/* The compact orb editor stands down while the Aspects window is actually
               MOUNTED (toggle on + tier reached + open) — that window lays every orb
-              out at once, so showing both would be two live editors of one store. */}
-          {!(showAspectLines && gatedUnlocked && aspectHudOpen) && (
+              out at once, so showing both would be two live editors of one store.
+              It also parks under a view lock, with the aspect lines it gates. */}
+          {!viewParked && !(showAspectLines && gatedUnlocked && aspectHudOpen) && (
             <>
           <h2 className="orb-heading">
             {t('settings.headings.aspectOrbs')}
@@ -1557,6 +1602,10 @@ export function Sidebar({
           outside core. The header always shows; the body is the controls when
           entitled, else the gated CTA. Empty in the open core. */}
       {getSettingsSections().map((ext) => {
+        // A conditional section (header included) stands down while its
+        // visibility predicate says so — e.g. it configures a surface that
+        // isn't currently active.
+        if (ext.visible && !ext.visible()) return null;
         // A registered section opts into the coloured (Advanced-style) treatment by
         // supplying accentRgb; the shared --section-accent-rgb drives both header + body.
         const accentStyle = ext.accentRgb

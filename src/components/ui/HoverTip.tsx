@@ -32,6 +32,7 @@ export function HoverTip({
   hotkey,
   advanced,
   gated,
+  className,
 }: {
   pos: TipPos | null;
   placement?: TipPlacement;
@@ -44,6 +45,9 @@ export function HoverTip({
    *  its top rung via setGatedTierLabel — see lib/plan) — marks the trigger as a
    *  gated-tier control. */
   gated?: boolean;
+  /** Extra class on the card — a themed surface (e.g. a dark viewport bar) can
+   *  re-skin its tips to match its own chrome instead of the shared card. */
+  className?: string;
 }) {
   const cardRef = useRef<HTMLSpanElement>(null);
 
@@ -74,7 +78,7 @@ export function HoverTip({
   return createPortal(
     <span
       ref={cardRef}
-      className={`ui-tip-box ui-tip hover-tip hover-tip-${placement}`}
+      className={`ui-tip-box ui-tip hover-tip hover-tip-${placement}${className ? ` ${className}` : ''}`}
       style={{ left: pos.left, top: pos.top }}
       aria-hidden="true"
     >
@@ -107,6 +111,7 @@ export function TipButton({
   advanced,
   gated,
   placement = 'bottom',
+  tipClassName,
   children,
   ...rest
 }: {
@@ -116,6 +121,8 @@ export function TipButton({
   advanced?: boolean;
   gated?: boolean;
   placement?: TipPlacement;
+  /** Forwarded to the card (HoverTip className) — lets a themed surface skin its tips. */
+  tipClassName?: string;
   children?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>(placement);
@@ -139,6 +146,7 @@ export function TipButton({
         hotkey={hotkey}
         advanced={advanced}
         gated={gated}
+        className={tipClassName}
       />
     </>
   );
@@ -154,6 +162,7 @@ export function TipSpan({
   advanced,
   placement = 'bottom',
   tapReveal,
+  tipClassName,
   children,
   ...rest
 }: {
@@ -167,6 +176,8 @@ export function TipSpan({
    *  rather than a long-press — which on iOS raises the text-selection callout over the
    *  glyph/label. Leave off for anything with an action. */
   tapReveal?: boolean;
+  /** Forwarded to the card (HoverTip className) — lets a themed surface skin its tips. */
+  tipClassName?: string;
   children?: ReactNode;
 } & HTMLAttributes<HTMLSpanElement>) {
   const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>(placement, { tapReveal });
@@ -189,6 +200,7 @@ export function TipSpan({
         hint={hint}
         hotkey={hotkey}
         advanced={advanced}
+        className={tipClassName}
       />
     </>
   );

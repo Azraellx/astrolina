@@ -17,6 +17,8 @@ import type { MapState } from '../TimelineHud/TimelineHud';
 import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
+  TIME_OVERLAY_MODES,
+  VIEW_LOCK_PARKED_OVERLAYS,
   overlayBlockedFor,
   type OverlayMode,
 } from '../../lib/astro/timeline';
@@ -24,6 +26,7 @@ import { canonicalLng } from '../../lib/coordFormat';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
+import { useViewLock } from '../../lib/extensions/viewLock';
 import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
@@ -296,6 +299,7 @@ function NavMenu({
   ariaLabel,
   active,
   className,
+  disabledTip,
   children,
 }: {
   /** Trigger content — text (Overlay/View) or an icon (Tools). */
@@ -306,12 +310,20 @@ function NavMenu({
   /** Extra class on the trigger (e.g. 'navmenu-steady' to opt out of the
    *  map-state accent on open/active). */
   className?: string;
+  /** When set, the menu can't open: the trigger renders inert (aria-disabled,
+   *  not `disabled` — a disabled button drops the hover events the tip needs)
+   *  with this text as its hover tip explaining why. */
+  disabledTip?: string;
   // Plain content, or a render-prop given a `close()` so items can dismiss the
   // menu on selection (used by Overlay).
   children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // A menu disabled while open snaps shut.
+  useEffect(() => {
+    if (disabledTip != null) setOpen(false);
+  }, [disabledTip]);
 
   useEffect(() => {
     if (!open) return;
@@ -328,6 +340,24 @@ function NavMenu({
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  if (disabledTip != null) {
+    return (
+      <div className="navmenu" ref={ref}>
+        <TipButton
+          type="button"
+          className={`navmenu-trigger navmenu-disabled ${className ?? ''}`}
+          tip={ariaLabel ?? label}
+          hint={disabledTip}
+          aria-disabled="true"
+          aria-label={ariaLabel}
+        >
+          <span>{label}</span>
+          <span className="navmenu-caret">▾</span>
+        </TipButton>
+      </div>
+    );
+  }
 
   return (
     <div className="navmenu" ref={ref}>
@@ -758,6 +788,9 @@ export function TopNav({
   // partition is stable, so each group keeps its declared order (e.g. Guides stays
   // above Info).
   const touch = useTouchLayout();
+  // A registered surface owning the viewport parks the View menu (see
+  // lib/extensions/viewLock) — the trigger disables with the provider's reason.
+  const viewLock = useViewLock();
   const viewItems: {
     id: string;
     label: string;
@@ -768,11 +801,14 @@ export function TopNav({
     /** One-line description shown in the row's hover .ui-tip, like the Tools/Overlay menus. */
     hint?: string;
   }[] = [
-    { id: 'coordinates', label: t('topNav.view.coordinates'), hint: t('topNav.view.coordinatesHint'), hotkey: 'C', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
-    { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
-    { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
-    { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
-    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'H', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
+    // The built-in windows ride the DIGIT row (1-4), keeping the letter pool for
+    // tools and add-ons; the letters that remain are mnemonic (T = Sky Times,
+    // L = Local Space). Badges mirror App's keydown switch exactly.
+    { id: 'coordinates', label: t('topNav.view.coordinates'), hint: t('topNav.view.coordinatesHint'), hotkey: '1', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
+    { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: '2', checked: showChart, onToggle: () => setShowChart(!showChart) },
+    { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: '3', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
+    { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: '4', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
+    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'T', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
     { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
@@ -983,7 +1019,7 @@ export function TopNav({
                     label={t('topNav.tools.captureItem')}
                     icon={<ToolMenuIcon tool="capture" />}
                     hint={t('topNav.tools.captureHint')}
-                    hotkey="E"
+                    hotkey="C"
                     checked={framing}
                     onToggle={() => {
                       setTool(framing ? 'off' : 'capture');
@@ -994,7 +1030,7 @@ export function TopNav({
                     label={t('topNav.tools.measureItem')}
                     icon={<ToolMenuIcon tool="measure" />}
                     hint={t('topNav.tools.measureHint')}
-                    hotkey="T"
+                    hotkey="M"
                     checked={measuring}
                     onToggle={() => {
                       setTool(measuring ? 'off' : 'measure');
@@ -1013,7 +1049,7 @@ export function TopNav({
                           ? t('topNav.tools.slideHint')
                           : t('topNav.tools.slideUnavailable')
                       }
-                      hotkey="Y"
+                      hotkey="S"
                       tier="adv"
                       checked={sliding}
                       disabled={!tierMet(planTier, 'adv') || !slideEnabled}
@@ -1073,7 +1109,10 @@ export function TopNav({
                   <RadioItem
                     label={t('topNav.overlay.none.label')}
                     hint={t('topNav.overlay.none.hint')}
-                    hotkey="N"
+                    // While a time overlay's bar is up, its drawer's Natal toggle
+                    // owns 'n' (see App's keydown) — drop the badge rather than
+                    // advertise a key that would do something else.
+                    hotkey={TIME_OVERLAY_MODES.has(overlayMode) ? undefined : 'N'}
                     checked={overlayMode === 'off' && activeOverlayExt == null}
                     onSelect={() => {
                       // setOverlayMode is the App's combined setter — it clears any
@@ -1090,6 +1129,10 @@ export function TopNav({
                     // has no natal moment to advance. One shared predicate with App's
                     // 'o'-cycle and stale-mode reset, so the three never disagree.
                     if (overlayBlockedFor(current)(mode)) return false;
+                    // Overlays a viewport owner can't carry HIDE while one holds the
+                    // lock — a visible row would only offer a dead selection (the 'o'
+                    // cycle skips them too; see VIEW_LOCK_PARKED_OVERLAYS).
+                    if (viewLock != null && VIEW_LOCK_PARKED_OVERLAYS.has(mode)) return false;
                     const req = ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new';
                     return tierMet(planTier, req) || shouldShowNudge(req);
                   }).map((mode) => {
@@ -1157,6 +1200,10 @@ export function TopNav({
               label={<NavMenuLabel text={t('topNav.view.menuLabel')} icon={<ViewIcon />} />}
               ariaLabel={t('topNav.view.menuLabel')}
               className="navmenu-steady"
+              // While a registered surface owns the viewport its windows are
+              // parked — the whole menu disables, with the provider's reason as
+              // the tip (Settings stays reachable via its own hotkey).
+              disabledTip={viewLock?.reason}
             >
               {/* Built-ins + add-on extensions, hotkey items first then hotkey-less
                   ones (see orderedViewItems). */}

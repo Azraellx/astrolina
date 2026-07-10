@@ -6,7 +6,7 @@
 
 import { useEffect } from 'react';
 import { useT } from '../../i18n';
-import { getCreditsFooter } from '../../lib/extensions/creditsFooter';
+import { getCreditsFooter, getCreditsItems } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
 
 // Sub-key into creditsModal.notes / creditsModal.groups. Kept as literal unions so the
@@ -184,6 +184,24 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
                     <span className="credits-license">{item.license}</span>
                   </span>
                   <span className="credits-note">{t(`creditsModal.notes.${item.noteKey}`)}</span>
+                </li>
+              ))}
+              {/* Rows a downstream build registered for this group (data/deps it
+                  bundles that the open core doesn't ship) — same chrome; strings
+                  arrive pre-localized. Empty in the open core. */}
+              {getCreditsItems(group.titleKey).map((item) => (
+                <li key={`registered-${item.name}`}>
+                  <span className="credits-line">
+                    {item.href ? (
+                      <a href={item.href} target="_blank" rel="noopener noreferrer">
+                        {item.name}
+                      </a>
+                    ) : (
+                      <span className="credits-name">{item.name}</span>
+                    )}
+                    <span className="credits-license">{item.license}</span>
+                  </span>
+                  <span className="credits-note">{item.note}</span>
                 </li>
               ))}
             </ul>

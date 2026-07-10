@@ -38,6 +38,11 @@ export interface SettingsSectionExtension extends GatedExtension {
   /** The section body, rendered when this section is the open accordion AND entitled.
    *  Context-free: a settings section owns its own controls/preferences. */
   render: () => ReactNode;
+  /** When present, the whole section (header included) renders only while this
+   *  returns true — for sections that configure a surface which is only
+   *  sometimes active. Re-evaluated on every sidebar render; pair it with
+   *  reactive state the sidebar already subscribes to (e.g. the view lock). */
+  visible?: () => boolean;
   /** Optional accent for the section, as an "r, g, b" triplet — a literal like
    *  '120, 90, 200' or a token reference like 'var(--brand-rgb)'. When set, the section
    *  gets the same coloured treatment as the core Advanced tab: a diagonal gradient

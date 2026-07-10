@@ -536,6 +536,16 @@ button.topnav-status:hover {
   background: rgba(var(--tint), 0.08);
   border-color: rgba(var(--tint), 0.24);
 }
+/* Parked while a registered surface owns the viewport (viewLock): inert but
+   still hoverable, so the tip can say why. */
+.navmenu-trigger.navmenu-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.navmenu-trigger.navmenu-disabled:hover {
+  background: rgba(var(--tint), 0.05);
+  border-color: rgba(var(--tint), 0.14);
+}
 .navmenu-trigger.open,
 .navmenu-trigger.active {
   border-color: rgba(var(--accent-rgb), 0.55);

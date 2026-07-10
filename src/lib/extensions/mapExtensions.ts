@@ -73,6 +73,9 @@ export interface MapExtensionContext {
   /** Effective zodiac mode (Advanced ▸ Zodiac; 'tropical' unless Advanced is on),
    *  so a dated HUD can read its list in the chart's active zodiac. */
   zodiacMode: ZodiacMode;
+  /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
+   *  extension drawing its own day/night treatment can follow the same switch. */
+  nightShadeOn: boolean;
   overlayMode: OverlayMode;
   /** The Progressions/Directions settings the directed overlays advance by
    *  (Chart-Angle method, Primary-Directions rate + user rate), so an extension
@@ -149,7 +152,10 @@ export interface MapExtension {
   surface?: 'view' | 'timeline-drawer';
   /** localStorage key to persist open/closed; omit for a non-persisted HUD. */
   storageKey?: string;
-  /** Single-key shortcut shown in the View menu (optional). */
+  /** Single-key shortcut (optional). For a 'view' surface it's global and shown
+   *  in the View menu; for a 'timeline-drawer' surface it's live ONLY while the
+   *  time-overlay bar is up (the host shadows the letter's base action there)
+   *  and shown in the drawer toggle's hover tip. */
   hotkey?: string;
   /** A short description of the feature for the toggle's hover tip, already
    *  localized (optional; shown where the surface renders tips — currently the

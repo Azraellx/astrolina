@@ -536,6 +536,9 @@ export function TimelineHud({
         placement="top"
         tip={t('settings.natal.title')}
         hint={t('settings.natal.hint')}
+        // 'n' belongs to this toggle while the bar is up (App's keydown shadows
+        // the Overlay-menu None row, whose badge yields for those modes).
+        hotkey="N"
         aria-label={t('settings.natal.title')}
         aria-pressed={showNatal}
         onClick={() => setShowNatal(!showNatal)}
@@ -564,6 +567,9 @@ export function TimelineHud({
               gated={ext.tier === 'gated'}
               tip={ext.label}
               hint={ext.hint}
+              // A drawer extension's hotkey is live only while this bar is up
+              // (App's keydown scopes it), so the pill is honest right here.
+              hotkey={ext.hotkey}
               aria-label={ext.label}
               aria-pressed={open}
               onClick={() => onToggleExtension(ext.id)}
