@@ -134,6 +134,38 @@ export interface MapExtensionContext {
    *  (e.g. once per point query), never per frame. Pair with `setLineSpotlight({ ..., lines })` to
    *  reveal the full set on the map, and read it for a "which lines are near here" list. */
   collectAllLines: () => AllLines;
+  /** Whether Advanced reading mode is on (the free rung that reveals the advanced
+   *  views/overlays). Read it before opening an advanced-gated view, so the menus
+   *  stay in step with what's on screen. */
+  advancedMode: boolean;
+  /** Switch Advanced reading mode — the same setter the built-in toggles use, so
+   *  turning it OFF also closes any advanced-only feature that's active. */
+  setAdvancedMode: (on: boolean) => void;
+  /** Force a BUILT-IN view window open by id — the built-ins' twin of
+   *  {@link openExtension} ('charts' is the chart browser). Idempotent. An
+   *  advanced-gated view ('skyTimes'/'localSpace') opens regardless of the Advanced
+   *  switch — flip {@link setAdvancedMode} first so the menus agree — and a view
+   *  lock doesn't block the state flip: the window appears once the lock clears. */
+  openView: (
+    id: 'coordinates' | 'minimap' | 'teleport' | 'skyTimes' | 'localSpace' | 'charts',
+  ) => void;
+  /** Open the settings sidebar, optionally at an accordion section (a
+   *  SidebarSection id, e.g. 'filters' — typed as plain string so this module
+   *  stays free of component types). */
+  openSettings: (section?: string) => void;
+  /** Open state of the built-in reference surfaces (the guides card + info chip) —
+   *  the read half of {@link setViewFlag}. */
+  viewFlags: { guides: boolean; info: boolean };
+  /** Show/hide a built-in reference surface — for an extension that HOSTS those
+   *  toggles after claiming their menu rows (see lib/extensions/viewRowClaims). */
+  setViewFlag: (id: 'guides' | 'info', open: boolean) => void;
+  /** The ids of the tool extensions currently OPEN — the read half of
+   *  {@link openTool}, mirroring {@link openExtensionIds}. */
+  openToolIds: ReadonlySet<string>;
+  /** Close a tool extension by id (no-op unless open) — the inverse of
+   *  {@link openTool}, e.g. releasing a viewport-owning tool before opening a
+   *  map window it parks. */
+  closeTool: (id: string) => void;
 }
 
 /** 'core' is always available; 'gated' is subject to the entitlement resolver. */
@@ -147,9 +179,16 @@ export interface MapExtension {
   /** Where the extension's TOGGLE lives (default 'view' = a View-menu row).
    *  'timeline-drawer' puts it in the time-overlay bar's display drawer instead
    *  (beside the Natal/Zenith toggles): available only while a timeline overlay
-   *  is active (leaving those overlays closes it), and — unlike the View menu's
-   *  nudge policy — NEVER teased: un-entitled users simply don't see the row. */
+   *  is active (leaving those overlays closes it). Follows the same nudge policy
+   *  as the View menu — a nudged un-entitled user sees it as a clickable teaser,
+   *  everyone else un-nudged sees nothing. */
   surface?: 'view' | 'timeline-drawer';
+  /** Where the extension's HUD sits (default 'map': a floating window over the
+   *  map, parked while a registered surface owns the viewport — see
+   *  lib/extensions/viewLock). 'modal' marks a full-screen takeover with its own
+   *  opaque backdrop (like the chart browser): it layers ABOVE the app, so both
+   *  its render and its hotkey stay live under a view lock. */
+  layer?: 'map' | 'modal';
   /** localStorage key to persist open/closed; omit for a non-persisted HUD. */
   storageKey?: string;
   /** Single-key shortcut (optional). For a 'view' surface it's global and shown

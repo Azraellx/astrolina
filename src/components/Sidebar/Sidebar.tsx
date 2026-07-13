@@ -1140,8 +1140,10 @@ export function Sidebar({
               there the whole section (heading included) is hidden, keeping the
               filter list to what the current projection can actually draw. Because
               the section only appears where Fortune DOES draw, its (i) hint needn't
-              explain the projection at all — just the Lot and its relocation. */}
-          {(lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
+              explain the projection at all — just the Lot and its relocation.
+              It's also part of Advanced reading mode, so the section hides while that's
+              off (matching App's fortuneDay gate, which won't draw the Lot otherwise). */}
+          {advUnlocked && (lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
             <>
               <h2 className="info-heading">
                 {t('settings.headings.points')}

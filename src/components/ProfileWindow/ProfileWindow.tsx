@@ -8,7 +8,7 @@ import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import { getProfileSection } from '../../lib/extensions/profileSection';
-import { planTierFor, tierLabel } from '../../lib/plan';
+import { planTierFor, tierName } from '../../lib/plan';
 import './ProfileWindow.css';
 
 interface ProfileWindowProps {
@@ -36,9 +36,11 @@ export function ProfileWindow({
   const { renderIdentity, onPlanTag } = getProfileSection();
   // The tag shows the user's rung on the shared ladder (the core reaches new ↔ adv
   // on its own; a downstream resolver can reach 'gated'). Its text comes from the
-  // tier-label table, so a downstream build names each rung without the core knowing
-  // those names. Clicking flips Advanced in the open core, or runs the installed
-  // onPlanTag handler (e.g. open a plan screen).
+  // tier-NAME table (the plan-pill channel), NOT the compact tier-label table that
+  // marks a feature's required tier — so the plan a user is ON never borrows the
+  // ADV/PRO feature-badge vocabulary, and this pill stays in lockstep with the
+  // wheel-sidebar plan pill. Clicking flips Advanced in the open core, or runs the
+  // installed onPlanTag handler (e.g. open a plan screen).
   const tier = planTierFor(advancedWheel);
   const handlePlanTag = () =>
     onPlanTag
@@ -75,7 +77,7 @@ export function ProfileWindow({
           onBlur={hide}
         >
           {renderIdentity?.()}
-          <span className={`pw-plan-tag tier-${tier}`}>{tierLabel(tier)}</span>
+          <span className={`pw-plan-tag tier-${tier}`}>{tierName(tier)}</span>
         </div>
         <HoverTip pos={pos} placement="bottom" title={tip} hint={hint} />
       </>
@@ -95,7 +97,7 @@ export function ProfileWindow({
         tip={t(advancedWheel ? 'profile.planTag.tipBasic' : 'profile.planTag.tip')}
         hint={t(advancedWheel ? 'profile.planTag.hintBasic' : 'profile.planTag.hint')}
       >
-        {tierLabel(tier)}
+        {tierName(tier)}
       </TipButton>
     </div>
   );

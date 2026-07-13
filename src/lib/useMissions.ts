@@ -8,8 +8,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MISSION_SETS,
   loadCompletedSets,
+  loadDismissedSets,
   loadSeenSets,
   saveCompletedSets,
+  saveDismissedSets,
   saveSeenSets,
   type MissionEvent,
   type MissionSet,
@@ -33,6 +35,9 @@ export interface MissionsApi {
   /** Close the open guide. Completion is persisted the moment a set finishes, so
    *  closing early just lets the trigger surface it again later. */
   close: () => void;
+  /** Permanently suppress a set's guide ("Don't show me again"): its trigger will never
+   *  surface it again, even unfinished. Per-set + persisted; idempotent. */
+  dismiss: (setId: string) => void;
   /** Mark a set finished + persist it. For sets the recordEvent path can't auto-finish
    *  on its own — e.g. ones with a mission that's "not applicable" (and so never
    *  recorded) in the current mode. Idempotent. */
@@ -67,12 +72,15 @@ export function useMissions(): MissionsApi {
   );
   // Sets that have surfaced at least once (persisted) — the View ▸ Guides reference list.
   const [seenSets, setSeenSets] = useState<Record<string, boolean>>(loadSeenSets);
+  // Sets the user asked to never see again ("Don't show me again"); persisted, per-set.
+  const [dismissedSets, setDismissedSets] = useState<Record<string, boolean>>(loadDismissedSets);
   const [openSetId, setOpenSetId] = useState<string | null>(null);
 
   // Latest state, read by the stable callbacks below without being their deps.
   const completedRef = useRef(completedSets);
   const progressRef = useRef(progress);
   const seenRef = useRef(seenSets);
+  const dismissedRef = useRef(dismissedSets);
   const openIdRef = useRef(openSetId);
   useEffect(() => {
     completedRef.current = completedSets;
@@ -83,6 +91,9 @@ export function useMissions(): MissionsApi {
   useEffect(() => {
     seenRef.current = seenSets;
   }, [seenSets]);
+  useEffect(() => {
+    dismissedRef.current = dismissedSets;
+  }, [dismissedSets]);
   useEffect(() => {
     openIdRef.current = openSetId;
   }, [openSetId]);
@@ -138,7 +149,10 @@ export function useMissions(): MissionsApi {
       // current when it actually matters.
       const cur = openIdRef.current;
       const set = MISSION_SETS.find(
-        (s) => s.trigger === t && !completedRef.current[s.id],
+        (s) =>
+          s.trigger === t &&
+          !completedRef.current[s.id] &&
+          !dismissedRef.current[s.id],
       );
       // Surface (and count as "seen") only when it will actually show: nothing is up, or
       // we're explicitly replacing the open guide. Otherwise keep whatever's open.
@@ -151,6 +165,13 @@ export function useMissions(): MissionsApi {
   );
 
   const close = useCallback(() => setOpenSetId(null), []);
+
+  const dismiss = useCallback((setId: string) => {
+    if (dismissedRef.current[setId]) return; // already suppressed
+    const next = { ...dismissedRef.current, [setId]: true };
+    setDismissedSets(next);
+    saveDismissedSets(next);
+  }, []);
 
   const complete = useCallback((setId: string) => {
     if (completedRef.current[setId]) return; // already finished
@@ -187,6 +208,7 @@ export function useMissions(): MissionsApi {
     recordEvent,
     trigger,
     close,
+    dismiss,
     complete,
     guideSets,
     progressFor,

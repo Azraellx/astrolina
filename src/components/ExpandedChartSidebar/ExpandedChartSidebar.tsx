@@ -50,6 +50,7 @@ import {
   useLocalSpaceHover,
 } from '../LocalSpaceWheel/LocalSpaceWheel';
 import { LocalSpaceCompass } from '../LocalSpaceWheel/LocalSpaceCompass';
+import { renderLocalSpaceGatedSlot } from '../../lib/extensions/localSpaceSlot';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import {
   essentialDignity,
@@ -214,6 +215,12 @@ interface ExpandedChartSidebarProps {
    *  relocated origin (pin ≠ birthplace) vs the natal birthplace — labels the
    *  Compare table's Local-space column for whichever dial it mirrors. */
   localSpaceRelocated?: boolean;
+  /** The Local Space view is on but the coord props above are held back by the caller's
+   *  tier gate, so the real dials won't draw. When set, the sidebar renders whatever a
+   *  downstream build has installed in the gated local-space slot (lib/extensions/
+   *  localSpaceSlot) in the dials' place — the open core installs nothing, so nothing
+   *  shows. Mutually exclusive with the coord props being populated. */
+  localSpaceGated?: boolean;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
@@ -600,6 +607,7 @@ export function ExpandedChartSidebar({
   localSpaceCoords,
   natalLocalSpaceCoords,
   relocatedLocalSpaceCoords,
+  localSpaceGated = false,
   localSpaceRelocated,
   aspectOrbs,
   advanced,
@@ -1197,6 +1205,10 @@ export function ExpandedChartSidebar({
               </div>
             </>
           );
+          // Dials held back by the tier gate (so lsPair is null): render whatever a
+          // downstream build put in the local-space slot in their place — nothing in the
+          // open core; a placeholder in a gated build (lib/extensions/localSpaceSlot).
+          const lsTease = localSpaceGated ? renderLocalSpaceGatedSlot(lsSize) : null;
           return (
             <>
               {/* Use the wheel's empty top corners: the chart-state title (left,
@@ -1239,8 +1251,11 @@ export function ExpandedChartSidebar({
               <div
                 // The dual modifier stacks the pane's children in a column —
                 // needed whenever more than one wheel renders, so the horizon
-                // dial lands BELOW the wheel(s) rather than beside them.
-                className={`es-wheel-pane${showDual || lsPair ? ' es-wheel-pane-dual' : ''}`}
+                // dial (or its locked teaser) lands BELOW the wheel(s) rather
+                // than beside them.
+                className={`es-wheel-pane${
+                  showDual || lsPair || lsTease ? ' es-wheel-pane-dual' : ''
+                }`}
                 ref={wheelPaneRef}
               >
                 {frame ? (
@@ -1285,7 +1300,7 @@ export function ExpandedChartSidebar({
                         readouts={fixedFullWidth}
                         interactive
                       />
-                      {lsPair}
+                      {lsPair || lsTease}
                     </>
                   ) : (
                     <>
@@ -1308,7 +1323,7 @@ export function ExpandedChartSidebar({
                         interactive
                         planetsOnly={planetsOnly && !angles}
                       />
-                      {lsPair}
+                      {lsPair || lsTease}
                     </>
                   )
                 ) : noChart ? (

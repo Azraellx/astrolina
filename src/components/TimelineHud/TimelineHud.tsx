@@ -33,7 +33,7 @@ import {
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
-import { shouldShowNudge, nudgeAction } from '../../lib/plan';
+import { shouldShowNudge, nudgeAction, tierOfEntitlement } from '../../lib/plan';
 import { getMapExtensions, isEntitled } from '../../lib/extensions/mapExtensions';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
@@ -551,13 +551,19 @@ export function TimelineHud({
           (Appearance ▸ Details), so this drawer no longer carries an overlay-Zenith
           toggle — just the Natal toggle above and any drawer extensions below. */}
       {/* Extensions surfaced in this drawer (surface 'timeline-drawer') — e.g. a
-          downstream build's gated add-on. Entitlement-gated with NO teaser: an
-          un-entitled user simply doesn't see the row. A gated row carries the
-          gated-tier tag in its hover tip (like the Zenith toggle carries ADV). */}
+          downstream build's gated add-on. Follows the same nudge policy as the View
+          menu: an entitled user gets the real toggle; an un-entitled user whom the
+          build nudges sees it as a CLICKABLE teaser (gated tag in the tip, a click
+          opens the account flow instead of toggling); everyone else sees nothing. */}
       {getMapExtensions()
-        .filter((ext) => ext.surface === 'timeline-drawer' && isEntitled(ext))
+        .filter(
+          (ext) =>
+            ext.surface === 'timeline-drawer' &&
+            (isEntitled(ext) || shouldShowNudge(tierOfEntitlement(ext.tier))),
+        )
         .map((ext) => {
           const open = openExtensions.has(ext.id);
+          const locked = !isEntitled(ext);
           return (
             <TipButton
               key={ext.id}
@@ -568,11 +574,12 @@ export function TimelineHud({
               tip={ext.label}
               hint={ext.hint}
               // A drawer extension's hotkey is live only while this bar is up
-              // (App's keydown scopes it), so the pill is honest right here.
-              hotkey={ext.hotkey}
+              // (App's keydown scopes it), so the pill is honest right here — but a
+              // locked teaser advertises no key (its letter is a no-op until entitled).
+              hotkey={locked ? undefined : ext.hotkey}
               aria-label={ext.label}
-              aria-pressed={open}
-              onClick={() => onToggleExtension(ext.id)}
+              aria-pressed={locked ? undefined : open}
+              onClick={() => (locked ? nudgeAction() : onToggleExtension(ext.id))}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <EyeIcon open={open} />

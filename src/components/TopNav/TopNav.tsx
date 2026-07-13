@@ -27,6 +27,7 @@ import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
 import { useViewLock } from '../../lib/extensions/viewLock';
+import { isViewRowClaimed } from '../../lib/extensions/viewRowClaims';
 import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
@@ -839,6 +840,9 @@ export function TopNav({
     // point, which a finger can't produce), so drop their View-menu rows too —
     // toggling them would be a confusing no-op.
     .filter((i) => !(touch && (i.id === 'coordinates' || i.id === 'minimap')))
+    // A registered extension may claim a built-in row to host it inside its own
+    // surface (lib/extensions/viewRowClaims) — a claimed row leaves the menu.
+    .filter((i) => !isViewRowClaimed(i.id))
     .filter((i) => tierMet(planTier, i.tier ?? 'new') || shouldShowNudge(i.tier ?? 'new'));
 
   const measuring = tool === 'measure';

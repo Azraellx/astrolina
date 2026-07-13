@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { MissionGesture, MissionSet } from '../../lib/missions';
 import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
@@ -152,7 +152,9 @@ interface MissionGuideProps {
   /** Whether the map is in the 3D globe projection — `only3d` missions show as already
    *  satisfied (neutral) when this is false. */
   is3d: boolean;
-  onClose: () => void;
+  /** Close the guide. `dontShowAgain` is true when the user ticked "Don't show me again"
+   *  (onboarding pop-up only) — the caller then suppresses THIS set's trigger for good. */
+  onClose: (dontShowAgain?: boolean) => void;
   /** Reference mode (opened from View ▸ Guides). The card becomes a glossary you can
    *  browse, so the OK button is always enabled — it just closes — even with missions
    *  still outstanding, and a guide pager may be shown. Off during the normal onboarding
@@ -201,13 +203,18 @@ export function MissionGuide({
     hide: hideDragTip,
   } = useHoverTip<HTMLDivElement>('top');
 
+  // "Don't show me again" (onboarding pop-up only). Ticking it is an explicit opt-out, so
+  // it also UNLOCKS the OK button — the user can dismiss without finishing — and, whichever
+  // way they then close, the caller suppresses this set's trigger for good.
+  const [dontShow, setDontShow] = useState(false);
+
   // A 3D-only mission is "satisfied" in 2D without being completed (see na below).
   const allDone = set.missions.every(
     (m) => completed.has(m.id) || (!!m.only3d && !is3d),
   );
   // In reference mode OK is just "close", so it's always enabled; in the onboarding
-  // pop-up it stays locked until every mission is done.
-  const okEnabled = reference || allDone;
+  // pop-up it stays locked until every mission is done — unless the user opts out.
+  const okEnabled = reference || allDone || dontShow;
   const showPager = reference && !!pager && pager.count > 1;
 
   // Subtitle: render any "{pin}" / "{ruler}" token inline as its icon, the rest as text.
@@ -253,7 +260,7 @@ export function MissionGuide({
         <TipButton
           type="button"
           className="mg-close"
-          onClick={onClose}
+          onClick={() => onClose(dontShow)}
           aria-label={t('missions.close')}
           placement="left"
           tip={t('missions.skipTip')}
@@ -359,10 +366,23 @@ export function MissionGuide({
             </button>
           </div>
         )}
+        {/* Per-tutorial opt-out — onboarding pop-up only (the reference guide is a browsable
+            glossary, so it doesn't apply). Ticking it unlocks OK (see okEnabled) and, on
+            close, suppresses just THIS set's trigger. */}
+        {!reference && (
+          <label className="mg-dontshow">
+            <input
+              type="checkbox"
+              checked={dontShow}
+              onChange={(e) => setDontShow(e.target.checked)}
+            />
+            <span>{t('missions.dontShowAgain')}</span>
+          </label>
+        )}
         <button
           type="button"
           className="mg-ok"
-          onClick={onClose}
+          onClick={() => onClose(dontShow)}
           disabled={!okEnabled}
           title={okEnabled ? undefined : t('missions.okLocked')}
         >

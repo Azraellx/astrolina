@@ -1363,15 +1363,16 @@ export default function App() {
           // extensions are handled above instead, only while their bar is up).
           // Toggle it — but only when the user is entitled, so a gated extension
           // the user can't reach stays a no-op (its HUD wouldn't render anyway).
-          // Parked with the rest of the View menu while a surface owns the viewport.
-          const ext = getViewLock()
-            ? undefined
-            : getMapExtensions().find(
-                (x) =>
-                  (x.surface ?? 'view') === 'view' &&
-                  x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
-                  isEntitled(x),
-              );
+          // Parked with the rest of the View menu while a surface owns the
+          // viewport — except a modal-layer extension, which stacks above the
+          // owning surface (like the chart browser does) and so keeps its key.
+          const ext = getMapExtensions().find(
+            (x) =>
+              (x.surface ?? 'view') === 'view' &&
+              x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
+              isEntitled(x) &&
+              (!getViewLock() || x.layer === 'modal'),
+          );
           if (ext) {
             toggleExtension(ext.id);
             break;
@@ -1862,12 +1863,16 @@ export default function App() {
   // In-Zodiaco (and geodetic); it needs the Ascendant, so it is absent when the
   // birth time is unknown; and it is a single-birth-moment idea, so composites are
   // out of scope. `fortuneDay` is the natal sect (Sun above the birthplace horizon).
+  // The Lot is an ADVANCED feature (Advanced ▸ reading depth), so it is gated on
+  // `advancedWheel`: with Advanced off, fortuneDay is null and BOTH the map line and
+  // the wheel glyph fall away (each downstream memo short-circuits on a null day) —
+  // the single choke point that keeps Fortune out of the view while Advanced is off.
   const fortuneDay = useMemo(
     () =>
-      current && !current.composite && !noTime
+      advancedWheel && current && !current.composite && !noTime
         ? isDayBirth(ecliptic, gmst, eps, current.birthplace.lat, current.birthplace.lng)
         : null,
-    [current, noTime, ecliptic, gmst, eps],
+    [advancedWheel, current, noTime, ecliptic, gmst, eps],
   );
   // The MAP's Fortune is fixed to the NATAL Ascendant and drawn like a body: its
   // offset from the Ascendant is the Moon–Sun arc, so a relocated Fortune would
@@ -3434,6 +3439,7 @@ export default function App() {
     recordEvent: recordMission,
     trigger: triggerMission,
     close: closeMissionGuide,
+    dismiss: dismissMission,
     complete: completeMission,
     guideSets,
     progressFor: missionProgressFor,
@@ -3633,15 +3639,23 @@ export default function App() {
   // an early completion would lock the set, so if the user then switched to 3D — where
   // the perspective mission becomes applicable and the guide re-exposes it — recordEvent
   // would skip the already-completed set and the pitch-rotate could never tick it off.
-  const closeMission = useCallback(() => {
-    if (missionSet) {
-      const allDone = missionSet.missions.every(
-        (m) => missionProgress.has(m.id) || (m.only3d && !is3d),
-      );
-      if (allDone) completeMission(missionSet.id);
-    }
-    closeMissionGuide();
-  }, [missionSet, missionProgress, is3d, completeMission, closeMissionGuide]);
+  const closeMission = useCallback(
+    (dontShowAgain?: boolean) => {
+      if (missionSet) {
+        if (dontShowAgain) {
+          // Explicit opt-out — suppress this set's trigger for good (no completion).
+          dismissMission(missionSet.id);
+        } else {
+          const allDone = missionSet.missions.every(
+            (m) => missionProgress.has(m.id) || (m.only3d && !is3d),
+          );
+          if (allDone) completeMission(missionSet.id);
+        }
+      }
+      closeMissionGuide();
+    },
+    [missionSet, missionProgress, is3d, completeMission, dismissMission, closeMissionGuide],
+  );
 
   // Switch the active chart. If you switch TO the chart currently being compared in
   // synastry, drop it as the partner — you can't compare someone to themselves, and
@@ -3863,6 +3877,70 @@ export default function App() {
   // offering "grab the current map view" toward a registered capture destination. Idempotent while
   // armed; the effect below then closes any open tool extension, keeping the one-active-tool rule.
   const openCaptureTool = useCallback(() => setMapTool('capture'), []);
+
+  // Close a tool extension (the inverse of openToolById; no-op unless open) — handed to extensions
+  // via the context as closeTool, e.g. releasing a viewport-owning tool before opening a map window
+  // it parks. Mirrors toggleTool's close path, storage writes included.
+  const closeToolById = useCallback((id: string) => {
+    setOpenTools((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set([...prev].filter((x) => x !== id));
+      for (const ext of getToolExtensions()) {
+        if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
+      }
+      return next;
+    });
+  }, []);
+
+  // Force a BUILT-IN view window open — handed to extensions via the context as openView, the
+  // built-ins' twin of openExtensionById ('charts' is the chart browser). Idempotent opens. An
+  // advanced-gated view opens regardless of the Advanced switch (callers flip setAdvancedMode
+  // first so the menus stay honest — the windows' own render gates don't re-check it), and a
+  // view lock doesn't block the state flip: the window appears once the lock clears.
+  const openViewById = useCallback(
+    (id: 'coordinates' | 'minimap' | 'teleport' | 'skyTimes' | 'localSpace' | 'charts') => {
+      switch (id) {
+        case 'coordinates':
+          setShowCoords(true);
+          break;
+        case 'minimap':
+          setShowChart(true);
+          break;
+        case 'teleport':
+          setShowTeleport(true);
+          break;
+        case 'skyTimes':
+          setShowSkyTimes(true);
+          break;
+        case 'localSpace':
+          setShowLocalSpaceSafe(true); // leaves the geodetic frame first, like the menu toggle
+          break;
+        case 'charts':
+          setCreating(true);
+          break;
+      }
+    },
+    [setShowLocalSpaceSafe],
+  );
+
+  // Open the settings sidebar, optionally at a section — the Info chip's jump, promoted to a
+  // context action (openSettings) so any extension can deep-link a setting it documents or
+  // depends on.
+  const openSettingsSection = useCallback((section?: string) => {
+    setShowSettings(true);
+    if (section) setSidebarSection(section);
+  }, []);
+
+  // Show/hide a built-in reference surface (guides card / info chip) — the write half of the
+  // context's viewFlags, for an extension that hosts those toggles after claiming their menu
+  // rows (lib/extensions/viewRowClaims).
+  const setViewFlag = useCallback(
+    (id: 'guides' | 'info', open: boolean) => {
+      if (id === 'guides') toggleGuides(open);
+      else setShowInfo(open);
+    },
+    [toggleGuides],
+  );
 
   // Arming a built-in tool closes any open tool extension, so only ONE tool is ever active. One-way
   // (clearing extensions can't re-arm a built-in), so it can't loop with toggleTool's disarm above.
@@ -4211,6 +4289,14 @@ export default function App() {
       openCapture: openCaptureTool,
       setLineSpotlight,
       collectAllLines,
+      advancedMode: advancedWheel,
+      setAdvancedMode,
+      openView: openViewById,
+      openSettings: openSettingsSection,
+      viewFlags: { guides: showGuides, info: showInfo },
+      setViewFlag,
+      openToolIds: openTools,
+      closeTool: closeToolById,
     }),
     [
       current,
@@ -4247,6 +4333,15 @@ export default function App() {
       openCaptureTool,
       collectAllLines,
       showNightShade,
+      advancedWheel,
+      setAdvancedMode,
+      openViewById,
+      openSettingsSection,
+      showGuides,
+      showInfo,
+      setViewFlag,
+      openTools,
+      closeToolById,
     ],
   );
 
@@ -4729,11 +4824,13 @@ export default function App() {
           time overlay's bar is up; a left-column extension (reservesLeftColumn)
           yields while the expanded chart panel — the other left-edge owner — is
           up. Either way the OPEN state stays put (like the drawer's toggles), so
-          the extension returns when the gating condition clears. */}
+          the extension returns when the gating condition clears. A view lock
+          parks map-layer HUDs only — a modal-layer takeover stacks above the
+          viewport's owner, so it stays. */}
       {/* eslint-disable-next-line react-hooks/refs -- ctx.flyTo reads the map ref only when a HUD invokes it from its own event handlers, never during render */}
       {getMapExtensions().map((ext) =>
         openExtensions.has(ext.id) &&
-        !viewParked &&
+        (!viewParked || ext.layer === 'modal') &&
         (ext.surface !== 'timeline-drawer' || isTimeMode) &&
         (!ext.reservesLeftColumn || !wheelExpanded) ? (
           <Fragment key={ext.id}>
@@ -4828,6 +4925,10 @@ export default function App() {
               ? relocatedLocalSpaceCoords
               : null
           }
+          // Same gate inverted: the view is on and would show the dials, but the gated
+          // tier isn't met — hand the sidebar the signal so it can render a downstream
+          // slot (a placeholder) in the dials' place. Nothing shows in the open core.
+          localSpaceGated={lsActive && !promoteOverlay && !gatedTierMet}
           localSpaceRelocated={localSpaceRelocated}
           aspectOrbs={effAspectOrbs}
           advanced={advancedWheel}

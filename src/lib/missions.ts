@@ -237,3 +237,30 @@ export function saveSeenSets(seen: Record<string, boolean>): void {
     // Ignore persistence failures (private mode, quota, etc.).
   }
 }
+
+// "Dismissed" sets: the user ticked "Don't show me again" on a set's guide, so its trigger
+// must never surface it again — even though they never FINISHED it (unlike completed sets),
+// and it can still be browsed from View ▸ Guides. Per-set (same { [setId]: true } shape), so
+// dismissing one tutorial leaves the other two free to still appear.
+const STORAGE_KEY_DISMISSED = 'astro:missions:dismissed:v1';
+
+export function loadDismissedSets(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DISMISSED);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveDismissedSets(dismissed: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_DISMISSED, JSON.stringify(dismissed));
+  } catch {
+    // Ignore persistence failures (private mode, quota, etc.).
+  }
+}

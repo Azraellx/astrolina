@@ -16,6 +16,8 @@ export const missions = {
   skipTip: 'Skip this guide',
   ok: 'OK, got it',
   okLocked: 'Finish every mission to continue',
+  // Per-tutorial opt-out beside OK in the onboarding pop-up.
+  dontShowAgain: 'Don’t show me again',
   // The reference-mode guide pager (View ▸ Guides) — aria labels for the ‹ / › buttons,
   // and a spoken form of the "n/total" position for screen readers.
   prevGuide: 'Previous guide',
