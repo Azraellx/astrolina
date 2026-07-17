@@ -1135,17 +1135,14 @@ export default function App() {
   const effShowStarLines = advancedWheel && showStarLines;
   const effShowZenith = advancedWheel && showZenith;
   const effShowOrbZones = advancedWheel && showOrbZones;
-  // Transits-bar ADVANCED-ONLY control: the positioning frame (Relative/Absolute switch in
-  // the returns row). Default while Advanced is OFF (its UI is hidden then; see TimelineHud),
+  // Transits-bar positioning frame (the Relative/Absolute switch in the returns row): a free
+  // display choice, shown and honored in every reading mode. Only celestial lines show its
+  // effect (others ignore sidereal time; see TimelineHud posEnabled). Was gated to Advanced,
   // raw restored when on. (The drawer's Natal toggle is NOT gated — always available, reads
   // raw showNatal.)
   // With the birth time unknown there is no natal RAMC to hold, so the transit map
   // is forced to the absolute sky-of-the-moment frame (the only one that's real).
-  const effTransitFrame: TransitFrame = noTime
-    ? 'transit-moment'
-    : advancedWheel
-      ? transitFrame
-      : 'relative-to-natal';
+  const effTransitFrame: TransitFrame = noTime ? 'transit-moment' : transitFrame;
   // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
   // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
   // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier

@@ -25,7 +25,7 @@ export const localSpaceHud = {
   // keep their storage polarity ("hide…") — renaming them would orphan saved prefs.
   hideInbound: {
     title: 'Inbound lines',
-    hint: 'The half of each local-space line pointing away from the planet (toward its antipode). Toggle off to keep only the bearing toward the planet.',
+    hint: 'The inbound continuation of each local-space line — the dashed half pointing to the body’s antipode, opposite its outgoing (solid) bearing. Toggle off to keep only the outgoing halves.',
   },
   hideCompass: {
     title: 'Compass',

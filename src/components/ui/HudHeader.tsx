@@ -32,8 +32,9 @@ export function HudHeader({
 }: {
   /** Usually a plain string; a node lets a window compose its name inline. */
   title: ReactNode;
-  /** Small transient indicator (e.g. a busy spinner) rendered AFTER the collapse
-   *  eye — past every fixed element, so its appearance never shifts the layout. */
+  /** An optional header slot rendered AFTER the collapse eye — past every fixed
+   *  element, so it never shifts the layout. A small transient indicator (e.g. a
+   *  busy spinner) or a persistent per-window control (e.g. a toggle button). */
   adornment?: ReactNode;
   /** Drag props from useMovableHud, spread onto the grip. */
   handleProps: Pick<

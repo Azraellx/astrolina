@@ -63,22 +63,41 @@ Local space always uses each body's **true** sky position (actual RA and declina
 
 ### Bearing alignment
 
-Because a local-space line is a **direction**, not a zone of influence, distance to it carries no interpretive meaning — a point 5 km off a bearing 8,000 km from the origin is astrologically nowhere near it. The meaningful question is angular: **does a place lie along one of the chart's bearings?** The test compares the initial great-circle bearing from the origin to the place against each body's azimuth, in **degrees of azimuth** (default orb 3°, adjustable), and works identically for a move across town and across the world. Because the drawn lines are great circles seeded at those azimuths, a place exactly on a drawn line matches its azimuth exactly; both halves count, with the reciprocal (inbound) half labelled as such. A body's azimuth from any origin equals the bearing to its sub-point, so the alignment can be asked from origins other than the drawn lines' own — the birthplace, the placed pin, or a saved home location — without recomputing the sky (this equality is asserted by the verification harness). Within roughly 5 km of the origin the bearing is undefined (every line passes through the origin), and alignment strength reads as the same orb fractions as the class orbs below.
+Because a local-space line is a **direction**, not a zone of influence, distance to it carries no interpretive meaning — a point 5 km off a bearing 8,000 km from the origin is astrologically nowhere near it. The meaningful question is angular: **does a place lie along one of the chart's bearings?** The test compares the initial great-circle bearing from the origin to the place against each body's azimuth, in **degrees of azimuth** (default orb 3°, adjustable), and works identically for a move across town and across the world. Because the drawn lines are great circles seeded at those azimuths, a place exactly on a drawn line matches its azimuth exactly; both halves count — the outgoing half (drawn solid) and its inbound continuation toward the antipode (drawn dashed), the latter labelled *inbound*. A body's azimuth from any origin equals the bearing to its sub-point, so the alignment can be asked from origins other than the drawn lines' own — the birthplace, the placed pin, or a saved home location — without recomputing the sky (this equality is asserted by the verification harness). Within roughly 5 km of the origin the bearing is undefined (every line passes through the origin), and alignment strength reads as the same orb fractions as the class orbs below.
 
 ## Orbs of influence by line class
 
 Surfaces that rank line proximity group every drawn line into a **class**, each with its own default **orb of influence** (user-adjustable); a line only lists within its class orb, and its **strength is the distance as a fraction of that orb — never the raw distance**. This is the working astrocartographer's ranking: a planetary line at 50 km (12% of its orb) reads stronger than a minor line at 30 km (27% of its own), whatever the raw kilometres say.
 
+The default orb has **one canonical figure per unit** rather than one value converted between them: a kilometre user's planetary orb *is* 400 km, a mile user's *is* 250 mi (which is 402 km). They differ by under a percent, and the point is that every number a user reads is the number actually in force — dividing one stored value showed odd conversions (249/149) for the round convention.
+
 | Class | Contents | Default orb |
 |---|---|---|
-| Planetary lines | MC/IC/ASC/DSC (and Vertex-axis) lines of the Sun through Pluto | 400 km (~250 mi) |
-| Points | The same line geometry for nodes, asteroids (Chiron, Ceres, Pallas, Juno, Vesta), Lilith, and Fortune | 240 km (~150 mi) |
-| Parans | Latitude-band contacts | 112 km (the classical 1° band) |
-| Aspect lines | Body square/trine/sextile to an angle | 160 km (~100 mi) |
-| Midpoint lines | Two-body midpoints on angles | 112 km |
-| Fixed stars | The drawn star lines (bright catalog) | 112 km |
+| Planetary lines | MC/IC/ASC/DSC (and Vertex-axis) lines of the Sun through Pluto | 250 mi / 400 km |
+| Points (calculated) | Node lines, Black Moon Lilith, and Fortune | 150 mi / 240 km |
+| Minor bodies (physical) | Chiron, Ceres, Pallas, Juno, Vesta (scales to further centaurs/TNOs) | 150 mi / 240 km |
+| Parans | Latitude-band contacts (about a 1° band) | 70 mi / 110 km |
+| Aspect lines | Body square/trine/sextile to an angle | 100 mi / 160 km |
+| Midpoint lines | Two-body midpoints on angles | 70 mi / 110 km |
+| Fixed stars | The drawn star lines (bright catalog) | 70 mi / 110 km |
 
-Strength tiers are fixed fractions of the governing orb: within **25%** = *on the line*, within **60%** = *close*, inside the orb = *within orb*; beyond the orb a line does not list. The local-space bearing alignment uses the same fractions in its own unit (degrees of the bearing orb). Classification is by **body** for the angular families (a planet's Vertex-axis line classes with the planet), and star × planet parans count as parans (latitude contacts) — the *Fixed stars* class is the drawn star lines. The class list is ordered and open: future line kinds (e.g. line-intersection points) slot in without renumbering.
+The hierarchy — the order the classes rank and display everywhere — is: **planetary lines → points → minor bodies → (a future line-intersection slot) → parans → aspect lines → midpoint lines → fixed stars.** The dividing principle for splitting bodies is physical body vs. calculated point vs. frame position: the classical planets and the physical minor bodies are bodies; nodes, Lilith and Fortune are calculated points. Pluto ranks with the planets by convention.
+
+Strength tiers are fixed fractions of the governing orb: within **25%** = *on the line*, within **60%** = *near*, inside the orb = *within orb*; beyond the orb a line does not list. The local-space bearing alignment uses the same fractions in its own unit (degrees of the bearing orb), where the top tier reads *aligned* rather than *on the line* — a bearing is aligned with a line, not on it. Classification is by **body** for the angular families, and angles are a frame position, not a class of their own: which of the six angles a line is (MC/IC/ASC/DSC/Vertex/Anti-Vertex) is a filter, and — as a ranking sub-key — a line on one of the four classical angles ranks above the same body's Vertex-axis line within its class. Star × planet parans count as parans (latitude contacts); the *Fixed stars* class is the drawn star lines. The class list is ordered and open: future line kinds (e.g. line-intersection points) slot in without renumbering.
+
+## Ranking places by theme
+
+A place-ranking surface can score the world's cities for a life theme — where a theme is a curated set of angular lines split into a **primary** and a **secondary** tier. A city is ranked by its **single strongest theme line**, never by a sum, so a lone exact contact isn't outweighed by a cluster of distant ones. The sort key, in order:
+
+1. **Tier** — a primary theme line before a secondary one.
+2. **Body class** — the line-class hierarchy above: a planetary line outranks a points or minor-body line **in the same tier** (so a classical planet leads, without demoting the asteroid/point lines from the theme).
+3. **Strength** — proximity as the fraction of that line's class orb (the 25% / 60% tiers above), nearer first.
+
+Ties break by how many **other** theme lines the city also carries, then by population tier (capitals and larger cities first). City size is a **filter**, never a ranking input. A place also carries a neutral heads-up when a demanding line (Saturn, Pluto, Mars, Chiron, the South Node) runs within about a degree — excluding the line the place is ranked for.
+
+A complementary **diffuse** mode inverts the question: it ranks the places **farthest from every planetary line** — the zones where the natal pattern is least triggered (after Jim Lewis) — by the distance to the nearest planetary line, most-cleared first, once no planetary line falls within a chosen clearance (default twice the planetary orb).
+
+The specific line set behind each theme is editorial and is published with the tool that uses it, not here.
 
 ## Zodiac mode (Tropical vs Sidereal)
 
