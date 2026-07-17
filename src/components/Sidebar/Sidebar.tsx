@@ -986,7 +986,7 @@ export function Sidebar({
         aria-expanded={openSection === 'theme'}
       >
         <span className="sidebar-title">{t('settings.sections.appearance')}</span>
-        <span className="sidebar-chevron">{openSection === 'theme' ? '▾' : '▸'}</span>
+        <span className={`sidebar-chevron${openSection === 'theme' ? ' is-open' : ''}`}>▸</span>
       </button>
 
       {openSection === 'theme' && (
@@ -1097,7 +1097,7 @@ export function Sidebar({
         aria-expanded={openSection === 'filters'}
       >
         <span className="sidebar-title">{t('settings.sections.mapFilters')}</span>
-        <span className="sidebar-chevron">{openSection === 'filters' ? '▾' : '▸'}</span>
+        <span className={`sidebar-chevron${openSection === 'filters' ? ' is-open' : ''}`}>▸</span>
       </button>
 
       {openSection === 'filters' && (
@@ -1204,7 +1204,7 @@ export function Sidebar({
         aria-expanded={openSection === 'calc'}
       >
         <span className="sidebar-title">{t('settings.sections.calculation')}</span>
-        <span className="sidebar-chevron">{openSection === 'calc' ? '▾' : '▸'}</span>
+        <span className={`sidebar-chevron${openSection === 'calc' ? ' is-open' : ''}`}>▸</span>
       </button>
 
       {openSection === 'calc' && (
@@ -1313,7 +1313,7 @@ export function Sidebar({
           aria-expanded={openSection === 'advanced'}
         >
           <span className="sidebar-title">{t('settings.sections.advanced')}</span>
-          <span className="sidebar-chevron">{openSection === 'advanced' ? '▾' : '▸'}</span>
+          <span className={`sidebar-chevron${openSection === 'advanced' ? ' is-open' : ''}`}>▸</span>
         </button>
       )}
 
@@ -1623,7 +1623,7 @@ export function Sidebar({
               aria-expanded={openSection === ext.id}
             >
               <span className="sidebar-title">{ext.label}</span>
-              <span className="sidebar-chevron">{openSection === ext.id ? '▾' : '▸'}</span>
+              <span className={`sidebar-chevron${openSection === ext.id ? ' is-open' : ''}`}>▸</span>
             </button>
             {openSection === ext.id && (
               <div

@@ -1081,15 +1081,20 @@ export function ExpandedChartSidebar({
                   blank; null only in transient states (e.g. the measure tool). When a
                   pin is placed, the pin marker sits beside the name (the place IS the
                   pin's location). */}
-              {pointLabel && (
-                <span className="es-relocated-place">
-                  {hasPin && pinIcon}
-                  {pointLabel}
-                </span>
-              )}
+              {/* ALWAYS rendered (nbsp while there's no name): the hover
+                  geocode resolves per mouse move, so a line that mounts/
+                  unmounts — or re-wraps between 1 and 2 lines — changes the
+                  header's height on every move, and the scroll container then
+                  "self-scrolls" to compensate whenever the user has scrolled
+                  down (scroll anchoring; see .es-scroll). A permanent one-line
+                  box (ellipsized in CSS) keeps the header geometry still. The
+                  pin marker lives here in every case, so a placed pin is
+                  never left unmarked. */}
+              <span className="es-relocated-place">
+                {hasPin && pinIcon}
+                {pointLabel || '\u00A0'}
+              </span>
               <span className="es-relocated-text">
-                {/* Fallback home for the pin when there's no name line to host it. */}
-                {hasPin && !pointLabel && pinIcon}
                 {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
               </span>
             </div>

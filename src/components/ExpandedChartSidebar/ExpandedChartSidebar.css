@@ -24,6 +24,20 @@
      right, so the resize handle never sits under the scrollbar. */
   display: flex;
   overflow: hidden;
+  /* Slide in from the docked edge on expand (the panel is conditionally
+     mounted, so this fires once per open). */
+  animation: es-slide-in var(--dur-move) var(--ease-settle);
+}
+@keyframes es-slide-in {
+  from {
+    opacity: 0;
+    translate: -16px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .expanded-sidebar {
+    animation: none;
+  }
 }
 
 /* The content column owns the vertical scroll, so tall content (e.g. Advanced
@@ -44,6 +58,14 @@
      panel appear to scroll/jitter on its own. A stable gutter keeps the width
      constant whether or not the scrollbar shows, breaking the loop. */
   scrollbar-gutter: stable;
+  /* No browser scroll anchoring in here. Live hover relocation re-renders this
+     column's content on every mouse move; any resulting height change above
+     the viewport makes anchoring ADJUST scrollTop to compensate (suppressed
+     only at scrollTop 0), and the constant node churn keeps re-seating the
+     anchor — together they read as the panel scrolling itself while the cursor
+     roams the map. With the header geometry pinned (see .es-relocated-place),
+     opting out keeps the user's scroll position exactly where they left it. */
+  overflow-anchor: none;
 }
 
 .es-section {
@@ -223,6 +245,14 @@
   flex-basis: 100%;
   font-size: 12px;
   letter-spacing: 0;
+  /* One line, always: hover relocation swaps this name on every mouse move,
+     and a wrap to a second line would bounce the header's height (see the
+     always-rendered nbsp fallback in the TSX). Long names ellipsize — the
+     coordinates right below still identify the spot. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Recenter button beside the "Pinned at …" text — flies the map to the pin. */

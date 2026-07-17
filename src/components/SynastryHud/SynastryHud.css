@@ -39,6 +39,15 @@
   border-radius: 13px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(7px);
+  /* Rise in when the mode brings the bar up — root only; drag/collapse toggle
+     classes on this node and can't restart it. The individual translate/opacity
+     animated here compose with the translateX(-50%) centering above. */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .synastry-hud {
+    animation: none;
+  }
 }
 
 /* No position transition while dragging, so the bar tracks the pointer 1:1. */

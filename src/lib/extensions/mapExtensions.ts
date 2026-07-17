@@ -124,6 +124,10 @@ export interface MapExtensionContext {
    *  idempotent while already armed. Lets a HUD offer "grab the current map view" — pair with a
    *  registered capture destination (lib/extensions/captureSink) to receive the frame. */
   openCapture: () => void;
+  /** Arm one of the other built-in map tools by id (the same action as its Tools-menu entry /
+   *  hotkey); idempotent while already armed. Capture keeps its dedicated opener above — it
+   *  predates this and pairs with the capture-sink seam. */
+  openBuiltinTool: (tool: 'measure' | 'slide') => void;
   /** Focus the linework to a radius around a point: dims the basemap and reveals only the lines
    *  passing within `radiusKm` of the spotlight's `center` (a null center dims + hides all lines;
    *  passing null clears it). Everything else on the map is untouched — purely a view treatment. */
@@ -199,6 +203,11 @@ export interface MapExtension {
    *  time-overlay bar is up (the host shadows the letter's base action there)
    *  and shown in the drawer toggle's hover tip. */
   hotkey?: string;
+  /** An additional key that triggers the same entry WITHOUT being advertised
+   *  in the menus — keeps a legacy/conventional key alive after a remap (a
+   *  surface that lists shortcuts may still choose to mention it). Matched by
+   *  the core dispatch for 'view'-surface entries only. */
+  hotkeyAlias?: string;
   /** A short description of the feature for the toggle's hover tip, already
    *  localized (optional; shown where the surface renders tips — currently the
    *  timeline-drawer rows). */

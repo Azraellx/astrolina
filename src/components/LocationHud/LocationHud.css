@@ -23,6 +23,16 @@
   padding: 0;
   cursor: default;
   overflow: hidden;
+  /* Rise in on open — window ROOT only: inner content must never carry its own
+     entrance (collapse/expand remounts it and would replay a "just opened"
+     effect). Composes safely with dragging: the window is placed by inline
+     left/top, while this animates the separate translate/opacity properties. */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .location-hud {
+    animation: none;
+  }
 }
 /* The frosted panel here is the shared .timeline-hud chrome, whose base rule ALSO carries the
    docked overlay-bar positioning (position:absolute; z-index:12). At EQUAL specificity, and
@@ -112,7 +122,8 @@
   border-radius: 6px;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 .location-close:hover {
   background: rgba(var(--tint), 0.1);
@@ -474,7 +485,9 @@ html[data-mapstate='hover'] .location-ls-seg-pin.active {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s,
+    scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 .location-ls-fly:hover {
   background: rgba(var(--tint), 0.1);

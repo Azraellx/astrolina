@@ -763,7 +763,7 @@ export function CaptureHud({
             <span>{t('captureHud.download.title')}</span>
           </TipBtn>
           <TipBtn
-            className="location-ls-fly capture-hud-btn"
+            className={`location-ls-fly capture-hud-btn${copied ? ' is-copied' : ''}`}
             onClick={onCopy}
             disabled={busy}
             advanced={exportGated}
@@ -790,7 +790,7 @@ export function CaptureHud({
           {/* Copy a shareable ?c= URL of this chart + view (no image involved). */}
           {shareLink && (
             <TipBtn
-              className="location-ls-fly capture-hud-btn"
+              className={`location-ls-fly capture-hud-btn${linkCopied ? ' is-copied' : ''}`}
               onClick={onCopyLink}
               disabled={busy}
               advanced={exportGated}
@@ -805,7 +805,7 @@ export function CaptureHud({
               already localized; failures share the generic status line below. */}
           {sink != null && sinkActive && (
             <TipBtn
-              className="location-ls-fly capture-hud-btn"
+              className={`location-ls-fly capture-hud-btn${sinkDone ? ' is-copied' : ''}`}
               onClick={onSendToSink}
               disabled={busy}
               title={sink.label}

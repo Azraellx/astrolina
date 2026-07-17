@@ -65,6 +65,16 @@
    reports (29), and sidebar (30). */
 .timeline-hud.thud-bar {
   z-index: 26;
+  /* Rise in when an overlay mode brings the bar up — root only; drag/collapse
+     toggle classes on this same node, which can't restart the animation. The
+     individual translate/opacity animated here compose with the bar's own
+     centering/positioning instead of overriding it. */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .timeline-hud.thud-bar {
+    animation: none;
+  }
 }
 
 /* Floating tool/view WINDOWS — every one is .location-hud (core: Capture, Aspect Lines,

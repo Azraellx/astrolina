@@ -134,6 +134,24 @@ span.astro-glyph {
   background: var(--bg-page);
 }
 
+/* ── Motion tokens ──────────────────────────────────────────────────────────
+   Shared durations + easings for micro-interactions. Theme-independent (no
+   per-theme overrides), so they live in their own block. The easings give
+   names to curves the app already leans on; new motion should reach for
+   these instead of re-deriving near-duplicates. */
+:root {
+  --dur-tap: 0.08s; /* press-down: fast enough to read as instant */
+  --dur-quick: 0.15s; /* press release, focus rings, menus, small pops */
+  --dur-move: 0.2s; /* entrances: windows, dialogs, panel sections */
+  --dur-flourish: 0.35s; /* one-shot flourishes: sheen sweeps, drop-ins */
+  /* Gentle decelerate — the app's long-standing "settle" curve. */
+  --ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Physical overshoot for drop/land moments (see the map pin's drop). */
+  --ease-spring: cubic-bezier(0.22, 1.2, 0.4, 1);
+  /* Snappy pop with a small bounce past 100% — confirmation moments. */
+  --ease-pop: cubic-bezier(0.2, 0.9, 0.3, 1.35);
+}
+
 :root[data-theme='vintage'] {
   color-scheme: dark;
 
@@ -499,6 +517,86 @@ body,
   }
 }
 
+/* ── Shared entrance keyframes ──────────────────────────────────────────────
+   The standard ways things arrive: rise (windows, panel sections, list rows),
+   pop (menus, dialogs), and throb (an in-place "it worked" nudge, no opacity
+   dip). From-only keyframes: each animates from its start pose to the
+   element's natural computed style, and releases control when done (no fill),
+   so later :hover/state transforms keep working. All three use the individual
+   translate/scale properties, which COMPOSE with any transform shorthand a
+   component already carries (e.g. translateX(-50%) centering) instead of
+   overriding it. Consumers add their own prefers-reduced-motion guard next to
+   the animation rule, following each file's local pattern. */
+@keyframes ui-rise {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+@keyframes ui-pop {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+@keyframes ui-throb {
+  from {
+    scale: 0.92;
+  }
+}
+
+/* ── Sheen utility ──────────────────────────────────────────────────────────
+   Opt-in "invite a click" cue: a one-shot glint swept across a control's face
+   on hover-enter (it restarts per fresh enter because the animation lives on
+   the :hover selector). Accent-tinted rather than white/tint so it reads as a
+   luminous glint on every theme, dark or light. Apply the class to a bounded
+   control (it brings its own position/overflow setup). */
+.ui-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.ui-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  translate: -130% 0;
+  /* Accent glint by default; a host can retune it (e.g. a solid accent-filled
+     button sets --sheen-rgb to white — accent-on-accent would vanish). */
+  background: linear-gradient(
+    105deg,
+    transparent -10%,
+    rgba(var(--sheen-rgb, var(--accent-rgb)), var(--sheen-alpha, 0.14)) 50%,
+    transparent 110%
+  );
+}
+.ui-sheen:hover::after {
+  animation: ui-sheen-sweep var(--dur-flourish) ease-out;
+}
+@keyframes ui-sheen-sweep {
+  0% {
+    translate: -130% 0;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    translate: 130% 0;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-sheen:hover::after {
+    animation: none;
+  }
+}
+
 /* The permanent top-left column: the profile strip, then the coordinates
    readout beneath it when shown. The wrapper owns the screen position, so the
    two panels stack with a gap and the column collapses when coordinates are off.
@@ -698,5 +796,27 @@ html[data-mapstate='natal-pinned'] .app-header {
 }
 .hud-dock-icon {
   flex-shrink: 0;
+}
+
+/* ── Press feedback ─────────────────────────────────────────────────────────
+   A light squish on :active for the app's main tap targets — the touch
+   counterpart to hover feedback (touch has no hover, so this is the only
+   "the tap landed" cue there). An enumerated list, deliberately NOT a blanket
+   button:active: grips, sliders and canvas controls opt out by omission.
+   The tap duration here governs only the press-down; the release settles at
+   each control's own base transition speed (each base rule lists `scale` in
+   its transition list for exactly that reason). Left un-gated for reduced
+   motion, like the app's other sub-0.2s state transitions. */
+.navmenu-trigger:active,
+.navmenu-item:active,
+.tech-toggle:active,
+.theme-option:active,
+.sidebar-header:active,
+.location-close:active,
+.location-ls-fly:active,
+.birth-form button.primary:active,
+.birth-form button.secondary:active {
+  scale: 0.97;
+  transition-duration: var(--dur-tap);
 }
 

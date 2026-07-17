@@ -121,10 +121,12 @@ export function EclipseHud({
   // The eclipse module is lazy-loaded on first open; until its chunk lands, every data prop is
   // empty (`catalog === []`, `selected`/`details === null`), which would render an EXPANDED body
   // blank — an empty zero-width picker, disabled steppers, no vitals (the "artifact shapes"). The
-  // expand preference is shared (App, via `expanded`), but the body must still wait for the data:
-  // show it only once the catalog is in, so a collapsed pref OR a cold load both read as a clean nub.
+  // expand preference is shared (App, via `expanded`), but the body must still wait for the data.
+  // While it does (rare — the App idle-warms the chunk soon after boot), an expanded bar holds the
+  // body slot with a slim spinner row instead of reading as a bare collapsed nub.
   const ready = catalog.length > 0;
   const showBody = expanded && ready;
+  const loading = expanded && !ready;
   const [query, setQuery] = useState('');
   const [bodyFilter, setBodyFilter] = useState<BodyFilter>('all');
   const [typeFilter, setTypeFilter] = useState<EclipseCatalogRow['kind'] | 'all'>('all');
@@ -217,7 +219,7 @@ export function EclipseHud({
   return (
     <div
       className={`eclipse-hud${dragging ? ' dragging' : ''}${
-        showBody ? '' : ' is-collapsed'
+        showBody || loading ? '' : ' is-collapsed'
       }`}
       ref={ref}
       style={
@@ -265,6 +267,12 @@ export function EclipseHud({
           </span>
         </span>
       </div>
+
+      {loading && (
+        <div className="eclipse-hud-loading">
+          <span className="location-spinner" aria-hidden="true" />
+        </div>
+      )}
 
       {showBody && (
         <div className="eclipse-hud-body">

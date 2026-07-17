@@ -202,6 +202,8 @@ html[data-mapstate='natal-pinned'] .sidebar {
   text-transform: uppercase;
   cursor: pointer;
   text-align: left;
+  transition: background 0.12s, scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .sidebar-header + .sidebar-header,
@@ -229,7 +231,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
   /* Enlarge the glyph ~30% visually without growing the header's line box
      (scaling is post-layout, so the button keeps its height). */
   display: inline-block;
-  transform: scale(1.3);
+  scale: 1.3;
+  transition: rotate var(--dur-quick) var(--ease-settle);
+}
+/* One fixed ▸ glyph, rotated to point down while its section is open — a
+   glyph swap to ▾ can't animate; a rotation can. */
+.sidebar-chevron.is-open {
+  rotate: 90deg;
 }
 
 /* A "coloured" settings section — the core Advanced tab, or a downstream-registered
@@ -282,6 +290,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   padding: 2px 14px 8px;
   border-top: 1px solid rgba(var(--tint), 0.06);
   overflow-y: auto;
+  /* A section mounts fresh each accordion open — rise the whole body in as
+     one block. Rows inside must NOT carry their own entrance (every row
+     would pop individually on each open). Safe to animate here: the host
+     <aside>'s onAnimationEnd filters bubbled child animations. */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-section {
+    animation: none;
+  }
 }
 
 .theme-list {
@@ -308,7 +326,8 @@ html[data-mapstate='natal-pinned'] .sidebar {
   text-align: left;
   text-transform: none;
   letter-spacing: 0;
-  transition: background 0.12s;
+  transition: background 0.12s, scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .theme-option:hover {
@@ -407,7 +426,14 @@ html[data-mapstate='natal-pinned'] .sidebar {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Inert rows don't squish — a grayed family toggle stays aria-disabled (its
+   explanatory tip must still show), so cancel the shared press feedback. */
+.tech-toggle.disabled:active {
+  scale: 1;
 }
 
 .tech-toggle:hover {

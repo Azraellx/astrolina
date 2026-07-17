@@ -24,6 +24,13 @@
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(6px);
   font-family: inherit;
+  /* Rise in on appear (the guide mounts fresh each time it's shown). */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mission-guide {
+    animation: none;
+  }
 }
 
 /* ── Header: drag handle (grip + title) on the left, skip × on the right ── */

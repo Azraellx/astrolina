@@ -532,7 +532,9 @@ button.topnav-status:hover {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition: border-color 0.12s, background 0.12s, color 0.12s,
+    scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 .navmenu-trigger:hover {
   background: rgba(var(--tint), 0.08);
@@ -558,11 +560,17 @@ button.topnav-status:hover {
   font-size: 9px;
   color: var(--text-faint);
   display: inline-block;
-  transform: scale(1.3);
+  scale: 1.3;
+  transition: rotate var(--dur-quick) var(--ease-settle);
 }
 .navmenu-trigger.open .navmenu-caret,
 .navmenu-trigger.active .navmenu-caret {
   color: var(--accent);
+}
+/* Flip the caret while the PANEL is open — .open only, never .active (a menu
+   can be "active" from an armed feature while its panel is closed). */
+.navmenu-trigger.open .navmenu-caret {
+  rotate: 180deg;
 }
 /* "Steady" triggers (View) keep a neutral open/active look instead of the
    map-state accent (gray/orange/green/blue). */
@@ -620,6 +628,15 @@ button.topnav-status:hover {
   border-radius: 9px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   z-index: 20;
+  /* Quick centered pop on open (the panel mounts fresh each time). Centered —
+     not top-anchored — because this class is also reused by portaled menus
+     that can flip open upward when short on room below. Close stays instant. */
+  animation: ui-pop var(--dur-quick) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .navmenu-panel {
+    animation: none;
+  }
 }
 
 /* Top-nav dropdowns size to their widest row — labels never wrap. The 170px min above is
@@ -648,10 +665,17 @@ button.topnav-status:hover {
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s, scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 .navmenu-item:hover {
   background: rgba(var(--tint), 0.08);
+}
+/* Inert controls don't squish: cancel the shared press feedback on rows/triggers
+   that render but can't act (grayed options, viewLock-parked menus). */
+.navmenu-item.disabled:active,
+.navmenu-trigger.navmenu-disabled:active {
+  scale: 1;
 }
 .navmenu-item.on {
   color: var(--accent);

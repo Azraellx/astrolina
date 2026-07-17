@@ -22,6 +22,32 @@
      it (which, when centred, would push their top back under the notch). */
   padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
     max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  /* Fade the scrim in on open (the panel pops via the rule below). Entrance
+     only — dismiss stays instant. */
+  animation: mb-fade-in var(--dur-move) ease;
+}
+@keyframes mb-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The dialog panels hosted on the backdrop pop in with it. Direct children
+   only, so content swapped INSIDE an open dialog never re-fires the entrance. */
+.modal-backdrop > .chart-manager,
+.modal-backdrop > .credits-modal,
+.modal-backdrop > .import-modal,
+.modal-backdrop > .tdm-card {
+  animation: ui-pop var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-backdrop > .chart-manager,
+  .modal-backdrop > .credits-modal,
+  .modal-backdrop > .import-modal,
+  .modal-backdrop > .tdm-card {
+    animation: none;
+  }
 }
 
 .birth-form {
@@ -231,6 +257,10 @@
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0;
+  /* Transparent resting outline so the focus ring GLIDES in instead of
+     snapping (outline paints outside the box — no layout shift). */
+  outline: 1px solid transparent;
+  transition: border-color var(--dur-quick), outline-color var(--dur-quick);
 }
 
 .birth-form input:focus {
@@ -457,6 +487,9 @@
   font-size: 12px;
   cursor: pointer;
   letter-spacing: 0.02em;
+  transition: background 0.12s, border-color 0.12s, color 0.12s,
+    scale var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .birth-form button.secondary {
@@ -475,6 +508,10 @@
   border: 1px solid transparent;
   color: #0a0a0f;
   font-weight: 600;
+  /* Solid accent fill, so the opt-in sheen (see index.css .ui-sheen) glints
+     white here — an accent-tinted glint would vanish on this background. */
+  --sheen-rgb: 255, 255, 255;
+  --sheen-alpha: 0.28;
 }
 
 .birth-form button.primary:hover {

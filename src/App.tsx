@@ -1373,7 +1373,8 @@ export default function App() {
           const ext = getMapExtensions().find(
             (x) =>
               (x.surface ?? 'view') === 'view' &&
-              x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
+              (x.hotkey?.toLowerCase() === e.key.toLowerCase() ||
+                x.hotkeyAlias?.toLowerCase() === e.key.toLowerCase()) &&
               isEntitled(x) &&
               (!getViewLock() || x.layer === 'modal'),
           );
@@ -2307,6 +2308,28 @@ export default function App() {
       stale = true;
     };
   }, [overlayMode, eclipsesMod]);
+  // Idle warm-up for the same chunk: it sits in the PWA precache, so a few
+  // seconds after boot this costs a local fetch + parse — and the first entry
+  // into eclipse mode then opens with the catalog already in hand instead of a
+  // collapsed beat while the import lands. The on-demand effect above stays as
+  // the immediate path (and the retry path if this quiet attempt ever fails,
+  // e.g. offline on an uncached first visit).
+  useEffect(() => {
+    if (eclipsesMod) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      import('./lib/astro/eclipses').then(
+        (m) => {
+          if (!cancelled) setEclipsesMod((cur) => cur ?? m);
+        },
+        () => {}, // quiet — the on-demand path owns error reporting + retry
+      );
+    }, 3500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [eclipsesMod]);
   const eclipseCatalog = useMemo(
     () => (eclipsesMod ? eclipsesMod.loadEclipseCatalog() : []),
     [eclipsesMod],
@@ -3908,6 +3931,11 @@ export default function App() {
   // armed; the effect below then closes any open tool extension, keeping the one-active-tool rule.
   const openCaptureTool = useCallback(() => setMapTool('capture'), []);
 
+  // Arm one of the other built-in map tools — openCapture's generic twin, handed to extensions
+  // via the context as openBuiltinTool, so a registered surface can arm the ruler/rotation tools
+  // exactly like their menu rows do. Same one-active-tool effect applies.
+  const openBuiltinTool = useCallback((tool: 'measure' | 'slide') => setMapTool(tool), []);
+
   // Close a tool extension (the inverse of openToolById; no-op unless open) — handed to extensions
   // via the context as closeTool, e.g. releasing a viewport-owning tool before opening a map window
   // it parks. Mirrors toggleTool's close path, storage writes included.
@@ -4317,6 +4345,7 @@ export default function App() {
       openExtension: openExtensionById,
       openTool: openToolById,
       openCapture: openCaptureTool,
+      openBuiltinTool,
       setLineSpotlight,
       collectAllLines,
       advancedMode: advancedWheel,
@@ -4362,6 +4391,7 @@ export default function App() {
       openExtensionById,
       openToolById,
       openCaptureTool,
+      openBuiltinTool,
       collectAllLines,
       showNightShade,
       advancedWheel,

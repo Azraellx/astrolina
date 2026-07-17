@@ -140,6 +140,28 @@
   white-space: nowrap;
 }
 
+/* One-shot "it worked" nudge when an action confirms (Copy → Copied!, link
+   copied, sent). The class rides the same timer that swaps the label, so the
+   throb fires once per confirmation and re-arms when the label resets. The
+   :hover twins keep the success tint from losing an equal-specificity tie to
+   the shared fly-button hover while the pointer is still on the button. */
+.capture-hud-btn.is-copied,
+.capture-hud-btn.is-copied:hover {
+  animation: ui-throb var(--dur-flourish) var(--ease-pop);
+  border-color: rgba(var(--success-rgb), 0.55);
+  color: var(--success);
+}
+.capture-hud-btn.is-copied svg,
+.capture-hud-btn.is-copied:hover svg {
+  color: var(--success);
+}
+@media (prefers-reduced-motion: reduce) {
+  .capture-hud-btn.is-copied,
+  .capture-hud-btn.is-copied:hover {
+    animation: none;
+  }
+}
+
 .capture-hud-status {
   font-size: 11px;
   text-align: center;

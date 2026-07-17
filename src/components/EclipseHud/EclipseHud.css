@@ -37,6 +37,27 @@
   border-radius: 13px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(7px);
+  /* Rise in when the mode brings the bar up — root only; drag/collapse toggle
+     classes on this node and can't restart it. The individual translate/opacity
+     animated here compose with the translateX(-50%) centering above. */
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .eclipse-hud {
+    animation: none;
+  }
+}
+
+/* Slim stand-in body while the lazy eclipse catalog lands (rare — the app
+   idle-warms the chunk soon after boot; this shows only when the mode is
+   entered within the first seconds, or that quiet warm-up failed): the bar
+   answers the click at once instead of sitting as a bare collapsed nub. */
+.eclipse-hud-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  padding: 12px 24px;
 }
 
 /* No position transition while dragging, so the bar tracks the pointer 1:1. */

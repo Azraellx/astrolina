@@ -713,7 +713,7 @@ export function BirthDataFields({
             )}
           </div>
           <div className="footer-actions">
-            <button type="submit" className="primary">
+            <button type="submit" className="primary ui-sheen">
               {submitLabel}
             </button>
           </div>
