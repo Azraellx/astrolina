@@ -3781,7 +3781,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         compact: false,
         // The basemap style already credits OpenStreetMap (the one credit that
         // legally has to stay on the map, and which also covers the OSM-derived
-        // Nominatim geocoding). Everything else — GeoNames, Swiss Ephemeris, the
+        // geocoding — Photon forward, Nominatim reverse). Everything else — GeoNames, Swiss Ephemeris, the
         // fonts, the basemap style licence — needn't be on screen at all times,
         // so it moves behind this "AstroLina" button, which opens the credits
         // dialog (CreditsModal). The button is also where AstroLina's own

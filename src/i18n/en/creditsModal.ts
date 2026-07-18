@@ -29,6 +29,7 @@ export const creditsModal = {
     openfreemap: 'Free vector tiles, label fonts, and sprites.',
     maptiler: 'Basemap styling for the Earth theme. © MapTiler.com & OpenMapTiles contributors; © Mapbox.',
     geonames: 'Offline place-name search and city lookup.',
+    photon: 'Online place and address search; data © OpenStreetMap contributors.',
     swisseph: 'Planetary positions (JPL DE441). © Astrodienst AG, via @swisseph/browser.',
     nasaEclipse:
       'Solar- and lunar-eclipse catalogs (dates, types, Saros series). Eclipse Predictions by Fred Espenak and Jean Meeus (NASA/GSFC).',

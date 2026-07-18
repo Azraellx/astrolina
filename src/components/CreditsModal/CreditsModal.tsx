@@ -18,6 +18,7 @@ type NoteKey =
   | 'openfreemap'
   | 'maptiler'
   | 'geonames'
+  | 'photon'
   | 'swisseph'
   | 'nasaEclipse'
   | 'noto'
@@ -86,6 +87,12 @@ const CREDIT_GROUPS: CreditGroup[] = [
         href: 'https://www.geonames.org',
         license: 'CC BY 4.0',
         noteKey: 'geonames',
+      },
+      {
+        name: 'Photon (komoot)',
+        href: 'https://photon.komoot.io',
+        license: 'Apache-2.0',
+        noteKey: 'photon',
       },
     ],
   },

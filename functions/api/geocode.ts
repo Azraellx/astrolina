@@ -6,9 +6,10 @@
 
 // Cloudflare Pages Function — GET /api/geocode?q=…&limit=…
 //
-// Proxies Nominatim from the edge with a policy-compliant User-Agent and
-// caches results for a week, so the browser never hits the public endpoint
-// directly (avoids rate-limiting/blocking at scale and removes CORS).
+// Proxies the forward geocoder (see _shared/geocodeSource.ts for the provider
+// split) from the edge with a policy-compliant User-Agent and caches results
+// for a week, so the browser never hits the public endpoint directly (avoids
+// rate-limiting/blocking at scale and removes CORS).
 //
 // Note: not part of any tsconfig project, so the Cloudflare runtime globals
 // below (`caches`, the event context) are intentionally untyped here.
@@ -34,11 +35,19 @@ export const onRequestGet = async (
   context: EventContext,
 ): Promise<Response> => {
   const url = new URL(context.request.url);
-  const q = url.searchParams.get('q')?.trim() ?? '';
-  const limit = Number(url.searchParams.get('limit') ?? '6');
+  // Fold the query and clamp the limit BEFORE they reach the cache key: case,
+  // internal whitespace, and out-of-range limits never change the (clamped)
+  // upstream result set, so they must not fragment the cache — unbounded
+  // distinct keys for one upstream query would let a client sidestep the shared
+  // cache and land every request on the geocoder.
+  const q = (url.searchParams.get('q') ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const limit = Math.min(
+    Math.max(Math.round(Number(url.searchParams.get('limit') ?? '6')) || 6, 1),
+    10,
+  );
   if (q.length < 2) return Response.json([]);
 
-  // Normalize the cache key so "?q=paris" and "?q=paris&limit=6" share an entry.
+  // One normalized key per distinct upstream query ("?q=paris" = "?q=Paris&limit=6").
   const cacheKey = new Request(
     `${url.origin}/api/geocode?q=${encodeURIComponent(q)}&limit=${limit}`,
   );

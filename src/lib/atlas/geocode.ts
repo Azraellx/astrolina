@@ -11,8 +11,9 @@ export interface GeocodeResult {
 }
 
 // Calls our own edge function (functions/api/geocode.ts), which proxies and
-// caches Nominatim with a policy-compliant User-Agent. In dev the same path is
-// served by a Vite middleware (see vite.config.ts).
+// caches the OSM geocoders (see functions/_shared/geocodeSource.ts for the
+// forward/reverse provider split) with a policy-compliant User-Agent. In dev
+// the same path is served by a Vite middleware (see vite.config.ts).
 export async function geocode(
   query: string,
   signal?: AbortSignal,

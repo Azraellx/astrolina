@@ -15,6 +15,7 @@ import type {
   TransitFrame,
 } from './astro/timeline';
 import { ZODIAC_MODES, type ZodiacMode } from './astro/ayanamsa';
+import { findLocalSpaceAnchor } from './extensions/localSpaceAnchors';
 
 const MODE_KEY = 'astro:overlay-mode:v1';
 const DATE_KEY = 'astro:overlay-date:v1';
@@ -322,15 +323,20 @@ export function saveZodiacMode(m: ZodiacMode) {
 }
 
 // Where local-space lines radiate from: the active pin (default — relocated
-// local space) or always the birthplace.
+// local space), always the birthplace, or a downstream-registered anchor
+// (lib/extensions/localSpaceAnchors), persisted by its id.
 const LS_ORIGIN_KEY = 'astro:ls-origin:v1';
 
-export type LsOriginPref = 'pin' | 'birthplace';
-const LS_ORIGINS: LsOriginPref[] = ['pin', 'birthplace'];
+export type LsOriginPref = string;
+const LS_BUILTIN_ORIGINS = ['pin', 'birthplace'];
 
 export function loadLsOrigin(): LsOriginPref {
   const v = localStorage.getItem(LS_ORIGIN_KEY);
-  return v && (LS_ORIGINS as string[]).includes(v) ? (v as LsOriginPref) : 'pin';
+  if (!v) return 'pin';
+  if (LS_BUILTIN_ORIGINS.includes(v)) return v;
+  // Anchor ids validate against the registry (anchors register at startup,
+  // before the first load call) — a stale/unknown id falls back to the default.
+  return findLocalSpaceAnchor(v) ? v : 'pin';
 }
 export function saveLsOrigin(o: LsOriginPref) {
   localStorage.setItem(LS_ORIGIN_KEY, o);

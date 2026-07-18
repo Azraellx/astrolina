@@ -396,6 +396,15 @@
   gap: 4px;
   padding: 1px 4px 3px;
 }
+/* Second line of the origin control: the fixed anchors (birthplace + any
+   registered) share one row under the full-width pin button. */
+.location-ls-seg-row {
+  display: flex;
+  gap: 4px;
+}
+.location-ls-seg-row .location-ls-seg-btn {
+  min-width: 0;
+}
 .location-ls-seg-btn {
   display: inline-flex;
   align-items: center;
@@ -443,6 +452,17 @@ html[data-mapstate='hover'] .location-ls-seg-pin.active {
   color: var(--neutral);
   border-color: rgba(var(--neutral-rgb), 0.5);
   background: rgba(var(--neutral-rgb), 0.1);
+}
+/* A downstream-registered origin anchor (localSpaceAnchors seam): a fixed anchor
+   like the birthplace, so its active state shares the steady brand accent. */
+.location-ls-seg-anchor.active {
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.1);
+}
+/* The selected anchor's inline editor (rendered by the anchor's own build). */
+.location-ls-anchor-editor {
+  padding: 2px 4px 3px;
 }
 
 /* Local Space top row: the square fly-to-origin action LEFT of the origin segmented

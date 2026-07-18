@@ -50,6 +50,11 @@ import {
 } from './components/SkyBand/SkyBand';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
 import { getMapOverlays, MAP_CLICK_EVENT, type MapClickDetail } from './lib/extensions/mapOverlays';
+import {
+  findLocalSpaceAnchor,
+  getNoAnchor,
+  subscribeNoAnchor,
+} from './lib/extensions/localSpaceAnchors';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
@@ -1972,14 +1977,23 @@ export default function App() {
   useEffect(() => saveLsLabelName(lsLabelName), [lsLabelName]);
   const [lsLineDeg, setLsLineDeg] = useState(loadLsLineDeg);
   useEffect(() => saveLsLineDeg(lsLineDeg), [lsLineDeg]);
-  // Local space radiates from the placed pin (relocated local space) — or the
-  // birthplace, either when nothing is pinned or when the Origin setting pins
-  // it home explicitly. Also the anchor for the LS ring labels.
+  // Local space radiates from the placed pin (relocated local space), from a
+  // downstream-registered anchor point (lib/extensions/localSpaceAnchors) when
+  // one is the selected origin, or from the birthplace — which is also the
+  // fallback whenever the chosen origin has nothing to offer (no pin placed /
+  // anchor unset). Also the anchor for the LS ring labels. The anchor's point
+  // is subscribed live, so editing it moves the lines immediately.
+  const lsAnchor = useMemo(() => findLocalSpaceAnchor(lsOrigin), [lsOrigin]);
+  const lsAnchorPoint = useSyncExternalStore(
+    lsAnchor ? lsAnchor.subscribe : subscribeNoAnchor,
+    lsAnchor ? lsAnchor.get : getNoAnchor,
+  );
   const localSpaceOrigin = useMemo<Point | null>(
     () =>
       (lsOrigin === 'pin' ? pinned : null) ??
+      lsAnchorPoint ??
       (current ? current.birthplace : null),
-    [lsOrigin, pinned, current],
+    [lsOrigin, pinned, lsAnchorPoint, current],
   );
   // Fly-to helper shared by Teleport, Local Space's "fly to origin", and the transparent-export
   // toggle: hop the camera and stash the jump so it can be undone (Teleport window / Backspace).

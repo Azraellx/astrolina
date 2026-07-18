@@ -7,6 +7,7 @@
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LsOriginPref } from '../../lib/overlayPrefs';
+import { getLocalSpaceAnchors } from '../../lib/extensions/localSpaceAnchors';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
@@ -212,24 +213,55 @@ export function LocalSpaceHud({
             </svg>
           </LsTipButton>
           <div className="location-ls-seg" role="group">
-            {(['pin', 'birthplace'] as const).map((o) => (
+            <LsTipButton
+              className={`location-ls-seg-btn location-ls-seg-pin ${lsOrigin === 'pin' ? 'active' : ''}`}
+              onClick={() => setLsOrigin('pin')}
+              ariaPressed={lsOrigin === 'pin'}
+              title={t('localSpaceHud.lsOrigin.pin')}
+              hint={t('localSpaceHud.lsOrigin.pinHint')}
+            >
+              <PinOriginLabel label={t('localSpaceHud.lsOrigin.pin')} />
+            </LsTipButton>
+            {/* The FIXED anchors — birthplace + any downstream-registered ones
+                (localSpaceAnchors seam; an anchor owns its strings, so no i18n
+                lookups) — share one row under the full-width pin button: the
+                live pin reads as the primary choice, the fixed points as the
+                halves beneath it. */}
+            <div className="location-ls-seg-row">
               <LsTipButton
-                key={o}
-                className={`location-ls-seg-btn location-ls-seg-${o} ${lsOrigin === o ? 'active' : ''}`}
-                onClick={() => setLsOrigin(o)}
-                ariaPressed={lsOrigin === o}
-                title={t(`localSpaceHud.lsOrigin.${o}`)}
-                hint={t(`localSpaceHud.lsOrigin.${o}Hint`)}
+                className={`location-ls-seg-btn location-ls-seg-birthplace ${lsOrigin === 'birthplace' ? 'active' : ''}`}
+                onClick={() => setLsOrigin('birthplace')}
+                ariaPressed={lsOrigin === 'birthplace'}
+                title={t('localSpaceHud.lsOrigin.birthplace')}
+                hint={t('localSpaceHud.lsOrigin.birthplaceHint')}
               >
-                {o === 'pin' ? (
-                  <PinOriginLabel label={t('localSpaceHud.lsOrigin.pin')} />
-                ) : (
-                  t(`localSpaceHud.lsOrigin.${o}`)
-                )}
+                {t('localSpaceHud.lsOrigin.birthplace')}
               </LsTipButton>
-            ))}
+              {getLocalSpaceAnchors().map((a) => (
+                <LsTipButton
+                  key={a.id}
+                  className={`location-ls-seg-btn location-ls-seg-anchor ${lsOrigin === a.id ? 'active' : ''}`}
+                  onClick={() => setLsOrigin(a.id)}
+                  ariaPressed={lsOrigin === a.id}
+                  title={a.tipTitle}
+                  hint={a.tipHint}
+                >
+                  {a.label}
+                </LsTipButton>
+              ))}
+            </div>
           </div>
         </div>
+        {/* The selected anchor's inline editor (registered with it), shown only
+            while that anchor IS the origin. */}
+        {(() => {
+          const active = getLocalSpaceAnchors().find(
+            (a) => a.id === lsOrigin && a.renderEditor,
+          );
+          return active ? (
+            <div className="location-ls-anchor-editor">{active.renderEditor!()}</div>
+          ) : null;
+        })()}
         {/* Eye toggles are named for the THING they show (noun + eye): pressed/eye-open
             = drawn — so aria-pressed is the INVERSE of the stored hide-flag. */}
         <LsTipButton

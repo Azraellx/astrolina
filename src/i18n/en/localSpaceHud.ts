@@ -16,7 +16,7 @@ export const localSpaceHud = {
     pin: 'From the pin',
     pinHint:
       'Relocated local space: the lines radiate from the active pin (the birthplace when nothing is pinned).',
-    birthplace: 'From the birthplace',
+    birthplace: 'Birthplace',
     birthplaceHint:
       'The lines stay anchored to the birthplace even while a pin is down.',
   },
