@@ -21,6 +21,17 @@ export interface CompositeParents {
   b: BirthData;
 }
 
+/** Where a chart's subject lives NOW — a second place on the record, distinct
+ *  from the birthplace. `updatedAt` is the client's write stamp, so a build that
+ *  syncs charts across devices reconciles it last-write-wins with the rest of
+ *  the record. */
+export interface ChartHome {
+  label: string;
+  lat: number;
+  lng: number;
+  updatedAt: number;
+}
+
 export interface StoredChart extends BirthData {
   id: string;
   createdAt: number;
@@ -38,6 +49,12 @@ export interface StoredChart extends BirthData {
   /** Organizing tag; absent on charts saved before tagging existed. Read via
    *  chartTag() so an absent value reads as 'none'. */
   tag?: ChartTag;
+  /** Where this chart's subject lives NOW, when that differs from the
+   *  birthplace — people move, and relocation questions are asked from where
+   *  you are, not where you started. Absent = unset; every consumer falls back
+   *  to the birthplace, which is what charts saved before this field existed
+   *  have always meant. */
+  home?: ChartHome | null;
   /** Composite-midpoints payload. When present, the chart's PLANET POSITIONS
    *  are the parents' longitude midpoints (lib/astro/composite.ts), not a cast
    *  of the stored moment — that moment is the synthesized sidereal-frame
@@ -110,4 +127,57 @@ export function saveCurrentId(id: string | null) {
 
 export function newChartId(): string {
   return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+// ── The active chart, readable from outside React ───────────────────────────
+// The app holds the chart set and the selected id in component state; this is a
+// small mirror of the RESOLVED active chart so plain modules — stores, caches,
+// anything keyed on "which chart am I looking at" — can read and follow it
+// without being handed props. App publishes on every change; the snapshot is
+// whatever object it published, so it stays referentially stable for
+// useSyncExternalStore between real changes.
+
+let currentChart: StoredChart | null = null;
+const currentListeners = new Set<() => void>();
+
+/** Publish the resolved active chart (the app calls this; nothing else should). */
+export function publishCurrentChart(chart: StoredChart | null): void {
+  if (chart === currentChart) return;
+  currentChart = chart;
+  for (const l of currentListeners) l();
+}
+
+/** The active chart, or null when the library is empty. Stable between changes. */
+export function getCurrentChart(): StoredChart | null {
+  return currentChart;
+}
+
+/** The active chart's id, or null — the natural scope key for per-chart data. */
+export function getCurrentChartId(): string | null {
+  return currentChart?.id ?? null;
+}
+
+export function subscribeCurrentChart(cb: () => void): () => void {
+  currentListeners.add(cb);
+  return () => void currentListeners.delete(cb);
+}
+
+// ── Patching a chart from outside the tree ──────────────────────────────────
+// An editor mounted outside the app's React tree (an extension window in its own
+// root, say) still has to be able to write a field back onto a chart. It routes
+// through here; the app installs the handler that folds the patch into its state
+// and persists it. Unhandled (or unknown id) is a no-op, never a throw.
+
+export type ChartPatchHandler = (id: string, patch: Partial<StoredChart>) => void;
+
+let patchHandler: ChartPatchHandler | null = null;
+
+/** Install the patch handler (the app calls this). Last call wins; null clears. */
+export function registerChartPatch(fn: ChartPatchHandler | null): void {
+  patchHandler = fn;
+}
+
+/** Merge a partial update into a stored chart, persisting + syncing it. */
+export function patchChart(id: string, patch: Partial<StoredChart>): void {
+  patchHandler?.(id, patch);
 }

@@ -297,71 +297,46 @@
 /* The date/time moment editor (spin inputs + Date/Time layout) is the shared
    DateTimeFields component; its styles live in DateTimeFields.css. */
 
+/* Birthplace + "Lives now". Both are the shared place-search field, so these
+   rules only supply the form's own label chrome and the dropdown framing — the
+   field itself is styled by PlaceSearchField.css. */
 .location-field {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.suggestions {
+/* Matches the caption on the form's real <label>s (these two fields wrap a
+   composite control, so they can't be labels themselves). */
+.location-field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Results float over the fields below instead of pushing the form around. No
+   `top`: the auto static position already puts them right under the input.
+   (Notes stay in flow — they're one short line and shouldn't cover anything.) */
+.chartform-place .psf-results,
+.chartform-home .psf-results {
   position: absolute;
-  top: 100%;
   left: 0;
   right: 0;
-  margin: 2px 0 0 0;
-  padding: 0;
-  list-style: none;
+  margin-top: 2px;
+  padding: 4px;
   background: rgba(var(--bg-menu), 0.98);
   border: 1px solid rgba(var(--tint), 0.12);
-  border-radius: 5px;
-  max-height: 220px;
-  overflow-y: auto;
+  border-radius: 6px;
+  text-transform: none;
+  letter-spacing: 0;
   z-index: 10;
 }
 
-.suggestions li {
-  border-bottom: 1px solid rgba(var(--tint), 0.05);
-}
-
-.suggestions li:last-child {
-  border-bottom: none;
-}
-
-.suggestions button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  padding: 7px 10px;
-  background: transparent;
-  border: none;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
+.home-field .che-row {
   text-transform: none;
   letter-spacing: 0;
-}
-
-.suggestions button:hover {
-  background: rgba(var(--tint), 0.06);
-}
-
-.suggestions .place-label {
-  font-size: 12px;
-  color: var(--text-strong);
-}
-
-.suggestions .place-coords {
-  font-size: 10px;
-  color: var(--text-faint);
-  margin-top: 2px;
-  font-variant-numeric: tabular-nums;
-}
-
-.suggestions .hint {
-  padding: 7px 10px;
-  font-size: 11px;
-  color: var(--text-faint);
-  text-transform: none;
 }
 
 .resolved {

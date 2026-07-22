@@ -19,6 +19,10 @@ export const localSpaceHud = {
     birthplace: 'Birthplace',
     birthplaceHint:
       'The lines stay anchored to the birthplace even while a pin is down.',
+    home: 'Home',
+    homeHint:
+      'Radiate the bearings from where this chart’s person lives now — set or change it right here. Uses the birthplace while no home is set.',
+    homeUnset: 'No home set for this chart — the bearings radiate from the birthplace until you set one.',
   },
   // The eye toggles are named for the THING they show (noun + eye, like the Capture
   // window's caption fields): eye open = drawn, eye closed = hidden. The key names

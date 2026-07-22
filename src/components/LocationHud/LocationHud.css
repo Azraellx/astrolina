@@ -144,30 +144,15 @@
   display: none;
 }
 
-.location-search {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+/* The teleport window's search is the shared place-search field
+   (components/ui/PlaceSearchField); it only needs the window's own padding and
+   a result list that scrolls inside the frame. The bespoke search box + result
+   rows that used to live here went with it. */
+.teleport-search {
   padding: 9px 12px;
 }
-
-.location-search-icon {
-  flex-shrink: 0;
-  color: var(--text-dim);
-}
-
-.location-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 13px;
-}
-.location-input::placeholder {
-  color: var(--text-faint);
+.teleport-search .psf-results {
+  max-height: 244px;
 }
 
 /* Spinning ring while a search is in flight. */
@@ -189,72 +174,6 @@
   .location-spinner {
     animation-duration: 2s;
   }
-}
-
-.location-results {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  max-height: 244px;
-  overflow-y: auto;
-  border-top: 1px solid rgba(var(--tint), 0.08);
-}
-
-.location-result {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  width: 100%;
-  padding: 6px 8px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-}
-.location-result.active,
-.location-result:hover {
-  background: rgba(var(--accent-rgb), 0.14);
-}
-
-.location-result-main {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  width: 100%;
-}
-
-.location-result-label {
-  flex: 1;
-  min-width: 0;
-  font-size: 12.5px;
-  color: var(--text-strong);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Precision tag (city / region / country) — signals which zoom the jump uses. */
-.location-kind {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(var(--tint), 0.1);
-  /* --text-muted (not --text-faint): the faint tier is too low-contrast in the Earth
-     (parchment) theme — the muted tier reads on every theme's chip. */
-  color: var(--text-muted);
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.location-result-coord {
-  font-size: 10px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
 }
 
 /* "Go back / Return" toggle, shown once a jump has happened — flips the camera
@@ -453,6 +372,9 @@ html[data-mapstate='hover'] .location-ls-seg-pin.active {
   border-color: rgba(var(--neutral-rgb), 0.5);
   background: rgba(var(--neutral-rgb), 0.1);
 }
+/* Home is a fixed anchor too (the chart's own second place), so it shares the
+   birthplace's steady brand accent rather than the pin's map-state colour. */
+.location-ls-seg-home.active,
 /* A downstream-registered origin anchor (localSpaceAnchors seam): a fixed anchor
    like the birthplace, so its active state shares the steady brand accent. */
 .location-ls-seg-anchor.active {
@@ -460,9 +382,15 @@ html[data-mapstate='hover'] .location-ls-seg-pin.active {
   border-color: rgba(var(--accent-brand-rgb), 0.5);
   background: rgba(var(--accent-brand-rgb), 0.1);
 }
-/* The selected anchor's inline editor (rendered by the anchor's own build). */
+/* The selected origin's inline editor (home's, or an anchor's own). */
 .location-ls-anchor-editor {
   padding: 2px 4px 3px;
+}
+.location-ls-note {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 /* Local Space top row: the square fly-to-origin action LEFT of the origin segmented

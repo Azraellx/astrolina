@@ -70,6 +70,17 @@ export const chartForm = {
   birthplacePlaceholder: 'City, country',
   searching: 'searching…',
   resolved: '✓ {label}',
+  // Where the person lives NOW — optional, and blank simply means "the
+  // birthplace". Worth setting on anyone who has moved: the direction-based
+  // views can then radiate from where they actually live.
+  home: 'Lives now',
+  homeUnset: 'Same as birthplace',
+  homeSet: 'Set…',
+  homeChange: 'Change',
+  homeCancel: 'Cancel',
+  homeClear: 'Clear',
+  homePlaceholder: 'Where they live now…',
+  homeAria: 'Search for where this person lives now',
   latitude: 'Latitude',
   longitude: 'Longitude',
   enterCoords: 'Enter manually',

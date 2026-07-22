@@ -272,7 +272,9 @@ import {
   loadCharts,
   loadCurrentId,
   newChartId,
+  publishCurrentChart,
   recentShortlist,
+  registerChartPatch,
   saveCharts,
   saveCurrentId,
   type StoredChart,
@@ -1805,8 +1807,28 @@ export default function App() {
   useEffect(() => {
     saveCharts(charts);
   }, [charts]);
+  // Let an editor outside this tree write a field back onto a chart (the
+  // patchChart channel). Merging through setCharts keeps the normal persist +
+  // sync path; an unknown id falls through untouched. Declared BEFORE the
+  // publish effect below so the handler is installed by the time the first
+  // chart is announced — a listener that reacts to that announcement by writing
+  // back would otherwise find no handler and be silently dropped.
+  useEffect(() => {
+    registerChartPatch((id, patch) => {
+      setCharts((prev) =>
+        prev.some((c) => c.id === id)
+          ? prev.map((c) => (c.id === id ? { ...c, ...patch } : c))
+          : prev,
+      );
+    });
+    return () => registerChartPatch(null);
+  }, []);
+
   useEffect(() => {
     saveCurrentId(current?.id ?? null);
+    // Mirror the resolved active chart where plain modules can read and follow
+    // it (lib/chartLibrary) — per-chart stores key their data on it.
+    publishCurrentChart(current);
   }, [current]);
 
   // The asteroid ephemeris file loads on demand (see ensureAsteroidEphemeris):
@@ -2035,13 +2057,14 @@ export default function App() {
     lsAnchor ? lsAnchor.subscribe : subscribeNoAnchor,
     lsAnchor ? lsAnchor.get : getNoAnchor,
   );
-  const localSpaceOrigin = useMemo<Point | null>(
-    () =>
-      (lsOrigin === 'pin' ? pinned : null) ??
-      lsAnchorPoint ??
-      (current ? current.birthplace : null),
-    [lsOrigin, pinned, lsAnchorPoint, current],
-  );
+  const localSpaceOrigin = useMemo<Point | null>(() => {
+    if (lsOrigin === 'pin' && pinned) return pinned;
+    // Home: where the chart's subject lives now — a field on the chart, so it
+    // travels with the person rather than the session.
+    if (lsOrigin === 'home' && current?.home) return current.home;
+    // Any origin with nothing to give falls through to the birthplace.
+    return lsAnchorPoint ?? (current ? current.birthplace : null);
+  }, [lsOrigin, pinned, lsAnchorPoint, current]);
   // Fly-to helper shared by Teleport, Local Space's "fly to origin", and the transparent-export
   // toggle: hop the camera and stash the jump so it can be undone (Teleport window / Backspace).
   // `duration` (ms) is optional — omitted keeps MapLibre's default flyTo curve.

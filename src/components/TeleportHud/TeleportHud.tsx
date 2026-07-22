@@ -5,11 +5,11 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useEffect, useRef, useState } from 'react';
-import type { PlaceResult } from '../../lib/atlas/cityLookup';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
+import { PlaceSearchField } from '../ui/PlaceSearchField';
 import { useHoverTip } from '../ui/useHoverTip';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
 // (.location-* classes), so the window frosts/recolors with the theme for free.
@@ -18,6 +18,9 @@ import '../LocationHud/LocationHud.css';
 
 // Its own saved position (independent of the Local Space window).
 const POS_KEY = 'astro:teleport-pos:v1';
+// Zoom used when a picked place carries no framing hint of its own (matches the
+// city tier in cityLookup's zoomFor — tight enough to see streets).
+const POINT_ZOOM = 11.5;
 
 interface TeleportHudProps {
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
@@ -68,20 +71,8 @@ export function TeleportHud({
     hide: hideBackTip,
   } = useHoverTip<HTMLButtonElement>('top');
 
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<PlaceResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(-1);
   // Rough place name for the back/forward target (where the next press jumps to).
   const [targetName, setTargetName] = useState<string | null>(null);
-  const debounceRef = useRef<number | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // The label just jumped to — suppresses re-searching it after a pick.
-  const pickedRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
 
   // Resolve the back/forward target to a rough place name (nearest bundled city,
   // generous radius), lazily — reusing the same offline dataset as the search, so
@@ -102,63 +93,6 @@ export function TeleportHud({
       cancelled = true;
     };
   }, [teleportTarget]);
-
-  // Debounced offline search over the bundled GeoNames data (cities + admin-1
-  // regions + countries). The dataset is a lazy chunk, so the first search awaits
-  // its import; thereafter the lookup is synchronous and sub-millisecond.
-  useEffect(() => {
-    if (query === pickedRef.current) return;
-    if (query.trim().length < 2) {
-      // Clearing stale results belongs to this debounced effect (it owns the search
-      // lifecycle) and can't be derived during render.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setResults([]);
-      return;
-    }
-    let cancelled = false;
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(async () => {
-      setSearching(true);
-      const { searchPlaces } = await import('../../lib/atlas/cityLookup');
-      if (cancelled) return;
-      const found = searchPlaces(query, 8);
-      setResults(found);
-      setActiveIdx(found.length ? 0 : -1);
-      setSearching(false);
-    }, 250);
-    return () => {
-      cancelled = true;
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
-  }, [query]);
-
-  const jump = (r: PlaceResult) => {
-    onFlyTo(r.lat, r.lng, r.zoom);
-    pickedRef.current = r.label;
-    setQuery(r.label);
-    setResults([]);
-    setActiveIdx(-1);
-    // Re-select the text so the next keystroke starts a fresh search.
-    requestAnimationFrame(() => inputRef.current?.select());
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, results.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const r = results[activeIdx] ?? results[0];
-      if (r) jump(r);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      if (results.length) setResults([]);
-      else onClose();
-    }
-  };
 
   return (
     <div
@@ -207,52 +141,34 @@ export function TeleportHud({
         </button>
       </div>
 
-      <div className="location-search">
-        <svg className="location-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
-        <input
-          ref={inputRef}
-          type="text"
-          className="location-input"
-          value={query}
-          onChange={(e) => {
-            pickedRef.current = null;
-            setQuery(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          placeholder={t('teleportHud.placeholder')}
-          spellCheck={false}
-          autoComplete="off"
-          aria-label={t('teleportHud.searchAria')}
-        />
-        {searching && <span className="location-spinner" aria-hidden="true" />}
-      </div>
-
-      {results.length > 0 && (
-        <ul className="location-results">
-          {results.map((r, i) => (
-            <li key={`${r.kind}-${r.label}-${r.lat}-${r.lng}-${i}`}>
-              <button
-                type="button"
-                className={`location-result${i === activeIdx ? ' active' : ''}`}
-                onClick={() => jump(r)}
-                onMouseEnter={() => setActiveIdx(i)}
-              >
-                <span className="location-result-main">
-                  <span className="location-result-label">{r.label}</span>
-                  <span className={`location-kind location-kind-${r.kind}`}>{t(`teleportHud.kind.${r.kind}`)}</span>
-                </span>
-                <span className="location-result-coord">
-                  {Math.abs(r.lat).toFixed(1)}°{r.lat >= 0 ? 'N' : 'S'}{' '}
-                  {Math.abs(r.lng).toFixed(1)}°{r.lng >= 0 ? 'E' : 'W'}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* The shared place-search field. Everything a jump needs — cities,
+          regions and countries, each carrying the zoom that frames it — plus
+          whatever additional scopes are registered. */}
+      <PlaceSearchField
+        className="teleport-search"
+        limit={8}
+        showCoords
+        keepQueryOnPick
+        selectOnPick
+        autoFocus
+        // The standing groups (a build's own saved/visited places) are as
+        // jumpable as any search hit — this is the window for going somewhere.
+        library
+        kindLabel={(kind) => t(`teleportHud.kind.${kind}`)}
+        // A hit with no framing hint is a bare point rather than a region, so
+        // arrive close in instead of holding the current world zoom.
+        onPick={(hit) => onFlyTo(hit.lat, hit.lng, hit.zoom ?? POINT_ZOOM)}
+        onCancel={onClose}
+        placeholder={t('teleportHud.placeholder')}
+        ariaLabel={t('teleportHud.searchAria')}
+        strings={{
+          scopeLabel: t('placeSearch.scopeLabel'),
+          noMatches: t('placeSearch.noMatches'),
+          failed: t('placeSearch.failed'),
+          scopeAria: t('placeSearch.scopeAria'),
+          more: t('placeSearch.more'),
+        }}
+      />
 
       {backState !== 'none' && (
         <div className="location-actions">

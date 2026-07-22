@@ -5,11 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  geocode,
-  reverseGeocode,
-  type GeocodeResult,
-} from '../../lib/atlas/geocode';
+import { reverseGeocode, type GeocodeResult } from '../../lib/atlas/geocode';
 import {
   formatUtcOffset,
   listTimeZones,
@@ -20,9 +16,13 @@ import {
   NAME_HARD_LIMIT,
   NAME_SOFT_LIMIT,
   newChartId,
+  type ChartHome,
   type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { PlaceSearchField } from '../ui/PlaceSearchField';
+import type { PlaceKind } from '../../lib/atlas/cityLookup';
+import { ChartHomeEditor } from '../ui/ChartHomeEditor';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { jdToCivil } from '../../lib/ephemeris';
@@ -57,6 +57,11 @@ const ZONE_GROUPS: { region: string; zones: string[] }[] = (() => {
 
 const zoneInList = (iana: string) =>
   ZONE_GROUPS.some((g) => g.zones.includes(iana));
+
+// A birthplace is a settlement — regions and countries aren't birthplaces, and
+// offering them here only invites an imprecise chart. Module-level so the search
+// field's memo sees a stable value.
+const BIRTHPLACE_KINDS: readonly PlaceKind[] = ['city'];
 
 // Whole-hour UTC offsets (−12 … +14) for the quick offset picker, each mapped to its
 // fixed-offset Etc/GMT zone. Note the IANA sign flip — Etc/GMT+4 is UTC−4 — so a user
@@ -129,11 +134,24 @@ export function BirthDataFields({
         }
       : null,
   );
-  const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
-  const [searching, setSearching] = useState(false);
+  // A label resolved by the COORDINATE path below (not typed) — handed to the
+  // search field to adopt as a settled answer rather than a fresh query.
+  const [adoptedLabel, setAdoptedLabel] = useState<string | undefined>(undefined);
+  // Where this chart's subject lives now; absent = the birthplace.
+  const [home, setHome] = useState<ChartHome | null>(initial?.home ?? null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<number | null>(null);
+  // The search field takes its copy as props (it also mounts outside this i18n
+  // tree elsewhere); both fields here share one translated set.
+  const placeSearchStrings = useMemo(
+    () => ({
+      scopeLabel: t('placeSearch.scopeLabel'),
+      noMatches: t('placeSearch.noMatches'),
+      failed: t('placeSearch.failed'),
+      scopeAria: t('placeSearch.scopeAria'),
+      more: t('placeSearch.more'),
+    }),
+    [t],
+  );
 
   // Manual coordinate drafts (kept as text so partial typing works). Editing them
   // reverse-geocodes a label and re-detects the zone, so a chart can be entered by
@@ -271,50 +289,16 @@ export function BirthDataFields({
         lng,
       };
       setSelectedPlace(place);
+      // The search box shows what the coordinates resolved to, without treating
+      // it as something the user typed (which would search it straight back).
       setLocationQuery(place.label);
+      setAdoptedLabel(place.label);
     }, 500);
     return () => {
       window.clearTimeout(t);
       ctrl.abort();
     };
   }, [latText, lngText]);
-
-  useEffect(() => {
-    if (selectedPlace && locationQuery === selectedPlace.label) return;
-    if (locationQuery.trim().length < 2) {
-      // Clearing stale suggestions belongs in this debounce/abort effect (it owns
-      // the async search lifecycle); it can't be derived during render.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSuggestions([]);
-      return;
-    }
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(async () => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-      setSearching(true);
-      try {
-        // Offline-first: resolve birthplaces from the bundled GeoNames cities;
-        // the online provider is queried only when the local set has no match.
-        const { searchCity } = await import('../../lib/atlas/cityLookup');
-        if (ctrl.signal.aborted) return;
-        const offline = searchCity(locationQuery, 8);
-        const results = offline.length
-          ? offline
-          : await geocode(locationQuery, ctrl.signal);
-        if (!ctrl.signal.aborted) {
-          setSuggestions(results);
-          setSearching(false);
-        }
-      } catch (e) {
-        if ((e as Error).name !== 'AbortError') setSearching(false);
-      }
-    }, 500);
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
-  }, [locationQuery, selectedPlace]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -371,6 +355,9 @@ export function BirthDataFields({
       tzManual: manual,
       tzUncertain: effective?.uncertain ?? false,
       birthplace: selectedPlace,
+      // Carried explicitly: this object REPLACES the stored record, so a field
+      // the form forgets is a field the next edit silently drops.
+      home,
       tag,
       // A composite chart's parents survive an edit (renames, place tweaks):
       // the planet positions stay the midpoints.
@@ -392,11 +379,10 @@ export function BirthDataFields({
   };
 
   const pickSuggestion = (s: GeocodeResult) => {
-    setSelectedPlace(s);
+    setSelectedPlace({ label: s.label, lat: s.lat, lng: s.lng });
     setLocationQuery(s.label);
     setLatText(String(s.lat));
     setLngText(String(s.lng));
-    setSuggestions([]);
   };
 
   return (
@@ -522,37 +508,57 @@ export function BirthDataFields({
           )}
         </fieldset>
 
-        <label className="location-field">
-          <span>{t('chartForm.birthplace')}</span>
-          <input
-            type="text"
-            value={locationQuery}
-            onChange={(e) => {
-              setLocationQuery(e.target.value);
-              setSelectedPlace(null);
+        <div className="location-field">
+          <span className="location-field-label">{t('chartForm.birthplace')}</span>
+          {/* The shared place-search field: same box, same keys, same scopes as
+              every other place search in the app. Restricted to cities — a
+              birthplace is a settlement, never a whole region or country — and
+              allowed to fall back to the online geocoder when the bundled index
+              has nothing (small towns and older place names). */}
+          <PlaceSearchField
+            className="chartform-place"
+            kinds={BIRTHPLACE_KINDS}
+            onlineFallback
+            initialQuery={initial?.birthplace.label ?? ''}
+            adoptQuery={adoptedLabel}
+            keepQueryOnPick
+            onQueryChange={(q) => {
+              setLocationQuery(q);
+              // Typing over a resolved place unsettles it: submitting needs a
+              // picked result, not a half-typed name.
+              setSelectedPlace((p) => (p && p.label === q ? p : null));
             }}
+            onPick={pickSuggestion}
             placeholder={t('chartForm.birthplacePlaceholder')}
-            autoComplete="off"
+            ariaLabel={t('chartForm.birthplace')}
+            strings={placeSearchStrings}
           />
-          {(suggestions.length > 0 || searching) && !selectedPlace && (
-            <ul className="suggestions">
-              {searching && <li className="hint">{t('chartForm.searching')}</li>}
-              {suggestions.map((s, i) => (
-                <li key={i}>
-                  <button type="button" onClick={() => pickSuggestion(s)}>
-                    <span className="place-label">{s.label}</span>
-                    <span className="place-coords">
-                      {s.lat.toFixed(3)}, {s.lng.toFixed(3)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
           {selectedPlace && (
             <p className="resolved">{t('chartForm.resolved', { label: selectedPlace.label })}</p>
           )}
-        </label>
+        </div>
+
+        {/* Where this person lives NOW. Optional, and unset simply means "the
+            birthplace" — but a chart whose subject has moved carries both, so
+            the direction-based views can radiate from the right one. */}
+        <div className="location-field home-field">
+          <span className="location-field-label">{t('chartForm.home')}</span>
+          <ChartHomeEditor
+            value={home}
+            onChange={(h) => setHome(h ? { ...h, updatedAt: Date.now() } : null)}
+            className="chartform-home"
+            strings={{
+              unset: t('chartForm.homeUnset'),
+              set: t('chartForm.homeSet'),
+              change: t('chartForm.homeChange'),
+              cancel: t('chartForm.homeCancel'),
+              clear: t('chartForm.homeClear'),
+              placeholder: t('chartForm.homePlaceholder'),
+              searchAria: t('chartForm.homeAria'),
+            }}
+            searchStrings={placeSearchStrings}
+          />
+        </div>
 
         {/* Time zone: locked until a location is set, then defaults to the zone
             detected from the birthplace. The dropdown lets you choose another zone;

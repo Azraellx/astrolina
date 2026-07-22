@@ -1,0 +1,333 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only
+   Licensed under the GNU AGPL v3.0 with an additional attribution term under
+   AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept. */
+
+/* The shared place-search field. Self-contained on purpose: this component is
+   mounted by windows in several different React roots and chunk graphs, so it
+   can't rely on any host's stylesheet having loaded first. Hosts re-skin by
+   scoping overrides under the class they pass in (`className`) rather than
+   forking the component. Everything below rides the app's theme variables, so
+   the field recolours with the rest of the chrome for free. */
+
+.psf {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The input line: magnifier, the box itself, an in-flight ring, then the scope
+   chips pinned to the right edge. */
+.psf-inputrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 8px;
+  background: rgba(var(--tint), 0.05);
+  transition: border-color var(--dur-quick, 0.15s) var(--ease-settle, ease);
+}
+.psf-inputrow:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.psf-icon {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.psf-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+.psf-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Spinning ring while a scope is in flight (the location window's ring). */
+.psf-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(var(--tint), 0.25);
+  border-top-color: var(--accent);
+  animation: psf-spin 0.7s linear infinite;
+}
+@keyframes psf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .psf-spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* ── Scope chips ──────────────────────────────────────────────────────────
+   Only rendered when more than one scope exists, so the open core's field is
+   a plain box with nothing to explain. */
+.psf-scopes {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.08);
+}
+
+.psf-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick, 0.15s) var(--ease-settle, ease),
+    color var(--dur-quick, 0.15s) var(--ease-settle, ease),
+    scale var(--dur-quick, 0.15s) var(--ease-settle, ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.psf-scope:hover {
+  color: var(--text-strong);
+}
+.psf-scope:active {
+  scale: 0.96;
+  transition-duration: var(--dur-tap, 0.08s);
+}
+.psf-scope.is-on {
+  background: rgba(var(--accent-rgb), 0.2);
+  color: var(--text-strong);
+}
+/* A gated scope stays visible and tappable — tapping it explains itself under
+   the input instead of switching. */
+.psf-scope.is-locked {
+  color: var(--text-faint);
+}
+
+.psf-scope-pill {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(var(--gated-rgb), 0.9);
+  color: #fff;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+/* ── Results ─────────────────────────────────────────────────────────────── */
+
+.psf-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 232px;
+  overflow-y: auto;
+}
+/* Rows land as a quick top-down cascade — found, not dumped (the same
+   treatment the result lists elsewhere in the app use). */
+.psf-results > li {
+  animation: ui-rise var(--dur-quick, 0.15s) var(--ease-settle, ease) both;
+}
+.psf-results > li:nth-child(2) {
+  animation-delay: 16ms;
+}
+.psf-results > li:nth-child(3) {
+  animation-delay: 32ms;
+}
+.psf-results > li:nth-child(4) {
+  animation-delay: 48ms;
+}
+.psf-results > li:nth-child(5) {
+  animation-delay: 64ms;
+}
+.psf-results > li:nth-child(n + 6) {
+  animation-delay: 80ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .psf-results > li {
+    animation: none;
+  }
+}
+
+/* A row is [optional mark] + a stacked body (label, then any second line), so
+   the second line aligns under the LABEL rather than under the mark — the same
+   shape the radar/report result rows use. */
+.psf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    scale var(--dur-quick, 0.15s) var(--ease-settle, ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.psf-row.is-active,
+.psf-row:hover {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+.psf-row:active {
+  scale: 0.98;
+  transition-duration: var(--dur-tap, 0.08s);
+}
+
+.psf-row-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+/* The classification glyph (a journal category, say) in that set's own colour —
+   inline-size fixed so labels stay on one left edge whether a row has one or
+   not. */
+.psf-row-glyph {
+  flex-shrink: 0;
+  width: 13px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.psf-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+.psf-row-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --text-muted, not the dimmer --text-dim: on the Earth (parchment) theme the
+   dim tier lands at ~2.8:1 against that panel — below AA, and these are 10.5px,
+   so they don't get the large-text allowance either. Muted clears it on every
+   theme. (Same reasoning as the precision tag below and the teleport window's
+   back-target label.) */
+.psf-row-sub,
+.psf-row-coord {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.psf-row-coord {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Precision tag (city / region / country) — signals which zoom a jump uses. */
+.psf-kind,
+.psf-row-tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(var(--tint), 0.1);
+  /* --text-muted, not --text-faint: the faint tier is too low-contrast on the
+     parchment theme; muted reads on every theme's chip. */
+  color: var(--text-muted);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Standing groups (saved places, recents, logged spots…) ───────────────── */
+
+/* The groups share ONE viewport: a long paged group should scroll past the
+   short fixed ones above it, not scroll inside its own little window while the
+   popover keeps growing. */
+.psf-groups {
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.psf-group {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+/* Group lists never scroll themselves — .psf-groups above owns that. */
+.psf-group .psf-results {
+  max-height: none;
+  overflow: visible;
+}
+
+.psf-group-head {
+  padding: 0 7px 2px;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.psf-group .psf-results {
+  margin-top: 0;
+}
+
+/* Reveals the next page of a paged group — a quiet link at the end of the list,
+   not a control competing with the rows above it. Keyboard-reachable like a row
+   (the arrows walk onto it), hence the matching active state. */
+.psf-more {
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.psf-more.is-active,
+.psf-more:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--text-strong);
+}
+
+.psf-note {
+  margin: 5px 0 0;
+  padding: 0 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}

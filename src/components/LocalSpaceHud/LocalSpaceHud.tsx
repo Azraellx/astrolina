@@ -8,11 +8,13 @@ import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { getLocalSpaceAnchors } from '../../lib/extensions/localSpaceAnchors';
+import { useChartHome } from '../../lib/useChartHome';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
+import { ChartHomeEditor } from '../ui/ChartHomeEditor';
 import { HudHeader } from '../ui/HudHeader';
 import { CLOSE_ZOOM } from '../Map/Map';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
@@ -152,6 +154,8 @@ export function LocalSpaceHud({
   localSpaceOrigin,
 }: LocalSpaceHudProps) {
   const { t } = useT();
+  // The active chart's home place, edited inline while it is the origin.
+  const [chartHome, setChartHome] = useChartHome();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
   // screen clutter — WITHOUT closing the tool (close it from the top nav / hotkey). Local UI state.
   const [collapsed, setCollapsed] = useState(false);
@@ -237,6 +241,18 @@ export function LocalSpaceHud({
               >
                 {t('localSpaceHud.lsOrigin.birthplace')}
               </LsTipButton>
+              {/* Home — where the chart's subject lives now. A chart field, so
+                  it follows the person: switching charts switches the origin.
+                  Unset simply falls back to the birthplace. */}
+              <LsTipButton
+                className={`location-ls-seg-btn location-ls-seg-home ${lsOrigin === 'home' ? 'active' : ''}`}
+                onClick={() => setLsOrigin('home')}
+                ariaPressed={lsOrigin === 'home'}
+                title={t('localSpaceHud.lsOrigin.home')}
+                hint={t('localSpaceHud.lsOrigin.homeHint')}
+              >
+                {t('localSpaceHud.lsOrigin.home')}
+              </LsTipButton>
               {getLocalSpaceAnchors().map((a) => (
                 <LsTipButton
                   key={a.id}
@@ -252,6 +268,32 @@ export function LocalSpaceHud({
             </div>
           </div>
         </div>
+        {/* Home's editor, inline while home IS the origin — set or change it
+            here rather than going back to the chart form. */}
+        {lsOrigin === 'home' && (
+          <div className="location-ls-anchor-editor">
+            {!chartHome && <p className="location-ls-note">{t('localSpaceHud.lsOrigin.homeUnset')}</p>}
+            <ChartHomeEditor
+              value={chartHome}
+              onChange={setChartHome}
+              strings={{
+                unset: t('chartForm.homeUnset'),
+                set: t('chartForm.homeSet'),
+                change: t('chartForm.homeChange'),
+                cancel: t('chartForm.homeCancel'),
+                clear: t('chartForm.homeClear'),
+                placeholder: t('chartForm.homePlaceholder'),
+                searchAria: t('chartForm.homeAria'),
+              }}
+              searchStrings={{
+                scopeLabel: t('placeSearch.scopeLabel'),
+                noMatches: t('placeSearch.noMatches'),
+                failed: t('placeSearch.failed'),
+                scopeAria: t('placeSearch.scopeAria'),
+              }}
+            />
+          </div>
+        )}
         {/* The selected anchor's inline editor (registered with it), shown only
             while that anchor IS the origin. */}
         {(() => {

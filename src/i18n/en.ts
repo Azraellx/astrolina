@@ -35,6 +35,7 @@ import { lineMeanings } from './en/lineMeanings';
 import { map } from './en/map';
 import { missions } from './en/missions';
 import { profile } from './en/profile';
+import { placeSearch } from './en/placeSearch';
 import { teleportHud } from './en/teleportHud';
 import { localSpaceHud } from './en/localSpaceHud';
 import { aspectLinesHud } from './en/aspectLinesHud';
@@ -64,6 +65,7 @@ export const en = {
   map,
   missions,
   profile,
+  placeSearch,
   teleportHud,
   localSpaceHud,
   aspectLinesHud,

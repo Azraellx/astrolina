@@ -323,12 +323,13 @@ export function saveZodiacMode(m: ZodiacMode) {
 }
 
 // Where local-space lines radiate from: the active pin (default — relocated
-// local space), always the birthplace, or a downstream-registered anchor
-// (lib/extensions/localSpaceAnchors), persisted by its id.
+// local space), the birthplace, the chart's home place, or a
+// downstream-registered anchor (lib/extensions/localSpaceAnchors), persisted by
+// its id.
 const LS_ORIGIN_KEY = 'astro:ls-origin:v1';
 
 export type LsOriginPref = string;
-const LS_BUILTIN_ORIGINS = ['pin', 'birthplace'];
+const LS_BUILTIN_ORIGINS = ['pin', 'birthplace', 'home'];
 
 export function loadLsOrigin(): LsOriginPref {
   const v = localStorage.getItem(LS_ORIGIN_KEY);
