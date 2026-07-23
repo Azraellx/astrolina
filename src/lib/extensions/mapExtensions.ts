@@ -67,6 +67,10 @@ export interface MapExtensionContext {
   targetDate: number;
   pinned: { lat: number; lng: number } | null;
   pinnedLabel: string | null;
+  /** Set (or, with null, clear) the placed pin — the write half of {@link pinned}.
+   *  Drives exactly the state the map's own place/remove gestures drive; the label
+   *  ({@link pinnedLabel}) re-resolves the same way it does for a hand-placed pin. */
+  placePin: (point: { lat: number; lng: number } | null) => void;
   visiblePlanets: ReadonlySet<PlanetName>;
   nodeType: NodeType;
   houseSystem: HouseSystem;

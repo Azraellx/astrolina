@@ -711,6 +711,22 @@
   color: var(--text-faint);
 }
 
+/* The overlay track — registered-overlay DOM (MapOverlayHost) rides in here. It is
+   translated synchronously during camera moves by the anchor's screen delta since
+   the last committed render (the same same-frame treatment MapLibre's own markers
+   get), then reset to zero on each commit. Being transformed, it is a stacking
+   context and containing block: overlay layers keep their own z-indexes INSIDE it,
+   and the track as a whole stacks at z-auto — below the placed pin by design. */
+.map-overlay-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+  /* The tracking transform includes the zoom's scale term, and the affine math
+     assumes it applies about the layer's own origin — never the default center. */
+  transform-origin: 0 0;
+}
+
 /* The placed-location marker: the app's teardrop pin icon (SVG, .map-pin-body). The
    tip marks the exact point (marker anchored 'bottom'); the location-state colour
    fills the icon — gold pinned, green natal — while the screen-edge glow (not the
@@ -719,6 +735,11 @@
   position: relative;
   width: 38px;
   height: 52px;
+  /* Above the map frame's own overlay layers (edge badges, extension-drawn marker
+     layers — those sit at z auto/1): the PLACED pin is the map's most important
+     marker and must never render underneath other positioned DOM. Kept at 2 so the
+     map controls (also 2, later in the DOM) still win a corner overlap. */
+  z-index: 2;
   /* One source for the state color: gold when pinned, green for the natal pin.
      Drives the icon fill and the tip pulse (via currentColor / --pin-rgb), so the
      .natal variant only flips this one custom property. */
@@ -765,6 +786,92 @@
 /* The centre reads as the pin's "hole", in the same theme-aware --tint as the rim. */
 .map-pin-dot {
   fill: rgb(var(--tint));
+}
+
+/* The optional emblem over the head circle (lib/extensions/pinAdornment): a small
+   round image seated where the centre dot sits, ringed in the same theme-aware
+   --tint as the rim so it reads as part of the icon. Hidden until an adornment
+   provides a URL; living inside .map-pin-body, it rides the icon's hover/drop
+   motion and drop-shadow for free. Clicks pass through it to the head beneath. */
+.map-pin-emblem,
+.map-pin-emblem-ring {
+  display: none;
+  pointer-events: none;
+}
+.map-pin.has-emblem .map-pin-emblem,
+.map-pin.has-emblem .map-pin-emblem-ring {
+  display: block;
+}
+/* The emblem is DRAWN at 2× (22 units) and statically halved here: the compositor
+   rasterizes at the drawn size, so the celebration pop (≤1.25×, via the individual
+   `scale` property, which COMPOSES with this shorthand) and the body bounce always
+   DOWNSCALE the raster — the flag stays crisp through the whole animation, and
+   supersamples at rest as a bonus. */
+.map-pin-emblem {
+  transform: scale(0.5);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.map-pin-emblem-ring {
+  fill: none;
+  stroke: rgb(var(--tint));
+  stroke-width: 0.9;
+}
+
+/* Celebration flourish (lib/extensions/pinAdornment celebratePin): a quick bounce
+   of the icon plus the emblem popping in on a spring — one-shot, entrance-only,
+   played alongside the replayed placement pulses. The class is re-applied per
+   celebration (Map.tsx forces a reflow so back-to-back runs restart cleanly). */
+.map-pin.celebrate .map-pin-body {
+  animation: map-pin-celebrate 0.5s var(--ease-pop, cubic-bezier(0.2, 0.9, 0.3, 1.35));
+}
+.map-pin.celebrate .map-pin-emblem,
+.map-pin.celebrate .map-pin-emblem-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  /* No fill-mode: the keyframes start applying the moment the class lands, and
+     holding a filled end state would keep the image on a composited layer with a
+     mid-pop raster (it reads distorted until the next href swap re-decodes it).
+     Map.tsx also removes .celebrate shortly after the flourish for the same reason. */
+  animation: map-pin-emblem-pop 0.45s var(--ease-spring, cubic-bezier(0.22, 1.2, 0.4, 1));
+}
+/* The celebration's pulse: ONE quick ping that eases straight into the ring's
+   settled look — the placement sequence's four spaced pings would keep firing
+   after the flourish is over, and a lone late ping reads as a stray flash. */
+.map-pin-glow.celebrate-ping {
+  animation:
+    map-pin-pulse 0.9s ease-out 1,
+    map-pin-settle 0.4s ease 0.9s;
+}
+
+@keyframes map-pin-celebrate {
+  /* A gentle 1.06 — the bounce upscales the marker's raster, so anything bigger
+     reads as blur on the emblem; the emblem's own pop carries the drama. */
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-4px) scale(1.06);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes map-pin-emblem-pop {
+  /* Individual `scale` — composes with the emblem's static half-scale, so the
+     same keyframes serve the (2×-drawn) image and the (1×) ring alike. */
+  0% {
+    scale: 0;
+    opacity: 0;
+  }
+  60% {
+    scale: 1.25;
+    opacity: 1;
+  }
+  100% {
+    scale: 1;
+    opacity: 1;
+  }
 }
 
 .map-pin:hover .map-pin-body {
@@ -837,7 +944,11 @@
   /* The finite pulses end on these same base values, so dropping the animations
      lands on exactly the steady-state look. */
   .map-pin-body,
-  .map-pin-glow {
+  .map-pin-glow,
+  .map-pin-glow.celebrate-ping,
+  .map-pin.celebrate .map-pin-body,
+  .map-pin.celebrate .map-pin-emblem,
+  .map-pin.celebrate .map-pin-emblem-ring {
     animation: none;
   }
 }

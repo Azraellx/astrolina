@@ -9,7 +9,7 @@
 // each overlay a project() + the live MapExtensionContext and lets it place its own
 // markers — the same approach the core uses for its edge/paran badges, factored into a
 // neutral host so out-of-tree features can draw on the map without touching Map.tsx.
-import { Fragment, useEffect, useRef, useState, type RefObject } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { projectVisible } from '../../lib/mapProjection';
 import {
@@ -39,6 +39,25 @@ export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOve
   // re-render and re-project as the user pans/zooms.
   const [version, setVersion] = useState(0);
   const rafRef = useRef(0);
+  // Same-frame tracking (the marker technique): screen-anchored overlay DOM re-projects
+  // through a rAF + a React render, so during camera motion it TRAILS the canvas by a
+  // frame and reads as jitter against the basemap — where a real MapLibre marker,
+  // repositioned synchronously inside the move event, is rock solid. The track div gets
+  // that same treatment wholesale: every move event applies, synchronously, the AFFINE
+  // map between commit-time screen space and now — under pan + zoom that mapping is
+  // exactly `scale(2^Δzoom)` about the world origin plus a translation, recovered from
+  // one anchor point (p_now = s·p_then + t ⇒ t = p_now − s·p_then). Exact for the
+  // mercator projection's pan AND zoom (rotation/pitch would need more terms; the app
+  // keeps north up), anchor-true on the globe; each committed render resets it to
+  // identity with fresh projections. The per-frame zoom factor also scales the marker
+  // DOM for that one frame (≤ a few %) — imperceptible, where position error was not.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<{
+    ll: maplibregl.LngLat;
+    x: number;
+    y: number;
+    zoom: number;
+  } | null>(null);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -50,18 +69,42 @@ export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOve
         setVersion((v) => (v + 1) % 1_000_000);
       });
     };
-    map.on('move', bump);
+    const onMove = () => {
+      // Synchronous — runs inside the map's own frame, before the canvas paints.
+      const el = trackRef.current;
+      const anchor = anchorRef.current;
+      if (el && anchor) {
+        const s = Math.pow(2, map.getZoom() - anchor.zoom);
+        const p = map.project(anchor.ll);
+        el.style.transform = `translate(${p.x - s * anchor.x}px, ${p.y - s * anchor.y}px) scale(${s})`;
+      }
+      bump();
+    };
+    map.on('move', onMove);
     map.on('moveend', bump);
     map.on('resize', bump);
     bump(); // place once on (re)subscribe
     return () => {
-      map.off('move', bump);
+      map.off('move', onMove);
       map.off('moveend', bump);
       map.off('resize', bump);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
   }, [mapRef, ready]);
+
+  // Re-anchor on EVERY committed render (no deps — a ctx-driven re-render mid-pan also
+  // re-projects the children): the overlays just got fresh positions, so the track's
+  // correction restarts from zero. Layout effect — applied before paint, no flicker.
+  useLayoutEffect(() => {
+    const map = mapRef.current;
+    const el = trackRef.current;
+    if (!map || !el) return;
+    el.style.transform = '';
+    const ll = map.getCenter();
+    const p = map.project(ll);
+    anchorRef.current = { ll, x: p.x, y: p.y, zoom: map.getZoom() };
+  });
 
   const overlays = getMapOverlays()
     .filter(isOverlayEntitled)
@@ -85,10 +128,10 @@ export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOve
   };
 
   return (
-    <>
+    <div ref={trackRef} className="map-overlay-track">
       {overlays.map((o) => (
         <Fragment key={o.id}>{o.render(api)}</Fragment>
       ))}
-    </>
+    </div>
   );
 }

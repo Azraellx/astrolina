@@ -26,6 +26,7 @@ import { canonicalLng } from '../../lib/coordFormat';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
+import { usePinCelebrations } from '../../lib/extensions/pinAdornment';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { isViewRowClaimed } from '../../lib/extensions/viewRowClaims';
 import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
@@ -912,6 +913,20 @@ export function TopNav({
   // readout — the same slot the built-in tools use. Null when none is open or it provides none.
   const extReadout = openToolExt?.readout ?? null;
 
+  // One-shot flourish on the centre status pill when a downstream action completes on
+  // the placed pin (lib/extensions/pinAdornment celebratePin) — diffed against the
+  // mount value so a bar mounting mid-session never celebrates history.
+  const pinCelebrations = usePinCelebrations();
+  const [statusCelebrating, setStatusCelebrating] = useState(false);
+  const celebratedRef = useRef(pinCelebrations);
+  useEffect(() => {
+    if (celebratedRef.current === pinCelebrations) return;
+    celebratedRef.current = pinCelebrations;
+    setStatusCelebrating(true);
+    const timer = window.setTimeout(() => setStatusCelebrating(false), 850);
+    return () => window.clearTimeout(timer);
+  }, [pinCelebrations]);
+
   return (
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
       <div ref={barRef} className="timeline-hud topnav" data-mapstate={mapState}>
@@ -969,7 +984,7 @@ export function TopNav({
             {pinned ? (
               <TipButton
                 type="button"
-                className="topnav-status pinned"
+                className={`topnav-status pinned${statusCelebrating ? ' celebrate' : ''}`}
                 onClick={onRecenterPin}
                 tip={t('topNav.pin.centerTip')}
                 hotkey="Space"

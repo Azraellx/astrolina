@@ -60,6 +60,12 @@ import {
   type MapClickDetail,
 } from '../../lib/extensions/mapOverlays';
 import type { MapExtensionContext } from '../../lib/extensions/mapExtensions';
+import {
+  PIN_CLICK_EVENT,
+  usePinAdornment,
+  usePinCelebrations,
+  type PinClickDetail,
+} from '../../lib/extensions/pinAdornment';
 import { getParanAnnotation } from '../../lib/extensions/paranAnnotation';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
@@ -3676,6 +3682,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // so its tip is driven imperatively from the marker effect below — never a
   // native `title=` (which the app has retired in favour of the shared .ui-tip).
   const [pinTip, setPinTip] = useState<{ pos: TipPos; title: string } | null>(null);
+  // Single-slot marker decoration (emblem in the head + tip override) — see
+  // lib/extensions/pinAdornment. Null in the open core.
+  const pinAdornment = usePinAdornment();
+  // One-shot celebration counter (same module): replay the pulses / pop the emblem
+  // when a downstream action on the pin completes. Static in the open core.
+  const pinCelebrations = usePinCelebrations();
+  // Pending removal of the marker's transient .celebrate class (see the marker
+  // effect). Deliberately NOT cleared in effect cleanups — unrelated re-runs must
+  // not strand the class; only a newer celebration replaces the timer.
+  const celebrateTimerRef = useRef(0);
   // The "AstroLina" entry in the map attribution bar opens the credits / license
   // dialog (the secondary disclosures that needn't sit on the map at all times).
   // Open state is lifted to the app (creditsOpen / setCreditsOpen props) so the same
@@ -5250,11 +5266,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // vignette, recoloured per state) rather than glowing around the pin; a ring
       // still pings from the tip on placement; only the icon is clickable (transparent
       // gaps stay click-through).
+      // The trailing ring + image pair is the (optional) emblem slot over the head
+      // circle — hidden until an adornment provides a URL (lib/extensions/pinAdornment);
+      // inside the SVG so it inherits the body's hover/drop motion and shadow for free.
       el.innerHTML =
         '<span class="map-pin-glow"></span>' +
         '<svg class="map-pin-body" viewBox="0 0 24 24" aria-hidden="true">' +
         '<path class="map-pin-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
         '<circle class="map-pin-dot" cx="12" cy="10" r="3"/>' +
+        '<circle class="map-pin-emblem-ring" cx="12" cy="10" r="5.9"/>' +
+        // Drawn at 2× and statically halved in CSS: rasterized at the DRAWN size,
+        // so animated upscales (the celebration pop, the body bounce) stay inside
+        // the raster's headroom and the emblem never blurs mid-animation.
+        '<image class="map-pin-emblem" x="1" y="-1" width="22" height="22" preserveAspectRatio="xMidYMid slice"/>' +
         '</svg>';
       // Right-click the pin to remove it (matches the map's right-click-to-remove).
       el.addEventListener('contextmenu', (e) => {
@@ -5262,6 +5286,40 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         e.stopPropagation();
         onRightClickRef.current?.();
       });
+      // Broadcast clicks on the pin itself on a claimable channel (the marker cousin of
+      // the map-click broadcast — see lib/extensions/pinAdornment): a listener that
+      // treats the pin tap as its own gesture claims it, which keeps the click from
+      // falling through to the map's own click handling (e.g. a line card under the
+      // pin). Unclaimed clicks bubble exactly as before. State is read live off the
+      // marker/DOM — this listener binds once, at marker creation.
+      el.addEventListener('click', (e) => {
+        const at = markerRef.current?.getLngLat();
+        if (!at) return;
+        let claimed = false;
+        const detail: PinClickDetail = {
+          lat: at.lat,
+          lng: at.lng,
+          natal: el.classList.contains('natal'),
+          claim: () => {
+            claimed = true;
+          },
+        };
+        window.dispatchEvent(new CustomEvent<PinClickDetail>(PIN_CLICK_EVENT, { detail }));
+        if (claimed) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+      // Swallow double-clicks on the marker: the icon hangs ABOVE its anchor point, so
+      // letting one through re-places the pin at the cursor and the pin creeps north by
+      // its own height. Double-click stays a map gesture, not a marker one.
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      // Stamp the mount-time celebration count so only LATER celebrations play (a
+      // marker created mid-session must not celebrate history).
+      el.dataset.celebrated = String(pinCelebrations);
       markerRef.current = new maplibregl.Marker({
         element: el,
         // Anchor the tip on the point; nudge down so the very tip (not the SVG's
@@ -5279,17 +5337,55 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // compositor busy forever), so replay them when the pin relocates: swapping
       // each inert pulse span for a fresh clone restarts its CSS animation. The
       // glass body (and the listeners, which live on the marker root) stay put.
+      // (Clones inherit classes, so shed a celebration's one-ping variant here —
+      // a relocation replays the full placement sequence.)
       if (moved) {
         for (const span of markerRef.current
           .getElement()
           .querySelectorAll('.map-pin-glow')) {
-          span.replaceWith(span.cloneNode(false));
+          const clone = span.cloneNode(false) as HTMLElement;
+          clone.classList.remove('celebrate-ping');
+          span.replaceWith(clone);
         }
       }
     }
     const el = markerRef.current.getElement();
     el.classList.toggle('natal', pinType === 'natal');
-    const label = pinType === 'natal' ? t('map.pin.natal') : t('map.pin.custom');
+    // Apply the single-slot adornment: show the emblem when a URL is provided.
+    const emblemUrl = pinAdornment?.emblemUrl ?? '';
+    const emblem = el.querySelector('.map-pin-emblem');
+    if (emblemUrl) emblem?.setAttribute('href', emblemUrl);
+    else emblem?.removeAttribute('href');
+    el.classList.toggle('has-emblem', emblemUrl !== '');
+    // One-shot celebration (pinAdornment.celebratePin): a downstream action on the
+    // pin just completed — replay the placement pulses and run the celebrate
+    // flourish (icon bounce + emblem pop, Map.css) so it visibly lands.
+    if (el.dataset.celebrated !== String(pinCelebrations)) {
+      el.dataset.celebrated = String(pinCelebrations);
+      // ONE ping, not the placement's four (Map.css .celebrate-ping): the later
+      // pings of the full sequence land seconds after the flourish reads as over
+      // and register as stray flashes.
+      for (const span of el.querySelectorAll('.map-pin-glow')) {
+        const clone = span.cloneNode(false) as HTMLElement;
+        clone.classList.add('celebrate-ping');
+        span.replaceWith(clone);
+      }
+      el.classList.remove('celebrate');
+      void el.offsetWidth; // reflow, so a rapid re-celebration restarts the animation
+      el.classList.add('celebrate');
+      // Drop the flourish state once it has played out (the longest keyframe runs
+      // 0.5 s). A lingering animation keeps the emblem on a composited layer whose
+      // raster was captured mid-pop — it then renders distorted until an href swap
+      // forces a fresh decode. Removing the class returns it to a plain element,
+      // which re-rasterizes crisp. Firing against a detached marker is a no-op.
+      window.clearTimeout(celebrateTimerRef.current);
+      celebrateTimerRef.current = window.setTimeout(
+        () => el.classList.remove('celebrate'),
+        700,
+      );
+    }
+    const label =
+      pinAdornment?.tip ?? (pinType === 'natal' ? t('map.pin.natal') : t('map.pin.custom'));
     // The pin is plain MapLibre DOM, so it can't take the shared HoverTip's ref —
     // drive the portaled tip imperatively, exactly like the nav-control tips above
     // (NOT a native `title=`). `aria-label` stays as the accessible name; the shared
@@ -5307,7 +5403,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       cleanup();
       setPinTip(null);
     };
-  }, [pin, pinType, t]);
+  }, [pin, pinType, t, pinAdornment, pinCelebrations]);
 
   // The Sky Times "follow the cursor" beacon: a clock stamp with a pulsing aura
   // marking where the sky clock is being read. In 'live' mode it rides the raw

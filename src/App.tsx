@@ -4503,6 +4503,8 @@ export default function App() {
       targetDate,
       pinned,
       pinnedLabel,
+      // The useState setter — stable identity, so it doesn't belong in the deps below.
+      placePin: setPinned,
       visiblePlanets,
       nodeType,
       houseSystem,
