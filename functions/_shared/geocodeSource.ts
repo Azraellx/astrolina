@@ -27,7 +27,21 @@ export interface GeocodeResult {
   lng: number;
 }
 
-const SEARCH_ENDPOINT = 'https://photon.komoot.io/api';
+// Bump whenever the label shape or the choice of results changes. Both geocode
+// endpoints cache for a week keyed by the QUERY alone, so a deployed change to
+// either would otherwise stay invisible — for up to that week, and only at the
+// points nobody had looked up yet — which reads as a fix that didn't work.
+export const LABEL_REVISION = '2';
+
+// Public instances by default; both are overridable per deployment (see the
+// UA note below for why a deployment would want its own). Pointing these at a
+// self-hosted or paid endpoint is a config change, never a code change — which
+// also keeps any credential such a provider needs out of this repository.
+export const DEFAULT_GEOCODER_BASE = 'https://photon.komoot.io';
+export const DEFAULT_REVERSE_GEOCODER_BASE = 'https://nominatim.openstreetmap.org';
+
+const resolveBase = (override: string | undefined, fallback: string): string =>
+  (override?.trim() || fallback).replace(/\/+$/, '');
 
 // Both public instances ask for an identifying User-Agent naming the app and a
 // real contact, so the operators can reach whoever is responsible about abuse.
@@ -35,8 +49,10 @@ const SEARCH_ENDPOINT = 'https://photon.komoot.io/api';
 // nothing private sits in the public source; every real deployment (including
 // the canonical one) should set its OWN contact via the GEOCODER_UA environment
 // variable (on the Cloudflare Pages project, and locally for dev) so
-// rate-limiting or abuse reports reach the actual operator. Heavy users should
-// self-host or use a paid geocoder.
+// rate-limiting or abuse reports reach the actual operator rather than whoever
+// publishes this source. Heavy users should self-host or use a paid geocoder —
+// GEOCODER_BASE / REVERSE_GEOCODER_BASE point these calls anywhere without a
+// code change.
 export const DEFAULT_GEOCODER_UA = 'AstroLina/1.0.0 (+https://astrolina.org)';
 
 const resolveUa = (override?: string): string =>
@@ -47,15 +63,20 @@ interface PhotonFeature {
   properties?: { name?: string; city?: string; state?: string; country?: string };
 }
 
-// Coarse "Place, Region, Country" labels, matching the reverse path's shape:
-// for sub-city hits (a street, a station) the containing city stands in as the
-// place, so a precise coordinate still reads as its town. Adjacent duplicates
-// collapse (a city hit's name would otherwise repeat as its own place).
+// "Place, Region, Country" labels, matching the reverse path's shape. The hit's
+// OWN name leads: a search for a named feature — a bay, a park, a peak, a hamlet
+// — is answered by the thing that was asked for, not by whichever settlement
+// happens to contain it. The containing town follows as context when the record
+// carries one; the region then drops, since the pair already places the hit and
+// a fourth segment only truncates in the narrow popovers this field mounts in.
+// Adjacent duplicates collapse (a town's own record names it twice otherwise).
 function photonLabel(p: NonNullable<PhotonFeature['properties']>): string {
+  const name = p.name?.trim();
+  const city = p.city?.trim();
+  const region = name && city && name !== city ? undefined : p.state?.trim();
   const parts: string[] = [];
-  for (const part of [p.city ?? p.name, p.state, p.country]) {
-    const s = part?.trim();
-    if (s && parts[parts.length - 1] !== s) parts.push(s);
+  for (const part of [name, city, region, p.country?.trim()]) {
+    if (part && parts[parts.length - 1] !== part) parts.push(part);
   }
   return parts.join(', ');
 }
@@ -65,6 +86,7 @@ export async function fetchGeocode(
   limit = 6,
   signal?: AbortSignal,
   userAgent?: string,
+  base?: string,
 ): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -73,10 +95,10 @@ export async function fetchGeocode(
     lang: 'en',
     limit: String(Math.min(Math.max(Math.round(limit) || 6, 1), 10)),
   });
-  const res = await fetch(`${SEARCH_ENDPOINT}?${params.toString()}`, {
-    signal,
-    headers: { 'User-Agent': resolveUa(userAgent) },
-  });
+  const res = await fetch(
+    `${resolveBase(base, DEFAULT_GEOCODER_BASE)}/api?${params.toString()}`,
+    { signal, headers: { 'User-Agent': resolveUa(userAgent) } },
+  );
   if (!res.ok) throw new Error(`Geocoder error: ${res.status}`);
   const fc = (await res.json()) as { features?: PhotonFeature[] };
   const out: GeocodeResult[] = [];
@@ -115,32 +137,43 @@ function buildLabel(item: NominatimItem): string {
     a.city ?? a.town ?? a.village ?? a.hamlet ?? a.municipality ??
     a.suburb ?? a.county ?? a.state_district;
   const region = a.state ?? a.region;
-  const parts = [place, region, a.country].filter(Boolean);
+  // Adjacent duplicates collapse, as on the forward path: a settlement that
+  // shares its name with the province around it reads "Pedernales, Pedernales,
+  // Dominican Republic" otherwise.
+  const parts: string[] = [];
+  for (const part of [place, region, a.country]) {
+    const s = part?.trim();
+    if (s && parts[parts.length - 1] !== s) parts.push(s);
+  }
   return parts.length ? parts.join(', ') : item.display_name;
 }
 
-const REVERSE_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
-
 // Reverse: a single lat/lng → "City, Region, Country" label, or null when the
 // point has no addressable place (e.g. open ocean — Nominatim returns {error}).
-// zoom=10 keeps the result at town/city granularity rather than a building.
+// zoom=12 is the settlement tier: it names the town or village actually standing
+// at the point, where the coarser tier answers with whatever district or
+// municipality contains it — a remote village then reads as an administrative
+// area nobody would recognise as the place they pointed at. Finer than this
+// starts breaking cities into their neighbourhoods, which is the opposite
+// mistake; the point of this label is the settlement, not the address.
 export async function fetchReverseGeocode(
   lat: number,
   lng: number,
   signal?: AbortSignal,
   userAgent?: string,
+  base?: string,
 ): Promise<string | null> {
   const params = new URLSearchParams({
     format: 'jsonv2',
     addressdetails: '1',
-    zoom: '10',
+    zoom: '12',
     lat: String(lat),
     lon: String(lng),
   });
-  const res = await fetch(`${REVERSE_ENDPOINT}?${params.toString()}`, {
-    signal,
-    headers: { 'User-Agent': resolveUa(userAgent), 'Accept-Language': 'en' },
-  });
+  const res = await fetch(
+    `${resolveBase(base, DEFAULT_REVERSE_GEOCODER_BASE)}/reverse?${params.toString()}`,
+    { signal, headers: { 'User-Agent': resolveUa(userAgent), 'Accept-Language': 'en' } },
+  );
   if (!res.ok) throw new Error(`Reverse geocoder error: ${res.status}`);
   const item = (await res.json()) as NominatimItem & { error?: unknown };
   if (item.error || !item.lat) return null;

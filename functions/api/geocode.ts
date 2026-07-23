@@ -14,7 +14,7 @@
 // Note: not part of any tsconfig project, so the Cloudflare runtime globals
 // below (`caches`, the event context) are intentionally untyped here.
 
-import { fetchGeocode } from '../_shared/geocodeSource';
+import { fetchGeocode, LABEL_REVISION } from '../_shared/geocodeSource';
 
 declare const caches: {
   default: {
@@ -25,7 +25,7 @@ declare const caches: {
 
 interface EventContext {
   request: Request;
-  env?: { GEOCODER_UA?: string };
+  env?: { GEOCODER_UA?: string; GEOCODER_BASE?: string };
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -47,15 +47,23 @@ export const onRequestGet = async (
   );
   if (q.length < 2) return Response.json([]);
 
-  // One normalized key per distinct upstream query ("?q=paris" = "?q=Paris&limit=6").
+  // One normalized key per distinct upstream query ("?q=paris" = "?q=Paris&limit=6"),
+  // scoped to the label revision so a change to how results read retires the old
+  // entries instead of serving them until they age out.
   const cacheKey = new Request(
-    `${url.origin}/api/geocode?q=${encodeURIComponent(q)}&limit=${limit}`,
+    `${url.origin}/api/geocode?q=${encodeURIComponent(q)}&limit=${limit}&v=${LABEL_REVISION}`,
   );
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
   try {
-    const results = await fetchGeocode(q, limit, undefined, context.env?.GEOCODER_UA);
+    const results = await fetchGeocode(
+      q,
+      limit,
+      undefined,
+      context.env?.GEOCODER_UA,
+      context.env?.GEOCODER_BASE,
+    );
     const resp = Response.json(results, {
       headers: { 'cache-control': `public, max-age=${WEEK}` },
     });

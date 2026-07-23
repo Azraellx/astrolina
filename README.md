@@ -137,7 +137,7 @@ src/
     importCharts.ts  text-block / CSV import parser
     theme.ts         basemap themes
 functions/
-  api/geocode.ts          Cloudflare Pages Function: cached Nominatim search proxy
+  api/geocode.ts          Cloudflare Pages Function: cached Photon search proxy
   api/reverse-geocode.ts  Cloudflare Pages Function: cached Nominatim reverse proxy
   _shared/                server-side fetch shared by the functions and the dev shim
 docs/
@@ -174,8 +174,14 @@ to relicense the project in the future).
   `functions/_shared/geocodeSource.ts`; **if you self-host or fork this, set your
   own** via the `GEOCODER_UA` environment variable (on your Cloudflare Pages
   project, and locally for dev) so rate-limiting or abuse reports reach you, not
-  the upstream contact. For heavy traffic, self-host Nominatim or use a paid
-  provider.
+  the upstream contact.
+- **Geocoder endpoints:** forward search goes to Photon and reverse to Nominatim
+  (two providers on purpose — Nominatim's policy forbids the search-as-you-type
+  pattern the location fields use). Both public instances are keyless, and both
+  are repointable without touching code: set `GEOCODER_BASE` and
+  `REVERSE_GEOCODER_BASE` to your own or a paid endpoint. For heavy traffic, do
+  exactly that — and keep any credential the provider needs in your deployment's
+  secrets rather than in a fork of this source.
 - **Accuracy & scope:** what the app computes, where its accuracy has limits, and
   its data sources and licensing are in [`docs/about.md`](docs/about.md); the
   calculation conventions (ephemeris, lines, parans, house cusps, geodetic,

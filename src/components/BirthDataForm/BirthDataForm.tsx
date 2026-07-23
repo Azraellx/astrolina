@@ -512,13 +512,12 @@ export function BirthDataFields({
           <span className="location-field-label">{t('chartForm.birthplace')}</span>
           {/* The shared place-search field: same box, same keys, same scopes as
               every other place search in the app. Restricted to cities — a
-              birthplace is a settlement, never a whole region or country — and
-              allowed to fall back to the online geocoder when the bundled index
-              has nothing (small towns and older place names). */}
+              birthplace is a settlement, never a whole region or country. The
+              online reach (on by default) covers what the bundled index has
+              not: small towns and older place names. */}
           <PlaceSearchField
             className="chartform-place"
             kinds={BIRTHPLACE_KINDS}
-            onlineFallback
             initialQuery={initial?.birthplace.label ?? ''}
             adoptQuery={adoptedLabel}
             keepQueryOnPick

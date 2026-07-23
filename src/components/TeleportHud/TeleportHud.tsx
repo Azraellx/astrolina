@@ -147,7 +147,6 @@ export function TeleportHud({
       <PlaceSearchField
         className="teleport-search"
         limit={8}
-        showCoords
         keepQueryOnPick
         selectOnPick
         autoFocus

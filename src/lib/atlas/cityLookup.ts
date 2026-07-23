@@ -43,6 +43,10 @@ export const SAMPLE_ROW: Row = ['Ellinbridge', 0, 52.417, -1.831, 'GB', 'GB.CALD
 // already romanised; folding it again is harmless.
 const fold = (s: string): string =>
   s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+// The same folding, for callers comparing an OUTSIDE name against these rows —
+// merging another source's results without listing one place twice, say. Sharing
+// the function is the point: two foldings that drift apart would miss matches.
+export { fold as foldName };
 const folded: string[] = rows.map((r) => fold(r[1] || r[0]));
 // GeoNames sometimes romanises by respelling rather than just dropping accents
 // (Zürich → "Zuerich"), so a user who types the plain accent-stripped form

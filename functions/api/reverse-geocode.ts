@@ -14,7 +14,7 @@
 // Note: not part of any tsconfig project, so the Cloudflare runtime globals
 // below (`caches`, the event context) are intentionally untyped here.
 
-import { fetchReverseGeocode } from '../_shared/geocodeSource';
+import { fetchReverseGeocode, LABEL_REVISION } from '../_shared/geocodeSource';
 
 declare const caches: {
   default: {
@@ -25,7 +25,7 @@ declare const caches: {
 
 interface EventContext {
   request: Request;
-  env?: { GEOCODER_UA?: string };
+  env?: { GEOCODER_UA?: string; REVERSE_GEOCODER_BASE?: string };
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -42,16 +42,25 @@ export const onRequestGet = async (
   }
 
   // Snap to ~110 m so jittery hovers collapse to one cache entry / upstream hit.
+  // Scoped to the label revision: the granularity these labels are read at is a
+  // deliberate choice, and changing it has to retire the entries made under the
+  // old one rather than leave a week of points still answering the old way.
   const rlat = lat.toFixed(3);
   const rlng = lng.toFixed(3);
   const cacheKey = new Request(
-    `${url.origin}/api/reverse-geocode?lat=${rlat}&lng=${rlng}`,
+    `${url.origin}/api/reverse-geocode?lat=${rlat}&lng=${rlng}&v=${LABEL_REVISION}`,
   );
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
   try {
-    const label = await fetchReverseGeocode(Number(rlat), Number(rlng), undefined, context.env?.GEOCODER_UA);
+    const label = await fetchReverseGeocode(
+      Number(rlat),
+      Number(rlng),
+      undefined,
+      context.env?.GEOCODER_UA,
+      context.env?.REVERSE_GEOCODER_BASE,
+    );
     const resp = Response.json(
       { label },
       { headers: { 'cache-control': `public, max-age=${WEEK}` } },

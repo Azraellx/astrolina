@@ -237,18 +237,20 @@
   text-overflow: ellipsis;
 }
 
-/* --text-muted, not the dimmer --text-dim: on the Earth (parchment) theme the
+/* The whereabouts under a place name — quieter than the name, and clipped
+   rather than wrapped so a long administrative chain can't grow the row.
+   --text-muted, not the dimmer --text-dim: on the Earth (parchment) theme the
    dim tier lands at ~2.8:1 against that panel — below AA, and these are 10.5px,
    so they don't get the large-text allowance either. Muted clears it on every
    theme. (Same reasoning as the precision tag below and the teleport window's
    back-target label.) */
-.psf-row-sub,
-.psf-row-coord {
+.psf-row-sub {
   font-size: 10.5px;
   color: var(--text-muted);
-}
-.psf-row-coord {
-  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Precision tag (city / region / country) — signals which zoom a jump uses. */

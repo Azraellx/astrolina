@@ -9,7 +9,8 @@
 // to set — mounts this one component, so the interaction is identical
 // everywhere: type, arrow/Enter/Escape through the hits, pick.
 //
-// The built-in scope searches the bundled offline place index. Any scope a
+// The built-in scope searches the bundled offline place index, reaching the
+// online geocoder for whatever that index doesn't carry. Any scope a
 // downstream build registers (lib/extensions/placeSearchProviders) joins it as
 // another chip in the input row, per-scope debounce and minimum length and all
 // — so a finer-grained search reaches every surface at once instead of being
@@ -30,7 +31,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
-import { geocode } from '../../lib/atlas/geocode';
+import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
 import {
   getPlaceSearchLibrary,
   getPlaceSearchProviders,
@@ -100,7 +101,9 @@ export interface PlaceSearchFieldProps {
   bias?: { lat: number; lng: number };
   /** Restrict the BUILT-IN scope's precision classes (default: all of them). */
   kinds?: readonly PlaceKind[];
-  /** Query the online geocoder when the offline index comes back empty. */
+  /** Reach the online geocoder when the offline index doesn't fill the list
+   *  (default: on). Turn it OFF for a field that must never touch the network;
+   *  every place worth searching for is worth finding, so this is opt-out. */
   onlineFallback?: boolean;
   /** Seed the input (e.g. the value being edited, or a query typed elsewhere). */
   initialQuery?: string;
@@ -123,8 +126,6 @@ export interface PlaceSearchFieldProps {
   /** After a pick, re-select the kept label so the next keystroke starts fresh
    *  (for boxes you search from repeatedly rather than fill in once). */
   selectOnPick?: boolean;
-  /** Show each hit's coordinates at the row's right edge. */
-  showCoords?: boolean;
   /** Render the precision tag (city / region / country) — pass the labeller. */
   kindLabel?: (kind: PlaceKind) => string;
   limit?: number;
@@ -148,20 +149,71 @@ function makeBuiltinProvider(
     id: BUILTIN_SCOPE_ID,
     label,
     minQueryLen: 2,
-    debounceMs: 250,
+    // Paced for the network leg below, not the instant local one: a query the
+    // bundled index can't fill reaches a shared, fair-use geocoder, and every
+    // keystroke that resolves before the typist has stopped is a request nobody
+    // needed. The local half is fast enough that the wait isn't felt.
+    debounceMs: 400,
     async search(query, { limit, signal }) {
-      const { searchPlaces } = await import('../../lib/atlas/cityLookup');
+      const { searchPlaces, foldName } = await import('../../lib/atlas/cityLookup');
       if (signal?.aborted) return [];
       // Over-fetch before filtering: searchPlaces caps BEFORE we drop the kinds
       // this host doesn't accept, so a plain `limit` could come back short.
       const raw = searchPlaces(query, kinds ? limit * 4 : limit);
       const hits = (kinds ? raw.filter((r) => kinds.includes(r.kind)) : raw).slice(0, limit);
-      if (hits.length || !onlineFallback) return hits;
-      // Offline-first: the online provider is asked only on a local miss.
-      const online = await geocode(query, signal);
-      return online.map((r) => ({ label: r.label, lat: r.lat, lng: r.lng }));
+      // Offline-first, but a SHORT local answer is not the same as a complete
+      // one: the bundled index holds populated places, so anything else with a
+      // name — a bay, a park, a peak, a hamlet — leaves the list underfilled
+      // while one incidental substring match ("bahia de" finding a city in
+      // Ecuador) used to be enough to suppress the wider search entirely.
+      // A full list is still answered locally, which is the common case.
+      if (hits.length >= limit || !onlineFallback) return hits;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return hits;
+      let online: GeocodeResult[];
+      try {
+        online = await geocode(query, signal);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        // A search the bundled index already answered must not FAIL because the
+        // network did — only an empty-handed one is worth an error. This is what
+        // keeps the offline build's search working on a cached-but-offline load.
+        if (!hits.length) throw err;
+        return hits;
+      }
+      // The two sources name the same place differently often enough that the
+      // whole label can't be the only key; a matching leading name plus near-
+      // identical coordinates catches the rest. Comparing the LEADING segment
+      // (not the coordinates alone) is what keeps a named feature beside the
+      // town that contains it — "Lake Bled" is not a duplicate of "Bled".
+      const lead = (label: string) => foldName(label.split(',')[0].trim());
+      const seen = (r: GeocodeResult) =>
+        hits.some(
+          (h) =>
+            foldName(h.label) === foldName(r.label) ||
+            (lead(h.label) === lead(r.label) &&
+              Math.abs(h.lat - r.lat) < 0.05 &&
+              Math.abs(h.lng - r.lng) < 0.05),
+        );
+      return [
+        ...hits,
+        ...online.filter((r) => !seen(r)).map((r) => ({ label: r.label, lat: r.lat, lng: r.lng })),
+      ].slice(0, limit);
     },
   };
+}
+
+// A row reads as a PLACE with its whereabouts under it, not as one long line
+// the eye has to parse to its first comma. Place names are what a person scans
+// for; the containing town, region and country only settle WHICH one is meant,
+// so they belong on the quieter second line. A provider that supplied its own
+// second line already knows better than this split does, and keeps it. The full
+// label is what gets picked either way — this is presentation, not identity.
+function rowText(label: string, sub?: string): { main: string; sub?: string } {
+  if (sub) return { main: label, sub };
+  const cut = label.indexOf(',');
+  if (cut < 0) return { main: label };
+  const rest = label.slice(cut + 1).trim();
+  return rest ? { main: label.slice(0, cut).trim(), sub: rest } : { main: label };
 }
 
 export function PlaceSearchField({
@@ -170,7 +222,7 @@ export function PlaceSearchField({
   ariaLabel,
   bias,
   kinds,
-  onlineFallback = false,
+  onlineFallback = true,
   initialQuery,
   adoptQuery,
   onQueryChange,
@@ -179,7 +231,6 @@ export function PlaceSearchField({
   library = false,
   keepQueryOnPick = false,
   selectOnPick = false,
-  showCoords = false,
   kindLabel,
   limit = 6,
   autoFocus,
@@ -473,6 +524,7 @@ export function PlaceSearchField({
       {results.length > 0 && (
         <ul className="psf-results psf-hits">
           {results.map((r, i) => {
+            const { main, sub } = rowText(r.label, r.sub);
             return (
               <li key={`${r.lat},${r.lng},${i}`}>
                 <button
@@ -483,18 +535,12 @@ export function PlaceSearchField({
                 >
                   <span className="psf-row-body">
                     <span className="psf-row-main">
-                      <span className="psf-row-label">{r.label}</span>
+                      <span className="psf-row-label">{main}</span>
                       {kindLabel && r.kind && (
                         <span className={`psf-kind psf-kind-${r.kind}`}>{kindLabel(r.kind)}</span>
                       )}
                     </span>
-                    {r.sub && <span className="psf-row-sub">{r.sub}</span>}
-                    {showCoords && (
-                      <span className="psf-row-coord">
-                        {Math.abs(r.lat).toFixed(1)}°{r.lat >= 0 ? 'N' : 'S'}{' '}
-                        {Math.abs(r.lng).toFixed(1)}°{r.lng >= 0 ? 'E' : 'W'}
-                      </span>
-                    )}
+                    {sub && <span className="psf-row-sub">{sub}</span>}
                   </span>
                 </button>
               </li>
@@ -516,6 +562,7 @@ export function PlaceSearchField({
                 <ul className="psf-results">
                   {shownItems[gi].map((it, ii) => {
                     const idx = groupStart[gi] + ii;
+                    const row = rowText(it.label, it.sub);
                     return (
                       <li key={it.id}>
                         <button
@@ -544,10 +591,10 @@ export function PlaceSearchField({
                           )}
                           <span className="psf-row-body">
                             <span className="psf-row-main">
-                              <span className="psf-row-label">{it.label}</span>
+                              <span className="psf-row-label">{row.main}</span>
                               {it.tag && <span className="psf-row-tag">{it.tag}</span>}
                             </span>
-                            {it.sub && <span className="psf-row-sub">{it.sub}</span>}
+                            {row.sub && <span className="psf-row-sub">{row.sub}</span>}
                           </span>
                         </button>
                       </li>
