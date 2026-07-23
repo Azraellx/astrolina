@@ -22,7 +22,6 @@ import {
 } from '../../lib/chartLibrary';
 import { PlaceSearchField } from '../ui/PlaceSearchField';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
-import { ChartHomeEditor } from '../ui/ChartHomeEditor';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { jdToCivil } from '../../lib/ephemeris';
@@ -139,6 +138,14 @@ export function BirthDataFields({
   const [adoptedLabel, setAdoptedLabel] = useState<string | undefined>(undefined);
   // Where this chart's subject lives now; absent = the birthplace.
   const [home, setHome] = useState<ChartHome | null>(initial?.home ?? null);
+  // Which place the single search box edits — the birthplace, or Home. One box
+  // serves both (the caption tabs above it switch the target), so the form
+  // never shows two search inputs at once.
+  const [placeTarget, setPlaceTarget] = useState<'birth' | 'home'>('birth');
+  // True once the tabs have been used: from then on the search field takes
+  // focus when a switch remounts it (switching means "now type"), without
+  // stealing focus when the form first opens.
+  const [placeTouched, setPlaceTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The search field takes its copy as props (it also mounts outside this i18n
   // tree elsewhere); both fields here share one translated set.
@@ -508,55 +515,86 @@ export function BirthDataFields({
           )}
         </fieldset>
 
+        {/* Both of a chart's places — the birthplace, and where its subject
+            lives NOW (optional; unset means "the birthplace") — share this one
+            search box. The caption row doubles as the switch, and the `key`
+            remounts the field on a switch so it opens on the new target's
+            settled value with no half-typed draft carried across. */}
         <div className="location-field">
-          <span className="location-field-label">{t('chartForm.birthplace')}</span>
+          <div
+            className="location-field-tabs"
+            role="radiogroup"
+            aria-label={t('chartForm.placeTabsAria')}
+          >
+            {(['birth', 'home'] as const).map((tgt) => (
+              <button
+                key={tgt}
+                type="button"
+                role="radio"
+                aria-checked={placeTarget === tgt}
+                className={`location-field-tab${placeTarget === tgt ? ' is-on' : ''}`}
+                onClick={() => {
+                  if (placeTarget === tgt) return;
+                  setPlaceTarget(tgt);
+                  setPlaceTouched(true);
+                }}
+              >
+                {t(tgt === 'birth' ? 'chartForm.birthplace' : 'chartForm.home')}
+              </button>
+            ))}
+          </div>
           {/* The shared place-search field: same box, same keys, same scopes as
-              every other place search in the app. Restricted to cities — a
-              birthplace is a settlement, never a whole region or country. The
-              online reach (on by default) covers what the bundled index has
-              not: small towns and older place names. */}
+              every other place search in the app. The birthplace target is
+              restricted to cities — a birthplace is a settlement, never a whole
+              region or country — while Home accepts any place kind, like the
+              other surfaces that set it. The online reach (on by default)
+              covers what the bundled index has not: small towns and older
+              place names. Home adopts its stored label so a pick shows settled
+              and a Clear empties the box. */}
           <PlaceSearchField
+            key={placeTarget}
             className="chartform-place"
-            kinds={BIRTHPLACE_KINDS}
-            initialQuery={initial?.birthplace.label ?? ''}
-            adoptQuery={adoptedLabel}
+            kinds={placeTarget === 'birth' ? BIRTHPLACE_KINDS : undefined}
+            initialQuery={
+              (placeTarget === 'birth' ? selectedPlace?.label : home?.label) ?? ''
+            }
+            adoptQuery={placeTarget === 'birth' ? adoptedLabel : (home?.label ?? '')}
             keepQueryOnPick
+            autoFocus={placeTouched}
             onQueryChange={(q) => {
+              if (placeTarget !== 'birth') return;
               setLocationQuery(q);
               // Typing over a resolved place unsettles it: submitting needs a
               // picked result, not a half-typed name.
               setSelectedPlace((p) => (p && p.label === q ? p : null));
             }}
-            onPick={pickSuggestion}
-            placeholder={t('chartForm.birthplacePlaceholder')}
-            ariaLabel={t('chartForm.birthplace')}
+            onPick={(s) =>
+              placeTarget === 'birth'
+                ? pickSuggestion(s)
+                : setHome({ label: s.label, lat: s.lat, lng: s.lng, updatedAt: Date.now() })
+            }
+            placeholder={t(
+              placeTarget === 'birth'
+                ? 'chartForm.birthplacePlaceholder'
+                : 'chartForm.homePlaceholder',
+            )}
+            ariaLabel={t(placeTarget === 'birth' ? 'chartForm.birthplace' : 'chartForm.homeAria')}
             strings={placeSearchStrings}
           />
-          {selectedPlace && (
+          {placeTarget === 'birth' && selectedPlace && (
             <p className="resolved">{t('chartForm.resolved', { label: selectedPlace.label })}</p>
           )}
-        </div>
-
-        {/* Where this person lives NOW. Optional, and unset simply means "the
-            birthplace" — but a chart whose subject has moved carries both, so
-            the direction-based views can radiate from the right one. */}
-        <div className="location-field home-field">
-          <span className="location-field-label">{t('chartForm.home')}</span>
-          <ChartHomeEditor
-            value={home}
-            onChange={(h) => setHome(h ? { ...h, updatedAt: Date.now() } : null)}
-            className="chartform-home"
-            strings={{
-              unset: t('chartForm.homeUnset'),
-              set: t('chartForm.homeSet'),
-              change: t('chartForm.homeChange'),
-              cancel: t('chartForm.homeCancel'),
-              clear: t('chartForm.homeClear'),
-              placeholder: t('chartForm.homePlaceholder'),
-              searchAria: t('chartForm.homeAria'),
-            }}
-            searchStrings={placeSearchStrings}
-          />
+          {placeTarget === 'home' &&
+            (home ? (
+              <p className="resolved home-resolved">
+                {t('chartForm.resolved', { label: home.label })}
+                <button type="button" className="coord-edit-link" onClick={() => setHome(null)}>
+                  {t('chartForm.homeClear')}
+                </button>
+              </p>
+            ) : (
+              <p className="home-unset-note">{t('chartForm.homeUnset')}</p>
+            ))}
         </div>
 
         {/* Time zone: locked until a location is set, then defaults to the zone

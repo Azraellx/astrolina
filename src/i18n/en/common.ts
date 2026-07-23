@@ -11,6 +11,8 @@ export const common = {
   cancel: 'Cancel',
   edit: 'Edit',
   delete: 'Delete',
+  // The other half of an inline Delete/Keep row confirm (see the chart lists).
+  keep: 'Keep',
   // Fallback location label shown when the cursor is over open water.
   locationFallbackOcean: 'Ocean',
   // Pre-1970 timezone DST caution (App header + expanded sidebar).

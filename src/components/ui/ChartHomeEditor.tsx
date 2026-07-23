@@ -5,19 +5,19 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // THE editor for a chart's home place — where its subject lives NOW, as opposed
-// to where they were born. Every surface that can set it renders this one
-// component (the chart form, the local-space origin row, and any extension
-// window that offers it), so the flow is identical everywhere: the current
-// value, Set/Change, and the shared place-search field with whatever scopes are
-// registered. It belongs beside a CHART — an account-level mount would be
-// claiming the account has a home, which is exactly the confusion this field
-// exists to undo.
+// to where they were born. Every LIVE surface that can set it renders this one
+// component (the local-space origin row, and any extension window that offers
+// it), so the flow is identical everywhere: the current value, Set/Change, and
+// the shared place-search field with whatever scopes are registered. (The
+// chart form sets the same value through its own tabbed place box — it edits a
+// chart that isn't saved yet, and its box already IS the shared search field.)
+// It belongs beside a CHART — an account-level mount would be claiming the
+// account has a home, which is exactly the confusion this field exists to undo.
 //
-// Controlled on purpose: the chart form edits a chart that isn't saved yet,
-// while the live surfaces edit the active chart through useChartHome(). Hosts
-// re-skin by scoping overrides under `className` rather than forking. Strings
-// arrive as props — like the search field, this mounts in React roots outside
-// the i18n provider.
+// Controlled on purpose: hosts edit the active chart through useChartHome().
+// Hosts re-skin by scoping overrides under `className` rather than forking.
+// Strings arrive as props — like the search field, this mounts in React roots
+// outside the i18n provider.
 
 import { useState, type ReactNode } from 'react';
 import type { ChartHome } from '../../lib/chartLibrary';

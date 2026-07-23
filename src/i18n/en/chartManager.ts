@@ -34,8 +34,7 @@ export const chartManager = {
   noMatches: 'No charts match.',
   // "Add <query>" row offered when the typed name has no exact match.
   addQuery: 'Add “{name}”',
-  // window.confirm before deleting a chart.
-  deleteConfirm: 'Delete "{name}"?',
+  // window.confirm before deleting a chart.
   // Header above the right-hand form when editing an existing chart.
   editingHeader: 'Editing {name}',
   // BirthDataForm submit-button labels owned by this view.

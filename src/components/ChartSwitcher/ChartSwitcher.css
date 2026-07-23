@@ -112,6 +112,9 @@
   overflow-y: auto;
 }
 
+/* The LI is the row pill: hover/active backgrounds live HERE, spanning the
+   name AND the action icons as one surface — the actions are part of the row,
+   not a block bolted on beside it. */
 .switcher-menu li {
   display: flex;
   align-items: stretch;
@@ -119,7 +122,11 @@
   margin-bottom: 1px;
 }
 
-.switcher-menu li.active .chart-row {
+.switcher-menu li:hover {
+  background: rgba(var(--tint), 0.05);
+}
+
+.switcher-menu li.active {
   background: rgba(var(--accent-brand-rgb), 0.12);
 }
 
@@ -132,6 +139,7 @@
 
 .chart-row {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -142,11 +150,6 @@
   font: inherit;
   cursor: pointer;
   text-align: left;
-  border-radius: 5px 0 0 5px;
-}
-
-.chart-row:hover {
-  background: rgba(var(--tint), 0.05);
 }
 
 .chart-name {
@@ -177,27 +180,84 @@
   margin-top: 2px;
 }
 
+/* Revealed per ROW on hover (and keyboard focus) — quiet until the pointer is
+   on that item. Touch has no hover, so coarse pointers keep them visible; an
+   armed Delete/Keep confirm stays visible regardless (is-confirm). */
 .chart-actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 1px;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.switcher-menu li:hover .chart-actions,
+.switcher-menu li:focus-within .chart-actions,
+.chart-actions.is-confirm {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .chart-actions {
+    opacity: 1;
+  }
 }
 
 .chart-actions .action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   background: transparent;
   border: none;
-  padding: 0 8px;
+  border-radius: 5px;
   color: var(--text-faint);
-  font-size: 14px;
   cursor: pointer;
-  height: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .chart-actions .action:hover {
   color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
 }
 
 .chart-actions .action.danger:hover {
   color: var(--danger);
+}
+
+/* The armed delete: the icons swap for an explicit Delete/Keep pair. */
+.chart-actions .row-confirm,
+.chart-actions .row-keep {
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chart-actions .row-confirm {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.16);
+  color: var(--danger);
+}
+
+.chart-actions .row-confirm:hover {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.28);
+}
+
+.chart-actions .row-keep {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.chart-actions .row-keep:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
 }
 
 .new-chart {

@@ -81,6 +81,9 @@ export const chartForm = {
   homeClear: 'Clear',
   homePlaceholder: 'Where they live now…',
   homeAria: 'Search for where this person lives now',
+  // Group label for the Birthplace / Lives now caption tabs — the two captions
+  // above the form's single place box, which pick what that box edits.
+  placeTabsAria: 'Which place to edit',
   latitude: 'Latitude',
   longitude: 'Longitude',
   enterCoords: 'Enter manually',

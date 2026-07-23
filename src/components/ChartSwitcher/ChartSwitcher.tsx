@@ -76,6 +76,8 @@ export function ChartSwitcher({
   // Portrait top bar (compact + narrow): collapse the label to initials + year only.
   const narrow = useNarrowNav();
   const [open, setOpen] = useState(false);
+  // The row whose delete is mid-confirm (its icons swapped for Delete/Keep).
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   // The trigger's hover tip. Suppressed while the menu is open so the rich card
   // never overlays the quick-select dropdown that opens just below it. In the
@@ -115,6 +117,9 @@ export function ChartSwitcher({
   );
   const list = flashCharts ?? recentCharts;
   const menuOpen = open || flashCharts !== null;
+  useEffect(() => {
+    if (!menuOpen) setConfirmId(null);
+  }, [menuOpen]);
 
   // The trigger tip's Tab line, with the {key} token rendered as the shared
   // yellow key chip so the key name reads like the menu badges. The wrapper
@@ -259,34 +264,86 @@ export function ChartSwitcher({
                     {fmtBirthDate(c, fmt)} · {c.birthplace.label.split(',')[0]}
                   </span>
                 </button>
-                <div className="chart-actions">
-                  <TipButton
-                    type="button"
-                    className="action"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(c.id);
-                      setOpen(false);
-                    }}
-                    placement="top"
-                    tip={t('common.edit')}
-                  >
-                    ✎
-                  </TipButton>
-                  <TipButton
-                    type="button"
-                    className="action danger"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(t('chartSwitcher.deleteConfirm', { name: c.name })))
+                {/* In-row actions, inside the same row pill (the li carries the
+                    hover surface). The × arms an inline Delete/Keep confirm —
+                    no native dialog, nothing deleted on a stray tap. */}
+                {confirmId === c.id ? (
+                  <div className="chart-actions is-confirm">
+                    <button
+                      type="button"
+                      className="row-confirm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmId(null);
                         onDelete(c.id);
-                    }}
-                    placement="top"
-                    tip={t('common.delete')}
-                  >
-                    ×
-                  </TipButton>
-                </div>
+                      }}
+                    >
+                      {t('common.delete')}
+                    </button>
+                    <button
+                      type="button"
+                      className="row-keep"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmId(null);
+                      }}
+                    >
+                      {t('common.keep')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="chart-actions">
+                    <TipButton
+                      type="button"
+                      className="action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(c.id);
+                        setOpen(false);
+                      }}
+                      placement="top"
+                      tip={t('common.edit')}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      </svg>
+                    </TipButton>
+                    <TipButton
+                      type="button"
+                      className="action danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmId(c.id);
+                      }}
+                      placement="top"
+                      tip={t('common.delete')}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg>
+                    </TipButton>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

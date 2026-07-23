@@ -297,9 +297,9 @@
 /* The date/time moment editor (spin inputs + Date/Time layout) is the shared
    DateTimeFields component; its styles live in DateTimeFields.css. */
 
-/* Birthplace + "Lives now". Both are the shared place-search field, so these
-   rules only supply the form's own label chrome and the dropdown framing — the
-   field itself is styled by PlaceSearchField.css. */
+/* Birthplace + "Lives now" share ONE place-search field, so these rules only
+   supply the form's own caption tabs and the dropdown framing — the field
+   itself is styled by PlaceSearchField.css. */
 .location-field {
   position: relative;
   display: flex;
@@ -307,21 +307,54 @@
   gap: 4px;
 }
 
-/* Matches the caption on the form's real <label>s (these two fields wrap a
-   composite control, so they can't be labels themselves). */
-.location-field-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* The caption row doubles as the target switch: the two captions pick which
+   place the box below edits. Styled like the form's other field captions
+   (small caps), with the active target lifted to the accent. */
+.location-field-tabs {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
 }
 
-/* Results float over the fields below instead of pushing the form around. No
-   `top`: the auto static position already puts them right under the input.
+.location-field-tab {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    color var(--dur-quick, 0.15s) var(--ease-settle, ease),
+    opacity var(--dur-quick, 0.15s) var(--ease-settle, ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.location-field-tab:hover {
+  opacity: 1;
+}
+.location-field-tab.is-on {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* Results float over the fields below instead of pushing the form around,
+   anchored to the field itself. The explicit `top` is load-bearing: these
+   lists are absolutely-positioned children of the field's flex column, and an
+   auto top would resolve to the flex static position — the START of the
+   column, i.e. over the input row — not the slot after it. Target the hits
+   list and the groups WRAPPER, never bare .psf-results: that also matches
+   each group's inner list and would stack them all on top of one another.
    (Notes stay in flow — they're one short line and shouldn't cover anything.) */
-.chartform-place .psf-results,
-.chartform-home .psf-results {
+.chartform-place {
+  position: relative;
+}
+.chartform-place .psf-hits,
+.chartform-place .psf-groups {
   position: absolute;
+  top: 100%;
   left: 0;
   right: 0;
   margin-top: 2px;
@@ -334,7 +367,19 @@
   z-index: 10;
 }
 
-.home-field .che-row {
+/* Home's status line under the box: the picked place, with Clear pushed to
+   the right edge (coord-edit-link brings the link look and the auto margin). */
+.home-resolved {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* Home unset: what a blank Home MEANS, said where its value would show. */
+.home-unset-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
   text-transform: none;
   letter-spacing: 0;
 }

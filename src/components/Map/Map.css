@@ -821,9 +821,16 @@
 /* Celebration flourish (lib/extensions/pinAdornment celebratePin): a quick bounce
    of the icon plus the emblem popping in on a spring — one-shot, entrance-only,
    played alongside the replayed placement pulses. The class is re-applied per
-   celebration (Map.tsx forces a reflow so back-to-back runs restart cleanly). */
+   celebration (Map.tsx forces a reflow so back-to-back runs restart cleanly).
+   The base entrance animation stays at INDEX 0 of this list, byte-identical to
+   the base rule's: an animation only survives a list change if its name holds
+   its index, so replacing the list outright meant the drop-in came BACK when
+   Map.tsx removed the class ~0.7s later — the pin visibly re-dropped right
+   after the flourish (the post-save "flash"). */
 .map-pin.celebrate .map-pin-body {
-  animation: map-pin-celebrate 0.5s var(--ease-pop, cubic-bezier(0.2, 0.9, 0.3, 1.35));
+  animation:
+    map-pin-drop 0.34s cubic-bezier(0.22, 1.2, 0.4, 1),
+    map-pin-celebrate 0.5s var(--ease-pop, cubic-bezier(0.2, 0.9, 0.3, 1.35));
 }
 .map-pin.celebrate .map-pin-emblem,
 .map-pin.celebrate .map-pin-emblem-ring {

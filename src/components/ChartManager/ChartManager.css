@@ -237,6 +237,9 @@
   );
 }
 
+/* The LI is the row pill: hover/current backgrounds live HERE, spanning the
+   name AND the action icons as one surface — the actions are part of the row,
+   not a block that fades in beside it. */
 .cm-list li {
   display: flex;
   align-items: stretch;
@@ -244,7 +247,11 @@
   margin-bottom: 1px;
 }
 
-.cm-list li.current .cm-row {
+.cm-list li:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.cm-list li.current {
   background: rgba(var(--accent-rgb), 0.12);
 }
 
@@ -265,12 +272,7 @@
   font: inherit;
   cursor: pointer;
   text-align: left;
-  border-radius: 6px 0 0 6px;
   min-width: 0;
-}
-
-.cm-row:hover {
-  background: rgba(var(--tint), 0.06);
 }
 
 .cm-row-name {
@@ -291,20 +293,27 @@
   text-overflow: ellipsis;
 }
 
+/* Revealed per ROW on hover (and keyboard focus / the row being edited) —
+   quiet until the pointer is on that item. Touch has no hover, so coarse
+   pointers keep them visible; an armed Delete/Keep confirm stays visible
+   regardless (is-confirm). */
 .cm-row-actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 1px;
+  padding-right: 4px;
   opacity: 0;
   transition: opacity 0.12s;
 }
 
 .cm-list li:hover .cm-row-actions,
-.cm-list li.editing .cm-row-actions {
+.cm-list li:focus-within .cm-row-actions,
+.cm-list li.editing .cm-row-actions,
+.cm-row-actions.is-confirm {
   opacity: 1;
 }
 
-/* Touch has no hover, so the edit / delete actions would otherwise never appear — keep them
-   visible there (only the row being edited would show them otherwise). */
 @media (pointer: coarse) {
   .cm-row-actions {
     opacity: 1;
@@ -312,21 +321,58 @@
 }
 
 .cm-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   background: transparent;
   border: none;
-  padding: 0 7px;
+  border-radius: 5px;
   color: var(--text-faint);
-  font-size: 13px;
   cursor: pointer;
-  height: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cm-act:hover {
   color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
 }
 
 .cm-act.danger:hover {
   color: var(--danger);
+}
+
+/* The armed delete: the icons swap for an explicit Delete/Keep pair. */
+.cm-row-confirm,
+.cm-row-keep {
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cm-row-confirm {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.16);
+  color: var(--danger);
+}
+
+.cm-row-confirm:hover {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.28);
+}
+
+.cm-row-keep {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.cm-row-keep:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
 }
 
 .cm-add-row {

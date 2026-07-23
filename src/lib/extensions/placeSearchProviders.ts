@@ -84,7 +84,7 @@ export class PlaceSearchFailure extends Error {
 // already has a relationship with. The core has no such list of its own (it
 // keeps no per-user data), so a downstream build contributes one here and every
 // field that opts in shows it. One registration, every host: the alternative is
-// each window hand-building the same four groups.
+// each window hand-building the same list.
 
 export interface PlaceSearchLibraryEntry {
   id: string;
@@ -93,11 +93,20 @@ export interface PlaceSearchLibraryEntry {
   sub?: string;
   /** Small trailing tag on the row. */
   tag?: string;
-  /** A leading mark for a row that belongs to a classified set — the glyph and
-   *  colour that set already uses elsewhere, so the classification reads the
-   *  same here as it does on the map. `label` names it for assistive tech; the
-   *  glyph itself is decorative. */
-  mark?: { glyph: string; color?: string; label?: string };
+  /** A leading mark for a row that belongs to a classified set — either the
+   *  glyph and colour that set already uses elsewhere, or a small round image
+   *  (an emblem) when the set marks its members with one; `imageUrl` wins when
+   *  both are given, so the glyph can serve as its fallback. `label` names the
+   *  classification for assistive tech; the mark itself is decorative. */
+  mark?: { glyph?: string; imageUrl?: string; color?: string; label?: string };
+  /** In-row edit action (a pencil at the row's end). `label` is its
+   *  accessible name; `run` opens whatever edits this entry. */
+  edit?: { label: string; run: () => void };
+  /** In-row delete action (an × beside the pencil), guarded by an inline
+   *  two-step confirm: pressing it swaps the icons for `confirm` / `keep`
+   *  buttons, and only `confirm` runs the removal. All strings come from the
+   *  contributor (already localized). */
+  remove?: { label: string; confirm: string; keep: string; run: () => void };
   lat: number;
   lng: number;
   /** Framing hint for hosts that fly the camera. */
@@ -106,7 +115,9 @@ export interface PlaceSearchLibraryEntry {
 
 export interface PlaceSearchLibraryGroup {
   id: string;
-  label: string;
+  /** Heading over the group. Omit for a flat, headingless list — the rows'
+   *  own tags and marks then do the telling. */
+  label?: string;
   entries: PlaceSearchLibraryEntry[];
   /** Reveal this many rows at first — for a group with no natural length limit. */
   pageSize?: number;

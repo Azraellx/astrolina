@@ -48,7 +48,7 @@ export const BUILTIN_SCOPE_ID = 'places';
  *  standing group rather than a search — it belongs to no scope. */
 export const LIBRARY_SCOPE_ID = 'library';
 
-/** One row in a group shown while the query is empty (saved places, recents…). */
+/** One row in a group shown while the query is empty (standing choices). */
 export interface PlaceSearchSectionItem {
   id: string;
   label: string;
@@ -56,15 +56,22 @@ export interface PlaceSearchSectionItem {
   sub?: string;
   /** Small trailing tag on the row (e.g. a "HOME" marker). */
   tag?: string;
-  /** Leading glyph in its own colour, for a row from a classified set. */
-  mark?: { glyph: string; color?: string; label?: string };
+  /** Leading mark for a row from a classified set: a glyph in that set's
+   *  colour, or a small round image (which wins when both are given). */
+  mark?: { glyph?: string; imageUrl?: string; color?: string; label?: string };
+  /** In-row edit action (a pencil at the row's end). */
+  edit?: { label: string; run: () => void };
+  /** In-row delete action (an ×), guarded by an inline two-step confirm —
+   *  pressing it swaps the icons for `confirm` / `keep` buttons. */
+  remove?: { label: string; confirm: string; keep: string; run: () => void };
   onPick: () => void;
 }
 
 /** A group of standing choices offered before anything is typed. */
 export interface PlaceSearchSection {
   id: string;
-  label: string;
+  /** Heading over the group; omit for a flat, headingless list. */
+  label?: string;
   items: PlaceSearchSectionItem[];
   /** Show this many rows at first, revealing another page at a time. Omit for
    *  a group that is short by nature (a handful of saves, a capped history);
@@ -202,6 +209,19 @@ function makeBuiltinProvider(
   };
 }
 
+// Below this root width the scope chips (which share the input row) would
+// crush the input itself, so the row condenses to a one-at-a-time cycle button.
+const NARROW_SCOPES_PX = 250;
+
+// Case- and diacritic-insensitive fold for matching typed text against the
+// standing rows' names. The atlas scopes fold their own queries; this stays
+// local so the field never pulls the atlas chunk just to compare strings.
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
 // A row reads as a PLACE with its whereabouts under it, not as one long line
 // the eye has to parse to its first comma. Place names are what a person scans
 // for; the containing town, region and country only settle WHICH one is meant,
@@ -250,6 +270,22 @@ export function PlaceSearchField({
   // keeps its label in the box would otherwise loop straight back into a query).
   const pickedRef = useRef<string | null>(keepQueryOnPick ? (initialQuery ?? null) : null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Whether this mount is too narrow for the full chip row (measured live — a
+  // host column can be resized under us).
+  const [narrowScopes, setNarrowScopes] = useState(false);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      // Ignore zero-width (display:none hosts) so a hidden field keeps its
+      // last honest measurement instead of flapping.
+      if (w > 0) setNarrowScopes(w < NARROW_SCOPES_PX);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // How many pages of each paged group are on screen (1 = the first page).
   const [pages, setPages] = useState<Record<string, number>>({});
   const revealMore = (id: string) =>
@@ -276,6 +312,9 @@ export function PlaceSearchField({
   const locked = !!gate?.locked;
   // A tapped-but-locked chip explains itself instead of switching scope.
   const [teasedId, setTeasedId] = useState<string | null>(null);
+  // The standing row whose × is mid-confirm (its icons swapped for the
+  // confirm/keep pair). One at a time; any typing or pick dismisses it.
+  const [confirmRowId, setConfirmRowId] = useState<string | null>(null);
   const teased = teasedId ? (gates[scopes.findIndex((p) => p.id === teasedId)] ?? null) : null;
 
   // Call the contributor unconditionally — the registry is fixed at startup, so
@@ -351,6 +390,11 @@ export function PlaceSearchField({
     pickedRef.current = null;
     setTeasedId(null);
     setQuery(q);
+    // The keyboard cursor resets with the text: the standing matches under a
+    // new query are a new list, and a stale highlight would sit on the wrong
+    // row until the next search lands. Enter still takes the first row.
+    setActiveIdx(-1);
+    setConfirmRowId(null);
     onQueryChange?.(q);
   };
 
@@ -361,6 +405,7 @@ export function PlaceSearchField({
       setEmpty(false);
       setFailed(null);
       setActiveIdx(-1);
+      setConfirmRowId(null);
       if (keepQueryOnPick) {
         pickedRef.current = hit.label;
         setQuery(hit.label);
@@ -375,9 +420,9 @@ export function PlaceSearchField({
     [onPick, onQueryChange, keepQueryOnPick, selectOnPick, scope.id],
   );
 
-  // One flat keyboard list over whatever is on screen — hits when searching,
-  // the standing groups when the box is empty — so the arrows always do
-  // something sensible.
+  // One flat keyboard list over whatever is on screen — the full standing
+  // groups while the box is empty, name-matched standing rows above the hits
+  // while typing — so the arrows always do something sensible.
   const showSections = !results.length && !searching && query.trim().length < scope.minQueryLen;
   // A group whose length is open-ended (everything logged against this chart,
   // say) reveals a page at a time rather than dumping hundreds of rows into a
@@ -397,6 +442,8 @@ export function PlaceSearchField({
             sub: e.sub,
             tag: e.tag,
             mark: e.mark,
+            edit: e.edit,
+            remove: e.remove,
             onPick: () =>
               take(
                 { label: e.label, lat: e.lat, lng: e.lng, zoom: e.zoom },
@@ -405,9 +452,30 @@ export function PlaceSearchField({
           })),
         }))
       : [];
-  const groups = (showSections ? [...librarySections, ...(sections ?? [])] : []).filter(
-    (g) => g.items.length > 0,
-  );
+  const standing = [...librarySections, ...(sections ?? [])];
+  // Once two characters are typed, the standing rows stop being a browsing
+  // list and become search results of their own: filtered by name (against the
+  // label, second line and tag alike), stripped of headings and paging, and
+  // kept on screen ABOVE the scope's hits — a place the user already keeps and
+  // named outranks a gazetteer's answer for that name.
+  const foldedQuery = fold(query.trim());
+  const matchesQuery = (it: PlaceSearchSectionItem) =>
+    fold(it.label).includes(foldedQuery) ||
+    (!!it.sub && fold(it.sub).includes(foldedQuery)) ||
+    (!!it.tag && fold(it.tag).includes(foldedQuery));
+  const groups = (
+    foldedQuery.length >= 2
+      ? standing.map((g) => ({
+          ...g,
+          label: undefined,
+          pageSize: undefined,
+          moreLabel: undefined,
+          items: g.items.filter(matchesQuery),
+        }))
+      : showSections
+        ? standing
+        : []
+  ).filter((g) => g.items.length > 0);
   const shownItems = groups.map(visible);
   const hasMore = groups.map((g, i) => shownItems[i].length < g.items.length);
   // Each group contributes its visible rows plus, when one is offered, the
@@ -419,12 +487,16 @@ export function PlaceSearchField({
         : [...acc, acc[i - 1] + shownItems[i - 1].length + (hasMore[i - 1] ? 1 : 0)],
     [],
   );
-  const navItems: { run: () => void }[] = results.length
-    ? results.map((r) => ({ run: () => take(r) }))
-    : groups.flatMap((g, i) => [
-        ...shownItems[i].map((it) => ({ run: it.onPick })),
-        ...(hasMore[i] ? [{ run: () => revealMore(g.id) }] : []),
-      ]);
+  // Standing rows come FIRST in both the DOM and the keyboard order — when a
+  // typed query matches one, it is the better answer, so it leads the hits.
+  const groupNav = groups.flatMap((g, i) => [
+    ...shownItems[i].map((it) => ({ run: it.onPick })),
+    ...(hasMore[i] ? [{ run: () => revealMore(g.id) }] : []),
+  ]);
+  const navItems: { run: () => void }[] = [
+    ...groupNav,
+    ...results.map((r) => ({ run: () => take(r) })),
+  ];
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
@@ -457,8 +529,27 @@ export function PlaceSearchField({
 
   const note = teased?.note ?? (locked ? gate?.note : null) ?? failed;
 
+  // The condensed scope control: ONE chip showing the active scope; tapping
+  // moves to the next scope that is open, skipping locked ones — and when every
+  // other scope is locked, the tap teases the next one instead (the same
+  // explain-under-the-input a locked chip gives), so nothing is silently dead.
+  const cycleScope = () => {
+    const idx = scopes.findIndex((p) => p.id === scope.id);
+    for (let step = 1; step < scopes.length; step++) {
+      const next = scopes[(idx + step) % scopes.length];
+      if (gates[scopes.indexOf(next)]?.locked) continue;
+      setTeasedId(null);
+      setScopeId(next.id);
+      setActiveIdx(-1);
+      inputRef.current?.focus();
+      return;
+    }
+    const next = scopes[(idx + 1) % scopes.length];
+    setTeasedId((v) => (v === next.id ? null : next.id));
+  };
+
   return (
-    <div className={`psf${className ? ` ${className}` : ''}`}>
+    <div ref={rootRef} className={`psf${className ? ` ${className}` : ''}`}>
       <div className="psf-inputrow">
         <svg
           className="psf-icon"
@@ -488,7 +579,33 @@ export function PlaceSearchField({
           autoFocus={autoFocus}
         />
         {searching && <span className="psf-spinner" aria-hidden="true" />}
-        {scopes.length > 1 && (
+        {scopes.length > 1 && narrowScopes && (
+          <div className="psf-scopes">
+            <button
+              type="button"
+              className="psf-scope psf-scope-cycle is-on"
+              aria-label={S.scopeAria}
+              onClick={cycleScope}
+            >
+              {scope.label}
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 8h13l-3.5-3.5" />
+                <path d="M20 16H7l3.5 3.5" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {scopes.length > 1 && !narrowScopes && (
           <div className="psf-scopes" role="radiogroup" aria-label={S.scopeAria}>
             {scopes.map((p, i) => {
               const g = gates[i];
@@ -521,36 +638,10 @@ export function PlaceSearchField({
         )}
       </div>
 
-      {results.length > 0 && (
-        <ul className="psf-results psf-hits">
-          {results.map((r, i) => {
-            const { main, sub } = rowText(r.label, r.sub);
-            return (
-              <li key={`${r.lat},${r.lng},${i}`}>
-                <button
-                  type="button"
-                  className={`psf-row${i === activeIdx ? ' is-active' : ''}`}
-                  onClick={() => take(r)}
-                  onMouseEnter={() => setActiveIdx(i)}
-                >
-                  <span className="psf-row-body">
-                    <span className="psf-row-main">
-                      <span className="psf-row-label">{main}</span>
-                      {kindLabel && r.kind && (
-                        <span className={`psf-kind psf-kind-${r.kind}`}>{kindLabel(r.kind)}</span>
-                      )}
-                    </span>
-                    {sub && <span className="psf-row-sub">{sub}</span>}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
       {/* One scroll container for every group, so a long list scrolls as a
-          whole instead of each group getting its own little viewport. */}
+          whole instead of each group getting its own little viewport. Rendered
+          ABOVE the hits: while typing, any standing rows still on screen are
+          name matches, and the user's own places outrank the gazetteer's. */}
       {groups.length > 0 && (
         <div className="psf-groups">
           {groups.map((g, gi) => {
@@ -558,13 +649,26 @@ export function PlaceSearchField({
             const remaining = g.items.length - shownItems[gi].length;
             return (
               <div className="psf-group" key={g.id}>
-                <span className="psf-group-head">{g.label}</span>
+                {g.label && <span className="psf-group-head">{g.label}</span>}
                 <ul className="psf-results">
                   {shownItems[gi].map((it, ii) => {
                     const idx = groupStart[gi] + ii;
                     const row = rowText(it.label, it.sub);
+                    const hasActs = !!(it.edit || it.remove);
                     return (
-                      <li key={it.id}>
+                      <li
+                        key={it.id}
+                        // Actioned rows: ONE highlight, painted by the LI (the
+                        // row pill) off is-active alone — mouse-enter anywhere
+                        // on the row (icons included) moves the active index,
+                        // so hover and keyboard can never show two highlights.
+                        className={
+                          hasActs
+                            ? `psf-item${idx === activeIdx ? ' is-active' : ''}`
+                            : undefined
+                        }
+                        onMouseEnter={hasActs ? () => setActiveIdx(idx) : undefined}
+                      >
                         <button
                           type="button"
                           className={`psf-row${idx === activeIdx ? ' is-active' : ''}`}
@@ -580,7 +684,14 @@ export function PlaceSearchField({
                               : undefined
                           }
                         >
-                          {it.mark && (
+                          {it.mark?.imageUrl ? (
+                            <img
+                              className="psf-row-emblem"
+                              src={it.mark.imageUrl}
+                              alt=""
+                              aria-hidden="true"
+                            />
+                          ) : it.mark?.glyph ? (
                             <span
                               className="psf-row-glyph"
                               style={it.mark.color ? { color: it.mark.color } : undefined}
@@ -588,7 +699,7 @@ export function PlaceSearchField({
                             >
                               {it.mark.glyph}
                             </span>
-                          )}
+                          ) : null}
                           <span className="psf-row-body">
                             <span className="psf-row-main">
                               <span className="psf-row-label">{row.main}</span>
@@ -597,6 +708,79 @@ export function PlaceSearchField({
                             {row.sub && <span className="psf-row-sub">{row.sub}</span>}
                           </span>
                         </button>
+                        {/* In-row actions, INSIDE the same row pill (the li
+                            carries the hover surface). The × arms an inline
+                            confirm — the icons swap for confirm/keep, so
+                            nothing is deleted on a stray tap. */}
+                        {hasActs &&
+                          (confirmRowId === it.id && it.remove ? (
+                            <span className="psf-row-acts is-confirm">
+                              <button
+                                type="button"
+                                className="psf-row-confirm"
+                                onClick={() => {
+                                  setConfirmRowId(null);
+                                  it.remove!.run();
+                                }}
+                              >
+                                {it.remove.confirm}
+                              </button>
+                              <button
+                                type="button"
+                                className="psf-row-keep"
+                                onClick={() => setConfirmRowId(null)}
+                              >
+                                {it.remove.keep}
+                              </button>
+                            </span>
+                          ) : (
+                            <span className="psf-row-acts">
+                              {it.edit && (
+                                <button
+                                  type="button"
+                                  className="psf-row-act"
+                                  aria-label={it.edit.label}
+                                  onClick={it.edit.run}
+                                >
+                                  <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                  </svg>
+                                </button>
+                              )}
+                              {it.remove && (
+                                <button
+                                  type="button"
+                                  className="psf-row-act psf-row-act-danger"
+                                  aria-label={it.remove.label}
+                                  onClick={() => setConfirmRowId(it.id)}
+                                >
+                                  <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M18 6 6 18" />
+                                    <path d="m6 6 12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </span>
+                          ))}
                       </li>
                     );
                   })}
@@ -619,8 +803,39 @@ export function PlaceSearchField({
         </div>
       )}
 
+      {results.length > 0 && (
+        <ul className="psf-results psf-hits">
+          {results.map((r, i) => {
+            const { main, sub } = rowText(r.label, r.sub);
+            const navIdx = groupNav.length + i;
+            return (
+              <li key={`${r.lat},${r.lng},${i}`}>
+                <button
+                  type="button"
+                  className={`psf-row${navIdx === activeIdx ? ' is-active' : ''}`}
+                  onClick={() => take(r)}
+                  onMouseEnter={() => setActiveIdx(navIdx)}
+                >
+                  <span className="psf-row-body">
+                    <span className="psf-row-main">
+                      <span className="psf-row-label">{main}</span>
+                      {kindLabel && r.kind && (
+                        <span className={`psf-kind psf-kind-${r.kind}`}>{kindLabel(r.kind)}</span>
+                      )}
+                    </span>
+                    {sub && <span className="psf-row-sub">{sub}</span>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       {note && <p className="psf-note">{note}</p>}
-      {empty && !note && !searching && <p className="psf-note">{S.noMatches}</p>}
+      {empty && !note && !searching && groups.length === 0 && (
+        <p className="psf-note">{S.noMatches}</p>
+      )}
       {children}
     </div>
   );

@@ -184,8 +184,11 @@ export function ChartManager({
     onSave(chart);
   };
 
+  // The row whose delete is mid-confirm (its icons swapped for Delete/Keep) —
+  // the inline two-step that replaced the native confirm() dialog.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const handleDelete = (c: StoredChart) => {
-    if (!confirm(t('chartManager.deleteConfirm', { name: c.name }))) return;
+    setConfirmId(null);
     onDelete(c.id);
     if (editing?.id === c.id) editNew('');
   };
@@ -239,7 +242,10 @@ export function ChartManager({
                 type="text"
                 className="cm-search-input"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setConfirmId(null);
+                }}
                 placeholder={t('chartManager.searchPlaceholder')}
                 autoFocus={!touch}
                 aria-label={t('chartManager.searchLabel')}
@@ -329,26 +335,72 @@ export function ChartManager({
                       {fmtBirth(c, fmt)} · {c.birthplace.label.split(',')[0]}
                     </span>
                   </button>
-                  <div className="cm-row-actions">
-                    <TipButton
-                      type="button"
-                      className="cm-act"
-                      onClick={() => editExisting(c)}
-                      placement="top"
-                      tip={t('common.edit')}
-                    >
-                      ✎
-                    </TipButton>
-                    <TipButton
-                      type="button"
-                      className="cm-act danger"
-                      onClick={() => handleDelete(c)}
-                      placement="top"
-                      tip={t('common.delete')}
-                    >
-                      ×
-                    </TipButton>
-                  </div>
+                  {/* In-row actions, inside the same row pill (the li carries
+                      the hover surface). The × arms an inline Delete/Keep
+                      confirm — no native dialog. */}
+                  {confirmId === c.id ? (
+                    <div className="cm-row-actions is-confirm">
+                      <button
+                        type="button"
+                        className="cm-row-confirm"
+                        onClick={() => handleDelete(c)}
+                      >
+                        {t('common.delete')}
+                      </button>
+                      <button
+                        type="button"
+                        className="cm-row-keep"
+                        onClick={() => setConfirmId(null)}
+                      >
+                        {t('common.keep')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="cm-row-actions">
+                      <TipButton
+                        type="button"
+                        className="cm-act"
+                        onClick={() => editExisting(c)}
+                        placement="top"
+                        tip={t('common.edit')}
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        </svg>
+                      </TipButton>
+                      <TipButton
+                        type="button"
+                        className="cm-act danger"
+                        onClick={() => setConfirmId(c.id)}
+                        placement="top"
+                        tip={t('common.delete')}
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M18 6 6 18" />
+                          <path d="m6 6 12 12" />
+                        </svg>
+                      </TipButton>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

@@ -5352,10 +5352,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const el = markerRef.current.getElement();
     el.classList.toggle('natal', pinType === 'natal');
     // Apply the single-slot adornment: show the emblem when a URL is provided.
+    // Idempotent on purpose — re-setting even the SAME href on an SVG <image>
+    // forces a re-decode, which blanks the emblem for a frame. Adornment
+    // updates that only change the tip (a place name resolving late) must not
+    // make the emblem blink.
     const emblemUrl = pinAdornment?.emblemUrl ?? '';
     const emblem = el.querySelector('.map-pin-emblem');
-    if (emblemUrl) emblem?.setAttribute('href', emblemUrl);
-    else emblem?.removeAttribute('href');
+    if (emblem && (emblem.getAttribute('href') ?? '') !== emblemUrl) {
+      if (emblemUrl) emblem.setAttribute('href', emblemUrl);
+      else emblem.removeAttribute('href');
+    }
     el.classList.toggle('has-emblem', emblemUrl !== '');
     // One-shot celebration (pinAdornment.celebratePin): a downstream action on the
     // pin just completed — replay the placement pulses and run the celebrate

@@ -124,6 +124,17 @@
   color: var(--text-faint);
 }
 
+/* The narrow-host condensation: one chip, the ACTIVE scope's name, tapping
+   cycles to the next open scope (a locked next explains itself under the
+   input, exactly as its chip would). The arrows say "this flips". */
+.psf-scope-cycle {
+  gap: 5px;
+}
+.psf-scope-cycle svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .psf-scope-pill {
   padding: 0 3px;
   border-radius: 3px;
@@ -209,7 +220,7 @@
   gap: 1px;
 }
 
-/* The classification glyph (a journal category, say) in that set's own colour —
+/* The classification glyph (a category marker, say) in that set's own colour —
    inline-size fixed so labels stay on one left edge whether a row has one or
    not. */
 .psf-row-glyph {
@@ -218,6 +229,16 @@
   text-align: center;
   font-size: 11px;
   line-height: 1;
+}
+
+/* The image form of the same mark (a small round emblem), sharing the glyph's
+   slot so mixed lists keep one left edge. */
+.psf-row-emblem {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .psf-row-main {
@@ -332,4 +353,99 @@
   padding: 0 2px;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+/* ── In-row actions (standing rows that can be edited/removed) ─────────────
+   The LI is the row pill, and it paints the ONE highlight — off is-active
+   alone. Mouse-enter anywhere on the li (icons included) moves the active
+   index, so the pointer's row and the keyboard's row are the same row and can
+   never light up twice. The inner button's own hover/active paints are
+   silenced here (they'd stack a second tone over the pill). */
+.psf-item {
+  display: flex;
+  align-items: stretch;
+  border-radius: 6px;
+}
+.psf-item.is-active {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+.psf-item .psf-row {
+  min-width: 0;
+}
+.psf-item .psf-row:hover,
+.psf-item .psf-row.is-active {
+  background: transparent;
+}
+
+/* Revealed per ROW on hover (and keyboard focus) — quiet until the pointer is
+   on that item. Touch has no hover, so coarse pointers keep them visible; an
+   armed Delete/Keep confirm stays visible regardless (is-confirm). */
+.psf-row-acts {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-right: 3px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.psf-item.is-active .psf-row-acts,
+.psf-item:hover .psf-row-acts,
+.psf-item:focus-within .psf-row-acts,
+.psf-row-acts.is-confirm {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .psf-row-acts {
+    opacity: 1;
+  }
+}
+.psf-row-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.psf-row-act:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
+}
+.psf-row-act-danger:hover {
+  color: var(--danger);
+}
+
+/* The armed delete: the icons swap for an explicit confirm/keep pair — small
+   text chips, the destructive one wearing the danger tint. */
+.psf-row-confirm,
+.psf-row-keep {
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.psf-row-confirm {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.16);
+  color: var(--danger);
+}
+.psf-row-confirm:hover {
+  background: rgba(var(--danger-rgb, 224, 82, 82), 0.28);
+}
+.psf-row-keep {
+  background: transparent;
+  color: var(--text-muted);
+}
+.psf-row-keep:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
 }
