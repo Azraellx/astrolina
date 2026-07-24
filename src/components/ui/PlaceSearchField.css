@@ -409,7 +409,10 @@
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--text-faint);
+  /* --text-muted, not --text-faint: the faint tier is below AA on the Earth
+     (parchment) panels, and these small icons get no large-text allowance — the
+     same reason the row sub-label and precision tag above already use muted. */
+  color: var(--text-muted);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }

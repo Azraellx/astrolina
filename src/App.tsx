@@ -1286,16 +1286,11 @@ export default function App() {
         return;
       }
       // While a time overlay's bar is up (Advanced mode shows its display drawer),
-      // the drawer's toggles claim their keys FIRST: 'n' flips the Natal-linework
-      // toggle, and a drawer-surface extension takes its registered hotkey — both
-      // advertised in the toggles' hover tips. The letters' base actions (N =
-      // overlay off, A = new chart) resume outside those modes.
+      // a drawer-surface extension claims its registered hotkey FIRST (V =
+      // Activations), advertised in its toggle's hover tip. Otherwise every letter
+      // keeps its base action in all modes — N turns the overlay off, A adds a
+      // chart. The Natal-linework toggle is click-only now, with no hotkey.
       if (advancedWheel && TIME_OVERLAY_MODES.has(overlayMode)) {
-        if (e.key.toLowerCase() === 'n') {
-          setShowNatal((v) => !v);
-          e.preventDefault();
-          return;
-        }
         const drawerExt = getMapExtensions().find(
           (x) =>
             x.surface === 'timeline-drawer' &&

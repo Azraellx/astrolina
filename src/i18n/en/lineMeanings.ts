@@ -33,19 +33,19 @@ export const lineMeanings = {
     ASC: 'your body, presence, and how you meet the world',
     DSC: 'partnership and the people you draw close',
     VX: 'fated meetings, turning points, and what life brings unbidden',
-    AVX: 'the familiar ground you act from when fate comes calling',
+    AVX: 'what you already know to do when fate comes calling',
   },
 
   // Generic card for bodies without bespoke texts (nodes, Lilith, Chiron,
   // asteroids): their one-line theme plus the angle essence.
-  generic: '{theme} Along this line that theme colors {essence}.',
+  generic: '{theme} Along this line that theme colours {essence}.',
   // Extra line on a merged node line: the same geometry is both nodes.
   nodePair: 'This line is the North Node on one angle and the South Node on the opposite one.',
 
   // Bespoke body-on-angle readings, every computed body.
   meanings: {
     Sun: {
-      MC: 'Identity and life direction step into the spotlight. Recognition, leadership, and being seen for who you are come naturally here, and career carries your personal stamp.',
+      MC: 'Identity and life direction step into the spotlight. Recognition, leadership, and being seen for who you are come naturally here, and career carries your personal stamp, though in this light little stays hidden.',
       IC: 'Vitality turns inward, toward home, roots, and self-knowledge. A strong place to build a private foundation, though public ambition tends to run quieter.',
       ASC: 'You come across with warmth, confidence, and presence. Energy runs high, and life here keeps inviting you to show up unmistakably as yourself.',
       DSC: 'Your light shines through the people you meet. Strong personalities are drawn to you, and partnership becomes a stage where you define who you are.',
@@ -58,33 +58,33 @@ export const lineMeanings = {
     },
     Mercury: {
       MC: 'Career runs on words, ideas, and connections. Writing, teaching, trade, and media thrive, and your name travels through what you say.',
-      IC: 'The mind turns homeward. Study, writing, and lively conversation flourish in private, and the household fills with books and ideas.',
+      IC: 'The mind turns homeward. A natural place for working from home or tracing family history, and the household fills with books and ideas.',
       ASC: 'You meet the world curious and quick. Conversation comes easily, days fill with errands and exchanges, and wit becomes your calling card.',
       DSC: 'You draw talkers, thinkers, and dealmakers. Relationships here live on conversation, and partners sharpen your thinking.',
     },
     Venus: {
-      MC: 'Charm works in your favor professionally. Art, beauty, diplomacy, and pleasant dealings lift your standing, and people enjoy working with you.',
-      IC: 'Home becomes beautiful and harmonious. Comfort, taste, and affection gather in private life, and the household feels like a refuge.',
+      MC: 'Charm works in your favour professionally. Art, beauty, diplomacy, and pleasant dealings lift your standing, and people enjoy working with you.',
+      IC: 'Home becomes beautiful and harmonious. Comfort, taste, and affection gather in private life, and the household feels like a refuge, a place to mend and bloom again.',
       ASC: 'You appear more attractive, graceful, and easy to like. Social life sweetens, and pleasure and beauty find you without much effort.',
-      DSC: 'The classic line for love. Affection, romance, and agreeable partners come toward you, and relationships carry unusual sweetness.',
+      DSC: 'The classic line for love. Affection, romance, and charming partners come toward you, and relationships carry unusual sweetness.',
     },
     Mars: {
       MC: 'Ambition fires up. You compete, push, and take initiative in public, which can build an impressive career or a combative reputation.',
       IC: 'Energy pours into the home: renovating, defending, or wrestling with your roots. Watch for friction in the household.',
       ASC: 'You act faster, train harder, and assert yourself more directly. Courage rises here, and so does impatience.',
-      DSC: 'You attract bold, driven, sometimes confrontational partners. Relationships run hot, with passion and argument close together.',
+      DSC: 'You attract bold, driven, sometimes confrontational partners. Relationships may run hot, with passion and argument close together.',
     },
     Jupiter: {
       MC: 'Doors open professionally. Opportunity, growth, and good reputation come more easily, and optimism reads as leadership.',
-      IC: 'Abundance settles into private life. Homes grow larger and more generous, and family life carries faith and good humor.',
+      IC: 'Abundance settles into private life. Homes grow larger and more generous, and family life carries faith and good humour.',
       ASC: 'Confidence and luck travel with you. Life feels more expansive here, with appetite, optimism, and opportunity all enlarged.',
-      DSC: 'Generous, fortunate, often well-traveled people enter your life. Partnerships broaden your world and tend to bring benefit.',
+      DSC: 'Generous, fortunate, often well-travelled people enter your life. Partnerships broaden your world and tend to bring benefit.',
     },
     Saturn: {
       MC: 'Career becomes serious business. Discipline and persistence can build lasting authority here, but recognition is earned slowly.',
       IC: 'Duty gathers at home: responsibility for family, property, or the past. A sobering place that builds deep, slow roots.',
       ASC: 'You read as older, steadier, more reserved. Life asks for structure and effort here, and rewards it with endurance.',
-      DSC: 'Partners arrive serious, older, or duty-bound. Relationships demand commitment and patience, and the durable ones last.',
+      DSC: 'Partners arrive serious, older, or duty-bound. Relationships demand commitment and patience, but what survives here tends to last.',
     },
     Uranus: {
       MC: 'Your path turns unconventional. Sudden career changes, original work, and a reputation for independence follow this line.',
@@ -93,7 +93,7 @@ export const lineMeanings = {
       DSC: 'Unusual, independent people arrive abruptly. Relationships form and change fast, and they need room to breathe.',
     },
     Neptune: {
-      MC: 'Career blurs toward imagination: art, healing, spirituality, or service. Inspiring, though goals can dissolve and refocus.',
+      MC: 'Career blurs toward imagination: art, healing, spirituality, or service. This line rewards riding inspiration rather than forcing the climb, and goals may dissolve and refocus along the way.',
       IC: 'Home becomes a dream space, ideal for retreat, art, or contemplation. Boundaries and practical footing need attention.',
       ASC: 'You soften, idealize, and absorb the atmosphere around you. Imagination and compassion rise; clarity about yourself can fade.',
       DSC: 'You idealize the people you meet, and they may idealize you. Romantic and inspiring, with a real risk of seeing what you wish.',
@@ -106,15 +106,15 @@ export const lineMeanings = {
     },
     NorthNode: {
       MC: 'Your growth path points at public life. Vocation here keeps pulling you into unfamiliar territory that turns out to fit, and reputation builds by stretching.',
-      IC: 'Growth runs through roots. Building a home, a base, or a family here moves your life forward, even when it feels like starting over.',
+      IC: 'Growth runs through roots. Building a home or a family here moves your life forward, sometimes on ground your ancestors once knew.',
       ASC: 'Life here asks you to become more fully yourself. New habits, a new presence, and a sense of heading somewhere come with the place.',
-      DSC: 'The people you meet carry your next lessons. Partnership here is less about comfort than about who you are becoming.',
+      DSC: 'The people you meet feel strangely like your own, and they carry your next lessons. Partnership here is less about comfort than about who you are becoming.',
     },
     SouthNode: {
-      MC: 'Public life runs on old, well-worn skills. Success can come easily here, but it tends to repeat the past rather than grow it.',
+      MC: 'Public life runs on old, well-worn skills. Success comes easily here, resting on mastery you already own.',
       IC: 'Home feels instantly familiar, like somewhere you have already lived. Comforting and deep, with a pull toward old patterns.',
-      ASC: 'You slip into an old version of yourself here. Effortless, familiar, and worth watching: ease is not the same as growth.',
-      DSC: 'Relationships feel fated and familiar from the start. Old dynamics resurface through partners, to be enjoyed or finally outgrown.',
+      ASC: 'You slip into a familiar version of yourself here. Effortless and comforting, a place to rest in what you already know, and to notice what you have outgrown.',
+      DSC: 'Relationships feel fated and familiar from the start. Old dynamics resurface through partners, to be enjoyed or gently released.',
     },
     Chiron: {
       MC: 'Your wound becomes your work. Careers in healing, teaching, or mentoring flourish here, with authority earned through what once hurt.',
@@ -124,7 +124,7 @@ export const lineMeanings = {
     },
     Ceres: {
       MC: 'Care becomes the career. Feeding, growing, teaching, or looking after others builds your public standing here.',
-      IC: 'A nourishing place to live. The household centers on food, comfort, and looking after one another, and it shows.',
+      IC: 'A nourishing place to live. The household centres on food, comfort, and care, and life may keep a seasonal rhythm, coming and going with the year.',
       ASC: 'You come across warmer and more protective. Looking after people, animals, or gardens comes naturally here.',
       DSC: 'Nurturing people come toward you. Relationships here run on care given and received, with mothering themes close by.',
     },
@@ -136,9 +136,9 @@ export const lineMeanings = {
     },
     Juno: {
       MC: 'Partnership shapes the public story. Marriage, contracts, and loyal alliances become visible themes of life here.',
-      IC: 'Commitment gathers at home. A place that favors settling down, shared property, and promises kept in private.',
+      IC: 'Commitment gathers at home. A place that favours settling down, shared property, and promises kept in private.',
       ASC: 'You present as someone ready to commit, and the question of partnership follows you. Loyalty becomes part of your presence.',
-      DSC: 'The marriage angle for the marriage asteroid. Serious, binding partnership themes concentrate here, for better and for worse.',
+      DSC: 'The marriage angle for the marriage asteroid. Serious, binding partnership themes concentrate here, and fairness between partners becomes the test.',
     },
     Vesta: {
       MC: 'Work becomes devotion. A career pursued like a calling, with focus and integrity your public signature.',
@@ -155,7 +155,7 @@ export const lineMeanings = {
     Fortune: {
       MC: 'A place of visible thriving. Work and standing flow with unusual ease here, and success feels natural rather than forced.',
       IC: 'Home and roots feel nourishing here. Comfort, security, and physical wellbeing settle into private life, and the body feels at ease.',
-      ASC: 'One of the strongest lines for vitality. You feel healthy, buoyant, and at home in yourself, and good fortune finds you without much effort.',
+      ASC: 'A line of ease in the body. You feel healthy, buoyant, and at home in yourself, and good fortune finds you without much effort.',
       DSC: 'Wellbeing comes through others here. Partners and close bonds bring ease, prosperity, and a shared sense of flourishing.',
     },
   },
@@ -174,7 +174,7 @@ export const lineMeanings = {
 
   // Midpoint lines: the pair's blend is angular, not either planet alone.
   midpoint:
-    'The {a}/{b} midpoint sits on the {angle} here. The blend of both planets, rather than either alone, colors {essence}.',
+    'The {a}/{b} midpoint sits on the {angle} here. The blend of both planets, rather than either alone, colours {essence}.',
 
   // Parans: two bodies exactly angular at once, valid along a latitude band.
   // The two theme lines (planets.*.theme) are woven in so the pair reads as a
@@ -189,7 +189,7 @@ export const lineMeanings = {
   // Fixed-star lines: the star's one-line signature woven into a shared frame.
   starTitle: '{star} on the {angle}',
   star:
-    'The fixed star {star} is exactly angular here. {theme} Star lines read narrowly: that signature colors {essence}, strongest within a degree or so of the line.',
+    'The fixed star {star} is exactly angular here. {theme} Star lines read narrowly: that signature colours {essence}, strongest within a degree or so of the line.',
 
   // One-line signatures for the bundled star catalog, in the classical
   // tradition's keywords, written in our own words. Standalone sentences, so
@@ -216,25 +216,25 @@ export const lineMeanings = {
     Alpheratz: 'Freedom of movement: independence, speed, and doors that open.',
     Mirach: 'Receptive grace: beauty, sympathy, and easy connection.',
     Achernar: 'The river’s end: rapid resolution, for better or worse.',
-    Hamal: 'The ram’s head: willful drive that needs a worthy aim.',
+    Hamal: 'The ram’s head: wilful drive that needs a worthy aim.',
     Menkar: 'The whale’s jaw: forces from the collective deep, surfacing suddenly.',
     Mirfak: 'The hero’s side: youthful boldness and the love of the challenge itself.',
     Bellatrix: 'The Amazon star: victory through struggle, won the hard way.',
-    Alnilam: 'The belt’s center: brief brilliance and public attention.',
+    Alnilam: 'The belt’s centre: brief brilliance and public attention.',
     Castor: 'The storyteller twin: wit, letters, and the double-edged word.',
     Alphard: 'The serpent’s heart: passion with an undertow, asking for clean motives.',
     Denebola: 'The lion’s tail: the maverick who succeeds out of step with the mainstream.',
     Acrux: 'The Southern Cross’ anchor: ceremony, depth, and matters of the spirit.',
     Algorab: 'The crow’s wing: the scavenger’s cunning, and the cost of shortcuts.',
-    Toliman: 'The neighboring sun: relationships between unequals, and learning from them.',
+    Toliman: 'The neighbouring sun: relationships between unequals, and learning from them.',
     'Zuben Elgenubi': 'The southern scale: reform won through personal cost.',
-    'Zuben Eschamali': 'The northern scale: reform that brings honor and reward.',
+    'Zuben Eschamali': 'The northern scale: reform that brings honour and reward.',
     Alphecca: 'The northern crown: quiet achievement that earns a lasting crown.',
     Unukalhai: 'The serpent’s neck: healing power entwined with poison; handling decides which.',
     Rasalhague: 'The healer’s head: medicine, teaching, and the urge to mend what is broken.',
     Deneb: 'The swan’s tail: idealism in flight and far-carrying vision.',
     Scheat: 'The spring of ideas: independent thought, with practical footing to keep.',
-    Markab: 'The saddle of Pegasus: steadiness under speed; honors that ask for composure.',
+    Markab: 'The saddle of Pegasus: steadiness under speed; honours that ask for composure.',
   },
 
   // The ecliptic reference circle.

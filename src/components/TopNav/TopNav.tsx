@@ -17,7 +17,6 @@ import type { MapState } from '../TimelineHud/TimelineHud';
 import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
-  TIME_OVERLAY_MODES,
   VIEW_LOCK_PARKED_OVERLAYS,
   overlayBlockedFor,
   type OverlayMode,
@@ -1136,10 +1135,7 @@ export function TopNav({
                   <RadioItem
                     label={t('topNav.overlay.none.label')}
                     hint={t('topNav.overlay.none.hint')}
-                    // While a time overlay's bar is up, its drawer's Natal toggle
-                    // owns 'n' (see App's keydown) — drop the badge rather than
-                    // advertise a key that would do something else.
-                    hotkey={TIME_OVERLAY_MODES.has(overlayMode) ? undefined : 'N'}
+                    hotkey="N"
                     checked={overlayMode === 'off' && activeOverlayExt == null}
                     onSelect={() => {
                       // setOverlayMode is the App's combined setter — it clears any

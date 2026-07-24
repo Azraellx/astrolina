@@ -525,9 +525,6 @@ export function TimelineHud({
         placement="top"
         tip={t('settings.natal.title')}
         hint={t('settings.natal.hint')}
-        // 'n' belongs to this toggle while the bar is up (App's keydown shadows
-        // the Overlay-menu None row, whose badge yields for those modes).
-        hotkey="N"
         aria-label={t('settings.natal.title')}
         aria-pressed={showNatal}
         onClick={() => setShowNatal(!showNatal)}
