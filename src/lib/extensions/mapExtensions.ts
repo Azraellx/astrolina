@@ -36,6 +36,16 @@ export interface AllLines {
   overlayLines: FeatureCollection | null;
   overlayParans: FeatureCollection | null;
   overlayLocalSpace: FeatureCollection | null;
+  /** The NATAL-frame auxiliary families, kept alongside the active-frame ones
+   *  above. While an overlay is active those three slots carry the overlay's
+   *  aspect/midpoint and star lines and an empty paran set — the one-frame rule
+   *  — which is right for a consumer showing "what the map is on", and wrong for
+   *  one that has to read the natal promise regardless of what the map is
+   *  showing. Both are now available, and neither has to be recomputed: these
+   *  are the same values the one-frame rule chooses between. */
+  natalAngleLines: FeatureCollection;
+  natalParans: FeatureCollection;
+  natalStarLines: FeatureCollection;
 }
 
 /** A point-and-radius "spotlight" on the linework — a neutral view treatment, not tied to any

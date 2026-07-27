@@ -5,7 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Shareable chart links: the chart's birth data + the current map view, encoded
-// as a compact base64url token in a `?c=` query param. The schema lives HERE —
+// as a compact base64url token in a `#c=` URL fragment. The schema lives HERE —
 // next to the state it serializes — because it drifts with the app's own model;
 // anything downstream should call these functions, never mint tokens itself.
 //
@@ -75,7 +75,7 @@ const b64urlDecode = (s: string) => {
   return new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
 };
 
-/** Encode a share state as the `?c=` token. */
+/** Encode a share state as the `#c=` token. */
 export function encodeShareState(state: ShareState): string {
   const c = state.chart;
   const wire: Wire = {
@@ -100,9 +100,21 @@ export function encodeShareState(state: ShareState): string {
   return b64urlEncode(JSON.stringify(wire));
 }
 
-/** A full shareable URL for the current origin/path. */
+/** A full shareable URL for the current origin/path.
+ *
+ *  The token rides in the FRAGMENT, not the query string, and that is a correctness
+ *  requirement rather than a formatting choice. A fragment is never transmitted: it is
+ *  not in the request line, so it reaches no access log, proxy or CDN along the way, and
+ *  it is stripped from the `Referer` header sent to any third party the recipient
+ *  navigates on to. A query string is in all of them.
+ *
+ *  The token IS the birth details — name, date, time, birthplace and its coordinates —
+ *  so that distinction decides whether sharing a chart hands those details to every host
+ *  the link passes through. Whoever deploys this, and whatever they undertake to their
+ *  own users, the mechanism is what makes the undertaking keepable. Do not move it back
+ *  into the query string. */
 export function buildShareUrl(state: ShareState): string {
-  return `${location.origin}${location.pathname}?${PARAM}=${encodeShareState(state)}`;
+  return `${location.origin}${location.pathname}#${PARAM}=${encodeShareState(state)}`;
 }
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -111,7 +123,7 @@ const inRange = (v: unknown, lo: number, hi: number): v is number =>
 const latOk = (v: unknown) => inRange(v, -90, 90);
 const lngOk = (v: unknown) => inRange(v, -180, 180);
 
-/** Decode a `?c=` token; null on ANY malformed/out-of-range content (fail safe). */
+/** Decode a `#c=` token; null on ANY malformed/out-of-range content (fail safe). */
 export function decodeShareState(raw: string | null | undefined): ShareState | null {
   if (!raw) return null;
   try {
@@ -159,6 +171,20 @@ export function decodeShareState(raw: string | null | undefined): ShareState | n
  */
 export function consumeShareParam(): ShareState | null {
   try {
+    // Current form: the token in the fragment (see buildShareUrl).
+    const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const fromHash = hash.get(PARAM);
+    if (fromHash) {
+      const state = decodeShareState(fromHash);
+      hash.delete(PARAM);
+      const rest = hash.toString();
+      history.replaceState(null, '', `${location.pathname}${location.search}${rest ? `#${rest}` : ''}`);
+      return state;
+    }
+    // Legacy form. Links minted before the token moved are already sent and cannot be
+    // recalled, so the query string is still READ — it is never emitted. Only the half
+    // actually consumed from is rewritten, or a plain "#faq" anchor would come back
+    // as "#faq=".
     const params = new URLSearchParams(location.search);
     const raw = params.get(PARAM);
     if (!raw) return null;

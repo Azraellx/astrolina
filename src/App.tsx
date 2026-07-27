@@ -497,7 +497,7 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 
 export default function App() {
   const { t, labels, fmt } = useT();
-  // A share link (?c=…) restores a chart + view. Consumed exactly once at boot
+  // A share link (#c=…) restores a chart + view. Consumed exactly once at boot
   // (the param is stripped from the address bar); malformed tokens decode to
   // null and the app boots normally. The chart lands in the library like an
   // import, carrying the system 'shared' tag (the red gift) so link-received
@@ -4194,6 +4194,9 @@ export default function App() {
         overlayLines: null,
         overlayParans: null,
         overlayLocalSpace: null,
+        natalAngleLines: EMPTY_FC,
+        natalParans: EMPTY_FC,
+        natalStarLines: EMPTY_FC,
       };
     }
     const effCoordSystem: CoordSystem = lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
@@ -4302,6 +4305,13 @@ export default function App() {
       overlayLines,
       overlayParans,
       overlayLocalSpace,
+      // The natal originals the one-frame rule chose between above, published
+      // rather than discarded: they are already built, and a consumer reading
+      // the natal promise while an overlay is active has no other way back to
+      // them.
+      natalAngleLines,
+      natalParans: allParans,
+      natalStarLines,
     };
   }, [
     current,
@@ -5043,7 +5053,7 @@ export default function App() {
           onToggleOverlay={toggleCaptureOverlay}
           fileName={captureFileName}
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
-          // Share link: the chart + this camera + the pin as a ?c= URL. A composite
+          // Share link: the chart + this camera + the pin as a #c= URL. A composite
           // isn't shareable (its planets are parent midpoints, not a castable
           // moment), so the button hides for one.
           shareLink={

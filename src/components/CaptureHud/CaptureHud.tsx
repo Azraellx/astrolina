@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
+import { downloadBlob } from '../../lib/downloadBlob';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
 import { tierMet, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
@@ -69,17 +70,6 @@ function canShareImageFiles(): boolean {
   } catch {
     return false;
   }
-}
-
-function downloadBlob(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function DownloadIcon() {
@@ -247,7 +237,7 @@ interface CaptureHudProps {
   fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
   onCapture: () => Promise<Blob | null>;
-  /** Build a shareable ?c= URL of the current chart + camera (lib/shareState) —
+  /** Build a shareable #c= URL of the current chart + camera (lib/shareState) —
    *  read lazily on click so it always carries the freshest view. Null hides the
    *  "Copy link" button (e.g. a composite chart, which a link can't recast). */
   shareLink?: (() => string) | null;
@@ -787,7 +777,7 @@ export function CaptureHud({
               <span>{t('captureHud.share.title')}</span>
             </TipBtn>
           )}
-          {/* Copy a shareable ?c= URL of this chart + view (no image involved). */}
+          {/* Copy a shareable #c= URL of this chart + view (no image involved). */}
           {shareLink && (
             <TipBtn
               className={`location-ls-fly capture-hud-btn${linkCopied ? ' is-copied' : ''}`}

@@ -22,6 +22,21 @@
      it (which, when centred, would push their top back under the notch). */
   padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
     max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  /* CLEAR THE LEFT DOCK. The scrim still covers the whole viewport — a modal owns
+     the app while it is up, docked panels included — but the PANEL centres in
+     what is left beside the dock rather than half on top of it, which reads as a
+     rendering fault rather than as focus. `--es-width` is the left-dock registry's
+     widest publisher (lib/leftDock), 0 when nothing is docked, so this is inert
+     for every layout that has no dock.
+     The `min()` is the floor: a dock may legitimately take most of the viewport
+     (it goes full-width on a phone), and padding the panel out of existence
+     would be worse than overlapping. Below the floor the inset simply stops
+     growing and the modal centres over the dock as before. */
+  padding-left: max(
+    20px,
+    env(safe-area-inset-left),
+    min(var(--es-width, 0px), calc(100vw - 460px))
+  );
   /* Fade the scrim in on open (the panel pops via the rule below). Entrance
      only — dismiss stays instant. */
   animation: mb-fade-in var(--dur-move) ease;

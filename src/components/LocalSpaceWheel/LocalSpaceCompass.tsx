@@ -85,10 +85,33 @@ export function LocalSpaceCompass({
   // faint spoke ties each glyph to the rim scale and its inner aspect endpoint.
   const arr = shown.map((p) => ({ name: p.name, off: coords.get(p.name)!.az }));
   arr.sort((a, b) => a.off - b.off);
-  const sep = Math.min(
-    20,
-    Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rPlanets, 1))),
+  // Min angular separation, sized from what actually has to clear rather than
+  // from one ring. Three things are laid out along this circle at three
+  // different radii — the glyph disc, the degree figure, and the arcminute
+  // figure — and the same angle buys progressively LESS arc the further in you
+  // go. Sizing the gap on the glyphs (the outermost, roomiest ring) left the
+  // figures beneath them colliding while the discs looked correctly spaced,
+  // which is why a crowded dial read as broken only in its numbers.
+  //
+  // So each item states the arc IT needs at ITS OWN radius, and the widest wins.
+  // The figures are horizontal text, so their width is the constraint, not their
+  // height: "347°" is far wider than the disc above it.
+  const arcDeg = (px: number, radius: number) => (px * 360) / (2 * Math.PI * Math.max(radius, 1));
+  // ~0.62em per character is a safe upper bound for digits + the degree/prime
+  // marks in the app's face; 4 and 3 characters are the longest either can be.
+  const degWidth = 4 * 9.75 * k * 0.62;
+  const minWidth = 3 * 7.5 * k * 0.62;
+  const rMinutes = rAz - 16 * k - 2;
+  let sep = Math.max(
+    arcDeg(2 * 11 * k + 3 * k, rPlanets), // glyph discs, plus a hairline gap
+    arcDeg(degWidth + 3 * k, rAz),
+    arcDeg(minWidth + 3 * k, rMinutes),
   );
+  // Two ceilings. The first keeps one tight cluster from being flung a third of
+  // the way round the dial; the second keeps the relaxation SATISFIABLE — a
+  // separation the circle cannot fit would simply stack the overflow back on
+  // top of itself, which is the failure this whole pass exists to avoid.
+  sep = Math.min(sep, 20, 340 / Math.max(arr.length, 1));
   relaxRing(arr, sep);
   const displayAz = new Map(arr.map((e) => [e.name, e.off]));
 

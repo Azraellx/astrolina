@@ -22,6 +22,7 @@ import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geo
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
+import { cloneWithInlineStyles, svgToImage } from '../../lib/wheelRaster';
 import { isTouchLayout } from '../../lib/touch';
 import {
   CaptureExtras,
@@ -2913,35 +2914,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           try {
             const wr = liveWheel.getBoundingClientRect();
             if (wr.width > 0 && wr.height > 0) {
-              const clone = liveWheel.cloneNode(true) as SVGSVGElement;
-              const liveEls = [liveWheel, ...liveWheel.querySelectorAll('*')];
-              const cloneEls = [clone, ...clone.querySelectorAll('*')];
-              const WHEEL_STYLE_PROPS = [
-                'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity',
-                'stroke-dasharray', 'stroke-linejoin', 'stroke-linecap', 'opacity', 'color',
-                'font-size', 'font-weight', 'font-style', 'font-family', 'letter-spacing',
-                'text-anchor', 'dominant-baseline', 'paint-order', 'visibility',
-              ];
-              const n = Math.min(liveEls.length, cloneEls.length);
-              for (let i = 0; i < n; i++) {
-                const cs = getComputedStyle(liveEls[i] as Element);
-                const st = (cloneEls[i] as SVGElement).style;
-                for (const pr of WHEEL_STYLE_PROPS) st.setProperty(pr, cs.getPropertyValue(pr));
-              }
-              // Glyphs (planet + sign) are re-stamped from the LIVE DOM below — drop them from
-              // the clone so they don't double-draw (and the clone needs no embedded font).
-              clone.querySelectorAll('.astro-glyph').forEach((g) => g.remove());
-              clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-              clone.setAttribute('width', String(wr.width));
-              clone.setAttribute('height', String(wr.height));
-              const svgStr = new XMLSerializer().serializeToString(clone);
-              const wheelImg = new Image();
-              await new Promise<void>((resolve) => {
-                wheelImg.onload = () => resolve();
-                wheelImg.onerror = () => resolve();
-                wheelImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
-              });
-              if (wheelImg.width > 0) {
+              // Style-inlining + glyph-stripping live in lib/wheelRaster, shared
+              // with the standalone wheel rasteriser — the two subtleties (CSS
+              // vars don't survive serialisation, the symbol font isn't loaded
+              // in an <img> document) are solved in one place. Placement stays
+              // here because only this path composites into a larger frame; the
+              // glyphs are re-stamped with the rest of the frame's below.
+              const clone = cloneWithInlineStyles(liveWheel as SVGSVGElement);
+              const wheelImg = await svgToImage(clone, wr.width, wr.height);
+              if (wheelImg) {
                 ctx.drawImage(
                   wheelImg,
                   (wr.left - frameRect.left) * scale,
