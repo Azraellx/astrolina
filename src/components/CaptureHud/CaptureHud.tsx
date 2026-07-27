@@ -72,6 +72,16 @@ function canShareImageFiles(): boolean {
   }
 }
 
+/** Report why an export failed. The banner can only say "try again"; the reason
+ *  belongs somewhere it can be read, because every one of these actions runs
+ *  async off a click and there is no other trace of it. A swallowed catch here
+ *  has already once made a missing dependency look like a mysterious dud
+ *  button. `which` names the action so a report says which of the four. */
+function reportCaptureFailure(which: string, cause: unknown): void {
+  // eslint-disable-next-line no-console
+  console.error(`[capture] ${which} failed`, cause);
+}
+
 function DownloadIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -370,11 +380,13 @@ export function CaptureHud({
     try {
       const blob = await onCapture();
       if (!blob) {
+        reportCaptureFailure('download', 'the frame produced no image');
         setFailed(true);
         return;
       }
       downloadBlob(blob, fileName);
-    } catch {
+    } catch (e) {
+      reportCaptureFailure('download', e);
       setFailed(true);
     } finally {
       setBusy(false);
@@ -403,12 +415,14 @@ export function CaptureHud({
         // No image-clipboard support → fall back to a download.
         const blob = await onCapture();
         if (!blob) {
+          reportCaptureFailure('copy', 'the frame produced no image');
           setFailed(true);
           return;
         }
         downloadBlob(blob, fileName);
       }
-    } catch {
+    } catch (e) {
+      reportCaptureFailure('copy', e);
       setFailed(true);
     } finally {
       setBusy(false);
@@ -472,6 +486,7 @@ export function CaptureHud({
     try {
       const blob = await onCapture();
       if (!blob) {
+        reportCaptureFailure('share', 'the frame produced no image');
         setFailed(true);
         return;
       }
@@ -497,7 +512,10 @@ export function CaptureHud({
       }
     } catch (e) {
       // Dismissing the share sheet rejects with AbortError — that's a cancel, not a failure.
-      if ((e as { name?: string } | null)?.name !== 'AbortError') setFailed(true);
+      if ((e as { name?: string } | null)?.name !== 'AbortError') {
+        reportCaptureFailure('share', e);
+        setFailed(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -520,13 +538,18 @@ export function CaptureHud({
     try {
       const blob = await onCapture();
       if (!blob) {
+        // The frame itself produced nothing — the destination never saw it, and
+        // saying so is the difference between debugging the map and debugging
+        // whatever registered the sink.
+        reportCaptureFailure(`sink:${s.id} (frame)`, 'the frame produced no image');
         setFailed(true);
         return;
       }
       await s.onCapture(blob);
       setSinkDone(true);
       setTimeout(() => setSinkDone(false), 1800);
-    } catch {
+    } catch (e) {
+      reportCaptureFailure(`sink:${s.id}`, e);
       setFailed(true);
     } finally {
       setBusy(false);
@@ -588,9 +611,9 @@ export function CaptureHud({
             below the gated rung unless the build nudges it. */}
         {(transparentUnlocked || transparentNudge) && (
           <TipBtn
-            className={`location-ls-toggle ${effTransparent ? 'on' : 'off'}${
-              localSpaceActive ? '' : ' disabled'
-            }`}
+            className={`location-ls-toggle capture-hud-transparent ${
+              effTransparent ? 'on' : 'off'
+            }${localSpaceActive ? '' : ' disabled'}`}
             onClick={transparentClick}
             ariaPressed={effTransparent}
             ariaDisabled={!localSpaceActive}

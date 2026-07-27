@@ -2540,6 +2540,34 @@ const CAPTURE_PNG_XMP =
   '</rdf:Description></rdf:RDF></x:xmpmeta>' +
   '<?xpacket end="r"?>';
 
+/** Can this source still be read back after being drawn?
+ *
+ *  Canvas TAINT is only observable at READ time: drawing a cross-origin source
+ *  succeeds silently, and the SecurityError surfaces much later at toBlob — by
+ *  which point the composite is finished and there is nothing left to attribute
+ *  it to. That is why a composite whose parts are documented as best-effort has
+ *  to probe each foreign source BEFORE it contaminates the destination, rather
+ *  than catching a failure afterwards: afterwards is too late to drop the part
+ *  that caused it.
+ *
+ *  Works for a WebGL canvas too, which cannot be probed directly (it already
+ *  holds a gl context, so getContext('2d') returns null) — drawing one pixel of
+ *  it into a scratch 2D canvas asks the same question. */
+function canExport(src: CanvasImageSource): boolean {
+  try {
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    const p = probe.getContext('2d');
+    if (!p) return false;
+    p.drawImage(src, 0, 0, 1, 1);
+    p.getImageData(0, 0, 1, 1);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   angleLines,
@@ -2745,6 +2773,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           );
           ctx.clip();
         }
+        if (!canExport(mapCanvas)) {
+          console.error(
+            '[capture] the basemap canvas cannot be exported (cross-origin content was drawn ' +
+              'into it without CORS). Every export path fails on this, not just one — check the ' +
+              'active basemap style: its sprite and raster sources must send ' +
+              'access-control-allow-origin.',
+          );
+          return null;
+        }
         ctx.drawImage(mapCanvas, mapX - 1, mapY - 1, mapW + 2, mapH + 2);
         if (doMask) ctx.restore();
       }
@@ -2801,14 +2838,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               !el.closest?.('.maplibregl-popup')
             )
               return true;
-            // The location pin (a MapLibre marker SVG) is RE-DRAWN on the 2D canvas after
-            // this pass — keep its whole subtree out of html2canvas, because a marker in the
-            // tree can make the entire overlay pass fail (→ map-only "broken" export). Edge
-            // labels stay (they're plain DOM and composite fine).
+            // Pin markers (MapLibre marker SVGs) are RE-DRAWN on the 2D canvas after this
+            // pass — keep their whole subtrees out of html2canvas, because a marker in the
+            // tree can make the entire overlay pass fail (→ map-only "broken" export). A
+            // marker carrying an <image> is a second, sharper reason: html2canvas would have
+            // to resolve that href, and a single unresolvable one taints its canvas — which
+            // does not surface until toBlob, far too late to attribute. Edge labels stay
+            // (they're plain DOM and composite fine).
             if (
               cl?.contains('map-pin') ||
               el.closest?.('.map-pin') ||
-              (cl?.contains('maplibregl-marker') && !!el.querySelector?.('.map-pin'))
+              cl?.contains('saved-pin-marker') ||
+              el.closest?.('.saved-pin-marker') ||
+              (cl?.contains('maplibregl-marker') &&
+                !!el.querySelector?.('.map-pin, .saved-pin-marker'))
             )
               return true;
             // The chart WHEEL (Details ▸ Wheel) is colour-styled via CSS vars + the bundled
@@ -2893,7 +2936,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             }
           },
         });
-        ctx.drawImage(overlay, 0, 0, W, H);
+        if (canExport(overlay)) {
+          ctx.drawImage(overlay, 0, 0, W, H);
+        } else {
+          // Best-effort, as documented above — but taint cannot be caught by the
+          // try/catch around this block, because it does not throw until toBlob.
+          // Dropping the layer keeps the promise the comment makes.
+          console.error(
+            '[capture] the DOM overlay layer cannot be exported (an image inside the frame ' +
+              'is cross-origin without CORS) — exporting the map without it. The culprit is an ' +
+              '<img>/background-image rendered inside the capture frame.',
+          );
+        }
 
         // Re-stamp the badge symbol glyphs (hidden in the clone above) at their real
         // on-screen positions. Read from the LIVE badges (the clone's hidden state
@@ -2986,21 +3040,50 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // The transparent (local-space) export omits the pin entirely: the rose's lines
         // already converge on the origin, and the overlay is meant to sit on someone
         // else's backdrop — a teardrop marker there is clutter, not information.
-        const pinBody = lsTransparentRef.current
-          ? null
-          : frameEl.querySelector('.map-pin-body');
-        const pinShape = pinBody?.querySelector('.map-pin-shape');
-        if (pinBody && pinShape) {
-          const br = pinBody.getBoundingClientRect();
-          if (br.width > 0 && br.height > 0) {
-            const cs = getComputedStyle(pinShape);
-            const dot = pinBody.querySelector('.map-pin-dot');
-            const s = (br.width / 24) * scale; // the pin SVG viewBox is 0 0 24 24
+        if (!lsTransparentRef.current) {
+          // Same-origin emblem art, loaded once per capture however many pins share a
+          // flag. Same-origin, so this cannot taint what the markers themselves might
+          // have — which is the whole reason they are drawn here instead of composited.
+          // A plain record, not a `new Map()`: `Map` is this component's own name in
+          // this file, so the global constructor is shadowed here.
+          const emblems: Record<string, Promise<HTMLImageElement | null>> = {};
+          const emblem = (url: string): Promise<HTMLImageElement | null> => {
+            const hit = emblems[url];
+            if (hit) return hit;
+            const load = new Promise<HTMLImageElement | null>((resolve) => {
+              const img = document.createElement('img');
+              img.onload = () => resolve(img);
+              img.onerror = () => resolve(null);
+              img.src = url;
+            });
+            emblems[url] = load;
+            return load;
+          };
+
+          /** One teardrop marker, in its live on-screen state colours. The SVG viewBox is
+           *  0 0 24 24 for every pin kind, so one routine draws them all. */
+          const drawPin = async (body: Element, shape: Element) => {
+            const br = body.getBoundingClientRect();
+            if (br.width <= 0 || br.height <= 0) return;
+            // In frame, or not drawn at all. The canvas would clip a stray pin anyway,
+            // but a marker parked off-viewport by MapLibre still has a rect, and half a
+            // teardrop bleeding in from outside the composition is not what was framed.
+            if (
+              br.right <= frameRect.left ||
+              br.left >= frameRect.right ||
+              br.bottom <= frameRect.top ||
+              br.top >= frameRect.bottom
+            )
+              return;
+            const cs = getComputedStyle(shape);
+            const dot = body.querySelector('.map-pin-dot, .saved-pin-dot');
+            const flag = body.querySelector<SVGImageElement>('.saved-pin-flag');
+            const ring = body.querySelector('.saved-pin-flag-ring');
+            const href = flag?.getAttribute('href') ?? '';
+            const art = href ? await emblem(href) : null;
+            const s = (br.width / 24) * scale;
             ctx.save();
-            ctx.translate(
-              (br.left - frameRect.left) * scale,
-              (br.top - frameRect.top) * scale,
-            );
+            ctx.translate((br.left - frameRect.left) * scale, (br.top - frameRect.top) * scale);
             ctx.scale(s, s);
             const teardrop = new Path2D('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z');
             ctx.fillStyle = cs.fill;
@@ -3009,12 +3092,36 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ctx.lineWidth = parseFloat(cs.strokeWidth) || 1.75;
             ctx.strokeStyle = cs.stroke;
             ctx.stroke(teardrop);
-            const hole = new Path2D();
-            hole.arc(12, 10, 3, 0, Math.PI * 2);
-            ctx.fillStyle = dot ? getComputedStyle(dot).fill : cs.stroke;
-            ctx.fill(hole);
+            if (art) {
+              // The flag art is already circle-masked, so it seats straight into the
+              // slot the centre dot would occupy — same geometry as the live marker.
+              ctx.drawImage(art, 6.5, 4.5, 11, 11);
+              if (ring) {
+                const rs = getComputedStyle(ring);
+                ctx.beginPath();
+                ctx.arc(12, 10, 5.9, 0, Math.PI * 2);
+                ctx.lineWidth = parseFloat(rs.strokeWidth) || 1;
+                ctx.strokeStyle = rs.stroke;
+                ctx.stroke();
+              }
+            } else {
+              const hole = new Path2D();
+              hole.arc(12, 10, 3, 0, Math.PI * 2);
+              ctx.fillStyle = dot ? getComputedStyle(dot).fill : cs.stroke;
+              ctx.fill(hole);
+            }
             ctx.restore();
+          };
+
+          // Saved pins first, the active pin last — it is the one being composed
+          // around, so it wins any overlap.
+          for (const body of frameEl.querySelectorAll('.saved-pin-body')) {
+            const shape = body.querySelector('.saved-pin-shape');
+            if (shape) await drawPin(body, shape);
           }
+          const pinBody = frameEl.querySelector('.map-pin-body');
+          const pinShape = pinBody?.querySelector('.map-pin-shape');
+          if (pinBody && pinShape) await drawPin(pinBody, pinShape);
         }
       } catch (err) {
         // Overlay compositing is best-effort — a failure still yields the map image.

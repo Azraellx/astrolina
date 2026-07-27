@@ -189,6 +189,17 @@ export interface MapExtensionContext {
   /** The ids of the tool extensions currently OPEN — the read half of
    *  {@link openTool}, mirroring {@link openExtensionIds}. */
   openToolIds: ReadonlySet<string>;
+  /** The BUILT-IN map tool currently armed, or 'off'. The read half of
+   *  {@link openCapture} and the built-in twin of {@link openToolIds}, which
+   *  only carries registered tool extensions.
+   *
+   *  A docked surface that shares the viewport can use it to stand down while a
+   *  tool owns the map — most of these tools are about composing or measuring
+   *  the map itself, and on a small screen a wide dock leaves too little of it
+   *  to work with. Standing down is a matter of hiding, not unmounting: a
+   *  surface that unmounts also withdraws whatever it registered (a capture
+   *  destination, an overlay), which is the opposite of what yielding means. */
+  mapTool: 'off' | 'measure' | 'slide' | 'capture';
   /** Close a tool extension by id (no-op unless open) — the inverse of
    *  {@link openTool}, e.g. releasing a viewport-owning tool before opening a
    *  map window it parks. */

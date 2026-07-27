@@ -79,6 +79,15 @@
   white-space: nowrap;
 }
 
+/* The Transparent toggle stands alone above the details section rather than in the
+   half-width grid, so it is not squeezed like the toggles there and reads at the size
+   the app gives a standalone section switch — the same 13.5px its sibling elsewhere
+   uses. Its own class, not a wider selector: the grid's toggles are deliberately
+   smaller and must stay that way. */
+.capture-hud-transparent .location-ls-name {
+  font-size: 13.5px;
+}
+
 /* Aspect presets: three equal columns (the shared .location-ls-seg is sized for two). */
 .capture-hud-seg {
   display: grid;

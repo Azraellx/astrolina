@@ -4552,6 +4552,7 @@ export default function App() {
       viewFlags: { guides: showGuides, info: showInfo },
       setViewFlag,
       openToolIds: openTools,
+      mapTool,
       closeTool: closeToolById,
     }),
     [
@@ -4599,6 +4600,7 @@ export default function App() {
       showInfo,
       setViewFlag,
       openTools,
+      mapTool,
       closeToolById,
     ],
   );
