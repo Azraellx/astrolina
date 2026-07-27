@@ -47,7 +47,7 @@ import {
   type DistanceUnit,
 } from '../../lib/overlayPrefs';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
-import { planTierFor, tierMet, tierLabel, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
+import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import {
@@ -259,7 +259,10 @@ function ChoiceTip({
   // wise hang off it. (Hook first: it must run on every render, tip or no tip.)
   const cardRef = useTipEdgeNudge<HTMLSpanElement>(pos);
   if (!pos) return null;
-  const hasHeadlineExtras = hotkey != null || advanced || unavailable;
+  // Derived ONCE: the badge policy can suppress the tag, and a headline row laid out for a
+  // tag that then doesn't render would be an empty row.
+  const advTag = advanced && shouldShowTierBadge('adv');
+  const hasHeadlineExtras = hotkey != null || advTag || unavailable;
   return createPortal(
     <span
       ref={cardRef}
@@ -274,7 +277,7 @@ function ChoiceTip({
         // (.ui-tip-adv / .ui-tip-hotkey, see HoverTip.css); the hint wraps below.
         <span className="ui-tip-headline">
           <span className="ui-tip-title">{title}</span>
-          {advanced && <span className="ui-tip-adv">ADV</span>}
+          {advTag && <span className="ui-tip-adv">ADV</span>}
           {unavailable ? (
             <span className="ui-hover">N/A</span>
           ) : (
@@ -617,7 +620,7 @@ export function HintMenu<V extends string>({
         </span>
         {/* The nav menus' tier badge, on the trigger — nothing for the baseline
             tier, or a gated tier whose downstream label is unset. */}
-        {tier && tier !== 'new' && tierLabel(tier) && (
+        {tier && tier !== 'new' && tierLabel(tier) && shouldShowTierBadge(tier) && (
           <span className={`navmenu-tier tier-${tier}`}>{tierLabel(tier)}</span>
         )}
         <span className="thud-select-caret" aria-hidden="true">
@@ -1044,8 +1047,9 @@ export function Sidebar({
   const planTier = planTierFor(showAdvancedTab);
   const advUnlocked = tierMet(planTier, 'adv');
   const gatedUnlocked = tierMet(planTier, 'gated');
-  // The gated rung's compact badge — '' in builds that set no label, so guard renders.
-  const gatedBadge = tierLabel('gated');
+  // The gated rung's compact badge — '' in builds that set no label, or when the badge
+  // policy suppresses this rung, so guard renders.
+  const gatedBadge = shouldShowTierBadge('gated') ? tierLabel('gated') : '';
 
   // Why the Part of Fortune filter is unavailable right now — or undefined when
   // it works. A Lot is a point on the ecliptic with no position in the sky, so

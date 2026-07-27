@@ -18,7 +18,7 @@ import {
 } from './useHoverTip';
 import { glyphify } from './glyphify';
 import { tipMaxWidthStyle } from './tipWidth';
-import { tierLabel } from '../../lib/plan';
+import { tierLabel, shouldShowTierBadge } from '../../lib/plan';
 import './HoverTip.css';
 
 // The shared .ui-tip card (chrome from index.css), portaled to <body> so no
@@ -68,8 +68,10 @@ export function HoverTip({
         <span className={`ui-tip-title${hasHint ? '' : ' ui-tip-title-plain'}`}>
           {title}
         </span>
-        {advanced && <span className="ui-tip-adv">ADV</span>}
-        {gated && <span className="ui-tip-gated">{tierLabel('gated')}</span>}
+        {advanced && shouldShowTierBadge('adv') && <span className="ui-tip-adv">ADV</span>}
+        {gated && shouldShowTierBadge('gated') && (
+          <span className="ui-tip-gated">{tierLabel('gated')}</span>
+        )}
         {hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>}
       </span>
       {/* String hints get their astro symbols re-rendered in the glyph font. */}

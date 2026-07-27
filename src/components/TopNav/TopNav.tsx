@@ -28,7 +28,7 @@ import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
 import { usePinCelebrations } from '../../lib/extensions/pinAdornment';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { isViewRowClaimed } from '../../lib/extensions/viewRowClaims';
-import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
+import { type PlanTier, tierMet, tierLabel, shouldShowTierBadge, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
@@ -492,7 +492,7 @@ function ViewIcon() {
 // src/lib/plan.ts. It right-aligns and sits left of any hotkey key; NEW (or a gated tier
 // whose downstream label is unset) renders nothing.
 function TierBadge({ tier }: { tier?: PlanTier }) {
-  if (!tier || tier === 'new') return null;
+  if (!tier || tier === 'new' || !shouldShowTierBadge(tier)) return null;
   const label = tierLabel(tier);
   return label ? <span className={`navmenu-tier tier-${tier}`}>{label}</span> : null;
 }

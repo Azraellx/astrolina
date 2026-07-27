@@ -93,6 +93,26 @@ export function tierName(tier: PlanTier): string {
   return NAMES[tier];
 }
 
+// Tier BADGE policy — whether the small tier marker (a menu row's badge, a tip's tag) should be
+// drawn for a rung. This is a separate question from whether the ITEM shows: the badge answers
+// "which rung does this belong to", which a viewer who has already climbed that rung does not
+// need told. But a badge can also be doing a second job — explaining a feature's absence to
+// someone other than the user, on a shared screen or in a screenshot — and that job survives
+// reaching the rung. Which rungs want which treatment is a product judgement, so the core states
+// no preference: every badge shows unless a build narrows it.
+let resolveBadge: (tier: PlanTier) => boolean = () => true;
+
+/** Install the tier-badge policy (downstream builds only). Given the tier a badge would
+ *  announce, return false to omit it. Default: show every badge. */
+export function setTierBadgeResolver(fn: (tier: PlanTier) => boolean): void {
+  resolveBadge = fn;
+}
+
+/** Whether a tier badge for this rung should be drawn (menu-row badge, or a tip's tag). */
+export function shouldShowTierBadge(tier: PlanTier): boolean {
+  return resolveBadge(tier);
+}
+
 // Nudge/teaser policy — whether an item the user has NOT reached should still SHOW (disabled, as
 // an upgrade teaser) instead of hiding. Consulted ONLY by the nav menus (and, downstream, a sync
 // badge); every other tier gate keeps hiding (no teaser). The open core installs none, so it
