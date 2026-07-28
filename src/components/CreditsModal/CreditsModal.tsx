@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react';
 import { useT } from '../../i18n';
+import { TipSpan } from '../ui/HoverTip';
 import { getCreditsFooter, getCreditsItems } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
 
@@ -160,9 +161,26 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
       >
         <header>
           <h2 id="credits-title">{t('creditsModal.title')}</h2>
-          <button type="button" className="close" onClick={onClose} aria-label={t('common.close')}>
-            ×
-          </button>
+          <div className="credits-header-actions">
+            {/* A thank-you that keeps to itself: inert, hover (or tap) reveals it.
+                It sits in the credits because that is what this dialog is for —
+                naming the work behind the work. */}
+            <TipSpan
+              className="credits-thanks"
+              tip={t('creditsModal.thanks.tip')}
+              hint={t('creditsModal.thanks.hint')}
+              tapReveal
+              role="img"
+              aria-label={t('creditsModal.thanks.hint')}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 21s-7.5-4.7-9.6-9.2A5.4 5.4 0 0 1 12 6.3a5.4 5.4 0 0 1 9.6 5.5C19.5 16.3 12 21 12 21Z" />
+              </svg>
+            </TipSpan>
+            <button type="button" className="close" onClick={onClose} aria-label={t('common.close')}>
+              ×
+            </button>
+          </div>
         </header>
 
         <p className="credits-intro">{t('creditsModal.intro')}</p>

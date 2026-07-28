@@ -295,7 +295,7 @@ export function PlaceSearchField({
   // startup (before first render), so a plain read is stable.
   const builtinLabel = S.scopeLabel;
   const kindKey = kinds ? kinds.join(',') : '';
-  const scopes = useMemo(
+  const registered = useMemo(
     () => [
       makeBuiltinProvider(
         kindKey ? (kindKey.split(',') as PlaceKind[]) : undefined,
@@ -306,8 +306,17 @@ export function PlaceSearchField({
     ],
     [kindKey, onlineFallback, builtinLabel],
   );
+  // Gates are read every render — a provider's answer can change under the user
+  // (access granted, a session ending). A scope whose gate hides it is dropped
+  // HERE, before anything downstream can render it, select it or cycle onto it;
+  // `withheld` only records that it happened, so the row below can still say
+  // what the remaining scope is. The built-in scope has no gate, so at least one
+  // always survives.
+  const allGates = registered.map((p) => p.gate?.() ?? null);
+  const scopes = registered.filter((_, i) => !allGates[i]?.hidden);
+  const gates = allGates.filter((g) => !g?.hidden);
+  const withheld = registered.length - scopes.length;
   const scope = scopes.find((p) => p.id === scopeId) ?? scopes[0];
-  const gates = scopes.map((p) => p.gate?.() ?? null);
   const gate: PlaceSearchGate | null = gates[scopes.indexOf(scope)] ?? null;
   const locked = !!gate?.locked;
   // A tapped-but-locked chip explains itself instead of switching scope.
@@ -579,6 +588,16 @@ export function PlaceSearchField({
           autoFocus={autoFocus}
         />
         {searching && <span className="psf-spinner" aria-hidden="true" />}
+        {/* Only one scope left, and only because the others were withheld: keep
+            its chip on screen as a plain tag rather than a control. Nothing here
+            is switchable, but "Place" still answers the question the empty box
+            raises — what kind of thing am I typing? Nothing was registered in
+            the first place ⇒ no row at all, as before. */}
+        {scopes.length === 1 && withheld > 0 && (
+          <div className="psf-scopes">
+            <span className="psf-scope psf-scope-static is-on">{scope.label}</span>
+          </div>
+        )}
         {scopes.length > 1 && narrowScopes && (
           <div className="psf-scopes">
             <button

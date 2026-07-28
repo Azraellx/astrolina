@@ -188,6 +188,11 @@ to relicense the project in the future).
   directions) are in
   [`docs/calculation-methods.md`](docs/calculation-methods.md).
 
+## Special thanks
+
+To **Shae Freeman** and **Cindy McKean**, professional astrologers whose guidance
+and generosity helped make this project possible — thank you both.
+
 ## Contact
 
 For licensing or general inquiries please email [contact@astrolina.org](mailto:contact@astrolina.org).

@@ -123,6 +123,18 @@
 .psf-scope.is-locked {
   color: var(--text-faint);
 }
+/* The lone remaining scope once the others are withheld: a label, not a control.
+   Takes the active chip's look (it IS the active scope) but none of its
+   affordances — no pointer, no hover lift, no press. */
+.psf-scope-static {
+  cursor: default;
+}
+.psf-scope-static:hover {
+  color: var(--text-strong);
+}
+.psf-scope-static:active {
+  scale: 1;
+}
 
 /* The narrow-host condensation: one chip, the ACTIVE scope's name, tapping
    cycles to the next open scope (a locked next explains itself under the

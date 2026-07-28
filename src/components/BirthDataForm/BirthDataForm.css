@@ -399,6 +399,18 @@
   letter-spacing: 0;
 }
 
+/* What the field is for, under whichever state line is showing. Same treatment
+   as .time-unknown-note — the form's other "here's what this actually does"
+   line — so the two read as one kind of remark. */
+.home-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .resolved {
   margin: 4px 0 0 0;
   font-size: 11px;

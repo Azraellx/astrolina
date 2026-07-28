@@ -237,6 +237,7 @@ function ChoiceTip({
   note,
   hotkey,
   advanced,
+  gated,
   unavailable,
 }: {
   pos: { left: number; top: number } | null;
@@ -249,6 +250,10 @@ function ChoiceTip({
   hotkey?: ReactNode;
   /** Show the "ADV" tag on the headline — marks the control as Advanced-only. */
   advanced?: boolean;
+  /** Show the gated rung's tag (the label a downstream build gives its top rung)
+   *  on the headline — the same mark the shared HoverTip puts on a gated control,
+   *  so a row badged in the sidebar is badged in its tip too. */
+  gated?: boolean;
   /** The control can't be clicked under the current settings: swap the hotkey
    *  chip for the grey .ui-hover badge. A key pill on a control that won't
    *  respond would be a lie, so the two never show together. */
@@ -262,7 +267,10 @@ function ChoiceTip({
   // Derived ONCE: the badge policy can suppress the tag, and a headline row laid out for a
   // tag that then doesn't render would be an empty row.
   const advTag = advanced && shouldShowTierBadge('adv');
-  const hasHeadlineExtras = hotkey != null || advTag || unavailable;
+  // Same policy check for the paid rung, plus the LABEL: a build that names no
+  // gated tier would otherwise lay out a headline row around an empty tag.
+  const gatedTag = gated && shouldShowTierBadge('gated') ? tierLabel('gated') : '';
+  const hasHeadlineExtras = hotkey != null || advTag || !!gatedTag || unavailable;
   return createPortal(
     <span
       ref={cardRef}
@@ -278,6 +286,7 @@ function ChoiceTip({
         <span className="ui-tip-headline">
           <span className="ui-tip-title">{title}</span>
           {advTag && <span className="ui-tip-adv">ADV</span>}
+          {gatedTag && <span className="ui-tip-gated">{gatedTag}</span>}
           {unavailable ? (
             <span className="ui-hover">N/A</span>
           ) : (
@@ -308,6 +317,7 @@ function TipToggle({
   disabled = false,
   disabledHint,
   advanced,
+  gated,
   children,
 }: {
   className: string;
@@ -328,6 +338,9 @@ function TipToggle({
   disabledHint?: string;
   /** Tag the tip's headline "ADV" (the control needs Advanced reading mode). */
   advanced?: boolean;
+  /** Tag the tip's headline with the gated rung's label (the control is on the
+   *  paid rung). Pair it with the row's own badge so the two always agree. */
+  gated?: boolean;
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
@@ -356,6 +369,7 @@ function TipToggle({
         note={disabled ? disabledHint : undefined}
         hotkey={hotkey}
         advanced={advanced}
+        gated={gated}
         unavailable={disabled}
       />
     </li>
@@ -1586,6 +1600,9 @@ export function Sidebar({
                 ariaPressed={gatedUnlocked && aspectHudOpen}
                 title={t('settings.aspectLines.openHud')}
                 hint={t('settings.aspectLines.openHudHint')}
+                // The row already wears the rung's badge; the tip carries it too,
+                // like every other gated control's tip does.
+                gated
               >
                 <span className="calc-menu-value">{t('settings.aspectLines.openHud')}</span>
                 {gatedBadge && (

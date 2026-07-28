@@ -53,12 +53,18 @@
   max-width: calc(100vw - 32px);
 }
 
-/* Resize toggle in the wheel's top-right corner. */
-.chart-wheel-resize {
+/* The wheel's controls, in its top-right corner. Resize is always there and keeps
+   the exact corner it has always held; the sidebar control joins it on the left
+   only while the wheel is enlarged, so nothing familiar moves either way. */
+.chart-wheel-controls {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.chart-wheel-ctl {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,7 +78,7 @@
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.chart-wheel-resize:hover {
+.chart-wheel-ctl:hover {
   background: rgba(var(--tint), 0.12);
   border-color: rgba(var(--tint), 0.26);
   color: var(--text-strong);

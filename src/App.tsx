@@ -5219,6 +5219,11 @@ export default function App() {
             visiblePlanets={visiblePlanets}
             noChart={noChart}
             planetsOnly={noTime}
+            // Second doorway to the sidebar wheel, beside the minimap's resize
+            // control: the bar's toggle is easy to miss, and a small wheel gives
+            // no hint that a fuller one exists. Opens only — the minimap is
+            // replaced by the sidebar, so there is nothing here to close.
+            onExpand={() => setWheelExpanded(true)}
           />
         )
       )}

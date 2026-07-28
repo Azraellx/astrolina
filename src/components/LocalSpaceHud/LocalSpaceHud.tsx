@@ -277,7 +277,7 @@ export function LocalSpaceHud({
               value={chartHome}
               onChange={setChartHome}
               strings={{
-                unset: t('chartForm.homeUnset'),
+                unset: t('chartForm.homeSameAsBirth'),
                 set: t('chartForm.homeSet'),
                 change: t('chartForm.homeChange'),
                 cancel: t('chartForm.homeCancel'),

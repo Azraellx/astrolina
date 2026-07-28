@@ -10,6 +10,12 @@
 // language-neutral and are NOT in this catalog.
 export const creditsModal = {
   title: 'Credits & licenses',
+  // The heart beside the dialog's close ✕ — a thank-you that reveals itself on hover.
+  // The two names are proper nouns and stay as written in every language.
+  thanks: {
+    tip: 'Special thanks',
+    hint: 'To Shae Freeman and Cindy McKean, professional astrologers whose guidance and generosity helped make this project possible.',
+  },
   intro:
     'AstroLina is built on open data and open-source software. The full license texts are available in the project repository.',
   disclaimer: {

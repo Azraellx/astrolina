@@ -74,7 +74,22 @@ export const chartForm = {
   // birthplace". Worth setting on anyone who has moved: the direction-based
   // views can then radiate from where they actually live.
   home: 'Lives now',
-  homeUnset: 'Same as birthplace',
+  // Said whenever this tab is open, because the tab row makes the two places look
+  // like peers and a birthplace IS chart-determining input — so the question this
+  // field raises is "will this move my chart?". Answer it before it is asked, and
+  // in terms of what the field is FOR. Deliberately names no view: this is read by
+  // people who have reached none of them yet.
+  homeHint:
+    'Nothing here changes the chart — that’s the birth data’s job. This is the starting point for views that measure direction from where someone lives now.',
+  // Was "Same as birthplace", which said the two were interchangeable inputs —
+  // the very reading the hint above exists to prevent. States the fallback
+  // without implying the places are the same kind of thing.
+  homeUnset: 'Not set — the birthplace is used instead.',
+  // The same fact as a VALUE, for the inline home editor's value slot (which
+  // reads "Home: <value> [Set…]" — a sentence would not fit there, and that
+  // surface is already explicitly about which point the bearings radiate from,
+  // so it never invites the confusion the form's tabs do).
+  homeSameAsBirth: 'Same as birthplace',
   homeSet: 'Set…',
   homeChange: 'Change',
   homeCancel: 'Cancel',

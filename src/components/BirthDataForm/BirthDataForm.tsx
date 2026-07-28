@@ -584,17 +584,23 @@ export function BirthDataFields({
           {placeTarget === 'birth' && selectedPlace && (
             <p className="resolved">{t('chartForm.resolved', { label: selectedPlace.label })}</p>
           )}
-          {placeTarget === 'home' &&
-            (home ? (
-              <p className="resolved home-resolved">
-                {t('chartForm.resolved', { label: home.label })}
-                <button type="button" className="coord-edit-link" onClick={() => setHome(null)}>
-                  {t('chartForm.homeClear')}
-                </button>
-              </p>
-            ) : (
-              <p className="home-unset-note">{t('chartForm.homeUnset')}</p>
-            ))}
+          {placeTarget === 'home' && (
+            <>
+              {home ? (
+                <p className="resolved home-resolved">
+                  {t('chartForm.resolved', { label: home.label })}
+                  <button type="button" className="coord-edit-link" onClick={() => setHome(null)}>
+                    {t('chartForm.homeClear')}
+                  </button>
+                </p>
+              ) : (
+                <p className="home-unset-note">{t('chartForm.homeUnset')}</p>
+              )}
+              {/* Trails the value, set or not: the tabs put this beside the
+                  birthplace as an equal, so say plainly that it isn't one. */}
+              <p className="home-hint">{t('chartForm.homeHint')}</p>
+            </>
+          )}
         </div>
 
         {/* Time zone: locked until a location is set, then defaults to the zone

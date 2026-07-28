@@ -8,7 +8,7 @@ import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
 import { ARIES_FRAME, WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { NoChartWheel } from '../Wheel/NoChartWheel';
-import { HoverTip } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import './ChartWheel.css';
@@ -36,6 +36,9 @@ interface ChartWheelProps {
    *  read by sign — render the planets-only wheel on the neutral Aries frame
    *  instead of the no-chart placeholder. */
   planetsOnly?: boolean;
+  /** Open the expanded sidebar wheel. Omit it and that control simply isn't
+   *  rendered — the minimap stays a self-contained readout. */
+  onExpand?: () => void;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
@@ -62,6 +65,7 @@ export function ChartWheel({
   visiblePlanets,
   noChart = false,
   planetsOnly = false,
+  onExpand,
 }: ChartWheelProps) {
   const { t } = useT();
   const [enlarged, setEnlarged] = useState(false);
@@ -82,11 +86,44 @@ export function ChartWheel({
   return (
     <aside className={`chart-wheel ${wheelClass} ${enlarged ? 'enlarged' : ''}`}>
       {frame && (
-        <>
+        <div className="chart-wheel-controls">
+          {/* Only once the wheel is enlarged: that's someone already asking for a
+              closer read, which is the moment a bigger wheel is worth offering —
+              and it keeps the compact minimap down to a single control. Same glyph
+              as the bar's sidebar toggle, so the two read as one destination
+              rather than two unrelated buttons. */}
+          {onExpand && enlarged && (
+            <TipButton
+              type="button"
+              className="chart-wheel-ctl"
+              onClick={onExpand}
+              placement="left"
+              aria-label={t('chartWheel.openSidebarLabel')}
+              tip={t('chartWheel.openSidebar')}
+              hint={t('chartWheel.openSidebarHint')}
+              hotkey="B"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+                <path d="m14 9 3 3-3 3" />
+              </svg>
+            </TipButton>
+          )}
           <button
             ref={resizeRef}
             type="button"
-            className="chart-wheel-resize"
+            className="chart-wheel-ctl chart-wheel-resize"
             onClick={() => setEnlarged((v) => !v)}
             onMouseEnter={showResizeTip}
             onMouseLeave={hideResizeTip}
@@ -113,7 +150,7 @@ export function ChartWheel({
             pos={resizeTipPos}
             title={enlarged ? t('chartWheel.shrink') : t('chartWheel.enlarge')}
           />
-        </>
+        </div>
       )}
       {frame ? (
         <div className="chart-wheel-svg-wrap">

@@ -46,6 +46,14 @@ export interface PlaceSearchGate {
   note: string;
   /** Short badge on the chip while locked (a tier tag, say). */
   pill?: string;
+  /** Withhold this scope from this viewer entirely: no chip, unreachable by
+   *  cycling, `note` never shown. A locked chip is an advertisement — it names
+   *  something you could have — and that is not always the right thing to put in
+   *  front of someone. Distinct from `locked` for exactly that reason: closed is
+   *  not the same as not-on-offer. The field keeps showing the built-in scope's
+   *  chip, so what is being searched stays legible even when it's the only
+   *  option left. */
+  hidden?: boolean;
 }
 
 export interface PlaceSearchProvider {
