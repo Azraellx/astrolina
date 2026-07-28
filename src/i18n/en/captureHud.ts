@@ -110,6 +110,12 @@ export const captureHud = {
     calculations: 'Calculations',
     calculationsHint:
       'Show the active calculation systems (the same line as the Info view) in the caption footer.',
+    // Shown only while discreet mode is on. It has to say that the EXPORT is blanked
+    // too, not just the preview: someone who turned the mode on hours ago and is now
+    // producing an image for somebody else needs to know before they send it, and the
+    // frame they are looking at is the only place that fact can reach them in time.
+    discreet:
+      'Discreet mode is on, so the name, birth date and time are blanked here and in the exported image. Press P to show them.',
   },
   share: {
     title: 'Share',

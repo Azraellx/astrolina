@@ -3146,7 +3146,11 @@ export default function App() {
       ? null
       : pinned
         ? isNatalPin
-          ? (current?.birthplace.label ?? null)
+          ? // The natal pin's label IS the birthplace, so discreet mode blanks it
+            // here the same way it blanks it in the sidebar and the corner readout.
+            // Every other branch names wherever the cursor or a custom pin is —
+            // a place the user chose to look at, not birth data — and reads on.
+            (current ? identity.text(current.birthplace.label) : null)
           : (pinnedLabel ?? hoverLabel)
         : hoverLabel;
   // Fade the readout text only when a non-natal pin's reverse-geocode RESOLVES to a
@@ -3216,32 +3220,49 @@ export default function App() {
     const dt = new Date(
       Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute),
     );
+    // Discreet mode blanks the caption too — in the PREVIEW and in the exported
+    // image alike, because they are one and the same DOM (the export rasterises
+    // this very band). Masking only the preview would hand back a file that says
+    // more than the screen did, which is the one outcome worse than not masking
+    // at all: what you see is what leaves the device. The place fields follow the
+    // same rule as everywhere else — blanked while they name the birthplace, kept
+    // when a pin has relocated the caption to somewhere the user chose.
+    const blankPlace = identity.on && !captionPlace.relocated;
+    const place = blankPlace ? identity.text : (v: string) => v;
     return {
-      name: displayName(current.name),
-      date: new Intl.DateTimeFormat('en', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }).format(dt),
-      time: new Intl.DateTimeFormat('en', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-        timeZone: 'UTC',
-      }).format(dt),
+      name: identity.on
+        ? identity.name(current.name)
+        : displayName(current.name),
+      date: identity.date(
+        new Intl.DateTimeFormat('en', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        }).format(dt),
+      ),
+      time: identity.time(
+        new Intl.DateTimeFormat('en', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+          timeZone: 'UTC',
+        }).format(dt),
+      ),
       // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
       // Stays the BIRTH offset even when relocated: the date and time are the birth
       // moment, and that moment's clock reading doesn't change by looking from
-      // elsewhere. Only the place fields below follow the pin.
-      tzLabel: formatUtcOffset(current.tzOffset),
-      location: captionPlace.label,
+      // elsewhere. Only the place fields below follow the pin. Blanked, it drops out
+      // entirely rather than becoming a second run of dots after the blanked time —
+      // one mask per fact reads as hidden, two reads as broken.
+      tzLabel: identity.on ? '' : formatUtcOffset(current.tzOffset),
+      location: place(captionPlace.label),
       // The captioned place's full latitude + longitude (DMS, same format as the
       // corner readout).
-      coordinates: `${fmtLat(captionPlace.lat)} ${fmtLng(captionPlace.lng)}`,
+      coordinates: place(`${fmtLat(captionPlace.lat)} ${fmtLng(captionPlace.lng)}`),
       calculations: captureCalcText,
     };
-  }, [current, captionPlace, captureCalcText]);
+  }, [current, captionPlace, captureCalcText, identity]);
   // Caption fields — only the enabled ones, in display order. The footer joins them into one
   // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
   // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
@@ -3252,7 +3273,11 @@ export default function App() {
       // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
       // other field renders as-is. The offset is appended only here, so the filename — which
       // reads the bare value from captureFields — never picks it up.
-      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]));
+      .map((k) =>
+        k === 'time' && captureFields.tzLabel
+          ? `${captureFields.time} ${captureFields.tzLabel}`
+          : captureFields[k],
+      );
   }, [captureFields, captureCaptionFields]);
   // The footer's single-line form: the enabled fields joined.
   const captureCaptionText = useMemo(
@@ -3263,11 +3288,18 @@ export default function App() {
   // order name → date → time → location (calculations is intentionally skipped — too verbose
   // for a filename). Keep walking past any field that slugs to nothing (e.g. a non-Latin
   // name); if none of the four are shown or yield a usable slug, use a generic name.
+  //
+  // A blanked field slugs to nothing and is walked past for free — except the NAME,
+  // whose mask keeps initials so the chart list stays navigable. "L•••• G•••••"
+  // would slug to "l-g", so discreet mode skips that field outright: initials are
+  // the one thing this mode keeps on screen and the last thing it should write into
+  // a filename, which outlives the screen and travels with the file.
   const captureFileName = useMemo(() => {
     let slug = '';
     if (captureFields) {
       for (const k of ['name', 'date', 'time', 'location'] as const) {
         if (!captureCaptionFields[k]) continue;
+        if (k === 'name' && identity.on) continue;
         slug = captureFields[k]
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
@@ -3276,7 +3308,7 @@ export default function App() {
       }
     }
     return `astrolina-${slug || 'capture'}.png`;
-  }, [captureFields, captureCaptionFields]);
+  }, [captureFields, captureCaptionFields, identity]);
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
@@ -5135,14 +5167,17 @@ export default function App() {
           // The day clock reads at the followed cursor point (while follow mode
           // is on), else the placed pin, else the chart's birthplace.
           point={skyFollowPoint ?? pinned ?? (current ? current.birthplace : null)}
+          // Discreet mode blanks the two branches that fall back to the BIRTHPLACE;
+          // a followed cursor point and a custom pin are places the user is looking
+          // at, so they read on (the same rule the sidebar and caption follow).
           placeLabel={
             skyFollowPoint
               ? (skyFollowCity ?? skyFollowCountry ?? t('common.locationFallbackOcean'))
               : pinned
                 ? isNatalPin
-                  ? (current?.birthplace.label ?? null)
+                  ? (current ? identity.text(current.birthplace.label) : null)
                   : pinnedLabel
-                : (current?.birthplace.label ?? null)
+                : (current ? identity.text(current.birthplace.label) : null)
           }
           visiblePlanets={visiblePlanets}
           nodeType={nodeType}

@@ -131,8 +131,8 @@ export const settings = {
   // Discreet mode. The hint has to say what is NOT hidden as clearly as what
   // is: someone who thinks the map is covered will use this wrongly.
   discreet: {
-    title: 'Hide birth details',
-    hint: 'Blanks names, dates and places everywhere on screen, so you can work with someone beside you. The map and its lines are unchanged, and exports still carry the real details.',
+    title: 'Discreet mode',
+    hint: 'Blanks names, birth dates and birthplaces everywhere on screen — including a capture caption and the image it exports — so you can work with someone beside you. The map and its lines are unchanged, and a document you sit down to produce still carries the real details.',
   },
   orbZones: {
     title: 'Orb Zones',

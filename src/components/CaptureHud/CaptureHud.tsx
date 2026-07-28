@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
+import { useDiscreet } from '../../lib/discreet';
 import { downloadBlob } from '../../lib/downloadBlob';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
@@ -346,6 +347,10 @@ export function CaptureHud({
   // so it keeps its picker (and is what the "i" sends a phone user to).
   const phone = usePhone();
   const chartSubject = subject === 'chart';
+  // Discreet mode blanks the caption's identifying fields, and the export is the same
+  // DOM as the preview — so the picture leaves the device blanked too. Announced in
+  // the Caption section rather than left to be discovered in the finished file.
+  const discreet = useDiscreet();
 
   // The Transparent (Local Space) toggle belongs to the GATED rung (lib/plan): live for an
   // entitled user (with the gated tip tag), a click-to-upgrade teaser when the build nudges
@@ -862,6 +867,11 @@ export function CaptureHud({
             </TipBtn>
           ))}
         </div>
+        {discreet && (
+          <div className="capture-hud-notice" role="status">
+            <p className="capture-hud-notice-text">{t('captureHud.caption.discreet')}</p>
+          </div>
+        )}
 
         <div className="capture-hud-actions" data-actions={actionCount}>
           <TipBtn

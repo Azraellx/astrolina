@@ -47,6 +47,7 @@ import { timeUnknown } from '../../lib/birthData';
 import { setDiscreet, useIdentity } from '../../lib/discreet';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { TipButton } from '../ui/HoverTip';
+import { SpyIcon } from '../ui/SpyIcon';
 import { TagIcon } from '../ui/TagIcon';
 import { getChartsSection } from '../../lib/extensions/chartsSection';
 import { useTouchLayout } from '../../lib/touch';
@@ -494,7 +495,7 @@ export function ChartManager({
               // itself on a touch device with no keyboard (see HoverTip.css).
               hotkey="P"
             >
-              <EyeIcon off={id.on} />
+              <SpyIcon />
             </TipButton>
             <button
               type="button"
@@ -1148,23 +1149,3 @@ function CrossIcon() {
   );
 }
 
-/** An eye, struck through while the details are hidden. */
-function EyeIcon({ off }: { off: boolean }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-      {off && <path d="M3 21 21 3" />}
-    </svg>
-  );
-}

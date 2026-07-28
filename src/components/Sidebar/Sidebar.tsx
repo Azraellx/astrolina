@@ -50,6 +50,7 @@ import { setDiscreet, useDiscreet } from '../../lib/discreet';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
+import { SpyIcon } from '../ui/SpyIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import {
   getSettingsSections,
@@ -1140,7 +1141,10 @@ export function Sidebar({
               hotkey="P"
               hint={t('settings.discreet.hint')}
             >
-              <EyeIcon open={!discreet} />
+              {/* The spy, not the eye every other row toggles with — this one
+                  changes what the whole app will say out loud, not whether a
+                  layer is drawn, and it should not look like its neighbours. */}
+              <SpyIcon />
               <span className="name">{t('settings.discreet.title')}</span>
             </TipToggle>
           </ul>

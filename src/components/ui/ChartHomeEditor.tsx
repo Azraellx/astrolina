@@ -21,6 +21,7 @@
 
 import { useState, type ReactNode } from 'react';
 import type { ChartHome } from '../../lib/chartLibrary';
+import { maskText } from '../../lib/discreet';
 import { PlaceSearchField, type PlaceSearchStrings } from './PlaceSearchField';
 import './ChartHomeEditor.css';
 
@@ -54,6 +55,12 @@ interface ChartHomeEditorProps {
   strings?: Partial<ChartHomeStrings>;
   /** Passed through to the search field (its own internal copy). */
   searchStrings?: Partial<PlaceSearchStrings>;
+  /** Blank the set value under discreet mode (lib/discreet). OFF by default, and the
+   *  host decides rather than this component: the same editor sits in the chart FORM,
+   *  where you are editing that record and blanking it from you would be a bug, and in
+   *  a working window, where where-someone-lives is exactly what the mode is for. Only
+   *  the value blanks — set, change and clear all keep working. */
+  maskValue?: boolean;
 }
 
 export function ChartHomeEditor({
@@ -63,6 +70,7 @@ export function ChartHomeEditor({
   className,
   strings,
   searchStrings,
+  maskValue,
 }: ChartHomeEditorProps) {
   const S = { ...EN, ...strings };
   const [picking, setPicking] = useState(false);
@@ -72,7 +80,7 @@ export function ChartHomeEditor({
       <p className="che-row">
         {label && <span className="che-label">{label}</span>}
         <span className={`che-value${value ? '' : ' che-value-unset'}`}>
-          {value ? value.label : S.unset}
+          {value ? (maskValue ? maskText(value.label) : value.label) : S.unset}
         </span>
         {value && !picking && (
           <button type="button" className="che-btn" onClick={() => onChange(null)}>

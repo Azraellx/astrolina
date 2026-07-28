@@ -20,9 +20,18 @@
 // What is NOT hidden is as deliberate as what is. The map and its lines stay
 // exactly as they were: a line across the Pacific says nothing about whose chart
 // it is, and blanking the actual work would defeat the point of being able to
-// keep working. Neither does this touch anything being deliberately produced —
-// the chart editor, an export, a share link — where hiding the data from the
-// person who asked for it would be a bug rather than a feature.
+// keep working. A place name is only blanked where it IS the birthplace — a spot
+// the user pinned is where they are working, not who the chart is. Neither does
+// this touch a DOCUMENT someone sat down to produce — the chart editor, a report,
+// a share link — where hiding the data from the person who asked for it would be
+// a bug rather than a feature.
+//
+// The capture caption is the line between those two and sits on the hidden side.
+// It is a live band on the screen for as long as the tool is armed, which is the
+// case this mode is for; and the export rasterises that very band, so preview and
+// file are one thing. Blanking only the preview would hand back a picture that
+// says more than the screen did — the one outcome worse than not blanking at all.
+// So both blank together, and the Capture window says so while the mode is on.
 //
 // This is a courtesy against shoulders, not a security control. It is a
 // per-device preference with no password, and anything already exported stays

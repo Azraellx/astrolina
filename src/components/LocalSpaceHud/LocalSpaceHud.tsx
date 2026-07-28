@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { getLocalSpaceAnchors } from '../../lib/extensions/localSpaceAnchors';
 import { useChartHome } from '../../lib/useChartHome';
+import { useDiscreet } from '../../lib/discreet';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
@@ -156,6 +157,7 @@ export function LocalSpaceHud({
   const { t } = useT();
   // The active chart's home place, edited inline while it is the origin.
   const [chartHome, setChartHome] = useChartHome();
+  const discreet = useDiscreet();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
   // screen clutter — WITHOUT closing the tool (close it from the top nav / hotkey). Local UI state.
   const [collapsed, setCollapsed] = useState(false);
@@ -276,6 +278,10 @@ export function LocalSpaceHud({
             <ChartHomeEditor
               value={chartHome}
               onChange={setChartHome}
+              // Where the chart's subject lives NOW — at least as telling as the
+              // birthplace, and this is a working window rather than the chart form,
+              // so discreet mode blanks it. Setting and changing it still work.
+              maskValue={discreet}
               strings={{
                 unset: t('chartForm.homeSameAsBirth'),
                 set: t('chartForm.homeSet'),

@@ -10,6 +10,7 @@ import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { HoverTip } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
+import { useIdentity } from '../../lib/discreet';
 import { useT } from '../../i18n';
 import './CoordReadout.css';
 
@@ -89,6 +90,7 @@ export function CoordReadout({
   fadeLocation,
 }: CoordReadoutProps) {
   const { t } = useT();
+  const id = useIdentity();
   const [open, setOpen] = useState<boolean>(
     () => localStorage.getItem(SHOW_ANGLES_KEY) === '1',
   );
@@ -99,13 +101,25 @@ export function CoordReadout({
 
   if (!point && !angles && !location) return null;
 
+  // The two natal sources are the ONLY ones where this readout is naming the
+  // chart's birthplace rather than somewhere the user is pointing at — the place
+  // and its coordinates are birth data there, and nowhere else. A hovered or
+  // custom-pinned point is just a spot on the map and stays legible, which is the
+  // same line the map's own linework is held to.
+  const natalPoint = source === 'natal' || source === 'natal-pinned';
+  const blankPlace = id.on && natalPoint;
+  // The angles stay readable even blanked: they are the work, not the identity —
+  // and they are already drawn across the map as the lines this readout describes.
+
   return (
     <div className={`coord-readout source-${source}`}>
       {location && (
         <div className="coord-location">
           <span className="coord-location-dot" />
           <span className="coord-location-text">
-            {fadeLocation ? (
+            {blankPlace ? (
+              id.text(location)
+            ) : fadeLocation ? (
               <span className="coord-location-fade" key={location}>
                 {location}
               </span>
@@ -118,8 +132,8 @@ export function CoordReadout({
 
       {point && (
         <div className="coord-line cursor">
-          <span className="lat">{fmtLat(point.lat)}</span>
-          <span className="lng">{fmtLng(point.lng)}</span>
+          <span className="lat">{blankPlace ? id.text('00°00′N') : fmtLat(point.lat)}</span>
+          <span className="lng">{blankPlace ? id.text('000°00′E') : fmtLng(point.lng)}</span>
         </div>
       )}
 

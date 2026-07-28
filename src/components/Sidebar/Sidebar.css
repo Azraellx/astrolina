@@ -588,6 +588,19 @@ html[data-mapstate='natal-pinned'] .sidebar {
   color: var(--accent);
 }
 
+/* Discreet mode's spy takes the eye's exact treatment in this row — faint at rest,
+   accent when engaged. It carries no on/off artwork of its own (see SpyIcon), so
+   this colour and the row's accent border ARE the state. */
+.tech-toggle .spy-icon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: color var(--dur-quick) var(--ease-settle);
+}
+
+.tech-toggle.on .spy-icon {
+  color: var(--accent);
+}
+
 .tech-toggle .check {
   display: inline-block;
   width: 12px;

@@ -28,6 +28,7 @@ import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { formatUtcOffset } from '../../lib/atlas/timezone';
+import { MASK_DATE, MASK_TIME, useIdentity } from '../../lib/discreet';
 import { planTierFor, tierName } from '../../lib/plan';
 import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
@@ -631,6 +632,10 @@ export function ExpandedChartSidebar({
   chartFlash = null,
 }: ExpandedChartSidebarProps) {
   const { t, fmt, labels } = useT();
+  // Discreet mode's masks — this header carries the chart's birth moment and, in
+  // the plain natal state, its birthplace, which is the whole of what the mode
+  // exists to blank. The wheel and every position below it stay as they are.
+  const id = useIdentity();
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
     const min = minSidebarWidth();
@@ -1007,8 +1012,16 @@ export function ExpandedChartSidebar({
         {chart && (
           <div className="es-meta">
             <span className="es-meta-when">
-              {fmtChartDate(chart, fmt)}
-              <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
+              {/* Masked as date · time rather than through id.date() alone: this one
+                  string carries both, and keeping the shape says "two things hidden
+                  here" where a lone date mask would read as the time being absent. */}
+              {id.on ? `${MASK_DATE} · ${MASK_TIME}` : fmtChartDate(chart, fmt)}
+              {/* The offset drops out entirely while masked instead of trailing a
+                  second run of dots — one mask per fact reads as hidden, two reads
+                  as broken. */}
+              {!id.on && (
+                <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
+              )}
               {chart.tzUncertain && (
                 <TipGlyph
                   className="es-meta-warn"
@@ -1040,6 +1053,11 @@ export function ExpandedChartSidebar({
                 ? ''
                 : 'natal';
           const hasPin = isNatalPin || pinned;
+          // Blanked only while this line is speaking for the BIRTHPLACE — the natal
+          // pin, or the plain natal state that falls back to it. A hovered or custom
+          // pin is a place the user chose to look at, not birth data, so it reads
+          // normally: the mode hides who the chart is, not where you are working.
+          const blankPlace = id.on && (isNatalPin || !point);
           // The pin marker, shown whenever a pin is placed. It sits beside the place
           // name when there is one; if the name line is hidden (e.g. the measure tool
           // nulls it) it falls back beside the coordinates, so a placed pin is never
@@ -1083,10 +1101,12 @@ export function ExpandedChartSidebar({
                   never left unmarked. */}
               <span className="es-relocated-place">
                 {hasPin && pinIcon}
-                {pointLabel || '\u00A0'}
+                {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || '\u00A0'}
               </span>
               <span className="es-relocated-text">
-                {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
+                {blankPlace
+                  ? `${id.text('00\u00B000\u2032N')} ${id.text('000\u00B000\u2032E')}`
+                  : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
               </span>
             </div>
           );

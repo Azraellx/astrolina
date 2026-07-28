@@ -45,11 +45,14 @@ export const chartManager = {
     nameLabel: 'Folder name',
     namePlaceholder: 'Folder name',
   },
-  // The eye toggle: blanks names, dates and places across the app so a screen
-  // can be shared without sharing the library. The map is untouched.
+  // The spy toggle: blanks names, dates and places across the app so a screen
+  // can be shared without sharing the library. The map is untouched. (Not an eye —
+  // every other toggle in the app is an eye, and this one is not a layer.)
+  // Phrased as the ACTION, not the state: this is the tip on a toggle, and the eye
+  // icon already carries which way it currently sits.
   discreet: {
-    hide: 'Hide birth details',
-    show: 'Show birth details',
+    hide: 'Turn on Discreet mode',
+    show: 'Turn off Discreet mode',
   },
   // Empty-state row when no charts have been saved.
   empty: 'No saved charts yet.',

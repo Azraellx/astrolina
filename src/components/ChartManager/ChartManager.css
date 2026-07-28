@@ -672,9 +672,10 @@
 }
 
 /* ── Discreet mode ──────────────────────────────────────────────────────────
-   The eye sits beside the close button. Lit while engaged, so the state is
+   The spy sits beside the close button. Lit while engaged, so the state is
    readable at a glance — someone who cannot tell whether the details are
-   hidden will not trust the mode. */
+   hidden will not trust the mode. The glyph itself has no on/off variant, so
+   this colour and tint are the whole signal and have to be unmistakable. */
 .cm-header-actions {
   display: inline-flex;
   align-items: center;
