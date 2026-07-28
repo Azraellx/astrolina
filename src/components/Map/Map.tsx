@@ -23,7 +23,7 @@ import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
 import { cloneWithInlineStyles, svgToImage } from '../../lib/wheelRaster';
-import { isTouchLayout } from '../../lib/touch';
+import { isTouchLayout, usePhone } from '../../lib/touch';
 import {
   CaptureExtras,
   type CaptureFrameExtras,
@@ -1341,6 +1341,23 @@ interface MapProps {
    *  WHEEL (+ balance grid), docked left for landscape, top for square/portrait. Null = no
    *  panel (and no inset). */
   frameExtras?: CaptureFrameExtras | null;
+  /** What the frame is a picture OF. 'map' — the framed map, with frameExtras as an
+   *  optional docked annotation. 'chart' — the details alone, filling the frame as a card
+   *  over an opaque backdrop; the basemap and everything projected onto it stand down. */
+  frameSubject?: 'map' | 'chart';
+  /** Whether the balance grid is switched ON — which shares the wheel's box, so the fit
+   *  below has to reserve its room. Taken from the TOGGLE rather than read off
+   *  `frameExtras`, deliberately: the fit decides whether the wheel view is offered at all,
+   *  so if it also depended on which view is currently drawn, declining the wheel would
+   *  remove the grid, which would make the wheel fit, which would offer it again — a loop
+   *  with no fixed point. The toggle is the same either way. */
+  frameWheelGrid?: boolean;
+  /** How much room the frame can actually give the details, recomputed with the frame box.
+   *  `wheelPx` is the diameter the wheel will be drawn at; `canWheel` is false when that
+   *  came out too small to read, so the tool can decline the view before it produces an
+   *  unreadable file; `clipped` is the panel's own measurement of overflowing content —
+   *  the backstop behind the arithmetic. Must be STABLE. */
+  onFrameFit?: (fit: { wheelPx: number; canWheel: boolean; clipped: boolean }) => void;
   /** Esc while the Capture frame is armed exits the tool. */
   onFrameCancel?: () => void;
   /** Emits map-originated onboarding mission events (measure point/snap, zoom-out click,
@@ -2505,6 +2522,134 @@ function detectWebGL(): boolean {
 // the caption text and the (mandatory) watermark.
 const CAPTURE_CAPTION_BAND_FRAC = 0.05;
 
+/** The capture frame's geometry: insets from each host edge, the reserved caption band,
+ *  and the box's own dimensions (which the details panel sizes itself against). */
+interface CaptureFrameBox {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+  /** Caption-band height reserved in the map inset — 0 when no band is drawn. */
+  cap: number;
+  /** The band's height whether or not it's drawn (a caption-free export still places its
+   *  brand mark as if the band were there). */
+  bandH: number;
+  boxW: number;
+  boxH: number;
+}
+
+/* ── Sizing the details wheel ──────────────────────────────────────────────────
+ * The wheel is a fixed atom in a clipping box: unlike the position list, which wraps
+ * into more columns when it runs out of room, a wheel that doesn't fit is simply cut.
+ * So its diameter is chosen against the room the frame actually has in BOTH axes, and
+ * when that room can't hold a legible wheel the caller is told so rather than handed a
+ * number that will produce a sliced picture.
+ *
+ * Every input is a property of the frame box, never of the rendered panel — the panel
+ * measures itself and insets the map by the result, so reading its size back here would
+ * close a measure→resize→measure loop.
+ */
+/** `.capture-extras` padding (7px 9px), both edges. */
+const EXTRAS_PAD_X = 18;
+const EXTRAS_PAD_Y = 14;
+/** `.capture-extras-fill` padding (12px), both edges — a card breathes wider than a rail. */
+const CARD_PAD = 24;
+/** The share of the frame a docked panel may occupy on its cross axis. Matches the CSS
+ *  cap on the list, so a wheel and a list claim the frame on the same terms. */
+const EXTRAS_MAX_FRAC = 0.46;
+/* Two floors, because a docked wheel and a card wheel are asked for different things.
+ *
+ * DOCKED — a note beside the map: planets, angle marks, the forced readout ring, and
+ * nothing else. It stops being worth exporting near 280px, where WheelSvg's per-planet
+ * degree·sign·minute ring self-hides; 300 keeps a little clearance.
+ *
+ * CARD — the picture itself, drawn as the sidebar draws it: the aspect web AND, under a
+ * running time overlay, a second ring. Those need real diameter, and WheelSvg names the
+ * sizes: the bi-wheel ring only appears at 420, and at 440 (READOUT_MIN) the wheel starts
+ * volunteering its degree ring rather than having to be told. Below that a card quietly
+ * stops drawing things it was asked for — a wheel that has lost its overlay ring without
+ * saying so is worse than one the tool declined. 440 clears both marks.
+ *
+ * A PHONE card is held to the docked floor instead. Every other frame is a choice — a
+ * wider ratio, a bigger window — so it can be held to the standard the wheel sets. A
+ * phone frame is already as large as it will ever get, and refusing there would leave
+ * nothing where this card is precisely the export that does fit.
+ */
+const WHEEL_MIN_LEGIBLE = 300;
+const WHEEL_MIN_CARD = 440;
+/** Ceiling for a DOCKED wheel, so it can't dominate a huge frame — the map is the
+ *  subject there. A wheel that IS the subject gets the card ceiling instead. */
+const WHEEL_MAX_DOCKED = 460;
+/** Ceiling for a card wheel, matching the expanded sidebar's own maximum: past this the
+ *  wheel gains no detail, only pixels. */
+const WHEEL_MAX_CARD = 900;
+/** Room to keep for the balance grid when it's shown. It's a fixed 5-row table sized off
+ *  the caption-band height (CaptureBalanceGrid.css: `clamp(8px, cap * 0.34, 12px)`, cells
+ *  at `min-height: 1.7em`, 1px gaps, a 1px border and a 6px top margin), so its extent is
+ *  DERIVED rather than measured — measuring it would reintroduce the feedback loop above.
+ *  Deliberately a shade generous: a crowded cell wraps its glyphs onto a second line, and
+ *  over-reserving costs a few pixels of wheel where under-reserving costs the bottom of
+ *  the grid. CaptureExtras reports actual overflow, which catches whatever drifts anyway. */
+function balanceGridReserve(cap: number, axis: 'row' | 'column'): number {
+  const font = Math.min(12, Math.max(8, cap * 0.34));
+  return axis === 'column'
+    ? Math.round(5 * font * 1.95 + 14)
+    // Beside the wheel: a narrow glyph column, then three carrying a spelled-out
+    // modality name ("Cardinal") at 0.82em.
+    : Math.round(font * 21);
+}
+
+/** The wheel diameter a frame can actually carry, and whether that is enough to be worth
+ *  drawing. `side` is where the panel sits (a rail, a band, or the whole frame) and
+ *  `gridAxis` which way the balance grid stacks — passed in rather than re-derived, so the
+ *  arithmetic and the layout can't disagree about where the grid's room comes from.
+ *  `phone` relaxes a card back to the docked floor (see the floors above). */
+function fitCaptureWheel(
+  box: CaptureFrameBox | null,
+  side: 'left' | 'top' | 'fill',
+  grid: boolean,
+  gridAxis: 'row' | 'column',
+  phone: boolean,
+): { wheelPx: number; canWheel: boolean } {
+  const floor = side === 'fill' && !phone ? WHEEL_MIN_CARD : WHEEL_MIN_LEGIBLE;
+  // No frame box yet (the first render, before the effect measures): fall back to the
+  // historical defaults rather than blocking the view on a transient null.
+  if (!box) {
+    const px = side === 'fill' ? 560 : side === 'top' ? 420 : 300;
+    return { wheelPx: px, canWheel: true };
+  }
+  const { boxW, boxH, cap } = box;
+  // The grid takes width when it sits beside the wheel, height when it stacks below.
+  const gridW = grid && gridAxis === 'row' ? balanceGridReserve(cap, 'row') : 0;
+  const gridH = grid && gridAxis === 'column' ? balanceGridReserve(cap, 'column') : 0;
+  let availW: number;
+  let availH: number;
+  let wanted: number;
+  if (side === 'fill') {
+    // A card: the wheel takes everything above the caption band. No docked-panel share to
+    // respect — the chart IS the picture here.
+    availW = boxW - CARD_PAD - gridW;
+    availH = boxH - cap - CARD_PAD - gridH;
+    wanted = WHEEL_MAX_CARD;
+  } else if (side === 'top') {
+    // A band across the top: height is the binding constraint. Square/portrait frames dock
+    // a roomy band rather than a narrow rail, where the rail's size reads cramped — hence
+    // the ~40% enlargement.
+    availW = boxW - EXTRAS_PAD_X - gridW;
+    availH = boxH * EXTRAS_MAX_FRAC - EXTRAS_PAD_Y;
+    wanted = Math.min(WHEEL_MAX_DOCKED, Math.max(280, boxW * 0.28)) * 1.4;
+  } else {
+    // A rail down the side: width binds. The wheel scales down only HALF as fast as the
+    // frame narrows (0.14·boxW + 230 rather than 0.28·boxW), so smaller laptop frames keep
+    // the inner degree numbers legible instead of collapsing toward the floor.
+    availW = boxW * EXTRAS_MAX_FRAC - EXTRAS_PAD_X;
+    availH = boxH - cap - EXTRAS_PAD_Y - gridH;
+    wanted = Math.min(WHEEL_MAX_DOCKED, Math.max(280, boxW * 0.14 + 230));
+  }
+  const wheelPx = Math.floor(Math.min(wanted, availW, availH));
+  return { wheelPx: Math.max(0, wheelPx), canWheel: wheelPx >= floor };
+}
+
 // Generic AstroLina attribution stamped into every exported PNG's metadata — provenance that
 // travels with a re-shared image, pointing back to the project (astrolina.org, matching the
 // AGPL 7(b) watermark default). Brand/source only: NEVER the chart's birth data, which the
@@ -2618,6 +2763,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   frameCaptionText,
   frameCaptionLines = [],
   frameExtras,
+  frameSubject = 'map',
+  frameWheelGrid = false,
+  onFrameFit,
   noCaption,
   onFrameCancel,
   onMissionEvent,
@@ -2644,6 +2792,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // it's the element `captureFrame` rasterises.
   const frameRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // The frame is a picture of the CHART, not the map — the details fill it as a card and
+  // the basemap stands down. Declared up here rather than with the rest of the frame
+  // geometry because the pointer-gesture effect below depends on it, and a dependency
+  // array is evaluated where it is written.
+  const chartSubject = frameSubject === 'chart';
+  // A phone frame is as large as it will ever get, which relaxes the card's wheel floor
+  // (see fitCaptureWheel) — every other frame can be widened or the window enlarged.
+  const capturePhone = usePhone();
   // Mirror of frameActive, read by computeBadges' HUD-dodge gate. While the Capture frame
   // is armed, edge badges ignore the HUD panels (incl. the Capture window) and hug only
   // the frame edges. Assigned during render so it's current before any badge recompute.
@@ -2720,6 +2876,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const ctx = out.getContext('2d');
       if (!ctx) return null;
 
+      // A chart-subject export is a picture of the CARD, not of the map: the card covers
+      // the frame, so every map-derived layer below stands down. Skipping them rather than
+      // relying on the card to hide them matters for the two that ignore z-order entirely
+      // — the glyph and pin re-stamps draw wherever the live DOM says, over anything.
+      //
+      // The mounted card IS the signal, rather than a mirror of the subject prop. It says
+      // precisely what this function needs to know — something opaque is covering the
+      // frame — and it can't disagree with what will be drawn. A chart with nothing to
+      // wheel (a promoted overlay leaving no coherent chart) mounts no card, and there an
+      // export that skipped the map would have produced an empty frame.
+      const cardEl = frameEl.querySelector('.capture-extras-fill');
+      const chartOnly = !!cardEl;
+
       // 0) Backdrop. In 3D globe mode the "space" void is a CSS background on the map
       //    container (the GL canvas is transparent there), so paint it first or the
       //    export would have a transparent void. In flat 2D the basemap is opaque and
@@ -2728,7 +2897,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       //    a transparent background IS the export — nothing may pre-fill the bitmap.
       //    (Read off the container class the hideBasemap effect maintains — the same
       //    signal the checkerboard CSS keys on — rather than a reactive prop ref.)
-      if (!containerRef.current?.classList.contains('basemap-hidden')) {
+      //    For a chart card the backdrop is the CARD's own colour, read off the live
+      //    element: html2canvas paints the card over this anyway, but a failure of that
+      //    layer should cost the export its labels, not leave it a transparent hole.
+      if (chartOnly) {
+        const bg = getComputedStyle(cardEl!).backgroundColor;
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+        }
+      } else if (!containerRef.current?.classList.contains('basemap-hidden')) {
         const containerBg = containerRef.current
           ? getComputedStyle(containerRef.current).backgroundColor
           : '';
@@ -2754,8 +2932,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Overdraw ~1px each side so the map tucks UNDER the (opaque) panel/caption and past
       // the frame edge — hiding any 1px rounding seam between this GL rect and the
       // html2canvas overlay. Guarded: a degenerate zero rect skips the draw rather than
-      // smearing the whole backbuffer across the frame.
-      if (mapW > 0 && mapH > 0) {
+      // smearing the whole backbuffer across the frame. A chart card has no map in it at
+      // all, which also puts the cross-origin abort below out of its way: a tainted
+      // basemap can't stop an export that never touches the basemap.
+      if (!chartOnly && mapW > 0 && mapH > 0) {
         // "Mask Lines": clip the map canvas to the same circle the live view uses (origin +
         // ~30%-over-compass radius), so the exported linework is a self-contained compass rose.
         // The DOM overlays below (compass, rim badges) are composited AFTER, unclipped.
@@ -2975,7 +3155,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               // here because only this path composites into a larger frame; the
               // glyphs are re-stamped with the rest of the frame's below.
               const clone = cloneWithInlineStyles(liveWheel as SVGSVGElement);
-              const wheelImg = await svgToImage(clone, wr.width, wr.height);
+              // Serialise at the OUTPUT size, not the layout size, and draw 1:1. The clone
+              // keeps its viewBox, so widening it scales the whole coordinate system —
+              // strokes and label type included — and the drawing is rasterised once, at
+              // the resolution it lands at. Decoding at layout size and letting drawImage
+              // enlarge it leaves the sharpness to whether the browser re-rasterises an
+              // SVG <img> at the destination size, which not all of them do.
+              const wheelImg = await svgToImage(clone, wr.width * scale, wr.height * scale);
               if (wheelImg) {
                 ctx.drawImage(
                   wheelImg,
@@ -3040,7 +3226,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // The transparent (local-space) export omits the pin entirely: the rose's lines
         // already converge on the origin, and the overlay is meant to sit on someone
         // else's backdrop — a teardrop marker there is clutter, not information.
-        if (!lsTransparentRef.current) {
+        // A chart card omits it for a harder reason: the marker is still mounted on the
+        // map behind the card, and this stamp draws at its live screen rect — so without
+        // the guard a teardrop would land in the middle of the wheel.
+        if (!lsTransparentRef.current && !chartOnly) {
           // Same-origin emblem art, loaded once per capture however many pins share a
           // flag. Same-origin, so this cannot taint what the markers themselves might
           // have — which is the whole reason they are drawn here instead of composited.
@@ -4243,8 +4432,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Slide tool is DRAGGING (spinning), it drives the spin. Otherwise hover still names
     // lines / parans / zeniths as usual — but during a slide the cursor is left to the
     // slide tool ('grab'/'grabbing'), since its hover targets aren't click-able then.
+    // A chart-subject capture stands hover down entirely: the card covers the map, so
+    // there is nothing under the cursor to name — and hover RELOCATES the chart, which
+    // would leave the wheel on the card changing with a coastline nobody can see.
     const handleMove = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive || slideDraggingRef.current) return;
+      if (measureActive || slideDraggingRef.current || chartSubject) return;
       const setCursor = (c: string) => {
         if (!slideActiveRef.current) map.getCanvas().style.cursor = c;
       };
@@ -4338,7 +4530,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       onLeave?.();
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive || slideActive) return;
+      // Same reasoning as hover: on a chart card every click lands on a map the user
+      // cannot see, and its side-effects (fly-to-zenith, an overlay's tap-to-tag, a
+      // pinned card) would all be things they did not aim at. Right-click still exits
+      // the tool — that gesture is about the TOOL, not about a place on the map.
+      if (measureActive || slideActive || chartSubject) return;
       // Any map click can surface onboarding missions (the handler itself decides
       // whether anything is due).
       onMapClick?.();
@@ -4419,7 +4615,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive || slideActive) return;
+      // A chart card hides the map, and moving the pin would silently recast the very
+      // wheel it is showing — the worst of the invisible-gesture cases.
+      if (measureActive || slideActive || chartSubject) return;
       // Neutral broadcast of the double-clicked point so a tool can treat a double-click as its own
       // gesture (e.g. re-placing a point on it). Fired for every dblclick; listeners ignore it if
       // they don't care. Sent BEFORE the spotlight guard so the tool still receives it.
@@ -4516,7 +4714,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       lineCardPopup.remove();
       lineCardPopupRef.current = null;
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, slideActive, frameActive, flyToZenith, t, labels]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, slideActive, frameActive, chartSubject, flyToZenith, t, labels]);
 
   // The pinned card describes ONE selection at one place — close it whenever
   // the selected eclipse changes or eclipses mode exits (the builder closure's
@@ -4544,9 +4742,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // both confines the lines and keeps the overlays in register with the smaller view.
   // `cap` is the reserved caption-band height (css px); the map/badges are inset by it
   // at the bottom so they don't sit behind the caption.
-  const [frameInset, setFrameInset] = useState<
-    { l: number; t: number; r: number; b: number; cap: number; bandH: number; boxW: number } | null
-  >(null);
+  const [frameInset, setFrameInset] = useState<CaptureFrameBox | null>(null);
   useEffect(() => {
     if (!frameActive || !frameAspect) {
       setFrameInset(null);
@@ -4606,8 +4802,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // place itself exactly like the (band-bound) watermark even though no band is reserved there.
       const bandH = Math.max(Math.round(boxW * bandFrac), 22);
       const cap = noCaption ? 0 : bandH;
-      // boxW is kept so the wheel view can size its wheel to a fraction of the frame width.
-      setFrameInset({ l: il, t: iy, r: ir, b: iyb, cap, bandH, boxW: Math.round(boxW) });
+      // The box dimensions are kept so the details panel can size its wheel to the room
+      // the frame actually has — in BOTH axes (see fitCaptureWheel).
+      setFrameInset({
+        l: il,
+        t: iy,
+        r: ir,
+        b: iyb,
+        cap,
+        bandH,
+        boxW: Math.round(boxW),
+        boxH: Math.round(boxH),
+      });
     };
     compute();
     window.addEventListener('resize', compute);
@@ -4619,36 +4825,59 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // the framed map + edge badges inset by that much (via the --capture-extra-* vars below)
   // so the lines stay clear of it — exactly like the caption band. Scalar state, separate
   // from the frame box; reset to 0 whenever the panel isn't shown so the map re-fills.
+  // With the chart as the export's subject the panel FILLS the frame instead, covering the
+  // map rather than docking beside it — so it reports no inset and both vars stay 0.
   const captureLandscape = !!frameAspect && frameAspect >= 1.3;
   const showExtras = frameActive && !!frameExtras;
-  const extraSide: 'left' | 'top' = captureLandscape ? 'left' : 'top';
-  // Wheel-view diameter, derived from the fixed frame box (not the panel inset, so it can't
-  // feed back into the measure→resize loop). Floored at 280px so the per-planet
-  // degree·sign·minute readout ring has room to render (below ~280px it self-hides) and
-  // capped so it can't dominate huge frames.
-  //  • Square/portrait dock the panel as a roomy TOP band (not a narrow left rail), where
-  //    the wheel reads cramped at the landscape size — so enlarge it ~40% there.
-  //  • Landscape (16:9) docks a narrow LEFT rail. There the wheel scales down only HALF as
-  //    fast as the frame narrows: 0.14·boxW + 230 rather than 0.28·boxW. The two meet at the
-  //    460px cap (boxW ≈ 1643), so wide frames are unchanged, but on smaller laptop frames the
-  //    wheel stays far larger — keeping the inner degree numbers legible instead of collapsing
-  //    toward the 280px floor where the readout ring self-hides.
-  const wheelSize = frameInset
-    ? extraSide === 'top'
-      ? Math.round(Math.min(460, Math.max(280, frameInset.boxW * 0.28)) * 1.4)
-      : Math.round(Math.min(460, Math.max(280, frameInset.boxW * 0.14 + 230)))
+  // A chart card covers the frame instead of docking beside the map, so it insets nothing.
+  const extraSide: 'left' | 'top' | 'fill' = chartSubject
+    ? 'fill'
+    : captureLandscape
+      ? 'left'
+      : 'top';
+  // The wheel and its balance grid stack down where the spare room is vertical (a rail, a
+  // portrait/square card) and sit side by side where it's horizontal (a band, a wide card).
+  const clusterAxis: 'row' | 'column' = chartSubject
+    ? captureLandscape
+      ? 'row'
+      : 'column'
     : extraSide === 'top'
-      ? 420
-      : 300;
+      ? 'row'
+      : 'column';
+  // Cheap pure arithmetic over the frame box, and deliberately blind to which view is
+  // currently drawn — see frameWheelGrid. A phone card is held to the lower floor, since
+  // its frame can't be made any bigger (see the floors beside fitCaptureWheel).
+  const wheelFit = fitCaptureWheel(
+    frameInset,
+    extraSide,
+    frameWheelGrid,
+    clusterAxis,
+    capturePhone,
+  );
+  const wheelSize = wheelFit.wheelPx;
+  const canWheel = wheelFit.canWheel;
   const [extraSize, setExtraSize] = useState(0);
-  const onExtraMeasure = useCallback((px: number) => {
+  // The panel's own measurement of whether it is cutting content off (see CaptureExtras).
+  const [extraClipped, setExtraClipped] = useState(false);
+  const onExtraMeasure = useCallback((px: number, clipped: boolean) => {
     // Round + equality-guard so a steady ResizeObserver tick can't loop with resize().
     const v = Math.round(px);
     setExtraSize((prev) => (prev === v ? prev : v));
+    setExtraClipped((prev) => (prev === clipped ? prev : clipped));
   }, []);
   useEffect(() => {
-    if (!showExtras) setExtraSize(0);
+    if (!showExtras) {
+      setExtraSize(0);
+      setExtraClipped(false);
+    }
   }, [showExtras]);
+  // Publish the fit so the tool can offer or decline the wheel view BEFORE an export —
+  // the whole point of working it out here rather than letting the user discover a sliced
+  // wheel in the saved file. Depends on the three scalars, not on the object holding them,
+  // so a resize tick that lands on the same numbers doesn't re-notify.
+  useEffect(() => {
+    onFrameFit?.({ wheelPx: wheelSize, canWheel, clipped: extraClipped });
+  }, [onFrameFit, wheelSize, canWheel, extraClipped]);
 
   // Match the GL viewport to the inset container once it's laid out (layout effect so
   // there's no flash of the old size), and again when the frame, extras inset, or a
@@ -4686,6 +4915,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   //   • basemap HIDDEN (Transparent mode) — the half-opacity brand mark (bottom-right, inside the
   //     frame) carries the attribution, and CSS hides this whole control (.map-frame.transparent),
   //     so it's not seen here; the BTN we still set below is just a failsafe if that CSS is absent.
+  //   • NO basemap in the frame at all (a chart-subject capture) — same as above: CSS hides the
+  //     control (.map-frame.chart-only), and the failsafe must be the BTN rather than the data
+  //     credit, since crediting a basemap's sources on a frame that shows no basemap would be
+  //     a claim about the picture that isn't true.
   // Restores the normal "AstroLina | <data>" on exit. The data-credit markup is captured LIVE
   // from maplibre (never hard-coded), so a style / attribution change carries through untouched.
   const attribDataRef = useRef('');
@@ -4712,7 +4945,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const captured = clone.innerHTML.trim();
     if (captured) attribDataRef.current = captured;
     const dataCredit = attribDataRef.current;
-    const want = hideBasemap ? BTN : dataCredit || BTN;
+    const want = hideBasemap || chartSubject ? BTN : dataCredit || BTN;
     // Guard on the browser-SERIALIZED result we last wrote (not `want`, which may differ by
     // attribute order / whitespace) so our own mutation is a no-op but a maplibre rebuild re-applies.
     let appliedHtml = '';
@@ -4728,7 +4961,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       obs.disconnect();
       inner.innerHTML = `${BTN}${dataCredit ? ' | ' + dataCredit : ''}`;
     };
-  }, [frameActive, hideBasemap]);
+  }, [frameActive, hideBasemap, chartSubject]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -5649,7 +5882,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           together, and so a single `captureFrame` rasterises them as one unit. */}
       <div
         ref={frameRef}
-        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}${lsTransparent ? ' transparent' : ''}`}
+        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}${lsTransparent ? ' transparent' : ''}${frameActive && chartSubject ? ' chart-only' : ''}`}
         style={
           frameInset
             ? ({
@@ -5718,13 +5951,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         placement="top"
         title={pinTip?.title ?? ''}
       />
+      {/* Every edge badge labels a line on the map, so a chart-subject export drops the lot:
+          the card covers the map, and the export re-stamps badge glyphs from the live DOM
+          with no z-order to respect — badges left mounted underneath would print on top of
+          the chart. */}
       <div
         className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
         aria-hidden="true"
       >
         {/* The ACG / aspect / node edge badges label the non-LS lines — hidden in the transparent
             LS-only export (those lines are emptied at the source), so their labels go too. */}
-        {!lsTransparent && badges.map((b) => {
+        {!chartSubject && !lsTransparent && badges.map((b) => {
           const text = badgeTextColor(b.color);
           // A merged lunar-node pair gets a two-tone fill (North Node colour → South Node
           // colour, matching the line) and a dual "NN MC / SN IC" label; every other
@@ -5851,7 +6088,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           );
         })}
         {/* Paran badges label the (non-LS) paran crossings — likewise hidden in the LS-only export. */}
-        {!lsTransparent && paranBadges.map((b) => (
+        {!chartSubject && !lsTransparent && paranBadges.map((b) => (
           <TipButton
             type="button"
             key={b.key}
@@ -5870,7 +6107,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
           </TipButton>
         ))}
-        {localSpaceBadges.map((b) => {
+        {!chartSubject && localSpaceBadges.map((b) => {
           const text = badgeTextColor(b.color);
           // Transparent export enlarges the badges ~50% for the compass-rose look — but only the
           // OUTBOUND (toward-planet) half; the reciprocal INBOUND half stays regular size.
@@ -5935,11 +6172,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           ctx={overlayCtx}
         />
       )}
-      {!hideCompass && compassP !== null && originScreen && (
+      {!hideCompass && !chartSubject && compassP !== null && originScreen && (
         // The dial is placed at the origin's PROJECTED point, which is relative to the GL
         // canvas. While framing, the canvas + edge badges shift by the Extras-panel inset
         // (--capture-extra-*); this layer carries the dial so it shifts by the same amount
         // and stays centred on the origin (see .local-horizon-layer in Map.css).
+        // Stands down entirely for a chart-subject export: the card covers the map, and the
+        // export's glyph pass draws from the live DOM, which has no z-order to respect —
+        // a dial left mounted underneath would stamp its marks onto the card.
         <div className="local-horizon-layer">
           <LocalHorizonWheel
             cx={originScreen.x}
@@ -5956,10 +6196,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         </div>
       )}
       {/* Capture "Extras" panel — opaque planet/angle positions; the map + edge badges
-          inset to clear it (left for landscape, top otherwise). Self-measures → onExtraMeasure. */}
+          inset to clear it (left for landscape, top otherwise), or the whole frame when the
+          chart is the subject. Self-measures → onExtraMeasure. */}
       {showExtras && frameExtras && (
         <CaptureExtras
           orientation={extraSide}
+          clusterAxis={clusterAxis}
           data={frameExtras}
           wheelSize={wheelSize}
           onMeasure={onExtraMeasure}

@@ -231,6 +231,11 @@ interface ExpandedChartSidebarProps {
    *  bi-wheel into two full stacked wheels whenever an overlay ring exists. */
   dualWheels: boolean;
   setDualWheels: (v: boolean) => void;
+  /** Which aspect categories the wheel draws and the aspect list keeps, toggled by the
+   *  pills in this panel. Held by the caller (and persisted there) because other
+   *  surfaces draw the same wheel and must not read a second, drifting copy. */
+  visibleAspects: Set<AspectCategory>;
+  setVisibleAspects: (v: Set<AspectCategory>) => void;
   onClose: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
@@ -243,7 +248,6 @@ interface ExpandedChartSidebarProps {
 }
 
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
-const ASPECTS_KEY = 'astro:visible-aspects:v1';
 const FRAMES_KEY = 'astro:aspect-frames:v1';
 const LS_MODE_KEY = 'astro:ls-wheel-3d:v1'; // local-space dials: '3d' globe vs 2D compass
 
@@ -616,6 +620,8 @@ export function ExpandedChartSidebar({
   setAdvanced,
   dualWheels,
   setDualWheels,
+  visibleAspects,
+  setVisibleAspects,
   onClose,
   onResizingChange,
   onSelectChart,
@@ -658,25 +664,6 @@ export function ExpandedChartSidebar({
     publishLeftDock('expanded-sidebar', width);
     return () => retireLeftDock('expanded-sidebar');
   }, [width]);
-
-  const [visibleAspects, setVisibleAspects] = useState<Set<AspectCategory>>(
-    () => {
-      try {
-        const raw = localStorage.getItem(ASPECTS_KEY);
-        if (raw) return new Set(JSON.parse(raw) as AspectCategory[]);
-      } catch {
-        /* fall through */
-      }
-      return new Set<AspectCategory>(['harmonious', 'hard', 'conjunction']);
-    },
-  );
-
-  useEffect(() => {
-    localStorage.setItem(
-      ASPECTS_KEY,
-      JSON.stringify(Array.from(visibleAspects)),
-    );
-  }, [visibleAspects]);
 
   // Aspect-frame view while horizon data is in: combined (default — one merged
   // list) vs separate (two matched columns). Persisted like the pills above.
@@ -813,13 +800,13 @@ export function ExpandedChartSidebar({
   // bar's separator convention); "UTC" is kept explicit as the labelFull captions do.
   const momentText = overlayMoment ? `${overlayMoment.replace(' ', ' · ')} UTC` : null;
 
+  // Built from the current prop rather than an updater callback: the set lives with the
+  // caller now, and one pill click per commit needs no queued form.
   const toggleAspect = (cat: AspectCategory) => {
-    setVisibleAspects((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return next;
-    });
+    const next = new Set(visibleAspects);
+    if (next.has(cat)) next.delete(cat);
+    else next.add(cat);
+    setVisibleAspects(next);
   };
 
   const draggingRef = useRef(false);

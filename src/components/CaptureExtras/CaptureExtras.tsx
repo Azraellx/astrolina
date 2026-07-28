@@ -10,9 +10,18 @@
 //     tally, the same rows the wheel sidebar shows.
 //   • WHEEL — the shared chart wheel (WheelSvg) with the bodies/angles the Map Filter
 //     keeps visible, and (optional) a 3×4 element/modality balance grid beneath it.
-// Either way it lives on the LEFT for landscape frames (16:9) and at the TOP for square/
-// portrait (1:1, 4:5), self-measures via a ResizeObserver, and reports its cross-axis size
-// up to the Map, which insets the framed map by that much (so lines/badges stay clear).
+//
+// Three placements, set by `orientation`:
+//   • LEFT — a rail down landscape frames (16:9).
+//   • TOP  — a band across square/portrait frames (1:1, 4:5).
+//   • FILL — the whole frame above the caption band, when the chart IS the subject of the
+//     export rather than an annotation on a map. The wheel gets the room to carry its
+//     aspect web and bi-wheel ring there, which it can't at rail/band size.
+// Left and top self-measure via a ResizeObserver and report their cross-axis size up to
+// the Map, which insets the framed map by that much (so lines/badges stay clear); fill
+// covers the map, so it reports none. Either way the panel never scrolls — a still image
+// can't — so the same callback reports whether content is overflowing, which the tool
+// surfaces instead of letting the user find a sliced wheel in the saved file.
 //
 // Glyphs are plain `.astro-glyph` spans / SVG text (planet + sign) — re-stamped by the
 // existing capture glyph pass with no extra export code. The wheel SVG itself is colour-
@@ -28,6 +37,7 @@ import {
 } from '../../lib/ephemeris';
 import { PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, type BalanceSeg, type BalanceGrid } from '../../lib/astro/format';
+import type { AspectOrbs } from '../../lib/aspectPrefs';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { CaptureBalanceGrid } from './CaptureBalanceGrid';
 import './CaptureExtras.css';
@@ -61,22 +71,47 @@ export type CaptureFrameExtras =
       planets: EclipticPosition[];
       visibleAngles: Set<CaptureWheelAngleKey>;
       balanceGrid: BalanceGrid | null;
+      /* The rest are the full-chart extras — the same ones the expanded sidebar draws.
+         They're supplied only where the wheel is big enough to carry them (the fill
+         card); omitted, the wheel falls back to the plain rail/band drawing, where an
+         aspect web and a second ring would crowd it into illegibility. */
+      /** Bi-wheel: a second chart's bodies in an outer ring (a running time overlay). */
+      overlayPlanets?: EclipticPosition[] | null;
+      /** The overlay chart's own angles, marked in that outer ring. */
+      overlayAngles?: RelocatedAngles | null;
+      /** Aspect categories to draw. Omitted → none, the small-wheel default. */
+      visibleAspects?: Set<AspectCategory>;
+      /** Per-aspect orb limits. Omitted → the wheel's own defaults. */
+      aspectOrbs?: AspectOrbs;
+      /** Rim degree scale + cusp labels. */
+      advanced?: boolean;
+      /** No houses/angles — a chart cast without a known birth time. */
+      planetsOnly?: boolean;
     };
 
 interface CaptureExtrasProps {
-  orientation: 'left' | 'top';
+  /** Where the panel sits: a rail, a band, or the whole frame (see the header). */
+  orientation: 'left' | 'top' | 'fill';
+  /** How the wheel and its balance grid stack: 'column' puts the grid below the wheel,
+   *  'row' beside it. Independent of `orientation`, because a fill card picks its axis
+   *  from the frame's shape rather than from a dock side. */
+  clusterAxis: 'row' | 'column';
   data: CaptureFrameExtras;
   /** Wheel diameter (px) for the wheel view; ignored by the list view. */
   wheelSize: number;
-  /** Reports the panel's cross-axis px (width when docked left, height when top). */
-  onMeasure: (px: number) => void;
+  /** Reports the panel's cross-axis px (width when docked left, height when top, 0 when
+   *  it fills the frame and insets nothing), and whether its content is overflowing the
+   *  space it was given — i.e. whether the export would cut something off. */
+  onMeasure: (px: number, clipped: boolean) => void;
 }
 
-// The wheel view never draws the aspect web (it crowds a small wheel) — same as the minimap.
+// The default when a payload names no aspects: none, so a rail/band wheel stays as
+// uncrowded as the minimap's.
 const NO_ASPECTS: Set<AspectCategory> = new Set();
 
 export function CaptureExtras({
   orientation,
+  clusterAxis,
   data,
   wheelSize,
   onMeasure,
@@ -90,7 +125,17 @@ export function CaptureExtras({
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const report = () => onMeasure(orientation === 'left' ? el.offsetWidth : el.offsetHeight);
+    const report = () => {
+      // The panel clips (overflow: hidden) because a still image can't scroll, so any
+      // overflow is content that silently vanishes from the file. The Map sizes the wheel
+      // to fit before it gets here; this is the measured backstop behind that arithmetic,
+      // which reserves the balance grid's room by approximation rather than measurement.
+      const clipped =
+        el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+      const cross =
+        orientation === 'fill' ? 0 : orientation === 'left' ? el.offsetWidth : el.offsetHeight;
+      onMeasure(cross, clipped);
+    };
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
@@ -117,7 +162,9 @@ export function CaptureExtras({
     >
       {data.view === 'wheel' ? (
         <div
-          className={`cx-wheel-cluster cx-wheel-cluster-${orientation}`}
+          className={`cx-wheel-cluster cx-wheel-cluster-${clusterAxis}`}
+          // The rail is exactly as wide as its wheel, so a stacked balance grid gets a
+          // definite width to stretch to. Elsewhere the cluster hugs its content.
           style={orientation === 'left' ? { width: wheelSize } : undefined}
         >
           <WheelSvg
@@ -127,7 +174,12 @@ export function CaptureExtras({
             detailed
             interactive
             readouts
-            visibleAspects={NO_ASPECTS}
+            advanced={data.advanced ?? false}
+            planetsOnly={data.planetsOnly ?? false}
+            overlayPlanets={data.overlayPlanets ?? null}
+            overlayAngles={data.overlayAngles ?? null}
+            aspectOrbs={data.aspectOrbs}
+            visibleAspects={data.visibleAspects ?? NO_ASPECTS}
             visibleAngles={data.visibleAngles}
           />
           {data.balanceGrid && <CaptureBalanceGrid grid={data.balanceGrid} />}

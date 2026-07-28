@@ -143,7 +143,12 @@ export async function rasterizeWheelSvg(
 
   // Take the glyph list from the LIVE element: the clone has had them removed.
   const glyphs = [...svg.querySelectorAll(`.${GLYPH_CLASS}`)];
-  const img = await svgToImage(cloneWithInlineStyles(svg), rect.width, rect.height);
+  // Serialize at the CANVAS size rather than the layout size. The clone keeps its
+  // viewBox, so a wider serialization scales the whole coordinate system uniformly and
+  // the drawing is rasterized once at the size it will occupy. Decoding at layout size
+  // and enlarging on draw would leave the sharpness to whether the browser re-rasterizes
+  // an SVG <img> at the destination size — behaviour that has varied between engines.
+  const img = await svgToImage(cloneWithInlineStyles(svg), canvas.width, canvas.height);
   if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
   await ensureGlyphFont();

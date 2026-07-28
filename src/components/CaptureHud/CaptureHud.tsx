@@ -228,6 +228,22 @@ interface CaptureHudProps {
   captureAspect: number;
   /** Pick an aspect preset (persisted by App). */
   setCaptureAspect: (ratio: number) => void;
+  /** What the frame is a picture OF (owned by App, persisted): 'map' — the framed map,
+   *  with the details as an optional note docked beside it; 'chart' — the details alone,
+   *  filling the frame. Both keep the same ratios, caption and export actions. */
+  subject: 'map' | 'chart';
+  setSubject: (s: 'map' | 'chart') => void;
+  /** Whether this frame has room to draw the wheel legibly (computed by the Map from the
+   *  frame box). False soft-disables the Wheel view — the point being to decline before
+   *  the export, not to hand back a picture with the wheel cut off. */
+  canWheel: boolean;
+  /** True when the view the user actually chose is the one being declined, so the notice
+   *  (and its way out) appears for someone who asked for it, not for everyone who happens
+   *  to be on a small frame. */
+  viewBlocked: boolean;
+  /** The details panel's own report that it is cutting content off. Covers the position
+   *  list too, which the wheel's fit arithmetic says nothing about. */
+  detailsClipped: boolean;
   /** Controlled caption-field toggles (owned by App; the Map renders the caption band). */
   captionFields: CaptionFields;
   onToggleCaptionField: (key: keyof CaptionFields) => void;
@@ -278,6 +294,11 @@ export function CaptureHud({
   onClose,
   captureAspect,
   setCaptureAspect,
+  subject,
+  setSubject,
+  canWheel,
+  viewBlocked,
+  detailsClipped,
   captionFields,
   onToggleCaptionField,
   view,
@@ -321,7 +342,10 @@ export function CaptureHud({
   const supportsShare = touchLayout && canShareFiles;
   // Phones can't fit the wheel/list details in a phone-sized frame, so the picker is replaced by
   // an explanatory "i" and the view is forced to 'none' upstream (App passes view='none' here).
+  // The rule is about a map WITH details beside it — a chart card is legible at phone size,
+  // so it keeps its picker (and is what the "i" sends a phone user to).
   const phone = usePhone();
+  const chartSubject = subject === 'chart';
 
   // The Transparent (Local Space) toggle belongs to the GATED rung (lib/plan): live for an
   // entitled user (with the gated tip tag), a click-to-upgrade teaser when the build nudges
@@ -346,7 +370,13 @@ export function CaptureHud({
   // clean transparent image (App forces the view off, withholds overlays, drops the caption).
   // So the Details, per-overlay toggles and Caption sections hide; the frame ratio stays free
   // to pick, and the Transparent toggle + export actions remain.
-  const transparentLocked = localSpaceActive && effTransparent;
+  // It describes a MAP export, so a chart card stands it down — matching App, which drops its
+  // effect there. Without this a preset left on from a previous session would swap the card's
+  // own picker for the local-space label toggles.
+  const transparentLocked = !chartSubject && localSpaceActive && effTransparent;
+  // The phone-only "i" beside the Details heading, standing in for the picker it replaces.
+  // Only the MAP picker is dropped on phones, so only that case needs the explanation.
+  const phoneInfo = phone && !transparentLocked && !chartSubject;
 
   // Optional downstream gate (e.g. a build makes export an account-only feature). While the user is
   // locked the three actions divert to the gate's upsell (the account takeover, see divertIfLocked).
@@ -585,6 +615,24 @@ export function CaptureHud({
       />
 
       <div className="location-ls capture-hud-body">
+        {/* What the frame is a picture of. Its own axis rather than a fourth ratio preset:
+            the ratios, the caption and every export action serve both subjects equally. */}
+        <div className="capture-hud-label">{t('captureHud.subject.label')}</div>
+        <div className="location-ls-seg capture-hud-seg" role="group">
+          {(['map', 'chart'] as const).map((s) => (
+            <TipBtn
+              key={s}
+              className={`location-ls-seg-btn ${subject === s ? 'active' : ''}`}
+              onClick={() => setSubject(s)}
+              ariaPressed={subject === s}
+              title={t(`captureHud.subject.${s}`)}
+              hint={t(`captureHud.subject.${s}Hint`)}
+            >
+              {t(`captureHud.subject.${s}`)}
+            </TipBtn>
+          ))}
+        </div>
+
         <div className="capture-hud-label">{t('captureHud.aspect.label')}</div>
         <div className="location-ls-seg capture-hud-seg" role="group">
           {ASPECTS.map((a) => {
@@ -609,7 +657,7 @@ export function CaptureHud({
             see-through export. Its effect only applies with Local Space on, so it's shown
             SOFT-DISABLED (greyed, non-clickable, tip explains) until LS is active; hidden
             below the gated rung unless the build nudges it. */}
-        {(transparentUnlocked || transparentNudge) && (
+        {!chartSubject && (transparentUnlocked || transparentNudge) && (
           <TipBtn
             className={`location-ls-toggle capture-hud-transparent ${
               effTransparent ? 'on' : 'off'
@@ -630,15 +678,12 @@ export function CaptureHud({
           </TipBtn>
         )}
 
-        {/* Details heading — shown in both modes. The phone "i" (why no wheel/list) is only
-            relevant to the normal picker, so it's dropped in the transparent branch. */}
-        <div
-          className={`capture-hud-label${
-            phone && !transparentLocked ? ' capture-hud-label-info' : ''
-          }`}
-        >
+        {/* Details heading — shown in every mode. The phone "i" (why no wheel/list) belongs
+            only to the map picker: the transparent branch has no picker, and a chart card
+            keeps its own, which is legible at phone size. */}
+        <div className={`capture-hud-label${phoneInfo ? ' capture-hud-label-info' : ''}`}>
           <span>{t('captureHud.extras.label')}</span>
-          {phone && !transparentLocked && (
+          {phoneInfo && (
             <DetailsInfo
               title={t('captureHud.view.phoneTitle')}
               hint={t('captureHud.view.phoneHint')}
@@ -672,24 +717,77 @@ export function CaptureHud({
             </TipBtn>
           </div>
         ) : (
-          /* Phones can't fit the wheel/list in a phone-sized frame, so the picker is dropped there
-             (view is forced to 'none' upstream); the "i" beside the heading explains it instead. */
-          !phone && (
+          /* Phones can't fit the wheel/list BESIDE A MAP in a phone-sized frame, so the map
+             picker is dropped there (view is forced to 'none' upstream) and the "i" beside
+             the heading explains it. A chart card has no such problem, and drops 'none' the
+             other way: the details are the picture, so there is nothing to turn off. */
+          (chartSubject || !phone) && (
             <div className="location-ls-seg capture-hud-seg" role="group">
-              {(['none', 'wheel', 'list'] as const).map((v) => (
-                <TipBtn
-                  key={v}
-                  className={`location-ls-seg-btn ${view === v ? 'active' : ''}`}
-                  onClick={() => onSetView(v)}
-                  ariaPressed={view === v}
-                  title={t(`captureHud.view.${v}`)}
-                  hint={t(`captureHud.view.${v}Hint`)}
-                >
-                  {t(`captureHud.view.${v}`)}
-                </TipBtn>
-              ))}
+              {(chartSubject
+                ? (['wheel', 'list'] as const)
+                : (['none', 'wheel', 'list'] as const)
+              ).map((v) => {
+                // Soft-disabled rather than hidden: the tip is the whole explanation, and a
+                // control that vanishes teaches nothing about why. A card is refused on the
+                // same terms as a docked panel — the wheel is one drawing, and a frame with
+                // no room for it has none whoever it belongs to.
+                const blocked = v === 'wheel' && !canWheel;
+                return (
+                  <TipBtn
+                    key={v}
+                    className={`location-ls-seg-btn ${view === v ? 'active' : ''}${
+                      blocked ? ' disabled' : ''
+                    }`}
+                    onClick={() => {
+                      if (blocked) return;
+                      onSetView(v);
+                    }}
+                    ariaPressed={view === v}
+                    ariaDisabled={blocked}
+                    title={t(`captureHud.view.${v}`)}
+                    hint={
+                      blocked
+                        ? chartSubject
+                          ? t('captureHud.view.tooSmallCardHint')
+                          : t('captureHud.view.tooSmallHint')
+                        : t(`captureHud.view.${v}Hint`)
+                    }
+                  >
+                    {t(`captureHud.view.${v}`)}
+                  </TipBtn>
+                );
+              })}
             </div>
           )
+        )}
+        {/* The frame declined the view the user picked. Say so here, where the choice was
+            made, and — for a map frame — carry the export that will work at this size. On a
+            card there is no subject left to offer, so the way out is a different ratio. */}
+        {viewBlocked && (
+          <div className="capture-hud-notice" role="status">
+            <p className="capture-hud-notice-text">
+              {chartSubject
+                ? t('captureHud.view.tooSmallCardBody')
+                : t('captureHud.view.tooSmallBody')}
+            </p>
+            {!chartSubject && (
+              <button
+                type="button"
+                className="capture-hud-notice-btn"
+                onClick={() => setSubject('chart')}
+              >
+                {t('captureHud.view.switchToChart')}
+              </button>
+            )}
+          </div>
+        )}
+        {/* The panel measured itself overflowing — the arithmetic above reserves the balance
+            grid's room by approximation, and the position list wraps on its own terms, so
+            this is the only signal that catches either one running over. */}
+        {!viewBlocked && detailsClipped && view !== 'none' && (
+          <div className="capture-hud-notice" role="status">
+            <p className="capture-hud-notice-text">{t('captureHud.view.clippedBody')}</p>
+          </div>
         )}
         {/* Optional groups, meaningful only once a view is chosen ('none' draws nothing). Planets
             aren't here — they're the always-on baseline of any view; these add on top of them.
@@ -716,7 +814,9 @@ export function CaptureHud({
             hide applies only WHILE the tool is armed: App reverts the map to every
             overlay the moment Capture closes, so nothing set here can stick. Labels
             arrive from the registration, already localized. */}
-        {!transparentLocked && (() => {
+        {/* Each of these hides something drawn ON THE MAP, so a chart card has none of them
+            to offer. */}
+        {!transparentLocked && !chartSubject && (() => {
           const overlayToggles = getMapOverlays().filter(
             (o) => o.captureToggle && isOverlayEntitled(o),
           );

@@ -12,6 +12,16 @@ export const captureHud = {
   title: 'Capture',
   closeAria: 'Close Capture',
   closeHint: 'Close the Capture tool.',
+  // What the frame is a picture OF. The ratio, caption and export actions serve both.
+  subject: {
+    label: 'Capture',
+    map: 'Map',
+    mapHint:
+      'Export the framed map — your lines over the world, with the chart as an optional panel beside them.',
+    chart: 'Chart',
+    chartHint:
+      'Export the chart on its own: the wheel (or the positions) fills the frame at full size, drawn the way the sidebar draws it — aspects, overlay ring and all. No map, same caption.',
+  },
   aspect: {
     label: 'Frame',
     square: '1:1',
@@ -50,10 +60,31 @@ export const captureHud = {
     listHint:
       'Show the chart as a list of planet / angle positions (and the element·modality tally), the same rows as the sidebar.',
     // Shown in place of the wheel/list control on phones, where a phone-sized frame is too small
-    // to render either legibly (the info “i” beside the Details heading reveals it).
+    // to fit either BESIDE A MAP (the info “i” beside the Details heading reveals it). A chart
+    // capture has the whole frame to itself, so it stays available — and is what this points to.
     phoneTitle: 'Not available on phones',
     phoneHint:
-      'A phone-sized frame is too small to show the wheel or list clearly, so details stay off here. For the full chart, open the sidebar (its wheel and positions) and capture that separately if you’d like an accompanying image.',
+      'A phone-sized frame is too small to show the wheel or list beside the map clearly, so details stay off here. To export the chart itself, switch Capture to Chart — the wheel then fills the frame and reads properly at this size.',
+    // Shown as the Wheel segment’s tip while this frame has no room for a legible wheel, and
+    // as the notice below the picker when that was the view the user had chosen.
+    tooSmallHint:
+      'This frame is too small to show the wheel beside the map — it would be drawn with its edge cut off. Choose a wider frame (16:9 has the most room), make the window bigger, turn Balance off to give the wheel its room back, or switch Capture to Chart to export the wheel on its own.',
+    tooSmallBody:
+      'This frame can’t fit a readable wheel beside the map, so details are off. A chart capture gives the wheel the whole frame.',
+    switchToChart: 'Capture the chart on its own',
+    // The same refusal on a chart card, where there is no other subject to offer — the
+    // frame itself is the wrong shape or size, so the way out is a different ratio, a
+    // bigger window, or the list. A card is held to a higher bar than the panel beside a
+    // map: it draws the full chart — the aspect web, and the second ring of a running
+    // overlay — and those stop fitting well before the wheel merely gets small.
+    tooSmallCardHint:
+      'This frame can’t give the wheel the room a full chart needs — the aspects and the overlay ring want more width than there is here, and a wide, shallow frame leaves a wheel almost no height at all. Choose 1:1 or 4:5, make the window bigger, turn Balance off to give the wheel its room back, or capture the positions as a List instead.',
+    tooSmallCardBody:
+      'This frame is too small to draw the full chart, so the positions are shown instead. A taller window — or a 1:1 or 4:5 frame — gives the wheel the room it needs.',
+    // The panel measured itself cutting content off — rarer than the case above, and the fix
+    // is the same family of moves, so it stays a plain note rather than another button.
+    clippedBody:
+      'Some details don’t fit this frame and would be cut off in the export. Try a wider frame, a bigger window, or fewer groups.',
   },
   extras: {
     label: 'Details',

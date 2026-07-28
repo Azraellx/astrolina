@@ -1,9 +1,14 @@
 /*
- * Capture "Extras" panel — the opaque planet/angle position list overlaid inside the
- * capture frame. Mirrors the caption band's treatment (opaque, the map insets to clear
- * it). Docked LEFT for landscape (column-wrap → grows wider) or TOP for square/portrait
- * (row-wrap → grows taller); it never scrolls (a static PNG can't), so overflowing
- * content wraps into more columns/rows up to a capped fraction of the frame.
+ * Capture "Extras" panel — the opaque planet/angle positions (or chart wheel) overlaid
+ * inside the capture frame. Mirrors the caption band's treatment (opaque, the map insets
+ * to clear it). Three placements:
+ *   • LEFT — a rail down landscape frames (column-wrap → grows wider).
+ *   • TOP  — a band across square/portrait frames (row-wrap → grows taller).
+ *   • FILL — the whole frame above the caption band, when the chart is the SUBJECT of the
+ *     export rather than a note on a map. Nothing to dock beside, so it centres.
+ * It never scrolls (a static PNG can't), so overflowing content wraps into more
+ * columns/rows up to a capped fraction of the frame — and the WHEEL, which can't wrap, is
+ * sized to fit before it gets here (fitCaptureWheel in Map.tsx).
  */
 
 .capture-extras {
@@ -23,6 +28,30 @@
      so the readout stays proportional across export resolutions. */
   font-size: clamp(9px, calc(var(--capture-caption-h, 18px) * 0.36), 13px);
   line-height: 1.45;
+}
+
+/* The panel's backdrop is a fixed dark, but the wheel inside is drawn from custom
+   properties. Under a LIGHT appearance theme those resolve to dark strokes and dark labels
+   — on a near-black panel, which all but erases the wheel, in the export as much as on
+   screen. So restate the base (dark) palette for this subtree: custom properties cascade,
+   so the wheel's stylesheet — and the rasterizer, which bakes computed values off these
+   very elements — resolves against these instead of against :root. Only the properties the
+   wheel and the rows actually read. The dark themes are left alone: their own palettes
+   already read correctly here, and keeping them preserves each theme's character in an
+   export. A new LIGHT theme must be added to this selector. */
+:root[data-theme='glass'] .capture-extras {
+  --bg-panel: 15, 15, 22;
+  --tint: 255, 255, 255;
+  --text-strong: #e7e7ea;
+  --text: #cccfd6;
+  --text-muted: #a0a0aa;
+  --text-dim: #8a8a96;
+  --text-faint: #6b6b78;
+  --accent: #f5b83d;
+  --accent-rgb: 245, 184, 61;
+  --cool: #5ec2e0;
+  --cool-rgb: 94, 194, 224;
+  --label-halo: rgba(10, 10, 15, 0.95);
 }
 
 /* Landscape: left rail, full height down to the caption band; wraps into columns. */
@@ -47,6 +76,27 @@
   max-height: 46%;
   flex-flow: row wrap;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Chart-subject card: the whole frame above the caption band. No border — nothing
+   remains beside it to divide from — and content centres rather than anchoring to a
+   corner, because here the chart is the picture, not a note pinned to one. */
+.capture-extras-fill {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--capture-caption-h, 0px);
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  align-content: center;
+  /* The list wraps into COLUMNS here (unlike the top band's rows): a card is taller than
+     a band, so a positions sheet reads down first, then across. */
+  flex-flow: column wrap;
+  /* Sized off the card, not the caption band's panel scale — there is far more room, and
+     a card read at arm's length wants type nearer the sidebar's than the band's. */
+  font-size: clamp(11px, calc(var(--capture-caption-h, 18px) * 0.5), 18px);
+  column-gap: 26px;
 }
 
 .cx-row {
@@ -99,8 +149,8 @@
 
 /* ── Wheel view ─────────────────────────────────────────────────────────────
    The Details panel can instead hold the chart wheel + (optional) balance grid as a
-   single top-left cluster, rather than the wrapping list of rows. Override the list's
-   flex-wrap so the cluster just anchors at the top-left and the rail/band sizes to it. */
+   single cluster, rather than the wrapping list of rows. Override the list's flex-wrap
+   so the cluster just anchors (or centres) and the rail/band/card sizes to it. */
 .capture-extras.capture-extras-wheel {
   flex-flow: column nowrap;
   gap: 0;
@@ -112,28 +162,44 @@
   min-width: 0;
   max-width: none;
 }
+/* Top band: the Map sizes the wheel to the room the band is allowed, so the band may take
+   the height that wheel needs. The list keeps the 46% cap above — it wraps into more rows
+   rather than growing a fixed atom, so a cap there costs nothing. */
+.capture-extras.capture-extras-wheel.capture-extras-top {
+  max-height: none;
+}
 .cx-wheel-cluster {
   display: flex;
 }
-/* Landscape (left rail): wheel on top, balance grid stacked below it (grid stretches to
-   the wheel width). */
-.cx-wheel-cluster-left {
+/* Grid stacked BELOW the wheel — the left rail, and portrait/square cards, where the
+   spare room is vertical (grid stretches to the wheel width). */
+.cx-wheel-cluster-column {
   flex-direction: column;
   align-items: stretch;
 }
-/* Square / portrait (top band): wheel on the left, balance grid beside it on the right. */
-.cx-wheel-cluster-top {
+/* Grid BESIDE the wheel — the top band, and landscape cards, where the room is sideways. */
+.cx-wheel-cluster-row {
   flex-direction: row;
   align-items: flex-start;
   gap: 10px;
 }
 /* Keep the wheel at its intrinsic size; never let the flex row squeeze it. */
-.cx-wheel-cluster-top .wheel-svg-wrap {
+.cx-wheel-cluster-row .wheel-svg-wrap {
   flex-shrink: 0;
 }
 /* Beside the wheel the grid aligns to its top edge — drop the stacked layout's top gap. */
-.cx-wheel-cluster-top .capture-balance-grid {
+.cx-wheel-cluster-row .capture-balance-grid {
   margin-top: 0;
+}
+/* On a card the cluster is the whole picture, so it centres on both axes — a stacked grid
+   sits centred under the wheel at its own width rather than stretching to the wheel's
+   (which is the rail's habit, where the rail edge gives "full width" a meaning). */
+.capture-extras-fill .cx-wheel-cluster {
+  align-items: center;
+}
+.capture-extras-fill .cx-wheel-cluster-row {
+  align-items: center;
+  gap: 18px;
 }
 /* The wheel uses the interactive renderer (so it draws the angle codes), but in the static
    capture it must stay inert — it sits in the opaque panel, off the live map. Block pointer

@@ -213,9 +213,21 @@
   font-size: clamp(10px, calc(var(--capture-brand-h, 0px) * 0.36), 15px);
 }
 /* …and hide maplibre's attribution/credits control entirely in Transparent mode — the brand mark
-   above is the sole disclosure. (Ordinary captures keep the control; see the attribution effect.) */
-.map-frame.transparent .maplibregl-ctrl-bottom-right {
+   above is the sole disclosure. (Ordinary captures keep the control; see the attribution effect.)
+   A chart-subject capture hides it for the same reason from the other direction: the credit names
+   the basemap's data sources, and that frame shows no basemap to credit. The watermark still
+   carries the app's own attribution. */
+.map-frame.transparent .maplibregl-ctrl-bottom-right,
+.map-frame.chart-only .maplibregl-ctrl-bottom-right {
   display: none !important;
+}
+/* The chart card covers the map, and the map's pointer gestures stand down behind it
+   (see the hover/click guards in Map.tsx) — so the canvas must stop advertising a grab
+   it will not honour. `!important` because the hover handler writes the cursor INLINE,
+   and it steps aside in this mode without getting the chance to clear what it left. */
+.map-frame.chart-only .maplibregl-canvas-container,
+.map-frame.chart-only .maplibregl-canvas {
+  cursor: default !important;
 }
 
 /* With a caption band present, center the watermark inside it on the right and scale

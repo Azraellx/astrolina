@@ -88,6 +88,7 @@ import type {
   CaptureFrameExtras,
   CaptureWheelAngleKey,
 } from './components/CaptureExtras/CaptureExtras';
+import { ARIES_FRAME, type AspectCategory } from './components/Wheel/WheelSvg';
 import {
   offsetHoursAt,
   zoneLabelAt,
@@ -757,6 +758,25 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:wheel-layout:v1', dualWheels ? 'dual' : 'bi-wheel');
   }, [dualWheels]);
+  // Which aspect categories the wheel draws, toggled by the expanded sidebar's pills.
+  // Lifted here — same storage key the sidebar always used — because more than one
+  // surface now draws that wheel, and a second copy of this set would drift from the
+  // pills the moment either one changed.
+  const [visibleAspects, setVisibleAspects] = useState<Set<AspectCategory>>(() => {
+    try {
+      const raw = localStorage.getItem('astro:visible-aspects:v1');
+      if (raw) return new Set(JSON.parse(raw) as AspectCategory[]);
+    } catch {
+      /* fall through */
+    }
+    return new Set<AspectCategory>(['harmonious', 'hard', 'conjunction']);
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      'astro:visible-aspects:v1',
+      JSON.stringify(Array.from(visibleAspects)),
+    );
+  }, [visibleAspects]);
   // The guides reference (View ▸ Guides): reopen the onboarding guides as a glossary.
   // Not persisted — it's an on-demand reference, so it shouldn't reappear on every load.
   // guideIndex is which met-guide the pager is showing (reset to the first on open).
@@ -905,6 +925,21 @@ export default function App() {
     const n = parseFloat(localStorage.getItem('astro:capture-aspect:v1') ?? '');
     return Number.isFinite(n) && n > 0 ? n : 16 / 9; // default landscape 16:9
   });
+  // What the capture frame is a picture OF, persisted alongside the ratio. 'map' — the
+  // framed map, with the chart as an optional note docked beside it. 'chart' — the chart
+  // alone, filling the frame. The ratio, caption and export actions serve both, which is
+  // why this is its own axis rather than a fourth ratio preset.
+  const [captureSubject, setCaptureSubject] = useState<'map' | 'chart'>(() =>
+    localStorage.getItem('astro:capture-subject:v1') === 'chart' ? 'chart' : 'map',
+  );
+  const setCaptureSubjectPersist = useCallback((s: 'map' | 'chart') => {
+    setCaptureSubject(s);
+    try {
+      localStorage.setItem('astro:capture-subject:v1', s);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   // Capture caption fields, persisted. The pin, edge labels and watermark are now
   // always included (no toggles); only WHICH parts of the caption appear is configurable.
   // The caption fields are lifted here (not kept in CaptureHud) because the Map reserves a
@@ -3494,19 +3529,65 @@ export default function App() {
   // the frame and the HUD without touching the stored preference, so a desktop 'wheel'/'list'
   // choice survives a detour through a phone.
   const capturePhone = usePhone();
+  // The frame is a picture of the CHART rather than the map: the details fill it as a card,
+  // and every map-flavoured option below steps aside.
+  const captureChart = mapTool === 'capture' && captureSubject === 'chart';
+  // How much room the frame can give the details, reported by the Map as the frame box
+  // changes. Optimistic until the first report — the frame hasn't been measured yet, and
+  // starting from "too small" would flash the picker into its blocked state on open.
+  const [captureFit, setCaptureFit] = useState<{
+    wheelPx: number;
+    canWheel: boolean;
+    clipped: boolean;
+  }>({ wheelPx: 0, canWheel: true, clipped: false });
+  const onCaptureFit = useCallback(
+    (fit: { wheelPx: number; canWheel: boolean; clipped: boolean }) => setCaptureFit(fit),
+    [],
+  );
   // Transparent (Local Space) export mode is effectively ON only with Local Space up, the
   // Capture frame armed, the toggle set AND the plan at the gated rung. It strips the export to
   // a clean transparent image: forces the details view off, withholds every registered map
   // overlay (journal spots etc.), and drops the caption band + watermark — a bare see-through
   // PNG (the LS lines + compass) for laying over a floor plan, in whatever frame ratio you pick.
+  // It describes a MAP export, so a chart card stands it down (the HUD hides its toggle there,
+  // but a preset left on from a previous session would otherwise still apply).
   const lsTransparent =
-    showLocalSpace && mapTool === 'capture' && transparentMode && gatedTierMet;
+    showLocalSpace &&
+    mapTool === 'capture' &&
+    !captureChart &&
+    transparentMode &&
+    gatedTierMet;
   // Every registered map overlay id — withheld from the frame while lsTransparent (a clean
   // LS-only export). The registry is populated at startup, so the set is stable.
   const allCaptureOverlayIds = useMemo(() => new Set(getMapOverlays().map((o) => o.id)), []);
-  // Details view is forced OFF (no panel) in transparent mode, and on phones.
-  const captureViewEff: 'none' | 'wheel' | 'list' =
-    capturePhone || lsTransparent ? 'none' : captureExtras.view;
+  // The view actually drawn, which is never written back to the stored preference — so a
+  // choice made where it fits survives a detour through a frame where it doesn't.
+  //  • CHART card — there is no 'none' (the details ARE the picture), and the phone rule
+  //    doesn't apply: a card is legible at phone size, which is exactly why the blocked
+  //    map view offers it as the way out. A frame too cramped even for a card wheel (a
+  //    16:9 strip on a phone) falls back to the LIST, which wraps to whatever room it has.
+  //  • MAP frame — off in transparent mode and on phones, and off when the frame has no
+  //    room to draw the wheel legibly (see fitCaptureWheel in Map).
+  const captureViewEff: 'none' | 'wheel' | 'list' = captureChart
+    ? captureExtras.view === 'list' || !captureFit.canWheel
+      ? 'list'
+      : 'wheel'
+    : capturePhone || lsTransparent
+      ? 'none'
+      : captureExtras.view === 'wheel' && !captureFit.canWheel
+        ? 'none'
+        : captureExtras.view;
+  // A card carries the chart as the sidebar draws it — the aspect web under the practitioner's
+  // own filters, and the outer ring of a running time overlay. The docked panel leaves both
+  // out: at rail/band size they crowd the wheel past reading. Same gate the sidebar uses —
+  // a promoted overlay or CCG has no coherent second chart to ring.
+  const captureCardOverlay =
+    captureChart && !promoteOverlay && !isCyclo && displayOverlayEcliptic
+      ? displayOverlayEcliptic.filter((p) => visiblePlanets.has(p.name))
+      : null;
+  // Unknown birth time: there are no angles, but the bodies still read by sign — so the card
+  // draws them planets-only on the neutral Aries frame, as the sidebar does.
+  const captureCardFrame = wheelAngles ?? (noTime ? ARIES_FRAME : null);
   // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
   // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
   // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
@@ -3514,15 +3595,32 @@ export default function App() {
     mapTool !== 'capture' || captureViewEff === 'none'
       ? null
       : captureViewEff === 'wheel'
-        ? wheelAngles
-          ? {
-              view: 'wheel',
-              angles: wheelAngles,
-              planets: captureWheelPlanets, // baseline of any view — no planets toggle
-              visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
-              balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
-            }
-          : null
+        ? captureChart
+          ? captureCardFrame
+            ? {
+                view: 'wheel',
+                angles: captureCardFrame,
+                planets: captureWheelPlanets,
+                visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
+                balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
+                overlayPlanets: captureCardOverlay,
+                overlayAngles:
+                  promoteOverlay || isCyclo ? null : (displayOverlayAngles ?? null),
+                visibleAspects,
+                aspectOrbs: effAspectOrbs,
+                advanced: advancedWheel,
+                planetsOnly: noTime && !wheelAngles,
+              }
+            : null
+          : wheelAngles
+            ? {
+                view: 'wheel',
+                angles: wheelAngles,
+                planets: captureWheelPlanets, // baseline of any view — no planets toggle
+                visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
+                balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
+              }
+            : null
         : captureExtraPlanets.length > 0 ||
             (captureExtras.angles && captureExtraAngles.length > 0)
           ? {
@@ -4692,6 +4790,14 @@ export default function App() {
         // Transparent export: the same fields, unjoined, stacked in the frame's top-left.
         frameCaptionLines={captureCaptionLines}
         frameExtras={captureFrameExtras}
+        // Chart subject: the details fill the frame as a card and the map stands down.
+        frameSubject={captureChart ? 'chart' : 'map'}
+        // The balance TOGGLE, not whether the drawn view happens to carry a grid — the fit
+        // below decides which views are offered, so it must not depend on the one in use.
+        frameWheelGrid={captureExtras.balance}
+        // How much room the frame has for the details — drives the wheel's size, and tells
+        // the tool when to decline the view rather than export something unreadable.
+        onFrameFit={onCaptureFit}
         // Transparent mode drops the caption band + watermark for a clean see-through export.
         noCaption={lsTransparent}
         // Transparent export: clip the LS lines to a circle ~30% wider than the compass with their
@@ -5045,6 +5151,28 @@ export default function App() {
           onClose={() => setMapTool('off')}
           captureAspect={captureAspect}
           setCaptureAspect={setCaptureAspectPersist}
+          // What the frame is a picture of — the map, or the chart on its own.
+          subject={captureSubject}
+          setSubject={setCaptureSubjectPersist}
+          // False when this frame has no room to draw the wheel legibly: the picker
+          // declines the view and points at the card instead of exporting a sliced one.
+          canWheel={captureFit.canWheel}
+          // The declined view is the one the user actually asked for — so the notice (and
+          // its way out) appears for them, not for anyone who merely has a small frame.
+          // A card can be refused too: a 16:9 strip on a phone has no room for a wheel
+          // whoever it belongs to, and there the answer is a different ratio, not a
+          // different subject.
+          viewBlocked={
+            !captureFit.canWheel &&
+            (captureChart
+              ? // A card draws the wheel unless the list was asked for, so anything but
+                // 'list' means a wheel was wanted here.
+                captureExtras.view !== 'list'
+              : captureExtras.view === 'wheel' && !capturePhone && !lsTransparent)
+          }
+          // The panel's own report that it is cutting content off — the backstop behind
+          // the fit arithmetic, and the only signal that covers the position list.
+          detailsClipped={captureFit.clipped}
           captionFields={captureCaptionFields}
           onToggleCaptionField={toggleCaptureCaptionField}
           view={captureViewEff}
@@ -5199,6 +5327,8 @@ export default function App() {
           setAdvanced={setAdvancedMode}
           dualWheels={dualWheels}
           setDualWheels={setDualWheels}
+          visibleAspects={visibleAspects}
+          setVisibleAspects={setVisibleAspects}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
           onSelectChart={selectChart}
