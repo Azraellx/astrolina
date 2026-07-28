@@ -113,4 +113,51 @@ export const chartForm = {
   yearRangeTip: 'Our ephemeris data covers {min}–{max}.',
   errorYearRange: 'Enter a year between {min} and {max}.',
   import: 'Import',
+  // The folder button beside Add chart: where the chart being saved will land.
+  // Starts on the folder the last chart went into.
+  folderPicker: {
+    tip: 'Choose the folder this chart goes in',
+    unfiled: 'Unfiled',
+    new: 'New folder',
+    // A '/' makes a subfolder, e.g. Clients/2026.
+    newPlaceholder: 'Name, or Parent/Child',
+  },
+  // Free notes about where the birth data came from and how far to trust it.
+  // Hidden behind the link until asked for; imports fill it in from whatever
+  // the source carried, and then it shows by itself.
+  addNotes: '+ Add notes/source',
+  notes: 'Notes',
+  // Kept short so the box sits flush with the source dropdown beside it.
+  notesPlaceholder: 'Where this data came from…',
+  // How far the birth data can be trusted — the Rodden-style code, beside the
+  // notes because it answers the same question in a form the app can read.
+  // Everything on the map hangs off the exact minute, so a certificate and a
+  // recollection are not the same kind of chart even when they look alike.
+  sourceRating: 'Source',
+  // Short glosses, not definitions: a native dropdown shows the SELECTED
+  // option's text when shut, so a long one would force the field wide and take
+  // the width off the notes box beside it. The full wording is in the help
+  // article, which is where someone learning the scale will actually read it.
+  rating: {
+    unset: 'No rating',
+    unsetHint: 'Nobody has said how reliable this birth data is.',
+    AA: 'Birth record',
+    A: 'From memory',
+    B: 'Biography',
+    C: 'Unknown source',
+    DD: 'Conflicting',
+    X: 'No birth time',
+    XX: 'Undetermined',
+  },
+  // The full meaning of each code, revealed as a hover explanation on its row
+  // in the dropdown — which is what lets the labels above stay short.
+  ratingHint: {
+    AA: 'From a birth record: a certificate, or a hospital or state record.',
+    A: 'From memory or a news report — quoted by the person, their family, or a friend.',
+    B: 'From a biography or autobiography, where no source is given.',
+    C: 'The source is unknown, or the time was rectified.',
+    DD: 'Conflicting or unverified: accounts that disagree, with nothing to settle them.',
+    X: 'No birth time is known.',
+    XX: 'Undetermined.',
+  },
 } as const;

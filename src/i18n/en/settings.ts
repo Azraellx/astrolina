@@ -17,6 +17,7 @@ export const settings = {
   },
   headings: {
     theme: 'Theme',
+    privacy: 'Privacy',
     details: 'Details',
     projection: 'Projection',
     language: 'Language',
@@ -126,6 +127,12 @@ export const settings = {
   nightShade: {
     title: 'Night Shade',
     hint: 'Shades the half of Earth in night at the displayed moment.',
+  },
+  // Discreet mode. The hint has to say what is NOT hidden as clearly as what
+  // is: someone who thinks the map is covered will use this wrongly.
+  discreet: {
+    title: 'Hide birth details',
+    hint: 'Blanks names, dates and places everywhere on screen, so you can work with someone beside you. The map and its lines are unchanged, and exports still carry the real details.',
   },
   orbZones: {
     title: 'Orb Zones',

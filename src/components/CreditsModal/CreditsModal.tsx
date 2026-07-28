@@ -4,9 +4,9 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '../../i18n';
-import { TipSpan } from '../ui/HoverTip';
+import { TipButton } from '../ui/HoverTip';
 import { getCreditsFooter, getCreditsItems } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
 
@@ -138,19 +138,129 @@ const CREDIT_GROUPS: CreditGroup[] = [
   },
 ];
 
+// The people credited in the acknowledgements sub-dialog, with the contact details
+// they asked to be reachable at. Names, addresses, and site labels are proper nouns —
+// they read the same in every language, so they are not in the message catalog.
+interface Person {
+  name: string;
+  email: string;
+  site: string;
+  siteLabel: string;
+}
+
+// The astrologer whose practice the app is built on. Billed on her own, above the
+// thanks — a first credit rather than the first of a list.
+const THANKS_LEAD: Person = {
+  name: 'Lina Grosso',
+  email: 'lina@linagrosso.com',
+  site: 'https://linagrosso.com',
+  siteLabel: 'linagrosso.com',
+};
+
+const THANKS_PEOPLE: Person[] = [
+  {
+    name: 'Shae Freeman',
+    email: 'shaeastrology@gmail.com',
+    site: 'https://astroshae.com',
+    siteLabel: 'astroshae.com',
+  },
+  {
+    name: 'Cindy McKean',
+    email: 'cindy@cindymckean.com',
+    site: 'https://cindymckean.com',
+    siteLabel: 'CindyMcKean.com',
+  },
+];
+
+// email | website, as a pair of links. Shared by the lead credit and the thanks list
+// so the two never drift apart in punctuation or link behaviour.
+function ContactLinks({ person }: { person: Person }) {
+  return (
+    <span className="thanks-contact">
+      <a href={`mailto:${person.email}`}>{person.email}</a>
+      <span className="thanks-sep" aria-hidden="true">
+        |
+      </span>
+      <a href={person.site} target="_blank" rel="noopener noreferrer">
+        {person.siteLabel}
+      </a>
+    </span>
+  );
+}
+
+// The acknowledgements, opened from the heart in the credits header. A dialog of its
+// own rather than a tooltip, so the thank-you can be read at leisure and the contact
+// details can be clicked. Escape is handled by the parent, which owns the "innermost
+// dialog first" ordering.
+function ThanksDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useT();
+  return (
+    <div className="modal-backdrop thanks-backdrop" onClick={onClose}>
+      <div
+        className="thanks-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="thanks-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header>
+          <h2 id="thanks-title">{t('creditsModal.thanks.title')}</h2>
+          <button type="button" className="close" onClick={onClose} aria-label={t('common.close')}>
+            ×
+          </button>
+        </header>
+
+        {/* The first credit, given its own card: name, what she is to the app, why. */}
+        <section className="thanks-lead">
+          <span className="thanks-lead-name">{THANKS_LEAD.name}</span>
+          <span className="thanks-role">{t('creditsModal.thanks.leadRole')}</span>
+          <p className="thanks-lead-body">{t('creditsModal.thanks.leadBody')}</p>
+          <ContactLinks person={THANKS_LEAD} />
+        </section>
+
+        {/* Grouped so the heading, its sentence, and the names keep their own tighter
+            rhythm instead of inheriting the dialog's section-sized gap. */}
+        <section className="thanks-others">
+          <h3 className="thanks-heading">{t('creditsModal.thanks.othersHeading')}</h3>
+          <p className="thanks-body">{t('creditsModal.thanks.body')}</p>
+          <ul className="thanks-list">
+            {THANKS_PEOPLE.map((person) => (
+              <li key={person.email}>
+                <span className="thanks-name">{person.name}</span>
+                <span className="thanks-role">{t('creditsModal.thanks.role')}</span>
+                <ContactLinks person={person} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 // A scrollable dialog of secondary copyright / license disclosures, plus
 // AstroLina's own copyright. Reuses the shared .modal-backdrop chrome.
 export function CreditsModal({ onClose }: { onClose: () => void }) {
   const { t } = useT();
+  const [thanksOpen, setThanksOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // Innermost first: Escape dismisses the acknowledgements and leaves the credits
+      // up. One listener for both, since two window listeners would fire on the same
+      // press and close the pair together.
+      if (thanksOpen) setThanksOpen(false);
+      else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, thanksOpen]);
 
   return (
+    // The sub-dialog is a SIBLING of this backdrop, never a child — a nested one would
+    // hand its own backdrop clicks up to this onClose and dismiss the pair together.
+    // Same parent, so the later sibling simply paints over it (see .thanks-backdrop).
+    <>
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="credits-modal"
@@ -162,21 +272,21 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
         <header>
           <h2 id="credits-title">{t('creditsModal.title')}</h2>
           <div className="credits-header-actions">
-            {/* A thank-you that keeps to itself: inert, hover (or tap) reveals it.
-                It sits in the credits because that is what this dialog is for —
-                naming the work behind the work. */}
-            <TipSpan
+            {/* A thank-you that keeps to itself until asked: the heart opens the
+                acknowledgements. It sits in the credits because that is what this
+                dialog is for — naming the work behind the work. */}
+            <TipButton
+              type="button"
               className="credits-thanks"
               tip={t('creditsModal.thanks.tip')}
               hint={t('creditsModal.thanks.hint')}
-              tapReveal
-              role="img"
-              aria-label={t('creditsModal.thanks.hint')}
+              onClick={() => setThanksOpen(true)}
+              aria-label={t('creditsModal.thanks.title')}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 21s-7.5-4.7-9.6-9.2A5.4 5.4 0 0 1 12 6.3a5.4 5.4 0 0 1 9.6 5.5C19.5 16.3 12 21 12 21Z" />
               </svg>
-            </TipSpan>
+            </TipButton>
             <button type="button" className="close" onClick={onClose} aria-label={t('common.close')}>
               ×
             </button>
@@ -245,5 +355,8 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
         </footer>
       </div>
     </div>
+
+    {thanksOpen && <ThanksDialog onClose={() => setThanksOpen(false)} />}
+    </>
   );
 }

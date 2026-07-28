@@ -28,13 +28,36 @@ export const chartManager = {
     unknown: 'Unknown',
     shared: 'Share',
   },
+  // Folders. A folder is a path written on the chart, so the tree is whatever
+  // paths are in use. Charts with no folder are simply listed after the tree,
+  // under no heading — they are the ones not sorted yet, which is when you most
+  // want to see them.
+  folders: {
+    new: 'New folder',
+    newChild: 'New folder inside',
+    rename: 'Rename folder',
+    // Removing a folder never removes charts — they move up to the folder above.
+    remove: 'Remove',
+    // Heading of the right-click menu on a chart row (desktop): file it
+    // somewhere without dragging it there.
+    moveTo: 'Move to',
+    unfiled: 'Unfiled',
+    nameLabel: 'Folder name',
+    namePlaceholder: 'Folder name',
+  },
+  // The eye toggle: blanks names, dates and places across the app so a screen
+  // can be shared without sharing the library. The map is untouched.
+  discreet: {
+    hide: 'Hide birth details',
+    show: 'Show birth details',
+  },
   // Empty-state row when no charts have been saved.
   empty: 'No saved charts yet.',
   // Shown when a search or tag filter matches no charts (but some charts exist).
   noMatches: 'No charts match.',
   // "Add <query>" row offered when the typed name has no exact match.
   addQuery: 'Add “{name}”',
-  // window.confirm before deleting a chart.
+  // window.confirm before deleting a chart.
   // Header above the right-hand form when editing an existing chart.
   editingHeader: 'Editing {name}',
   // BirthDataForm submit-button labels owned by this view.

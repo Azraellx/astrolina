@@ -190,8 +190,24 @@ to relicense the project in the future).
 
 ## Special thanks
 
-To **Shae Freeman** and **Cindy McKean**, professional astrologers whose guidance
-and generosity helped make this project possible — thank you both.
+### Lina Grosso — the astrologer behind AstroLina
+
+This app began as her practice, and it still answers to it. The methods it
+follows, the conventions it holds to, and the judgement behind every line it
+draws are hers — explained patiently, and often more than once, until the
+software matched the craft.
+
+[lina@linagrosso.com](mailto:lina@linagrosso.com) | [linagrosso.com](https://linagrosso.com)
+
+### With thanks also to
+
+Two professional astrologers who gave their time, their expertise, and a great
+deal of patience to this project — answering questions, checking conventions,
+and helping an early tool find its footing. It would be a lesser thing without
+them.
+
+- **Shae Freeman**, professional astrologer — [shaeastrology@gmail.com](mailto:shaeastrology@gmail.com) | [astroshae.com](https://astroshae.com)
+- **Cindy McKean**, professional astrologer — [cindy@cindymckean.com](mailto:cindy@cindymckean.com) | [CindyMcKean.com](https://cindymckean.com)
 
 ## Contact
 

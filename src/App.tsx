@@ -280,6 +280,13 @@ import {
   saveCurrentId,
   type StoredChart,
 } from './lib/chartLibrary';
+import {
+  buildFolderTree,
+  flattenFolders,
+  loadDeclaredFolders,
+  pruneDeclaredFolders,
+} from './lib/chartFolders';
+import { toggleDiscreet, useIdentity } from './lib/discreet';
 import { fmtLat, fmtLng } from './lib/coordFormat';
 import {
   applyTheme,
@@ -498,6 +505,11 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 
 export default function App() {
   const { t, labels, fmt } = useT();
+  // Discreet mode's masks. Used for what is on SCREEN; anything being produced
+  // deliberately — a capture caption, an export, a share link — keeps the real
+  // values, since hiding those from the person who asked for them would be a
+  // bug rather than a courtesy.
+  const identity = useIdentity();
   // A share link (#c=…) restores a chart + view. Consumed exactly once at boot
   // (the param is stripped from the address bar); malformed tokens decode to
   // null and the app boots normally. The chart lands in the library like an
@@ -1264,7 +1276,9 @@ export default function App() {
         if (session) {
           session = { ids: session.ids, index: (session.index + 1) % session.ids.length };
         } else {
-          const ids = recentShortlist(charts).map((c) => c.id);
+          // Same folder-scoped shortlist the switcher shows — Tab flashes that
+          // menu, so cycling a different set would contradict what is on screen.
+          const ids = recentShortlist(charts, current).map((c) => c.id);
           if (ids.length < 2) return; // one chart (or none): let Tab be Tab
           // Start from the active chart's slot (top, having just been used)
           // and step once — the previous chart.
@@ -1377,6 +1391,11 @@ export default function App() {
         case 'c': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
+        // Discreet mode: blank every name, date and place on screen. Deliberately
+        // NOT parked under a view lock — a surface owning the viewport still
+        // shows chart names, and this is wanted most in the second where someone
+        // walks up, which is no time to be hunting for a button.
+        case 'p': toggleDiscreet(); break;
         default: {
           // A registered map-HUD extension may claim a plain-letter hotkey (its
           // `hotkey` field, also shown beside it in the View menu — drawer-surface
@@ -1772,6 +1791,11 @@ export default function App() {
 
   useEffect(() => {
     saveCharts(charts);
+    // A folder is remembered as "declared" only while it holds nothing. Once a
+    // chart lands in it the path itself is the evidence, so the declaration is
+    // dropped — otherwise the list would grow a stale entry for every folder
+    // ever made, and a folder deleted on another device would come back.
+    pruneDeclaredFolders(charts);
   }, [charts]);
   // Let an editor outside this tree write a field back onto a chart (the
   // patchChart channel). Merging through setCharts keeps the normal persist +
@@ -3966,6 +3990,28 @@ export default function App() {
     setPickingPartner(false);
   };
 
+  /**
+   * Fold several edited charts back in at once, leaving everything else alone.
+   *
+   * Filing works in bulk — renaming a folder rewrites every chart underneath it
+   * — and one setCharts per chart would be one render and one persist each.
+   * Unlike handleSaveChart this changes no selection and closes nothing: the
+   * charts moved, the user did not.
+   */
+  // Every folder currently in use, offered as import destinations.
+  const folderPaths = useMemo(
+    () => flattenFolders(buildFolderTree(charts, loadDeclaredFolders())).map((n) => n.path),
+    [charts],
+  );
+
+  const handleSaveCharts = (updated: StoredChart[]) => {
+    if (!updated.length) return;
+    // A plain record, not a Map: `Map` in this module is the map COMPONENT.
+    const byId: Record<string, StoredChart> = {};
+    for (const c of updated) byId[c.id] = c;
+    setCharts((prev) => prev.map((c) => byId[c.id] ?? c));
+  };
+
   // Build a relationship chart from the active chart + its synastry partner using the
   // chosen method, make it the active chart, and clear the partner — the synastry view
   // stays on (its partner slot just empties for re-picking).
@@ -5365,7 +5411,9 @@ export default function App() {
           title={
             pickingPartner
               ? t('chartManager.comparisonTitle', {
-                  name: displayName(current?.name ?? ''),
+                  name: identity.on
+                    ? identity.name(current?.name ?? '')
+                    : displayName(current?.name ?? ''),
                 })
               : undefined
           }
@@ -5375,7 +5423,9 @@ export default function App() {
               <span className="cm-comparison-title">
                 {t('chartManager.comparisonLabel')}
                 <SynastryIcon />
-                {displayName(current?.name ?? '')}
+                {identity.on
+                  ? identity.name(current?.name ?? '')
+                  : displayName(current?.name ?? '')}
               </span>
             ) : undefined
           }
@@ -5392,6 +5442,7 @@ export default function App() {
             closeManager();
           }}
           onSave={handleSaveChart}
+          onSaveMany={handleSaveCharts}
           onDelete={handleDelete}
           onImport={() => setImporting(true)}
           onClose={closeManager}
@@ -5401,6 +5452,10 @@ export default function App() {
         <ImportChartModal
           onCancel={() => setImporting(false)}
           onImport={handleImport}
+          // So a re-dropped export can recognise what it already brought in,
+          // and so imported charts can land straight in an existing folder.
+          existing={charts}
+          folderOptions={folderPaths}
         />
       )}
       {/* The guides reference (View ▸ Guides) takes precedence over an onboarding pop-up,

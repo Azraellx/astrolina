@@ -5,6 +5,10 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import type { BirthData } from './birthData';
+// Value import, but no cycle: chartFolders only imports StoredChart as a TYPE,
+// which erases at compile time.
+import { normalizeFolderPath } from './chartFolders';
+import type { SourceRating } from './sourceRating';
 import { notifyChartsChanged } from './extensions/chartSync';
 
 /** A chart's organizing tag. 'star' is user-assigned (the only one the UI offers);
@@ -60,6 +64,20 @@ export interface StoredChart extends BirthData {
    *  of the stored moment — that moment is the synthesized sidereal-frame
    *  anchor, which every gmst/houses/relocation consumer reads normally. */
   composite?: CompositeParents;
+  /** Free text about where this record came from and how far to trust it: the
+   *  source, a rating, why a time was rectified or is only remembered. Carried
+   *  in from imports, which is where most of it originates, and editable in the
+   *  chart form. Absent on charts that have none. */
+  notes?: string;
+  /** How far the birth data can be trusted — the Rodden-style code, fitted to
+   *  the seven in lib/sourceRating.ts. Absent means nobody has said, which is
+   *  different from saying the source is unknown (that is 'C'). */
+  sourceRating?: SourceRating;
+  /** Which folder holds this chart, as a '/'-separated path — "Clients/2026".
+   *  Absent or empty means unfiled. Ancestors are implied rather than declared,
+   *  so a chart filed at "Clients/2026" is all it takes for both levels to
+   *  exist; see lib/chartFolders.ts. */
+  folder?: string;
 }
 
 /** Recency key for sorting the "most recently used" list (newest first). */
@@ -72,9 +90,28 @@ export function chartRecency(c: StoredChart): number {
  *  searchable list. */
 export const RECENT_COUNT = 5;
 
-/** The quick-switch shortlist: the most recently used handful, newest first. */
-export function recentShortlist(charts: readonly StoredChart[]): StoredChart[] {
-  return [...charts]
+/**
+ * The quick-switch shortlist: the most recently used handful, newest first,
+ * from the SAME FOLDER as the chart given.
+ *
+ * Scoped rather than global because this list appears in the top bar on a tap,
+ * where anyone beside you can read it. Working through a folder of clients, the
+ * five names it offers should be that folder — not whichever five charts you
+ * last opened, which is exactly how the person you were reading yesterday ends
+ * up on screen in front of somebody else today. Charts you have not filed
+ * shortlist against each other the same way.
+ *
+ * With no chart given it falls back to the whole library, which is what an
+ * empty or brand-new set wants.
+ */
+export function recentShortlist(
+  charts: readonly StoredChart[],
+  current?: StoredChart | null,
+): StoredChart[] {
+  const scope = current ? normalizeFolderPath(current.folder) : null;
+  const inScope =
+    scope === null ? charts : charts.filter((c) => normalizeFolderPath(c.folder) === scope);
+  return [...inScope]
     .sort((a, b) => chartRecency(b) - chartRecency(a))
     .slice(0, RECENT_COUNT);
 }
@@ -88,6 +125,19 @@ export function chartTag(c: StoredChart): ChartTag {
 // where it gets ellipsised for display around the app (the full name is still stored).
 // Starred rows reserve a little width for the star badge, so they ellipsise sooner.
 // (Some surfaces pass their own limit, or truncate dynamically by width instead.)
+/**
+ * How much free text a chart's notes may hold.
+ *
+ * A chart is stored and synced as ONE JSON blob, and a downstream account store
+ * can reasonably bound that blob — an oversized record risks being dropped
+ * rather than saved, which is the worst kind of failure because the chart still
+ * looks fine locally. Everything else on a chart is small and bounded; notes
+ * are the only field a person can type into without limit, so the bound goes
+ * here. Generous enough for provenance and a rectification argument, far short
+ * of any sane blob cap.
+ */
+export const NOTES_HARD_LIMIT = 2000;
+
 export const NAME_HARD_LIMIT = 50;
 export const NAME_SOFT_LIMIT = 25;
 export const NAME_SOFT_LIMIT_STARRED = 21;

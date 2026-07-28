@@ -52,7 +52,8 @@
 .modal-backdrop > .chart-manager,
 .modal-backdrop > .credits-modal,
 .modal-backdrop > .import-modal,
-.modal-backdrop > .tdm-card {
+.modal-backdrop > .tdm-card,
+.modal-backdrop > .thanks-modal {
   animation: ui-pop var(--dur-move) var(--ease-settle);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -60,7 +61,8 @@
   .modal-backdrop > .chart-manager,
   .modal-backdrop > .credits-modal,
   .modal-backdrop > .import-modal,
-  .modal-backdrop > .tdm-card {
+  .modal-backdrop > .tdm-card,
+  .modal-backdrop > .thanks-modal {
     animation: none;
   }
 }
@@ -218,6 +220,186 @@
 
 /* Read-only coordinate summary (the default): the auto-chosen lat/lng plus the
    "Enter manually" link that swaps in the inputs above. */
+/* Notes and the source rating share a line — they answer the same question,
+   where this data came from, once in prose and once in a code the app can
+   reason about. The rating is fixed-width so the textarea takes the slack. */
+.notes-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.notes-row .notes-field {
+  flex: 1;
+  min-width: 0;
+}
+/* Only as wide as its longest label needs, so the rest of the line goes to the
+   notes box — which is the field people actually type into. The dropdown is a
+   HintMenu (the Calculations settings' control), so all of its chrome comes
+   from .thud-select / .calc-select and none of it is repeated here. */
+.rating-field {
+  flex: 0 0 152px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* The field caption, matching the form's other labels — needed explicitly
+   because this control is a div rather than a <label> wrapping an input. */
+.rating-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Narrow panes cannot hold both side by side without squeezing the notes to a
+   sliver, so they stack — the rating keeps its own line rather than shrinking. */
+@media (max-width: 560px) {
+  .notes-row {
+    flex-direction: column;
+  }
+  .rating-field {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}
+
+/* Notes sit behind this until asked for: a plain line under the coordinates,
+   costing one row instead of a labelled field plus a textarea on every chart. */
+.notes-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity var(--dur-quick), color var(--dur-quick);
+}
+.notes-link:hover {
+  color: var(--text-strong);
+  opacity: 1;
+}
+
+/* ── The folder picker ──────────────────────────────────────────────────────
+   Beside the submit button, because "where does this go" is a question about
+   saving rather than about the birth data. The menu opens UPWARDS: the form
+   footer sits at the bottom of the pane, so downwards would open off-screen. */
+.folder-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.folder-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  padding: 7px 10px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-quick), border-color var(--dur-quick);
+}
+.folder-picker-trigger:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.26);
+}
+.folder-picker-trigger.is-filed {
+  color: var(--text-strong);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+.folder-picker-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-picker-caret {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.folder-picker-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  /* The form pane scrolls, so this menu is clipped by it — and it opens upward
+     from a trigger already at the pane's bottom edge. Cap against the viewport
+     as well as an absolute, so a short pane (portrait, where the list takes a
+     third of the screen) gets a menu that fits rather than one cut off. */
+  max-height: min(240px, 34dvh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 8px;
+  background: rgba(var(--bg-menu), 0.98);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  z-index: 30;
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+
+.folder-picker-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  padding-left: calc(8px + var(--depth, 0) * 12px);
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-picker-item:hover {
+  background: rgba(var(--tint), 0.08);
+  color: var(--text-strong);
+}
+.folder-picker-item.is-current {
+  color: var(--accent);
+}
+.folder-picker-item.is-new {
+  color: var(--text-faint);
+}
+
+.folder-picker-new {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+}
+.folder-picker-new input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.06);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+}
+.folder-picker-new input:focus {
+  outline: none;
+}
+
 .coord-summary {
   display: flex;
   align-items: baseline;
@@ -279,6 +461,30 @@
 }
 
 .birth-form input:focus {
+  outline: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+/* Notes: the same chrome as an input, but it can grow. Provenance runs to a
+   sentence or two — where the data came from, why a time is only remembered —
+   so a single line would hide most of what an import brought in. */
+.birth-form textarea {
+  background: rgba(var(--tint), 0.04);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 5px;
+  padding: 7px 9px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  resize: vertical;
+  min-height: 2.6em;
+  outline: 1px solid transparent;
+  transition: border-color var(--dur-quick), outline-color var(--dur-quick);
+}
+
+.birth-form textarea:focus {
   outline: 1px solid rgba(var(--accent-rgb), 0.6);
   border-color: rgba(var(--accent-rgb), 0.6);
 }
@@ -519,6 +725,14 @@
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+}
+
+/* The folder picker sits beside the submit button, so this side is a row now. */
+.birth-form .footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .birth-form footer .footer-actions {

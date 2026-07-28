@@ -1,0 +1,9 @@
+Name,Date,Time,Zone,City,Region,Latitude,Longitude
+Good Row,5 Jun 1941,09:30,-04:00,Yonkers,New York,40N56,073W54
+Bad Lat,5 Jun 1941,09:30,-04:00,Nowhere,Nowhere,91N00,073W54
+Bad Lng,5 Jun 1941,09:30,-04:00,Nowhere,Nowhere,40N56,999W00
+Bad Offset,5 Jun 1941,09:30,+26:00,Nowhere,Nowhere,40N56,073W54
+Ambiguous Coord,5 Jun 1941,09:30,-04:00,Nowhere,Nowhere,40N345,073W54
+No Coords,5 Jun 1941,09:30,-04:00,Nowhere,Nowhere,,
+Truncated Row,5 Jun 1941
+Bad Date,tuesday,09:30,-04:00,Nowhere,Nowhere,40N56,073W54

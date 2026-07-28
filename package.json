@@ -28,6 +28,8 @@
     "verify:directions": "node scripts/harness/run.mjs scripts/verify-directions.ts",
     "verify:slide": "node scripts/harness/run.mjs scripts/verify-slide.ts",
     "verify:content": "node scripts/harness/run.mjs scripts/verify-content.ts",
+    "verify:import": "node scripts/harness/run.mjs scripts/verify-import.ts",
+    "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",
     "build:lmt": "node scripts/build-lmt-table.mjs",
     "verify:eclipses": "tsx scripts/verify-eclipses.ts",
     "build:eclipses": "node scripts/build-eclipses.mjs",

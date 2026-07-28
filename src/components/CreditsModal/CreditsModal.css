@@ -50,14 +50,16 @@
   gap: 2px;
 }
 
-/* Inert on purpose — it opens nothing; hovering (or tapping) it reveals the
-   thank-you as the shared .ui-tip. `help` is the cursor for exactly that. */
+/* Opens the acknowledgements sub-dialog. Styled as a bare glyph rather than a
+   button so the header stays two quiet marks beside the title. */
 .credits-thanks {
   display: inline-flex;
   align-items: center;
   padding: 0 4px;
+  background: transparent;
+  border: none;
   color: var(--text-dim);
-  cursor: help;
+  cursor: pointer;
   transition: color 0.12s;
 }
 
@@ -201,4 +203,168 @@
 
 .credits-modal footer a:hover {
   text-decoration: underline;
+}
+
+/* ── Acknowledgements ───────────────────────────────────────────────────────
+   The sub-dialog behind the header heart. Same card chrome as the credits panel
+   it opens over, one size smaller — it is a short read, not a list to scan. */
+
+/* Its scrim sits a step above the credits scrim it stacks on. The two are siblings in
+   one stacking context, so DOM order alone would already do it; the explicit step keeps
+   that true if they are ever reordered. It keeps the shared scrim rather than a shadow
+   (this app has no raised-card shadows) — the second veil is what sinks the credits
+   panel behind it. */
+.thanks-backdrop {
+  z-index: 101;
+}
+
+.thanks-modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  padding: 18px 20px 18px;
+  color: var(--text-strong);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.thanks-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.thanks-modal header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.thanks-modal .close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.thanks-modal .close:hover {
+  color: var(--text-strong);
+}
+
+/* The lead credit. The only raised surface in the dialog — the thanks below it are a
+   list, this is a statement, and the tint is what says so before the words do. */
+.thanks-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 13px 14px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 8px;
+  background: rgba(var(--tint), 0.06);
+}
+
+.thanks-lead-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+}
+
+/* The lead's role line takes the accent — the one coloured word in the dialog. */
+.thanks-lead .thanks-role {
+  color: var(--accent);
+}
+
+.thanks-lead-body {
+  margin: 7px 0 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* The thanks proper, kept on a tighter internal rhythm than the dialog's own gap. */
+.thanks-others {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thanks-heading {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.thanks-body {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.thanks-list {
+  list-style: none;
+  margin: 0;
+  padding: 3px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.thanks-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.thanks-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.thanks-role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* email | website, on one line where it fits and wrapped where it doesn't. */
+.thanks-contact {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 11.5px;
+}
+
+.thanks-contact a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.thanks-contact a:hover {
+  text-decoration: underline;
+}
+
+.thanks-sep {
+  color: var(--text-dim);
 }

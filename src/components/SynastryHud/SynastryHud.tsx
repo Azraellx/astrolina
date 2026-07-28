@@ -6,6 +6,7 @@
 
 import { useRef } from 'react';
 import { chartTag, displayName, type StoredChart } from '../../lib/chartLibrary';
+import { useIdentity } from '../../lib/discreet';
 import type { RelationshipMethod } from '../../lib/astro/timeline';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
@@ -70,6 +71,7 @@ export function SynastryHud({
   generateBlock,
 }: SynastryHudProps) {
   const { t, fmt } = useT();
+  const id = useIdentity();
   const ref = useRef<HTMLDivElement>(null);
   // Shares its movable position with the timeline bar (same bottom slot) so the
   // overlay bar stays where the user dragged it across mode switches.
@@ -115,7 +117,7 @@ export function SynastryHud({
         {!expanded && partner && (
           <span className="synastry-hud-nub-partner">
             <TagIcon tag={chartTag(partner)} className="tag-icon" />
-            {displayName(partner.name)}
+            {id.on ? id.name(partner.name) : displayName(partner.name)}
           </span>
         )}
         <TipButton
@@ -169,7 +171,7 @@ export function SynastryHud({
                     {partner ? (
                       <>
                         <TagIcon tag={chartTag(partner)} className="tag-icon" />
-                        {displayName(partner.name)}
+                        {id.on ? id.name(partner.name) : displayName(partner.name)}
                       </>
                     ) : (
                       t('synastryHud.choosePrompt')
@@ -195,7 +197,7 @@ export function SynastryHud({
                 </span>
                 {partner && (
                   <span className="synastry-hud-meta">
-                    {fmtDate(partner, fmt)} · {cityOf(partner)}
+                    {id.date(fmtDate(partner, fmt))} · {id.text(cityOf(partner))}
                   </span>
                 )}
               </span>

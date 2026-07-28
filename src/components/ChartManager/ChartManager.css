@@ -421,6 +421,288 @@
   margin-bottom: 12px;
 }
 
+/* ── Folders ────────────────────────────────────────────────────────────────
+   Folder rows and chart rows share the one scrolling list, told apart by depth
+   rather than by living in separate panes: the pane is a narrow column, and a
+   tree that scrolls with its contents beats a second column that cannot fit.
+   Indent comes from a --depth custom property the row sets, so nesting costs
+   one declaration rather than a rule per level. */
+.cm-list li.cm-folder-li,
+.cm-list li.cm-chart-li {
+  padding-left: calc(var(--depth, 0) * 11px);
+}
+
+.cm-folder-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+
+/* The name and its count read as one label — "Family (4)" — so the count sits
+   directly after the name rather than being pushed to the far edge. The count
+   then carries the auto margin, which leaves the free space between it and the
+   row actions. */
+.cm-folder-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.cm-folder-count {
+  flex-shrink: 0;
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-caret {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: rotate var(--dur-quick) var(--ease-settle);
+}
+.cm-caret.open {
+  rotate: 90deg;
+}
+
+/* ── Dragging a chart into a folder ─────────────────────────────────────────
+   Filing by drag is only trustworthy if you can see it happening: which row
+   you picked up, which folder would take it, and where it ended up. Dropping a
+   client into the wrong folder is otherwise completely silent. */
+
+/* The row being carried: dimmed and slightly shrunk, so it reads as lifted out
+   of the list rather than still sitting in it. */
+.cm-list li.cm-chart-li.is-dragging {
+  opacity: 0.35;
+  scale: 0.98;
+  transition:
+    opacity var(--dur-quick) var(--ease-settle),
+    scale var(--dur-quick) var(--ease-settle);
+}
+
+/* The folder that would take it. Deliberately loud — this is the one decision
+   in the gesture, and it is made by hovering, which is easy to get wrong. */
+.cm-list li.cm-folder-li.drag-over {
+  background: rgba(var(--accent-rgb), 0.16);
+  outline: 1px solid rgba(var(--accent-rgb), 0.5);
+  scale: 1.015;
+  transition:
+    background var(--dur-tap) var(--ease-settle),
+    scale var(--dur-quick) var(--ease-spring);
+}
+.cm-list li.cm-folder-li.drag-over .cm-folder-name,
+.cm-list li.cm-folder-li.drag-over .cm-caret {
+  color: var(--accent);
+}
+
+/* And where it landed — a pop at the new place, so a chart that moved into an
+   open folder is watched rather than hunted for. Entrance only: one shot on
+   arrival, nothing that keeps moving afterwards. */
+.cm-list li.cm-chart-li.has-landed {
+  animation: ui-pop var(--dur-move) var(--ease-pop);
+}
+.cm-list li.cm-chart-li.has-landed .cm-row-name {
+  animation: cm-landed-tint var(--dur-flourish) var(--ease-settle);
+}
+@keyframes cm-landed-tint {
+  from {
+    color: var(--accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-list li.cm-chart-li.is-dragging,
+  .cm-list li.cm-folder-li.drag-over {
+    scale: 1;
+  }
+  .cm-list li.cm-chart-li.has-landed,
+  .cm-list li.cm-chart-li.has-landed .cm-row-name {
+    animation: none;
+  }
+}
+
+/* ── Right-click: move to… ──────────────────────────────────────────────────
+   Fixed to the viewport rather than the list, so it is never clipped by the
+   pane's own scrolling. */
+.cm-move-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 172px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 8px;
+  background: rgba(var(--bg-menu), 0.98);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  animation: ui-pop var(--dur-quick) var(--ease-pop);
+}
+
+.cm-move-head {
+  padding: 4px 8px 6px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cm-move-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  padding-left: calc(8px + var(--depth, 0) * 12px);
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cm-move-item:hover {
+  background: rgba(var(--tint), 0.08);
+  color: var(--text-strong);
+}
+/* Where it already is — shown, not hidden, so the menu says where you are. */
+.cm-move-item.is-current {
+  color: var(--accent);
+}
+.cm-move-item.is-new {
+  color: var(--text-faint);
+}
+/* Nesting has a floor; the option stays visible so the limit is legible
+   rather than the item simply vanishing. */
+.cm-move-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cm-move-item:disabled:hover {
+  background: transparent;
+  color: var(--text-faint);
+}
+
+/* Naming a new folder without leaving the menu — filing a chart is exactly
+   when you find out you want one. */
+.cm-move-new {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+}
+.cm-move-new input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.06);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+}
+.cm-move-new input:focus {
+  outline: none;
+}
+
+.cm-list li.cm-folder-li.active .cm-folder-name {
+  color: var(--accent);
+}
+
+/* Naming a folder, inline where the row will be. */
+.cm-folder-editor {
+  flex: 1;
+  padding: 4px 10px;
+}
+.cm-folder-editor input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.06);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+}
+.cm-folder-editor input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The folder a search hit lives in, appended to its meta line. */
+.cm-row-crumb {
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+
+.cm-new-folder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  margin-left: auto;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cm-new-folder:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.24);
+}
+
+/* ── Discreet mode ──────────────────────────────────────────────────────────
+   The eye sits beside the close button. Lit while engaged, so the state is
+   readable at a glance — someone who cannot tell whether the details are
+   hidden will not trust the mode. */
+.cm-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cm-discreet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-quick) var(--ease-settle);
+}
+.cm-discreet:hover {
+  color: var(--text-strong);
+}
+.cm-discreet.is-on {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
 /* Strip the form's standalone-card chrome so it sits flush in the right pane. */
 .cm-form-pane .birth-form {
   max-width: none;

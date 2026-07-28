@@ -46,6 +46,7 @@ import {
   type StarSetPref,
   type DistanceUnit,
 } from '../../lib/overlayPrefs';
+import { setDiscreet, useDiscreet } from '../../lib/discreet';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
@@ -1011,6 +1012,7 @@ export function Sidebar({
   onSlideOutEnd,
 }: SidebarProps) {
   const { t, labels, locale, setLocale } = useT();
+  const discreet = useDiscreet();
   const touch = useTouchLayout();
   // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
   // pick + one stepper, instead of seven stacked rows.
@@ -1122,6 +1124,25 @@ export function Sidebar({
                 </button>
               </li>
             ))}
+          </ul>
+
+          {/* Discreet mode. Deliberately OUTSIDE the parking guard below: it
+              hides chart identity rather than anything on the map, and a
+              surface owning the viewport still shows the chart's name — so
+              this is exactly when it must stay reachable. */}
+          <h2>{t('settings.headings.privacy')}</h2>
+          <ul className="technique-list">
+            <TipToggle
+              className={`tech-toggle ${discreet ? 'on' : 'off'}`}
+              onClick={() => setDiscreet(!discreet)}
+              ariaPressed={discreet}
+              title={t('settings.discreet.title')}
+              hotkey="P"
+              hint={t('settings.discreet.hint')}
+            >
+              <EyeIcon open={!discreet} />
+              <span className="name">{t('settings.discreet.title')}</span>
+            </TipToggle>
           </ul>
 
           {/* The whole Details section is map-surface-only (basemap linework,

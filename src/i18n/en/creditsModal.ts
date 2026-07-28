@@ -10,11 +10,21 @@
 // language-neutral and are NOT in this catalog.
 export const creditsModal = {
   title: 'Credits & licenses',
-  // The heart beside the dialog's close ✕ — a thank-you that reveals itself on hover.
-  // The two names are proper nouns and stay as written in every language.
+  // The heart beside the dialog's close ✕ — opens the acknowledgements sub-dialog.
+  // The names, addresses, and site labels listed there are proper nouns and stay as
+  // written in every language, so they live in the component rather than here.
   thanks: {
     tip: 'Special thanks',
-    hint: 'To Shae Freeman and Cindy McKean, professional astrologers whose guidance and generosity helped make this project possible.',
+    hint: 'View credits',
+    title: 'Special thanks',
+    // The lead astrologer comes first and alone — the app is her practice put into
+    // software, which is a different kind of credit from the thanks below it.
+    leadRole: 'The astrologer behind AstroLina',
+    leadBody:
+      'This app began as her practice, and it still answers to it. The methods it follows, the conventions it holds to, and the judgement behind every line it draws are hers — explained patiently, and often more than once, until the software matched the craft.',
+    othersHeading: 'With thanks also to',
+    body: 'Two professional astrologers gave their time, their expertise, and a great deal of patience to this project — answering questions, checking conventions, and helping an early tool find its footing. It would be a lesser thing without them.',
+    role: 'Professional astrologer',
   },
   intro:
     'AstroLina is built on open data and open-source software. The full license texts are available in the project repository.',

@@ -4,8 +4,19 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { reverseGeocode, type GeocodeResult } from '../../lib/atlas/geocode';
+import {
+  folderName,
+  isValidFolderName,
+  loadLastFolder,
+  MAX_FOLDER_DEPTH,
+  MAX_FOLDER_NAME,
+  normalizeFolderPath,
+  saveLastFolder,
+  UNFILED,
+} from '../../lib/chartFolders';
+import { SOURCE_RATINGS, type SourceRating } from '../../lib/sourceRating';
 import {
   formatUtcOffset,
   listTimeZones,
@@ -15,11 +26,13 @@ import {
 import {
   NAME_HARD_LIMIT,
   NAME_SOFT_LIMIT,
+  NOTES_HARD_LIMIT,
   newChartId,
   type ChartHome,
   type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
+import { HintMenu } from '../Sidebar/Sidebar';
 import { PlaceSearchField } from '../ui/PlaceSearchField';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
 import { TipButton, TipSpan } from '../ui/HoverTip';
@@ -32,6 +45,7 @@ import {
   BIRTH_YEAR_MAX,
 } from '../DateTimeFields/DateTimeFields';
 import { useT } from '../../i18n';
+import type { TFn } from '../../i18n';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
@@ -80,6 +94,11 @@ interface BirthDataFieldsProps {
   onSubmit: (chart: StoredChart) => void;
   /** Opens the import flow; only shown when creating (not editing). */
   onImport?: () => void;
+  /** Folder paths that already exist, for the folder picker. Omitted (or empty)
+   *  hides the row — there is nothing to file into yet. */
+  folderOptions?: readonly string[];
+  /** Folder a NEW chart should start in, e.g. the one open in the list. */
+  folderSeed?: string;
 }
 
 // The birth-details form body (name, date/time, birthplace), without modal chrome,
@@ -91,9 +110,38 @@ export function BirthDataFields({
   submitLabel,
   onSubmit,
   onImport,
+  folderOptions,
+  folderSeed,
 }: BirthDataFieldsProps) {
   const { t } = useT();
   const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
+  // Where this chart is filed, and what is known about where its data came
+  // from. Both ride the record; both are carried explicitly through submit
+  // below, for the reason stated there.
+  const [folder, setFolder] = useState(() =>
+    normalizeFolderPath(
+      // An existing chart keeps its own folder. A new one starts where the
+      // list was pointing, or failing that where the last chart went.
+      initial ? initial.folder : (folderSeed || loadLastFolder()),
+    ),
+  );
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [sourceRating, setSourceRating] = useState<SourceRating | null>(
+    () => initial?.sourceRating ?? null,
+  );
+  // Shown already when the chart HAS either — a chart that came in from an
+  // import carries them, and leaving them behind a link nobody pressed would
+  // read as having lost them.
+  const [showNotes, setShowNotes] = useState(
+    () => !!(initial?.notes || initial?.sourceRating),
+  );
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const openedNotes = useRef(false);
+  useEffect(() => {
+    // Revealing the field is a request to type in it.
+    if (showNotes && openedNotes.current) notesRef.current?.focus();
+    openedNotes.current = showNotes;
+  }, [showNotes]);
   // A new chart starts with empty date/time fields (null) rather than "today" —
   // pre-filling a real-looking date reads as a half-entered chart you're editing.
   // Editing an existing chart loads its saved values — EXCEPT an unknown-time
@@ -366,6 +414,10 @@ export function BirthDataFields({
       // the form forgets is a field the next edit silently drops.
       home,
       tag,
+      folder: folder || undefined,
+      notes: notes.trim() || undefined,
+      sourceRating: sourceRating ?? undefined,
+      // (saveLastFolder runs after the record is built — see below.)
       // A composite chart's parents survive an edit (renames, place tweaks):
       // the planet positions stay the midpoints.
       composite: initial?.composite,
@@ -382,6 +434,8 @@ export function BirthDataFields({
         tzUncertain: false,
       });
     }
+    // Remember where this went, so the next chart starts there.
+    saveLastFolder(folder);
     onSubmit(chart);
   };
 
@@ -750,6 +804,60 @@ export function BirthDataFields({
             )}
           </div>
         )}
+        {/* Notes hold whatever came in with the record: the source, a rating,
+            why a time is only remembered. That last is the part of an imported
+            chart an astrologer would most mind losing — but it is wanted
+            occasionally, not every time, so it costs one line of link until
+            asked for. */}
+        {showNotes ? (
+          <div className="notes-row">
+            <label className="notes-field">
+              <span>{t('chartForm.notes')}</span>
+              <textarea
+                ref={notesRef}
+                value={notes}
+                rows={2}
+                maxLength={NOTES_HARD_LIMIT}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={t('chartForm.notesPlaceholder')}
+              />
+            </label>
+            {/* How far this birth data can be trusted. Beside the notes because
+                it is the same question — where did this come from — answered
+                once in prose and once in a form the app can reason about. */}
+            <div className="rating-field">
+              <span className="rating-label">{t('chartForm.sourceRating')}</span>
+              {/* The app's own dropdown — the same one the Calculations settings
+                  use — rather than a native <select>. A native one can only be
+                  styled shut: the open list is drawn by the operating system and
+                  looks nothing like the rest of the app. This also lets each
+                  option carry its full meaning as a hover explanation, so the
+                  labels can stay short enough to leave the notes box its width. */}
+              <div className="calc-select">
+                <HintMenu<SourceRating | ''>
+                  value={sourceRating ?? ''}
+                  onChange={(v) => setSourceRating(v === '' ? null : v)}
+                  options={[
+                    {
+                      value: '' as const,
+                      label: t('chartForm.rating.unset'),
+                      hint: t('chartForm.rating.unsetHint'),
+                    },
+                    ...SOURCE_RATINGS.map((code) => ({
+                      value: code,
+                      label: `${code} · ${t(`chartForm.rating.${code}` as 'chartForm.rating.AA')}`,
+                      hint: t(`chartForm.ratingHint.${code}` as 'chartForm.ratingHint.AA'),
+                    })),
+                  ]}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="notes-link" onClick={() => setShowNotes(true)}>
+            {t('chartForm.addNotes')}
+          </button>
+        )}
 
         {error && <p className="form-error">{error}</p>}
 
@@ -762,11 +870,181 @@ export function BirthDataFields({
             )}
           </div>
           <div className="footer-actions">
+            {/* Where this chart lands, chosen right where it is saved. Defaults
+                to the folder the last chart went into, because charts arrive in
+                runs — several clients, then some family — and re-choosing the
+                same folder every time is the sort of small friction that stops
+                people filing at all. */}
+            <FolderPicker
+              value={folder}
+              options={folderOptions ?? []}
+              onChange={setFolder}
+              t={t}
+            />
             <button type="submit" className="primary ui-sheen">
               {submitLabel}
             </button>
           </div>
         </footer>
     </form>
+  );
+}
+
+/**
+ * Where the chart being saved will land.
+ *
+ * Sits beside the submit button because that is the moment the question is
+ * actually being asked. A menu of the folders that exist, plus a line to type
+ * a new one — so a folder can be made without leaving the form, which is the
+ * only way filing ever gets done in the middle of entering a chart.
+ */
+function FolderPicker({
+  value,
+  options,
+  onChange,
+  t,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (path: string) => void;
+  t: TFn;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const newRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setCreating(false);
+      }
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+
+  useEffect(() => {
+    if (creating) newRef.current?.focus();
+  }, [creating]);
+
+  const choose = (path: string) => {
+    onChange(path);
+    setOpen(false);
+    setCreating(false);
+  };
+
+  const commitNew = () => {
+    const name = draft.trim();
+    // A slash makes a subfolder, so the typed text is a PATH: validate the
+    // last segment, which is the part being named.
+    const path = normalizeFolderPath(name);
+    if (path && isValidFolderName(folderName(path))) choose(path);
+    else {
+      setCreating(false);
+      setDraft('');
+    }
+  };
+
+  return (
+    <div className="folder-picker" ref={ref}>
+      <TipButton
+        type="button"
+        className={`folder-picker-trigger ${value ? 'is-filed' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        placement="top"
+        tip={t('chartForm.folderPicker.tip')}
+      >
+        <FolderIcon />
+        <span className="folder-picker-value">
+          {value ? folderName(value) : t('chartForm.folderPicker.unfiled')}
+        </span>
+        <span className="folder-picker-caret" aria-hidden="true">
+          ▾
+        </span>
+      </TipButton>
+
+      {open && (
+        <div className="folder-picker-menu" role="menu">
+          <button
+            type="button"
+            className={`folder-picker-item ${value ? '' : 'is-current'}`}
+            onClick={() => choose(UNFILED)}
+          >
+            {t('chartForm.folderPicker.unfiled')}
+          </button>
+          {options.map((path) => (
+            <button
+              key={path}
+              type="button"
+              className={`folder-picker-item ${path === value ? 'is-current' : ''}`}
+              style={{ '--depth': path.split('/').length - 1 } as CSSProperties}
+              onClick={() => choose(path)}
+            >
+              {folderName(path)}
+            </button>
+          ))}
+          <div className="folder-picker-new">
+            {creating ? (
+              <input
+                ref={newRef}
+                type="text"
+                value={draft}
+                maxLength={MAX_FOLDER_NAME * MAX_FOLDER_DEPTH}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitNew();
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setCreating(false);
+                    setDraft('');
+                  }
+                }}
+                onBlur={commitNew}
+                placeholder={t('chartForm.folderPicker.newPlaceholder')}
+                aria-label={t('chartForm.folderPicker.new')}
+              />
+            ) : (
+              <button
+                type="button"
+                className="folder-picker-item is-new"
+                onClick={() => {
+                  setDraft(value ? `${value}/` : '');
+                  setCreating(true);
+                }}
+              >
+                ＋ {t('chartForm.folderPicker.new')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </svg>
   );
 }

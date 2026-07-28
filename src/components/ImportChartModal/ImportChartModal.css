@@ -122,65 +122,336 @@
   color: var(--danger);
 }
 
-.import-preview {
+/* ── Steps ──────────────────────────────────────────────────────────────────
+   Three steps share the one dialog. The preview one is much the widest, so the
+   dialog grows for it rather than making a table live in a paste-sized box. */
+.im-step {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-height: 0;
 }
 
-.import-list {
+.import-modal:has(.im-preview),
+.import-modal:has(.im-map) {
+  max-width: 860px;
+}
+
+.im-shape {
+  margin-left: auto;
+  margin-right: 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+}
+.im-encoding {
+  color: var(--text-muted);
+}
+
+.im-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.im-step h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+/* ── The fixed-width ruler ──────────────────────────────────────────────────
+   Ticks sit one per character directly above a monospace sample, so a click
+   lands on the column it looks like it lands on. Both are `ch`-width and share
+   the font, which is what keeps them aligned; scrolling moves them together. */
+.im-ruler-scroll {
+  overflow-x: auto;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.03);
+  padding: 6px 8px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.im-ruler {
+  display: flex;
+  height: 14px;
+}
+
+.im-tick {
+  flex: 0 0 1ch;
+  width: 1ch;
+  padding: 0;
+  border: none;
+  border-left: 1px solid transparent;
+  background: rgba(var(--tint), 0.06);
+  cursor: pointer;
+}
+.im-tick:hover {
+  background: rgba(var(--accent-rgb), 0.3);
+}
+.im-tick.is-cut {
+  border-left: 2px solid var(--accent);
+  background: rgba(var(--accent-rgb), 0.18);
+}
+
+.im-sample {
+  margin: 4px 0 0;
+  white-space: pre;
+  color: var(--text-muted);
+}
+.im-sample-line {
+  display: block;
+}
+
+/* ── Column list ────────────────────────────────────────────────────────────
+   One row per column rather than dropdowns above the columns: a column three
+   characters wide cannot host the word "Longitude", and the sample text is
+   what tells you which column you are looking at anyway. */
+.im-columns {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(var(--tint), 0.1);
-  border-radius: 6px;
-  max-height: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 34vh;
   overflow-y: auto;
 }
 
-.import-list li {
+.im-columns li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.03);
+}
+.im-columns li.is-ignored {
+  opacity: 0.55;
+}
+
+.im-col-n {
+  flex: 0 0 78px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.im-col-sample {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.im-need {
+  margin: 0;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.im-map-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Preview controls ───────────────────────────────────────────────────────
+   Above the table, because each one re-reads every row and the effect has to be
+   visible in the same glance as the control. */
+.im-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(var(--tint), 0.08);
+}
+
+.im-control {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 7px 10px;
-  border-bottom: 1px solid rgba(var(--tint), 0.05);
+  gap: 3px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
-.import-list li:last-child {
+.im-control select,
+.im-control input,
+.im-remember input {
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.im-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.im-counts {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.im-applied {
+  color: var(--text-faint);
+}
+
+/* ── The preview table ──────────────────────────────────────────────────────
+   Every row states its own verdict. Colour alone never carries it — each amber
+   or red row also says, in words, what is wrong with it. */
+.im-table-scroll {
+  flex: 1;
+  min-height: 120px;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 6px;
+}
+
+.im-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.im-row td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(var(--tint), 0.05);
+  vertical-align: top;
+}
+.im-row:last-child td {
   border-bottom: none;
 }
+.im-row.is-skipped {
+  opacity: 0.5;
+}
 
-.import-name {
+.im-cell-status {
+  width: 18px;
+}
+.im-cell-act {
+  width: 84px;
+  text-align: right;
+}
+
+.im-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.im-dot.is-warn {
+  background: var(--accent);
+}
+.im-dot.is-reject {
+  background: var(--danger);
+}
+
+.im-name {
+  display: block;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-strong);
 }
 
-.import-detail {
+.im-meta {
+  display: block;
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.import-errors {
+.im-issues {
   list-style: none;
-  margin: 0;
+  margin: 3px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+.im-issues li {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--accent);
+}
+.im-issues li.is-reject {
+  color: var(--danger);
 }
 
-.import-errors li {
+.im-toggle {
+  background: transparent;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 4px;
+  padding: 3px 7px;
+  color: var(--text-muted);
+  font: inherit;
   font-size: 11px;
-  color: var(--danger);
+  cursor: pointer;
+}
+.im-toggle:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.26);
+}
+
+.im-empty {
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.im-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.im-remember input {
+  flex: 1;
+}
+.im-saved {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .import-modal footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-top: 2px;
+}
+
+.im-footer-left {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .import-modal button.secondary,

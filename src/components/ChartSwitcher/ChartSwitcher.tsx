@@ -14,6 +14,7 @@ import {
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { timeUnknown } from '../../lib/birthData';
+import { useIdentity } from '../../lib/discreet';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -73,6 +74,9 @@ export function ChartSwitcher({
   flash = null,
 }: ChartSwitcherProps) {
   const { t, fmt } = useT();
+  // While discreet mode is on, the switcher shows structure and not identity —
+  // it sits in the top bar, permanently visible, so it leaks first otherwise.
+  const id = useIdentity();
   // Portrait top bar (compact + narrow): collapse the label to initials + year only.
   const narrow = useNarrowNav();
   const [open, setOpen] = useState(false);
@@ -101,8 +105,10 @@ export function ChartSwitcher({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Just the most-recently-used handful — the rest are reachable via search.
-  const recentCharts = useMemo(() => recentShortlist(charts), [charts]);
+  // The most-recently-used handful FROM THE ACTIVE CHART'S FOLDER — the rest
+  // are reachable via search. Scoped because this list opens in the top bar
+  // with a tap, in front of whoever is sitting beside you.
+  const recentCharts = useMemo(() => recentShortlist(charts, current), [charts, current]);
 
   // A quick-swap flash holds the menu open on ITS frozen order (ids resolved
   // against the live set, so an edit mid-flash still shows current names).
@@ -168,11 +174,13 @@ export function ChartSwitcher({
                   {/* Portrait top bar (compact + narrow): just the initials — the name + date
                       don't fit. Compact landscape: hard-cap the name. Expanded sidebar: the full
                       name, let CSS ellipsis trim it so it reveals more as the sidebar widens. */}
-                  {compact
-                    ? narrow
-                      ? initials(current.name)
-                      : displayName(current.name)
-                    : current.name}
+                  {id.on
+                    ? id.name(current.name)
+                    : compact
+                      ? narrow
+                        ? initials(current.name)
+                        : displayName(current.name)
+                      : current.name}
                 </>
               ) : (
                 t('chartSwitcher.noChart')
@@ -201,11 +209,11 @@ export function ChartSwitcher({
           {current && (
             <span className="meta">
               {compact && narrow ? (
-                current.year
+                id.on ? id.date(String(current.year)) : current.year
               ) : (
                 <>
-                  {fmtBirthDate(current, fmt)} ·{' '}
-                  {current.birthplace.label.split(',')[0]}
+                  {id.date(fmtBirthDate(current, fmt))} ·{' '}
+                  {id.text(current.birthplace.label.split(',')[0])}
                   {current.tzUncertain && <span className="uncertain">⚠</span>}
                 </>
               )}
@@ -253,15 +261,18 @@ export function ChartSwitcher({
                     )}
                     {/* Starred rows show a star badge, so cap their name a little
                         shorter to leave room for it. */}
-                    {displayName(
-                      c.name,
-                      chartTag(c) === 'star'
-                        ? NAME_SOFT_LIMIT_STARRED
-                        : NAME_SOFT_LIMIT,
-                    )}
+                    {id.on
+                      ? id.name(c.name)
+                      : displayName(
+                          c.name,
+                          chartTag(c) === 'star'
+                            ? NAME_SOFT_LIMIT_STARRED
+                            : NAME_SOFT_LIMIT,
+                        )}
                   </span>
                   <span className="chart-meta">
-                    {fmtBirthDate(c, fmt)} · {c.birthplace.label.split(',')[0]}
+                    {id.date(fmtBirthDate(c, fmt))} ·{' '}
+                    {id.text(c.birthplace.label.split(',')[0])}
                   </span>
                 </button>
                 {/* In-row actions, inside the same row pill (the li carries the
