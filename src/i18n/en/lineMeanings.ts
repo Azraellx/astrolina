@@ -21,7 +21,12 @@ export const lineMeanings = {
   },
   aspectTitle: '{planet} {aspect} {angle}',
   midpointTitle: '{a}/{b} on the {angle}',
-  paranTitle: 'Paran: {a} × {b}',
+  // Each body is named with the angle it is actually on. A paran is a pair of
+  // simultaneous angular contacts, and which angle each body holds is the whole
+  // content of the reading — "Venus × Neptune" alone names the pair and omits
+  // what they are doing. The list surfaces that fold the same line already
+  // label it this way, so the two agree.
+  paranTitle: '{a} {angleA} × {b} {angleB}',
   localSpaceTitle: 'Local space: {planet}',
   eclipticTitle: 'The ecliptic',
 

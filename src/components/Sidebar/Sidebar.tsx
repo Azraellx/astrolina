@@ -56,7 +56,7 @@ import {
   getSettingsSections,
   isEntitled,
 } from '../../lib/extensions/settingsSection';
-import { useHoverTip, useTipEdgeNudge } from '../ui/useHoverTip';
+import { useHoverTip, useTipEdgeNudge, type TipPlacement } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
 import { tipMaxWidthStyle } from '../ui/tipWidth';
 import { glyphify } from '../ui/glyphify';
@@ -228,6 +228,12 @@ export type SidebarSection =
 // map, centred on the row (coordinates viewport-relative — the card is position:
 // fixed). Using the shared hook (rather than a local copy) also gives every
 // sidebar tip the same touch long-press as the rest of the app.
+//
+// The default is a default, not a rule. These controls are shared, and a surface
+// docked against the OTHER edge needs the mirror — a card popping left there
+// opens back across the panel, over the heading it belongs to and the rows under
+// it. Such callers pass placement='right'; the anchor point and the card's
+// transform both follow it, which is why the two travel together.
 
 // The shared .ui-tip card (see index.css), portaled to <body> so the sidebar's
 // overflow can't clip it. aria-hidden mirrors the timeline nub's hint: a sighted
@@ -241,6 +247,7 @@ function ChoiceTip({
   advanced,
   gated,
   unavailable,
+  placement = 'left',
 }: {
   pos: { left: number; top: number } | null;
   title: ReactNode;
@@ -260,6 +267,13 @@ function ChoiceTip({
    *  chip for the grey .ui-hover badge. A key pill on a control that won't
    *  respond would be a lie, so the two never show together. */
   unavailable?: boolean;
+  /** Which side of its trigger the card sits on. Defaults to LEFT, which is
+   *  right for a panel docked against the right edge — the card opens into the
+   *  map. A surface docked the other way wants the mirror, or the card opens
+   *  back over the very rows it is explaining. Must match the placement the
+   *  trigger's useHoverTip() was given: that decides the anchor POINT, this
+   *  decides which way the card hangs off it. */
+  placement?: TipPlacement;
 }) {
   // Same edge-nudge every other tip card gets — the sidebar is docked right and
   // these cards pop LEFT, so a wide one near a narrow window's edge would other-
@@ -276,7 +290,7 @@ function ChoiceTip({
   return createPortal(
     <span
       ref={cardRef}
-      className="ui-tip-box ui-tip choice-tip"
+      className={`ui-tip-box ui-tip choice-tip choice-tip-${placement}`}
       // Width scales with the copy (see tipWidth) — the settings hints run from
       // three words to a full paragraph, and one flat cap can't serve both.
       style={{ left: pos.left, top: pos.top, ...tipMaxWidthStyle(title, hint, note) }}
@@ -416,13 +430,18 @@ export function InfoTip({
   title,
   hint,
   advanced,
+  placement = 'left',
 }: {
   title: string;
   hint: string;
   /** Tag the tip's headline with "ADV" (an Advanced-only control). */
   advanced?: boolean;
+  /** Which side the card opens on. Left by default (the sidebar and the map
+   *  tools are docked right); a left-docked surface passes 'right' so the card
+   *  opens away from its own panel instead of across it. */
+  placement?: TipPlacement;
 }) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>();
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>(placement);
   return (
     <span
       ref={ref}
@@ -448,7 +467,13 @@ export function InfoTip({
         <path d="M12 11v6" />
         <path d="M12 7.5v.5" />
       </svg>
-      <ChoiceTip pos={pos} title={title} hint={hint} advanced={advanced} />
+      <ChoiceTip
+        pos={pos}
+        title={title}
+        hint={hint}
+        advanced={advanced}
+        placement={placement}
+      />
     </span>
   );
 }

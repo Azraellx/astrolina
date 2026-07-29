@@ -708,6 +708,17 @@ html[data-mapstate='natal-pinned'] .sidebar {
   animation: choice-tip-in 0.12s ease-out;
 }
 
+/* Mirror of the default, for a card opening off a LEFT-docked surface. The
+   anchor is already the trigger's right edge (see tipPosFor), so the card only
+   has to stop pulling itself backwards across it; vertical centring is
+   unchanged, and the edge-nudge still composes on top via `translate`.
+
+   Must stay AFTER .choice-tip: both are one class deep, so source order is what
+   decides, and written above it the base transform simply won. */
+.choice-tip-right {
+  transform: translate(0, -50%);
+}
+
 @keyframes choice-tip-in {
   from {
     opacity: 0;

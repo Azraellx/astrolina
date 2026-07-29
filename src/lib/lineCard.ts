@@ -95,7 +95,12 @@ export function lineReading(
     const a = t(`planets.${planetA}.name`);
     const b = t(`planets.${planetB}.name`);
     return {
-      title: t('lineMeanings.paranTitle', { a, b }),
+      title: t('lineMeanings.paranTitle', {
+        a,
+        b,
+        angleA: String(props.angleA),
+        angleB: String(props.angleB),
+      }),
       body: t('lineMeanings.paran', {
         a,
         b,

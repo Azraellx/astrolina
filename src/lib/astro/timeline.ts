@@ -342,11 +342,20 @@ const norm2pi = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.P
 // Quantities shared by the three directed overlays (solar-arc, progressed,
 // primary-directions). The arc closures are lazy — each does a progressed-Sun
 // lookup, so only the chosen method pays for it.
-function directionContext(
-  chart: StoredChart,
-  targetDate: number,
-  nodeType: NodeType,
-) {
+/**
+ * The natal-invariant half of a directed/progressed frame, plus that frame's arcs as
+ * functions of a TRIAL instant.
+ *
+ * Split this way because two kinds of caller want opposite shapes. Drawing an overlay
+ * asks about ONE instant — the cursor — and wants every body at once. Solving for the
+ * instant a body reaches a given longitude asks about one body at thousands of trial
+ * times, inside a bisection, and cannot afford to rebuild the natal set per probe.
+ *
+ * So everything independent of the trial time is computed once here, and the rest are
+ * functions of `jd`. Both kinds of caller then read the SAME arithmetic — which is the
+ * point: a change of convention cannot reach one and silently miss the other.
+ */
+export function directedBase(chart: StoredChart, nodeType: NodeType) {
   const birthJD = birthDataToJD(chart);
   const eps = obliquity(birthJD);
   // The directed BASE: a composite chart directs its midpoint positions, not
@@ -360,8 +369,8 @@ function directionContext(
   const natal = chart.composite
     ? compositeEquatorial(chart.composite, nodeType)
     : real;
-  const years = (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
-  const progressedJD = birthJD + years;
+  const yearsAt = (jd: number) => (jd - birthJD) / TROPICAL_YEAR_DAYS;
+  const progressedJDAt = (jd: number) => birthJD + yearsAt(jd);
   const natalGMST = gmstRadians(birthJD);
   // Solar arc measured in ecliptic longitude vs in right ascension. The arc is
   // ALWAYS the real Sun's day-for-a-year travel from the chart's stored moment
@@ -371,20 +380,124 @@ function directionContext(
   // list drops bodies that lack data, so an index would silently misread.
   const sunOf = (list: PlanetPosition[]) => list.find((p) => p.name === 'Sun') ?? list[0];
   const natalSun = sunOf(real);
-  const arcLong = () => {
-    const s = sunOf(getPlanetPositions(progressedJD, nodeType));
-    return normalizeAngle(
-      raDecToEclipticLon(s.ra, s.dec, eps) -
-        raDecToEclipticLon(natalSun.ra, natalSun.dec, eps),
-    );
+  // Memoized per trial instant: a scan marches every body over the SAME grid of
+  // times, so each sample's Sun is solved once however many bodies ask for it.
+  const sunMemo = new Map<number, { long: number; ra: number }>();
+  const arcsAt = (jd: number) => {
+    let v = sunMemo.get(jd);
+    if (v === undefined) {
+      const s = sunOf(getPlanetPositions(progressedJDAt(jd), nodeType));
+      v = {
+        long: normalizeAngle(
+          raDecToEclipticLon(s.ra, s.dec, eps) -
+            raDecToEclipticLon(natalSun.ra, natalSun.dec, eps),
+        ),
+        ra: normalizeAngle(s.ra - natalSun.ra),
+      };
+      sunMemo.set(jd, v);
+    }
+    return v;
   };
-  const arcRA = () =>
-    normalizeAngle(sunOf(getPlanetPositions(progressedJD, nodeType)).ra - natalSun.ra);
+  const arcLongAt = (jd: number) => arcsAt(jd).long;
+  const arcRAAt = (jd: number) => arcsAt(jd).ra;
   // Advance the MC's ecliptic longitude by Δλ and return the matching RAMC (gmst).
   // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST.
   const ramcOfLong = (dLon: number) =>
     eclipticToRaDec(eclipticLonOfRA(natalGMST, eps) + dLon, 0, eps).ra;
-  return { birthJD, eps, natal, years, progressedJD, natalGMST, arcLong, arcRA, ramcOfLong };
+  return {
+    birthJD, eps, natal, natalGMST, natalSun,
+    yearsAt, progressedJDAt, arcLongAt, arcRAAt, ramcOfLong,
+  };
+}
+export type DirectedBase = ReturnType<typeof directedBase>;
+
+/** The same frame bound to ONE instant — the shape the overlay builder wants. */
+function directionContext(chart: StoredChart, targetDate: number, nodeType: NodeType) {
+  const b = directedBase(chart, nodeType);
+  const jd = epochMsToJD(targetDate);
+  return {
+    ...b,
+    years: b.yearsAt(jd),
+    progressedJD: b.progressedJDAt(jd),
+    arcLong: () => b.arcLongAt(jd),
+    arcRA: () => b.arcRAAt(jd),
+  };
+}
+
+// ── The two arc tables ────────────────────────────────────────────────────────
+// These are the ONE statement of what each dropdown value means. They are pure and
+// exported so that every consumer — whoever draws a frame at the cursor, and whoever
+// solves for the instant a body arrives somewhere — selects from the same table
+// instead of restating it. A restated switch is the failure this prevents: it agrees
+// on the day it is written and nothing checks it afterwards.
+
+/** How a solar-arc method sources its arc, and the coordinate it is applied in. */
+export type SolarArcChoice = { source: 'true' | 'naibod'; frame: 'long' | 'ra' };
+
+/** Mean Quotidian ("Natal Frame") has no native solar-arc form, so it falls back to
+ *  SA in longitude — which makes those two options produce identical directed BODIES,
+ *  differing only in how the frame itself is drawn. */
+export function solarArcChoice(angleProgression: AngleProgression): SolarArcChoice {
+  switch (angleProgression) {
+    case 'sa-ra':
+      return { source: 'true', frame: 'ra' };
+    case 'naibod-long':
+      return { source: 'naibod', frame: 'long' };
+    case 'naibod-ra':
+      return { source: 'naibod', frame: 'ra' };
+    case 'sa-long':
+    case 'mean-quotidian':
+    default:
+      return { source: 'true', frame: 'long' };
+  }
+}
+
+/** The solar arc at `jd` under `choice` (radians). */
+export function solarArcAt(base: DirectedBase, choice: SolarArcChoice, jd: number): number {
+  if (choice.source === 'naibod') {
+    return (base.yearsAt(jd) * NAIBOD_DEG_PER_YR * Math.PI) / 180;
+  }
+  return choice.frame === 'ra' ? base.arcRAAt(jd) : base.arcLongAt(jd);
+}
+
+/** A primary-direction time-key. `trueArcRA` marks the one nonlinear rate (the real
+ *  secondary-progressed solar arc in RA); `degPerYear` is then only a nominal pace,
+ *  useful for sizing a scan's step but not for computing the arc. */
+export type PrimaryArcPlan = { degPerYear: number; trueArcRA: boolean };
+
+export function primaryArcPlan(
+  primaryRate: PrimaryRate,
+  userPrimaryRate: number,
+  base: DirectedBase,
+  nodeType: NodeType,
+): PrimaryArcPlan {
+  switch (primaryRate) {
+    case 'naibod':
+      return { degPerYear: NAIBOD_DEG_PER_YR, trueArcRA: false };
+    case 'cardan':
+      return { degPerYear: CARDAN_DEG_PER_YR, trueArcRA: false };
+    case 'kepler-ra':
+      return { degPerYear: solarDailyMotionRA(base.birthJD), trueArcRA: false };
+    case 'solar-long':
+      return { degPerYear: solarDailyMotionLong(base.birthJD, nodeType), trueArcRA: false };
+    case 'placidus-ra':
+      return { degPerYear: 1.1, trueArcRA: true };
+    case 'user':
+      return {
+        degPerYear: Number.isFinite(userPrimaryRate) ? userPrimaryRate : 0,
+        trueArcRA: false,
+      };
+    case 'ptolemy':
+    default:
+      return { degPerYear: 1, trueArcRA: false };
+  }
+}
+
+/** The primary-direction arc at `jd` (radians), positive = directed forward. */
+export function primaryArcAt(base: DirectedBase, plan: PrimaryArcPlan, jd: number): number {
+  return plan.trueArcRA
+    ? base.arcRAAt(jd)
+    : (base.yearsAt(jd) * plan.degPerYear * Math.PI) / 180;
 }
 
 export function buildOverlay(
@@ -512,33 +625,13 @@ export function buildOverlay(
     }
     case 'solar-arc': {
       const c = directionContext(chart, targetDate, nodeType);
-      const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
       // Every natal body is advanced by the arc (and, via the natal gmst, the
       // angles too), so directed MC = natal MC + arc. The method picks the arc's
       // source (true solar arc vs Naibod's mean rate) and frame (longitude vs RA).
       // Mean Quotidian has no native solar-arc form → falls back to SA in longitude.
-      let arc: number;
-      let frame: 'long' | 'ra';
-      switch (angleProgression) {
-        case 'sa-ra':
-          arc = c.arcRA();
-          frame = 'ra';
-          break;
-        case 'naibod-long':
-          arc = naibodArc;
-          frame = 'long';
-          break;
-        case 'naibod-ra':
-          arc = naibodArc;
-          frame = 'ra';
-          break;
-        case 'sa-long':
-        case 'mean-quotidian':
-        default:
-          arc = c.arcLong();
-          frame = 'long';
-          break;
-      }
+      const choice = solarArcChoice(angleProgression);
+      const arc = solarArcAt(c, choice, epochMsToJD(targetDate));
+      const frame = choice.frame;
       // Bodies shift by the arc in `frame`; the bi-wheel angle marks advance by the same
       // arc — in longitude for 'long', and via RAMC + arc for 'ra' (an angle has no
       // declination to freeze, so it's re-derived from the advanced RAMC, not RA-shifted;
@@ -566,7 +659,6 @@ export function buildOverlay(
     }
     case 'primary-directions': {
       const c = directionContext(chart, targetDate, nodeType);
-      const perYear = (degPerYr: number) => (degPerYr * c.years * Math.PI) / 180;
       // Primary directions rotate the chart rigidly by the arc. We direct the bodies
       // in RA (−arc, declination unchanged) against the natal frame: this draws the
       // SAME swept lines as advancing the RAMC by +arc would (the hour angle is
@@ -574,31 +666,11 @@ export function buildOverlay(
       // only the frame left `positions` = natal, so the overlay ring mirrored the
       // natal one. The rate is the time-key (arc per year); positive arc directs
       // forward.
-      let arc: number;
-      switch (primaryRate) {
-        case 'naibod':
-          arc = perYear(NAIBOD_DEG_PER_YR);
-          break;
-        case 'cardan':
-          arc = perYear(CARDAN_DEG_PER_YR);
-          break;
-        case 'kepler-ra':
-          arc = perYear(solarDailyMotionRA(c.birthJD));
-          break;
-        case 'solar-long':
-          arc = perYear(solarDailyMotionLong(c.birthJD, nodeType));
-          break;
-        case 'placidus-ra':
-          arc = c.arcRA(); // true secondary-progressed solar arc in RA (nonlinear)
-          break;
-        case 'user':
-          arc = perYear(Number.isFinite(userPrimaryRate) ? userPrimaryRate : 0);
-          break;
-        case 'ptolemy':
-        default:
-          arc = perYear(1);
-          break;
-      }
+      const arc = primaryArcAt(
+        c,
+        primaryArcPlan(primaryRate, userPrimaryRate, c, nodeType),
+        epochMsToJD(targetDate),
+      );
       const arcDeg = ((arc * 180) / Math.PI).toFixed(1);
       return {
         kind: mode,

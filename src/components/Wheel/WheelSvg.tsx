@@ -652,22 +652,25 @@ export function WheelSvg({
     ? aspects.filter((a) => visibleAspects.has(a.category))
     : aspects;
 
-  // Bi-wheel cross-aspects (overlay-to-natal). Drawn dashed so they read as
-  // distinct from the solid natal-to-natal aspect lines, and gated by the same
-  // category toggles.
-  const crossAspects = hasOverlay
-    ? computeCrossAspects(overlayPlanets!, planets, aspectOrbs)
-    : [];
-  const filteredCrossAspects = visibleAspects
-    ? crossAspects.filter((a) => visibleAspects.has(a.category))
-    : crossAspects;
+  // A bi-wheel draws the INNER chart's aspects only. Cross-ring contacts
+  // (overlay-to-natal) were once drawn here as a second, dashed web; two webs
+  // over one centre is unreadable at any wheel size, and the contacts are
+  // better served as a list, where each pair can carry its own orb. Callers
+  // that want them compute computeCrossAspects() themselves and render a
+  // section beside the wheel. A per-ring toggle for the chords is a separate
+  // question and deliberately not answered here.
 
   // The four chart angles (As/Ds/Mc/Ic), drawn as ring marks alongside the
-  // planets in the interactive sidebar wheel so they read in the chart itself
-  // rather than a separate list. Each keeps its hover hint (ANGLE_HINTS) and its
-  // axis colour — As/Ds gold, Mc/Ic cool — and joins the planet spread below so
-  // an angle is never stacked on top of a planet it's conjunct.
-  const showAngleMarks = interactive && detailed && !planetsOnly;
+  // planets so they read in the chart itself rather than in a separate list.
+  // Each keeps its axis colour — As/Ds gold, Mc/Ic cool — and joins the planet
+  // spread below so an angle is never stacked on top of a planet it's conjunct.
+  //
+  // Gated on the DETAILED wheel, not on `interactive`. The two were one flag
+  // once, which meant a non-interactive consumer — a rasterised or printed
+  // wheel — drew a relocated chart with no angle marked at all, the one thing
+  // such a chart exists to show. Interactivity now decides only the hover
+  // affordances (ANGLE_HINTS, the hit targets), not whether the marks exist.
+  const showAngleMarks = detailed && !planetsOnly;
   const angleLonByKey: Record<AngleKey, number> = {
     As: angles.asc,
     Ds: angles.dsc,
@@ -1129,37 +1132,6 @@ export function WheelSvg({
           );
         })}
 
-      {/* Bi-wheel cross-aspect lines (overlay ↔ natal), dashed. */}
-      {hasOverlay &&
-        filteredCrossAspects.map((a, i) => {
-          const opacity = 0.4 + (1 - a.orb / maxOrb) * 0.4;
-          // Cross-aspect conjunction: a small ring at its longitude (the chord
-          // would be invisibly short), distinct from the natal filled disc.
-          if (a.category === 'conjunction') {
-            let mid = (a.lonA + a.lonB) / 2;
-            if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
-            const pos = svgPos(mid, angles.asc, rAspectRing, cx, cy);
-            return (
-              <circle key={`xasp-${i}`} cx={pos.x} cy={pos.y} r={3.5} fill="none" stroke={a.color} strokeWidth={1} opacity={opacity} />
-            );
-          }
-          const posA = svgPos(a.lonA, angles.asc, rAspectRing, cx, cy);
-          const posB = svgPos(a.lonB, angles.asc, rAspectRing, cx, cy);
-          return (
-            <line
-              key={`xasp-${i}`}
-              x1={posA.x}
-              y1={posA.y}
-              x2={posB.x}
-              y2={posB.y}
-              stroke={a.color}
-              strokeWidth={1}
-              strokeDasharray="3 2"
-              opacity={opacity}
-            />
-          );
-        })}
-
       {/* Connector from the true zodiac position to the (possibly spread)
           glyph, plus a tick on the zodiac band marking the exact longitude. */}
       {detailed &&
@@ -1290,24 +1262,26 @@ export function WheelSvg({
       {showAngleMarks &&
         angleMarks.map((a) => {
           const pos = svgPos(angleLonFor(a), angles.asc, rPlanets, cx, cy);
-          return (
-            <g
-              key={`angle-disc-${a.key}`}
-              className="planet-mark"
-              onMouseEnter={() =>
-                setTip({
-                  x: pos.x,
-                  y: pos.y,
-                  r: 11,
-                  title: a.title,
-                  sub: a.sub,
-                  titleColor: a.color,
-                })
+          // The hover lift + named tag are the interactive wheel's; a static
+          // wheel keeps the mark and drops the handlers with the hit target.
+          const markProps = interactive
+            ? {
+                onMouseEnter: () =>
+                  setTip({
+                    x: pos.x,
+                    y: pos.y,
+                    r: 11,
+                    title: a.title,
+                    sub: a.sub,
+                    titleColor: a.color,
+                  }),
+                onMouseLeave: clearTip,
+                'aria-label': a.title,
               }
-              onMouseLeave={clearTip}
-              aria-label={a.title}
-            >
-              <circle cx={pos.x} cy={pos.y} r={14} className="planet-hit" />
+            : {};
+          return (
+            <g key={`angle-disc-${a.key}`} className="planet-mark" {...markProps}>
+              {interactive && <circle cx={pos.x} cy={pos.y} r={14} className="planet-hit" />}
               <g className="planet-mark-visual">
                 <text
                   x={pos.x}
@@ -1430,23 +1404,27 @@ export function WheelSvg({
           const glyphPos = svgPos(a.lon, angles.asc, rOverlay, cx, cy);
           const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
           const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 7, cx, cy);
+          const markProps = interactive
+            ? {
+                onMouseEnter: () =>
+                  setTip({
+                    x: glyphPos.x,
+                    y: glyphPos.y,
+                    r: 11,
+                    title: a.title,
+                    sub: a.sub,
+                    titleColor: a.color,
+                  }),
+                onMouseLeave: clearTip,
+                'aria-label': a.title,
+              }
+            : {};
           return (
             <g
               key={`ov-angle-${a.key}`}
               className="planet-mark"
               style={{ color: a.color }}
-              onMouseEnter={() =>
-                setTip({
-                  x: glyphPos.x,
-                  y: glyphPos.y,
-                  r: 11,
-                  title: a.title,
-                  sub: a.sub,
-                  titleColor: a.color,
-                })
-              }
-              onMouseLeave={clearTip}
-              aria-label={a.title}
+              {...markProps}
             >
               <line
                 x1={truePos.x}
@@ -1466,7 +1444,9 @@ export function WheelSvg({
                 stroke="currentColor"
                 strokeWidth={1.2}
               />
-              <circle cx={glyphPos.x} cy={glyphPos.y} r={14} className="planet-hit" />
+              {interactive && (
+                <circle cx={glyphPos.x} cy={glyphPos.y} r={14} className="planet-hit" />
+              )}
               <g className="planet-mark-visual">
                 <text
                   x={glyphPos.x}

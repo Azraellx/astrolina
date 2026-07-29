@@ -18,6 +18,16 @@ export interface Formatters {
   monthAbbr(month1to12: number): string;
   /** Locale-aware number formatting (decimal separator, grouping). */
   num(value: number, opts?: Intl.NumberFormatOptions): string;
+  /**
+   * A run of items as one phrase — "Toronto, Lisbon and Auckland". The
+   * separator and the final conjunction differ per language (and the serial
+   * comma is a live argument even within English), so this is Intl's to decide
+   * rather than something a caller joins by hand.
+   *
+   * `type` picks the conjunction: 'conjunction' is "and" (the default, for a
+   * set that all applies), 'disjunction' is "or".
+   */
+  list(items: readonly string[], type?: 'conjunction' | 'disjunction'): string;
 }
 
 export function makeFormatters(locale: string): Formatters {
@@ -27,5 +37,7 @@ export function makeFormatters(locale: string): Formatters {
     monthAbbr: (month) =>
       DateTime.fromObject({ month }).setLocale(locale).toFormat('LLL'),
     num: (value, opts) => new Intl.NumberFormat(locale, opts).format(value),
+    list: (items, type = 'conjunction') =>
+      new Intl.ListFormat(locale, { style: 'long', type }).format(items),
   };
 }
