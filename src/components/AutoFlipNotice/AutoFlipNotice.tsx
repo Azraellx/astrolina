@@ -19,7 +19,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useT } from '../../i18n';
 import { WarningIcon } from '../ui/WarningIcon';
-import { AUTO_FLIP_TARGET, type AutoFlipKind } from '../../lib/autoFlipNotice';
+import { InfoIcon } from '../ui/InfoIcon';
+import { AUTO_FLIP_META, type AutoFlipKind } from '../../lib/autoFlipNotice';
 import './AutoFlipNotice.css';
 
 /** Gap between the card and the control it points at, and the minimum breathing room
@@ -52,12 +53,13 @@ export function AutoFlipNotice({
   const { t } = useT();
   const cardRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const { tone, once } = AUTO_FLIP_META[kind];
 
   // Find the control this notice is about, park the card next to it, and mark it. In
   // a LAYOUT effect so the move happens before paint — measuring in a passive effect
   // would let the card show up in one place and jump to another.
   useLayoutEffect(() => {
-    const selector = AUTO_FLIP_TARGET[kind];
+    const selector = AUTO_FLIP_META[kind].target;
     const target = selector
       ? document.querySelector<HTMLElement>(selector)
       : null;
@@ -68,7 +70,10 @@ export function AutoFlipNotice({
     // would anchor the card to the top-left corner and point confidently at nothing.
     if (!target || !card || !target.getClientRects().length) return;
 
+    // The ring lives on someone else's element, so it can't inherit the card's tone —
+    // it gets its own modifier. Both classes come off together in the cleanup.
     target.classList.add('auto-flip-target');
+    if (tone === 'info') target.classList.add('auto-flip-target--info');
 
     const place = () => {
       const t0 = target.getBoundingClientRect();
@@ -93,9 +98,9 @@ export function AutoFlipNotice({
     window.addEventListener('resize', place);
     return () => {
       window.removeEventListener('resize', place);
-      target.classList.remove('auto-flip-target');
+      target.classList.remove('auto-flip-target', 'auto-flip-target--info');
     };
-  }, [kind]);
+  }, [kind, tone]);
 
   // Escape closes, hand-rolled like every other dismissible surface here (there is
   // no shared hook). Non-capturing: a takeover that owns Escape should get it first.
@@ -110,7 +115,7 @@ export function AutoFlipNotice({
   return (
     <div
       ref={cardRef}
-      className={`auto-flip-notice${anchor ? ' is-anchored' : ''}${
+      className={`auto-flip-notice is-${tone}${anchor ? ' is-anchored' : ''}${
         anchor?.below ? ' is-below' : ''
       }`}
       style={anchor ? { left: anchor.left, top: anchor.top } : undefined}
@@ -124,23 +129,34 @@ export function AutoFlipNotice({
           aria-hidden="true"
         />
       )}
-      {/* The shared heads-up mark (see WarningIcon) — the same one the other
-          "something changed / you should know" notices wear, so the class of message
-          is recognisable before the sentence is read. */}
+      {/* Warn wears the shared heads-up triangle (see WarningIcon) — the same mark the
+          other "the app changed something" notices carry. Info wears the circled i
+          instead: nothing has happened, the card is only explaining, and a triangle
+          would overstate it. */}
       <p className="afn-title">
-        <WarningIcon className="afn-icon" />
+        {tone === 'warn' ? (
+          <WarningIcon className="afn-icon" />
+        ) : (
+          <InfoIcon className="afn-icon" />
+        )}
         {t(`autoFlip.${kind}.title`)}
       </p>
       <p className="afn-body">{t(`autoFlip.${kind}.body`)}</p>
       <div className="afn-actions">
-        <label className="afn-suppress">
-          <input
-            type="checkbox"
-            checked={suppress}
-            onChange={() => onSuppressChange(!suppress)}
-          />
-          {t('autoFlip.suppress')}
-        </label>
+        {/* A once-only kind has already booked itself as seen by the time it is on
+            screen, so the tick would be a control that changes nothing — worse than
+            no control, because it implies a choice the reader doesn't have. Offered
+            only where it decides something: the notices that otherwise repeat. */}
+        {!once && (
+          <label className="afn-suppress">
+            <input
+              type="checkbox"
+              checked={suppress}
+              onChange={() => onSuppressChange(!suppress)}
+            />
+            {t('autoFlip.suppress')}
+          </label>
+        )}
         <button
           type="button"
           className="afn-ok"

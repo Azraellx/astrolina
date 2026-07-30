@@ -500,9 +500,18 @@ function tagZeniths(
   };
 }
 
+/** Marks the example charts a fresh library starts with. Their ids are DETERMINISTIC,
+ *  unlike every other chart's: a minted id (`newChartId`) is random per page load, and
+ *  the seeds are persisted on first boot, so an identity test against a freshly minted
+ *  set would hold on the first visit and quietly stop holding on the second. This
+ *  prefix is what "the reader hasn't added anything of their own yet" is measured by,
+ *  so it has to survive a reload. Editing an example keeps its id, and so keeps it an
+ *  example — which is the reading we want. */
+export const SEED_CHART_ID_PREFIX = 'seed_';
+
 const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
   ...b,
-  id: newChartId(),
+  id: `${SEED_CHART_ID_PREFIX}${i}`,
   createdAt: Date.now() + i,
 }));
 
@@ -693,6 +702,7 @@ export default function App() {
     pending: autoFlipKind,
     announce: announceFlip,
     dismiss: dismissAutoFlip,
+    isSuppressed: isFlipSuppressed,
   } = useAutoFlipNotice();
   const [autoFlipSuppress, setAutoFlipSuppress] = useState(false);
   // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
@@ -1576,10 +1586,47 @@ export default function App() {
   // selection changes under the user, so the switch still owes them a word.
   const setZodiacModeSafe = useCallback(
     (m: ZodiacMode) => {
-      announceFlip('line-system', lineSystemPref === 'geodetic' && m !== 'tropical');
+      // 'line-system-held', not 'line-system': this path masks the geodetic choice, it
+      // doesn't rewrite it. Same visible change to the map, different fact about the
+      // reader's setting, so it gets its own message and its own dismissal.
+      announceFlip(
+        'line-system-held',
+        lineSystemPref === 'geodetic' && m !== 'tropical',
+      );
       setZodiacMode(m);
     },
     [lineSystemPref, announceFlip],
+  );
+  // Opening the Calculation panel is the one moment the In Mundo default can be
+  // explained to someone who hasn't yet been confused by it. Gated on the projection
+  // actually being ON SCREEN and still at its default: a reader who has already moved
+  // it knows the control exists, and under the geodetic mapping the control isn't
+  // rendered at all (everything is on the ecliptic there by construction). Fires once
+  // — see the `once` flag in lib/autoFlipNotice.
+  const openSidebarSection = useCallback(
+    (section: SidebarSection | null) => {
+      announceFlip(
+        'line-projection',
+        section === 'calc' && lineSystem === 'celestial' && coordSystem === 'mundo',
+      );
+      setSidebarSection(section);
+    },
+    [lineSystem, coordSystem, announceFlip],
+  );
+  // Open the settings sidebar, optionally at a section — the Info chip's jump, promoted to a
+  // context action (openSettings) so any extension can deep-link a setting it documents or
+  // depends on. Sits up here beside openSidebarSection rather than with the other window
+  // actions: the save-a-chart handler calls it, and a plain handler reaching FORWARD to a
+  // later const is what makes the compiler give up on memoizing this component.
+  const openSettingsSection = useCallback(
+    (section?: string) => {
+      setShowSettings(true);
+      if (section) openSidebarSection(section as SidebarSection);
+    },
+    // openSidebarSection is not stable — it closes over the projection settings its
+    // notice tests. A frozen copy here would judge that against whatever they were
+    // when this component first mounted.
+    [openSidebarSection],
   );
   // (Switching INTO sidereal while Mundane is active no longer WRITES the celestial
   // frame. Sidereal is a standing condition, not an event: the derived `lineSystem`
@@ -4105,6 +4152,24 @@ export default function App() {
   const handleSaveChart = (chart: StoredChart) => {
     // Stamp recency on the saved chart.
     const stamped = { ...chart, lastUsedAt: Date.now() };
+    // A reader's first chart OF THEIR OWN is the moment the map stops being a demo and
+    // starts being about them — so it is the moment they begin comparing it against
+    // whatever program they arrived from, and the moment the In Mundo default is worth
+    // mentioning. Most people meet it long before they would ever open Calculation, so
+    // take them there rather than duplicating the notice: opening the panel IS the
+    // existing trigger, and it brings the card anchored beside the control.
+    //
+    // "First" cannot mean an empty library — a fresh install is SEEDED (see seedCharts
+    // above), so nobody ever has zero. It means everything held is still an example,
+    // which the seeds' stable id prefix makes true across reloads. New charts only (an
+    // edit is not a first anything), and skipped once the tip has been seen, so nobody
+    // gets a settings panel opened at them for a card that would not appear.
+    const firstOwnChart =
+      !charts.some((c) => c.id === stamped.id) &&
+      charts.every((c) => c.id.startsWith(SEED_CHART_ID_PREFIX));
+    if (firstOwnChart && !isFlipSuppressed('line-projection')) {
+      openSettingsSection('calc');
+    }
     setCharts((prev) => {
       const exists = prev.some((c) => c.id === stamped.id);
       return exists
@@ -4382,14 +4447,6 @@ export default function App() {
     },
     [setShowLocalSpaceSafe],
   );
-
-  // Open the settings sidebar, optionally at a section — the Info chip's jump, promoted to a
-  // context action (openSettings) so any extension can deep-link a setting it documents or
-  // depends on.
-  const openSettingsSection = useCallback((section?: string) => {
-    setShowSettings(true);
-    if (section) setSidebarSection(section);
-  }, []);
 
   // Show/hide a built-in reference surface (guides card / info chip) — the write half of the
   // context's viewFlags, for an extension that hosts those toggles after claiming their menu
@@ -5112,7 +5169,7 @@ export default function App() {
           showLabels={showLabels}
           setShowLabels={setShowLabels}
           openSection={sidebarSection}
-          setOpenSection={setSidebarSection}
+          setOpenSection={openSidebarSection}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -5181,7 +5238,7 @@ export default function App() {
           advancedMode={advancedWheel}
           onOpen={(section) => {
             setShowSettings(true);
-            setSidebarSection(section);
+            openSidebarSection(section);
           }}
         />
       )}

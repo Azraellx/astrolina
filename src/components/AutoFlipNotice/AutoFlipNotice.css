@@ -21,9 +21,11 @@
   width: min(340px, calc(100vw - 32px));
   box-sizing: border-box;
   background: rgba(var(--bg-panel), 0.96);
-  /* Warn-toned border rather than the guide's accent: this reports something the
-     app did on its own, not an invitation. Held well down — nothing has failed. */
-  border: 1px solid rgba(var(--danger-rgb), 0.4);
+  /* One tone variable feeds the border, the pointer and the ring on the control, so a
+     kind's tone is set in one place (the .is-warn / .is-info rules below) and can't
+     end up half-applied. Warn: the app changed something on its own — held well down,
+     since nothing has failed. Info: it is only explaining. */
+  border: 1px solid rgba(var(--afn-tone), 0.4);
   border-radius: 12px;
   padding: 12px 14px 12px;
   color: var(--text-strong);
@@ -36,6 +38,12 @@
   .auto-flip-notice {
     animation: none;
   }
+}
+.auto-flip-notice.is-warn {
+  --afn-tone: var(--danger-rgb);
+}
+.auto-flip-notice.is-info {
+  --afn-tone: var(--accent-brand-rgb);
 }
 
 /* Anchored: the component writes left/top from the target's measured box, so the
@@ -59,8 +67,8 @@
 /* Card ABOVE the control: the arrow hangs off the bottom edge, pointing down. */
 .auto-flip-notice.is-anchored .afn-arrow {
   bottom: -5.5px;
-  border-right: 1px solid rgba(var(--danger-rgb), 0.4);
-  border-bottom: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-right: 1px solid rgba(var(--afn-tone), 0.4);
+  border-bottom: 1px solid rgba(var(--afn-tone), 0.4);
 }
 /* Card BELOW it (no room above): flip to the top edge, pointing up. */
 .auto-flip-notice.is-below .afn-arrow {
@@ -68,8 +76,8 @@
   top: -5.5px;
   border-right: none;
   border-bottom: none;
-  border-left: 1px solid rgba(var(--danger-rgb), 0.4);
-  border-top: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-left: 1px solid rgba(var(--afn-tone), 0.4);
+  border-top: 1px solid rgba(var(--afn-tone), 0.4);
 }
 
 /* The cue on the CONTROL itself — applied to a node outside this component's tree
@@ -87,6 +95,10 @@
    pulse runs 3 × 0.75s = 2.25s, and the fade takes over at exactly that mark to land
    the whole cue on 3s. Keep those three numbers in step if you retune it. */
 .auto-flip-target {
+  /* Carries its OWN tone: this class lands on a control elsewhere in the document, so
+     nothing cascades to it from the card. Warn is the default; the component adds the
+     modifier below for an informational kind. */
+  --afn-tone: var(--danger-rgb);
   outline: 2px solid transparent;
   outline-offset: 3px;
   border-radius: 7px;
@@ -94,18 +106,23 @@
     afn-target-pulse 0.75s var(--ease-settle) 3,
     afn-target-fade 0.75s ease-out 2.25s forwards;
 }
+/* Scoped modifier rather than a bare .is-info — this class sits on someone else's
+   element, alongside classes this file knows nothing about. */
+.auto-flip-target--info {
+  --afn-tone: var(--accent-brand-rgb);
+}
 @keyframes afn-target-pulse {
   from,
   to {
-    outline-color: rgba(var(--danger-rgb), 0.75);
+    outline-color: rgba(var(--afn-tone), 0.75);
   }
   50% {
-    outline-color: rgba(var(--danger-rgb), 0.12);
+    outline-color: rgba(var(--afn-tone), 0.12);
   }
 }
 @keyframes afn-target-fade {
   from {
-    outline-color: rgba(var(--danger-rgb), 0.75);
+    outline-color: rgba(var(--afn-tone), 0.75);
   }
   to {
     outline-color: transparent;
@@ -117,7 +134,7 @@
 @media (prefers-reduced-motion: reduce) {
   .auto-flip-target {
     animation: none;
-    outline-color: rgba(var(--danger-rgb), 0.7);
+    outline-color: rgba(var(--afn-tone), 0.7);
   }
 }
 
@@ -129,11 +146,11 @@
   font-size: 12.5px;
   font-weight: 700;
 }
-/* The mark carries the warn tone so the title text can stay plain — colouring the
-   whole heading red would read as a failure, which this is not. */
+/* The mark carries the tone so the title text can stay plain — colouring a whole
+   heading red would read as a failure, which none of these are. */
 .afn-icon {
   flex-shrink: 0;
-  color: var(--danger);
+  color: rgb(var(--afn-tone));
 }
 
 .afn-body {

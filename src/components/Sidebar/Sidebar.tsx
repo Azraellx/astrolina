@@ -1418,7 +1418,10 @@ export function Sidebar({
           {lineSystem === 'celestial' && (
             <>
               <h2>{t('settings.headings.lineProjection')}</h2>
-              <ul className="theme-list">
+              {/* Named so the first-open notice can point here (lib/autoFlipNotice) —
+                  this app's In Mundo default is the one that routinely reads as a bug
+                  to someone cross-checking against another program. */}
+              <ul className="theme-list" data-autoflip="line-projection">
                 {COORD_SYSTEM_VALUES.map((value) => (
                   <HintOption
                     key={value}
