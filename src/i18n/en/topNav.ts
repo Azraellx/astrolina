@@ -15,6 +15,18 @@ export const topNav = {
       label: 'None',
       hint: 'Just the natal chart, with no time technique applied.',
     },
+    // Why a technique is unavailable ON THIS CHART. Shown in place of the row's own
+    // description while it's greyed — it names what about the chart bars it, so the
+    // answer is "switch to a chart that has one", not a shrug. Nothing is lost by
+    // reading it: the technique is only held, and returns with the next chart.
+    blocked: {
+      composite:
+        'A composite is a midpoint chart, not a moment — there is no birth instant for this technique to advance. Switch to a single-person chart to use it.',
+      'no-time':
+        'This chart’s birth time is unknown, so there is no exact natal moment to advance — a technique built on one would be quietly inventing it. Add a birth time to use this.',
+      davison:
+        'This chart is already a two-person chart, so there is no one left to add. Switch to a single-person chart to build a synastry.',
+    },
     modes: {
       transits: {
         label: 'Transits',

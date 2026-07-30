@@ -1,0 +1,185 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only
+   Licensed under the GNU AGPL v3.0 with an additional attribution term under
+   AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept. */
+
+/* The auto-flip notice. Shares the guide panel's chrome and layer (z 50 — above the
+   HUDs, below the real modals at z 100). No backdrop by design (see
+   AutoFlipNotice.tsx) — the map stays live behind it.
+
+   The rule below is the FALLBACK spot, used when the setting that moved has no
+   control on screen to point at. When it does, the component measures that control
+   and repositions to it (.is-anchored), because a card naming a control at the other
+   end of the screen leaves the reader hunting for it. */
+.auto-flip-notice {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  background: rgba(var(--bg-panel), 0.96);
+  /* Warn-toned border rather than the guide's accent: this reports something the
+     app did on its own, not an invitation. Held well down — nothing has failed. */
+  border: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-radius: 12px;
+  padding: 12px 14px 12px;
+  color: var(--text-strong);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  font-family: inherit;
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .auto-flip-notice {
+    animation: none;
+  }
+}
+
+/* Anchored: the component writes left/top from the target's measured box, so the
+   centring translate has to go or it would drag the card half its width off the
+   control it just lined up with. */
+.auto-flip-notice.is-anchored {
+  translate: none;
+}
+
+/* The pointer. A bordered square rotated 45° rather than a border triangle, so it can
+   carry the card's own 1px edge on the two sides that face out and read as part of
+   the panel instead of a separate shape stuck to it. `left` is set inline. */
+.afn-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: rgba(var(--bg-panel), 0.96);
+  rotate: 45deg;
+}
+/* Card ABOVE the control: the arrow hangs off the bottom edge, pointing down. */
+.auto-flip-notice.is-anchored .afn-arrow {
+  bottom: -5.5px;
+  border-right: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-bottom: 1px solid rgba(var(--danger-rgb), 0.4);
+}
+/* Card BELOW it (no room above): flip to the top edge, pointing up. */
+.auto-flip-notice.is-below .afn-arrow {
+  bottom: auto;
+  top: -5.5px;
+  border-right: none;
+  border-bottom: none;
+  border-left: 1px solid rgba(var(--danger-rgb), 0.4);
+  border-top: 1px solid rgba(var(--danger-rgb), 0.4);
+}
+
+/* The cue on the CONTROL itself — applied to a node outside this component's tree
+   for as long as the card is up, and removed with it. An outline rather than a
+   border or shadow: it costs no layout, so it can't nudge a bar's contents around
+   while the reader is looking at them.
+
+   House motion is entrance-only and this deliberately isn't — an eye being directed
+   somewhere needs a run of movement to follow. But it is a POINTER, not decoration:
+   it beats quickly for a few seconds and then fades out entirely, rather than leaving
+   a ring around a control the reader has already looked at. The base outline is
+   therefore transparent, and the fade holds it there (`forwards`).
+
+   Two animations rather than one long keyframe list so each half stays tunable: the
+   pulse runs 3 × 0.75s = 2.25s, and the fade takes over at exactly that mark to land
+   the whole cue on 3s. Keep those three numbers in step if you retune it. */
+.auto-flip-target {
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+  border-radius: 7px;
+  animation:
+    afn-target-pulse 0.75s var(--ease-settle) 3,
+    afn-target-fade 0.75s ease-out 2.25s forwards;
+}
+@keyframes afn-target-pulse {
+  from,
+  to {
+    outline-color: rgba(var(--danger-rgb), 0.75);
+  }
+  50% {
+    outline-color: rgba(var(--danger-rgb), 0.12);
+  }
+}
+@keyframes afn-target-fade {
+  from {
+    outline-color: rgba(var(--danger-rgb), 0.75);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
+/* No motion to follow, so the ring simply holds while the card is up — it is removed
+   with the card either way, so nothing is left behind. Without this the transparent
+   base above would leave a reduced-motion reader with no cue at all. */
+@media (prefers-reduced-motion: reduce) {
+  .auto-flip-target {
+    animation: none;
+    outline-color: rgba(var(--danger-rgb), 0.7);
+  }
+}
+
+.afn-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+/* The mark carries the warn tone so the title text can stay plain — colouring the
+   whole heading red would read as a failure, which this is not. */
+.afn-icon {
+  flex-shrink: 0;
+  color: var(--danger);
+}
+
+.afn-body {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The tick and the acknowledgement share one row — the checkbox modifies the close
+   rather than standing as its own decision. Both routes out (OK and Escape) run the
+   same dismiss and honour the tick, so a user who ticks and then hits Escape gets
+   what they asked for rather than silently losing it. */
+.afn-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.afn-suppress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.afn-suppress input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.afn-ok {
+  margin-left: auto;
+  padding: 4px 14px;
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.5);
+  border-radius: 6px;
+  background: rgba(var(--accent-brand-rgb), 0.12);
+  color: var(--accent-brand);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.afn-ok:hover {
+  background: rgba(var(--accent-brand-rgb), 0.2);
+}

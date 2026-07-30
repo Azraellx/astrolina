@@ -400,6 +400,8 @@ function HintOption({
   label,
   hint,
   hotkey,
+  disabled,
+  disabledHint,
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -407,6 +409,12 @@ function HintOption({
   hint: string;
   /** Optional keyboard shortcut, shown as the yellow pill in the hover tip. */
   hotkey?: ReactNode;
+  /** THE standard unavailable state (.ui-inert), forwarded to TipToggle: an option
+   *  a choice list can't offer right now stays VISIBLE and says why, rather than
+   *  disappearing and taking the explanation with it. `disabledHint` names the
+   *  setting to change. */
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
     <TipToggle
@@ -415,6 +423,8 @@ function HintOption({
       title={label}
       hint={hint}
       hotkey={hotkey}
+      disabled={disabled}
+      disabledHint={disabledHint}
     >
       <span className="radio">{selected ? '●' : '○'}</span>
       <span className="label">{label}</span>
@@ -1064,7 +1074,7 @@ export function Sidebar({
     setOpenSection(openSection === s ? null : s);
 
   // (Every overlay now hosts its own controls on its bottom-center HUD — time
-  // overlays' display drawer + positioning switch on the timeline bar, synastry's
+  // overlays' display drawer + frame control on the timeline bar, synastry's
   // relationship builder on the synastry bar, and the eclipse vitals/contacts/
   // toggles on the EclipseHud — so the Sidebar no longer has an "Overlay" tab.)
 
@@ -1380,20 +1390,29 @@ export function Sidebar({
               ONLY in Celestial — which also keeps "In Mundo" from ever appearing
               next to "Mundane". */}
           <h2>{t('settings.headings.lineSystem')}</h2>
-          <ul className="theme-list">
-            {LINE_SYSTEM_VALUES.filter(
-              // Geodetic (Mundane) is tropical-only — hidden in sidereal mode
-              // (mirrors how local space is withheld in geodetic mode).
-              (value) => value !== 'geodetic' || !siderealActive,
-            ).map((value) => (
-              <HintOption
-                key={value}
-                selected={lineSystem === value}
-                onSelect={() => setLineSystem(value)}
-                label={labels.lineSystem(value)}
-                hint={labels.lineSystemHint(value)}
-              />
-            ))}
+          {/* Named so the auto-flip notice can point here when it reports a line-system
+              change and this panel happens to be open (lib/autoFlipNotice). A styling
+              hook would be wrong — this is an identity, and it must survive a reskin. */}
+          <ul className="theme-list" data-autoflip="line-system">
+            {/* Geodetic (Mundane) is tropical-only, so a sidereal zodiac makes it
+                unavailable — shown INERT rather than filtered out. Removing it left a
+                user who had Mundane selected watching it vanish with nothing to read
+                and no way back; the disabled row names the setting to change, and the
+                stored choice is only masked, so reverting to tropical restores it. */}
+            {LINE_SYSTEM_VALUES.map((value) => {
+              const unavailable = value === 'geodetic' && siderealActive;
+              return (
+                <HintOption
+                  key={value}
+                  selected={lineSystem === value}
+                  onSelect={() => setLineSystem(value)}
+                  label={labels.lineSystem(value)}
+                  hint={labels.lineSystemHint(value)}
+                  disabled={unavailable}
+                  disabledHint={unavailable ? t('settings.inert.geodeticSidereal') : undefined}
+                />
+              );
+            })}
           </ul>
 
           {lineSystem === 'celestial' && (

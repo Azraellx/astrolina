@@ -34,7 +34,6 @@ export const settings = {
     aspectOrbs: 'Aspect orbs',
     primaryRate: 'Pri. directions rate',
     display: 'Display',
-    positioning: 'Positioning',
     chartAngle: 'Chart Angle',
     magnitudeSteps: 'Magnitude steps',
     fortuneFormula: 'Part of Fortune',
@@ -202,6 +201,8 @@ export const settings = {
       'A Lot is a point on the ecliptic with no position in the sky, so In Mundo has nowhere to place it. To see this line, set the projection to In Zodiaco (Calculation).',
     fortuneAdvanced:
       'The Part of Fortune is an Advanced reading — turn Advanced on to use it.',
+    geodeticSidereal:
+      'Mundane maps the TROPICAL zodiac onto Earth’s longitudes — there is no sidereal version of it. Set the zodiac back to Tropical (Advanced) to use it; your choice is only being held, not cleared.',
   },
 
   nodeType: {
@@ -238,14 +239,21 @@ export const settings = {
     user: { label: 'User rate', hint: 'Enter your own degrees-per-year below.' },
   },
 
+  // The overlay frame, as the two QUESTIONS it answers rather than as a pair of
+  // abstract adjectives — the old Relative/Absolute labels named the mechanism and
+  // left the reader to work out which one their question needed. `label` is the
+  // segment face (kept short: it shares a bar row with the returns), `tip` the
+  // tooltip headline, `hint` the reasoning underneath.
   positioning: {
     'relative-to-natal': {
-      label: 'Relative',
-      hint: 'Frame the overlay against your natal chart’s angles (radix-relative); the lines drift slowly with the planets’ own motion. The default most astrologers work with.',
+      label: 'My angles',
+      tip: 'Transits to my angles',
+      hint: 'Where a transiting planet reaches your relocated natal angles — the map answers “where would I have to live for this transit to land on my MC?” It holds the birth chart’s sidereal frame, so the lines drift only with the planets’ own motion, slowly enough to read over months.',
     },
     'transit-moment': {
-      label: 'Absolute',
-      hint: 'Place the overlay at its own moment in the sky (that instant’s sidereal time); the lines sweep about 15° per hour with Earth’s rotation. Standard transit astrocartography.',
+      label: 'Sky now',
+      tip: 'The sky at this moment',
+      hint: 'Where each body is genuinely angular at the overlay’s own moment — standard transit astrocartography, and the frame other software draws. The lines sweep about 15° per hour with Earth’s rotation, so this one is read at an instant rather than across a season.',
     },
   },
 

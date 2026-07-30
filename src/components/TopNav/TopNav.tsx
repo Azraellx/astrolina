@@ -18,7 +18,7 @@ import {
   OVERLAY_MODES,
   ADVANCED_OVERLAY_MODES,
   VIEW_LOCK_PARKED_OVERLAYS,
-  overlayBlockedFor,
+  overlayBlockFor,
   type OverlayMode,
 } from '../../lib/astro/timeline';
 import { canonicalLng } from '../../lib/coordFormat';
@@ -1147,11 +1147,6 @@ export function TopNav({
                   {/* Synastry needs the 'adv' tier: filtered out below it (or a disabled
                       teaser if the build nudges), tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
                   {OVERLAY_MODES.filter((mode) => {
-                    // Some charts can't carry every overlay — a composite has no real
-                    // moment to progress/direct (Q11), and an unknown-birth-time chart
-                    // has no natal moment to advance. One shared predicate with App's
-                    // 'o'-cycle and stale-mode reset, so the three never disagree.
-                    if (overlayBlockedFor(current)(mode)) return false;
                     // Overlays a viewport owner can't carry HIDE while one holds the
                     // lock — a visible row would only offer a dead selection (the 'o'
                     // cycle skips them too; see VIEW_LOCK_PARKED_OVERLAYS).
@@ -1160,6 +1155,15 @@ export function TopNav({
                     return tierMet(planTier, req) || shouldShowNudge(req);
                   }).map((mode) => {
                     const advMode = ADVANCED_OVERLAY_MODES.has(mode);
+                    // Some charts can't carry every technique — a composite has no real
+                    // moment to progress/direct (Q11), an unknown-birth-time chart has no
+                    // natal moment to advance, and a Davison is already a two-person
+                    // chart. The row stays VISIBLE and says which of those it is: a
+                    // technique that vanishes from the menu takes its explanation with
+                    // it, and the reader is left wondering what they did. Same predicate
+                    // as the 'o' cycle and the effective overlay mode, so all three agree.
+                    const block = overlayBlockFor(current)(mode);
+                    const tierLocked = advMode && !tierMet(planTier, 'adv');
                     return (
                       <RadioItem
                         key={mode}
@@ -1173,11 +1177,18 @@ export function TopNav({
                                 ? t('topNav.overlay.modes.cyclo.tipTitle')
                                 : undefined
                         }
-                        hint={t(`topNav.overlay.modes.${mode}.desc`)}
+                        hint={
+                          block
+                            ? t(`topNav.overlay.blocked.${block}`)
+                            : t(`topNav.overlay.modes.${mode}.desc`)
+                        }
                         hotkey={<CycleHotkey label="O" />}
                         tier={advMode ? 'adv' : undefined}
-                        disabled={advMode && !tierMet(planTier, 'adv')}
-                        locked={advMode && !tierMet(planTier, 'adv')}
+                        // A tier lock is a teaser (clicking opens the upgrade flow); a
+                        // chart block is simply not applicable, so it disables WITHOUT
+                        // locking — there is nothing to buy that would make it work.
+                        disabled={tierLocked || block != null}
+                        locked={tierLocked}
                         checked={overlayMode === mode}
                         onSelect={() => {
                           setOverlayMode(mode);

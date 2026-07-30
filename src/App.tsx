@@ -72,6 +72,8 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
+import { AutoFlipNotice } from './components/AutoFlipNotice/AutoFlipNotice';
+import { useAutoFlipNotice } from './lib/useAutoFlipNotice';
 import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
 import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
@@ -188,6 +190,7 @@ import {
   shiftAngles,
   shiftEclipticPositions,
   shiftEclipticPositionsPerBody,
+  type ZodiacMode,
 } from './lib/astro/ayanamsa';
 import { findReturn, type ReturnBody } from './lib/astro/returns';
 import { buildLineCard, type LineCardDistance } from './lib/lineCard';
@@ -652,11 +655,46 @@ export default function App() {
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
   );
-  const [lineSystem, setLineSystem] = useState<LineSystem>(() =>
+  // The STORED line-system choice. Consumers read the derived `lineSystem` below, not
+  // this — the geodetic mapping is tropical-only, so a sidereal zodiac masks it. Masking
+  // rather than rewriting is the point: sidereal is a standing condition, and when it
+  // ends the user's Mundane choice has to still be here.
+  const [lineSystemPref, setLineSystemPref] = useState<LineSystem>(() =>
     localStorage.getItem('astro:line-system:v1') === 'geodetic'
       ? 'geodetic'
       : 'celestial',
   );
+  // The expanded wheel's Advanced reading mode (degree rim, aspect grid, coordinate
+  // tables). Lifted here — same storage key the sidebar always used — so the Info chip
+  // can gate its Advanced-tab items on it.
+  const [advancedWheel, setAdvancedWheel] = useState(
+    () => localStorage.getItem('astro:advanced:v1') === '1',
+  );
+  // Zodiac reading frame (Advanced ▸ Zodiac): tropical, or sidereal by ayanamsa — a
+  // display-layer choice (see the sidereal block further down).
+  const [zodiacMode, setZodiacMode] = useState(loadZodiacMode);
+  // These three sit up here, ahead of the other eff* values, only because the derived
+  // line system below needs them and `visiblePlanets` (just under it) needs THAT.
+  const effZodiacMode = advancedWheel ? zodiacMode : 'tropical';
+  // The EFFECTIVE line system every consumer reads — the name stays `lineSystem` so the
+  // ~80 read sites don't care that a preference sits behind it. The geodetic mapping is
+  // the TROPICAL zodiac laid on Earth's longitudes by definition, with no sidereal
+  // variant, so a sidereal zodiac masks it to celestial. Masked, never rewritten: the
+  // Sidebar shows Mundane present-but-unavailable with the reason, and reverting to
+  // tropical brings the choice straight back with nothing to redo.
+  const lineSystem: LineSystem =
+    lineSystemPref === 'geodetic' && effZodiacMode !== 'tropical'
+      ? 'celestial'
+      : lineSystemPref;
+  // Acknowledgement for settings this app rewrites on the user's behalf. Declared up
+  // here because the earliest thing that announces (the slide tool) is defined well
+  // above the other view state. `announce` is only ever called from event handlers.
+  const {
+    pending: autoFlipKind,
+    announce: announceFlip,
+    dismiss: dismissAutoFlip,
+  } = useAutoFlipNotice();
+  const [autoFlipSuppress, setAutoFlipSuppress] = useState(false);
   // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
   // extensions, sky band). The Part of Fortune is a zodiacal-frame point: In
   // Mundo it has no map line (its lines exist In-Zodiaco/geodetic only), so
@@ -750,14 +788,17 @@ export default function App() {
   );
   // Sky Times (View ▸ Sky times): the day's rise/culminate/set clock at the
   // active point — the bottom sky band. On-demand, so it defaults OFF.
+  // Advanced-gated at LOAD, the same way showLocalSpace is above — and for the same
+  // reason, which is easy to miss because neither window is advanced-gated at RENDER.
+  // The only thing that normally closes them is setAdvancedMode(false); a build that
+  // instead drives 'astro:advanced:v1' straight from an account tier never calls it,
+  // so a reader who drops back to the base tier with this open would land on a sky
+  // band whose View row is tier-filtered away and whose hotkey is gated — visible,
+  // and with nothing left to turn it off.
   const [showSkyTimes, setShowSkyTimes] = useState(
-    () => localStorage.getItem('astro:view-skytimes:v1') === '1',
-  );
-  // The expanded wheel's Advanced reading mode (degree rim, aspect grid,
-  // coordinate tables). Lifted here — same storage key the sidebar always
-  // used — so the Info chip can gate its Advanced-tab items on it.
-  const [advancedWheel, setAdvancedWheel] = useState(
-    () => localStorage.getItem('astro:advanced:v1') === '1',
+    () =>
+      localStorage.getItem('astro:view-skytimes:v1') === '1' &&
+      localStorage.getItem('astro:advanced:v1') === '1',
   );
   useEffect(() => {
     localStorage.setItem('astro:advanced:v1', advancedWheel ? '1' : '0');
@@ -847,26 +888,26 @@ export default function App() {
     return 'filters';
   });
 
-  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
-    const m = loadOverlayMode();
-    // Advanced-tier overlays don't restore while Advanced is off (see ADVANCED_OVERLAY_MODES).
-    return ADVANCED_OVERLAY_MODES.has(m) &&
-      localStorage.getItem('astro:advanced:v1') !== '1'
+  // The STORED overlay technique. Consumers read the derived `overlayMode` below.
+  // Restored raw — the two conditions that can make a technique unreadable are both
+  // resolved on the way out, not on the way in.
+  const [overlayModePref, setOverlayModePref] = useState<OverlayMode>(loadOverlayMode);
+  // The EFFECTIVE overlay every consumer reads. Two standing conditions can make a
+  // stored technique unreadable, and NEITHER is allowed to rewrite it:
+  //   · the active chart can't carry it — a composite has no real moment to advance
+  //     (Q11), an unknown-birth-time chart can't advance its natal moment, and a
+  //     Davison is already a two-person chart so it can't take a partner;
+  //   · it's an Advanced-tier technique and Advanced is off.
+  // Both end. Someone who opens a composite to glance at it, or turns Advanced off for
+  // an afternoon, is not asking to forget the technique they work in — and writing
+  // 'off' here used to mean exactly that, permanently, because the write persisted.
+  // Masked instead: the menu shows the row unavailable with the reason, and the
+  // technique is simply back the moment the chart or the tier allows it again.
+  const overlayMode: OverlayMode =
+    overlayBlockedFor(current)(overlayModePref) ||
+    (!advancedWheel && ADVANCED_OVERLAY_MODES.has(overlayModePref))
       ? 'off'
-      : m;
-  });
-  // A composite chart can't carry a progression / direction / synastry overlay
-  // (no real moment to advance — Q11), and an unknown-birth-time chart can't carry
-  // any technique that advances its natal moment — so making such a chart active
-  // resets a blocked mode to None. One guarded spot covers chart switch, generate,
-  // import, and load-time restore; the menu + 'o'-cycle already hide these modes, so
-  // this only fires on a stale combo, and the no-op updater bails when nothing needs
-  // changing.
-  useEffect(() => {
-    const blocked = overlayBlockedFor(current);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOverlayMode((m) => (blocked(m) ? 'off' : m));
-  }, [current]);
+      : overlayModePref;
   // The active Overlay-menu EXTENSION (registerOverlayExtension), single-select and
   // mutually exclusive with overlayMode. Restored only if the id still matches a
   // registered extension, so a stale id from a removed plugin activates nothing. The
@@ -901,9 +942,6 @@ export default function App() {
   const [transitFrame, setTransitFrame] = useState<TransitFrame>(() =>
     loadTransitFrame(),
   );
-  // Zodiac reading frame (Advanced ▸ Zodiac): tropical, or sidereal by
-  // ayanamsa — a display-layer choice (see the sidereal block further down).
-  const [zodiacMode, setZodiacMode] = useState(loadZodiacMode);
   useEffect(() => saveZodiacMode(zodiacMode), [zodiacMode]);
   // Eclipses overlay: the selected catalog eclipse (by id), the magnitude-
   // isoline interval, and the "eclipse chart lines" display toggle.
@@ -1089,11 +1127,12 @@ export default function App() {
     // No natal cage to spin when natal linework is hidden / an overlay is promoted
     // (slideAvailableRef, synced below). The hotkey routes here, so gate it too.
     if (!slideAvailableRef.current) return;
-    if (lineSystem === 'geodetic') setLineSystem('celestial');
+    announceFlip('line-system', lineSystem === 'geodetic');
+    if (lineSystem === 'geodetic') setLineSystemPref('celestial');
     // A playing timeline and a spinning globe fight over the camera/data — pause it.
     if (playing) setPlaying(false);
     setMapTool('slide');
-  }, [mapTool, lineSystem, playing]);
+  }, [mapTool, lineSystem, playing, announceFlip]);
   // The current map-pin-state accent resolved to a concrete color, for the WebGL
   // measure layers (which can't read CSS vars). Kept in sync below.
   const [measureColor, setMeasureColor] = useState('#8b909c');
@@ -1133,7 +1172,8 @@ export default function App() {
   // restores exactly what the user had. Only the chart/map COMPUTATION reads
   // these effective values; the (hidden) Sidebar/InfoBar keep the raw ones.
   const effHouseSystem = advancedWheel ? houseSystem : 'placidus';
-  const effZodiacMode = advancedWheel ? zodiacMode : 'tropical';
+  // effZodiacMode belongs in this group but is resolved further up, where the derived
+  // line system it feeds has to sit (see the comment there).
   const effFortuneFormula = advancedWheel ? fortuneFormula : 'sect';
   const effShowParans = advancedWheel && showParans;
   const effShowAspectLines = advancedWheel && showAspectLines;
@@ -1367,7 +1407,8 @@ export default function App() {
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
           // celestial frame (matches the View-menu toggle + the slide tool).
           if (advancedWheel && !getViewLock()) {
-            if (lineSystem === 'geodetic') setLineSystem('celestial');
+            announceFlip('line-system', lineSystem === 'geodetic');
+            if (lineSystem === 'geodetic') setLineSystemPref('celestial');
             setShowLocalSpace((v) => !v);
           }
           break;
@@ -1379,10 +1420,14 @@ export default function App() {
           const cycle = getViewLock()
             ? overlayCycle.filter((m) => !VIEW_LOCK_PARKED_OVERLAYS.has(m))
             : overlayCycle;
-          setOverlayMode((mode) => cycle[(cycle.indexOf(mode) + 1) % cycle.length]);
+          // Steps from the VISIBLE mode, not the stored one: with a technique masked
+          // (blocked chart / Advanced off) the bar reads None, so 'o' has to continue
+          // from None — resuming from a mode the user can't currently see would skip
+          // an entry for no reason they could observe.
+          setOverlayModePref(cycle[(cycle.indexOf(overlayMode) + 1) % cycle.length]);
           break;
         }
-        case 'n': setActiveOverlayExt(null); setOverlayMode('off'); break;
+        case 'n': setActiveOverlayExt(null); setOverlayModePref('off'); break;
         case 'm': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
@@ -1435,7 +1480,17 @@ export default function App() {
     // later in this component; the keydown closure reads them lazily (post-commit), so they're
     // intentionally left out of the deps — listing them here would touch their temporal dead
     // zone during render.
-  }, [current, charts, pinned, toggleSlide, advancedWheel, lineSystem, mapTool, overlayMode]);
+  }, [
+    current,
+    charts,
+    pinned,
+    toggleSlide,
+    advancedWheel,
+    lineSystem,
+    mapTool,
+    overlayMode,
+    announceFlip,
+  ]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
   // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
@@ -1457,14 +1512,34 @@ export default function App() {
   // Local Space view, Synastry/Eclipses overlays) so nothing advanced-only lingers without
   // a menu control to turn it back off. Used in place of the raw setAdvancedWheel at every
   // Advanced toggle (the profile plan tag + the wheel-sidebar ADV label). Load-time stale
-  // state is handled in the showLocalSpace / overlayMode initializers instead (an effect
-  // that setState's on mount would cascade renders — see react-hooks/set-state-in-effect).
+  // state is handled in the showLocalSpace / showSkyTimes / overlayMode initializers
+  // instead (an effect that setState's on mount would cascade renders — see
+  // react-hooks/set-state-in-effect).
+  //
+  // The two view-window writes below LOOK like the preference-destroying pattern the
+  // overlay technique was just rescued from (they clear a persisted flag that doesn't
+  // come back when Advanced returns), and they are deliberately left alone:
+  //
+  //   · Neither window is advanced-gated at RENDER, so the write is load-bearing — a
+  //     derived value would need render gates added to both before it could replace it.
+  //   · A closed window announces its own absence. You can see it isn't there and
+  //     reopen it from the View menu in one click. That is the whole difference from a
+  //     masked reading, which silently changes what the map COMPUTES while looking
+  //     exactly the same — which is why those got derived and these did not.
+  //   · This whole path is effectively open-core-only. A build that ties Advanced to an
+  //     account tier writes 'astro:advanced:v1' directly and reloads, never calling this,
+  //     so it already gets the derive-shaped behaviour by never taking this branch.
+  //
+  // If either window ever gains a render gate on advancedWheel, revisit: at that point
+  // the write becomes redundant and rule 2 (CLAUDE.md) applies cleanly.
   const setAdvancedMode = useCallback((on: boolean) => {
     if (!on) {
       setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
       setShowLocalSpace(false);
       setShowSkyTimes(false);
-      setOverlayMode((m) => (ADVANCED_OVERLAY_MODES.has(m) ? 'off' : m));
+      // An advanced-tier OVERLAY is not cleared here: the derived overlayMode masks it
+      // while Advanced is off, so turning Advanced back on hands the technique straight
+      // back — the same courtesy the house system, zodiac and orb settings already get.
     }
     setAdvancedWheel(on);
   }, []);
@@ -1480,23 +1555,36 @@ export default function App() {
       // definition — there is no sidereal variant — so it is unavailable in
       // sidereal mode (mirrors how it is withheld alongside local space / slide).
       if (next === 'geodetic' && effZodiacMode !== 'tropical') return;
+      // Only when the view was actually OPEN — "we closed local space" is a lie when
+      // it was already closed, and a notice that lies once is dismissed unread after.
+      announceFlip('local-space-off', next === 'geodetic' && showLocalSpace);
       if (next === 'geodetic') setShowLocalSpace(false);
-      setLineSystem(next);
+      setLineSystemPref(next);
     },
-    [effZodiacMode],
+    [effZodiacMode, showLocalSpace, announceFlip],
   );
   const setShowLocalSpaceSafe = useCallback(
     (v: boolean) => {
-      if (v && lineSystem === 'geodetic') setLineSystem('celestial');
+      announceFlip('line-system', v && lineSystem === 'geodetic');
+      if (v && lineSystem === 'geodetic') setLineSystemPref('celestial');
       setShowLocalSpace(v);
     },
-    [lineSystem],
+    [lineSystem, announceFlip],
   );
-  // Switching INTO sidereal while Mundane is active drops back to the celestial
-  // frame (geodetic is tropical-only — see setLineSystemSafe).
-  useEffect(() => {
-    if (effZodiacMode !== 'tropical' && lineSystem === 'geodetic') setLineSystem('celestial');
-  }, [effZodiacMode, lineSystem]);
+  // Switching INTO sidereal doesn't rewrite the line system any more — it MASKS a
+  // geodetic choice (see the derived lineSystem). Nothing is lost, but the Sidebar's
+  // selection changes under the user, so the switch still owes them a word.
+  const setZodiacModeSafe = useCallback(
+    (m: ZodiacMode) => {
+      announceFlip('line-system', lineSystemPref === 'geodetic' && m !== 'tropical');
+      setZodiacMode(m);
+    },
+    [lineSystemPref, announceFlip],
+  );
+  // (Switching INTO sidereal while Mundane is active no longer WRITES the celestial
+  // frame. Sidereal is a standing condition, not an event: the derived `lineSystem`
+  // masks the geodetic choice for as long as it lasts and hands it straight back
+  // afterwards, so a trip through sidereal can't cost the user a setting.)
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -1510,9 +1598,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:node-type:v1', nodeType);
   }, [nodeType]);
+  // The PREFERENCE, never the derived value. Persisting the derived one would write
+  // 'celestial' the moment a sidereal zodiac masks a geodetic choice — quietly
+  // destroying it, and only visibly so in the NEXT session.
   useEffect(() => {
-    localStorage.setItem('astro:line-system:v1', lineSystem);
-  }, [lineSystem]);
+    localStorage.setItem('astro:line-system:v1', lineSystemPref);
+  }, [lineSystemPref]);
   useEffect(() => {
     localStorage.setItem('astro:show-aspect-lines:v1', showAspectLines ? '1' : '0');
   }, [showAspectLines]);
@@ -1752,7 +1843,9 @@ export default function App() {
     localStorage.setItem('astro:show-natal:v1', showNatal ? '1' : '0');
   }, [showNatal]);
 
-  useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
+  // The PREFERENCE, never the derived value — persisting the mask is what made a
+  // glance at a composite chart cost the user their technique for good.
+  useEffect(() => saveOverlayMode(overlayModePref), [overlayModePref]);
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
   useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
@@ -2618,12 +2711,15 @@ export default function App() {
     [eclipseCatalog, flyToEclipse],
   );
 
-  // Returns snap (timeline ▸ Returns, transits only): move the target date to
-  // the chart's solar/lunar return and frame the lines by that instant's own
-  // sidereal time — only 'transit-moment' positioning makes the snapped map the
-  // return chart's astrocartography (the HUD tips disclose the switch). The flip
-  // shows on the timeline bar's Positioning switch (in the Returns row) right beside
-  // the snap that triggered it.
+  // Returns snap (timeline ▸ Returns, transits only): move the target date to the
+  // chart's solar/lunar return and frame the lines by that instant's own sidereal
+  // time. This is not a preference nudge — in the natal frame the returning body is
+  // pinned to its birth longitude BY CONSTRUCTION, so its lines would sit on the
+  // natal ones and never move from one return to the next, whatever year you walked
+  // to. Only 'transit-moment' makes the snapped map the return chart's
+  // astrocartography. Every returns button's tip discloses it (whenever the switch
+  // will actually move), and the frame segments sit in the same row and throb once
+  // to acknowledge it.
   const snapToReturn = useCallback(
     (body: ReturnBody, dir: -1 | 0 | 1) => {
       if (!current) return;
@@ -2631,12 +2727,19 @@ export default function App() {
       if (!r) return;
       setPlaying(false);
       setTargetDate(r.ms);
+      announceFlip(
+        'overlay-frame',
+        lineSystem === 'celestial' && transitFrame === 'relative-to-natal',
+      );
       // Geodetic lines ignore sidereal time, so the frame flip would change nothing
       // there while silently rewriting a persisted pref whose switch isn't even shown
       // (it's gated to celestial) — only switch it where it has its documented effect.
       if (lineSystem === 'celestial') setTransitFrame('transit-moment');
     },
-    [current, targetDate, lineSystem],
+    // transitFrame is a real dependency, not a formality: the announce above decides
+    // whether anything CHANGED from it, and a stale copy would report a flip that
+    // already happened — the one thing a notice must never do.
+    [current, targetDate, lineSystem, transitFrame, announceFlip],
   );
 
   const overlayLayer = useMemo(() => {
@@ -4326,10 +4429,10 @@ export default function App() {
   // extension as it sets the core mode); selectOverlayExt does the inverse.
   const selectOverlay = useCallback((mode: OverlayMode) => {
     setActiveOverlayExt(null);
-    setOverlayMode(mode);
+    setOverlayModePref(mode);
   }, []);
   const selectOverlayExt = useCallback((id: string) => {
-    setOverlayMode('off');
+    setOverlayModePref('off');
     setActiveOverlayExt(id);
   }, []);
   const clearOverlayExt = useCallback(() => setActiveOverlayExt(null), []);
@@ -4695,6 +4798,10 @@ export default function App() {
       // stored preference (the Sidebar hides the control for the same reason).
       coordSystem: lineSystem === 'geodetic' ? 'zodiaco' : coordSystem,
       lineSystem,
+      // EFFECTIVE, for the same reason coordSystem is: a time-unknown chart has no
+      // natal frame to hold, so the map draws the moment's own whatever is stored.
+      transitFrame: effTransitFrame,
+      setTransitFrame,
       nightShadeOn: showNightShade,
       overlayMode,
       angleProgression,
@@ -4749,6 +4856,7 @@ export default function App() {
       effZodiacMode,
       coordSystem,
       lineSystem,
+      effTransitFrame,
       overlayMode,
       angleProgression,
       primaryRate,
@@ -4990,7 +5098,7 @@ export default function App() {
           houseSystem={houseSystem}
           setHouseSystem={setHouseSystem}
           zodiacMode={zodiacMode}
-          setZodiacMode={setZodiacMode}
+          setZodiacMode={setZodiacModeSafe}
           nodeType={nodeType}
           setNodeType={setNodeType}
           theme={theme}
@@ -5498,6 +5606,21 @@ export default function App() {
           // and so imported charts can land straight in an existing folder.
           existing={charts}
           folderOptions={folderPaths}
+        />
+      )}
+      {/* A setting this app changed on the user's behalf, said out loud. Parked while a
+          registered surface owns the viewport, like every other floating window —
+          `announce` checks the same lock and declines to consume the notice there, so
+          it still arrives once the surface lets go. */}
+      {autoFlipKind && !viewParked && (
+        <AutoFlipNotice
+          kind={autoFlipKind}
+          suppress={autoFlipSuppress}
+          onSuppressChange={setAutoFlipSuppress}
+          onDismiss={() => {
+            dismissAutoFlip(autoFlipSuppress);
+            setAutoFlipSuppress(false);
+          }}
         />
       )}
       {/* The guides reference (View ▸ Guides) takes precedence over an onboarding pop-up,

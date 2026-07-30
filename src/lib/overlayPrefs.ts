@@ -122,14 +122,22 @@ export function saveUserPrimaryRate(deg: number) {
   localStorage.setItem(USER_PRIM_RATE_KEY, String(deg));
 }
 
-// Overlay positioning (relative-to-natal vs the moment's own sidereal time).
-const TRANSIT_FRAME_KEY = 'astro:transit-frame:v1';
+// Overlay frame (the natal chart's sidereal time vs the moment's own).
+//
+// v2 deliberately abandons every v1 value rather than migrating it. The default
+// used to be 'relative-to-natal', and the pref is written on mount, so EVERY
+// existing install carries that value whether or not anyone chose it — reading
+// v1 would make the new default unreachable for exactly the people it's meant to
+// reach. 'transit-moment' is the frame the rest of the field draws (a transit map
+// is the transit chart's astrocartography), so a fresh install now agrees with
+// other software out of the box; the natal-framed map stays one click away.
+const TRANSIT_FRAME_KEY = 'astro:transit-frame:v2';
 const TRANSIT_FRAMES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
 export function loadTransitFrame(): TransitFrame {
   const v = localStorage.getItem(TRANSIT_FRAME_KEY);
   return v && (TRANSIT_FRAMES as string[]).includes(v)
     ? (v as TransitFrame)
-    : 'relative-to-natal';
+    : 'transit-moment';
 }
 export function saveTransitFrame(f: TransitFrame) {
   localStorage.setItem(TRANSIT_FRAME_KEY, f);

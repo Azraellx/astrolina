@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import {
   minorStepMs,
@@ -75,14 +76,16 @@ interface TimelineHudProps {
   /** Snap the target date to a solar/lunar return (dir 0 = nearest, ±1 = next/
    *  previous). Transits mode only — the Returns group hides otherwise. */
   onSnapReturn: (body: ReturnBody, dir: -1 | 0 | 1) => void;
-  /** Transit framing (Relative-to-natal ↔ Absolute/transit-moment), flipped by the
-   *  switch in the transits returns row. `lineSystem` gates that switch: framing only
-   *  has an effect on Celestial lines, so it's hidden for Mundane/Geodetic. */
+  /** Overlay frame — the natal chart's sidereal time ("My angles") or the moment's own
+   *  ("Sky now") — chosen by the segmented control in the transits returns row.
+   *  `lineSystem` gates it: framing only has an effect on Celestial lines, so the
+   *  control is disabled for Mundane/Geodetic. */
   transitFrame: TransitFrame;
   setTransitFrame: (f: TransitFrame) => void;
   lineSystem: LineSystem;
   /** The chart has no real natal frame to hold (its birth time is unknown), so the
-   *  framing is forced to Absolute upstream — the switch shows that, disabled. */
+   *  framing is forced to the moment's own sky upstream — the control marks that
+   *  value, disabled, rather than the stored preference it is ignoring. */
   frameLocked?: boolean;
   /** The Natal-linework display toggle, relocated from Settings ▸ Display into the
    *  bar's right-side drawer. (Synastry/eclipses don't render this HUD, so they keep
@@ -108,6 +111,60 @@ interface TimelineHudProps {
 }
 
 const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
+
+// The two overlay frames, as a segmented pair rather than one flip button: both
+// choices stay on screen with the live one marked, so the control never has to be
+// read as "is this the current state or the thing a click would do?". Reading order
+// puts the chart-carried frame first and the live sky second.
+//
+// The icons are deliberately parallel — each shows a body meeting a set of axes,
+// and the only difference is WHOSE axes: the frame the chart carries from birth, or
+// the real horizon under the sky right now. Sized to sit beside an 11px word.
+const FRAME_OPTIONS: { value: TransitFrame; icon: ReactNode }[] = [
+  {
+    value: 'relative-to-natal',
+    // Natal angular cross (meridian + horizon) with a body arriving on the ring.
+    icon: (
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="8.4" />
+        <path d="M12 2v20M2 12h20" />
+        <circle cx="12" cy="3.6" r="2.2" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    value: 'transit-moment',
+    // A body angular over the REAL horizon — the sky of the moment, no carried frame.
+    icon: (
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12.4" r="4.1" />
+        <path d="M12 3.2v2M18.9 6.1l-1.4 1.4M5.1 6.1l1.4 1.4M2.6 12.4h2M19.4 12.4h2" />
+        <path d="M2 18.8h20" />
+      </svg>
+    ),
+  },
+];
+
+// How long the one-shot cue on an externally-changed frame runs (--dur-flourish).
+const FRAME_THROB_MS = 350;
 
 // Catalog keys for the draggable nub's per-mode name (timeline.nubMode.*).
 const NUB_LABEL_KEY = {
@@ -399,12 +456,19 @@ export function TimelineHud({
 
   // The date button's readout, in the chart's zone (display ms = target + offset,
   // read in UTC) — e.g. "5 Jun 1941, 09:30". The picker modal does the inverse.
+  //
+  // The day is split out because it is the ONE piece that changes width while you
+  // scrub (1–2 digits; the month abbreviation is three letters and the clock is
+  // pad2'd). The bar is shrink-to-fit and centred, so crossing the 9th→10th moved
+  // BOTH its edges by half a character under the cursor. It gets a two-digit box
+  // rather than a zero-pad, so the reading stays "5 Jun" while the geometry stays
+  // "15 Jun" — see .thud-date-day, exact because the readout is tabular-nums.
   const dispDate = new Date(targetDate + offsetMs);
-  const dateLabel = `${dispDate.getUTCDate()} ${fmt.monthAbbr(
-    dispDate.getUTCMonth() + 1,
-  )} ${dispDate.getUTCFullYear()}, ${pad2(dispDate.getUTCHours())}:${pad2(
-    dispDate.getUTCMinutes(),
-  )}`;
+  const dateDay = dispDate.getUTCDate();
+  const dateMon = fmt.monthAbbr(dispDate.getUTCMonth() + 1);
+  const dateRest = ` ${dispDate.getUTCFullYear()}, ${pad2(
+    dispDate.getUTCHours(),
+  )}:${pad2(dispDate.getUTCMinutes())}`;
   // Year clamp for the picker's spinner, from the slider's own range.
   const yearMin = new Date(sliderMin).getUTCFullYear();
   const yearMax = new Date(sliderMax).getUTCFullYear();
@@ -462,6 +526,15 @@ export function TimelineHud({
     );
   }, [overlayMode, current, targetDate]);
 
+  // Whether a snap would visibly move the frame — App switches to the moment's own
+  // sky, but only on celestial lines, and a time-unknown chart is already forced
+  // there. All three return buttons carry the warning when it's true and none when
+  // it isn't, so the disclosure tracks the side effect instead of tracking which
+  // button happens to be the "main" one.
+  const snapWillReframe =
+    lineSystem === 'celestial' && !frameLocked && transitFrame === 'relative-to-natal';
+  const reframeHint = snapWillReframe ? t('timeline.returns.reframes') : undefined;
+
   // One luminary's return controls: ‹ prev · the named snap button · next ›. Shared by
   // the Solar (left) and Lunar (right) groups that flank the centred "Returns" label.
   const returnGroup = (body: ReturnBody) => (
@@ -473,6 +546,7 @@ export function TimelineHud({
         aria-label={t(`timeline.returns.${body}.prevAria`)}
         placement="top"
         tip={t(`timeline.returns.${body}.prev`)}
+        hint={reframeHint}
       >
         ‹
       </TipButton>
@@ -483,6 +557,7 @@ export function TimelineHud({
         aria-label={t(`timeline.returns.${body}.snapAria`)}
         placement="top"
         tip={t(`timeline.returns.${body}.snap`)}
+        hint={reframeHint}
       >
         <span className="astro-glyph" aria-hidden="true">
           {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
@@ -496,11 +571,39 @@ export function TimelineHud({
         aria-label={t(`timeline.returns.${body}.nextAria`)}
         placement="top"
         tip={t(`timeline.returns.${body}.next`)}
+        hint={reframeHint}
       >
         ›
       </TipButton>
     </span>
   );
+
+  // The returns snap changes the frame from OUTSIDE this control. A label that just
+  // quietly becomes something else reads as the app changing its mind on its own, so
+  // the segment that gains the value throbs once — the same one-shot cue the sync
+  // badge and capture HUD use. A change made HERE gets no cue: the user is already
+  // looking at the control they clicked. Clearing the class after the animation lets
+  // a later change re-trigger it without remounting the button (which would drop its
+  // hover tip mid-gesture).
+  const frameSelfSetRef = useRef(false);
+  const prevFrameRef = useRef(transitFrame);
+  const [throbFrame, setThrobFrame] = useState<TransitFrame | null>(null);
+  useEffect(() => {
+    if (prevFrameRef.current === transitFrame) return;
+    prevFrameRef.current = transitFrame;
+    if (frameSelfSetRef.current) {
+      frameSelfSetRef.current = false;
+      // Clicking a segment while an earlier snap's cue is still running tears down
+      // that cue's timeout with this effect's cleanup, which would strand the class
+      // on the button — and a class already present can't re-animate, so the NEXT
+      // snap would go unacknowledged. Drop it by hand on this path.
+      setThrobFrame(null);
+      return;
+    }
+    setThrobFrame(transitFrame);
+    const id = window.setTimeout(() => setThrobFrame(null), FRAME_THROB_MS);
+    return () => window.clearTimeout(id);
+  }, [transitFrame]);
 
   const touch = useTouchLayout();
   // Modes that render a settings/returns second row — on touch the display toggles ride on the
@@ -777,7 +880,9 @@ export function TimelineHud({
             placement="top"
             tip={t('timeline.datePicker.open')}
           >
-            {dateLabel}
+            <span className="thud-date-day">{dateDay}</span>{' '}
+            <span className="thud-date-mon">{dateMon}</span>
+            {dateRest}
           </TipButton>
           <TipButton
             type="button"
@@ -821,9 +926,10 @@ export function TimelineHud({
       {/* Returns snap on its OWN row (transits only), so the main transport row
           keeps the same width as the other overlay bars. Clicking the luminary
           snaps the target date to the nearest solar/lunar return; ‹ › walk whole
-          returns. The snap also switches Positioning to "Transit moment" (App
-          side) — only that framing makes the snapped map the return chart's
-          astrocartography — which the tips disclose. */}
+          returns. The snap also moves the frame to the moment's own sky (App side) —
+          only that framing makes the snapped map the return chart's astrocartography
+          — which every button's tip discloses, and which the frame segments throb to
+          acknowledge. */}
       {overlayMode === 'transits' && (
         <div
           className="thud-row thud-returns-row"
@@ -836,60 +942,62 @@ export function TimelineHud({
           {/* The positioning frame + its separator — a free control for everyone; the
               returns and the flip-switch always share the row. */}
           <span className="thud-returns-divider" aria-hidden="true" />
-          {/* Positioning, relocated from Settings: a flip-switch (Relative ↔ Absolute).
+          {/* The overlay frame, relocated from Settings. Both options stay on screen
+              with the live one marked — the old single flip button showed one word and
+              left it ambiguous whether that was the current state or what a click would
+              do. The group carries its own meaning ("My angles" / "Sky now"), so it
+              needs no separate heading; the tips hold the full explanation.
               Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
-              longitude — so on those it's shown DISABLED, reading "—" (not the stored
-              frame, which would be meaningless here) with a tip explaining why, rather
-              than hidden. The button is floored to one width (see .thud-positioning-btn)
-              so toggling Relative↔Absolute can't nudge the bar wider. */}
+              longitude — so on those the group is DISABLED with NEITHER segment marked
+              (highlighting a stored frame that isn't in force would assert a distinction
+              the map isn't drawing) and a tip explaining why, rather than hidden. */}
           {(() => {
             // frameLocked (no real natal frame — unknown birth time): the frame is
-            // forced to Absolute upstream, so show that value disabled with its own
-            // explanation rather than the stored (ignored) preference.
+            // forced to the moment's own sky upstream, so mark that value disabled
+            // rather than the stored (ignored) preference.
             const posEnabled = lineSystem === 'celestial' && !frameLocked;
             const shownFrame = frameLocked ? 'transit-moment' : transitFrame;
             return (
-              <div className="thud-positioning">
-                <span className="thud-mode-label">{t('settings.headings.positioning')}</span>
-                <TipButton
-                  type="button"
-                  className={`thud-positioning-btn${posEnabled ? '' : ' is-disabled'}`}
-                  aria-disabled={!posEnabled}
-                  placement="top"
-                  // Enabled: tip names the CURRENT framing + its meaning. Disabled
-                  // (non-Celestial lines / locked frame): explain why.
-                  tip={
-                    posEnabled || frameLocked
-                      ? t(`settings.positioning.${shownFrame}.label`)
-                      : t('settings.headings.positioning')
-                  }
-                  hint={
-                    posEnabled
-                      ? t(`settings.positioning.${transitFrame}.hint`)
-                      : frameLocked
-                        ? t('timeline.positioning.lockedNoTime')
-                        : t('timeline.positioning.disabled')
-                  }
-                  aria-label={
-                    posEnabled || frameLocked
-                      ? `${t('settings.headings.positioning')}: ${t(
-                          `settings.positioning.${shownFrame}.label`,
-                        )}`
-                      : t('settings.headings.positioning')
-                  }
-                  onClick={() => {
-                    if (posEnabled)
-                      setTransitFrame(
-                        transitFrame === 'relative-to-natal'
-                          ? 'transit-moment'
-                          : 'relative-to-natal',
-                      );
-                  }}
-                >
-                  {posEnabled || frameLocked
-                    ? t(`settings.positioning.${shownFrame}.label`)
-                    : '—'}
-                </TipButton>
+              <div
+                className={`thud-frame-seg${posEnabled ? '' : ' is-disabled'}`}
+                role="group"
+                aria-label={t('timeline.positioning.groupAria')}
+              >
+                {FRAME_OPTIONS.map(({ value, icon }) => {
+                  const active = (posEnabled || frameLocked) && shownFrame === value;
+                  return (
+                    <TipButton
+                      key={value}
+                      type="button"
+                      className={`thud-frame-btn${active ? ' active' : ''}${
+                        throbFrame === value ? ' is-throb' : ''
+                      }`}
+                      aria-pressed={active}
+                      aria-disabled={!posEnabled}
+                      placement="top"
+                      tip={t(`settings.positioning.${value}.tip`)}
+                      // Enabled: each segment explains the reading it produces. Disabled
+                      // (non-Celestial lines / locked frame): explain why instead.
+                      hint={
+                        posEnabled
+                          ? t(`settings.positioning.${value}.hint`)
+                          : frameLocked
+                            ? t('timeline.positioning.lockedNoTime')
+                            : t('timeline.positioning.disabled')
+                      }
+                      onClick={() => {
+                        if (!posEnabled || transitFrame === value) return;
+                        frameSelfSetRef.current = true;
+                        setTransitFrame(value);
+                      }}
+                    >
+                      {icon}
+                      <span className="thud-frame-word">
+                        {t(`settings.positioning.${value}.label`)}
+                      </span>
+                    </TipButton>
+                  );
+                })}
               </div>
             );
           })()}

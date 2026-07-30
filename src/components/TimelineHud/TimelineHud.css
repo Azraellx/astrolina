@@ -32,10 +32,10 @@
   z-index: 12;
   max-width: calc(100vw - 360px);
   /* A column so the bar's width is driven only by the ruler + transport row (the
-     same content every overlay bar has) — the returns/positioning row then FILLS
-     that width without inflating it (see .thud-returns-row), so the transits bar
-     stays the same width as the other overlay bars regardless of the Positioning
-     label, and the flexible gap absorbs the Relative↔Absolute difference. */
+     same content every overlay bar has) — the returns/frame row then FILLS that
+     width without inflating it (see .thud-returns-row), so the transits bar stays
+     the same width as the other overlay bars whatever the frame segments measure,
+     and the flexible gap absorbs the difference. */
   display: flex;
   flex-direction: column;
   background: rgba(var(--bg-panel), 0.94);
@@ -365,17 +365,17 @@
   flex-shrink: 0;
 }
 
-/* The returns + positioning live on their OWN row under the transport, so the main
-   row sets the bar width. Returns sit at the LEFT, Positioning at the RIGHT, and the
-   gap between them FLEXES (space-between) — no fixed centre padding that could push
+/* The returns + frame control live on their OWN row under the transport, so the main
+   row sets the bar width. Returns sit at the LEFT, the frame segments at the RIGHT, and
+   the gap between them FLEXES (space-between) — no fixed centre padding that could push
    the row wider than the transport row above. */
 .thud-returns-row {
   padding-top: 0;
   justify-content: space-between;
   /* Fill the bar width the transport row sets, WITHOUT contributing to it: width:0
      keeps this row out of the bar's shrink-to-fit sizing, min-width:100% then makes
-     it span the resolved bar width. So the Positioning label never widens the bar —
-     the flexible space-between gap takes up the slack. Tighter gap than the main row
+     it span the resolved bar width. So the frame control never widens the bar — the
+     flexible space-between gap takes up the slack. Tighter gap than the main row
      leaves headroom for the longest label. */
   width: 0;
   min-width: 100%;
@@ -383,27 +383,13 @@
   gap: 8px;
 }
 
-/* Positioning group, right-aligned end of the returns row. */
-.thud-positioning {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-}
-
-/* A very faint hairline marking the Returns | Positioning boundary. space-between
-   centres it in the flexible gap between the two groups. */
+/* A very faint hairline marking the returns | frame boundary. space-between centres
+   it in the flexible gap between the two groups. */
 .thud-returns-divider {
   width: 1px;
   height: 18px;
   background: rgba(var(--tint), 0.16);
   flex-shrink: 0;
-}
-
-/* When Advanced is off, the positioning control is removed (see TimelineHud) — centre the
-   lone returns group instead of leaving it pinned left (the row default is space-between). */
-.thud-returns-row--solo {
-  justify-content: center;
 }
 
 /* Relocated bottom settings row — Chart Angle (Solar Arc / Progressed / Tertiary) or
@@ -529,40 +515,75 @@
   font-size: 13px;
 }
 
-/* Positioning flip-switch (Relative ↔ Absolute), to the right of the lunar returns
-   in the transits row. One button showing the current frame; clicking flips it.
-   Styled like the return buttons but on the STEADY brand accent (a fixed control,
-   not a map-state cue). */
-.thud-positioning-btn {
+/* Overlay-frame segmented control ("My angles" | "Sky now"), to the right of the
+   lunar returns in the transits row. Both options are always on screen with the live
+   one marked — a single flip button showing one word can't say whether that word is
+   the current state or the result of clicking. Styled like the return buttons but on
+   the STEADY brand accent (a fixed control, not a map-state cue). */
+.thud-frame-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.thud-frame-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 9px;
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
   background: rgba(var(--tint), 0.04);
-  color: var(--text-strong);
+  color: var(--text-muted);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.thud-positioning-btn:hover {
-  background: rgba(var(--accent-brand-rgb), 0.12);
-  border-color: rgba(var(--accent-brand-rgb), 0.5);
-  color: var(--accent-brand);
+.thud-frame-btn svg {
+  flex-shrink: 0;
 }
-/* Disabled on non-Celestial line systems (framing has no effect): dimmed, no hover
-   accent — but still hoverable so its tip can explain why. */
-.thud-positioning-btn.is-disabled,
-.thud-positioning-btn.is-disabled:hover {
+.thud-frame-btn:hover {
+  background: rgba(var(--tint), 0.1);
+  color: var(--text-strong);
+}
+/* The live frame, on the steady brand accent — matching the segmented control in the
+   Local Space window so the two read as the same kind of choice. */
+.thud-frame-btn.active {
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.1);
+}
+.thud-frame-btn.active:hover {
+  background: rgba(var(--accent-brand-rgb), 0.16);
+}
+/* One-shot cue for a frame the RETURNS SNAP changed (never a click on this control —
+   see TimelineHud). Individual scale so it can't disturb the row's layout, and the
+   class is dropped again once it finishes so a later snap re-fires it. */
+.thud-frame-btn.is-throb {
+  animation: ui-throb var(--dur-flourish) var(--ease-pop);
+}
+/* Disabled on non-Celestial line systems (framing has no effect) and on a
+   time-unknown chart (the frame is forced): dimmed, no hover accent — but still
+   hoverable so the tips can explain why. */
+.thud-frame-seg.is-disabled .thud-frame-btn,
+.thud-frame-seg.is-disabled .thud-frame-btn:hover {
   opacity: 0.45;
   cursor: not-allowed;
   background: rgba(var(--tint), 0.04);
   border-color: rgba(var(--tint), 0.12);
-  color: var(--text-strong);
+  color: var(--text-muted);
+}
+/* …except the forced value on a time-unknown chart, which still reads as the one in
+   force (dimmed, but marked) so the map's frame is never left unexplained. */
+.thud-frame-seg.is-disabled .thud-frame-btn.active,
+.thud-frame-seg.is-disabled .thud-frame-btn.active:hover {
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.1);
 }
 
 /* Adjustable step-amount box, sitting just right of the forward step button.
@@ -705,6 +726,33 @@
   white-space: nowrap;
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+/* The two variable-width pieces of the readout each get a fixed box, so the
+   shrink-to-fit, centre-anchored bar stops resizing under the cursor mid-scrub.
+   (Boxing the pieces beats a min-width on the bar itself: .timeline-hud chrome is
+   shared with the Capture / Local Space / Aspect Lines / Location windows, and a
+   floor sized for the widest month would leave every OTHER overlay bar padded out
+   to a width its content never needs.)
+
+   Day — 2ch is exact because .thud-date is tabular-nums, so every digit advances by
+   one ch. Right-aligned: a single-digit day keeps the gap on the left, where a
+   zero-pad would have gone, and nothing downstream moves. */
+.thud-date-day {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+}
+/* Month — tabular-nums does nothing for letters, and the three-letter abbreviations
+   are three CHARACTERS but not three widths ("Mar" out-measures "Feb" in any
+   proportional face), so scrubbing month to month moved the bar too. Sized in em
+   with headroom over the widest abbreviation rather than in ch (a letter is not a
+   digit advance) and centred, so the box holds whatever the locale's formatter
+   returns. Left-margin-free: the space before it lives in the JSX. */
+.thud-date-mon {
+  display: inline-block;
+  min-width: 2.9em;
+  text-align: center;
 }
 
 .thud-date:hover {

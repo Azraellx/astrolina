@@ -117,14 +117,15 @@ export const TIME_UNKNOWN_BLOCKED_OVERLAYS = new Set<OverlayMode>([
   'cyclo',
 ]);
 
-/** The overlay modes a given chart cannot carry — the composite block, the
- *  unknown-birth-time block, and the Davison synastry block. The one predicate
- *  behind the Overlay menu, the 'o' cycle, and the stale-mode reset, so they can
- *  never disagree. */
-export function overlayBlockedFor(
+/** WHICH of the three blocks bars a mode on a given chart, or null if none does.
+ *  A menu that greys a row out owes the reader the reason — and the three reasons
+ *  are different things about the chart, not one blanket "unavailable". */
+export type OverlayBlock = 'composite' | 'no-time' | 'davison';
+
+export function overlayBlockFor(
   chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
-): (mode: OverlayMode) => boolean {
-  if (!chart) return () => false;
+): (mode: OverlayMode) => OverlayBlock | null {
+  if (!chart) return () => null;
   const composite = !!chart.composite;
   const noTime = chart.timeKnown === false;
   // A Davison is a locally-generated relationship chart: real natal math (so no
@@ -132,10 +133,22 @@ export function overlayBlockedFor(
   // You can't add a partner to a chart that is already a two-person relationship
   // chart, so Synastry is barred on it — the same reason a composite bars it.
   const davison = !composite && chart.tag === 'space';
-  return (mode) =>
-    (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) ||
-    (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode)) ||
-    (davison && mode === 'synastry');
+  return (mode) => {
+    if (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) return 'composite';
+    if (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode)) return 'no-time';
+    if (davison && mode === 'synastry') return 'davison';
+    return null;
+  };
+}
+
+/** The overlay modes a given chart cannot carry. The one predicate behind the
+ *  Overlay menu, the 'o' cycle, and the effective overlay mode, so they can never
+ *  disagree. Callers that want to SAY why should use `overlayBlockFor` instead. */
+export function overlayBlockedFor(
+  chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
+): (mode: OverlayMode) => boolean {
+  const reason = overlayBlockFor(chart);
+  return (mode) => reason(mode) !== null;
 }
 
 // The auxiliary line families that derive from a chart's body set (as opposed to

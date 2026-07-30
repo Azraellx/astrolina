@@ -50,15 +50,16 @@ export const timeline = {
       'Everything from Jupiter outward — plus the nodes, Lilith, Chiron and the asteroids — reads at its real transiting position. Their lines carry the Tr tag.',
   },
 
-  // The Positioning flip-switch in the transits returns row. When the line system
-  // isn't Celestial the switch is disabled — this tip explains why framing is moot.
+  // The frame segmented control in the transits returns row. When the line system
+  // isn't Celestial the control is disabled — this tip explains why framing is moot.
   // lockedNoTime: disabled because the chart's birth time is unknown, so the frame
-  // is forced to Absolute (there is no natal frame to hold).
+  // is forced to the moment's own sky (there is no natal frame to hold).
   positioning: {
+    groupAria: 'Overlay frame',
     disabled:
       'Only Celestial lines have a sidereal-time frame to switch — Mundane and Geodetic lines key off zodiacal longitude, so framing has no effect.',
     lockedNoTime:
-      'Birth time unknown — there is no natal frame to hold, so the map shows the absolute sky of the moment.',
+      'Birth time unknown — there is no natal frame to hold, so the map can only show the sky of the moment.',
   },
 
   // Timeline scale picker (the <select>).
@@ -113,15 +114,19 @@ export const timeline = {
   ruler: { aria: 'Scrub date' },
   now: { label: 'Now', tip: 'Set to the current moment' },
 
-  // Returns snap (transits only). The snap tips disclose the Positioning side
-  // effect: a return map is only the return chart's astrocartography when the
-  // lines are framed by the return instant itself (Transit moment).
+  // Returns snap (transits only). `reframes` rides as the HINT on all three buttons
+  // — ‹ and › carry the same side effect the named snap does, and › is the usual way
+  // in ("show me my next return"), so warning on the middle button alone left the
+  // commonest path silent. It is attached only when the switch will actually move
+  // (natal frame + celestial lines); once the frame is already the moment's own sky
+  // the snap changes nothing and a warning would be noise.
   returns: {
     label: 'Returns',
-    // "Absolute" names the Positioning option as the Calculation tab labels it.
+    reframes:
+      'Reframes the map to the sky at that moment. In the natal frame the returning body is pinned to its birth degree, so its lines would never move from one return to the next.',
     solar: {
       name: 'Solar',
-      snap: 'Nearest solar return. Positioning switches to Absolute.',
+      snap: 'Nearest solar return',
       snapAria: 'Snap to the nearest solar return',
       prev: 'Previous solar return',
       prevAria: 'Previous solar return',
@@ -130,7 +135,7 @@ export const timeline = {
     },
     lunar: {
       name: 'Lunar',
-      snap: 'Nearest lunar return. Positioning switches to Absolute.',
+      snap: 'Nearest lunar return',
       snapAria: 'Snap to the nearest lunar return',
       prev: 'Previous lunar return',
       prevAria: 'Previous lunar return',

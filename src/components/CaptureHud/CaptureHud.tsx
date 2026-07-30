@@ -25,6 +25,7 @@ import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { InfoIcon } from '../ui/InfoIcon';
+import { WarningIcon } from '../ui/WarningIcon';
 import { HudHeader } from '../ui/HudHeader';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles,
 // so the window frosts/recolors with the theme for free; CaptureHud.css adds the rest.
@@ -937,7 +938,12 @@ export function CaptureHud({
             role="alertdialog"
             aria-label={t('captureHud.link.warnAria')}
           >
-            <p className="capture-link-warn-text">{t('captureHud.link.warnBody')}</p>
+            {/* The shared heads-up mark — same class of message as the map-side
+                notices, so it is recognisable as one before it's read. */}
+            <p className="capture-link-warn-text">
+              <WarningIcon className="capture-link-warn-icon" />
+              {t('captureHud.link.warnBody')}
+            </p>
             <label className="capture-link-warn-suppress">
               <input
                 type="checkbox"

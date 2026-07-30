@@ -18,7 +18,12 @@
 import type { ReactNode } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { StoredChart } from '../chartLibrary';
-import type { AngleProgression, OverlayMode, PrimaryRate } from '../astro/timeline';
+import type {
+  AngleProgression,
+  OverlayMode,
+  PrimaryRate,
+  TransitFrame,
+} from '../astro/timeline';
 import type {
   PlanetName,
   NodeType,
@@ -105,7 +110,28 @@ export interface MapExtensionContext {
    *  its ecliptic latitude, so it reaches its degree and its meridian at different
    *  instants; in zodiaco the two coincide by construction. */
   coordSystem: CoordSystem;
+  /** EFFECTIVE too: the geodetic mapping is the tropical zodiac laid on Earth's
+   *  longitudes and has no sidereal variant, so a sidereal zodiac reports 'celestial'
+   *  here whatever the stored preference says — exactly as the line generators see it.
+   *  The preference itself is only masked, never rewritten. */
   lineSystem: LineSystem;
+  /** Which sidereal time a DATED overlay's lines are framed by: the natal chart's
+   *  ('relative-to-natal') or the overlay moment's own ('transit-moment'). EFFECTIVE
+   *  — a chart with no birth time has no natal frame to hold, so it reads
+   *  'transit-moment' whatever the stored preference says. Inert under the geodetic
+   *  mapping, which keys off zodiacal longitude and has no sidereal frame to choose.
+   *
+   *  This is the companion to {@link coordSystem} for anything that answers a
+   *  question about an overlay line's TIMING. A consumer that resolves instants
+   *  against the natal frame — "when does this body reach this place's relocated
+   *  angle?" — is answering a different question from the map whenever this reads
+   *  'transit-moment', and the two can be most of the globe apart. Read it and say
+   *  so rather than let them disagree in silence. */
+  transitFrame: TransitFrame;
+  /** Set the overlay frame — the write half of {@link transitFrame}. Drives exactly
+   *  the state the timeline bar's own control drives, so a consumer that has just
+   *  disclosed a mismatch can offer to resolve it. */
+  setTransitFrame: (frame: TransitFrame) => void;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
    *  extension drawing its own day/night treatment can follow the same switch. */
   nightShadeOn: boolean;

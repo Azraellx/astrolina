@@ -39,6 +39,7 @@ import { placeSearch } from './en/placeSearch';
 import { teleportHud } from './en/teleportHud';
 import { localSpaceHud } from './en/localSpaceHud';
 import { aspectLinesHud } from './en/aspectLinesHud';
+import { autoFlip } from './en/autoFlip';
 import { skyTimes } from './en/skyTimes';
 import { captureHud } from './en/captureHud';
 import { synastryHud } from './en/synastryHud';
@@ -69,6 +70,7 @@ export const en = {
   teleportHud,
   localSpaceHud,
   aspectLinesHud,
+  autoFlip,
   skyTimes,
   captureHud,
   synastryHud,
