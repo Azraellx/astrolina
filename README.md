@@ -24,14 +24,13 @@ on any device, no install.
 Deployed as a static site on Cloudflare Pages, with two edge functions for
 geocoding.
 
-<!-- TEMP: accuracy disclaimer. Remove once outputs are corroborated against other tools. -->
-> **⚠️ Early access: accuracy is still being verified.** AstroLina
-> uses the same astronomical datasets as the professional tools (Swiss Ephemeris
-> / JPL DE441), but its output is still being cross-checked against established
-> software, and display bugs could currently misplace a line or other element.
-> Until this note is removed, please treat the results as provisional and
-> double-check anything important against a tool you already trust.
-<!-- /TEMP -->
+> **We're new at this, and glad of your help.** The astronomy is solid — Swiss
+> Ephemeris, JPL data, agreement with the professional tools to well under an
+> arcsecond. The app around it is version one, and it does enough that we
+> couldn't have reached every corner before launch. So if a line looks wrong, a
+> figure looks odd, or something simply won't do what you asked, please tell us —
+> every report is read by a person, and we mean to make this a tool you can rely
+> on: [contact@astrolina.org](mailto:contact@astrolina.org).
 
 ## Features
 

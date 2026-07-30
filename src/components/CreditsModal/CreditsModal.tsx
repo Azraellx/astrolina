@@ -7,7 +7,9 @@
 import { useEffect, useState } from 'react';
 import { useT } from '../../i18n';
 import { TipButton } from '../ui/HoverTip';
+import { InfoIcon } from '../ui/InfoIcon';
 import { getCreditsFooter, getCreditsItems } from '../../lib/extensions/creditsFooter';
+import type { CreditsNoticeActions } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
 
 // Sub-key into creditsModal.notes / creditsModal.groups. Kept as literal unions so the
@@ -26,6 +28,10 @@ type NoteKey =
   | 'maplibre'
   | 'other';
 type GroupKey = 'astrolina' | 'mapsPlaces' | 'astronomy' | 'typeSoftware';
+
+// Where a problem report goes — the same address the project's LICENSE and README
+// give. An address reads the same in every language, so it stays out of the catalog.
+const CONTACT_EMAIL = 'contact@astrolina.org';
 
 interface CreditItem {
   name: string;
@@ -240,9 +246,20 @@ function ThanksDialog({ onClose }: { onClose: () => void }) {
 
 // A scrollable dialog of secondary copyright / license disclosures, plus
 // AstroLina's own copyright. Reuses the shared .modal-backdrop chrome.
-export function CreditsModal({ onClose }: { onClose: () => void }) {
+export function CreditsModal({
+  onClose,
+  noticeActions,
+}: {
+  onClose: () => void;
+  /** What a downstream notice tail is allowed to do (see creditsFooter). Absent when
+   *  the host has no extension context to lend, which also hides the tail. */
+  noticeActions?: CreditsNoticeActions;
+}) {
   const { t } = useT();
   const [thanksOpen, setThanksOpen] = useState(false);
+  // The downstream link that stands in for the contact address. Only worth asking for
+  // when the host lent us the actions it needs — otherwise the address stays.
+  const noticeTail = noticeActions ? getCreditsFooter().renderNotice?.(noticeActions) : null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -295,10 +312,19 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
 
         <p className="credits-intro">{t('creditsModal.intro')}</p>
 
-        {/* TEMP: accuracy disclaimer. Remove once outputs are corroborated against other tools. */}
-        <p className="credits-disclaimer">
-          <strong>{t('creditsModal.disclaimer.label')}</strong>
-          {t('creditsModal.disclaimer.body')}
+        {/* The invitation to report a problem, ending in the one thing to act on — so
+            the closing sentence is the only link in it. A downstream build REPLACES that
+            link (see creditsFooter's notice tail) when it has somewhere better to send a
+            reader than a mail client: a help page that carries these same words and can
+            afford to say what a useful report contains. With no tail registered — and in
+            any build that renders the dialog without a context to lend one — the sentence
+            links to the contact address instead, so the route is never missing. */}
+        <p className="credits-notice">
+          <InfoIcon className="credits-notice-mark" size={12} />
+          <strong>{t('creditsModal.notice.lead')}</strong> {t('creditsModal.notice.body')}{' '}
+          {noticeTail ?? (
+            <a href={`mailto:${CONTACT_EMAIL}`}>{t('creditsModal.notice.report')}</a>
+          )}
         </p>
 
         <div className="credits-groups">

@@ -19,7 +19,13 @@ import type { ReactNode } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { StoredChart } from '../chartLibrary';
 import type { AngleProgression, OverlayMode, PrimaryRate } from '../astro/timeline';
-import type { PlanetName, NodeType, HouseSystem } from '../ephemeris';
+import type {
+  PlanetName,
+  NodeType,
+  HouseSystem,
+  CoordSystem,
+  LineSystem,
+} from '../ephemeris';
 import type { ZodiacMode } from '../astro/ayanamsa';
 
 /** The COMPLETE line set — every planet, line type, and family (natal angular + aspects +
@@ -87,6 +93,19 @@ export interface MapExtensionContext {
   /** Effective zodiac mode (Advanced ▸ Zodiac; 'tropical' unless Advanced is on),
    *  so a dated HUD can read its list in the chart's active zodiac. */
   zodiacMode: ZodiacMode;
+  /** The two framing choices behind every line on the map: which mapping places an
+   *  angle ({@link lineSystem}) and which position each body is placed by
+   *  ({@link coordSystem}). `coordSystem` is EFFECTIVE — the geodetic mapping is
+   *  zodiacal by construction, so it reads 'zodiaco' there whatever the stored
+   *  preference says, exactly as the line generators see it.
+   *
+   *  A consumer that answers a question ABOUT a line — where it falls, when a body
+   *  arrives on it — has to resolve it in the same frame the line was drawn in, or
+   *  it describes a line the map isn't showing. In mundo a body's position carries
+   *  its ecliptic latitude, so it reaches its degree and its meridian at different
+   *  instants; in zodiaco the two coincide by construction. */
+  coordSystem: CoordSystem;
+  lineSystem: LineSystem;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
    *  extension drawing its own day/night treatment can follow the same switch. */
   nightShadeOn: boolean;

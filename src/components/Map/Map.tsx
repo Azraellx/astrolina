@@ -5939,7 +5939,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           </div>
         </div>
       )}
-      {creditsOpen && <CreditsModal onClose={() => setCreditsOpen(false)} />}
+      {creditsOpen && (
+        <CreditsModal
+          onClose={() => setCreditsOpen(false)}
+          // The dialog has no extension context of its own; this is the one action its
+          // notice tail may take, lent from the context the map already holds. The
+          // dialog closes first — anything opened this way is a takeover of its own,
+          // and returning to a stale credits dialog behind it would read as a bug.
+          noticeActions={
+            overlayCtx
+              ? {
+                  openExtension: (id) => {
+                    setCreditsOpen(false);
+                    overlayCtx.openExtension(id);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
       <HoverTip
         pos={ctrlTip?.pos ?? null}
         placement="left"

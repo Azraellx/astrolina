@@ -40,6 +40,33 @@ The **lunar nodes** are the one exception, because the North and South Node are 
 
 In the standard ("Celestial") map, the longitude of each angle is driven by sidereal time: a body's meridian longitude equals its right ascension minus Greenwich *apparent* sidereal time. That single sidereal-time reference is what ties the whole map to the chart's exact moment.
 
+## Dated arrivals (when a moving body reaches a place's angle)
+
+The lines answer *where*. The same geometry answers *when*: fix a place, take a moving body — transiting, progressed, or directed — and solve for the instants it arrives on one of that place's four relocated angles. Two conventions have to be stated for such a date to mean anything, and they are stated here rather than left to whichever surface lists them.
+
+### The target is the natal-relocated angle, held fixed
+
+A place's four angles are a product of one moment — the birth moment — and the geography. They are computed once, from that moment, and they do not advance: not with the chart-angle progression method, not with the primary-directions rate, not with the technique in play. Those settings govern the **moving** side (and how an overlay draws its own frame); the thing being arrived at is a fact about the birth chart at that place.
+
+One consequence is worth naming, because the alternative fails silently. If the target advanced by the same arc as the mover, the two would travel together and the arrival could never occur — the list would simply be short, with nothing to indicate why. A fixed target cannot cancel, and that is checkable rather than merely intended: across a scan, the change in the gap between body and target must equal the distance the body itself travels.
+
+A second consequence: **before the birth moment there is nothing to arrive at.** A body's position six years before the birth is perfectly computable; the arrival is not, because the angles it would be arriving at do not exist yet. Such a scan therefore floors at the birth instant, in every technique including transits.
+
+### The arrival follows the line projection
+
+**In Zodiaco** — and in the geodetic mapping, which is zodiacal by construction — every body is projected onto the ecliptic before its line is drawn, so the body is on the angle exactly when its ecliptic longitude equals the angle's. That is an identity rather than an approximation: RA(λ, 0) is monotonic in λ, so "the projected body culminates" and "the longitudes are equal" are one statement.
+
+**In Mundo** each body is drawn where it actually stands, so the arrival is geometric. The body reaches the MC when its right ascension reaches the place's RAMC — frozen at the birth moment, the same sidereal-time reference the lines themselves are drawn with — and the IC half a turn away. It reaches the ASC or DSC when its altitude on that frozen horizon passes through zero: east of the meridian rising, west setting.
+
+For a body on the ecliptic the two readings are the same event. For a body carrying ecliptic latitude they are not — reaching a degree and reaching a meridian are different events — and the separation is made of that latitude: a few tenths of a degree of arrival longitude per degree of latitude, the exact factor depending on where on the ecliptic the angle falls. The Moon (β to 5.3°) and the mean lunar apogee (β to 5.15°) can differ by days between the two readings; Pluto (β to 17.7°) by more. The lunar nodes, which are ecliptic points by construction, agree.
+
+Two further consequences of the mundane reading:
+
+- **A frozen horizon a body never crosses.** Where the body's declination exceeds 90° − |latitude| it stays above or below that horizon for the whole scan, so no ASC/DSC arrival exists — at a place where the longitude reading always eventually produced one. This is ordinary at high latitude: at 70°N the limit is 20°, which the Sun, Moon and Venus all exceed for much of the year.
+- **A Lot has no arrival in mundo.** A Lot is a construction on the ecliptic with no position in the sky — no right ascension of its own to culminate — so it is read by degree in either projection, and its lines are drawn only in a zodiacal frame for the same reason.
+
+Both readings freeze their target in the natal frame, one in longitude and one in right ascension, and the map between those two coordinates drifts slowly with the obliquity (which falls about 47″ a century). So even for a body with no latitude the two dates differ by a few arcseconds' worth of its motion — a lifetime of scan is worth around 5″ at a mid-northern MC. That is inherent to freezing the frame, and it is the same convention the drawn lines are under.
+
 ## Parans
 
 The app computes all **planet-to-planet** parans:
@@ -374,6 +401,7 @@ With an overlay active, the expanded chart wheel becomes a bi-wheel (natal inner
 - **"SA in RA" definition.** This computes the arc as a raw RA difference (progressed-Sun RA minus natal-Sun RA) and adds it directly to every **body's** RA, leaving declination fixed — a literal RA increment, intended for the bodies (it differs from an along-the-ecliptic arc and from how some programs define "solar arc in RA"). The bi-wheel's directed **angles**, by contrast, advance via `RAMC + arc` (an angle is a meridian position fixed by the RAMC, with no independent declination to freeze), matching the convention the Progressed overlay's map frame already uses — so the bi-wheel and map now agree (the old declination-fixed shift split them ~2.4° at age 30).
 - **Angles anchored to Greenwich.** All directed angles advance the natal *Greenwich* RAMC, not the birthplace's local sidereal time. For astrocartography this is internally consistent: the directed MC is referenced to Greenwich rather than the birthplace meridian.
 - **Forward only.** Primary Directions (and the positive-only user rate) always direct *forward*; there is no converse/backward option.
+- **Neither setting reaches a dated arrival's target.** Chart-angle progression and the primary rate move the bodies and the drawn frame; the angle a moving body is timed *against* is the natal-relocated one, held fixed under every value of both (see "Dated arrivals" above). Chart-angle progression does not reach the progressed or primary movers either — only the solar-arc ones — so those two families give identical dates under all five of its values.
 - **"True Solar Arc (RA)" naming.** This rate (storage key `placidus-ra`) is the true secondary-progressed solar arc in RA applied as a primary-direction rate, not a Placidian semi-arc / mundane primary direction. It was formerly labelled "Placidus: True SA in RA", which wrongly implied a classical Placidus technique; the label now drops the Placidus attribution.
 - **Day-for-a-year constant.** The year length used is 365.2422 days (the tropical year), which sets both the progressed date and every per-year rate.
 - **Naibod precision.** The Naibod rate is 0.985647°/yr (59′08″); in the app it appears as 0.985647°/yr in the Primary-rate hint and rounded to 0.9856°/yr in the angle-progression hint.

@@ -24,6 +24,7 @@ import { useTouchLayout, usePhone } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
+import { InfoIcon } from '../ui/InfoIcon';
 import { HudHeader } from '../ui/HudHeader';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles,
 // so the window frosts/recolors with the theme for free; CaptureHud.css adds the rest.
@@ -119,16 +120,6 @@ function FilePlusIcon() {
       <path d="M14 2v6h6" />
       <path d="M12 18v-6" />
       <path d="M9 15h6" />
-    </svg>
-  );
-}
-
-function InfoIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4" />
-      <path d="M12 8h.01" />
     </svg>
   );
 }

@@ -4690,6 +4690,11 @@ export default function App() {
       nodeType,
       houseSystem,
       zodiacMode: effZodiacMode,
+      // The line frame, as the generators see it: geodetic is zodiacal by
+      // construction, so the projection reads 'zodiaco' there regardless of the
+      // stored preference (the Sidebar hides the control for the same reason).
+      coordSystem: lineSystem === 'geodetic' ? 'zodiaco' : coordSystem,
+      lineSystem,
       nightShadeOn: showNightShade,
       overlayMode,
       angleProgression,
@@ -4742,6 +4747,8 @@ export default function App() {
       nodeType,
       houseSystem,
       effZodiacMode,
+      coordSystem,
+      lineSystem,
       overlayMode,
       angleProgression,
       primaryRate,

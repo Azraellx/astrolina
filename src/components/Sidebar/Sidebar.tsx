@@ -1152,28 +1152,6 @@ export function Sidebar({
             ))}
           </ul>
 
-          {/* Discreet mode. Deliberately OUTSIDE the parking guard below: it
-              hides chart identity rather than anything on the map, and a
-              surface owning the viewport still shows the chart's name — so
-              this is exactly when it must stay reachable. */}
-          <h2>{t('settings.headings.privacy')}</h2>
-          <ul className="technique-list">
-            <TipToggle
-              className={`tech-toggle ${discreet ? 'on' : 'off'}`}
-              onClick={() => setDiscreet(!discreet)}
-              ariaPressed={discreet}
-              title={t('settings.discreet.title')}
-              hotkey="P"
-              hint={t('settings.discreet.hint')}
-            >
-              {/* The spy, not the eye every other row toggles with — this one
-                  changes what the whole app will say out loud, not whether a
-                  layer is drawn, and it should not look like its neighbours. */}
-              <SpyIcon />
-              <span className="name">{t('settings.discreet.title')}</span>
-            </TipToggle>
-          </ul>
-
           {/* The whole Details section is map-surface-only (basemap linework,
               basemap text, the map's night shading), so it parks AS A SECTION
               while a registered surface owns the viewport — an owner brings its
@@ -1245,6 +1223,28 @@ export function Sidebar({
               </ul>
             </>
           )}
+
+          {/* Discreet mode, below the map-facing controls it has nothing to do with —
+              it hides chart identity rather than anything on the map. Deliberately
+              OUTSIDE both parking guards above: a surface owning the viewport still
+              shows the chart's name, so this is exactly when it must stay reachable. */}
+          <h2>{t('settings.headings.privacy')}</h2>
+          <ul className="technique-list">
+            <TipToggle
+              className={`tech-toggle ${discreet ? 'on' : 'off'}`}
+              onClick={() => setDiscreet(!discreet)}
+              ariaPressed={discreet}
+              title={t('settings.discreet.title')}
+              hotkey="P"
+              hint={t('settings.discreet.hint')}
+            >
+              {/* The spy, not the eye every other row toggles with — this one
+                  changes what the whole app will say out loud, not whether a
+                  layer is drawn, and it should not look like its neighbours. */}
+              <SpyIcon />
+              <span className="name">{t('settings.discreet.title')}</span>
+            </TipToggle>
+          </ul>
 
           {/* Language sits last, below the map-facing detail + projection controls. */}
           <h2>{t('settings.headings.language')}</h2>

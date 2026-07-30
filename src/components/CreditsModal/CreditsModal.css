@@ -88,20 +88,54 @@
   line-height: 1.45;
 }
 
-/* TEMP: accuracy disclaimer banner. Remove with the matching block in CreditsModal.tsx. */
-.credits-disclaimer {
+/* The report-a-problem notice under the intro — an invitation, not a warning, so it
+   takes the brand accent as a quiet tint. The BRAND alias, not --accent: the card
+   shouldn't repaint when the map accent changes underneath the dialog. */
+.credits-notice {
   margin: 0;
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--text-muted);
-  background: rgba(245, 184, 61, 0.1);
-  border: 1px solid rgba(245, 184, 61, 0.32);
+  background: rgba(var(--accent-brand-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.32);
   border-radius: 6px;
   padding: 8px 10px;
 }
 
-.credits-disclaimer strong {
+.credits-notice strong {
   color: var(--text-strong);
+}
+
+/* The info mark rides with the opening sentence rather than in a gutter of its own — at
+   this width a marker column would cost more line length than it buys in structure.
+   Nudged below the baseline so the circle sits centred on the x-height beside it. */
+.credits-notice-mark {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--accent-brand);
+}
+
+/* The closing sentence, whichever route it takes: a mailto here, or a downstream BUTTON
+   that opens a help page instead (it acts inside the app rather than navigating, so it
+   needs the reset an anchor doesn't). Both sit in the run of prose and must read as the
+   same word — hence one rule for the pair. */
+.credits-notice a,
+.credits-notice button {
+  color: var(--accent-brand);
+  text-decoration: none;
+}
+
+.credits-notice button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.credits-notice a:hover,
+.credits-notice button:hover {
+  text-decoration: underline;
 }
 
 .credits-groups {

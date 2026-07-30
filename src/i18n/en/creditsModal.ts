@@ -5,7 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The credits / license disclosures dialog (CreditsModal.tsx). Group headings, intro,
-// accuracy disclaimer, per-dependency note prose, and the footer attribution. Item
+// the report-a-problem notice, per-dependency note prose, and the footer attribution. Item
 // names, SPDX license ids, brand/proper nouns, and the astrolina.org domain label stay
 // language-neutral and are NOT in this catalog.
 export const creditsModal = {
@@ -28,9 +28,18 @@ export const creditsModal = {
   },
   intro:
     'AstroLina is built on open data and open-source software. The full license texts are available in the project repository.',
-  disclaimer: {
-    label: '⚠️ Early access:',
-    body: ' accuracy is still being verified. AstroLina uses the same datasets as the professional tools, but its output is still being cross-checked, and display bugs could currently misplace a line. Please treat results as provisional for now.',
+  // The invitation to report a problem, at the top of the dialog. Not a countdown to
+  // its own removal: the ephemeris side is settled and says so, and what is young is
+  // the software around it — where a reader's report is the fastest route to a fix.
+  // Split in three so the opening sentence can carry the emphasis and the closing one
+  // can be the link. A downstream build's help page can render lead + body under a
+  // heading of its own rather than keeping a second copy of the wording, and point
+  // `report` at itself instead of at the address (see creditsFooter's notice tail).
+  notice: {
+    lead: 'We’re new at this, and glad of your help.',
+    body: 'The astronomy is solid — Swiss Ephemeris, JPL data, agreement with the professional tools to well under an arcsecond. The app around it is version one, and it does enough that we couldn’t have reached every corner before launch. So if a line looks wrong, a figure looks odd, or something simply won’t do what you asked, please tell us — every report is read by a person, and we mean to make this a tool you can rely on.',
+    // The one thing in the notice to act on, so it is the only thing in it that links.
+    report: 'Report an issue.',
   },
   groups: {
     astrolina: 'AstroLina',

@@ -6,16 +6,31 @@
 
 // Credits-dialog seams — let a downstream build extend the credits/licenses
 // window WITHOUT editing it. A sibling of the profile-section seam. Two hooks:
-// a single-slot FOOTER (e.g. Privacy / Terms links) and a multi-registry of
-// GROUP ITEMS — disclosure rows appended to one of the core groups, for data or
-// dependencies a downstream build bundles that the open core doesn't ship.
-// The open core registers nothing for either.
+// a single-slot CUSTOMIZATION (footer content such as Privacy / Terms links, plus
+// a tail for the report-a-problem notice) and a multi-registry of GROUP ITEMS —
+// disclosure rows appended to one of the core groups, for data or dependencies a
+// downstream build bundles that the open core doesn't ship. The open core
+// registers nothing for either.
 
 import type { ReactNode } from 'react';
+
+/** What the notice tail may DO, handed to it at render time. The dialog has no
+ *  extension context of its own, so the actions it can offer are passed in by the
+ *  host (Map) rather than reached for — and a build that renders the dialog without
+ *  a context gets no tail rather than a dead link. */
+export interface CreditsNoticeActions {
+  /** Open a registered View-menu extension by id; the credits dialog closes first. */
+  openExtension: (id: string) => void;
+}
 
 export interface CreditsFooter {
   /** Extra footer content (e.g. legal links). Absent in the open core. */
   render?: () => ReactNode;
+  /** Extra content at the END of the report-a-problem notice, beside the contact
+   *  address — for a build that repeats the same notice somewhere with more room
+   *  (a help page) and wants to point at it. Absent in the open core, where the
+   *  address is the only route. */
+  renderNotice?: (actions: CreditsNoticeActions) => ReactNode;
 }
 
 let footer: CreditsFooter = {};
