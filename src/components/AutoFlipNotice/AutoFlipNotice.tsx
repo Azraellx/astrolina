@@ -71,9 +71,9 @@ export function AutoFlipNotice({
     if (!target || !card || !target.getClientRects().length) return;
 
     // The ring lives on someone else's element, so it can't inherit the card's tone —
-    // it gets its own modifier. Both classes come off together in the cleanup.
+    // it restates it (see the CSS). One class, both kinds: the tone no longer varies by
+    // kind, only the mark on the card does, and a ring has no mark to vary.
     target.classList.add('auto-flip-target');
-    if (tone === 'info') target.classList.add('auto-flip-target--info');
 
     const place = () => {
       const t0 = target.getBoundingClientRect();
@@ -98,9 +98,9 @@ export function AutoFlipNotice({
     window.addEventListener('resize', place);
     return () => {
       window.removeEventListener('resize', place);
-      target.classList.remove('auto-flip-target', 'auto-flip-target--info');
+      target.classList.remove('auto-flip-target');
     };
-  }, [kind, tone]);
+  }, [kind]);
 
   // Escape closes, hand-rolled like every other dismissible surface here (there is
   // no shared hook). Non-capturing: a takeover that owns Escape should get it first.
@@ -129,10 +129,11 @@ export function AutoFlipNotice({
           aria-hidden="true"
         />
       )}
-      {/* Warn wears the shared heads-up triangle (see WarningIcon) — the same mark the
-          other "the app changed something" notices carry. Info wears the circled i
-          instead: nothing has happened, the card is only explaining, and a triangle
-          would overstate it. */}
+      {/* The mark is the only thing that separates the two kinds now that they share a
+          tone, so it is carrying the distinction alone. Warn wears the shared heads-up
+          triangle (see WarningIcon) — the same mark the other "the app changed
+          something" notices carry. Info wears the circled i instead: nothing has
+          happened, the card is only explaining, and a triangle would overstate it. */}
       <p className="afn-title">
         {tone === 'warn' ? (
           <WarningIcon className="afn-icon" />

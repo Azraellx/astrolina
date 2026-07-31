@@ -808,6 +808,9 @@ export function TopNav({
     tier?: PlanTier;
     /** One-line description shown in the row's hover .ui-tip, like the Tools/Overlay menus. */
     hint?: string;
+    /** Registered but not yet usable (MapExtension.unavailable): the row stays, inert,
+     *  with this reason in place of its hint. Only extensions can be in this state. */
+    unavailable?: string;
   }[] = [
     // Built-in windows, on the digit row (1-3) and on mnemonic letters
     // (T = Teleport, S = Sky Times, L = Local Space). Badges mirror App's
@@ -833,6 +836,7 @@ export function TopNav({
         hint: ext.hint,
         tier: tierOfEntitlement(ext.tier),
         checked: openExtensions.has(ext.id),
+        unavailable: ext.unavailable,
         onToggle: () => onToggleExtension(ext.id),
       })),
   ];
@@ -850,7 +854,14 @@ export function TopNav({
     // A registered extension may claim a built-in row to host it inside its own
     // surface (lib/extensions/viewRowClaims) — a claimed row leaves the menu.
     .filter((i) => !isViewRowClaimed(i.id))
-    .filter((i) => tierMet(planTier, i.tier ?? 'new') || shouldShowNudge(i.tier ?? 'new'));
+    // A row above the user's tier survives only as an upgrade teaser — which an
+    // unavailable feature must never be, since upgrading wouldn't produce it. So an
+    // unavailable row shows to those who could already use it, and to nobody else.
+    .filter(
+      (i) =>
+        tierMet(planTier, i.tier ?? 'new') ||
+        (!i.unavailable && shouldShowNudge(i.tier ?? 'new')),
+    );
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
@@ -1245,12 +1256,16 @@ export function TopNav({
                 <CheckItem
                   key={it.id}
                   label={it.label}
-                  hint={it.hint}
-                  hotkey={it.hotkey}
-                  checked={it.checked}
+                  // Unavailable: the reason stands in for the description, the row
+                  // can't read as checked (nothing is running), the shortcut chip
+                  // goes (the key is released), and the click is a no-op — never a
+                  // nudge, which would be selling an unfinished feature.
+                  hint={it.unavailable ?? it.hint}
+                  hotkey={it.unavailable ? undefined : it.hotkey}
+                  checked={it.checked && !it.unavailable}
                   tier={it.tier}
-                  disabled={!tierMet(planTier, it.tier ?? 'new')}
-                  locked={!tierMet(planTier, it.tier ?? 'new')}
+                  disabled={!!it.unavailable || !tierMet(planTier, it.tier ?? 'new')}
+                  locked={!it.unavailable && !tierMet(planTier, it.tier ?? 'new')}
                   onToggle={it.onToggle}
                 />
               ))}

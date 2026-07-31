@@ -7,6 +7,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   getMapExtensions,
+  isAvailable,
   isEntitled,
   type AllLines,
   type LineSpotlight,
@@ -1394,7 +1395,10 @@ export default function App() {
           (x) =>
             x.surface === 'timeline-drawer' &&
             x.hotkey?.toLowerCase() === e.key.toLowerCase() &&
-            isEntitled(x),
+            isEntitled(x) &&
+            // An unavailable extension releases its letter entirely — the key falls
+            // through to whatever base action the switch below gives it.
+            isAvailable(x),
         );
         if (drawerExt) {
           toggleExtension(drawerExt.id);
@@ -1466,6 +1470,7 @@ export default function App() {
               (x.hotkey?.toLowerCase() === e.key.toLowerCase() ||
                 x.hotkeyAlias?.toLowerCase() === e.key.toLowerCase()) &&
               isEntitled(x) &&
+              isAvailable(x) && // unavailable → the letter is released, as in the drawer branch
               (!getViewLock() || x.layer === 'modal'),
           );
           if (ext) {
@@ -4315,6 +4320,10 @@ export default function App() {
     // opening one closes the other. Safe in both toggle directions: when closing this
     // extension the panel is already down (it couldn't have coexisted), so it's a no-op.
     const ext0 = getMapExtensions().find((e) => e.id === id);
+    // An extension that has declared itself unavailable doesn't move in either
+    // direction: nothing of it renders, so there is no open state worth flipping —
+    // and leaving the stored one alone is what lets it come back as the user left it.
+    if (ext0 && !isAvailable(ext0)) return;
     if (ext0?.reservesLeftColumn) setWheelExpanded(false);
     setOpenExtensions((prev) => {
       const next = new Set(prev);
@@ -4334,6 +4343,7 @@ export default function App() {
   // context as openExtension, e.g. a map overlay opening its companion HUD on a marker click.
   const openExtensionById = useCallback((id: string) => {
     const ext0 = getMapExtensions().find((e) => e.id === id);
+    if (ext0 && !isAvailable(ext0)) return; // unavailable — see toggleExtension
     if (ext0?.reservesLeftColumn) setWheelExpanded(false); // left-column takeover — see toggleExtension
     setOpenExtensions((prev) => {
       if (prev.has(id)) return prev;
@@ -5479,7 +5489,7 @@ export default function App() {
         (ext.surface !== 'timeline-drawer' || isTimeMode) &&
         (!ext.reservesLeftColumn || !wheelExpanded) ? (
           <Fragment key={ext.id}>
-            {isEntitled(ext)
+            {isEntitled(ext) && isAvailable(ext)
               ? ext.render(extensionCtx, () => toggleExtension(ext.id))
               : null}
           </Fragment>

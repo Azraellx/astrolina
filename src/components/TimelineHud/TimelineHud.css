@@ -1029,6 +1029,40 @@
   background: rgba(var(--gated-rgb), 0.12);
   border-color: rgba(var(--gated-rgb), 0.6);
 }
+/* Registered but not yet usable (MapExtension.unavailable, paired with .ui-inert like
+   every other unavailable control). Deliberately the OPPOSITE treatment to .locked
+   above: that one is tinted at full opacity because it is an offer, and this is not
+   for sale at any tier — so the gated purple is repainted back to the neutral resting
+   chrome and the row simply dims. Every hover response is neutralized too, since the
+   only thing a click can do here is nothing; the tip still fires (aria-disabled, not
+   natively disabled) and carries the reason. Listed at this specificity because
+   `.gated.off:not(.locked)` above is four classes deep. */
+.thud-drawer-toggle.ui-inert,
+.thud-drawer-toggle.ui-inert:hover,
+.thud-drawer-toggle.gated.ui-inert:hover,
+.thud-drawer-toggle.gated.off.ui-inert:not(.locked) {
+  opacity: 0.45;
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.04);
+  border-color: rgba(var(--tint), 0.12);
+  cursor: default;
+}
+/* The label strike on hover — the drawer's copy of the shared unavailable cue (see
+   `.planet-toggle.ui-inert` in Sidebar.css, which explains why it is a ruled
+   pseudo-element and not text-decoration). At rest the dimming carries the state. */
+.thud-drawer-toggle.ui-inert .thud-drawer-toggle-name {
+  position: relative;
+}
+.thud-drawer-toggle.ui-inert:hover .thud-drawer-toggle-name::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--ui-strike-pos, 58%);
+  height: 1px;
+  background: currentColor;
+  pointer-events: none;
+}
 .thud-drawer-toggle .eye-icon {
   display: block;
   flex-shrink: 0;

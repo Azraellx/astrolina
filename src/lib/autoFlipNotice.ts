@@ -61,7 +61,10 @@ export interface AutoFlipMeta {
    *  matches nothing (or matches a collapsed box) falls back the same way. */
   target: string | null;
   /** 'warn' for something the app changed on its own; 'info' for something it is
-   *  merely telling you. A red triangle on a settings tip would be shouting. */
+   *  merely telling you. Picks the MARK on the card and nothing else — both wear the
+   *  same cool blue, because neither is a failure and a red one was read as one. So a
+   *  triangle here is the difference between a report and an explanation, not the
+   *  difference between calm and alarmed. */
   tone: 'warn' | 'info';
   /** Suppress after a single showing, without waiting to be asked. True for a
    *  first-run explanation — it is answering a question the reader hasn't asked yet,

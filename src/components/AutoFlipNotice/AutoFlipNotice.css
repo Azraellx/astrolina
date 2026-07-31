@@ -21,10 +21,17 @@
   width: min(340px, calc(100vw - 32px));
   box-sizing: border-box;
   background: rgba(var(--bg-panel), 0.96);
-  /* One tone variable feeds the border, the pointer and the ring on the control, so a
-     kind's tone is set in one place (the .is-warn / .is-info rules below) and can't
-     end up half-applied. Warn: the app changed something on its own — held well down,
-     since nothing has failed. Info: it is only explaining. */
+  /* One tone variable feeds the border, the pointer and the ring on the control, so it
+     can't end up half-applied.
+     BOTH kinds share it. Nothing on this card has failed — warn reports a setting the
+     app moved on the reader's behalf, info explains a default it draws differently — and
+     a red edge on either of those reads as an error, which sends someone looking for the
+     thing that broke instead of at the sentence in front of them. The tone is the cool
+     blue the mission guide marks a finished step with: the one they have already met as
+     the app talking to them rather than something going wrong.
+     What separates the two kinds is the MARK, not the colour (AutoFlipNotice.tsx picks
+     it). .is-warn / .is-info still land on the root as state, but carry no colour. */
+  --afn-tone: var(--cool-rgb);
   border: 1px solid rgba(var(--afn-tone), 0.4);
   border-radius: 12px;
   padding: 12px 14px 12px;
@@ -39,13 +46,6 @@
     animation: none;
   }
 }
-.auto-flip-notice.is-warn {
-  --afn-tone: var(--danger-rgb);
-}
-.auto-flip-notice.is-info {
-  --afn-tone: var(--accent-brand-rgb);
-}
-
 /* Anchored: the component writes left/top from the target's measured box, so the
    centring translate has to go or it would drag the card half its width off the
    control it just lined up with. */
@@ -96,20 +96,16 @@
    the whole cue on 3s. Keep those three numbers in step if you retune it. */
 .auto-flip-target {
   /* Carries its OWN tone: this class lands on a control elsewhere in the document, so
-     nothing cascades to it from the card. Warn is the default; the component adds the
-     modifier below for an informational kind. */
-  --afn-tone: var(--danger-rgb);
+     nothing cascades to it from the card. Same cool blue, restated rather than shared —
+     if the card's tone ever moves, move this with it or the ring and the thing that
+     summoned it stop looking like one gesture. */
+  --afn-tone: var(--cool-rgb);
   outline: 2px solid transparent;
   outline-offset: 3px;
   border-radius: 7px;
   animation:
     afn-target-pulse 0.75s var(--ease-settle) 3,
     afn-target-fade 0.75s ease-out 2.25s forwards;
-}
-/* Scoped modifier rather than a bare .is-info — this class sits on someone else's
-   element, alongside classes this file knows nothing about. */
-.auto-flip-target--info {
-  --afn-tone: var(--accent-brand-rgb);
 }
 @keyframes afn-target-pulse {
   from,
@@ -146,8 +142,8 @@
   font-size: 12.5px;
   font-weight: 700;
 }
-/* The mark carries the tone so the title text can stay plain — colouring a whole
-   heading red would read as a failure, which none of these are. */
+/* The mark carries the tone so the title text can stay plain — a whole coloured heading
+   makes a one-line report look like an announcement it isn't. */
 .afn-icon {
   flex-shrink: 0;
   color: rgb(var(--afn-tone));

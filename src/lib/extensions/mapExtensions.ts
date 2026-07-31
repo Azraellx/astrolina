@@ -292,6 +292,22 @@ export interface MapExtension {
   defaultOpen?: boolean;
   /** Defaults to 'core'. A 'gated' extension is subject to the entitlement resolver. */
   tier?: Entitlement;
+  /** Registered but NOT YET USABLE — the surface ships while the thinking behind
+   *  the feature is still being settled. Set it to the reason, shown to the reader;
+   *  clear it and everything below reverses with no other edit.
+   *
+   *  While set: the toggle stays where it is, marked unavailable (dimmed, no
+   *  shortcut pill, click does nothing) with this string as its tip's explanation;
+   *  the hotkey is dead; the HUD never renders; `openExtension` no-ops. Persisted
+   *  open/closed state is left untouched rather than cleared, so the feature
+   *  returns exactly as each reader last left it.
+   *
+   *  This is NOT entitlement. A gated extension is finished and merely unpaid for,
+   *  and its teaser exists to sell it; an unavailable one is unfinished, which no
+   *  plan changes — so it never nudges and never appears to a user who could only
+   *  be shown a teaser. Word the reason so a reader knows to come back, not just
+   *  that a control is dead. */
+  unavailable?: string;
   /** The extension docks a panel that RESERVES the left column (shrinks the map out
    *  from under it — see lib/leftDock `reserve`). The host treats it as mutually
    *  exclusive with the built-in expanded chart panel, since both own the left edge:
@@ -326,4 +342,13 @@ export function setEntitlementResolver(fn: (ext: MapExtension) => boolean): void
 /** Whether `ext`'s real HUD (vs. its CTA) should render for the current user. */
 export function isEntitled(ext: MapExtension): boolean {
   return ext.tier !== 'gated' || resolveEntitled(ext);
+}
+
+/** Whether `ext` can be opened at all — false while it declares itself
+ *  {@link MapExtension.unavailable}. Every open path (hotkey, toggle, `openExtension`,
+ *  the HUD's own render) checks this; entitlement is the separate question above, and
+ *  the two are deliberately not folded together: one is about who may use a finished
+ *  feature, this one about whether the feature is finished. */
+export function isAvailable(ext: MapExtension): boolean {
+  return !ext.unavailable;
 }

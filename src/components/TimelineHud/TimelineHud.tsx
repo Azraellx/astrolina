@@ -35,7 +35,7 @@ import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { shouldShowNudge, nudgeAction, tierOfEntitlement } from '../../lib/plan';
-import { getMapExtensions, isEntitled } from '../../lib/extensions/mapExtensions';
+import { getMapExtensions, isAvailable, isEntitled } from '../../lib/extensions/mapExtensions';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -643,36 +643,51 @@ export function TimelineHud({
           downstream build's gated add-on. Follows the same nudge policy as the View
           menu: an entitled user gets the real toggle; an un-entitled user whom the
           build nudges sees it as a CLICKABLE teaser (gated tag in the tip, a click
-          opens the account flow instead of toggling); everyone else sees nothing. */}
+          opens the account flow instead of toggling); everyone else sees nothing.
+          An extension marked unavailable (MapExtension.unavailable) is the third
+          case and is NOT teased to anyone who couldn't already use it — upgrading
+          wouldn't produce it. It shows to entitled users only, inert, with its
+          reason where its description would be. */}
       {getMapExtensions()
         .filter(
           (ext) =>
             ext.surface === 'timeline-drawer' &&
-            (isEntitled(ext) || shouldShowNudge(tierOfEntitlement(ext.tier))),
+            (isEntitled(ext) ||
+              (isAvailable(ext) && shouldShowNudge(tierOfEntitlement(ext.tier)))),
         )
         .map((ext) => {
           const open = openExtensions.has(ext.id);
           const locked = !isEntitled(ext);
-          // A locked teaser must never READ as on: a defaultOpen ext still sits in
-          // openExtensions, but the feature isn't actually running until entitled — so show
-          // the eye closed + a gated accent, not a misleading "on" state.
-          const shown = open && !locked;
+          const pending = ext.unavailable;
+          // Neither a locked teaser nor an unavailable feature may READ as on: a
+          // defaultOpen ext still sits in openExtensions, but nothing of it is
+          // running — so show the eye closed, not a misleading "on" state.
+          const shown = open && !locked && !pending;
           return (
             <TipButton
               key={ext.id}
               type="button"
-              className={`thud-drawer-toggle ${shown ? 'on' : 'off'}${locked ? ' locked' : ''}${ext.tier === 'gated' ? ' gated' : ''}`}
+              className={`thud-drawer-toggle ${shown ? 'on' : 'off'}${locked ? ' locked' : ''}${pending ? ' ui-inert' : ''}${ext.tier === 'gated' ? ' gated' : ''}`}
               placement="top"
               gated={ext.tier === 'gated'}
               tip={ext.label}
-              hint={ext.hint}
+              // The reason REPLACES the description while unavailable: what the
+              // feature would do is no use to a reader who can't reach it, and the
+              // one thing they need is why the control won't respond.
+              hint={pending ?? ext.hint}
               // A drawer extension's hotkey is live only while this bar is up
-              // (App's keydown scopes it), so the pill is honest right here — but a
-              // locked teaser advertises no key (its letter is a no-op until entitled).
-              hotkey={locked ? undefined : ext.hotkey}
+              // (App's keydown scopes it), so the pill is honest right here — but
+              // neither a locked teaser nor an unavailable feature advertises a key
+              // (the letter does nothing in both cases).
+              hotkey={locked || pending ? undefined : ext.hotkey}
               aria-label={ext.label}
-              aria-pressed={locked ? undefined : open}
-              onClick={() => (locked ? nudgeAction() : onToggleExtension(ext.id))}
+              aria-pressed={locked || pending ? undefined : open}
+              // aria-disabled rather than natively disabled, so the tip carrying the
+              // reason still fires on hover and focus (the .ui-inert convention).
+              aria-disabled={pending ? true : undefined}
+              onClick={() =>
+                pending ? undefined : locked ? nudgeAction() : onToggleExtension(ext.id)
+              }
               onPointerDown={(e) => e.stopPropagation()}
             >
               <EyeIcon open={shown} />

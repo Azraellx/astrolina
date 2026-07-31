@@ -124,20 +124,27 @@ export function saveUserPrimaryRate(deg: number) {
 
 // Overlay frame (the natal chart's sidereal time vs the moment's own).
 //
-// v2 deliberately abandons every v1 value rather than migrating it. The default
-// used to be 'relative-to-natal', and the pref is written on mount, so EVERY
-// existing install carries that value whether or not anyone chose it — reading
-// v1 would make the new default unreachable for exactly the people it's meant to
-// reach. 'transit-moment' is the frame the rest of the field draws (a transit map
-// is the transit chart's astrocartography), so a fresh install now agrees with
-// other software out of the box; the natal-framed map stays one click away.
-const TRANSIT_FRAME_KEY = 'astro:transit-frame:v2';
+// The default is 'relative-to-natal': it answers the question a reader arrives
+// with — where would I have to live for this transit to reach MY angles — and it
+// holds still enough to be read across a season, where the moment's own frame
+// sweeps ~15° an hour and only means anything at an instant deliberately chosen.
+// The moment frame is one segment click away, and a returns snap still forces it
+// outright (App.tsx), announced.
+//
+// v3 abandons every earlier value rather than migrating it, for the reason the key
+// keeps getting bumped: this pref is written on mount, so EVERY install that has
+// run the app carries whatever the default was at the time, chosen or not, and
+// reading the old key would make the new default unreachable for exactly the people
+// it is meant to reach. v2 defaulted to 'transit-moment' (briefly), v1 to
+// 'relative-to-natal'; neither key's contents can be read as a real choice, so
+// neither is read.
+const TRANSIT_FRAME_KEY = 'astro:transit-frame:v3';
 const TRANSIT_FRAMES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
 export function loadTransitFrame(): TransitFrame {
   const v = localStorage.getItem(TRANSIT_FRAME_KEY);
   return v && (TRANSIT_FRAMES as string[]).includes(v)
     ? (v as TransitFrame)
-    : 'transit-moment';
+    : 'relative-to-natal';
 }
 export function saveTransitFrame(f: TransitFrame) {
   localStorage.setItem(TRANSIT_FRAME_KEY, f);
