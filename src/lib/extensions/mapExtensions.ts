@@ -79,9 +79,31 @@ export interface LineSpotlight {
  * need more — treat additions as backward-compatible.
  */
 export interface MapExtensionContext {
+  /** The active chart AS DRAWN. While a birth time is being tried on
+   *  ({@link timeHypothesis}) this carries that minute instead of the stored one,
+   *  so a consumer reading it agrees with the map by default. Read
+   *  {@link timeHypothesis} when the difference matters — a saved record and a
+   *  guess are not the same kind of object, however alike they look once cast. */
   current: StoredChart | null;
   /** The active synastry partner chart, if a relationship overlay is in play; else null. */
   partner: StoredChart | null;
+  /** The birth time currently being TRIED ON (minutes past local midnight), or null
+   *  when the chart is drawn from its own record. Session-only and never persisted:
+   *  the stored chart keeps whatever it said, including "unknown".
+   *
+   *  This exists for features that reason about a birth time nobody knows yet — the
+   *  map can answer for a candidate minute without anything being written. It is
+   *  cleared when the active chart changes and on reload. */
+  timeHypothesis: number | null;
+  /** Try a birth time on, or drop it with null — the write half of
+   *  {@link timeHypothesis}.
+   *
+   *  Whatever calls this owns saying so. The header announces a provisional time
+   *  on its own, but only while the coordinates readout is on screen, so a caller
+   *  that can be used with it hidden must carry the disclosure too. It writes
+   *  NOTHING to the chart: adopting a time is a separate, explicit act through the
+   *  usual chart-writing channel. */
+  setTimeHypothesis: (minutes: number | null) => void;
   jd: number;
   /** The current timeline instant (epoch ms) the overlay is set to (the value behind
    *  `setTargetDate`), so a HUD/overlay can capture or display "the moment on screen". */

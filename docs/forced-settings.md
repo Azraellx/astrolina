@@ -60,6 +60,17 @@ Every announcement carries a *Don't show me again* tick. Turning one off suppres
 that message everywhere it would appear, including from a different starting point —
 having understood the rule once is enough.
 
+One thing on this page is not a setting at all, and belongs here anyway because it
+looks like the same kind of surprise. A tool that works out an unknown birth time can
+ask the map to draw the chart **as if** it were born at a candidate minute, so you can
+see where the lines would fall before deciding anything. While that is happening the
+"Birth time unknown" banner is replaced by one naming the minute being tried and saying
+it is not saved — because a map drawn from a guess must never be mistaken for one drawn
+from a record. Nothing is written: the chart still reads *? Unknown* in every list, the
+provisional time is dropped the moment you close the tool or switch charts, and it never
+survives a reload. Adopting a time onto the chart is a separate, explicit act, and it is
+undoable.
+
 The reasoning behind each setting stays on the setting itself, in its hover tip, where
 it is still there next week. The announcement only says what moved.
 

@@ -343,7 +343,7 @@
    it's a gated feature: full on the ON state, a lighter tone when OFF. (The un-entitled
    .locked teaser below is unaffected.) */
 .sky-band-track-toggle.gated.on {
-  color: var(--gated);
+  color: var(--gated-ink);
   border-color: color-mix(in srgb, var(--gated) 55%, transparent);
   background: color-mix(in srgb, var(--gated) 10%, transparent);
 }
@@ -360,12 +360,12 @@
 /* Locked teaser (un-entitled but nudged): a gated tint so it reads as a premium feature,
    while staying clickable (the click opens the account flow). */
 .sky-band-track-toggle.locked {
-  color: var(--gated);
+  color: var(--gated-ink);
   border-color: rgba(var(--gated-rgb), 0.4);
   background: rgba(var(--gated-rgb), 0.08);
 }
 .sky-band-track-toggle.locked:hover {
-  color: var(--gated);
+  color: var(--gated-ink);
   border-color: rgba(var(--gated-rgb), 0.6);
 }
 

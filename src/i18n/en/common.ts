@@ -20,6 +20,11 @@ export const common = {
   // Unknown-birth-time banner (App header / coordinates window). Kept terse —
   // the chart form's note carries the full explanation of the degrade.
   timeUnknownBanner: 'Birth time unknown',
+  // Replaces the banner above while a birth time is being TRIED ON: the map is
+  // drawing a guess, and nothing has been written to the chart. Names the minute
+  // so the reader can attribute what changed, and says "not saved" plainly —
+  // a provisional map that looks like a real one is the failure this prevents.
+  provisionalTimeBanner: '⚠ Trying {time} — provisional, not saved',
   // Spelled-out cardinal direction words. (The single-letter DMS readout codes in
   // coordFormat.ts stay language-neutral as cartographic convention; these are here
   // for any spelled-out use and for locales where the letters differ.)

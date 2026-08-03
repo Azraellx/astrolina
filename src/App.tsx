@@ -80,7 +80,7 @@ import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
-import { SEED_BIRTHS, timeUnknown } from './lib/birthData';
+import { SEED_BIRTHS, applyTimeHypothesis, timeUnknown } from './lib/birthData';
 import {
   buildShareUrl,
   consumeShareParam,
@@ -552,15 +552,43 @@ export default function App() {
     const stored = loadCurrentId();
     return stored ?? charts[0]?.id ?? null;
   });
-  const current = useMemo(
+  // A birth time being TRIED ON (minutes past local midnight), or null. Session
+  // state only: it is never persisted and never written back onto the record —
+  // see the derived `current` below and applyTimeHypothesis in lib/birthData.
+  const [timeHypothesis, setTimeHypothesis] = useState<number | null>(null);
+  const storedCurrent = useMemo(
     () => charts.find((c) => c.id === currentId) ?? charts[0] ?? null,
     [charts, currentId],
   );
+  // The chart every consumer below reads. While a time is being tried on, this is
+  // the STORED record with that minute substituted — so the angular linework,
+  // houses, wheel and every downstream tool answer for the provisional time at
+  // once, without a single one of them knowing a hypothesis exists.
+  //
+  // Derived, never written: the condition is a standing one (it lasts as long as
+  // whatever is trying the time out), and the record has to still read "unknown"
+  // when it ends. The persist effect below therefore writes `charts` — the stored
+  // array, which the substitution deliberately happens OUTSIDE of — and must
+  // never be pointed at `current`, which would save the guess.
+  const current = useMemo(
+    () => applyTimeHypothesis(storedCurrent, timeHypothesis),
+    [storedCurrent, timeHypothesis],
+  );
+  // A provisional time is only ever announced, never assumed: while one stands the
+  // header says so (below), and whatever set it is expected to say so too.
+  const provisionalTime = timeHypothesis != null && current !== storedCurrent;
   // Birth TIME unknown (timeKnown === false): the stored 12:00 is a placeholder, so
   // every time-of-day-dependent layer below degrades — the angular linework, parans,
   // local space, star lines, houses and relocated angles all suppress; the date-robust
   // content (planets by sign, eclipse geometry, the transiting sky) stays.
+  // Reads the DERIVED chart, so trying a time on lifts the degrade for as long as
+  // it stands and restores it the moment it is dropped.
   const noTime = timeUnknown(current);
+  // A hypothesis belongs to the chart it was reasoned about — switching charts
+  // drops it rather than silently applying one record's guess to another.
+  useEffect(() => {
+    setTimeHypothesis(null);
+  }, [currentId]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1934,6 +1962,10 @@ export default function App() {
   if (!isTimeMode && playing) setPlaying(false);
 
   useEffect(() => {
+    // `charts` — the STORED array — never the derived `current`, which may be
+    // carrying a birth time somebody is only trying on. Persisting that would
+    // write the guess into the record and destroy the "unknown" the whole
+    // degrade hangs off, and it would only show up in the NEXT session.
     saveCharts(charts);
     // A folder is remembered as "declared" only while it holds nothing. Once a
     // chart lands in it the path itself is the evidence, so the declaration is
@@ -4831,6 +4863,10 @@ export default function App() {
     () => ({
       current,
       partner,
+      // The provisional birth time, and its setter. Both useState halves: the
+      // setter's identity is stable, so it doesn't belong in the deps below.
+      timeHypothesis,
+      setTimeHypothesis,
       jd,
       targetDate,
       pinned,
@@ -4894,6 +4930,7 @@ export default function App() {
     [
       current,
       partner,
+      timeHypothesis,
       jd,
       targetDate,
       pinned,
@@ -5074,8 +5111,20 @@ export default function App() {
           />
           {showCoords && !viewParked && (
             <header className="app-header">
-              {noTime && (
-                <p className="tz-warning">{t('common.timeUnknownBanner')}</p>
+              {provisionalTime ? (
+                // The stored record still says the time is unknown. Say which
+                // minute the map is answering for, and that nothing was saved —
+                // a map drawn from a guess must never look like one drawn from a
+                // record.
+                <p className="tz-warning">
+                  {t('common.provisionalTimeBanner', {
+                    time: `${String(current?.hour ?? 0).padStart(2, '0')}:${String(
+                      current?.minute ?? 0,
+                    ).padStart(2, '0')}`,
+                  })}
+                </p>
+              ) : (
+                noTime && <p className="tz-warning">{t('common.timeUnknownBanner')}</p>
               )}
               {current?.tzUncertain && (
                 <p className="tz-warning">{t('common.tzWarning')}</p>

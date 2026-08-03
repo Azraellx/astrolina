@@ -537,7 +537,7 @@
    the gated accent — full on ON, a lighter tone when OFF. Scoped to .es-ls-head so the sibling
    Dual-Wheels toggle keeps the neutral accent. */
 .es-ls-head .es-advanced-toggle.on {
-  color: var(--gated);
+  color: var(--gated-ink);
 }
 .es-ls-head .es-advanced-toggle.on .es-toggle-track {
   background: rgba(var(--gated-rgb), 0.55);
@@ -562,7 +562,7 @@
    treatment (full ON, lighter OFF), scoped to .es-frames-toggle so the sibling gated rules
    above and the neutral Dual-Wheels toggle are untouched. */
 .es-advanced-toggle.es-frames-toggle.on {
-  color: var(--gated);
+  color: var(--gated-ink);
 }
 .es-advanced-toggle.es-frames-toggle.on .es-toggle-track {
   background: rgba(var(--gated-rgb), 0.55);

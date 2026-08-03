@@ -22,6 +22,7 @@ import './HudHeader.css';
 export function HudHeader({
   title,
   adornment,
+  trailing,
   handleProps,
   dragging,
   collapsed,
@@ -36,6 +37,13 @@ export function HudHeader({
    *  element, so it never shifts the layout. A small transient indicator (e.g. a
    *  busy spinner) or a persistent per-window control (e.g. a toggle button). */
   adornment?: ReactNode;
+  /** A slot at the FAR end, immediately before the close X. For a control that
+   *  belongs with the window-level buttons rather than with its title — a link to
+   *  the window's help page, say. Distinct from {@link adornment}, which sits by
+   *  the title at the other end of the drag stretch: which end a control lands on
+   *  is the difference between "about this window's contents" and "about this
+   *  window", and the two should not be confusable at a glance. */
+  trailing?: ReactNode;
   /** Drag props from useMovableHud, spread onto the grip. */
   handleProps: Pick<
     HTMLAttributes<HTMLDivElement>,
@@ -105,6 +113,7 @@ export function HudHeader({
           pointer handlers), so the whole bar — everything but the eye/X buttons — drags, matching
           Teleport / Guides. It also pushes the close X to the far corner. */}
       <div className="hud-header-drag" {...handleProps} aria-hidden="true" />
+      {trailing}
       {/* Close X — exits the tool / turns the view off entirely. */}
       <TipButton
         type="button"

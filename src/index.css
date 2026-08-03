@@ -92,6 +92,15 @@ span.astro-glyph {
      --advanced (see src/lib/plan.ts). Placeholder default; a downstream build retunes it. */
   --gated: #8b6fd6;
   --gated-rgb: 139, 111, 214;
+  /* The same accent as INK — text, marks and thin strokes drawn ON a panel,
+     rather than a fill with white text on top of it (the tier badges).
+     They have to be separate tokens because the two want opposite adjustments
+     on a light or warm panel: the badge needs the fill kept dark enough for
+     white to read on it, while the ink needs lifting until it reads against the
+     panel. Defaults to the fill colour, so a theme that says nothing is exactly
+     as it was; a theme with a pale or warm panel overrides this one alone. */
+  --gated-ink: var(--gated);
+  --gated-ink-rgb: var(--gated-rgb);
   --success: #8de0a3;
   --success-rgb: 141, 224, 163;
   --neutral: #d8d8d8;
@@ -178,6 +187,14 @@ span.astro-glyph {
   --danger-rgb: 232, 122, 90;
   --success: #a8d68a;
   --success-rgb: 168, 214, 138;
+  /* The gated accent as ink, lifted for the parchment panel. The fill colour is
+     deliberately NOT retuned: it carries white text on the tier badges, which a
+     paler purple would strand. Left alone, the root purple sits at about 2.6:1
+     against this theme's warm panel — legible as a shape, not as words; this
+     lands near 5:1, in the same lightened register the theme already puts --cool,
+     --danger and --success in. */
+  --gated-ink: #c4abe0;
+  --gated-ink-rgb: 196, 171, 224;
 
   --scrim: rgba(18, 12, 4, 0.7);
   --scrim-strong: rgba(18, 12, 4, 0.85);

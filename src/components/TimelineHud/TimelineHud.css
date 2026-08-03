@@ -993,12 +993,12 @@
    tone when OFF, where .off's opacity dims it) so an entitled user still gets the gated cue; the
    base ON/off/hover/focus otherwise repaint it --accent. The un-entitled .locked teaser stays. */
 .thud-drawer-toggle.gated.on {
-  color: var(--gated);
+  color: var(--gated-ink);
   background: rgba(var(--gated-rgb), 0.1);
   border-color: rgba(var(--gated-rgb), 0.45);
 }
 .thud-drawer-toggle.gated.off:not(.locked) {
-  color: var(--gated);
+  color: var(--gated-ink);
   background: rgba(var(--gated-rgb), 0.06);
   border-color: rgba(var(--gated-rgb), 0.28);
 }
@@ -1021,7 +1021,7 @@
    stays legible (overrides .off's dim), and still clickable (click opens the account flow). */
 .thud-drawer-toggle.locked {
   opacity: 1;
-  color: var(--gated);
+  color: var(--gated-ink);
   background: rgba(var(--gated-rgb), 0.07);
   border-color: rgba(var(--gated-rgb), 0.4);
 }
