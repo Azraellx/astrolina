@@ -48,9 +48,14 @@ export type AutoFlipKind =
    *  In Mundo where most others draw In Zodiaco, so a reader cross-checking against
    *  the program they came from finds lines that don't agree and reasonably concludes
    *  one of us is wrong. Said once, when they first open the panel that holds the
-   *  control, rather than waiting for them to write in about it. (The union has
-   *  outgrown its "auto-flip" name by exactly one member; if a third non-flip notice
-   *  turns up, rename the module rather than stretching it further.) */
+   *  control, rather than waiting for them to write in about it. That opening is the
+   *  ONLY trigger, deliberately: an explanation nobody asked for is welcome beside the
+   *  control it is about and an interruption anywhere else. Saving a first chart used to
+   *  open Calculation to deliver it, which met a reader with a settings panel at the one
+   *  moment they were waiting to see their own map — so don't route anyone here to say
+   *  it. The notice keeps until they arrive on their own. (The union has outgrown its
+   *  "auto-flip" name by exactly one member; if a third non-flip notice turns up, rename
+   *  the module rather than stretching it further.) */
   | 'line-projection';
 
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one

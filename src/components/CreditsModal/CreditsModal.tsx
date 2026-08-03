@@ -29,9 +29,11 @@ type NoteKey =
   | 'other';
 type GroupKey = 'astrolina' | 'mapsPlaces' | 'astronomy' | 'typeSoftware';
 
-// Where a problem report goes — the same address the project's LICENSE and README
-// give. An address reads the same in every language, so it stays out of the catalog.
-const CONTACT_EMAIL = 'contact@astrolina.org';
+// Where a problem report goes. Deliberately NOT the licensing/legal address in LICENSE
+// and the CLA: those two kinds of mail are answered on different clocks, and a report
+// about a wrong figure shouldn't queue behind correspondence. An address reads the same
+// in every language, so it stays out of the catalog.
+const REPORT_EMAIL = 'support@astrolina.org';
 
 interface CreditItem {
   name: string;
@@ -323,7 +325,7 @@ export function CreditsModal({
           <InfoIcon className="credits-notice-mark" size={12} />
           <strong>{t('creditsModal.notice.lead')}</strong> {t('creditsModal.notice.body')}{' '}
           {noticeTail ?? (
-            <a href={`mailto:${CONTACT_EMAIL}`}>{t('creditsModal.notice.report')}</a>
+            <a href={`mailto:${REPORT_EMAIL}`}>{t('creditsModal.notice.report')}</a>
           )}
         </p>
 

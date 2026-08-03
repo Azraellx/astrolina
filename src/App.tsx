@@ -703,7 +703,6 @@ export default function App() {
     pending: autoFlipKind,
     announce: announceFlip,
     dismiss: dismissAutoFlip,
-    isSuppressed: isFlipSuppressed,
   } = useAutoFlipNotice();
   const [autoFlipSuppress, setAutoFlipSuppress] = useState(false);
   // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
@@ -1620,9 +1619,9 @@ export default function App() {
   );
   // Open the settings sidebar, optionally at a section — the Info chip's jump, promoted to a
   // context action (openSettings) so any extension can deep-link a setting it documents or
-  // depends on. Sits up here beside openSidebarSection rather than with the other window
-  // actions: the save-a-chart handler calls it, and a plain handler reaching FORWARD to a
-  // later const is what makes the compiler give up on memoizing this component.
+  // depends on. Sits beside openSidebarSection because it goes THROUGH it: a deep link into
+  // Calculation is someone's first arrival at that panel just as often as a click on the
+  // accordion is, and it owes them the same notice.
   const openSettingsSection = useCallback(
     (section?: string) => {
       setShowSettings(true);
@@ -4157,24 +4156,6 @@ export default function App() {
   const handleSaveChart = (chart: StoredChart) => {
     // Stamp recency on the saved chart.
     const stamped = { ...chart, lastUsedAt: Date.now() };
-    // A reader's first chart OF THEIR OWN is the moment the map stops being a demo and
-    // starts being about them — so it is the moment they begin comparing it against
-    // whatever program they arrived from, and the moment the In Mundo default is worth
-    // mentioning. Most people meet it long before they would ever open Calculation, so
-    // take them there rather than duplicating the notice: opening the panel IS the
-    // existing trigger, and it brings the card anchored beside the control.
-    //
-    // "First" cannot mean an empty library — a fresh install is SEEDED (see seedCharts
-    // above), so nobody ever has zero. It means everything held is still an example,
-    // which the seeds' stable id prefix makes true across reloads. New charts only (an
-    // edit is not a first anything), and skipped once the tip has been seen, so nobody
-    // gets a settings panel opened at them for a card that would not appear.
-    const firstOwnChart =
-      !charts.some((c) => c.id === stamped.id) &&
-      charts.every((c) => c.id.startsWith(SEED_CHART_ID_PREFIX));
-    if (firstOwnChart && !isFlipSuppressed('line-projection')) {
-      openSettingsSection('calc');
-    }
     setCharts((prev) => {
       const exists = prev.some((c) => c.id === stamped.id);
       return exists

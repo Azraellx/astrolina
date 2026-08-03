@@ -30,7 +30,7 @@ geocoding.
 > couldn't have reached every corner before launch. So if a line looks wrong, a
 > figure looks odd, or something simply won't do what you asked, please tell us —
 > every report is read by a person, and we mean to make this a tool you can rely
-> on: [contact@astrolina.org](mailto:contact@astrolina.org).
+> on: [support@astrolina.org](mailto:support@astrolina.org).
 
 ## Features
 

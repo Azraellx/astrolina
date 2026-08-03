@@ -67,10 +67,25 @@ export const autoFlip = {
   // asks to be taken on trust, which is exactly what the reader is already unwilling to
   // do. How far they diverge (Pluto ~17°, the Moon ~5°) still belongs in the control's
   // own hint and in Help, not in a card that will be gone in five seconds.
+  //
+  // Framed as two ways of answering one question rather than as us-versus-them. The
+  // earlier draft opened "Most other programs default to In Zodiaco", which puts the
+  // reader's own software on one side of a disagreement in the first four words — and
+  // the words available for the other side ("true", "actual") all imply the program
+  // they trust is wrong. It isn't; it answers a different question. Nothing here ranks
+  // the two, which also leaves the reader free to switch without conceding anything.
+  //
+  // The two branches get one short sentence each, both NAMED. An earlier draft ran them
+  // together and named only In Zodiaco, which left the reader holding two options and one
+  // label and no way to tell which was which — while the title, the only place In Mundo
+  // appeared, says which is ON without saying what it means. And "latitude and all" is
+  // load-bearing rather than decorative: it is what "flattens" flattens, so the pair only
+  // clicks if the first sentence has already put the latitude there.
+  //
   // The control is named rather than pointed at even though this one always anchors,
   // because the ring beside it is no help to a screen reader.
   'line-projection': {
     title: 'These lines are drawn In Mundo',
-    body: 'Most other programs default to In Zodiaco, which flattens each body onto the ecliptic first — usually why lines here differ from one you already know. Line projection switches between them.',
+    body: 'Every program has to decide where a body “is” before it can draw its line. In Mundo places it where it sits in the sky, latitude and all. In Zodiaco flattens that latitude onto the ecliptic first — the usual default elsewhere, and usually why lines here differ from a map you already know. Line projection switches between them.',
   },
 } as const;

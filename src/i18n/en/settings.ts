@@ -167,7 +167,11 @@ export const settings = {
   coordSystem: {
     mundo: {
       label: 'In Mundo',
-      hint: 'Lines use each body’s true position in the sky (RA / dec). Most affects Pluto and the Moon.',
+      // The magnitude the notice card deliberately leaves out (see i18n/en/autoFlip
+      // 'line-projection') lands here, where it stays available. The Sun is the check
+      // a doubtful reader can run in seconds — it has no ecliptic latitude, so the two
+      // readings place it identically, which is also why they can't BOTH be arbitrary.
+      hint: 'Lines use each body’s own place in the sky (RA / dec). Identical to In Zodiaco for the Sun, which sits on the ecliptic; furthest apart on Pluto and the Moon.',
     },
     zodiaco: {
       label: 'In Zodiaco',

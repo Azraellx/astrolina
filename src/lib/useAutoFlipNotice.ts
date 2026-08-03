@@ -28,10 +28,6 @@ export interface AutoFlipApi {
   /** Acknowledge the pending notice; `persist` carries the "Don't show me again"
    *  tick. */
   dismiss: (persist: boolean) => void;
-  /** Whether a kind has been silenced. For a caller that has to do something else
-   *  first to make the notice appear — open the panel it lives in, say — so it can
-   *  skip the whole detour rather than performing it for a card that won't come. */
-  isSuppressed: (kind: AutoFlipKind) => boolean;
 }
 
 export function useAutoFlipNotice(): AutoFlipApi {
@@ -73,10 +69,5 @@ export function useAutoFlipNotice(): AutoFlipApi {
     [pending],
   );
 
-  const isSuppressed = useCallback(
-    (kind: AutoFlipKind) => !!loadSuppressedFlips()[kind],
-    [],
-  );
-
-  return { pending, announce, dismiss, isSuppressed };
+  return { pending, announce, dismiss };
 }
