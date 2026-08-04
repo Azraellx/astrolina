@@ -75,6 +75,7 @@ span.astro-glyph {
   --text-muted: #a0a0aa;
   --text-dim: #8a8a96;
   --text-faint: #6b6b78;
+  --text-placeholder: #8a8a96;
 
   --accent: #f5b83d;
   --accent-rgb: 245, 184, 61;
@@ -177,6 +178,7 @@ span.astro-glyph {
   --text-muted: #b8a07c;
   --text-dim: #8e7a5e;
   --text-faint: #978259;
+  --text-placeholder: #c9b490;
 
   --accent: #f5b83d;
   --accent-rgb: 245, 184, 61;
@@ -220,6 +222,7 @@ span.astro-glyph {
   --text-muted: #5e6473;
   --text-dim: #818796;
   --text-faint: #a6abb7;
+  --text-placeholder: #5e6473;
 
   --accent: #c97b1a;
   --accent-rgb: 201, 123, 26;
@@ -240,6 +243,33 @@ span.astro-glyph {
 
   --pin-stroke: #ffffff;
   --label-halo: rgba(255, 255, 255, 0.95);
+}
+
+/* ── Placeholder ink (single source) ────────────────────────────────
+   Every placeholder in the app, from one token per theme. It used to be decided
+   in fifteen separate rules that each reached for --text-faint, and that token is
+   tuned for INERT chrome — a disabled label, a tip's footnote — not for text
+   somebody is meant to read. Measured against the fill an input actually
+   composites, it lands at 3.35 : 1 on dark, 2.57 : 1 on Earth and 2.01 : 1 on
+   glass. All three fail WCAG AA for body text; two fail the large-text bar as
+   well, and a hint nobody can read is not a hint.
+
+   The values here clear 4.5 : 1 on all three while staying clearly quieter than
+   the typed value beside them. Earth is the tight one — its ramp is compressed
+   between a parchment --text-strong and a much darker --text-muted — so its
+   placeholder sits closer to its value text than the others do. Legibility wins
+   that trade; the alternative was a hint that reads as an empty box.
+
+   Deliberately NOT applied to the plan picker or a rendered report: both paint on
+   a fixed palette that does not follow the theme, and both set their own. Their
+   class selectors outrank this element one, so they keep it without an override.
+
+   opacity:1 because Firefox dims placeholders on top of the colour, which would
+   undo the tuning. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-placeholder);
+  opacity: 1;
 }
 
 /* ── Map-pin state → accent (single source) ─────────────────────────

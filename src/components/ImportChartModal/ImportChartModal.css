@@ -81,10 +81,6 @@
   border-color: rgba(var(--accent-rgb), 0.6);
 }
 
-.import-textarea::placeholder {
-  color: var(--text-faint);
-}
-
 .import-dropzone {
   display: flex;
   align-items: center;

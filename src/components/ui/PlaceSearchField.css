@@ -49,9 +49,6 @@
   font: inherit;
   font-size: 13px;
 }
-.psf-input::placeholder {
-  color: var(--text-faint);
-}
 
 /* Spinning ring while a scope is in flight (the location window's ring). */
 .psf-spinner {

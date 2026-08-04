@@ -336,9 +336,6 @@
   font: inherit;
   font-size: 13px;
 }
-.eclipse-hud-search::placeholder {
-  color: var(--text-faint);
-}
 .eclipse-hud-search:focus {
   outline: none;
   border-color: rgba(var(--accent-brand-rgb), 0.5);
