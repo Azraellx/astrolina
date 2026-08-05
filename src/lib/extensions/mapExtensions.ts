@@ -185,6 +185,17 @@ export interface MapExtensionContext {
   overlayLocalSpace: FeatureCollection | null;
   /** Fly the map camera to a point. */
   flyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Mark where a camera jump was aimed, so arriving somewhere is attributable.
+   *  Pair it with {@link flyTo} when the destination is a PRECISE point: the
+   *  basemap draws and names a settlement on its own, but a street address or a
+   *  bare coordinate arrives on tiles that name nothing, and the camera does not
+   *  even centre exactly on the target. `label` names the spot on a chip that
+   *  fades once read; the mark itself stays until the next jump, until the view
+   *  is sent back, or until this is called with null.
+   *
+   *  Don't use it for an area (a region or country centroid): a dot in a field
+   *  captioned with the country's name asserts a precision that isn't there. */
+  markArrival: (point: { lat: number; lng: number } | null, label?: string) => void;
   /** Set the timeline to an instant (epoch milliseconds). */
   setTargetDate: (epochMs: number) => void;
   /** Switch the active time-overlay mode (e.g. start a transits overlay). */

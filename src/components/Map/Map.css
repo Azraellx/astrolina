@@ -1027,6 +1027,155 @@
   }
 }
 
+/* ── Camera-arrival mark (DOM marker) ────────────────────────────────────────
+   Marks where a jump aimed at a precise point landed. A crosshair, NOT a pin: the
+   teardrop already means "the chart is cast here", and two pin-shaped things
+   saying different things is worse than the confusion this fixes.
+   Click-through by default; Map.tsx adds `.is-clickable` only while the host has a
+   meaning for a click (the app adopts the arrival as the placed pin), and the ping
+   and the label chip stay click-through in every state.
+   The mark is drawn as soon as the jump starts — it flies into frame with the
+   camera — and only the ping and the chip wait for `.is-arrived`. */
+.arrival-mark {
+  /* No `position` here ON PURPOSE — MapLibre's own .maplibregl-marker rule already
+     makes the element absolute, and this stylesheet loads AFTER maplibre's, so a
+     `position: relative` at the same specificity would silently win and drop the
+     marker back into the canvas container's normal flow. That container is static,
+     so an in-flow marker's static origin is pushed down by every in-flow marker
+     appended before it, and MapLibre's inline transform then offsets from the wrong
+     origin: with the placed pin up (38×52), the crosshair lands ~52px below the
+     address it is supposed to be marking. Follow .sky-follow-stamp below, not
+     .map-pin / .eclipse-marker above — those two carry the same latent bug. */
+  /* 44px box around a 28px crosshair: the mark is deliberately small (it must not
+     hide the spot it points at) but a tap target that small is a miss on a phone,
+     and the skirt costs nothing — it paints nothing and MapLibre centres whatever
+     size this box is on the point. */
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  /* Passive by default, so a host that wires no click handler keeps the original
+     guarantee: the mark never swallows a click meant for the map beneath it. */
+  pointer-events: none;
+  /* --cool, deliberately: not --accent (the placed pin's gold) and not --success
+     (the natal pin's green). Where you flew is a different kind of fact from where
+     the chart is cast, and the two must never be read for each other. It also does
+     not follow --map-accent, since the pin state has nothing to say about it. */
+  color: var(--cool);
+}
+/* Set by Map.tsx only when the host passes onArrivalClick — clicking then adopts
+   the arrival as the placed pin. */
+.arrival-mark.is-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.arrival-mark.is-clickable:hover .arrival-mark-icon {
+  scale: 1.12;
+}
+.arrival-mark.is-clickable:active .arrival-mark-icon {
+  scale: 1.04;
+}
+.arrival-mark-icon {
+  /* Positioned, so it paints ABOVE the (also positioned) ping ring that precedes
+     it — leave it static and the expanding ring washes over the crosshair. */
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  transition: scale var(--dur-quick) var(--ease-settle);
+  /* The basemap under an address is pale tiles or dark satellite by turns, so the
+     mark carries its own separation rather than trusting either. */
+  filter: drop-shadow(0 1px 2.5px rgba(0, 0, 0, 0.55));
+}
+/* The arrival ping — the pin's finite pulse, one ring shorter (three, to its four:
+   an arrival is a smaller event than placing a pin). `map-pin-settle` then eases the
+   last one into a resting ring that equals the base style, so nothing jumps when the
+   animation ends — which is also why the reduced-motion rule can simply drop it. */
+.arrival-mark-ping {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  /* Decorative, like the pin's glow: `map-pin-pulse` scales it to 2.1× (≈46px), so
+     without this the clickable area would balloon past the 44px box for the ping's
+     first few seconds and then quietly shrink back. */
+  pointer-events: none;
+}
+.arrival-mark.is-arrived .arrival-mark-ping {
+  animation:
+    map-pin-pulse 1.8s ease-out 3,
+    map-pin-settle 0.6s ease 5.4s;
+  opacity: 0.5;
+}
+/* The name of the place you landed on, above the crosshair. It fades out once
+   read: the top-nav readout speaks for the pin and the cursor, never for a camera
+   jump, so this chip is the only thing that names the arrival — but a text label
+   parked at street zoom sits on top of the lines you came to look at. */
+.arrival-mark-label {
+  position: absolute;
+  left: 50%;
+  /* Measured off the 44px box, which stands 8px proud of the crosshair on each
+     side — so this keeps the chip the same 3px clear of the ICON it names. */
+  bottom: calc(100% - 5px);
+  transform: translateX(-50%);
+  /* Never clickable, even while the root is: the chip ends its animation at
+     opacity 0 but is still laid out, and an invisible 210px-wide strip eating map
+     clicks is exactly the failure the passive default above exists to prevent. */
+  pointer-events: none;
+  max-width: 210px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--cool-rgb), 0.45);
+  background: rgba(11, 13, 22, 0.82);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+}
+.arrival-mark.is-arrived .arrival-mark-label {
+  animation: arrival-mark-chip 4.4s ease both;
+}
+@keyframes arrival-mark-chip {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 3px);
+  }
+  9%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The ping's resting ring is its base style, so dropping the animation lands on
+     the same steady state. The chip has no steady state — its whole job is to go
+     away — so it is held visible instead of animated out. */
+  .arrival-mark.is-arrived .arrival-mark-ping {
+    animation: none;
+  }
+  .arrival-mark.is-arrived .arrival-mark-label {
+    animation: none;
+    opacity: 1;
+  }
+  /* The hover/press scale still applies — it is the affordance that says the mark
+     can be clicked — it just arrives without the tween. */
+  .arrival-mark-icon {
+    transition: none;
+  }
+}
+
 /* Sky Times "follow the cursor" beacon — a clock stamp with a pulsing aura marking
    where the sky clock is being read (live: rides the cursor; held: parked on a clicked
    spot). A luminous "sky" cyan that reads on every basemap; the translucent-dark disc

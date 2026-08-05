@@ -9,7 +9,7 @@ import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
-import { PlaceSearchField } from '../ui/PlaceSearchField';
+import { LIBRARY_SCOPE_ID, PlaceSearchField } from '../ui/PlaceSearchField';
 import { useHoverTip } from '../ui/useHoverTip';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
 // (.location-* classes), so the window frosts/recolors with the theme for free.
@@ -23,8 +23,16 @@ const POS_KEY = 'astro:teleport-pos:v1';
 const POINT_ZOOM = 11.5;
 
 interface TeleportHudProps {
-  /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
-  onFlyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate).
+   *  `mark` asks for the destination to be marked — passed only for a precise
+   *  point, where the basemap won't name the arrival on its own. */
+  onFlyTo: (
+    lat: number,
+    lng: number,
+    zoom?: number,
+    duration?: number,
+    mark?: { label?: string } | null,
+  ) => void;
   /** Toggle between the current spot and the one before the last jump. */
   onGoBack: () => void;
   /** Whether (and which way) the back/forward toggle points: 'none' hides it. */
@@ -156,7 +164,25 @@ export function TeleportHud({
         kindLabel={(kind) => t(`teleportHud.kind.${kind}`)}
         // A hit with no framing hint is a bare point rather than a region, so
         // arrive close in instead of holding the current world zoom.
-        onPick={(hit) => onFlyTo(hit.lat, hit.lng, hit.zoom ?? POINT_ZOOM)}
+        //
+        // Marking is decided from the hit's OWN shape, never from which scope it
+        // came out of — a scope id baked in here would name one build's provider
+        // and quietly do nothing for anyone else's. A hit the atlas could class as
+        // a settlement or a territory needs no mark: the basemap has drawn and
+        // named the town, and a dot on a country's centroid would claim a precision
+        // it doesn't have. What's left — an unclassed point — is exactly the case
+        // that lands you on anonymous tiles. The library scope is excluded because
+        // its rows already draw their own marker on the map.
+        onPick={(hit, pickedScope) => {
+          const precise = hit.kind === undefined && pickedScope !== LIBRARY_SCOPE_ID;
+          onFlyTo(
+            hit.lat,
+            hit.lng,
+            hit.zoom ?? POINT_ZOOM,
+            undefined,
+            precise ? { label: hit.label } : null,
+          );
+        }}
         onCancel={onClose}
         placeholder={t('teleportHud.placeholder')}
         ariaLabel={t('teleportHud.searchAria')}

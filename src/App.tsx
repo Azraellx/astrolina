@@ -1295,7 +1295,7 @@ export default function App() {
       if (e.key === ' ' || e.code === 'Space') {
         if (isInteractive(el)) return;
         if (pinned) {
-          mapRef.current?.flyTo(pinned.lat, pinned.lng);
+          jumpTo(pinned.lat, pinned.lng);
           e.preventDefault();
         } else if (current) {
           const target = {
@@ -1304,7 +1304,7 @@ export default function App() {
           };
           setPinned(target);
           setHover(null);
-          mapRef.current?.flyTo(target.lat, target.lng);
+          jumpTo(target.lat, target.lng);
           e.preventDefault();
         }
         return;
@@ -1336,6 +1336,8 @@ export default function App() {
         if (target) {
           setLocationReturn((d) => (d === 'forward' ? 'back' : 'forward'));
           setTeleportTarget(target);
+          // Going back means the arrival is no longer where you are.
+          setArrivalMark(null);
           e.preventDefault();
         }
         return;
@@ -2234,17 +2236,57 @@ export default function App() {
   // Fly-to helper shared by Teleport, Local Space's "fly to origin", and the transparent-export
   // toggle: hop the camera and stash the jump so it can be undone (Teleport window / Backspace).
   // `duration` (ms) is optional — omitted keeps MapLibre's default flyTo curve.
+  // Where the last jump was aimed, so an arrival at a bare coordinate is
+  // attributable. Session state, never persisted: this is a fact about the view
+  // right now, not a preference. `stamp` is a counter rather than a dedupe key —
+  // arriving at the same point twice has to ping twice.
+  const [arrivalMark, setArrivalMark] = useState<{
+    lat: number;
+    lng: number;
+    label?: string;
+    stamp: number;
+  } | null>(null);
+  const arrivalStampRef = useRef(0);
+  const markArrival = useCallback((point: { lat: number; lng: number } | null, label?: string) => {
+    if (!point) {
+      setArrivalMark(null);
+      return;
+    }
+    arrivalStampRef.current += 1;
+    setArrivalMark({ ...point, label, stamp: arrivalStampRef.current });
+  }, []);
+  // Every PROGRAMMATIC jump retires the arrival mark. The mark answers "where did
+  // I just land"; once the camera has been sent somewhere else it is answering
+  // about a landing that is no longer the current one. A jump that wants its own
+  // mark sets one immediately after — the two writes batch, so the mark wins.
+  //
+  // Deliberately NOT wired to the user's own pan or zoom: panning off the address
+  // and coming back is exactly when the mark is still wanted. Route camera jumps
+  // through here rather than reaching for mapRef directly, or the mark outlives
+  // the arrival it describes. (The map's own label-click jumps can't come through
+  // here — they start inside Map — so they report themselves via `onCameraJump`.)
+  const clearArrivalMark = useCallback(() => setArrivalMark(null), []);
+  const jumpTo = useCallback((lat: number, lng: number, zoom?: number) => {
+    clearArrivalMark();
+    mapRef.current?.flyTo(lat, lng, zoom);
+  }, [clearArrivalMark]);
   const teleportToPoint = (
     lat: number,
     lng: number,
     zoom?: number,
     duration?: number,
+    // Opt IN to marking the destination. Defaulting to "no mark" keeps the callers
+    // that aren't searches — Local Space's fly-to-origin (which already draws its
+    // compass rose there) and the transparent-export re-frame (a framing gesture,
+    // not a destination) — exactly as they were.
+    mark?: { label?: string } | null,
   ) => {
     const target = mapRef.current?.teleportTo(lat, lng, zoom, duration);
     if (target) {
       setLocationReturn('back');
       setTeleportTarget(target);
     }
+    markArrival(mark ? { lat, lng } : null, mark?.label);
   };
   // Turning on the transparent export flies to the local-space origin at the compass's full-size
   // zoom, so the always-on circle mask has the horizon rose to frame. Same teleport hop as Local
@@ -2781,8 +2823,8 @@ export default function App() {
   const flyToEclipse = useCallback((row: EclipseCatalogRow) => {
     const lat = row.body === 'solar' ? row.geLat : row.zenLat;
     const lng = row.body === 'solar' ? row.geLng : row.zenLng;
-    mapRef.current?.flyTo(lat, lng, 2.75);
-  }, []);
+    jumpTo(lat, lng, 2.75);
+  }, [jumpTo]);
   const onEclipseSelect = useCallback(
     (id: string, source: 'menu' | 'step') => {
       setEclipseId(id);
@@ -3987,9 +4029,22 @@ export default function App() {
     },
     [surfaceMissions, recordMission],
   );
+  // Clicking the arrival crosshair adopts it as the placed pin. The mark has done
+  // its job at that point — it answered "where did I land", and the answer is now
+  // carried by the pin — so it retires rather than sitting under the teardrop
+  // saying the same thing in a second colour. Straight through onPlacePin, so an
+  // adopted arrival is a pin like any other: same coordinate hygiene, same hover
+  // readout, same onboarding tick.
+  const onArrivalClick = useCallback(
+    (lat: number, lng: number) => {
+      onPlacePin(lat, lng);
+      setArrivalMark(null);
+    },
+    [onPlacePin],
+  );
   const onRecenterPin = useCallback(() => {
-    if (pinned) mapRef.current?.flyTo(pinned.lat, pinned.lng);
-  }, [pinned]);
+    if (pinned) jumpTo(pinned.lat, pinned.lng);
+  }, [pinned, jumpTo]);
   const onPinNatal = useCallback(() => {
     if (!current) return;
     setPinned({
@@ -4530,10 +4585,13 @@ export default function App() {
   );
 
   // A stable fly-to that reads the map ref lazily, so the snapshot below holds no
-  // ref access during render (the HUD calls it from its own event handlers).
+  // ref access during render (the HUD calls it from its own event handlers). Goes
+  // through jumpTo, so an extension jumping the camera retires any arrival mark
+  // the same way the app's own jumps do — one that then wants its own mark calls
+  // markArrival right after.
   const extFlyTo = useCallback(
-    (lat: number, lng: number, zoom?: number) => mapRef.current?.flyTo(lat, lng, zoom),
-    [],
+    (lat: number, lng: number, zoom?: number) => jumpTo(lat, lng, zoom),
+    [jumpTo],
   );
 
   // Generate the COMPLETE, UNFILTERED line set — ignores visiblePlanets / visibleLineTypes AND the
@@ -4903,6 +4961,7 @@ export default function App() {
       starLines: effStarLines,
       overlayLocalSpace: effOverlayLocalSpace,
       flyTo: extFlyTo,
+      markArrival,
       setTargetDate,
       // The exclusion-aware setter (not the raw setOverlayMode) so an extension HUD that
       // drives a core overlay mode also clears any active extension overlay — preserving
@@ -4990,6 +5049,18 @@ export default function App() {
         setCreditsOpen={setCreditsOpen}
         skyFollow={skyBeaconMode}
         skyFollowHeld={skyHeld}
+        arrivalMark={arrivalMark}
+        onCameraJump={clearArrivalMark}
+        // Withdrawn while another gesture owns map clicks — the same conditions the
+        // map's own click handler bails on. Withdrawing the HANDLER rather than
+        // guarding inside it is what makes the deferral honest: the mark drops its
+        // affordance and its pointer events together, so the click lands on the map
+        // and reaches the tool that was waiting for it (a spotlight picking a centre
+        // confirms off the map-click broadcast) instead of being eaten by a crosshair
+        // that still looked live. Measure and Slide own the surface outright.
+        onArrivalClick={
+          mapTool === 'measure' || sliding || spotlightAiming ? undefined : onArrivalClick
+        }
         // Registered-overlay hides apply only while the Capture tool is armed —
         // closing it always restores every overlay, whatever the persisted set says.
         hiddenOverlayIds={
@@ -5367,6 +5438,8 @@ export default function App() {
             if (target) {
               setLocationReturn((d) => (d === 'forward' ? 'back' : 'forward'));
               setTeleportTarget(target);
+              // Going back means the arrival is no longer where you are.
+              setArrivalMark(null);
             }
           }}
           backState={locationReturn}

@@ -119,15 +119,21 @@ const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'yea
 //
 // The icons are deliberately parallel — each shows a body meeting a set of axes,
 // and the only difference is WHOSE axes: the frame the chart carries from birth, or
-// the real horizon under the sky right now. Sized to sit beside an 11px word.
+// the real horizon under the sky right now.
+//
+// 12px, one under the return buttons' 13px glyph: this is a drawn box whose ink runs
+// to its own edge, where a font glyph carries side bearings, so matching the NUMBER
+// would not match the mass. Keep each drawing's ink centred in the viewBox — flexbox
+// centres the BOX, so ink that sits high in it renders a mark that looks off-centre
+// beside its word and unmatched beside its sibling segment.
 const FRAME_OPTIONS: { value: TransitFrame; icon: ReactNode }[] = [
   {
     value: 'relative-to-natal',
     // Natal angular cross (meridian + horizon) with a body arriving on the ring.
     icon: (
       <svg
-        width="13"
-        height="13"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -146,8 +152,8 @@ const FRAME_OPTIONS: { value: TransitFrame; icon: ReactNode }[] = [
     // A body angular over the REAL horizon — the sky of the moment, no carried frame.
     icon: (
       <svg
-        width="13"
-        height="13"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -155,9 +161,12 @@ const FRAME_OPTIONS: { value: TransitFrame; icon: ReactNode }[] = [
         strokeLinecap="round"
         aria-hidden="true"
       >
-        <circle cx="12" cy="12.4" r="4.1" />
-        <path d="M12 3.2v2M18.9 6.1l-1.4 1.4M5.1 6.1l1.4 1.4M2.6 12.4h2M19.4 12.4h2" />
-        <path d="M2 18.8h20" />
+        {/* Every y is one unit below the original drawing: the ink ran 2.25–19.75,
+            centred on 11 rather than 12, so the whole mark rode high in a box the
+            flexbox was centring correctly. Now 3.25–20.75, centred on 12. */}
+        <circle cx="12" cy="13.4" r="4.1" />
+        <path d="M12 4.2v2M18.9 7.1l-1.4 1.4M5.1 7.1l1.4 1.4M2.6 13.4h2M19.4 13.4h2" />
+        <path d="M2 19.8h20" />
       </svg>
     ),
   },

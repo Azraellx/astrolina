@@ -530,9 +530,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  /* Gap and padding match .thud-return-btn deliberately: the two groups sit on the
+     same row, so any difference reads as one of them being wrong rather than as a
+     distinction. (Padding is 8 to its 10 because the icon here is a drawn box whose
+     ink runs to its own edge, where the return button's is a font glyph carrying its
+     own side bearings — equal padding leaves these looking loose.) */
+  gap: 4px;
   height: 28px;
-  padding: 0 9px;
+  padding: 0 8px;
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
   background: rgba(var(--tint), 0.04);
@@ -543,6 +548,16 @@
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
+/* No vertical nudge on either the icon or the word — flexbox centring is what makes
+   these sit flush with the return buttons, and BOTH corrections were tried against
+   the real render and rejected:
+   - raising the word (position/top) lifted the whole button, because the label is the
+     one element both button kinds render identically and so is the datum the row
+     reads as level against;
+   - raising the icon left the drawings sitting visibly high.
+   Whatever residual difference remains between a drawn box and a font glyph, the
+   return buttons carry it too — which is exactly why matching them means leaving it
+   alone. Fix the geometry INSIDE the viewBox if a mark looks off, never its box. */
 .thud-frame-btn svg {
   flex-shrink: 0;
 }
@@ -748,10 +763,18 @@
    proportional face), so scrubbing month to month moved the bar too. Sized in em
    with headroom over the widest abbreviation rather than in ch (a letter is not a
    digit advance) and centred, so the box holds whatever the locale's formatter
-   returns. Left-margin-free: the space before it lives in the JSX. */
+   returns. Left-margin-free: the space before it lives in the JSX.
+   The box is CENTRED, so every em of width past the abbreviation becomes half an em
+   of gap on each side — which is why this reads as loose spacing around the month
+   rather than as a wide month. In system-ui the widest English abbreviation ("May",
+   with two of the three widest letters) measures ≈1.9em while a narrow one ("Jul",
+   J-u-l) measures ≈1.2em, so the slack is what varies, not the word.
+   FLOOR IS ≈1.95em. Below that the widest month overflows the box, the box grows to
+   fit it, and the shrink-to-fit bar starts moving under the cursor again on a
+   month-to-month scrub — the whole reason this rule exists. */
 .thud-date-mon {
   display: inline-block;
-  min-width: 2.9em;
+  min-width: 2.25em;
   text-align: center;
 }
 

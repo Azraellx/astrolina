@@ -796,6 +796,19 @@ const LUNAR_MARKER_SVG =
   '<circle cx="18" cy="18" r="8.6" fill="currentColor"/>' +
   '<circle class="eclipse-marker-umbra" cx="22.7" cy="15.3" r="8"/>' +
   '</svg>';
+/** The camera-arrival mark: a surveyor's crosshair, deliberately NOT a teardrop —
+ *  a second pin-shaped thing on the map would compete with the reading point for
+ *  the same meaning. Ticks that stop short of the centre leave the exact spot
+ *  unobscured, which is the whole question it answers. */
+const ARRIVAL_MARK_SVG =
+  '<svg class="arrival-mark-icon" viewBox="0 0 28 28" aria-hidden="true">' +
+  '<g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+  '<line x1="14" y1="1.6" x2="14" y2="6.2"/><line x1="14" y1="21.8" x2="14" y2="26.4"/>' +
+  '<line x1="1.6" y1="14" x2="6.2" y2="14"/><line x1="21.8" y1="14" x2="26.4" y2="14"/>' +
+  '</g>' +
+  '<circle cx="14" cy="14" r="6.4" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+  '<circle cx="14" cy="14" r="2.4" fill="currentColor"/>' +
+  '</svg>';
 
 interface ZenithHit {
   id: string;
@@ -1410,6 +1423,27 @@ interface MapProps {
   skyFollow?: 'off' | 'live' | 'held';
   /** The parked spot for `skyFollow === 'held'` (the clicked read point). */
   skyFollowHeld?: { lat: number; lng: number } | null;
+  /** Where the last camera jump was AIMED, marked so the arrival is attributable.
+   *  A jump to a settlement needs nothing — the basemap has already drawn and named
+   *  it — but a jump to a bare coordinate lands on tiles that name nothing, and the
+   *  destination isn't even at screen centre (see `flyWithSidebarOffset`). Hosts
+   *  pass this only for precise points; `label` names the spot on a chip that fades
+   *  once you've read it, leaving the mark itself. `stamp` is a monotonic counter,
+   *  not a dedupe key: re-picking the SAME point must replay the ping, so the
+   *  markup is rebuilt whenever it changes. Null clears the mark. */
+  arrivalMark?: { lat: number; lng: number; label?: string; stamp: number } | null;
+  /** Fired when the MAP ITSELF sends the camera somewhere (a paran or local-space
+   *  label click) rather than the app driving it. The host uses it to retire
+   *  view state tied to where the camera last was — {@link arrivalMark} above.
+   *  Not fired for the user's own pan or zoom, which move the view without
+   *  choosing a new subject for it. */
+  onCameraJump?: () => void;
+  /** The viewer clicked the arrival mark itself. Map only reports the gesture and
+   *  the point it happened on — what a click MEANS is the host's to decide (the
+   *  app adopts it as the placed pin). The coordinate is read live off the marker
+   *  rather than closed over, so a render the listener never saw can't send a
+   *  stale one. Omit it and the mark stays a passive crosshair. */
+  onArrivalClick?: (lat: number, lng: number) => void;
 }
 
 interface MapData {
@@ -2784,6 +2818,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   setCreditsOpen,
   skyFollow = 'off',
   skyFollowHeld,
+  arrivalMark,
+  onCameraJump,
+  onArrivalClick,
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3333,9 +3370,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // from the GL zenith coins). `eclipseMarkerKey` tracks the rendered point so the
   // effect knows when to replay the finite ping.
   const eclipseMarkerRef = useRef<maplibregl.Marker | null>(null);
+  // The camera-arrival mark (a DOM marker like the two above, so MapLibre keeps it
+  // pinned to its coordinate without a React render per frame).
+  const arrivalMarkerRef = useRef<maplibregl.Marker | null>(null);
   const skyStampRef = useRef<maplibregl.Marker | null>(null);
   const eclipseMarkerKeyRef = useRef<string | null>(null);
   const onRightClickRef = useRef(onRightClick);
+  // Its marker's click listener binds once at creation, so the live prop comes
+  // through a ref (refreshed in the post-commit effect below, beside onRightClick).
+  const onArrivalClickRef = useRef(onArrivalClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
@@ -3406,6 +3449,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // handlers always read the latest props.
   useEffect(() => {
     onRightClickRef.current = onRightClick;
+    onArrivalClickRef.current = onArrivalClick;
     dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
@@ -3451,11 +3495,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [originNorthDeg, setOriginNorthDeg] = useState(0);
   const badgeRafRef = useRef(0);
 
+  // Through a ref so the jump helper below keeps its empty dep list — its identity
+  // feeds the badge handlers, which must not churn every time the host re-renders.
+  const onCameraJumpRef = useRef(onCameraJump);
+  onCameraJumpRef.current = onCameraJump;
+
   // Ease the map to a lng/lat, keeping the target clear of the left-docked expanded
   // sidebar (same offset as the recenter button). Used by paran + LS label clicks.
   const flyToPoint = useCallback((lng: number, lat: number) => {
     const map = mapRef.current;
     if (!map) return;
+    // A label click chooses a new subject for the view, so the host can retire what
+    // it was showing about the old one.
+    onCameraJumpRef.current?.();
     // While sliding, the linework is RENDERED translated by −θ to stay screen-pinned,
     // so shift the geographic target by the same −θ to land on the point as drawn
     // (badge clicks pass natal-frame coordinates).
@@ -5839,6 +5891,93 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       (solar ? SOLAR_MARKER_SVG : LUNAR_MARKER_SVG);
     eclipseMarkerKeyRef.current = key;
   }, [eclipse]);
+
+  // Where the last camera jump landed. A jump to a named settlement needs nothing —
+  // the basemap has drawn and labelled it already — but a jump to a bare coordinate
+  // arrives on tiles that name nothing, at a point that isn't even screen centre
+  // (flyWithSidebarOffset nudges it), so the viewer is left to guess which rooftop
+  // was meant. The mark answers that and keeps answering it while they pan around;
+  // the label chip answers "which one was it" and then gets out of the way.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!arrivalMark) {
+      arrivalMarkerRef.current?.remove();
+      arrivalMarkerRef.current = null;
+      return;
+    }
+    const { lat, lng, label } = arrivalMark;
+    if (!arrivalMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'arrival-mark';
+      // Adopt the arrival. Once a host has given the click a meaning it is the
+      // mark's OWN gesture, so it is stopped here rather than offered on a
+      // claimable channel the way a pin click is: markers sit inside the canvas
+      // container, so anything left to bubble reaches MapLibre's own click
+      // handling and would open a line card under the crosshair the viewer just
+      // aimed at. The host withdraws the handler when it wants the click to pass
+      // through instead — and no handler means no stopPropagation, which is why
+      // this returns BEFORE stopping rather than after.
+      // Read the coordinate off the MARKER, never the effect's closure — this
+      // listener binds once and outlives every later arrival.
+      el.addEventListener('click', (e) => {
+        const at = arrivalMarkerRef.current?.getLngLat();
+        if (!at || !onArrivalClickRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onArrivalClickRef.current(at.lat, at.lng);
+      });
+      // Swallow double-clicks, as the pin marker does: one that reaches the map
+      // re-places the pin at the CURSOR, which is the aimed point only by luck. A
+      // host whose click RETIRES the mark (the app's does) never gets here — the
+      // element is gone before the second click lands — but one that leaves the
+      // mark up would, and the two-click misfire is silent when it happens.
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      arrivalMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([lng, lat])
+        .addTo(map);
+    } else {
+      arrivalMarkerRef.current.setLngLat([lng, lat]);
+    }
+    const el = arrivalMarkerRef.current.getElement();
+    // Rebuilding the markup is what replays the animations — toggling a class on
+    // the same nodes would not. `stamp` changes on every jump, so arriving at the
+    // SAME point twice pings twice.
+    el.classList.remove('is-arrived');
+    el.innerHTML =
+      '<span class="arrival-mark-ping" aria-hidden="true"></span>' + ARRIVAL_MARK_SVG;
+    if (label) {
+      const chip = document.createElement('span');
+      chip.className = 'arrival-mark-label';
+      // textContent, never innerHTML — this string comes from a search provider.
+      chip.textContent = label;
+      el.appendChild(chip);
+    }
+    // The ping fires on ARRIVAL, not on the pick: a flight's duration scales with
+    // its distance, so a long one would burn the pulse off-screen before anyone
+    // saw it. The mark itself flies in with the camera. A gesture that interrupts
+    // the flight ends it too, which is the behaviour we want — the viewer has
+    // arrived, however they got there.
+    const arrive = () => el.classList.add('is-arrived');
+    if (map.isMoving()) map.once('moveend', arrive);
+    else arrive();
+    return () => {
+      map.off('moveend', arrive);
+    };
+  }, [arrivalMark]);
+
+  // Claim pointer events only where a click actually MEANS something. Its own
+  // effect, not a line in the one above: a host withdraws the handler the moment
+  // another gesture owns map clicks, and rebuilding the markup to reflect that
+  // would replay the arrival ping every time a tool opened. While withdrawn the
+  // mark is inert AND click-through — no pointer cursor, no hover swell, and the
+  // click reaches the map, so the tool waiting on it is not quietly robbed.
+  useEffect(() => {
+    arrivalMarkerRef.current?.getElement().classList.toggle('is-clickable', !!onArrivalClick);
+  }, [onArrivalClick, arrivalMark]);
 
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
