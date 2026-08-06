@@ -187,6 +187,12 @@ export const expandedSidebar = {
   aspectsTip: 'Aspects',
   aspectsHint: 'Angular relationships between two bodies by ecliptic longitude (conjunction, sextile, square, trine, opposition) that shape how their energies interact.',
 
+  // The fold under the positions readout that opens the OVERLAY's own table —
+  // the same columns for the overlay's bodies at the overlay's moment. Named for
+  // the overlay ("Transits positions") rather than labelled generically, since
+  // which second chart is being read is the whole question.
+  overlayPositions: '{overlay} positions',
+
   // Overlay-aspect section: the "(overlay)" planet suffix, counted heading, tip, hint.
   overlaySuffix: '(overlay)',
   overlayAspectsCount: '{count, plural, one {Overlay aspects (#)} other {Overlay aspects (#)}}',

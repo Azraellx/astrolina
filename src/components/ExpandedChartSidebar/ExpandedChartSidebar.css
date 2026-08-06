@@ -1006,6 +1006,56 @@
   font-size: 8px;
 }
 
+/* The overlay's positions, folded under the chart's own. A plain text row rather
+   than a switch: it reveals a reading, it does not change one, and the caret is
+   the whole affordance. */
+.es-overlay-positions {
+  margin-top: 10px;
+  border-top: 1px solid rgba(var(--tint), 0.07);
+  padding-top: 8px;
+}
+.es-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+.es-disclosure:hover,
+.es-disclosure.open {
+  color: var(--text-strong);
+}
+/* Points right when shut, down when open — the state IS the rotation, so there is
+   no second glyph to keep in step with it. */
+.es-disclosure-caret {
+  display: inline-block;
+  font-size: 9px;
+  transition: rotate var(--dur-quick) var(--ease-settle);
+}
+.es-disclosure.open .es-disclosure-caret {
+  rotate: 90deg;
+}
+/* Room between the label and what it opened. On the button itself rather than on
+   the panel, and only in the open state: shut, the row is just a line of text and
+   the space below it would be a gap under nothing. */
+.es-disclosure.open {
+  margin-bottom: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .es-disclosure-caret {
+    transition: none;
+  }
+}
+
 /* The aspect lists' sort strip. They lay their rows out two-up (a pair of columns
    OF ROWS), so there is nowhere for a header row to sit above one set of columns
    — the columns are named as chips in a strip above the list instead. One line,

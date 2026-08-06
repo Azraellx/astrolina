@@ -273,6 +273,10 @@ The two **axial** systems divide the celestial equator into equal 30° arcs from
 
 The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes, so a system like Equal (whose 4th and 10th float off the meridian) renders correctly. The mini wheel shows the angles only, to stay legible at small size.
 
+**What sits at due left** is the **1st house cusp**, not the Ascendant. Under every system whose first house begins at the rising degree the two are the same longitude and the ASC–DSC axis is a flat horizontal diameter, as it has always been. **Whole Sign** is the case where they part: its first house *is* a sign, beginning at 0° of the rising sign, so that boundary takes the left of the wheel and the Ascendant is drawn where it actually falls inside the first house — which is how whole-sign charts are drawn conventionally, and what makes the house divisions line up with the zodiac band rather than cutting across it. The ASC–DSC axis tilts accordingly there.
+
+The wheel identifies that case from the cusps themselves — whole sign is the only system whose twelve cusps all sit on sign boundaries — rather than from the house-system setting, so a wheel rendered from stored angles alone (an export, a report) reaches the same layout as the live one. Equal houses are 30° apart too, but offset from the Ascendant; they coincide with this test only when the Ascendant is itself exactly on a boundary, where both anchors are the same degree anyway. **Meridian** and **Morinus** keep the Ascendant anchor: their first cusp is an East Point, and their cusps are not uniform, so the test does not catch them.
+
 ### The Vertex axis (Vx / Avx)
 
 The **Vx** and **Avx** toggles sit with the line filters (below As/Ds) and behave exactly like the four classical angles, on the map and in the chart alike — both default off. The Vertex is the **prime vertical** (the great circle through due east, the zenith, and due west) taken on the **western** side; the **Anti-Vertex** is its eastern counterpart.

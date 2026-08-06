@@ -126,6 +126,11 @@ export const timeline = {
       'Reframes the map to the sky at that moment. In the natal frame the returning body is pinned to its birth degree, so its lines would never move from one return to the next.',
     solar: {
       name: 'Solar',
+      // What the chart WHEEL calls this overlay when the transit moment is one of
+      // these returns. The mode is still Transits — same overlay, same maths —
+      // but the chart in front of the reader at that instant is the return, and
+      // that is the name it is read under. The timeline bar keeps the mode name.
+      chartName: 'Solar Return',
       snap: 'Nearest solar return',
       snapAria: 'Snap to the nearest solar return',
       prev: 'Previous solar return',
@@ -135,6 +140,7 @@ export const timeline = {
     },
     lunar: {
       name: 'Lunar',
+      chartName: 'Lunar Return',
       snap: 'Nearest lunar return',
       snapAria: 'Snap to the nearest lunar return',
       prev: 'Previous lunar return',

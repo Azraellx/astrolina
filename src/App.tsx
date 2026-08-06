@@ -193,7 +193,7 @@ import {
   shiftEclipticPositionsPerBody,
   type ZodiacMode,
 } from './lib/astro/ayanamsa';
-import { findReturn, type ReturnBody } from './lib/astro/returns';
+import { activeReturnBody, findReturn, type ReturnBody } from './lib/astro/returns';
 import { buildLineCard, type LineCardDistance } from './lib/lineCard';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
@@ -2799,6 +2799,19 @@ export default function App() {
     };
   }, [overlayMode, resolvedEclipse, eclipsesMod, t]);
 
+  // Whether the transit moment IS one of the chart's returns. A solar or lunar
+  // return chart is transits cast for one particular instant — the same overlay,
+  // the same maths — but it is a named chart an astrologer reads as its own thing,
+  // so the wheel calls it by that name rather than "Transits". The timeline bar's
+  // Returns row highlights off the same predicate, so the two can't disagree.
+  const overlayReturn = useMemo<ReturnBody | null>(
+    () =>
+      overlayMode !== 'transits' || !current
+        ? null
+        : activeReturnBody(current, targetDate),
+    [overlayMode, current, targetDate],
+  );
+
   // Click-a-line interpretation card: a short reading for the clicked line
   // (planet on angle, aspect/midpoint/paran/local-space explainers). Off in
   // eclipses mode, whose clicks pin the local-circumstances card instead. The
@@ -3677,6 +3690,42 @@ export default function App() {
     }
     return getAngleCoords(a, gmst, eps, obs.lat, obs.lng);
   }, [promoteOverlay, overlayLayer, overlayAngles, angles, activePoint, current, gmst, eps]);
+
+  // The same equatorial + horizon coordinates for the OVERLAY's bodies and
+  // angles, at the overlay's own moment and the same observer, so the expanded
+  // sidebar can print the overlay's positions table under the chart's.
+  //
+  // Only while the overlay rides ALONGSIDE the chart: promoted, it stands in for
+  // the chart and advancedCoords/angleCoords above already report it — a second
+  // table would be the same figures twice.
+  //
+  // Fed the TROPICAL overlayEcliptic for the same reason the natal pair is fed
+  // tropical `ecliptic`: RA, declination and azimuth are frame-independent
+  // physics, and a sidereally shifted input would corrupt them. The longitude
+  // COLUMN comes from the display positions the sidebar already holds.
+  const overlayAdvancedCoords = useMemo(() => {
+    const obs = activePoint ?? current?.birthplace;
+    if (promoteOverlay || !overlayLayer || !obs) return null;
+    return getHorizontalCoords(
+      overlayEcliptic ?? [],
+      overlayLayer.gmst,
+      obliquity(overlayLayer.jd),
+      obs.lat,
+      obs.lng,
+    );
+  }, [promoteOverlay, overlayLayer, overlayEcliptic, activePoint, current]);
+
+  const overlayAngleCoords = useMemo(() => {
+    const obs = activePoint ?? current?.birthplace;
+    if (promoteOverlay || !overlayLayer || !overlayAngles || !obs) return null;
+    return getAngleCoords(
+      overlayAngles,
+      overlayLayer.gmst,
+      obliquity(overlayLayer.jd),
+      obs.lat,
+      obs.lng,
+    );
+  }, [promoteOverlay, overlayLayer, overlayAngles, activePoint, current]);
 
   // Sidereal display layer (Advanced ▸ Zodiac). The map's line geometry is
   // zodiac-independent and never shifts; every WHEEL/READOUT longitude does,
@@ -5646,6 +5695,7 @@ export default function App() {
             promoteOverlay || isCyclo ? null : (overlayLayer?.moment ?? null)
           }
           overlayKind={overlayLayer?.kind ?? null}
+          overlayReturn={promoteOverlay || isCyclo ? null : overlayReturn}
           // When promoted CCG leaves nothing to wheel, render the empty "NO CHART" state.
           noChart={noChart}
           // When the overlay is promoted (Natal hidden), the wheel's state title is
@@ -5665,6 +5715,8 @@ export default function App() {
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
           angleCoords={angleCoords}
+          overlayAdvancedCoords={overlayAdvancedCoords}
+          overlayAngleCoords={overlayAngleCoords}
           // Horizon-frame data for the sidebar's local-space dial + aspect
           // statuses: only while the Local Space view is on and the gated tier
           // is met, and never against a promoted overlay (the wheel would be

@@ -96,3 +96,25 @@ export function findReturn(
   }
   return jd === null ? null : { jd, ms: jdToEpochMs(jd) };
 }
+
+/** Whether `atMs` IS one of the chart's returns — which luminary's, or null.
+ *
+ *  A minute of slack, because the callers are asking a presentational question
+ *  ("is this the return chart?") rather than an astronomical one: a snap lands on
+ *  the instant exactly, and a date typed or scrubbed to the same minute should
+ *  read the same way. Solar wins a tie, being the rarer coincidence.
+ *
+ *  Shared so the timeline bar's snap highlight and the sidebar's overlay title
+ *  cannot disagree about whether you are looking at a return. */
+export function activeReturnBody(
+  chart: StoredChart,
+  atMs: number,
+  tolMs = 60_000,
+): ReturnBody | null {
+  return (
+    (['solar', 'lunar'] as const).find((body) => {
+      const r = findReturn(chart, body, atMs, 0);
+      return r != null && Math.abs(r.ms - atMs) <= tolMs;
+    }) ?? null
+  );
+}

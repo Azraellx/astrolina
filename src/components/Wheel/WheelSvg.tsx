@@ -20,7 +20,7 @@ import {
 import { useT } from '../../i18n';
 import type { EnumLabels, MsgKey, TFn } from '../../i18n';
 import { fmtDM, lonToZodiac } from '../../lib/astro/format';
-import { placeOnRing } from '../../lib/ringLayout';
+import { placeOnRing, type RingMark } from '../../lib/ringLayout';
 import {
   DEFAULT_ASPECT_ORBS,
   maxAspectOrb,
@@ -694,13 +694,47 @@ export function WheelSvg({
   const rAspectRing = detailed ? houseRingInner : rPlanets - 22;
   const rInner = detailed ? houseRingInner : rPlanets - 22;
 
-  // The wheel is rotated so the ASC sits at due-left, which makes the ASC–DSC
-  // axis a true horizontal diameter. The MC is NOT at due-top, though (that
+  // Whole-sign houses: the first house is a SIGN, beginning at 0° of the rising
+  // sign, and the Ascendant floats somewhere inside it. That is the whole content
+  // of the system, so the boundary is what the wheel is built on — every other
+  // program draws it that way, and anchoring on the Ascendant instead left the
+  // house divisions lying at an angle nobody else shows.
+  //
+  // Detected from the cusps rather than passed in: whole sign is the one system
+  // whose twelve cusps ALL sit on sign boundaries. Equal houses are 30° apart too
+  // but offset from the Ascendant, and only coincide with this when the Ascendant
+  // is itself exactly on a boundary — where the two anchors are the same degree
+  // anyway. (Meridian and Morinus start their first house on an East Point rather
+  // than the Ascendant, and are deliberately NOT included: their cusps are not
+  // uniform, and this is not the change to decide their convention in.)
+  const SIGN_RAD = Math.PI / 6;
+  const onSignBoundary = (lon: number) => {
+    const m = ((lon % SIGN_RAD) + SIGN_RAD) % SIGN_RAD;
+    return Math.min(m, SIGN_RAD - m) < 1e-6; // ~0.2 arcsec
+  };
+  const wholeSign =
+    angles.cusps.length === 12 && angles.cusps.every(onSignBoundary);
+
+  // The longitude that sits at due-left — the wheel's rotation reference, and the
+  // ONE value every draw site below rotates against.
+  const frameAnchor = wholeSign ? angles.cusps[0] : angles.asc;
+
+  // The wheel is rotated so the first house cusp sits at due-left. Under every
+  // system but whole sign that IS the ASC, making the ASC–DSC axis a true
+  // horizontal diameter; under whole sign the Ascendant falls inside the first
+  // house and the axis tilts, so it is drawn from its real longitude (below) the
+  // way the MC–IC axis always has been. The MC is NOT at due-top either (that
   // only holds when asc − mc = 90°), so the detailed MC–IC axis is drawn at the
   // MC's real longitude via svgPos — keeping the cusp-10/cusp-4 separators
   // aligned with the house numbers.
-  const mcOuter = svgPos(angles.mc, angles.asc, rOuter, cx, cy);
-  const icOuter = svgPos(angles.ic, angles.asc, rOuter, cx, cy);
+  const mcOuter = svgPos(angles.mc, frameAnchor, rOuter, cx, cy);
+  const icOuter = svgPos(angles.ic, frameAnchor, rOuter, cx, cy);
+  // Drawn from the Ascendant's real longitude rather than as a flat diameter: it
+  // IS a flat diameter whenever the anchor is the Ascendant (every system but
+  // whole sign), and under whole sign it has to tilt to where the Ascendant
+  // actually falls inside the first house.
+  const ascOuter = svgPos(angles.asc, frameAnchor, rOuter, cx, cy);
+  const dscOuter = svgPos(angles.dsc, frameAnchor, rOuter, cx, cy);
 
   const aspects = detailed ? computeAspects(planets, aspectOrbs) : [];
   // Normalizes the per-aspect opacity fade: an exact aspect is brightest, one
@@ -805,6 +839,26 @@ export function WheelSvg({
   // still overlapping its neighbour, since the codes are wider than the discs the
   // figure was cut for. Both halves of that are fixed by giving each mark its own
   // width and letting the axes stand still.)
+  //
+  // ONE converter for both rings, and the only place either of them may call the
+  // layout module: placeOnRing answers in DEGREES round the ring, every draw site
+  // below reads an absolute longitude in RADIANS, and a ring laid out in one unit
+  // and drawn in the other puts its glyphs nowhere near the ticks that mark their
+  // true degree. (Which is what the overlay ring did the day it was moved onto
+  // placeOnRing: the natal path converted, the overlay path did not.)
+  const placeLongitudes = (
+    fixed: RingMark[],
+    movable: RingMark[],
+    minSep: number,
+    radius: number,
+  ): Map<string, number> => {
+    const out = new Map<string, number>();
+    for (const [name, deg] of placeOnRing(fixed, movable, minSep, radius)) {
+      out.set(name, angles.asc + (deg * Math.PI) / 180);
+    }
+    return out;
+  };
+
   const displayLon = new Map<string, number>();
   if (detailed) {
     // A floor every pair clears on top of what their own widths ask for. The
@@ -826,7 +880,7 @@ export function WheelSvg({
           Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rReadout - readoutFan, 1))),
         )
       : 0;
-    const placed = placeOnRing(
+    const placed = placeLongitudes(
       angleMarks.map((a) => ({
         name: a.key as string,
         off: off(a.lon),
@@ -840,9 +894,7 @@ export function WheelSvg({
       sep,
       Math.max(rPlanets, 1),
     );
-    for (const [name, deg] of placed) {
-      displayLon.set(name, angles.asc + (deg * Math.PI) / 180);
-    }
+    for (const [name, lon] of placed) displayLon.set(name, lon);
   }
   const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
   const angleLonFor = (a: { key: string; lon: number }) =>
@@ -860,7 +912,7 @@ export function WheelSvg({
     ? Math.max(rOverlayReadout - OV_FAN, 1)
     : rOverlay;
   const overlayDisplay = hasOverlay
-    ? placeOnRing(
+    ? placeLongitudes(
         overlayAngleMarks.map((a) => ({
           name: a.key as string,
           off: off(a.lon),
@@ -871,10 +923,16 @@ export function WheelSvg({
           off: off(p.lon),
           half: discHalf,
         })),
-        Math.min(
-          20,
-          Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(overlaySpreadRadius, 1))),
-        ),
+        // Conditional for the same reason the natal ring's is: the floor exists to
+        // keep the degree·sign·minute trio clear where it fans inward, and on a
+        // wheel too small to draw that trio it is arc reserved for a ring that
+        // isn't there.
+        showOverlayReadouts
+          ? Math.min(
+              20,
+              Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(overlaySpreadRadius, 1))),
+            )
+          : 0,
         Math.max(rOverlay, 1),
       )
     : null;
@@ -970,8 +1028,8 @@ export function WheelSvg({
         !planetsOnly &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
-          const inner = svgPos(lon, angles.asc, rInner, cx, cy);
-          const outer = svgPos(lon, angles.asc, rZodiacInner, cx, cy);
+          const inner = svgPos(lon, frameAnchor, rInner, cx, cy);
+          const outer = svgPos(lon, frameAnchor, rZodiacInner, cx, cy);
           return (
             <line
               key={`spoke-${idx}`}
@@ -987,8 +1045,8 @@ export function WheelSvg({
       {detailed &&
         Array.from({ length: 12 }).map((_, i) => {
           const lon = (i * 30 * Math.PI) / 180;
-          const inner = svgPos(lon, angles.asc, rZodiacInner, cx, cy);
-          const outer = svgPos(lon, angles.asc, rOuter, cx, cy);
+          const inner = svgPos(lon, frameAnchor, rZodiacInner, cx, cy);
+          const outer = svgPos(lon, frameAnchor, rOuter, cx, cy);
           return (
             <line
               key={`div-${i}`}
@@ -1011,10 +1069,10 @@ export function WheelSvg({
           <path
             key={`sign-hit-${i}`}
             className="sign-hit"
-            d={signSectorPath(i, rZodiacInner, rOuter, angles.asc, cx, cy)}
+            d={signSectorPath(i, rZodiacInner, rOuter, frameAnchor, cx, cy)}
             onMouseEnter={() => {
               const lon = ((i * 30 + 15) * Math.PI) / 180;
-              const pos = svgPos(lon, angles.asc, (rZodiacInner + rOuter) / 2, cx, cy);
+              const pos = svgPos(lon, frameAnchor, (rZodiacInner + rOuter) / 2, cx, cy);
               setTip({
                 x: pos.x,
                 y: pos.y,
@@ -1033,7 +1091,7 @@ export function WheelSvg({
         Array.from({ length: 12 }).map((_, i) => {
           const lon = ((i * 30 + 15) * Math.PI) / 180;
           const rMid = (rZodiacInner + rOuter) / 2;
-          const pos = svgPos(lon, angles.asc, rMid, cx, cy);
+          const pos = svgPos(lon, frameAnchor, rMid, cx, cy);
           return (
             <ZodiacGlyph
               key={`sign-${i}`}
@@ -1054,8 +1112,8 @@ export function WheelSvg({
         Array.from({ length: 360 }).map((_, d) => {
           const lon = (d * Math.PI) / 180;
           const len = d % 10 === 0 ? 8 : d % 5 === 0 ? 5 : 2.5;
-          const o = svgPos(lon, angles.asc, rZodiacInner, cx, cy);
-          const i = svgPos(lon, angles.asc, rZodiacInner - len, cx, cy);
+          const o = svgPos(lon, frameAnchor, rZodiacInner, cx, cy);
+          const i = svgPos(lon, frameAnchor, rZodiacInner - len, cx, cy);
           const cls =
             d % 10 === 0
               ? 'deg-tick deg-tick-10'
@@ -1075,7 +1133,7 @@ export function WheelSvg({
         !planetsOnly &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
-          const pos = svgPos(lon, angles.asc, rOuter + 12, cx, cy);
+          const pos = svgPos(lon, frameAnchor, rOuter + 12, cx, cy);
           const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
           const inSign = lonDeg % 30;
           const deg = Math.floor(inSign);
@@ -1105,12 +1163,12 @@ export function WheelSvg({
           if (!Number.isFinite(lon) || !Number.isFinite(next)) return null;
           const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
           const mid = lon + span / 2;
-          const pos = svgPos(mid, angles.asc, (houseRingInner + houseRingOuter) / 2, cx, cy);
+          const pos = svgPos(mid, frameAnchor, (houseRingInner + houseRingOuter) / 2, cx, cy);
           return (
             <path
               key={`house-hit-${idx}`}
               className="house-hit"
-              d={annularSectorPath(lon, next, houseRingInner, houseRingOuter, angles.asc, cx, cy)}
+              d={annularSectorPath(lon, next, houseRingInner, houseRingOuter, frameAnchor, cx, cy)}
               onMouseEnter={() =>
                 setTip({
                   x: pos.x,
@@ -1142,8 +1200,8 @@ export function WheelSvg({
             (a) => angleDiff(a) < 0.0087, // ~0.5°
           );
           if (onAxis) return null;
-          const inner = svgPos(lon, angles.asc, houseRingInner, cx, cy);
-          const outer = svgPos(lon, angles.asc, houseRingOuter, cx, cy);
+          const inner = svgPos(lon, frameAnchor, houseRingInner, cx, cy);
+          const outer = svgPos(lon, frameAnchor, houseRingOuter, cx, cy);
           return (
             <line
               key={`cusp-${idx}`}
@@ -1164,7 +1222,7 @@ export function WheelSvg({
           // dedicated house ring band.
           const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
           const mid = lon + span / 2;
-          const pos = svgPos(mid, angles.asc, (houseRingInner + houseRingOuter) / 2, cx, cy);
+          const pos = svgPos(mid, frameAnchor, (houseRingInner + houseRingOuter) / 2, cx, cy);
           return (
             <text
               key={`house-${idx}`}
@@ -1182,10 +1240,10 @@ export function WheelSvg({
           planets-only wheel draws neither. */}
       {!planetsOnly && (
         <line
-          x1={cx - rOuter}
-          y1={cy}
-          x2={cx + rOuter}
-          y2={cy}
+          x1={ascOuter.x}
+          y1={ascOuter.y}
+          x2={dscOuter.x}
+          y2={dscOuter.y}
           className="angle asc-dsc"
         />
       )}
@@ -1221,13 +1279,13 @@ export function WheelSvg({
           if (a.category === 'conjunction') {
             let mid = (a.lonA + a.lonB) / 2;
             if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
-            const pos = svgPos(mid, angles.asc, rAspectRing, cx, cy);
+            const pos = svgPos(mid, frameAnchor, rAspectRing, cx, cy);
             return (
               <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} fill={a.color} opacity={opacity} />
             );
           }
-          const posA = svgPos(a.lonA, angles.asc, rAspectRing, cx, cy);
-          const posB = svgPos(a.lonB, angles.asc, rAspectRing, cx, cy);
+          const posA = svgPos(a.lonA, frameAnchor, rAspectRing, cx, cy);
+          const posB = svgPos(a.lonB, frameAnchor, rAspectRing, cx, cy);
           return (
             <line
               key={`asp-${i}`}
@@ -1246,10 +1304,10 @@ export function WheelSvg({
           glyph, plus a tick on the zodiac band marking the exact longitude. */}
       {detailed &&
         planets.map((p) => {
-          const truePos = svgPos(p.lon, angles.asc, rZodiacInner, cx, cy);
-          const glyphPos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
-          const tickPos = svgPos(p.lon, angles.asc, rZodiacInner - 2, cx, cy);
-          const tipPos = svgPos(p.lon, angles.asc, rZodiacInner - 8, cx, cy);
+          const truePos = svgPos(p.lon, frameAnchor, rZodiacInner, cx, cy);
+          const glyphPos = svgPos(lonFor(p), frameAnchor, rPlanets, cx, cy);
+          const tickPos = svgPos(p.lon, frameAnchor, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(p.lon, frameAnchor, rZodiacInner - 8, cx, cy);
           return (
             <g key={`mark-${p.name}`}>
               <line
@@ -1279,10 +1337,10 @@ export function WheelSvg({
           the axis colour so currentColor resolves the CSS var on the strokes. */}
       {showAngleMarks &&
         angleMarks.map((a) => {
-          const truePos = svgPos(a.lon, angles.asc, rZodiacInner, cx, cy);
-          const glyphPos = svgPos(angleLonFor(a), angles.asc, rPlanets, cx, cy);
-          const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
-          const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 8, cx, cy);
+          const truePos = svgPos(a.lon, frameAnchor, rZodiacInner, cx, cy);
+          const glyphPos = svgPos(angleLonFor(a), frameAnchor, rPlanets, cx, cy);
+          const tickPos = svgPos(a.lon, frameAnchor, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(a.lon, frameAnchor, rZodiacInner - 8, cx, cy);
           return (
             <g key={`angle-mark-${a.key}`} style={{ color: a.color }}>
               <line
@@ -1307,7 +1365,7 @@ export function WheelSvg({
         })}
 
       {planets.map((p) => {
-        const pos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
+        const pos = svgPos(lonFor(p), frameAnchor, rPlanets, cx, cy);
         // The non-detailed minimap draws larger planet discs/glyphs (they're the
         // only thing on that simplified wheel, so there's room).
         const r = detailed ? 11 : 13;
@@ -1371,7 +1429,7 @@ export function WheelSvg({
           a transparent hit target. */}
       {showAngleMarks &&
         angleMarks.map((a) => {
-          const pos = svgPos(angleLonFor(a), angles.asc, rPlanets, cx, cy);
+          const pos = svgPos(angleLonFor(a), frameAnchor, rPlanets, cx, cy);
           // The hover lift + named tag are the interactive wheel's; a static
           // wheel keeps the mark and drops the handlers with the hit target.
           const markProps = interactive
@@ -1416,10 +1474,10 @@ export function WheelSvg({
       {hasOverlay && (
         <g className="wheel-overlay-ring" opacity={0.92}>
           {overlayPlanets!.map((p) => {
-            const truePos = svgPos(p.lon, angles.asc, rZodiacInner, cx, cy);
-            const glyphPos = svgPos(overlayLonFor(p), angles.asc, rOverlay, cx, cy);
-            const tickPos = svgPos(p.lon, angles.asc, rZodiacInner - 2, cx, cy);
-            const tipPos = svgPos(p.lon, angles.asc, rZodiacInner - 7, cx, cy);
+            const truePos = svgPos(p.lon, frameAnchor, rZodiacInner, cx, cy);
+            const glyphPos = svgPos(overlayLonFor(p), frameAnchor, rOverlay, cx, cy);
+            const tickPos = svgPos(p.lon, frameAnchor, rZodiacInner - 2, cx, cy);
+            const tipPos = svgPos(p.lon, frameAnchor, rZodiacInner - 7, cx, cy);
             return (
               <g key={`ov-${p.name}`}>
                 <line
@@ -1514,13 +1572,13 @@ export function WheelSvg({
           marks, so the bi-wheel shows the overlay's angles too. */}
       {hasOverlay &&
         overlayAngleMarks.map((a) => {
-          const truePos = svgPos(a.lon, angles.asc, rZodiacInner, cx, cy);
+          const truePos = svgPos(a.lon, frameAnchor, rZodiacInner, cx, cy);
           // The code holds its own axis; the settled position only differs from it
           // when two overlay codes were close enough to have to clear each other,
           // and the dashed connector below points back to the true degree either way.
-          const glyphPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlay, cx, cy);
-          const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
-          const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 7, cx, cy);
+          const glyphPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlay, cx, cy);
+          const tickPos = svgPos(a.lon, frameAnchor, rZodiacInner - 2, cx, cy);
+          const tipPos = svgPos(a.lon, frameAnchor, rZodiacInner - 7, cx, cy);
           const markProps = interactive
             ? {
                 onMouseEnter: () =>
@@ -1589,9 +1647,9 @@ export function WheelSvg({
       {showOverlayReadouts &&
         showAngleMarks &&
         overlayAngleMarks.map((a) => {
-          const degPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout + OV_FAN, cx, cy);
-          const signPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout, cx, cy);
-          const minPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout - OV_FAN, cx, cy);
+          const degPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout + OV_FAN, cx, cy);
+          const signPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout, cx, cy);
+          const minPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout - OV_FAN, cx, cy);
           const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;
@@ -1628,9 +1686,9 @@ export function WheelSvg({
           positions read exactly. Retrograde → red, stationary → yellow. */}
       {showOverlayReadouts &&
         overlayPlanets!.map((p) => {
-          const degPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout + OV_FAN, cx, cy);
-          const signPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout, cx, cy);
-          const minPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout - OV_FAN, cx, cy);
+          const degPos = svgPos(overlayLonFor(p), frameAnchor, rOverlayReadout + OV_FAN, cx, cy);
+          const signPos = svgPos(overlayLonFor(p), frameAnchor, rOverlayReadout, cx, cy);
+          const minPos = svgPos(overlayLonFor(p), frameAnchor, rOverlayReadout - OV_FAN, cx, cy);
           const sc = advanced ? statusColor(p) : null;
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
@@ -1674,9 +1732,9 @@ export function WheelSvg({
           stationary → yellow. */}
       {showReadouts &&
         planets.map((p) => {
-          const degPos = svgPos(lonFor(p), angles.asc, rReadout + readoutFan, cx, cy);
-          const signPos = svgPos(lonFor(p), angles.asc, rReadout, cx, cy);
-          const minPos = svgPos(lonFor(p), angles.asc, rReadout - readoutFan, cx, cy);
+          const degPos = svgPos(lonFor(p), frameAnchor, rReadout + readoutFan, cx, cy);
+          const signPos = svgPos(lonFor(p), frameAnchor, rReadout, cx, cy);
+          const minPos = svgPos(lonFor(p), frameAnchor, rReadout - readoutFan, cx, cy);
           const sc = advanced ? statusColor(p) : null;
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
@@ -1720,9 +1778,9 @@ export function WheelSvg({
       {showReadouts &&
         showAngleMarks &&
         angleMarks.map((a) => {
-          const degPos = svgPos(angleLonFor(a), angles.asc, rReadout + readoutFan, cx, cy);
-          const signPos = svgPos(angleLonFor(a), angles.asc, rReadout, cx, cy);
-          const minPos = svgPos(angleLonFor(a), angles.asc, rReadout - readoutFan, cx, cy);
+          const degPos = svgPos(angleLonFor(a), frameAnchor, rReadout + readoutFan, cx, cy);
+          const signPos = svgPos(angleLonFor(a), frameAnchor, rReadout, cx, cy);
+          const minPos = svgPos(angleLonFor(a), frameAnchor, rReadout - readoutFan, cx, cy);
           const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;

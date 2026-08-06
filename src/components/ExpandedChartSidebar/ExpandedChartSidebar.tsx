@@ -181,6 +181,10 @@ interface ExpandedChartSidebarProps {
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
   overlayKind?: string | null;
+  /** Set when the transit moment IS one of the chart's returns ('solar' | 'lunar').
+   *  A return chart is transits cast for one instant — same overlay, same maths —
+   *  but it is a named chart in its own right, so the wheel calls it one. */
+  overlayReturn?: 'solar' | 'lunar' | null;
   /** When the Natal toggle is off and a time overlay is promoted to stand in for the
    *  chart, the overlay's own name ("Sec. Progressed"/"Transits"/"CCG"/…). It REPLACES
    *  the chart-state title above the wheel — the title's live hover/pin colour still
@@ -203,6 +207,15 @@ interface ExpandedChartSidebarProps {
   advancedCoords: Map<PlanetName, HorizontalCoords>;
   /** RA + declination + azimuth/altitude for the angles (ecliptic points). */
   angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> | null;
+  /** The same two, for the OVERLAY's bodies and angles at the overlay's own moment
+   *  — what the overlay's own positions table is printed from. Null when nothing
+   *  rides alongside the chart, and null while the overlay is PROMOTED (the pair
+   *  above is already reporting it, so a second table would repeat itself). */
+  overlayAdvancedCoords?: Map<PlanetName, HorizontalCoords> | null;
+  overlayAngleCoords?: Record<
+    'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex',
+    AngleCoords
+  > | null;
   /** Per-body azimuth/altitude (degrees) at the local-space origin — non-null only
    *  while the Local Space view is on and the caller's tier gate passes. Drives the
    *  aspect list's frame statuses (the local-space pair uses the two props below). */
@@ -816,6 +829,7 @@ export function ExpandedChartSidebar({
   overlayLabel,
   overlayMoment,
   overlayKind,
+  overlayReturn,
   promotedLabel,
   noChart = false,
   planetsOnly = false,
@@ -823,6 +837,8 @@ export function ExpandedChartSidebar({
   visibleLineTypes,
   advancedCoords,
   angleCoords,
+  overlayAdvancedCoords,
+  overlayAngleCoords,
   localSpaceCoords,
   natalLocalSpaceCoords,
   relocatedLocalSpaceCoords,
@@ -916,6 +932,13 @@ export function ExpandedChartSidebar({
   // positions table by declination doesn't reorder the aspects underneath it.
   // `null` = the list's own order, which every one of them opens in.
   const [posSort, setPosSort] = useState<SortState<PosSortKey>>(null);
+  // The overlay's own table sorts separately from the chart's above it: reading
+  // the transits by declination should not reorder the birth chart beside them.
+  const [ovPosSort, setOvPosSort] = useState<SortState<PosSortKey>>(null);
+  // Shut until asked for. The overlay's figures are a second reading of a second
+  // set of bodies — wanted often enough to be one press away, not often enough to
+  // push the aspects and the balance a screen further down by default.
+  const [ovPosOpen, setOvPosOpen] = useState(false);
   const [aspectSort, setAspectSort] = useState<SortState<AspectSortKey>>(null);
   const [crossSort, setCrossSort] = useState<SortState<AspectSortKey>>(null);
 
@@ -998,6 +1021,19 @@ export function ExpandedChartSidebar({
       }))
     : [];
 
+  // The overlay's angles as the same row shape, gated by the same line-type
+  // toggles — so the overlay's table lists Mc/Ic/As/Ds for ITS frame exactly as
+  // the chart's does for the natal one.
+  const shownOverlayAngleRows = overlayAngles
+    ? visibleAngleSpecs(visibleLineTypes).map((s) => ({
+        code: s.code,
+        key: s.key,
+        name: t(s.nameKey),
+        lon: overlayAngles[s.key],
+        color: s.color,
+      }))
+    : [];
+
   // The out-of-bounds limit IS the Sun's maximum declination — the true
   // obliquity at the chart's moment (~23°26'; drifts ~47" per century). Epoch
   // differences to any overlay rows are arcseconds and don't matter here.
@@ -1026,10 +1062,17 @@ export function ExpandedChartSidebar({
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
   // Cyclo is special-cased to "CCG": its name "Cyclo·carto·graphy" contains middots,
   // so the generic split would truncate it to "Cyclo".
+  // A solar or lunar return is transits at one particular instant, so the overlay
+  // still calls itself "Transits" everywhere it is a MODE. Here it is naming a
+  // CHART, and the chart an astrologer has in front of them at that moment is the
+  // return — so the wheel says so. Only the wheel's caption: the timeline bar,
+  // which is showing the mode and the date being scrubbed, is unchanged.
   const overlayName = overlayLabel
-    ? overlayKind === 'cyclo'
-      ? 'CCG'
-      : overlayLabel.split('·')[0].trim()
+    ? overlayReturn
+      ? t(`timeline.returns.${overlayReturn}.chartName` as 'timeline.returns.solar.chartName')
+      : overlayKind === 'cyclo'
+        ? 'CCG'
+        : overlayLabel.split('·')[0].trim()
     : null;
   // Synastry's second chart is a PERSON, not a moment: it has no instant at all
   // (timeline.ts leaves `moment` null for it), so the slot every other overlay
@@ -1165,6 +1208,280 @@ export function ExpandedChartSidebar({
   // the labels live. (Desktop can't go below MIN_WIDTH, so it's never compact — labels always
   // show there. The old DEFAULT_WIDTH threshold was unreachable on a phone, so it stuck compact.)
   const compact = isTouchLayout() && width < MIN_WIDTH;
+
+  // The positions readout, for ONE chart: the compact two-column list, or the
+  // Advanced table of coordinate columns. Written once and called twice — the
+  // active chart, and the overlay riding with it — because the two are the same
+  // reading of two different sets of bodies, and a second copy would be a second
+  // place for a column to drift.
+  //
+  // Everything it needs is an argument: the bodies, their horizon coordinates,
+  // the angle rows and theirs, and the sort state (each table sorts on its own,
+  // so ordering the overlay by declination does not disturb the chart above it).
+  const positionsBlock = (
+    bodies: EclipticPosition[],
+    coords: Map<PlanetName, HorizontalCoords>,
+    angleRows: typeof shownAngleRows,
+    aCoords: Record<string, AngleCoords> | null | undefined,
+    sort: SortState<PosSortKey>,
+    onSortCol: (key: PosSortKey) => void,
+  ): ReactNode => {
+    // Simple view: planets then angles in one row-by-row two-column grid
+    // (even index → left, odd → right), so the angles flow straight on from
+    // the last planet.
+    const planetItems = bodies.map((p) => ({ kind: 'planet' as const, p }));
+    const angleItems = angleRows.map((a) => ({ kind: 'angle' as const, ...a }));
+    const rows = [...planetItems, ...angleItems];
+    const leftCol = rows.filter((_, i) => i % 2 === 0);
+    const rightCol = rows.filter((_, i) => i % 2 === 1);
+    const renderRow = (row: (typeof rows)[number]) =>
+      row.kind === 'planet' ? (
+        <li key={`p-${row.p.name}`}>
+          <div className="es-row-main">
+            <PlanetTipGlyph planet={row.p.name} size={13} />
+            <span className="es-name">{labels.planet(row.p.name)}</span>
+            <span className="es-lon">
+              <Longitude lon={row.p.lon} advanced={advanced} />
+            </span>
+          </div>
+        </li>
+      ) : (
+        <li key={`a-${row.code}`}>
+          <div className="es-row-main">
+            <AngleTipGlyph code={row.code} name={row.name} color={row.color} />
+            <span className="es-name">{row.name}</span>
+            <span className="es-lon">
+              <Longitude lon={row.lon} advanced={advanced} />
+            </span>
+          </div>
+        </li>
+      );
+    // Two width-driven cutoffs keep the table fitting (it fills the panel, so
+    // it must never need to scroll). Past the first, the Longitude column shows
+    // the full sign name (e.g. "21°38' ♉ Taurus") instead of the compact glyph
+    // form; past the second, the Azimuth + Altitude columns also fit. Below a
+    // cutoff the heavier content drops back so a narrow panel still fits.
+    const advFullSign = width >= 530;
+    // Past 640px the Azimuth + Altitude columns fit; OR force them on phones — portrait pins
+    // the panel full-width, landscape caps it at 70% of a short viewport, so NEITHER can reach
+    // the cutoff by dragging — where the table scrolls sideways instead (usePhone also covers
+    // fixedFullWidth's portrait case).
+    const advExtraCols = width >= 640 || phone;
+    // Advanced view: one planet per row across labelled coordinate columns.
+    // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
+    // from coords (computed for the relocated observer).
+    const renderAdvRow = (p: EclipticPosition) => {
+      const hc = coords.get(p.name);
+      const decCls = p.dec !== undefined ? decClass(p.dec, oobLimitDeg) : '';
+      const dec = p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—';
+      return (
+        <tr key={p.name}>
+          <td className="es-adv-point">
+            <PlanetTipGlyph planet={p.name} size={13} />
+            <span className="es-name">{labels.planet(p.name)}</span>
+            {p.stationary ? (
+              <TipGlyph
+                className="es-station"
+                title={
+                  <span className="es-tip-title">
+                    <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
+                  </span>
+                }
+                hint={t('expandedSidebar.stationaryHint')}
+              >
+                S
+              </TipGlyph>
+            ) : p.retrograde ? (
+              <TipGlyph
+                className="es-rx"
+                title={
+                  <span className="es-tip-title">
+                    <span style={{ color: 'var(--danger)' }}>℞</span> {t('expandedSidebar.retrograde')}
+                  </span>
+                }
+                hint={t('expandedSidebar.retrogradeHint')}
+              >
+                ℞
+              </TipGlyph>
+            ) : null}
+          </td>
+          <td className="es-adv-num es-adv-lon">
+            {advFullSign ? (
+              <Longitude lon={p.lon} advanced={false} />
+            ) : (
+              <SignLon lon={p.lon} />
+            )}
+          </td>
+          <td className="es-adv-num">
+            {p.speed !== undefined ? fmtDM(p.speed, true) : '—'}
+          </td>
+          <td className="es-adv-num">
+            {p.lat !== undefined ? fmtDM(p.lat * RAD2DEG, true) : '—'}
+          </td>
+          <td className="es-adv-num">{hc ? fmtDM(hc.ra * RAD2DEG) : '—'}</td>
+          <td className={`es-adv-num ${decCls}`}>
+            {decCls ? (
+              <TipGlyph
+                title={
+                  <span className="es-tip-title">
+                    <span className="es-dec-oob es-dec-dot" />
+                    {t('expandedSidebar.outOfBounds', {
+                      dir: (p.dec ?? 0) > 0 ? t('expandedSidebar.north') : t('expandedSidebar.south'),
+                    })}
+                  </span>
+                }
+                hint={t('expandedSidebar.outOfBoundsHint')}
+              >
+                {dec}
+              </TipGlyph>
+            ) : (
+              dec
+            )}
+          </td>
+          {advExtraCols && (
+            <>
+              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">
+                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+              </td>
+            </>
+          )}
+        </tr>
+      );
+    };
+    // Advanced mode lists the angles in the same table, right after the
+    // planets. Each angle is an ecliptic point, so latitude is 0 and RA / Decl
+    // / Azimuth / Altitude come from aCoords (same observer as the planets);
+    // Speed has no meaning for an angle, so that cell stays an em-dash.
+    const renderAdvAngleRow = (a: (typeof angleRows)[number]) => {
+      const ac = aCoords?.[a.key];
+      return (
+        <tr key={`a-${a.code}`}>
+          <td className="es-adv-point">
+            <AngleTipGlyph code={a.code} name={a.name} color={a.color} />
+            <span className="es-name">{a.name}</span>
+          </td>
+          <td className="es-adv-num es-adv-lon">
+            {advFullSign ? (
+              <Longitude lon={a.lon} advanced={false} />
+            ) : (
+              <SignLon lon={a.lon} />
+            )}
+          </td>
+          <td className="es-adv-num">—</td>
+          <td className="es-adv-num">{ac ? fmtDM(ac.lat * RAD2DEG, true) : '—'}</td>
+          <td className="es-adv-num">{ac ? fmtDM(ac.ra * RAD2DEG) : '—'}</td>
+          <td className="es-adv-num">{ac ? fmtDM(ac.dec * RAD2DEG, true) : '—'}</td>
+          {advExtraCols && (
+            <>
+              <td className="es-adv-num">{ac ? fmtDM(ac.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">{ac ? fmtDM(ac.alt * RAD2DEG, true) : '—'}</td>
+            </>
+          )}
+        </tr>
+      );
+    };
+    // Planets and angles sort as ONE list. An angle is an ecliptic point with
+    // a real longitude, latitude, right ascension and declination, so leaving
+    // the four of them out of a declination sort would answer the question
+    // wrongly rather than narrowly. Only Speed has nothing to say for an
+    // angle — and the rule below sinks every empty cell to the bottom, in
+    // both directions, so an em-dash never heads a sorted column.
+    type PosRow =
+      | { kind: 'planet'; p: EclipticPosition }
+      | { kind: 'angle'; a: (typeof angleRows)[number] };
+    const posRows: PosRow[] = [
+      ...bodies.map((p): PosRow => ({ kind: 'planet', p })),
+      ...angleRows.map((a): PosRow => ({ kind: 'angle', a })),
+    ];
+    // Every value in the units the CELL is computed from, so a column sorts by
+    // exactly what it prints: longitudes and speed in degrees, the rest in
+    // radians (both sides of each column share one unit, which is all a
+    // comparison needs).
+    const posVal = (r: PosRow, key: PosSortKey): number | null => {
+      if (r.kind === 'angle') {
+        const ac = aCoords?.[r.a.key];
+        switch (key) {
+          // The angles keep their canonical Mc, Ic, As, Ds, Vx, Avx order and
+          // sit after every body, so a Point sort ascending reproduces the
+          // table's own natural order exactly.
+          case 'point': return 1000 + angleRows.indexOf(r.a);
+          case 'lon': return r.a.lon;
+          case 'speed': return null;
+          case 'lat': return ac?.lat ?? null;
+          case 'ra': return ac?.ra ?? null;
+          case 'dec': return ac?.dec ?? null;
+          case 'az': return ac?.az ?? null;
+          case 'alt': return ac?.alt ?? null;
+        }
+      }
+      const p = r.p;
+      const hc = coords.get(p.name);
+      switch (key) {
+        case 'point': return planetRank(p.name);
+        case 'lon': return p.lon;
+        case 'speed': return p.speed ?? null;
+        case 'lat': return p.lat ?? null;
+        case 'ra': return hc?.ra ?? null;
+        case 'dec': return p.dec ?? null;
+        case 'az': return hc?.az ?? null;
+        case 'alt': return hc?.alt ?? null;
+      }
+    };
+    const sortedPosRows = sort
+      ? [...posRows].sort((x, y) => {
+          const a = posVal(x, sort.key);
+          const b = posVal(y, sort.key);
+          if (a == null || b == null) {
+            return a == null ? (b == null ? 0 : 1) : -1;
+          }
+          // Ties fall back to the natural order, so equal values still read
+          // luminaries-first rather than in whatever order sort() leaves them.
+          return sort.dir * (a - b) || posRows.indexOf(x) - posRows.indexOf(y);
+        })
+      : posRows;
+    return (
+      <>
+        <div className="es-planets-col">
+          {advanced ? (
+            <div className="es-adv-scroll">
+              <table className="es-adv-table">
+                <thead>
+                  <tr>
+                    <AdvHeader cellClass="es-adv-point" sortKey="point" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.point')} hint={t('expandedSidebar.table.pointHint')} />
+                    <AdvHeader sortKey="lon" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.longitude')} hint={t('expandedSidebar.table.longitudeHint')} />
+                    <AdvHeader sortKey="speed" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.speed')} hint={t('expandedSidebar.table.speedHint')} />
+                    <AdvHeader sortKey="lat" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.latitude')} hint={t('expandedSidebar.table.latitudeHint')} />
+                    <AdvHeader sortKey="ra" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.raLabel')} title={t('expandedSidebar.table.raTitle')} hint={t('expandedSidebar.table.raHint')} />
+                    <AdvHeader sortKey="dec" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
+                    {advExtraCols && (
+                      <>
+                        <AdvHeader sortKey="az" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
+                        <AdvHeader sortKey="alt" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedPosRows.map((r) =>
+                    r.kind === 'planet' ? renderAdvRow(r.p) : renderAdvAngleRow(r.a),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="es-planet-cols">
+              <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
+              {rightCol.length > 0 && (
+                <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
+              )}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  };
+
 
   // The place line and its coordinates — the panel header's, and the overlay
   // wheel's below it, because they are the same fact about both: the angles on
@@ -1716,264 +2033,49 @@ export function ExpandedChartSidebar({
       {/* Planet + angle readout below the wheel — no heading. Planets come
           first, then the visible angles (Mc, Ic, As, Ds) tack onto the end of
           the same list. The angles also render in the wheel above. */}
-      {frame && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (() => {
-        // Simple view: planets then angles in one row-by-row two-column grid
-        // (even index → left, odd → right), so the angles flow straight on from
-        // the last planet.
-        const planetItems = shownPlanets.map((p) => ({ kind: 'planet' as const, p }));
-        const angleItems = shownAngleRows.map((a) => ({ kind: 'angle' as const, ...a }));
-        const rows = [...planetItems, ...angleItems];
-        const leftCol = rows.filter((_, i) => i % 2 === 0);
-        const rightCol = rows.filter((_, i) => i % 2 === 1);
-        const renderRow = (row: (typeof rows)[number]) =>
-          row.kind === 'planet' ? (
-            <li key={`p-${row.p.name}`}>
-              <div className="es-row-main">
-                <PlanetTipGlyph planet={row.p.name} size={13} />
-                <span className="es-name">{labels.planet(row.p.name)}</span>
-                <span className="es-lon">
-                  <Longitude lon={row.p.lon} advanced={advanced} />
+      {frame && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (
+        <section className="es-section es-section-details">
+          {positionsBlock(
+            shownPlanets,
+            advancedCoords,
+            shownAngleRows,
+            angleCoords,
+            posSort,
+            (key) => setPosSort((s) => nextSort(s, key)),
+          )}
+          {/* The overlay's own positions, one press away. Same block, same
+              columns, same sort gesture — the overlay is a chart too, and the
+              question "where is transiting Mars, exactly" had no answer in this
+              panel before. Folded shut by default so it costs nothing until it
+              is wanted. */}
+          {overlayAdvancedCoords && shownOverlay && shownOverlay.length > 0 && (
+            <div className="es-overlay-positions">
+              <button
+                type="button"
+                className={`es-disclosure${ovPosOpen ? ' open' : ''}`}
+                aria-expanded={ovPosOpen}
+                onClick={() => setOvPosOpen((v) => !v)}
+              >
+                <span className="es-disclosure-caret" aria-hidden="true">
+                  ▸
                 </span>
-              </div>
-            </li>
-          ) : (
-            <li key={`a-${row.code}`}>
-              <div className="es-row-main">
-                <AngleTipGlyph code={row.code} name={row.name} color={row.color} />
-                <span className="es-name">{row.name}</span>
-                <span className="es-lon">
-                  <Longitude lon={row.lon} advanced={advanced} />
-                </span>
-              </div>
-            </li>
-          );
-        // Two width-driven cutoffs keep the table fitting (it fills the panel, so
-        // it must never need to scroll). Past the first, the Longitude column shows
-        // the full sign name (e.g. "21°38' ♉ Taurus") instead of the compact glyph
-        // form; past the second, the Azimuth + Altitude columns also fit. Below a
-        // cutoff the heavier content drops back so a narrow panel still fits.
-        const advFullSign = width >= 530;
-        // Past 640px the Azimuth + Altitude columns fit; OR force them on phones — portrait pins
-        // the panel full-width, landscape caps it at 70% of a short viewport, so NEITHER can reach
-        // the cutoff by dragging — where the table scrolls sideways instead (usePhone also covers
-        // fixedFullWidth's portrait case).
-        const advExtraCols = width >= 640 || phone;
-        // Advanced view: one planet per row across labelled coordinate columns.
-        // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
-        // from advancedCoords (computed for the relocated observer).
-        const renderAdvRow = (p: EclipticPosition) => {
-          const hc = advancedCoords.get(p.name);
-          const decCls = p.dec !== undefined ? decClass(p.dec, oobLimitDeg) : '';
-          const dec = p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—';
-          return (
-            <tr key={p.name}>
-              <td className="es-adv-point">
-                <PlanetTipGlyph planet={p.name} size={13} />
-                <span className="es-name">{labels.planet(p.name)}</span>
-                {p.stationary ? (
-                  <TipGlyph
-                    className="es-station"
-                    title={
-                      <span className="es-tip-title">
-                        <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
-                      </span>
-                    }
-                    hint={t('expandedSidebar.stationaryHint')}
-                  >
-                    S
-                  </TipGlyph>
-                ) : p.retrograde ? (
-                  <TipGlyph
-                    className="es-rx"
-                    title={
-                      <span className="es-tip-title">
-                        <span style={{ color: 'var(--danger)' }}>℞</span> {t('expandedSidebar.retrograde')}
-                      </span>
-                    }
-                    hint={t('expandedSidebar.retrogradeHint')}
-                  >
-                    ℞
-                  </TipGlyph>
-                ) : null}
-              </td>
-              <td className="es-adv-num es-adv-lon">
-                {advFullSign ? (
-                  <Longitude lon={p.lon} advanced={false} />
-                ) : (
-                  <SignLon lon={p.lon} />
+                {t('expandedSidebar.overlayPositions', {
+                  overlay: overlayName ?? t('expandedSidebar.overlaySuffix'),
+                })}
+              </button>
+              {ovPosOpen &&
+                positionsBlock(
+                  shownOverlay,
+                  overlayAdvancedCoords,
+                  shownOverlayAngleRows,
+                  overlayAngleCoords,
+                  ovPosSort,
+                  (key) => setOvPosSort((s) => nextSort(s, key)),
                 )}
-              </td>
-              <td className="es-adv-num">
-                {p.speed !== undefined ? fmtDM(p.speed, true) : '—'}
-              </td>
-              <td className="es-adv-num">
-                {p.lat !== undefined ? fmtDM(p.lat * RAD2DEG, true) : '—'}
-              </td>
-              <td className="es-adv-num">{hc ? fmtDM(hc.ra * RAD2DEG) : '—'}</td>
-              <td className={`es-adv-num ${decCls}`}>
-                {decCls ? (
-                  <TipGlyph
-                    title={
-                      <span className="es-tip-title">
-                        <span className="es-dec-oob es-dec-dot" />
-                        {t('expandedSidebar.outOfBounds', {
-                          dir: (p.dec ?? 0) > 0 ? t('expandedSidebar.north') : t('expandedSidebar.south'),
-                        })}
-                      </span>
-                    }
-                    hint={t('expandedSidebar.outOfBoundsHint')}
-                  >
-                    {dec}
-                  </TipGlyph>
-                ) : (
-                  dec
-                )}
-              </td>
-              {advExtraCols && (
-                <>
-                  <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
-                  <td className="es-adv-num">
-                    {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
-                  </td>
-                </>
-              )}
-            </tr>
-          );
-        };
-        // Advanced mode lists the angles in the same table, right after the
-        // planets. Each angle is an ecliptic point, so latitude is 0 and RA / Decl
-        // / Azimuth / Altitude come from angleCoords (same observer as the planets);
-        // Speed has no meaning for an angle, so that cell stays an em-dash.
-        const renderAdvAngleRow = (a: (typeof shownAngleRows)[number]) => {
-          const ac = angleCoords?.[a.key];
-          return (
-            <tr key={`a-${a.code}`}>
-              <td className="es-adv-point">
-                <AngleTipGlyph code={a.code} name={a.name} color={a.color} />
-                <span className="es-name">{a.name}</span>
-              </td>
-              <td className="es-adv-num es-adv-lon">
-                {advFullSign ? (
-                  <Longitude lon={a.lon} advanced={false} />
-                ) : (
-                  <SignLon lon={a.lon} />
-                )}
-              </td>
-              <td className="es-adv-num">—</td>
-              <td className="es-adv-num">{ac ? fmtDM(ac.lat * RAD2DEG, true) : '—'}</td>
-              <td className="es-adv-num">{ac ? fmtDM(ac.ra * RAD2DEG) : '—'}</td>
-              <td className="es-adv-num">{ac ? fmtDM(ac.dec * RAD2DEG, true) : '—'}</td>
-              {advExtraCols && (
-                <>
-                  <td className="es-adv-num">{ac ? fmtDM(ac.az * RAD2DEG) : '—'}</td>
-                  <td className="es-adv-num">{ac ? fmtDM(ac.alt * RAD2DEG, true) : '—'}</td>
-                </>
-              )}
-            </tr>
-          );
-        };
-        // Planets and angles sort as ONE list. An angle is an ecliptic point with
-        // a real longitude, latitude, right ascension and declination, so leaving
-        // the four of them out of a declination sort would answer the question
-        // wrongly rather than narrowly. Only Speed has nothing to say for an
-        // angle — and the rule below sinks every empty cell to the bottom, in
-        // both directions, so an em-dash never heads a sorted column.
-        type PosRow =
-          | { kind: 'planet'; p: EclipticPosition }
-          | { kind: 'angle'; a: (typeof shownAngleRows)[number] };
-        const posRows: PosRow[] = [
-          ...shownPlanets.map((p): PosRow => ({ kind: 'planet', p })),
-          ...shownAngleRows.map((a): PosRow => ({ kind: 'angle', a })),
-        ];
-        // Every value in the units the CELL is computed from, so a column sorts by
-        // exactly what it prints: longitudes and speed in degrees, the rest in
-        // radians (both sides of each column share one unit, which is all a
-        // comparison needs).
-        const posVal = (r: PosRow, key: PosSortKey): number | null => {
-          if (r.kind === 'angle') {
-            const ac = angleCoords?.[r.a.key];
-            switch (key) {
-              // The angles keep their canonical Mc, Ic, As, Ds, Vx, Avx order and
-              // sit after every body, so a Point sort ascending reproduces the
-              // table's own natural order exactly.
-              case 'point': return 1000 + shownAngleRows.indexOf(r.a);
-              case 'lon': return r.a.lon;
-              case 'speed': return null;
-              case 'lat': return ac?.lat ?? null;
-              case 'ra': return ac?.ra ?? null;
-              case 'dec': return ac?.dec ?? null;
-              case 'az': return ac?.az ?? null;
-              case 'alt': return ac?.alt ?? null;
-            }
-          }
-          const p = r.p;
-          const hc = advancedCoords.get(p.name);
-          switch (key) {
-            case 'point': return planetRank(p.name);
-            case 'lon': return p.lon;
-            case 'speed': return p.speed ?? null;
-            case 'lat': return p.lat ?? null;
-            case 'ra': return hc?.ra ?? null;
-            case 'dec': return p.dec ?? null;
-            case 'az': return hc?.az ?? null;
-            case 'alt': return hc?.alt ?? null;
-          }
-        };
-        const sortedPosRows = posSort
-          ? [...posRows].sort((x, y) => {
-              const a = posVal(x, posSort.key);
-              const b = posVal(y, posSort.key);
-              if (a == null || b == null) {
-                return a == null ? (b == null ? 0 : 1) : -1;
-              }
-              // Ties fall back to the natural order, so equal values still read
-              // luminaries-first rather than in whatever order sort() leaves them.
-              return posSort.dir * (a - b) || posRows.indexOf(x) - posRows.indexOf(y);
-            })
-          : posRows;
-        const onPosSort = (key: PosSortKey) =>
-          setPosSort((s) => nextSort(s, key));
-        return (
-          <section className="es-section es-section-details">
-            <div className="es-planets-col">
-              {advanced ? (
-                <div className="es-adv-scroll">
-                  <table className="es-adv-table">
-                    <thead>
-                      <tr>
-                        <AdvHeader cellClass="es-adv-point" sortKey="point" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.point')} hint={t('expandedSidebar.table.pointHint')} />
-                        <AdvHeader sortKey="lon" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.longitude')} hint={t('expandedSidebar.table.longitudeHint')} />
-                        <AdvHeader sortKey="speed" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.speed')} hint={t('expandedSidebar.table.speedHint')} />
-                        <AdvHeader sortKey="lat" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.latitude')} hint={t('expandedSidebar.table.latitudeHint')} />
-                        <AdvHeader sortKey="ra" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.raLabel')} title={t('expandedSidebar.table.raTitle')} hint={t('expandedSidebar.table.raHint')} />
-                        <AdvHeader sortKey="dec" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
-                        {advExtraCols && (
-                          <>
-                            <AdvHeader sortKey="az" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
-                            <AdvHeader sortKey="alt" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedPosRows.map((r) =>
-                        r.kind === 'planet' ? renderAdvRow(r.p) : renderAdvAngleRow(r.a),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="es-planet-cols">
-                  <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
-                  {rightCol.length > 0 && (
-                    <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
-                  )}
-                </div>
-              )}
             </div>
-          </section>
-        );
-      })()}
+          )}
+        </section>
+      )}
 
       {frame && shownPlanets.length > 0 && (() => {
         // Element/modality tallies (always shown) + essential dignities (Advanced

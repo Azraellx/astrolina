@@ -174,6 +174,17 @@ export interface PlanetPosition {
   // samples omit them (their ra/dec round-trip exactly).
   lon?: number;          // ecliptic longitude of record, radians
   lat?: number;          // ecliptic latitude of record, radians
+  /** Ecliptic longitude motion, degrees/day (negative = retrograde) — carried only
+   *  by positions SAMPLED from the sky, which is what makes its absence meaningful.
+   *
+   *  A directed chart (solar arc, primary directions) advances every body by one
+   *  shared arc, so its bodies have no daily motion of their own: the two shift
+   *  helpers above build fresh positions without this field, and every readout of
+   *  it then prints an em-dash rather than quoting the birth sky's rate as though
+   *  it were the directed body's. Midpoint constructions (composite) are the same.
+   *
+   *  Free where it exists: sampleBody computes it for every body already. */
+  speed?: number;
 }
 
 export interface EclipticPosition {
@@ -708,9 +719,14 @@ export function getPlanetPositions(
   jd: number,
   nodeType: NodeType = 'mean',
 ): PlanetPosition[] {
-  return PLANET_NAMES.map((name) => {
+  return PLANET_NAMES.map((name): PlanetPosition | null => {
     const s = sampleBody(jd, name, nodeType);
-    return s ? { name, ra: s.ra, dec: s.dec } : null;
+    // Speed rides along because sampleBody has already paid for it — the same Swiss
+    // call that returns the longitude returns its rate. Dropping it here was why an
+    // overlay's Speed column read as em-dashes: every overlay ring is built from
+    // these positions, and nothing downstream could recover a figure this had thrown
+    // away. (Its absence still means something — see PlanetPosition.speed.)
+    return s ? { name, ra: s.ra, dec: s.dec, speed: s.speed } : null;
   }).filter((p): p is PlanetPosition => p !== null);
 }
 
@@ -779,6 +795,14 @@ export function toEclipticPositions(
     lat: p.lat ?? raDecToEclipticLat(p.ra, p.dec, eps),
     dec: p.dec,
     ra: p.ra,
+    // Both undefined for a directed or midpoint-built position, which carries no
+    // speed — so those keep reading as an em-dash rather than gaining a rate they
+    // do not have. `stationary` is deliberately NOT derived here: retrograde is a
+    // sign test on a figure already in hand, while a station needs the body
+    // resampled either side of the instant, and that is a real cost to pay on
+    // every timeline tick for a flag the overlay ring has never shown.
+    speed: p.speed,
+    retrograde: p.speed == null ? undefined : p.speed < 0,
   }));
 }
 

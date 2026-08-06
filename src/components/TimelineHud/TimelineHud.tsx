@@ -23,7 +23,7 @@ import {
   type TransitFrame,
 } from '../../lib/astro/timeline';
 import type { LineSystem } from '../../lib/ephemeris';
-import { findReturn, type ReturnBody } from '../../lib/astro/returns';
+import { activeReturnBody, type ReturnBody } from '../../lib/astro/returns';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import {
@@ -525,15 +525,13 @@ export function TimelineHud({
   // Highlight the Solar / Lunar snap button when the selected date sits ON that
   // luminary's return — a snap lands exactly on it, and a one-minute window keeps the
   // cue while you're effectively there. Transits only (the Returns row hides otherwise).
-  const activeReturn = useMemo<ReturnBody | null>(() => {
-    if (overlayMode !== 'transits' || !current) return null;
-    return (
-      (['solar', 'lunar'] as const).find((body) => {
-        const r = findReturn(current, body, targetDate, 0);
-        return r != null && Math.abs(r.ms - targetDate) <= 60_000;
-      }) ?? null
-    );
-  }, [overlayMode, current, targetDate]);
+  const activeReturn = useMemo<ReturnBody | null>(
+    () =>
+      overlayMode !== 'transits' || !current
+        ? null
+        : activeReturnBody(current, targetDate),
+    [overlayMode, current, targetDate],
+  );
 
   // Whether a snap would visibly move the frame — App switches to the moment's own
   // sky, but only on celestial lines, and a time-unknown chart is already forced
