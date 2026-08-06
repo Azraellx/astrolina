@@ -251,11 +251,26 @@
   gap: 6px;
 }
 
-/* The ℞ / S motion tag appended to a retrograde / stationary readout sign's
-   title — bold, in the matching highlight color (set inline). */
+/* The ℞ / S motion tag: appended to a retrograde / stationary readout sign's
+   title, and leading a body's own tip description. Bold, in the matching
+   highlight color (set inline). */
 .wheel-tip-status {
   font-weight: 700;
   line-height: 1;
+}
+
+/* A body's tip titles itself with two things — the body, then the sign it is in
+   — divided by a hairline rule rather than a word, since neither is subordinate
+   to the other. The divider is drawn faint so the two names carry the line. */
+.wheel-tip-sep {
+  color: var(--text-faint);
+  font-weight: 400;
+  opacity: 0.7;
+}
+.wheel-tip-sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .wheel-tip-dot {
   width: 7px;

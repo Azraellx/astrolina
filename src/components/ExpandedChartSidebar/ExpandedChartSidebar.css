@@ -86,8 +86,12 @@
 .es-section-header {
   flex-shrink: 0;
   /* Sole source of the gap above the wheel — the wheel section drops its own
-     top padding (below), so the header→wheel spacing lives here only. */
-  padding-bottom: 5px;
+     top padding (below), so the header→wheel spacing lives here only.
+     What the eye reads as the gap is bigger than this figure: the wheel's state
+     title floats 4px into the section below, and both text lines carry their own
+     leading, so ~13px sits between the coordinates and the title. Trimmed here
+     because this is the only part of that which is spacing rather than type. */
+  padding-bottom: 2px;
 }
 
 .es-header-row {
@@ -217,8 +221,11 @@
 }
 
 /* Plain line-style pin (replaces the 📌 emoji) — inherits the row's state color. */
+/* The place line is a flex row now, so its centring comes from align-items and
+   the old vertical-align nudge (which only ever applied to inline layout) is
+   gone. flex-shrink stays and finally means something: a long place name
+   ellipsizes on its own, never by squeezing the marker. */
 .es-pin-icon {
-  vertical-align: -2px;
   margin-right: 4px;
   flex-shrink: 0;
 }
@@ -243,12 +250,23 @@
    it; inherits the relocated block's state colour. */
 .es-relocated-place {
   flex-basis: 100%;
+  /* A row, so the pin marker and the name stay side by side however narrow the
+     box gets. They used to be inline content in a block, which holds only while
+     the line has room to spare: in the dual-wheel header, where the same lines
+     are reused under the second wheel, the name dropped below the marker. */
+  display: flex;
+  align-items: center;
+  min-width: 0;
   font-size: 12px;
   letter-spacing: 0;
-  /* One line, always: hover relocation swaps this name on every mouse move,
-     and a wrap to a second line would bounce the header's height (see the
-     always-rendered nbsp fallback in the TSX). Long names ellipsize — the
-     coordinates right below still identify the spot. */
+}
+
+/* One line, always: hover relocation swaps this name on every mouse move, and a
+   wrap to a second line would bounce the header's height (see the always-rendered
+   nbsp fallback in the TSX). Long names ellipsize — the coordinates right below
+   still identify the spot. Its own box because ellipsis needs one; the marker
+   beside it must not be ellipsized with it. */
+.es-relocated-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,9 +445,24 @@
   padding-left: 20px;
 }
 
-/* The coordinate-column headers carry a hover .ui-tip explaining each one. */
-.es-adv-table th.es-adv-num {
+/* Every column header carries a hover .ui-tip explaining it — and its label is
+   also the sort control, so the pointer over the LABEL is the click cursor while
+   the rest of the cell keeps the explain-me one. */
+.es-adv-table th {
   cursor: help;
+}
+
+/* The sort button inside a header IS the header text: it takes the cell's type
+   rather than the frame table's, so sorting changed nothing about how the table
+   reads. Only the active column brightens. */
+.es-adv-table th .es-adv-sort {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.es-adv-table th .es-adv-sort.on {
+  color: var(--text-strong);
 }
 
 .es-adv-num {
@@ -920,6 +953,29 @@
   color: var(--text-strong);
 }
 
+/* The table's own orb, pushed to the far end of the status-pill row. The shared
+   HintMenu trigger is a full-width form control by default (see .calc-menu-trigger);
+   size it to the pills beside it instead, so the control costs the panel no extra
+   row. The portaled options panel still matches the trigger's measured width. */
+.es-compare-orb {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+.es-compare-orb .calc-menu-trigger {
+  width: auto;
+  margin-top: 0;
+  padding: 2px 22px 2px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.es-compare-orb .thud-select-caret {
+  font-size: 10px;
+  right: 8px;
+}
+
 .es-frames-table {
   width: 100%;
   border-collapse: collapse;
@@ -948,6 +1004,36 @@
 }
 .es-ft-arrow {
   font-size: 8px;
+}
+
+/* The aspect lists' sort strip. They lay their rows out two-up (a pair of columns
+   OF ROWS), so there is nowhere for a header row to sit above one set of columns
+   — the columns are named as chips in a strip above the list instead. One line,
+   shared shape with the frame table's status pills beside it. */
+.es-sort-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.es-sort-strip-label {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.es-sort-chip {
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 999px;
+  padding: 2px 9px;
+  opacity: 0.55;
+}
+.es-sort-chip.on {
+  opacity: 1;
+  border-color: rgba(var(--tint), 0.3);
+  color: var(--text-strong);
 }
 .es-frames-table td {
   padding: 2px 8px 2px 0;
@@ -1021,15 +1107,42 @@
   overflow-x: hidden;
 }
 
-/* Dual Wheels (Advanced): the natal and overlay wheels stack vertically with
-   the overlay's caption as the seam between them. */
+/* Dual Wheels (Advanced): the natal and overlay wheels stack vertically. */
 .es-wheel-pane-dual {
   flex-direction: column;
   align-items: safe center;
   gap: 2px;
 }
 
-.es-dual-caption {
+/* The overlay wheel's own positioning context, so its corner title anchors to
+   THAT wheel. Without it the corner would resolve against .es-section-wheel and
+   land over the FIRST wheel of the pair. Shrink-wraps the SVG, so it adds
+   nothing to the stack's height. */
+.es-wheel-slot {
+  position: relative;
+  display: flex;
+}
+
+/* Dual Wheels: the second chart's header — instant, place, coordinates — laid out
+   like the panel's own header above the first wheel, so the two wheels are
+   introduced the same way instead of one getting a header and the other a
+   caption. Stretched to the pane and nudged right by the 6px the wheel section's
+   padding is short of .es-section's, so its text starts on the same rule as the
+   header's. The margin above separates it from the wheel it follows. */
+.es-overlay-head {
+  /* Both, on purpose: the pane centres its items, so the block has to opt out of
+     that AND state a width. align-self alone leaves the width to be inferred, and
+     a shrink-to-fit box is what pushed the place name off its marker's line. */
+  align-self: stretch;
+  width: 100%;
+  padding-left: 6px;
+  margin-top: 10px;
+}
+
+/* The centred title above each of the paired local-space dials (natal /
+   relocated). The overlay wheel no longer uses a caption row — it captions
+   itself in its own corner — so this is the dials' alone. */
+.es-dial-caption {
   display: flex;
   justify-content: center;
   padding: 2px 0;
@@ -1251,6 +1364,13 @@
   text-align: right;
 }
 
+/* Inside a wheel slot the corner is measured from the WHEEL's edge rather than
+   the section's, so the section's own 12px pane padding is already off the
+   figure — inset by the remainder to land in the same visual spot. */
+.es-wheel-slot .es-wheel-corner-left {
+  left: 6px;
+}
+
 .es-wheel-title {
   font-size: 12px;
   font-weight: 700;
@@ -1316,15 +1436,34 @@
   white-space: nowrap;
 }
 
-/* Dual layout appends the moment INLINE after the name: drop the caption's inline-flex so
-   the name span + " · moment" flow as one line of text (keeping the middot spacing). */
-.es-overlay-caption.es-overlay-inline {
-  display: inline;
+/* The same slot when it holds a NAME rather than a moment (synastry's partner
+   chart). Figures want tabular alignment and can be relied on to be short; a name
+   wants neither, and can be long enough to run out of the corner — so it
+   ellipsizes there instead of spilling across the wheel. */
+.es-overlay-subject {
+  font-variant-numeric: normal;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Non-dual: the moment stacks ABOVE the name in the top-right corner. Lay the corner out as
+/* Dual Wheels: the second chart's header leads with its NAME under synastry,
+   where every other overlay leads with its instant. Matched to the natal chart's
+   own name in the panel header (.switcher-trigger strong: 14px/600) rather than
+   left at the date line's size — the two wheels are two charts here, and their
+   names should carry the same weight as each other. */
+.es-overlay-chart-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.02em;
+  font-variant-numeric: normal;
+}
+
+/* The moment stacks ABOVE the name in the top-right corner. Lay the corner out as
    a right-aligned column so the two lines share the right edge (flush to the wheel's corner);
-   the corner is absolutely placed over the wheel, so this adds no height to the sidebar. */
+   the corner is absolutely placed over the wheel, so this adds no height to the sidebar.
+   The dual layout uses the same corner over its SECOND wheel, with the moment alone. */
 .es-wheel-corner-right.es-overlay-corner {
   display: flex;
   flex-direction: column;

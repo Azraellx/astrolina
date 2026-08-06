@@ -27,6 +27,7 @@ import {
   type PlanetName,
 } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
+import { fmtDM } from '../../lib/astro/format';
 
 const DEG2RAD = Math.PI / 180;
 
@@ -119,22 +120,12 @@ function rotate(v: Vec3, yawDeg: number, pitchDeg: number): Vec3 {
 const clampN = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
 
-// Degrees → "DD°MM'" for the hover tip's azimuth/altitude readout — the same
-// degree+arcminute form the Advanced planet table quotes. Azimuth reads 0–360
-// (signed=false); altitude passes signed=true so below-horizon shows a leading −.
-// Exported so the 2D compass sibling formats its hover tip identically.
-export function fmtDM(deg: number, signed = false): string {
-  const abs = Math.abs(deg);
-  let d = Math.floor(abs);
-  let m = Math.round((abs - d) * 60);
-  if (m === 60) {
-    m = 0;
-    d += 1;
-  }
-  if (d >= 360 && !signed) d -= 360; // 359°59.6' rounds to 0°00', not 360°00'
-  const sign = d === 0 && m === 0 ? '' : deg < 0 ? '-' : signed ? '+' : '';
-  return `${sign}${d}°${String(m).padStart(2, '0')}'`;
-}
+// Degrees → "DD°MM'" for the hover tip's azimuth/altitude readout. It moved to
+// lib/astro/format (beside lonToZodiac, the other coordinate formatter) once the
+// zodiac wheel needed it too: the wheel is what this module imports its own tip
+// chrome FROM, so importing back would have closed a cycle. Re-exported here so
+// the compass sibling and the readout surfaces keep their existing import.
+export { fmtDM };
 
 type SP = { sx: number; sy: number; depth: number };
 

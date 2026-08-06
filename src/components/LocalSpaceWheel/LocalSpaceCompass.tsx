@@ -8,11 +8,11 @@ import { useSyncExternalStore } from 'react';
 import './LocalSpaceWheel.css';
 import {
   WheelTip,
-  relaxRing,
   type Aspect,
   type AspectCategory,
   type HoverTip,
 } from '../Wheel/WheelSvg';
+import { relaxRing } from '../../lib/ringLayout';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import {
   PLANET_COLORS,

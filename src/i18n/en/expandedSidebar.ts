@@ -50,6 +50,9 @@ export const expandedSidebar = {
   timeUnknownNote: 'Birth time unknown',
 
   // Pre-1970 timezone DST caution glyph in the meta row.
+  // Where the birth chart's header carries a UTC offset, an overlay's carries
+  // this: its instant is given in UTC, having no birth zone to be offset from.
+  utc: 'UTC',
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
 
@@ -64,9 +67,12 @@ export const expandedSidebar = {
     antivertex: 'Anti-Vertex',
   },
 
-  // Advanced table column headers and their explanatory hover tips.
+  // Advanced table column headers and their explanatory hover tips. Every header
+  // also sorts: press once for ascending, again for descending, a third time to
+  // hand the table back to its usual order.
   table: {
     point: 'Point',
+    pointHint: 'The bodies in their conventional order — luminaries first — with the chart angles after them. Press any header to sort the table by that column; press it a third time to come back here.',
     longitude: 'Longitude',
     longitudeHint: 'Zodiacal longitude: the body’s degree, sign, and arcminute along the ecliptic.',
     speed: 'Speed',
@@ -163,6 +169,19 @@ export const expandedSidebar = {
     fall: 'The planet sits opposite its sign of exaltation — weakened, its expression strained.',
   },
 
+  // The sort strip above the aspect lists. They can't carry column headers (each
+  // list is two columns OF ROWS), so the columns are named as chips instead.
+  sortBy: 'Sort',
+  sort: {
+    pair: 'Pair',
+    pairHint: 'Group the list by body, in the conventional order — every aspect the Moon makes, then the Sun’s, and so on. Within a body, tightest orb first.',
+    crossPairHint: 'Group the list by the overlay body — the one making the contact, and the one each row leads with. Within a body, tightest orb first.',
+    type: 'Aspect',
+    typeHint: 'Group by the aspect itself, in the usual order: conjunctions, oppositions, trines, squares, sextiles, then the declination pairs. Within a kind, tightest orb first.',
+    orb: 'Orb',
+    orbHint: 'Order by distance from exact — the list’s own order, tightest first. Press again to read it loosest first.',
+  },
+
   // Aspect section heading (counted) + its hover-tip title and explanation.
   aspectsCount: '{count, plural, one {Aspects (#)} other {Aspects (#)}}',
   aspectsTip: 'Aspects',
@@ -208,7 +227,12 @@ export const expandedSidebar = {
     bothHint: 'This aspect holds in both frames — in the natal zodiac and between the bodies’ compass bearings (azimuths) at the local-space origin.',
     compare: 'Compare',
     compareTip: 'Compare frames',
-    compareHint: 'Compare the frames pair by pair: each row shows a pair’s natal aspect, its local-space aspect, the orb change (− means closer to exact), and a status — retained, changed (same pair, different aspect), lost, or new. Column headers sort; the status pills filter. Declination pairs, having no horizon analogue, show in the combined list only.',
+    compareHint: 'Compare the frames pair by pair: each row shows a pair’s natal aspect, its local-space aspect, the orb change (− means closer to exact), and a status — retained, changed (same pair, different aspect), lost, or new. Column headers sort; the status pills filter. This table is computed at its own orb, set beside the pills and wider than your aspect table by default. Declination pairs, having no horizon analogue, show in the combined list only.',
+    orbValue: 'Orb {deg}°',
+    orbTip: 'This table’s orb',
+    orbHint: 'Both frames are read at this orb, and it belongs to this table alone — your aspect orbs in Settings are untouched. It opens wider than they are on purpose: a pair 9° apart at birth that closes to 2° here is exactly what the comparison is for, and at a 7° orb it never reaches the natal column at all — the move shows up as “new”, which says the opposite of what happened.',
+    orbDefaultHint: 'The default. Wide enough to hold a pair that is loose in one frame and tight in the other, which is the change worth seeing.',
+    orbOptionHint: 'Read both frames at {deg}°. A narrower orb lists fewer pairs and reports more of them as lost or new; a wider one holds more pairs across both frames.',
     pairCol: 'Pair',
     pairColHint: 'The two bodies. Sort to group rows by planet.',
     natalCol: 'Natal',

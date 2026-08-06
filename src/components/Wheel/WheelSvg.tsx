@@ -18,7 +18,9 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
-import type { MsgKey, TFn } from '../../i18n';
+import type { EnumLabels, MsgKey, TFn } from '../../i18n';
+import { fmtDM, lonToZodiac } from '../../lib/astro/format';
+import { placeOnRing } from '../../lib/ringLayout';
 import {
   DEFAULT_ASPECT_ORBS,
   maxAspectOrb,
@@ -50,12 +52,83 @@ const signMeaning = (t: TFn, idx: number) =>
 const houseMeaning = (t: TFn, idx: number) =>
   t(`wheel.houseMeanings.h${idx + 1}` as MsgKey);
 
-// A short, standard keyword gloss per body — the novice hint shown when hovering
-// a planet disc. Kept terse so the tag stays compact. Resolved via
-// wheel.planetMeanings, keyed by the PlanetName code. Exported so sibling wheel
-// surfaces can serve the identical hover gloss.
+// A short, standard keyword gloss per body. Not the wheel's own hover any more —
+// the discs say where the body IS (see positionTip below) — but the readouts
+// underneath name bodies without describing them, so this is what their glyphs
+// carry on hover. Exported for those surfaces; resolved via wheel.planetMeanings,
+// keyed by the PlanetName code.
 export const planetMeaning = (t: TFn, p: PlanetName) =>
   t(`wheel.planetMeanings.${p}` as MsgKey);
+
+// A body's hover tip, in two halves.
+//
+// The TITLE carries the two IDENTITIES — which body, and which sign it is in —
+// because those are what a glance is asking for and they belong on the bold line
+// together: "♃ Jupiter | ♏ Scorpio". The description underneath carries the
+// FIGURES: how the body is moving where that is worth saying, then where it sits,
+// one coordinate per line. The horizon dials read the same way in their own frame
+// (azimuth, then altitude — see LocalSpaceCompass), which is the shape this
+// follows.
+//
+// The longitude line is the degree WITHIN the sign, since the sign itself is
+// already named above it — the same split the wheel's own readout ring makes.
+//
+// This replaced a keyword gloss ("Identity · vitality · ego"). The gloss said the
+// same thing every time the wheel was opened, which the wheel is not the place to
+// keep teaching; where a body IS changes with every chart, and on a panel too
+// narrow to show the readout ring this is the only place the figure appears at
+// all. (The gloss moved to the planet glyphs in the readouts below — see
+// planetMeaning above.)
+//
+// Latitude is optional on the position — the caller only computes it when the
+// sidebar's Advanced mode asked for it — and the line is simply left off when it
+// is absent, rather than printed as an em-dash the tag has no room to explain.
+// Takes anything with a longitude, so the chart ANGLES read the same way as the
+// bodies do — they simply have no motion and no latitude to report (an angle is a
+// point ON the ecliptic), and those lines fall away on their own.
+function bodyTip(
+  t: TFn,
+  labels: EnumLabels,
+  p: { lon: number; lat?: number; retrograde?: boolean; stationary?: boolean },
+): { suffix: ReactNode; sub: ReactNode } {
+  const { signIdx, degMin } = lonToZodiac(p.lon);
+  const tag = motionTag(p);
+  return {
+    suffix: (
+      <>
+        <span className="wheel-tip-sep" aria-hidden="true">
+          |
+        </span>
+        <span className="wheel-tip-sign">
+          <ZodiacGlyph sign={signIdx} size={13} />
+          {labels.sign(signIdx)}
+        </span>
+      </>
+    ),
+    sub: (
+      <>
+        {/* Retrograde / stationary leads, in the ℞ / S mark and colour the
+            readout ring and the sidebar's table both use, so one body reads the
+            same however you meet it. */}
+        {tag && (
+          <>
+            <span className="wheel-tip-status" style={{ color: MOTION_MARK[tag].color }}>
+              {MOTION_MARK[tag].char} {motionWord(t, tag)}
+            </span>
+            <br />
+          </>
+        )}
+        {t('wheel.tip.longitude', { lon: degMin })}
+        {p.lat !== undefined && (
+          <>
+            <br />
+            {t('wheel.tip.latitude', { lat: fmtDM((p.lat * 180) / Math.PI, true) })}
+          </>
+        )}
+      </>
+    ),
+  };
+}
 
 // The chart angles, keyed by the label drawn on the wheel. The title + sub
 // hint text is resolved via wheel.angles.<key> at render time. Vx/Avx (the
@@ -379,54 +452,39 @@ function signSectorPath(
 // sized to give ~16px of arc at the given ring radius. Returns display
 // longitudes keyed by planet name; the true longitude is still marked by a
 // tick at the planet's real position by the caller.
-// Relax SORTED ring offsets (degrees, ascending in [0,360)) so neighbours sit at
-// least `sep` apart, treating the ring as CIRCULAR: a 1°-wide pair straddling
-// the 0°/360° seam (bodies conjunct on either side of the ASC) is 1° apart, not
-// 359°. A linear pass can't see that — and worse, it can push a near-360
-// cluster past 360 into an untouched body just after 0. So the pass runs in a
-// frame rotated to start just after the LARGEST circular gap (whose two ends
-// are the only neighbours guaranteed already clear), then maps back mod 360.
-export function relaxRing(arr: { off: number }[], sep: number): void {
-  if (arr.length < 2) return;
-  let gapIdx = arr.length - 1; // gap between the last entry and the first (+360)
-  let gapSize = arr[0].off + 360 - arr[arr.length - 1].off;
-  for (let i = 1; i < arr.length; i++) {
-    const g = arr[i].off - arr[i - 1].off;
-    if (g > gapSize) {
-      gapSize = g;
-      gapIdx = i - 1;
-    }
-  }
-  const start = (gapIdx + 1) % arr.length;
-  let prev = -Infinity;
-  for (let k = 0; k < arr.length; k++) {
-    const idx = (start + k) % arr.length;
-    let v = arr[idx].off + (start + k >= arr.length ? 360 : 0);
-    if (v - prev < sep && k > 0) v = prev + sep;
-    prev = v;
-    arr[idx].off = ((v % 360) + 360) % 360;
-  }
-}
+// Half-widths on the glyph ring, in pixels — what a mark actually occupies, and
+// therefore what its neighbour has to clear.
+//
+// The angle codes are TEXT, and text is not square: "Ic" is barely half the width
+// of "Avx". One separation figure for the whole ring can only be right for one of
+// them, which is why the codes used to sit on top of the discs beside them — the
+// figure was sized for a circular disc and the labels are wider than that. So each
+// mark states its own half-width and every pair clears the sum of the two.
+//
+// Per-character advances (in em, at weight 700) for the nine characters the six
+// codes are built from. Deliberately a table rather than one average figure: an
+// average generous enough for "Mc" reserves half again too much for "Ic", and the
+// wasted arc is arc some body is being pushed out of for no reason.
+const ANGLE_LABEL_EM: Record<string, number> = {
+  A: 0.72, D: 0.72, I: 0.34, M: 0.92, V: 0.68,
+  c: 0.56, s: 0.52, v: 0.56, x: 0.56,
+};
+// .wheel-angle-label in WheelSvg.css: 13px/700 with a 3px paint-order stroke halo
+// (1.5px each side, and the halo is part of what must not be overlapped — it is
+// the panel colour, so it erases whatever it lands on).
+const ANGLE_LABEL_FONT = 13;
+const ANGLE_LABEL_HALO = 3;
+const angleLabelHalfPx = (code: string): number => {
+  let em = 0;
+  for (const ch of code) em += ANGLE_LABEL_EM[ch] ?? 0.6;
+  return (em * ANGLE_LABEL_FONT + ANGLE_LABEL_HALO) / 2;
+};
+// A planet's disc: the radius plus half its stroke.
+const DISC_HALF_PX = (r: number, stroke: number) => r + stroke / 2;
 
-function spreadOnRing(
-  planets: EclipticPosition[],
-  ascRad: number,
-  ringRadius: number,
-): Map<string, number> {
-  const arr = planets.map((p) => ({
-    name: p.name,
-    off: ((((p.lon - ascRad) * 180) / Math.PI) % 360 + 360) % 360,
-  }));
-  arr.sort((a, b) => a.off - b.off);
-  const sep = Math.min(
-    20,
-    Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(ringRadius, 1))),
-  );
-  relaxRing(arr, sep);
-  const m = new Map<string, number>();
-  for (const e of arr) m.set(e.name, ascRad + (e.off * Math.PI) / 180);
-  return m;
-}
+// (spreadOnRing lived here: bodies-only spreading for the overlay ring. It was
+// the reason the overlay's angle codes were overlapped — it had no way to be told
+// about them. placeOnRing above replaced it and takes both sets.)
 
 // Retrograde / stationary highlight colors for the readout (sign · degree ·
 // minute) text only — the planet glyph keeps its own color. Plain hex (not theme
@@ -451,7 +509,7 @@ function statusColor(p: EclipticPosition): string | null {
 // station-before-retrograde priority as statusColor, so the tag matches the
 // red / yellow coloring of the sign it's on. null for direct motion.
 type MotionTag = 'retrograde' | 'stationary';
-function motionTag(p: EclipticPosition): MotionTag | null {
+function motionTag(p: { retrograde?: boolean; stationary?: boolean }): MotionTag | null {
   if (p.stationary) return 'stationary';
   if (p.retrograde) return 'retrograde';
   return null;
@@ -694,8 +752,10 @@ export function WheelSvg({
           (!visibleAngles || visibleAngles.has(h.key)),
       ).map((h) => ({
         ...h,
+        // Name only. The `.sub` gloss beside it in the catalog is what an angle
+        // MEANS, and that is now read off its row below the wheel rather than off
+        // the mark — the mark's tip gives the position.
         title: t(`wheel.angles.${h.key}.title`),
-        sub: t(`wheel.angles.${h.key}.sub`),
         lon: angleLonByKey[h.key],
         color: angleColor(h.key),
       }))
@@ -725,36 +785,63 @@ export function WheelSvg({
         ).map((h) => ({
           ...h,
           title: t(`wheel.angles.${h.key}.title`),
-          sub: t(`wheel.angles.${h.key}.sub`),
           lon: overlayAngleLonByKey[h.key],
           color: angleColor(h.key),
         }))
       : [];
 
+  const off = (lon: number) =>
+    ((((lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360;
+  const discHalf = DISC_HALF_PX(detailed ? 11 : 13, 1.3);
+
   // Spread overlapping planets along the ring so their glyphs and readouts
   // don't collide; the true position is still marked by a tick on the zodiac
-  // band. Aspect lines keep using the true longitudes. The angle marks ride in
-  // the same relaxation so they clear neighbouring planets too.
+  // band. Aspect lines keep using the true longitudes.
+  //
+  // The angle codes are the FIXED marks here: they name an axis, so they hold the
+  // exact spot where that axis crosses the ring and the bodies move around them.
+  // (They used to relax alongside the bodies on equal terms, under one separation
+  // figure sized for a circular disc — which left a code both off its own axis AND
+  // still overlapping its neighbour, since the codes are wider than the discs the
+  // figure was cut for. Both halves of that are fixed by giving each mark its own
+  // width and letting the axes stand still.)
   const displayLon = new Map<string, number>();
   if (detailed) {
-    const off = (lon: number) =>
-      ((((lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360;
-    const arr = [
-      ...planets.map((p) => ({ name: p.name as string, off: off(p.lon) })),
-      ...angleMarks.map((a) => ({ name: a.key as string, off: off(a.lon) })),
-    ];
-    arr.sort((a, b) => a.off - b.off);
-    // Min angular separation that yields ~16px of arc. When the readouts show,
-    // the trio fans inward to rReadout − 16, so base the separation on that
-    // innermost (minutes) ring — the tightest arc — so neighbouring readouts
-    // clear there too.
-    const sepRadius = showReadouts
-      ? Math.max(rReadout - readoutFan, 1)
-      : Math.max(rReadout, 1);
-    const sep = Math.min(20, Math.max(4, (16 * 360) / (2 * Math.PI * sepRadius)));
-    relaxRing(arr, sep);
-    for (const e of arr) {
-      displayLon.set(e.name, angles.asc + (e.off * Math.PI) / 180);
+    // A floor every pair clears on top of what their own widths ask for. The
+    // degree·sign·minute trio fans INWARD from the glyph ring, and the same angle
+    // buys less arc the further in it lands, so it is sized on that innermost
+    // (minutes) ring — otherwise the figures collide under discs that look
+    // correctly spaced.
+    //
+    // Only while the trio is actually drawn, though. It used to be charged on
+    // every wheel, and on one too small to show a readout at all that is a wide
+    // reservation for a ring that isn't there: at the narrowest sidebar width it
+    // came to 27px of arc between marks that need 23, which both flung bodies
+    // further from their true degree than anything required and left arcs too
+    // narrow to hold what fell in them. Below the readout size the widths decide
+    // on their own.
+    const sep = showReadouts
+      ? Math.min(
+          20,
+          Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rReadout - readoutFan, 1))),
+        )
+      : 0;
+    const placed = placeOnRing(
+      angleMarks.map((a) => ({
+        name: a.key as string,
+        off: off(a.lon),
+        half: angleLabelHalfPx(a.key),
+      })),
+      planets.map((p) => ({
+        name: p.name as string,
+        off: off(p.lon),
+        half: discHalf,
+      })),
+      sep,
+      Math.max(rPlanets, 1),
+    );
+    for (const [name, deg] of placed) {
+      displayLon.set(name, angles.asc + (deg * Math.PI) / 180);
     }
   }
   const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
@@ -764,14 +851,37 @@ export function WheelSvg({
   // One spread for the overlay ring, shared by its glyphs and (when shown) its
   // readout trio so the two stay radially aligned. Sized to the innermost ring
   // in use — the minutes slot when the readout is on — so nothing collides there.
+  //
+  // The overlay's angle codes are fixed marks on this ring exactly as the natal
+  // ones are on theirs. They are DRAWN at their true longitude already; what was
+  // missing is that nothing knew they were there, so the overlay bodies were
+  // spread against each other only and settled straight on top of them.
   const overlaySpreadRadius = showOverlayReadouts
     ? Math.max(rOverlayReadout - OV_FAN, 1)
     : rOverlay;
   const overlayDisplay = hasOverlay
-    ? spreadOnRing(overlayPlanets!, angles.asc, overlaySpreadRadius)
+    ? placeOnRing(
+        overlayAngleMarks.map((a) => ({
+          name: a.key as string,
+          off: off(a.lon),
+          half: angleLabelHalfPx(a.key),
+        })),
+        overlayPlanets!.map((p) => ({
+          name: p.name as string,
+          off: off(p.lon),
+          half: discHalf,
+        })),
+        Math.min(
+          20,
+          Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(overlaySpreadRadius, 1))),
+        ),
+        Math.max(rOverlay, 1),
+      )
     : null;
   const overlayLonFor = (p: EclipticPosition) =>
     overlayDisplay?.get(p.name) ?? p.lon;
+  const overlayAngleLonFor = (a: { key: string; lon: number }) =>
+    overlayDisplay?.get(a.key) ?? a.lon;
 
   // A sign glyph inside a body's readout that names itself on hover (interactive
   // wheel only), exactly like the rim signs — so the sign attached to each planet
@@ -1212,7 +1322,7 @@ export function WheelSvg({
                   y: pos.y,
                   r,
                   title: labels.planet(p.name),
-                  sub: planetMeaning(t, p.name),
+                  ...bodyTip(t, labels, p),
                   color: PLANET_COLORS[p.name],
                   marker: (
                     <PlanetGlyph
@@ -1272,7 +1382,11 @@ export function WheelSvg({
                     y: pos.y,
                     r: 11,
                     title: a.title,
-                    sub: a.sub,
+                    // The angle says WHERE it falls, exactly as the bodies do.
+                    // What it MEANS is the same sentence in every chart, and has
+                    // moved to its row in the readout below the wheel — see
+                    // AngleTipGlyph in ExpandedChartSidebar.
+                    ...bodyTip(t, labels, { lon: a.lon }),
                     titleColor: a.color,
                   }),
                 onMouseLeave: clearTip,
@@ -1335,7 +1449,7 @@ export function WheelSvg({
                         y: glyphPos.y,
                         r: 9,
                         title: labels.planet(p.name),
-                        sub: planetMeaning(t, p.name),
+                        ...bodyTip(t, labels, p),
                         color: PLANET_COLORS[p.name],
                         marker: (
                           <PlanetGlyph
@@ -1401,7 +1515,10 @@ export function WheelSvg({
       {hasOverlay &&
         overlayAngleMarks.map((a) => {
           const truePos = svgPos(a.lon, angles.asc, rZodiacInner, cx, cy);
-          const glyphPos = svgPos(a.lon, angles.asc, rOverlay, cx, cy);
+          // The code holds its own axis; the settled position only differs from it
+          // when two overlay codes were close enough to have to clear each other,
+          // and the dashed connector below points back to the true degree either way.
+          const glyphPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlay, cx, cy);
           const tickPos = svgPos(a.lon, angles.asc, rZodiacInner - 2, cx, cy);
           const tipPos = svgPos(a.lon, angles.asc, rZodiacInner - 7, cx, cy);
           const markProps = interactive
@@ -1412,7 +1529,9 @@ export function WheelSvg({
                     y: glyphPos.y,
                     r: 11,
                     title: a.title,
-                    sub: a.sub,
+                    // As the natal angle marks above: position here, meaning in
+                    // the readout below the wheel.
+                    ...bodyTip(t, labels, { lon: a.lon }),
                     titleColor: a.color,
                   }),
                 onMouseLeave: clearTip,
@@ -1470,9 +1589,9 @@ export function WheelSvg({
       {showOverlayReadouts &&
         showAngleMarks &&
         overlayAngleMarks.map((a) => {
-          const degPos = svgPos(a.lon, angles.asc, rOverlayReadout + OV_FAN, cx, cy);
-          const signPos = svgPos(a.lon, angles.asc, rOverlayReadout, cx, cy);
-          const minPos = svgPos(a.lon, angles.asc, rOverlayReadout - OV_FAN, cx, cy);
+          const degPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout + OV_FAN, cx, cy);
+          const signPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout, cx, cy);
+          const minPos = svgPos(overlayAngleLonFor(a), angles.asc, rOverlayReadout - OV_FAN, cx, cy);
           const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;

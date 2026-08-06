@@ -40,6 +40,7 @@ import {
   computeAspects,
   computeAzimuthAspects,
   computeCrossAspects,
+  planetMeaning,
   computeDeclinationAspects,
   type Aspect,
   type AspectCategory,
@@ -63,6 +64,7 @@ import {
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
 import { publishLeftDock, retireLeftDock } from '../../lib/leftDock';
+import { HintMenu } from '../Sidebar/Sidebar';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
@@ -252,11 +254,47 @@ const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const FRAMES_KEY = 'astro:aspect-frames:v1';
 const LS_MODE_KEY = 'astro:ls-wheel-3d:v1'; // local-space dials: '3d' globe vs 2D compass
 
+// The Compare view's OWN orb, in degrees. Written on mount, so this key can
+// never have its default changed in place — the old value is already in every
+// existing install's storage. A different default needs a :v2 and a note here
+// saying why the old figures are abandoned rather than migrated.
+const COMPARE_ORB_KEY = 'astro:compare-orb:v1';
+// Wider than the app's 7° table on purpose. The table exists to show what the
+// horizon frame DOES to a pair, and the interesting case is the one that moves
+// a long way: a trine 9° wide at birth that closes to 2° here. Computed at the
+// app's own orb, that pair is simply absent from the natal column and reads
+// "new" — the finding disappears into a status that means the opposite. The
+// figure stays the reader's: this is a default, not a fixed rule.
+const COMPARE_ORB_DEFAULT = 10;
+const COMPARE_ORBS = [5, 7, 8, 10, 12, 15] as const;
+
 // Frame-table vocabulary (the aspects section's Separate view): every pair's
 // fate across the natal → local-space frames, plus the sortable columns.
 const FRAME_STATUSES = ['retained', 'changed', 'lost', 'new'] as const;
 type FrameStatus = (typeof FRAME_STATUSES)[number];
 type FrameSortKey = 'pair' | 'natal' | 'ls' | 'delta' | 'status';
+
+// Every other sortable list in the panel. `null` is a real state — the list's
+// own natural order, which for the positions table is the astrological one
+// (luminaries first, angles after) and for the aspect lists is tightest-orb
+// first. Session-only throughout, like the frame table's: a sort is a way of
+// looking at one chart, not a standing preference.
+type SortState<K extends string> = { key: K; dir: 1 | -1 } | null;
+type PosSortKey = 'point' | 'lon' | 'speed' | 'lat' | 'ra' | 'dec' | 'az' | 'alt';
+type AspectSortKey = 'pair' | 'type' | 'orb';
+// Canonical aspect order for the type column — the order the app lists them in
+// everywhere else (by exact angle, then the declination pair, which has no
+// angle). Anything unrecognised sorts last rather than throwing the row away.
+const ASPECT_TYPE_RANK: Record<string, number> = {
+  conjunction: 0,
+  opposition: 1,
+  trine: 2,
+  square: 3,
+  sextile: 4,
+  parallel: 5,
+  contraparallel: 6,
+};
+const aspectTypeRank = (type: string): number => ASPECT_TYPE_RANK[type] ?? 99;
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
 // Touch screens (usually a narrower landscape phone) get a lower floor than the desktop
@@ -408,7 +446,14 @@ function AspectGlyph({ type, color }: { type: string; color: string }) {
 
 // A planet glyph below the wheel (list, table, or aspect rows) that names itself
 // as a .ui-tip on hover: the glyph + display name, plus an optional suffix such as
-// "(overlay)". No description — the name is the whole point.
+// "(overlay)" — and the body's one-line keyword gloss beneath.
+//
+// The gloss used to be the WHEEL's hover, where it competed with the thing a wheel
+// is actually consulted for (where the body sits), and repeated itself in every
+// chart. Down here it is doing the job it is good at: these rows name a body and
+// nothing else, so someone reading "Chiron ☍ Saturn" in the aspect list has
+// somewhere to ask what Chiron is. One tip, every surface below the wheel — the
+// positions table, both aspect lists, the frame table.
 function PlanetTipGlyph({
   planet,
   size = 13,
@@ -420,7 +465,7 @@ function PlanetTipGlyph({
   className?: string;
   suffix?: string;
 }) {
-  const { labels } = useT();
+  const { t, labels } = useT();
   return (
     <TipGlyph
       className={className}
@@ -432,33 +477,199 @@ function PlanetTipGlyph({
           {suffix ? ` ${suffix}` : ''}
         </span>
       }
+      hint={planetMeaning(t, planet)}
     >
       <PlanetGlyph planet={planet} size={size} />
     </TipGlyph>
   );
 }
 
+// An angle's code below the wheel (the positions list or table) that explains
+// itself on hover: the code and its full name, with a one-line gloss of what the
+// angle MEANS underneath.
+//
+// That gloss used to be the wheel's own hover for the angle marks, which now give
+// the position instead — the same move the bodies made, for the same reason. What
+// the Midheaven signifies does not change from chart to chart; where it falls
+// does, and the wheel is where a particular chart is read.
+function AngleTipGlyph({
+  code,
+  name,
+  color,
+}: {
+  code: string;
+  name: string;
+  color: string;
+}) {
+  const { t } = useT();
+  return (
+    <TipGlyph
+      className="es-glyph es-angle-code"
+      color={color}
+      title={
+        <span className="es-tip-title">
+          <span className="es-angle-code" style={{ color }}>
+            {code}
+          </span>
+          {name}
+        </span>
+      }
+      hint={t(`wheel.angles.${code}.sub` as 'wheel.angles.As.sub')}
+    >
+      {code}
+    </TipGlyph>
+  );
+}
+
+// The clickable label inside a sortable column header, shared by every table and
+// list in the panel that sorts. Same three-state gesture throughout: a new column
+// opens ascending, a second press on the active one flips it, a third hands the
+// list back to its natural order (which for the positions table is the
+// astrological one, and is not otherwise recoverable).
+function SortLabel<K extends string>({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: K;
+  sort: SortState<K>;
+  onSort: (key: K) => void;
+  className?: string;
+}) {
+  const on = sort?.key === sortKey;
+  return (
+    <button
+      type="button"
+      className={`es-ft-sort${className ? ` ${className}` : ''}${on ? ' on' : ''}`}
+      onClick={() => onSort(sortKey)}
+    >
+      {label}
+      {on && <span className="es-ft-arrow">{sort.dir === 1 ? '▴' : '▾'}</span>}
+    </button>
+  );
+}
+
+/** `aria-sort` for a header, or undefined when the column isn't the active one. */
+const ariaSort = <K extends string>(
+  sort: SortState<K>,
+  key: K,
+): 'ascending' | 'descending' | undefined =>
+  sort?.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined;
+
+/** The three-state cycle behind every SortLabel: → ascending → descending → off. */
+function nextSort<K extends string>(sort: SortState<K>, key: K): SortState<K> {
+  if (sort?.key !== key) return { key, dir: 1 };
+  return sort.dir === 1 ? { key, dir: -1 } : null;
+}
+
+// The sort control for a list that cannot carry column headers. The aspect lists
+// lay their rows out TWO-up — .es-aspect-list is a pair of columns OF ROWS, each
+// row its own little grid — so there is no single set of columns for a header row
+// to sit above. A strip of chips above the list does the same job in one line.
+function SortStrip<K extends string>({
+  label,
+  options,
+  sort,
+  onSort,
+}: {
+  label: string;
+  options: { key: K; label: string; hint: string }[];
+  sort: SortState<K>;
+  onSort: (key: K) => void;
+}) {
+  return (
+    <div className="es-sort-strip">
+      <span className="es-sort-strip-label">{label}</span>
+      {options.map((o) => {
+        const on = sort?.key === o.key;
+        return (
+          <TipButton
+            key={o.key}
+            type="button"
+            className={`es-ft-sort es-sort-chip${on ? ' on' : ''}`}
+            placement="bottom"
+            tip={o.label}
+            hint={o.hint}
+            aria-pressed={on}
+            onClick={() => onSort(o.key)}
+          >
+            {o.label}
+            {on && <span className="es-ft-arrow">{sort.dir === 1 ? '▴' : '▾'}</span>}
+          </TipButton>
+        );
+      })}
+    </div>
+  );
+}
+
+/** One aspect row's value on a sort column. Shared by both aspect lists — they
+ *  differ in what a row MEANS (natal pair vs overlay-to-natal contact), not in
+ *  how it sorts. */
+function aspectSortVal(a: Aspect, key: AspectSortKey): number {
+  switch (key) {
+    case 'pair':
+      return planetRank(a.a as PlanetName) * 100 + planetRank(a.b as PlanetName);
+    case 'type':
+      return aspectTypeRank(a.type);
+    case 'orb':
+      return a.orb;
+  }
+}
+
+/** Sort a list of aspect rows in place-safe fashion; `null` keeps the caller's
+ *  own order (tightest orb first in both lists today). Ties break on orb, so a
+ *  pair- or type-sorted list still reads tightest-first inside each group. */
+function sortAspects<T extends Aspect>(rows: T[], sort: SortState<AspectSortKey>): T[] {
+  if (!sort) return rows;
+  return [...rows].sort(
+    (x, y) =>
+      sort.dir * (aspectSortVal(x, sort.key) - aspectSortVal(y, sort.key)) ||
+      x.orb - y.orb,
+  );
+}
+
 // A coordinate-column header that explains itself as the shared .ui-tip on hover —
 // the abbreviations (Rt.Asc., Decl., Azi…) aren't obvious to a newcomer, so the
 // tip's title spells out the full word (`title`), defaulting to the column label.
+// The label is also the sort control: the tip stays on the CELL so hovering
+// anywhere in the header still explains the column, while the click target is the
+// label itself.
 function AdvHeader({
   label,
   title,
   hint,
+  sortKey,
+  sort,
+  onSort,
+  cellClass = 'es-adv-num',
 }: {
   label: string;
   title?: string;
   hint: string;
+  sortKey: PosSortKey;
+  sort: SortState<PosSortKey>;
+  onSort: (key: PosSortKey) => void;
+  cellClass?: string;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right', { tapReveal: true });
   return (
     <th
       ref={ref}
-      className="es-adv-num"
+      className={cellClass}
+      aria-sort={ariaSort(sort, sortKey)}
       onMouseEnter={show}
       onMouseLeave={hide}
     >
-      {label}
+      <SortLabel
+        label={label}
+        sortKey={sortKey}
+        sort={sort}
+        onSort={onSort}
+        className="es-adv-sort"
+      />
       <HoverTip pos={pos} placement="right" title={title ?? label} hint={hint} />
     </th>
   );
@@ -512,7 +723,7 @@ function BalanceRow({
     bodies: EclipticPosition[];
   };
 }) {
-  const { labels } = useT();
+  const { t, labels } = useT();
   const count = seg.bodies.length;
   const aria =
     count > 0
@@ -554,6 +765,7 @@ function BalanceRow({
                 <PlanetGlyph planet={p.name} size={13} /> {labels.planet(p.name)}
               </span>
             }
+            hint={planetMeaning(t, p.name)}
           >
             <PlanetGlyph planet={p.name} size={14} />
           </TipSpan>
@@ -678,6 +890,19 @@ export function ExpandedChartSidebar({
   useEffect(() => {
     localStorage.setItem(FRAMES_KEY, splitFrames ? 'separate' : 'combined');
   }, [splitFrames]);
+  // The orb the Compare table is computed at — its own, never the app's. A
+  // methodological choice rather than an exploratory one, so unlike the sort and
+  // the status pills it persists. It reaches NOTHING else: Settings ▸ Aspect
+  // orbs still governs the wheel, the combined list and every other reading.
+  const [compareOrb, setCompareOrb] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(COMPARE_ORB_KEY));
+    return COMPARE_ORBS.includes(saved as (typeof COMPARE_ORBS)[number])
+      ? saved
+      : COMPARE_ORB_DEFAULT;
+  });
+  useEffect(() => {
+    localStorage.setItem(COMPARE_ORB_KEY, String(compareOrb));
+  }, [compareOrb]);
   // Frame-table controls (Separate view): active sort column/direction and
   // the status pills' filter. Session-only — the table is exploratory.
   const [frameSort, setFrameSort] = useState<{
@@ -687,6 +912,12 @@ export function ExpandedChartSidebar({
   const [frameStatuses, setFrameStatuses] = useState<Set<FrameStatus>>(
     () => new Set(FRAME_STATUSES),
   );
+  // The other three sortable readings, each with its own state so sorting the
+  // positions table by declination doesn't reorder the aspects underneath it.
+  // `null` = the list's own order, which every one of them opens in.
+  const [posSort, setPosSort] = useState<SortState<PosSortKey>>(null);
+  const [aspectSort, setAspectSort] = useState<SortState<AspectSortKey>>(null);
+  const [crossSort, setCrossSort] = useState<SortState<AspectSortKey>>(null);
 
 
   // Respect the Map Filter's planet toggles across every area of the expanded
@@ -800,10 +1031,21 @@ export function ExpandedChartSidebar({
       ? 'CCG'
       : overlayLabel.split('·')[0].trim()
     : null;
+  // Synastry's second chart is a PERSON, not a moment: it has no instant at all
+  // (timeline.ts leaves `moment` null for it), so the slot every other overlay
+  // fills with its date is where the partner's name goes. Taken off the label's
+  // detail half — "Synastry · Jane Doe" — from the FIRST middot only, so a name
+  // that contains one survives whole.
+  const overlaySubject =
+    overlayKind === 'synastry' && overlayLabel && overlayLabel.includes('·')
+      ? overlayLabel.slice(overlayLabel.indexOf('·') + 1).trim() || null
+      : null;
   // The overlay's date/time (UTC) to show alongside its name over the wheel, so the moment
   // reads even without the timeline bar in view. A middot splits date · time (matching the
   // bar's separator convention); "UTC" is kept explicit as the labelFull captions do.
-  const momentText = overlayMoment ? `${overlayMoment.replace(' ', ' · ')} UTC` : null;
+  const momentText = overlayMoment
+    ? `${overlayMoment.replace(' ', ' · ')} UTC`
+    : overlaySubject;
 
   // Built from the current prop rather than an updater callback: the set lives with the
   // caller now, and one pill click per commit needs no queued form.
@@ -923,6 +1165,103 @@ export function ExpandedChartSidebar({
   // the labels live. (Desktop can't go below MIN_WIDTH, so it's never compact — labels always
   // show there. The old DEFAULT_WIDTH threshold was unreachable on a phone, so it stuck compact.)
   const compact = isTouchLayout() && width < MIN_WIDTH;
+
+  // The place line and its coordinates — the panel header's, and the overlay
+  // wheel's below it, because they are the same fact about both: the angles on
+  // either wheel are cast for this point. Rendered from one function so the two
+  // cannot drift into saying it differently.
+  const relocatedLines = (): ReactNode => {
+    const displayPoint =
+      point ?? (chart ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng } : null);
+    if (!displayPoint) return null;
+    const stateClass = isNatalPin
+      ? 'natal-pinned'
+      : pinned
+        ? 'pinned'
+        : point
+          ? ''
+          : 'natal';
+    const hasPin = isNatalPin || pinned;
+    // Blanked only while this line is speaking for the BIRTHPLACE — the natal
+    // pin, or the plain natal state that falls back to it. A hovered or custom
+    // pin is a place the user chose to look at, not birth data, so it reads
+    // normally: the mode hides who the chart is, not where you are working.
+    const blankPlace = id.on && (isNatalPin || !point);
+    // The pin marker, shown whenever a pin is placed. It sits beside the place
+    // name when there is one; if the name line is hidden (e.g. the measure tool
+    // nulls it) it falls back beside the coordinates, so a placed pin is never
+    // left unmarked.
+    const pinIcon = (
+      <svg
+        className="es-pin-icon"
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+        <circle cx="12" cy="10" r="3" />
+      </svg>
+    );
+    // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
+    // the wheel's top-left corner, so here we show the place name (marked with a
+    // pin when one's placed) above its coordinates.
+    return (
+      <div className={`es-relocated ${stateClass}`}>
+        {/* The active point's place name — the chart's only location line (the
+            fixed birthplace line was removed to avoid showing the place twice).
+            Falls back to the birthplace when nothing is pinned, so it's never
+            blank; null only in transient states (e.g. the measure tool). When a
+            pin is placed, the pin marker sits beside the name (the place IS the
+            pin's location). */}
+        {/* ALWAYS rendered (nbsp while there's no name): the hover
+            geocode resolves per mouse move, so a line that mounts/
+            unmounts — or re-wraps between 1 and 2 lines — changes the
+            header's height on every move, and the scroll container then
+            "self-scrolls" to compensate whenever the user has scrolled
+            down (scroll anchoring; see .es-scroll). A permanent one-line
+            box (ellipsized in CSS) keeps the header geometry still. The
+            pin marker lives here in every case, so a placed pin is
+            never left unmarked. */}
+        {/* The pin marker and the name are a ROW, stated as one. The marker used
+            to be an inline SVG in front of a bare text node, which reads correctly
+            only while the line has room to spare — put the same markup in a
+            narrower box and the name drops below the marker instead of sitting
+            beside it. The name keeps the ellipsis, so it needs a box of its own to
+            ellipsize inside. */}
+        <span className="es-relocated-place">
+          {hasPin && pinIcon}
+          <span className="es-relocated-name">
+            {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || ' '}
+          </span>
+        </span>
+        <span className="es-relocated-text">
+          {blankPlace
+            ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
+            : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
+        </span>
+      </div>
+    );
+  };
+
+  // The overlay's instant in the header's own date form ("10 Aug 2026 · 04:43"),
+  // rather than the raw "YYYY-MM-DD HH:MM" the timeline hands over. The overlay is
+  // always given in UTC — it has no birth zone of its own to be offset from — so
+  // that stands where the chart's UTC offset does above.
+  //
+  // Synastry has no instant, and its partner's NAME takes the line instead (see
+  // overlaySubject) — which is not a time, so it carries no UTC mark.
+  const overlayWhen = (() => {
+    const m = overlayMoment?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    if (!m) return overlayMoment ?? overlaySubject;
+    return `${Number(m[3])} ${fmt.monthName(Number(m[2]))} ${m[1]} · ${m[4]}:${m[5]}`;
+  })();
+
   return (
     <aside
       className={`expanded-sidebar ${dragging ? 'dragging' : ''}${compact ? ' es-compact' : ''}`}
@@ -1038,79 +1377,7 @@ export function ExpandedChartSidebar({
             </span>
           </div>
         )}
-        {(() => {
-          const displayPoint =
-            point ??
-            (chart
-              ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng }
-              : null);
-          if (!displayPoint) return null;
-          const stateClass = isNatalPin
-            ? 'natal-pinned'
-            : pinned
-              ? 'pinned'
-              : point
-                ? ''
-                : 'natal';
-          const hasPin = isNatalPin || pinned;
-          // Blanked only while this line is speaking for the BIRTHPLACE — the natal
-          // pin, or the plain natal state that falls back to it. A hovered or custom
-          // pin is a place the user chose to look at, not birth data, so it reads
-          // normally: the mode hides who the chart is, not where you are working.
-          const blankPlace = id.on && (isNatalPin || !point);
-          // The pin marker, shown whenever a pin is placed. It sits beside the place
-          // name when there is one; if the name line is hidden (e.g. the measure tool
-          // nulls it) it falls back beside the coordinates, so a placed pin is never
-          // left unmarked.
-          const pinIcon = (
-            <svg
-              className="es-pin-icon"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-          );
-          // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
-          // the wheel's top-left corner, so here we show the place name (marked with a
-          // pin when one's placed) above its coordinates.
-          return (
-            <div className={`es-relocated ${stateClass}`}>
-              {/* The active point's place name — the chart's only location line (the
-                  fixed birthplace line was removed to avoid showing the place twice).
-                  Falls back to the birthplace when nothing is pinned, so it's never
-                  blank; null only in transient states (e.g. the measure tool). When a
-                  pin is placed, the pin marker sits beside the name (the place IS the
-                  pin's location). */}
-              {/* ALWAYS rendered (nbsp while there's no name): the hover
-                  geocode resolves per mouse move, so a line that mounts/
-                  unmounts — or re-wraps between 1 and 2 lines — changes the
-                  header's height on every move, and the scroll container then
-                  "self-scrolls" to compensate whenever the user has scrolled
-                  down (scroll anchoring; see .es-scroll). A permanent one-line
-                  box (ellipsized in CSS) keeps the header geometry still. The
-                  pin marker lives here in every case, so a placed pin is
-                  never left unmarked. */}
-              <span className="es-relocated-place">
-                {hasPin && pinIcon}
-                {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || '\u00A0'}
-              </span>
-              <span className="es-relocated-text">
-                {blankPlace
-                  ? `${id.text('00\u00B000\u2032N')} ${id.text('000\u00B000\u2032E')}`
-                  : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
-              </span>
-            </div>
-          );
-        })()}
+        {relocatedLines()}
 
       </section>
 
@@ -1182,7 +1449,7 @@ export function ExpandedChartSidebar({
               </div>
               <div className="es-ls-pair">
                 <div className="es-ls-col">
-                  <div className="es-dual-caption">
+                  <div className="es-dial-caption">
                     <TipSpan
                       className="es-overlay-caption"
                       tapReveal
@@ -1195,7 +1462,7 @@ export function ExpandedChartSidebar({
                   {lsDial(lsNatal, lsNatalAspects)}
                 </div>
                 <div className="es-ls-col">
-                  <div className="es-dual-caption">
+                  <div className="es-dial-caption">
                     <TipSpan
                       className="es-overlay-caption"
                       tapReveal
@@ -1230,7 +1497,8 @@ export function ExpandedChartSidebar({
             <>
               {/* Use the wheel's empty top corners: the chart-state title (left,
                   always) and, when an overlay is on, its caption (right — in
-                  Dual Wheels the caption sits between the wheels instead). */}
+                  Dual Wheels the overlay is a chart in its own right and gets a
+                  header of its own below, so this corner stays the natal one). */}
               {frame && (
                 <div className="es-wheel-corner es-wheel-corner-left">
                   <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
@@ -1272,12 +1540,20 @@ export function ExpandedChartSidebar({
                   // When the overlay moment is shown it stacks ABOVE the name as a
                   // right-aligned column (es-overlay-corner); the corner is absolutely
                   // positioned over the wheel, so this never adds sidebar height.
+                  // Synastry has no moment and puts its partner's name on that line
+                  // instead — same slot, so the layout is unchanged.
                   className={`es-wheel-corner es-wheel-corner-right${
                     momentText ? ' es-overlay-corner' : ''
                   }`}
                 >
                   {momentText && (
-                    <span className="es-overlay-moment">{momentText}</span>
+                    <span
+                      className={`es-overlay-moment${
+                        overlayMoment ? '' : ' es-overlay-subject'
+                      }`}
+                    >
+                      {momentText}
+                    </span>
                   )}
                   <span className="es-overlay-caption es-overlay-dashed">
                     {overlayName}
@@ -1311,31 +1587,68 @@ export function ExpandedChartSidebar({
                         interactive
                         planetsOnly={planetsOnly && !angles}
                       />
-                      {overlayName && (
-                        <div className="es-dual-caption">
-                          {/* Dual layout has room, so the moment is appended INLINE after
-                              the name with a middot separator (only the name keeps the
-                              dotted underline that echoes the map's overlay lines). */}
-                          <span className="es-overlay-caption es-overlay-inline">
-                            <span className="es-overlay-dashed">{overlayName}</span>
-                            {momentText && (
-                              <span className="es-overlay-moment"> · {momentText}</span>
-                            )}
-                          </span>
-                        </div>
-                      )}
-                      <WheelSvg
-                        size={wheelSize}
-                        angles={overlayAngles!}
-                        planets={shownOverlay!}
-                        detailed={true}
-                        advanced={advanced}
-                        aspectOrbs={aspectOrbs}
-                        visibleAspects={visibleAspects}
-                        visibleAngles={visibleAngles}
-                        readouts={fixedFullWidth}
-                        interactive
-                      />
+                      {/* The overlay wheel is introduced the way the natal one is:
+                          the same three header lines — instant, place, coordinates
+                          — and then its own name in its top-left corner where the
+                          chart-state title sits above. The two wheels are separate
+                          charts in this layout, and the second was getting a
+                          middot-joined caption where the first got a header.
+                          Everything but the name is the SECOND chart's own: its
+                          instant rather than the birth moment, and the place both
+                          are cast for (which is a fact about this wheel's angles,
+                          not a repetition of the one above). */}
+                      <div className="es-overlay-head">
+                        {overlayWhen && (
+                          <div className="es-meta">
+                            {/* When this line is a NAME rather than an instant it
+                                is the second chart's name, and a chart's name is
+                                the thing an astrologer reads first — so it takes
+                                the weight the natal chart's own name has at the
+                                top of the panel, instead of the quiet form a
+                                date wants. */}
+                            <span
+                              className={`es-meta-when${
+                                overlayMoment ? '' : ' es-overlay-chart-name'
+                              }`}
+                            >
+                              {overlayWhen}
+                              {/* Only a time is marked UTC. Synastry puts its
+                                  partner's name on this line, and a name has no
+                                  zone. */}
+                              {overlayMoment && (
+                                <span className="es-meta-tz">
+                                  {t('expandedSidebar.utc')}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        )}
+                        {relocatedLines()}
+                      </div>
+                      <div className="es-wheel-slot">
+                        {overlayName && (
+                          <div className="es-wheel-corner es-wheel-corner-left">
+                            <span
+                              className="es-wheel-title"
+                              style={{ color: 'var(--map-accent)' }}
+                            >
+                              {overlayName}
+                            </span>
+                          </div>
+                        )}
+                        <WheelSvg
+                          size={wheelSize}
+                          angles={overlayAngles!}
+                          planets={shownOverlay!}
+                          detailed={true}
+                          advanced={advanced}
+                          aspectOrbs={aspectOrbs}
+                          visibleAspects={visibleAspects}
+                          visibleAngles={visibleAngles}
+                          readouts={fixedFullWidth}
+                          interactive
+                        />
+                      </div>
                       {lsPair || lsTease}
                     </>
                   ) : (
@@ -1416,9 +1729,7 @@ export function ExpandedChartSidebar({
           row.kind === 'planet' ? (
             <li key={`p-${row.p.name}`}>
               <div className="es-row-main">
-                <span className="es-glyph" style={{ color: PLANET_COLORS[row.p.name] }}>
-                  <PlanetGlyph planet={row.p.name} size={13} />
-                </span>
+                <PlanetTipGlyph planet={row.p.name} size={13} />
                 <span className="es-name">{labels.planet(row.p.name)}</span>
                 <span className="es-lon">
                   <Longitude lon={row.p.lon} advanced={advanced} />
@@ -1428,9 +1739,7 @@ export function ExpandedChartSidebar({
           ) : (
             <li key={`a-${row.code}`}>
               <div className="es-row-main">
-                <span className="es-glyph es-angle-code" style={{ color: row.color }}>
-                  {row.code}
-                </span>
+                <AngleTipGlyph code={row.code} name={row.name} color={row.color} />
                 <span className="es-name">{row.name}</span>
                 <span className="es-lon">
                   <Longitude lon={row.lon} advanced={advanced} />
@@ -1459,9 +1768,7 @@ export function ExpandedChartSidebar({
           return (
             <tr key={p.name}>
               <td className="es-adv-point">
-                <span className="es-glyph" style={{ color: PLANET_COLORS[p.name] }}>
-                  <PlanetGlyph planet={p.name} size={13} />
-                </span>
+                <PlanetTipGlyph planet={p.name} size={13} />
                 <span className="es-name">{labels.planet(p.name)}</span>
                 {p.stationary ? (
                   <TipGlyph
@@ -1542,9 +1849,7 @@ export function ExpandedChartSidebar({
           return (
             <tr key={`a-${a.code}`}>
               <td className="es-adv-point">
-                <span className="es-glyph es-angle-code" style={{ color: a.color }}>
-                  {a.code}
-                </span>
+                <AngleTipGlyph code={a.code} name={a.name} color={a.color} />
                 <span className="es-name">{a.name}</span>
               </td>
               <td className="es-adv-num es-adv-lon">
@@ -1567,6 +1872,67 @@ export function ExpandedChartSidebar({
             </tr>
           );
         };
+        // Planets and angles sort as ONE list. An angle is an ecliptic point with
+        // a real longitude, latitude, right ascension and declination, so leaving
+        // the four of them out of a declination sort would answer the question
+        // wrongly rather than narrowly. Only Speed has nothing to say for an
+        // angle — and the rule below sinks every empty cell to the bottom, in
+        // both directions, so an em-dash never heads a sorted column.
+        type PosRow =
+          | { kind: 'planet'; p: EclipticPosition }
+          | { kind: 'angle'; a: (typeof shownAngleRows)[number] };
+        const posRows: PosRow[] = [
+          ...shownPlanets.map((p): PosRow => ({ kind: 'planet', p })),
+          ...shownAngleRows.map((a): PosRow => ({ kind: 'angle', a })),
+        ];
+        // Every value in the units the CELL is computed from, so a column sorts by
+        // exactly what it prints: longitudes and speed in degrees, the rest in
+        // radians (both sides of each column share one unit, which is all a
+        // comparison needs).
+        const posVal = (r: PosRow, key: PosSortKey): number | null => {
+          if (r.kind === 'angle') {
+            const ac = angleCoords?.[r.a.key];
+            switch (key) {
+              // The angles keep their canonical Mc, Ic, As, Ds, Vx, Avx order and
+              // sit after every body, so a Point sort ascending reproduces the
+              // table's own natural order exactly.
+              case 'point': return 1000 + shownAngleRows.indexOf(r.a);
+              case 'lon': return r.a.lon;
+              case 'speed': return null;
+              case 'lat': return ac?.lat ?? null;
+              case 'ra': return ac?.ra ?? null;
+              case 'dec': return ac?.dec ?? null;
+              case 'az': return ac?.az ?? null;
+              case 'alt': return ac?.alt ?? null;
+            }
+          }
+          const p = r.p;
+          const hc = advancedCoords.get(p.name);
+          switch (key) {
+            case 'point': return planetRank(p.name);
+            case 'lon': return p.lon;
+            case 'speed': return p.speed ?? null;
+            case 'lat': return p.lat ?? null;
+            case 'ra': return hc?.ra ?? null;
+            case 'dec': return p.dec ?? null;
+            case 'az': return hc?.az ?? null;
+            case 'alt': return hc?.alt ?? null;
+          }
+        };
+        const sortedPosRows = posSort
+          ? [...posRows].sort((x, y) => {
+              const a = posVal(x, posSort.key);
+              const b = posVal(y, posSort.key);
+              if (a == null || b == null) {
+                return a == null ? (b == null ? 0 : 1) : -1;
+              }
+              // Ties fall back to the natural order, so equal values still read
+              // luminaries-first rather than in whatever order sort() leaves them.
+              return posSort.dir * (a - b) || posRows.indexOf(x) - posRows.indexOf(y);
+            })
+          : posRows;
+        const onPosSort = (key: PosSortKey) =>
+          setPosSort((s) => nextSort(s, key));
         return (
           <section className="es-section es-section-details">
             <div className="es-planets-col">
@@ -1575,23 +1941,24 @@ export function ExpandedChartSidebar({
                   <table className="es-adv-table">
                     <thead>
                       <tr>
-                        <th className="es-adv-point">{t('expandedSidebar.table.point')}</th>
-                        <AdvHeader label={t('expandedSidebar.table.longitude')} hint={t('expandedSidebar.table.longitudeHint')} />
-                        <AdvHeader label={t('expandedSidebar.table.speed')} hint={t('expandedSidebar.table.speedHint')} />
-                        <AdvHeader label={t('expandedSidebar.table.latitude')} hint={t('expandedSidebar.table.latitudeHint')} />
-                        <AdvHeader label={t('expandedSidebar.table.raLabel')} title={t('expandedSidebar.table.raTitle')} hint={t('expandedSidebar.table.raHint')} />
-                        <AdvHeader label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
+                        <AdvHeader cellClass="es-adv-point" sortKey="point" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.point')} hint={t('expandedSidebar.table.pointHint')} />
+                        <AdvHeader sortKey="lon" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.longitude')} hint={t('expandedSidebar.table.longitudeHint')} />
+                        <AdvHeader sortKey="speed" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.speed')} hint={t('expandedSidebar.table.speedHint')} />
+                        <AdvHeader sortKey="lat" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.latitude')} hint={t('expandedSidebar.table.latitudeHint')} />
+                        <AdvHeader sortKey="ra" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.raLabel')} title={t('expandedSidebar.table.raTitle')} hint={t('expandedSidebar.table.raHint')} />
+                        <AdvHeader sortKey="dec" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
                         {advExtraCols && (
                           <>
-                            <AdvHeader label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
-                            <AdvHeader label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
+                            <AdvHeader sortKey="az" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
+                            <AdvHeader sortKey="alt" sort={posSort} onSort={onPosSort} label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
                           </>
                         )}
                       </tr>
                     </thead>
                     <tbody>
-                      {shownPlanets.map(renderAdvRow)}
-                      {shownAngleRows.map(renderAdvAngleRow)}
+                      {sortedPosRows.map((r) =>
+                        r.kind === 'planet' ? renderAdvRow(r.p) : renderAdvAngleRow(r.a),
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1681,12 +2048,7 @@ export function ExpandedChartSidebar({
                   const term = t(`expandedSidebar.dignity.${d}`);
                   return (
                     <li key={p.name}>
-                      <PlanetGlyph
-                        planet={p.name}
-                        size={12}
-                        className="asp-planet"
-                        color={PLANET_COLORS[p.name]}
-                      />
+                      <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
                       <span className="es-dignity-planet">{labels.planet(p.name)}</span>
                       <TipSpan
                         className={`es-dignity es-dignity-${d}`}
@@ -1836,14 +2198,32 @@ export function ExpandedChartSidebar({
         let count: number;
         let body: ReactNode;
         if (split) {
+          // BOTH frames are recomputed at the table's own orb (see
+          // COMPARE_ORB_DEFAULT) — comparing two frames only works if the same
+          // orb was asked of each, and the whole question is what a pair does
+          // between them, which a narrow orb answers by dropping one side. Only
+          // the five aspect orbs move; the luminary widener is the reader's and
+          // rides along, and the declination orb is untouched because
+          // declination pairs sit this table out. Nothing else in the app sees
+          // this table: the combined list above still reads the app's own orbs.
+          const cmpOrbs: AspectOrbs = {
+            ...aspectOrbs,
+            orbs: {
+              conjunction: compareOrb,
+              opposition: compareOrb,
+              trine: compareOrb,
+              square: compareOrb,
+              sextile: compareOrb,
+            },
+          };
+          const natCmp = computeAspects(shownPlanets, cmpOrbs);
+          const azCmp = computeAzimuthAspects(shownPlanets, lsAzimuths!, cmpOrbs);
           // One row per PAIR: fold each pair's two frames onto one line. The
           // statuses read off presence + type equality; the Δ column is the
           // signed orb change (negative = closer to exact in local space).
           const pairKey = (a: Aspect) => [a.a, a.b].sort().join('|');
-          const natPairs = new Map(lonAll.map((a) => [pairKey(a), a] as const));
-          const azPairs = new Map(
-            azAspects!.map((a) => [pairKey(a), a] as const),
-          );
+          const natPairs = new Map(natCmp.map((a) => [pairKey(a), a] as const));
+          const azPairs = new Map(azCmp.map((a) => [pairKey(a), a] as const));
           type FrameRow = {
             nat: Aspect | null;
             ls: Aspect | null;
@@ -1987,6 +2367,31 @@ export function ExpandedChartSidebar({
                     <span className="es-status-count">{counts[s]}</span>
                   </TipButton>
                 ))}
+                {/* Rides at the far right of the pills row rather than in a row
+                    of its own — the panel is a column of readings and a control
+                    strip per table would crowd them out. */}
+                <span className="es-compare-orb">
+                  <HintMenu
+                    value={String(compareOrb)}
+                    onChange={(v) => setCompareOrb(Number(v))}
+                    options={COMPARE_ORBS.map((o) => ({
+                      value: String(o),
+                      label: t('expandedSidebar.localSpace.orbValue', { deg: o }),
+                      hint:
+                        o === COMPARE_ORB_DEFAULT
+                          ? t('expandedSidebar.localSpace.orbDefaultHint')
+                          : t('expandedSidebar.localSpace.orbOptionHint', { deg: o }),
+                    }))}
+                    triggerTip={{
+                      title: (
+                        <span className="es-tip-title">
+                          {t('expandedSidebar.localSpace.orbTip')}
+                        </span>
+                      ),
+                      hint: t('expandedSidebar.localSpace.orbHint'),
+                    }}
+                  />
+                </span>
               </div>
               <table className="es-frames-table">
                 <thead>
@@ -2092,48 +2497,61 @@ export function ExpandedChartSidebar({
             // One metric across frames: zodiacal and azimuth orbs interleave.
             .sort(byOrb);
           count = rows.length;
+          const sortedRows = sortAspects(rows, aspectSort);
           body = (
-            <ul className="es-aspect-list">
-              {rows.map((a, i) => {
-                const rowCls = `asp asp-${a.category}${
-                  a.ls === 'lost' ? ' asp-ls-lost' : ''
-                }${a.ls === 'both' ? ' asp-ls-both' : ''}`;
-                // Frame badges ride in the type cell, right after the aspect
-                // name, so they read at a glance; a kept row's orb carries the
-                // orb-shift marker against its horizon counterpart.
-                const rowCells = cells(
-                  a,
-                  a.ls === 'lost'
-                    ? lostBadge
-                    : a.ls === 'only'
-                      ? newBadge('LS', 'es-ls-tag')
+            <>
+              <SortStrip
+                label={t('expandedSidebar.sortBy')}
+                sort={aspectSort}
+                onSort={(key) => setAspectSort((s) => nextSort(s, key))}
+                options={[
+                  { key: 'pair', label: t('expandedSidebar.sort.pair'), hint: t('expandedSidebar.sort.pairHint') },
+                  { key: 'type', label: t('expandedSidebar.sort.type'), hint: t('expandedSidebar.sort.typeHint') },
+                  { key: 'orb', label: t('expandedSidebar.sort.orb'), hint: t('expandedSidebar.sort.orbHint') },
+                ]}
+              />
+              <ul className="es-aspect-list">
+                {sortedRows.map((a, i) => {
+                  const rowCls = `asp asp-${a.category}${
+                    a.ls === 'lost' ? ' asp-ls-lost' : ''
+                  }${a.ls === 'both' ? ' asp-ls-both' : ''}`;
+                  // Frame badges ride in the type cell, right after the aspect
+                  // name, so they read at a glance; a kept row's orb carries the
+                  // orb-shift marker against its horizon counterpart.
+                  const rowCells = cells(
+                    a,
+                    a.ls === 'lost'
+                      ? lostBadge
+                      : a.ls === 'only'
+                        ? newBadge('LS', 'es-ls-tag')
+                        : undefined,
+                    a.ls === 'both'
+                      ? orbShift(a, azByKey!.get(k(a))!)
                       : undefined,
-                  a.ls === 'both'
-                    ? orbShift(a, azByKey!.get(k(a))!)
-                    : undefined,
-                );
-                // A both-frames row has no badge — its capsule styling is the
-                // whole cue — so the row itself explains it on hover.
-                return a.ls === 'both' ? (
-                  <TipRow
-                    key={i}
-                    className={rowCls}
-                    title={
-                      <span className="es-tip-title">
-                        {t('expandedSidebar.localSpace.both')}
-                      </span>
-                    }
-                    hint={t('expandedSidebar.localSpace.bothHint')}
-                  >
-                    {rowCells}
-                  </TipRow>
-                ) : (
-                  <li key={i} className={rowCls}>
-                    {rowCells}
-                  </li>
-                );
-              })}
-            </ul>
+                  );
+                  // A both-frames row has no badge — its capsule styling is the
+                  // whole cue — so the row itself explains it on hover.
+                  return a.ls === 'both' ? (
+                    <TipRow
+                      key={i}
+                      className={rowCls}
+                      title={
+                        <span className="es-tip-title">
+                          {t('expandedSidebar.localSpace.both')}
+                        </span>
+                      }
+                      hint={t('expandedSidebar.localSpace.bothHint')}
+                    >
+                      {rowCells}
+                    </TipRow>
+                  ) : (
+                    <li key={i} className={rowCls}>
+                      {rowCells}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           );
         }
 
@@ -2188,8 +2606,22 @@ export function ExpandedChartSidebar({
             >
               {t('expandedSidebar.overlayAspectsCount', { count: cross.length })}
             </TipHeading>
+            {/* Same strip as the list above, with its own state: sorting the
+                contacts should not disturb the natal aspects, and the two are
+                read against each other. 'Pair' groups by the OVERLAY body here —
+                the subject of the contact, and the column the list leads with. */}
+            <SortStrip
+              label={t('expandedSidebar.sortBy')}
+              sort={crossSort}
+              onSort={(key) => setCrossSort((s) => nextSort(s, key))}
+              options={[
+                { key: 'pair', label: t('expandedSidebar.sort.pair'), hint: t('expandedSidebar.sort.crossPairHint') },
+                { key: 'type', label: t('expandedSidebar.sort.type'), hint: t('expandedSidebar.sort.typeHint') },
+                { key: 'orb', label: t('expandedSidebar.sort.orb'), hint: t('expandedSidebar.sort.orbHint') },
+              ]}
+            />
             <ul className="es-aspect-list">
-              {cross.map((a, i) => (
+              {sortAspects(cross, crossSort).map((a, i) => (
                 <li key={i} className={`asp asp-${a.category}`}>
                   <PlanetTipGlyph
                     planet={a.a as PlanetName}

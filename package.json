@@ -27,6 +27,7 @@
     "verify:timechain": "node scripts/harness/run.mjs scripts/verify-timechain.ts",
     "verify:directions": "node scripts/harness/run.mjs scripts/verify-directions.ts",
     "verify:slide": "node scripts/harness/run.mjs scripts/verify-slide.ts",
+    "verify:wheel-layout": "node scripts/harness/run.mjs scripts/verify-wheel-layout.ts",
     "verify:content": "node scripts/harness/run.mjs scripts/verify-content.ts",
     "verify:import": "node scripts/harness/run.mjs scripts/verify-import.ts",
     "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",

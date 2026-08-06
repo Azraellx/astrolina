@@ -47,6 +47,29 @@ export function lonToZodiac(lon: number): { signIdx: number; degMin: string } {
   return { signIdx, degMin: `${cd}°${pad2(cm)}'` };
 }
 
+// Degrees → "DD°MM'" — the same degree+arcminute form the Advanced planet table
+// quotes, for any coordinate that isn't a zodiacal longitude. A 0–360 quantity
+// (azimuth, right ascension) passes signed=false and wraps 360° back to 0°; a
+// ± quantity (altitude, declination, ecliptic latitude, daily motion) passes
+// signed=true and keeps its leading − or +.
+//
+// It lives here beside lonToZodiac rather than with the horizon dial that first
+// needed it: the zodiac wheel's own hover readout wants it too, and that wheel is
+// where the dial imports its tip chrome from, so keeping it there would have made
+// the two modules import each other.
+export function fmtDM(deg: number, signed = false): string {
+  const abs = Math.abs(deg);
+  let d = Math.floor(abs);
+  let m = Math.round((abs - d) * 60);
+  if (m === 60) {
+    m = 0;
+    d += 1;
+  }
+  if (d >= 360 && !signed) d -= 360; // 359°59.6' rounds to 0°00', not 360°00'
+  const sign = d === 0 && m === 0 ? '' : deg < 0 ? '-' : signed ? '+' : '';
+  return `${sign}${d}°${pad2(m)}'`;
+}
+
 // The six chart angles as static rows, in the conventional Mc, Ic, As, Ds, then
 // Vertex axis order. Each is tied to the line-type toggle that gates it (so map
 // lines and readout rows move together), the i18n key for its full name, the
@@ -59,6 +82,10 @@ export interface AngleSpec {
   nameKey: MsgKey;
   color: string;
 }
+/** An angle's short code — the identity every angle filter is keyed by (the
+ *  wheel's angle marks, a capture's Angles extra, a consumer that owns its own
+ *  angle set). Named off the spec so the two can never drift apart. */
+export type AngleCode = AngleSpec['code'];
 export const ANGLE_SPECS: AngleSpec[] = [
   { code: 'Mc',  key: 'mc',         lineType: 'MC',  nameKey: 'expandedSidebar.angle.midheaven',  color: 'var(--cool)' },
   { code: 'Ic',  key: 'ic',         lineType: 'IC',  nameKey: 'expandedSidebar.angle.imumCoeli',  color: 'var(--cool)' },

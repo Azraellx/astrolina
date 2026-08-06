@@ -4440,6 +4440,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       maxWidth: 'none',
     });
     lineCardPopupRef.current = lineCardPopup;
+    // Which line the open card is ABOUT. Both popups anchor on the same click
+    // coordinate, so without this the hover tip lands on top of the card the
+    // click just asked for — and it names the line the card's own title already
+    // names, so it is pure duplication there. Cleared on every close path (the
+    // ✕, an empty-map click's remove(), and the [lineCard] identity effect
+    // below) by the one listener.
+    let cardLine: string | null = null;
+    lineCardPopup.on('close', () => {
+      cardLine = null;
+    });
     const clearLine = () => {
       hoveredLine = null;
       linePopup.remove();
@@ -4510,8 +4520,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         } else {
           // A bare line under the cursor just names itself (hover tip); it isn't a
           // click target, so the cursor stays the map's default (no pointer).
+          //
+          // Except the one line an open interpretation card is about: the card
+          // titles itself with that name and sits on the same coordinate, so the
+          // tip would only cover the reading it was clicked for. Tested on the
+          // RAW id, before the eclipse/paran salting below appends a cursor cell
+          // to it. Any other line still names itself as usual.
           const line = lineAtPoint(map, e.point, t, labels);
-          if (line) {
+          if (line && !(lineCardPopup.isOpen() && line.id === cardLine)) {
             // Eclipse curves add the LOCAL circumstances at the cursor ("63%
             // obscured at 18:14 UTC"). The id is salted with a coarse cursor
             // cell so the figure refreshes while sliding along the line without
@@ -4661,6 +4677,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         if (html) {
           lineCardPopup.setLngLat(e.lngLat).setHTML(html);
           if (!lineCardPopup.isOpen()) lineCardPopup.addTo(map);
+          // Remember the line, and take its hover tip down: the tip is already
+          // open on this very coordinate (the click didn't move the cursor), so
+          // it would sit over the card. handleMove keeps it down for this line
+          // while the card stays open — see the guard there.
+          cardLine = hit!.id;
+          clearLine();
         } else {
           lineCardPopup.remove();
         }

@@ -43,7 +43,24 @@ export const wheel = {
     h11: 'Friends · community · hopes',
     h12: 'Solitude · the unseen · spirituality',
   },
-  // Short keyword gloss per body, keyed by PlanetName.
+  // What a body's hover tip reads under its name IN THE WHEEL: where the body IS,
+  // in the two ecliptic coordinates — the zodiac wheel's counterpart to the
+  // horizon dials' Azimuth / Altitude pair (expandedSidebar.localSpace.azTip /
+  // altTip), worded and formatted to match them.
+  //
+  // The longitude is the degree WITHIN the sign, the sign itself being named up
+  // in the tip's title beside the body — so no sign name belongs in this string.
+  tip: {
+    longitude: 'Longitude {lon}',
+    latitude: 'Latitude {lat}',
+  },
+  // Short keyword gloss per body, keyed by PlanetName. It used to be what the
+  // wheel's own discs said on hover, which is where the position belongs — a
+  // wheel is read for where things ARE — so the gloss moved down to the planet
+  // glyphs in the readouts under it: the positions table, the aspect lists, the
+  // frame table. Those name the body and nothing else, so a beginner reading an
+  // aspect row has somewhere to ask what Chiron is without the wheel spending
+  // its one line of tip on a sentence that never changes.
   planetMeanings: {
     Sun: 'Identity · vitality · ego',
     Moon: 'Emotions · instinct · needs',
