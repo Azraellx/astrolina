@@ -55,42 +55,55 @@ export function AutoFlipNotice({
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const { tone, once } = AUTO_FLIP_META[kind];
 
-  // Find the control this notice is about, park the card next to it, and mark it. In
-  // a LAYOUT effect so the move happens before paint — measuring in a passive effect
+  // Find the controls this notice is about, park the card clear of them, and mark them.
+  // In a LAYOUT effect so the move happens before paint — measuring in a passive effect
   // would let the card show up in one place and jump to another.
   useLayoutEffect(() => {
-    const selector = AUTO_FLIP_META[kind].target;
-    const target = selector
-      ? document.querySelector<HTMLElement>(selector)
-      : null;
     const card = cardRef.current;
-    // No control on screen (behind a menu, a collapsed panel, a hidden bar): keep the
-    // neutral position rather than pointing at nothing. Matching the selector is not
-    // enough — a collapsed section is still IN the document, with a zero-size box that
-    // would anchor the card to the top-left corner and point confidently at nothing.
-    if (!target || !card || !target.getClientRects().length) return;
+    // On-screen only. Matching the selector is not enough — a collapsed section is still
+    // IN the document, with a zero-size box that would drag the card to the top-left
+    // corner and point confidently at nothing.
+    const targets = AUTO_FLIP_META[kind].targets
+      .map((sel) => document.querySelector<HTMLElement>(sel))
+      .filter((el): el is HTMLElement => !!el && el.getClientRects().length > 0);
+    // Nothing on screen (behind a menu, a collapsed panel, a hidden bar): keep the
+    // neutral position rather than pointing at nothing.
+    if (!card || !targets.length) return;
 
-    // The ring lives on someone else's element, so it can't inherit the card's tone —
-    // it restates it (see the CSS). One class, both kinds: the tone no longer varies by
+    // The ring lives on someone else's elements, so it can't inherit the card's tone —
+    // it restates it (see the CSS). One class, every kind: the tone no longer varies by
     // kind, only the mark on the card does, and a ring has no mark to vary.
-    target.classList.add('auto-flip-target');
+    targets.forEach((el) => el.classList.add('auto-flip-target'));
 
     const place = () => {
-      const t0 = target.getBoundingClientRect();
+      const rects = targets.map((el) => el.getBoundingClientRect());
       const c = card.getBoundingClientRect();
+      // The card clears the union of every marked control, not just the one it points
+      // at. Anchoring to one and hoping was the bug this replaced: the card cleared the
+      // frame segments and came to rest exactly on the returns chip in the nub above
+      // them — hiding the ✕ in the same sentence that told the reader to press it.
+      const top = Math.min(...rects.map((r) => r.top));
+      const bottom = Math.max(...rects.map((r) => r.bottom));
+      const midX =
+        (Math.min(...rects.map((r) => r.left)) +
+          Math.max(...rects.map((r) => r.right))) /
+        2;
       // Above by preference — these controls live on the bottom bar, and a card that
       // covers the thing it is naming would be its own kind of unhelpful.
-      const below = t0.top < c.height + GAP + EDGE;
-      const centred = t0.left + t0.width / 2 - c.width / 2;
+      const below = top < c.height + GAP + EDGE;
       const left = Math.min(
-        Math.max(EDGE, centred),
+        Math.max(EDGE, midX - c.width / 2),
         Math.max(EDGE, window.innerWidth - c.width - EDGE),
       );
+      // The arrow points at the FIRST control, not at the middle of the union — with two
+      // of them the middle can be empty space, and an arrow into a gap is worse than
+      // none. The ring is what ties the others to the card.
+      const a0 = rects[0];
       setAnchor({
         left,
-        top: below ? t0.bottom + GAP : t0.top - c.height - GAP,
+        top: below ? bottom + GAP : top - c.height - GAP,
         // Clamped inside the card's own corners so the arrow never detaches from it.
-        arrow: Math.min(Math.max(16, t0.left + t0.width / 2 - left), c.width - 16),
+        arrow: Math.min(Math.max(16, a0.left + a0.width / 2 - left), c.width - 16),
         below,
       });
     };
@@ -98,7 +111,7 @@ export function AutoFlipNotice({
     window.addEventListener('resize', place);
     return () => {
       window.removeEventListener('resize', place);
-      target.classList.remove('auto-flip-target');
+      targets.forEach((el) => el.classList.remove('auto-flip-target'));
     };
   }, [kind]);
 

@@ -34,7 +34,11 @@ export const settings = {
     aspectOrbs: 'Aspect orbs',
     primaryRate: 'Pri. directions rate',
     display: 'Display',
-    chartAngle: 'Chart Angle',
+    // The two halves the old shared "Chart Angle" control split into. Naming them apart
+    // is what splits the question: `Arc` sets how far the bodies advance (Solar Arc),
+    // `Angles` sets whose angles the map is drawn against (progressions).
+    arc: 'Arc',
+    progAngles: 'Angles',
     magnitudeSteps: 'Magnitude steps',
     fortuneFormula: 'Part of Fortune',
   },
@@ -239,38 +243,127 @@ export const settings = {
     cardan: { label: 'Cardan (59′12″/yr)', hint: '0.986667° per year.' },
     'kepler-ra': { label: 'Solar Daily Motion (RA)', hint: 'Kepler’s key — the natal Sun’s daily motion in right ascension × years.' },
     'solar-long': { label: 'Solar Daily Motion (Longitude)', hint: 'Natal Sun’s daily motion in ecliptic longitude × years.' },
-    'placidus-ra': { label: 'True Solar Arc (RA)', hint: 'True secondary-progressed solar arc in RA, applied as a primary-direction rate (nonlinear with time).' },
+    // The one nonlinear key. The old hint named three techniques in a single clause and
+    // left the reader to work out which was the subject; this says what the key IS and
+    // what follows from it. "True" stays in the LABEL — it is doing real work there,
+    // marking this as the measured arc against the mean-rate keys above it.
+    'placidus-ra': { label: 'True Solar Arc (RA)', hint: 'Uses the actual distance the progressed Sun has covered by this age as the time key, rather than a fixed yearly rate. Because the Sun’s speed varies through the year, the arc accumulates unevenly — so this key runs slightly ahead or behind the fixed-rate options depending on the season of birth.' },
     user: { label: 'User rate', hint: 'Enter your own degrees-per-year below.' },
+    // The CONTROL's own copy, on an info tip beside the label. Seven unfamiliar school
+    // names need the frame before the choices — what a time-key is and why they differ —
+    // and none of the seven entries is the right place to carry it.
+    control: {
+      tip: 'The primary-directions time key',
+      hint: 'Primary directions model the daily rotation: the chart’s angles are carried forward while the bodies hold their natal places in the sky. The rate is the time-key — how much arc accrues per year of life. Schools differ, and the spread is real: over a lifetime Ptolemy and Naibod part by more than a year.',
+    },
   },
 
-  // The overlay frame, as the two QUESTIONS it answers rather than as a pair of
-  // abstract adjectives — the old Relative/Absolute labels named the mechanism and
-  // left the reader to work out which one their question needed. `label` is the
-  // segment face (kept short: it shares a bar row with the returns), `tip` the
-  // tooltip headline, `hint` the reasoning underneath.
+  // The overlay frame: WHOSE ANGLES the lines are drawn against. Both segments are named
+  // for that one question, which is also what the progressions control now asks — so the
+  // pattern is learnable across the two bars rather than being two vocabularies.
+  //
+  // ("My angles" / "Sky now" until August 2026. Both were wrong in the same way: they
+  // named the reader's relationship to the frame instead of the frame. "Sky now" was
+  // additionally false at every date but the present, which is precisely when it is read
+  // — a return, an election, an event.)
+  //
+  // `label` is the SPELLED-OUT name — the accessible name of the segment, the status strip,
+  // and any prose. `short` is the segment FACE: both options end in the same noun, so the
+  // control draws that noun once, as the angles mark (ui/AnglesIcon), and each button spends
+  // its width on the word that actually distinguishes it. `tip` is the tooltip headline,
+  // `hint` the reasoning underneath. The `return*` variants replace them while a return is on
+  // screen: the frames are the same two, but under a return each answers a different
+  // question, and the exact-degree behaviour of the returning body is the whole reason the
+  // frame is held. Third person throughout, and no recommendation — the app explains the
+  // options and lets the astrologer choose the technique.
   positioning: {
     'relative-to-natal': {
-      label: 'My angles',
-      tip: 'Transits to my angles',
-      hint: 'Where a transiting planet reaches your relocated natal angles — the map answers “where would I have to live for this transit to land on my MC?” It holds the birth chart’s sidereal frame, so the lines drift only with the planets’ own motion, slowly enough to read over months.',
+      label: 'Natal angles',
+      short: 'Natal',
+      tip: 'The birth chart’s own angles',
+      hint: 'Holds the natal frame still, so only the planets’ own secondary motion moves the lines. The diurnal rotation is removed. Answers: where on Earth would this transit be landing on the MC, IC, Ascendant or Descendant? The lines drift over weeks and months, at each planet’s own rate.',
+      // Under a solar return: the Sun carries no ecliptic latitude, so In Mundo and In
+      // Zodiaco agree about it exactly — which is why this one can promise "the same
+      // place every year" where the lunar wording below cannot.
+      returnHintSolar: 'Draws the return’s planets against the natal angles. The return Sun is back on its natal degree, and the Sun has no ecliptic latitude, so its lines fall exactly on the natal Sun lines in either projection — the same place every year.',
+      returnHintLunar: 'Draws the return’s planets against the natal angles. The return Moon is back on its natal longitude, so In Zodiaco its lines fall on the natal Moon lines; In Mundo they land close but not exactly, because the Moon’s latitude has changed since birth.',
     },
     'transit-moment': {
-      label: 'Sky now',
-      tip: 'The sky at this moment',
-      hint: 'Where each body is genuinely angular at the overlay’s own moment — standard transit astrocartography, and the frame other software draws. The lines sweep about 15° per hour with Earth’s rotation, so this one is read at an instant rather than across a season.',
+      label: 'Transit angles',
+      short: 'Transit',
+      // The second segment is named for the technique in play, so it parallels
+      // "Progressed angles" on the other bar and the reader learns one pattern.
+      returnLabel: 'Return angles',
+      returnShort: 'Return',
+      tip: 'The angles of the moment itself',
+      returnTip: 'The return chart’s own angles',
+      hint: 'Reads the sky against the moment’s own frame, so the lines carry primary motion — the whole set sweeps 15° an hour and comes right around once a day. Each body’s line marks where it is genuinely angular at that instant. No natal chart is involved. Read at an instant, not across a season.',
+      returnHint: 'A return chart is a moment of its own, with its own angles. The map is drawn against the return’s angles rather than the natal ones.',
     },
   },
 
-  chartAngle: {
-    'sa-long': { label: 'SA in Longitude', hint: 'Solar arc in ecliptic longitude (the classic solar-arc default).' },
-    'sa-ra': { label: 'SA in RA', hint: 'Solar arc measured in right ascension.' },
-    'naibod-long': { label: 'Naibod in Long', hint: 'Mean solar rate 0.9856°/yr, applied in longitude.' },
-    'naibod-ra': { label: 'Naibod in RA', hint: 'Mean solar rate 0.9856°/yr, applied in right ascension.' },
-    // Storage key is historical ('mean-quotidian'); the behavior is the natal
-    // frame — progressed angles do NOT advance. Relabeled by the June 2026
-    // audit: the old "Mean Quotidian" label promised angle motion the overlay
-    // deliberately doesn't perform (true quotidian angles are a planned option).
-    'mean-quotidian': { label: 'Natal Frame', hint: 'Angles hold the natal RAMC — progressed planets read against the birth chart’s frame. On Solar Arc this applies the arc in longitude (the classic default).' },
+  // The four arc CALCULATIONS. One set of labels, two sets of hints: the same arithmetic
+  // acts on different things depending on which overlay is asking, and a tooltip that
+  // describes the arc without saying what it moves is the shape the old shared menu was
+  // stuck in ("solar arc in ecliptic longitude" — applied to what?).
+  //
+  // `angles` is the progressions reading, `bodies` the Solar Arc one. Each stands alone,
+  // with no back-references between neighbouring entries: they are read one at a time,
+  // hovered in whatever order the reader's pointer takes.
+  //
+  // Names spelled out. "SA" is already the map badge for a solar-arc line, so a menu that
+  // also used it as an abbreviation was asking one string to mean two things. And no
+  // "(default)" tag on any entry — the radio dot marks the live one, while a static tag
+  // would still be sitting next to an option the reader had deliberately moved away from.
+  arcMethod: {
+    'sa-long': {
+      label: 'Solar arc — in longitude',
+      angles: 'Advances the angles by the distance this chart’s progressed Sun has actually travelled, measured along the ecliptic.',
+      bodies: 'Advances every body by the distance this chart’s progressed Sun has actually travelled, measured along the ecliptic. The classic method.',
+    },
+    'sa-ra': {
+      label: 'Solar arc — in right ascension',
+      angles: 'Advances the angles by the distance this chart’s progressed Sun has actually travelled, measured along the equator.',
+      bodies: 'Advances every body by the distance this chart’s progressed Sun has actually travelled, measured along the equator.',
+    },
+    'naibod-long': {
+      label: 'Naibod, mean rate — in longitude',
+      angles: 'Advances the angles at the Sun’s average yearly motion, measured along the ecliptic.',
+      bodies: 'Advances every body at the Sun’s average yearly motion, measured along the ecliptic.',
+    },
+    'naibod-ra': {
+      label: 'Naibod, mean rate — in right ascension',
+      angles: 'Advances the angles at the Sun’s average yearly motion, measured along the equator.',
+      bodies: 'Advances every body at the Sun’s average yearly motion, measured along the equator.',
+    },
+    // Menu headers — the question the four entries answer, which differs by overlay and
+    // is the whole reason these are two controls now.
+    headerAngles: 'How far the angles advance',
+    headerBodies: 'How far the bodies advance',
+  },
+
+  // The progressed overlays' frame pair, named to parallel the transits bar's: same
+  // question ("whose angles?"), same shape of answer — and the same `label`/`short` split,
+  // with the shared noun drawn once as the angles mark.
+  progAngles: {
+    natal: {
+      label: 'Natal angles',
+      short: 'Natal',
+      tip: 'The birth chart’s own angles',
+      hint: 'The progressed planets are read against the natal angles. The birth chart’s frame is held still, so only the planets move.',
+    },
+    progressed: {
+      label: 'Progressed angles',
+      short: 'Progressed',
+      tip: 'The progressed chart’s own angles',
+      hint: 'The progressed chart has a real moment of its own — one day after birth for each year of life — so it has its own angles. The map is drawn against those instead of the natal ones.',
+    },
+    // On the calculation menu while the angles are held natal: it is showing a method
+    // that isn't running, which needs saying before a reader takes it for the live one.
+    idle: {
+      tip: 'Not in force',
+      hint: 'The angles are held on the birth chart’s, so no arc is being applied to them. Choosing a calculation here also switches the map to Progressed angles.',
+    },
   },
 
   // Synastry ▸ Relationships: derive one chart from the two synastry charts.

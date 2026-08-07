@@ -19,7 +19,7 @@ import type {
   NodeType,
 } from '../lib/ephemeris';
 import type {
-  AngleProgression,
+  ArcMethod,
   PrimaryRate,
 } from '../lib/astro/timeline';
 import type { LineType } from '../lib/astro/lines';
@@ -63,8 +63,11 @@ export function makeEnumLabels(t: TFn) {
     primaryRate: (r: PrimaryRate) => t(`settings.primaryRate.${r}.label`),
     primaryRateHint: (r: PrimaryRate) => t(`settings.primaryRate.${r}.hint`),
 
-    chartAngle: (a: AngleProgression) => t(`settings.chartAngle.${a}.label`),
-    chartAngleHint: (a: AngleProgression) => t(`settings.chartAngle.${a}.hint`),
+    // The four arc calculations share one label set and split their explanation by what
+    // the arc is being applied TO — the angles (progressions) or every body (Solar Arc).
+    arcMethod: (a: ArcMethod) => t(`settings.arcMethod.${a}.label`),
+    arcMethodAnglesHint: (a: ArcMethod) => t(`settings.arcMethod.${a}.angles`),
+    arcMethodBodiesHint: (a: ArcMethod) => t(`settings.arcMethod.${a}.bodies`),
 
     lineTypeHint: (lt: LineType) => t(`settings.lineType.${lt}.hint`),
   };

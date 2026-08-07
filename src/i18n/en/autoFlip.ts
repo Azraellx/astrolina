@@ -24,19 +24,30 @@ export const autoFlip = {
   suppress: 'Don’t show me again',
   ok: 'Got it',
 
-  // Always anchored (the snap that fires this is two controls away from the frame segments),
-  // so no location clause: the title already names both the setting and the value it moved
-  // to, which is what a screen reader needs, and the ring does the rest for everyone else.
+  // Always anchored, and to BOTH of the controls it names — the chip in the timeline nub
+  // and the frame segments in the returns row (see AUTO_FLIP_META). So no location clause:
+  // the title names the setting and the value it moved to, which is what a screen reader
+  // needs, and the two rings do the rest for everyone else.
   //
-  // Both sentences describe the frame the reader is NOW in. An earlier draft opened on the
-  // one they are NOT in ("on My angles its lines would…") and read as a non-sequitur — the
-  // card announces a move to Sky now and then talks about somewhere else, so the reader has
-  // to hold a counterfactual before they have been told what they actually got. The reason
-  // still turns on the alternative, so it is IMPLIED ("the only frame its lines move in")
-  // rather than narrated; the comparison itself belongs on the two segments' own tips.
-  'overlay-frame': {
-    title: 'Overlay frame set to Sky now',
-    body: 'This frame reads the sky as it actually stood at the return’s own moment. The returning body is back on its birth degree, so this is the only frame its lines move in.',
+  // That is also why the last sentence can afford to say "the ✕ on the chip" without
+  // explaining where the chip is. It could not before the card learned to clear more than
+  // one control: it used to come to rest squarely on the chip, hiding the ✕ in the same
+  // breath as naming it.
+  //
+  // The first two sentences describe the frame the reader is NOW in. An earlier draft opened
+  // on the one they are NOT in ("on Natal angles its lines would…") and read as a
+  // non-sequitur — the card announces one frame and then talks about somewhere else, so the
+  // reader has to hold a counterfactual before they have been told what they actually got.
+  // The reason still turns on the alternative, so it is IMPLIED ("the only frame its lines
+  // move in") rather than narrated; the comparison belongs on the two segments' own tips.
+  //
+  // The LAST sentence is the one this card exists for, and it is the same sentence
+  // 'line-system-held' ends on: nothing was taken. It also names what gives it back, because
+  // the chip carrying that handle is small and new, and a reader who has just watched every
+  // line on the map move is not in a mood to go looking.
+  'overlay-frame-held': {
+    title: 'Overlay frame held on Return angles',
+    body: 'A return chart is a moment of its own, with its own angles, and the returning body is back on its birth degree — so this is the only frame its lines move in. Your own frame is held, not cleared: it comes back when you leave the return, or straight away from the ✕ on the chip.',
   },
   // Fires from several tools, so the trigger stays unnamed — but the old "has no meaning
   // under the Mundane mapping" asserted the conclusion without the fact behind it. The
@@ -82,10 +93,22 @@ export const autoFlip = {
   // load-bearing rather than decorative: it is what "flattens" flattens, so the pair only
   // clicks if the first sentence has already put the latitude there.
   //
-  // The control is named rather than pointed at even though this one always anchors,
-  // because the ring beside it is no help to a screen reader.
+  // TRIMMED (2026-08-07) by two sentences that had each been argued for above and no longer
+  // earn their place on a card the reader did not ask for:
+  //   - "the usual default elsewhere, and usually why lines here differ from a map you
+  //     already know" — a reader told there are two ways to place a body, while looking at
+  //     a map that doesn't match the one they know, draws that line themselves. Stating it
+  //     spends the card's last sentence on the reader's own next thought.
+  //   - "Line projection switches between them" — this named the control instead of
+  //     pointing at it, on the reasoning that the ring is no help to a screen reader. That
+  //     reasoning was about LOCATING the control, and it doesn't survive this kind's single
+  //     trigger: the card only ever fires on opening the panel the control lives in, so the
+  //     reader is already in it. (Restore the clause if the trigger is ever widened.)
+  // What is left is the one thing a reader can't infer: what the two readings DO
+  // differently. The magnitudes (Pluto ~17°, the Moon ~5°) stay on the control's own hint
+  // and in Help, where they are still there next week.
   'line-projection': {
     title: 'These lines are drawn In Mundo',
-    body: 'Every program has to decide where a body “is” before it can draw its line. In Mundo places it where it sits in the sky, latitude and all. In Zodiaco flattens that latitude onto the ecliptic first — the usual default elsewhere, and usually why lines here differ from a map you already know. Line projection switches between them.',
+    body: 'Every program has to decide where a body “is” before it can draw its line. In Mundo places it where it sits in the sky, latitude and all. In Zodiaco flattens that latitude onto the ecliptic first.',
   },
 } as const;

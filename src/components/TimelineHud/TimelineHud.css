@@ -141,6 +141,93 @@
   font-weight: 600;
 }
 
+/* ── The returns chip ───────────────────────────────────────────────────────
+   Shown in the nub while a return is holding the overlay frame: the record that
+   the app took it, and the handle for giving it back. A tinted pill rather than
+   plain text, because it is a piece of live STATE sitting next to a label that
+   never changes, and the two must not read as one phrase.
+
+   It pops in once (ui-pop, --dur-quick) — the map has just moved and the eye is
+   on it, so the chip needs to catch a glance that isn't looking here yet. No
+   exit animation: it leaves as part of a gesture the reader made. */
+.thud-return-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 1px;
+  padding: 1px 2px 1px 6px;
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.14);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.35);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  /* The nub is the drag handle; the chip is not, so it takes the normal cursor
+     back and lets its own buttons own their hit areas. */
+  cursor: default;
+  animation: ui-pop var(--dur-quick) var(--ease-pop);
+}
+/* Keep the pill while the auto-flip card is ringing it: .auto-flip-target sets a 7px
+   radius as a default for plain boxes, and letting that win would square the chip off at
+   the one moment the reader has been asked to look at it. The tighter offset keeps the
+   ring inside the nub, which has only 3px of padding above the chip. */
+.thud-return-chip.auto-flip-target {
+  border-radius: 999px;
+  outline-offset: 2px;
+}
+.thud-return-chip-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.thud-return-chip .astro-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+/* The date is the part that changes as returns are stepped, so it carries the
+   muted weight the nub's other dynamic value (.thud-measure-value) uses. */
+.thud-return-chip-date {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.thud-return-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 999px;
+  color: var(--map-accent);
+  opacity: 0.6;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity var(--dur-quick), background var(--dur-quick);
+}
+.thud-return-chip-x:hover,
+.thud-return-chip-x:focus-visible {
+  opacity: 1;
+  background: rgba(var(--tint), 0.18);
+}
+.thud-return-chip-x:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.5);
+}
+/* Same courtesy the eye gets: while the pointer is on the chip, the nub's
+   "Drag to move" hint stands down so the chip's own tip is the only one up. */
+.thud-measure:has(.thud-return-chip:hover) .hud-move-hint {
+  opacity: 0 !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thud-return-chip {
+    animation: none;
+  }
+}
+
 /* The nub's "Drag to move" hint is the shared .hud-move-hint (index.css);
    reveal on hover, hide while dragging. */
 .thud-measure:hover .hud-move-hint {
@@ -243,11 +330,24 @@
 }
 
 .thud-mode-label {
+  display: inline-flex;
+  align-items: center;
+  /* A label that carries an (i) binds it close — 4px rather than the row's 8px control
+     gap, which is what the mark drifts to if it is left as a flex sibling of the label
+     instead of a child of it. Tighter than the Sidebar headings' 6px because this label is
+     10px uppercase with 0.08em tracking, so its own letters already sit loose; matching
+     that 6px here reads as a gap rather than as an annotation. */
+  gap: 4px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+/* The trailing letter-space of an 0.08em-tracked label lands between the word and the
+   mark, on top of the gap above — pull it back so the two read as one unit. */
+.thud-mode-label .orb-info {
+  margin-left: -0.08em;
 }
 
 .thud-select-wrap {
@@ -392,9 +492,9 @@
   flex-shrink: 0;
 }
 
-/* Relocated bottom settings row — Chart Angle (Solar Arc / Progressed / Tertiary) or
-   the primary-directions Rate. Centred; reuses the returns-row width trick so the
-   control never widens the bar. */
+/* Relocated bottom settings row — the Arc menu (Solar Arc), the Angles pair + its
+   calculation menu (Progressed / Tertiary), or the primary-directions Rate. Centred;
+   reuses the returns-row width trick so the control never widens the bar. */
 .thud-setting-row {
   padding-top: 0;
   justify-content: center;
@@ -407,11 +507,31 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  /* The progressed "Angles" control is three things wide — label, segmented pair, and
+     the calculation menu whose spelled-out names ("Naibod, mean rate — in right
+     ascension") are long on purpose. Allowed to wrap rather than forcing the bar wider
+     than the viewport; centred so a wrapped second line sits under the first. */
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 5px;
 }
 /* Content-sized like the Scale picker so the selected option always shows in full;
    the min-width floor keeps it from jumping narrow on short options. */
 .thud-setting .calc-menu {
   display: inline-flex;
+}
+/* The progressed calculation menu while the angles are held natal: dimmed, because it is
+   naming a method that isn't being applied. Still fully interactive (picking one turns
+   the angles on) — this is a statement about the map, not a disabled control. */
+.thud-prog-method {
+  display: inline-flex;
+}
+.thud-prog-method.is-idle .calc-menu-trigger {
+  opacity: 0.55;
+}
+.thud-prog-method.is-idle .calc-menu-trigger:hover,
+.thud-prog-method.is-idle .calc-menu-trigger:focus-visible {
+  opacity: 1;
 }
 .thud-setting .calc-menu-trigger {
   width: auto;
@@ -515,11 +635,13 @@
   font-size: 13px;
 }
 
-/* Overlay-frame segmented control ("My angles" | "Sky now"), to the right of the
-   lunar returns in the transits row. Both options are always on screen with the live
-   one marked — a single flip button showing one word can't say whether that word is
-   the current state or the result of clicking. Styled like the return buttons but on
-   the STEADY brand accent (a fixed control, not a map-state cue). */
+/* Overlay-frame segmented control ("Natal angles" | "Transit angles"), to the right of
+   the lunar returns in the transits row — and reused, without the icons, as the
+   progressed overlays' "Angles" pair, because the two ask the same question of the same
+   kind of answer and should not look like two different mechanisms. Both options are
+   always on screen with the live one marked — a single flip button showing one word can't
+   say whether that word is the current state or the result of clicking. Styled like the
+   return buttons but on the STEADY brand accent (a fixed control, not a map-state cue). */
 .thud-frame-seg {
   display: inline-flex;
   align-items: center;
@@ -561,6 +683,23 @@
 .thud-frame-btn svg {
   flex-shrink: 0;
 }
+/* The angles mark, TRAILING the word rather than leading it — it stands in for the noun
+   both segments share ("Natal ⊹" = Natal angles), so it sits where that word would have.
+   A word space, not an icon gutter: the default 4px gap reads as a separator between two
+   things, and this is one phrase. Slightly held back in weight for the same reason a
+   unit symbol is — it is the part of the label that never varies, so the eye should land
+   on the word first — and brought to full strength on the live segment, where the whole
+   label is the reading in force. */
+.thud-frame-btn .thud-frame-angles {
+  margin-left: -1px;
+  opacity: 0.75;
+}
+.thud-frame-btn.active .thud-frame-angles,
+/* Not inside a disabled group: the whole button is already at 0.45 there, and lifting
+   the mark alone would leave it reading BRIGHTER than the word it belongs to. */
+.thud-frame-seg:not(.is-disabled) .thud-frame-btn:hover .thud-frame-angles {
+  opacity: 1;
+}
 .thud-frame-btn:hover {
   background: rgba(var(--tint), 0.1);
   color: var(--text-strong);
@@ -580,6 +719,29 @@
    class is dropped again once it finishes so a later snap re-fires it. */
 .thud-frame-btn.is-throb {
   animation: ui-throb var(--dur-flourish) var(--ease-pop);
+}
+/* The same cue on the whole GROUP, fired when the status strip's frame item sends the
+   reader here. Both segments together, because the strip named the control, not a value —
+   and a ring rather than a scale, so a pair of buttons doesn't lurch in opposite
+   directions. It marks whichever pair is rendered (transits' frame, progressions'
+   Angles), which is why it lives on the group and not on a value. */
+.thud-frame-seg.is-flash {
+  border-radius: 8px;
+  animation: thud-frame-flash var(--dur-flourish) ease-out;
+}
+@keyframes thud-frame-flash {
+  from {
+    box-shadow: 0 0 0 3px rgba(var(--accent-brand-rgb), 0.55);
+  }
+  to {
+    box-shadow: 0 0 0 3px rgba(var(--accent-brand-rgb), 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thud-frame-seg.is-flash {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(var(--accent-brand-rgb), 0.45);
+  }
 }
 /* Disabled on non-Celestial line systems (framing has no effect) and on a
    time-unknown chart (the frame is forced): dimmed, no hover accent — but still

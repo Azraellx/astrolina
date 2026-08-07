@@ -196,7 +196,23 @@ export type AngleProgression =
   | 'sa-ra'          // solar arc, applied in right ascension
   | 'naibod-long'    // Naibod mean rate, applied in longitude
   | 'naibod-ra'      // Naibod mean rate, applied in right ascension
-  | 'mean-quotidian'; // "Natal Frame": angles hold the natal RAMC (historical storage key)
+  | 'mean-quotidian'; // natal frame: angles hold the natal RAMC (historical storage key)
+
+/** The four real CALCULATIONS, without the natal-frame member.
+ *
+ *  'mean-quotidian' was never a fifth calculation — it is a frame answer that had been
+ *  living in a calculation menu. On the progressed overlays it means "don't advance the
+ *  angles at all", which is now the `Angles` control's other segment; on Solar Arc it has
+ *  no distinct form and falls through to `sa-long` (see solarArcChoice), so the menu
+ *  carried two entries with identical output and no way to explain the difference.
+ *
+ *  It stays in AngleProgression above, which is the value the overlay builder and every
+ *  downstream consumer read: what changed is which UI can produce it, not what it means. */
+export type ArcMethod = Exclude<AngleProgression, 'mean-quotidian'>;
+
+/** Whether a progressed overlay's ANGLES advance, or hold the birth chart's. The
+ *  calculation (ArcMethod) only comes into it once they do. */
+export type ProgAngleFrame = 'natal' | 'progressed';
 
 // Group B — the time-key (arc per year) for the Primary Directions overlay.
 export type PrimaryRate =

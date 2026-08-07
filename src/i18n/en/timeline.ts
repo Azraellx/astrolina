@@ -60,6 +60,12 @@ export const timeline = {
       'Only Celestial lines have a sidereal-time frame to switch — Mundane and Geodetic lines key off zodiacal longitude, so framing has no effect.',
     lockedNoTime:
       'Birth time unknown — there is no natal frame to hold, so the map can only show the sky of the moment.',
+    // The un-chosen segment while a return holds the frame. Unlike lockedNoTime the
+    // control is NOT disabled here: choosing a frame by hand is one of the ways out, and
+    // a segment that refused the click meant to end the hold would be the hold outranking
+    // the reader. So this reads as an offer, not a refusal.
+    heldForReturn:
+      'Held while the map is on a return — a return chart is only itself in its own frame. Choosing this ends the hold and puts the map back in it.',
   },
 
   // Timeline scale picker (the <select>).
@@ -120,10 +126,24 @@ export const timeline = {
   // commonest path silent. It is attached only when the switch will actually move
   // (natal frame + celestial lines); once the frame is already the moment's own sky
   // the snap changes nothing and a warning would be noise.
+  //
+  // "Borrows" rather than "reframes": the difference between the two words is the whole
+  // change, and this tip is where most readers meet it first.
   returns: {
     label: 'Returns',
     reframes:
-      'Reframes the map to the sky at that moment. In the natal frame the returning body is pinned to its birth degree, so its lines would never move from one return to the next.',
+      'Borrows the map’s frame for the return’s own moment. In the natal frame the returning body is pinned to its birth degree, so its lines would never move from one return to the next. Your frame is held, not cleared, and comes back when you leave the return.',
+    // The chip in the timeline nub: the record that the app took the frame, and the
+    // handle for giving it back. `date` is formatted by the caller in the chart's zone.
+    chip: {
+      solar: 'Solar return',
+      lunar: 'Lunar return',
+      tip: 'The map is on a return',
+      hint: 'The overlay frame is borrowed for this moment, because a return chart is only itself in its own frame. Your own frame is underneath and comes back when you leave the return — step returns with the arrows to keep it, or clear it here.',
+      clear: 'Leave the return',
+      clearHint: 'Puts the overlay frame back where it was. The date stays where it is.',
+      clearAria: 'Leave the return and restore the overlay frame',
+    },
     solar: {
       name: 'Solar',
       // What the chart WHEEL calls this overlay when the transit moment is one of

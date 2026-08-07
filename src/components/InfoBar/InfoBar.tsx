@@ -30,7 +30,9 @@ export function InfoBar({
   zodiacMode,
   nodeType,
   advancedMode,
+  overlayFrame,
   onOpen,
+  onShowFrameControl,
 }: {
   lineSystem: LineSystem;
   coordSystem: CoordSystem;
@@ -39,8 +41,20 @@ export function InfoBar({
   nodeType: NodeType;
   /** The expanded wheel's Advanced reading mode — gates the Advanced-tab items. */
   advancedMode: boolean;
+  /** Which angles the active overlay's lines are drawn against, as a ready label — or
+   *  null where that isn't a live question (no overlay; Solar Arc, Primary Directions and
+   *  cyclo, which are natal-framed by construction and offer no choice).
+   *
+   *  It belongs in this row because it is a calculation system exactly like the others
+   *  here, and because it is the one of them a reader can find changed without having
+   *  changed it — a returns snap borrows it. Relocation deliberately stays OUT: it
+   *  changes which place's angles, not whose moment, and the pin already names the place. */
+  overlayFrame?: string | null;
   /** Open the settings sidebar on the given tab. */
   onOpen: (section: 'calc' | 'advanced') => void;
+  /** Bring the frame's own control into view and mark it. Unlike its neighbours this one
+   *  doesn't live in a settings tab — it is on the timeline bar, which may be collapsed. */
+  onShowFrameControl?: () => void;
 }) {
   const { t, labels } = useT();
   const item = (label: string, section: 'calc' | 'advanced') => (
@@ -61,6 +75,21 @@ export function InfoBar({
         <>
           {dot}
           {item(labels.coordSystem(coordSystem), 'calc')}
+        </>
+      )}
+      {/* The overlay frame sits with the MAP conventions above, ahead of the wheel's
+          reading preferences below — mirroring where it applies: it is a property of the
+          drawn lines, not of the chart being read. */}
+      {overlayFrame && (
+        <>
+          {dot}
+          <button
+            type="button"
+            className="info-bar-item"
+            onClick={onShowFrameControl}
+          >
+            {overlayFrame}
+          </button>
         </>
       )}
       {advancedMode && (

@@ -26,9 +26,17 @@
 // force the same setting, and a reader who has understood the rule once should not
 // be told again because they arrived at it from a different direction.
 export type AutoFlipKind =
-  /** A dated overlay's frame moved to the moment's own sidereal time, because the
-   *  reading asked for is only that reading in that frame. */
-  | 'overlay-frame'
+  /** A dated overlay's frame is HELD on the moment's own sidereal time, because the
+   *  reading asked for is only that reading in that frame. Held rather than rewritten:
+   *  the borrow lasts as long as the reader stays on the return they snapped to, and the
+   *  stored preference is underneath it the whole time.
+   *
+   *  This replaced a kind named 'overlay-frame' that reported the same map movement as a
+   *  REWRITE, which is what it then was. The id changed with the fact rather than the id
+   *  being reused, so that anyone who dismissed the old sentence — reasonably, having
+   *  understood that their frame was gone — is told the new one once. Nobody should
+   *  inherit a silence they agreed to about something else. */
+  | 'overlay-frame-held'
   /** The line system was REWRITTEN to celestial, because the view or tool asked for
    *  has no meaning under a time-independent mapping. One-way: the stored choice is
    *  gone and has to be picked again. */
@@ -61,10 +69,17 @@ export type AutoFlipKind =
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one
  *  edit and can't half-land. */
 export interface AutoFlipMeta {
-  /** Selector for the control that undoes or owns this — the card anchors beside it
-   *  and marks it. null when there is nothing persistent to point at; a selector that
-   *  matches nothing (or matches a collapsed box) falls back the same way. */
-  target: string | null;
+  /** Selectors for the controls that undo or own this. Every one that is ON SCREEN gets
+   *  the ring, and the card places itself clear of ALL of them; the first one found takes
+   *  the arrow. Empty when there is nothing persistent to point at; a selector that
+   *  matches nothing (or matches a collapsed box) drops out the same way.
+   *
+   *  A LIST rather than one selector because a notice can be about more than one thing at
+   *  once, and the single-target version silently failed at that: the card would clear the
+   *  control it knew about and land squarely on the one it didn't, which is how the return
+   *  chip's ✕ ended up hidden underneath a card that told the reader to press it. Order
+   *  them nearest-first if it matters, since the first is what the arrow lands on. */
+  targets: readonly string[];
   /** 'warn' for something the app changed on its own; 'info' for something it is
    *  merely telling you. Picks the MARK on the card and nothing else — both wear the
    *  same cool blue, because neither is a failure and a red one was read as one. So a
@@ -78,34 +93,48 @@ export interface AutoFlipMeta {
   once: boolean;
 }
 
-// Where the control that undoes each flip actually LIVES on screen, as a selector the
+// Where the controls each notice is about actually LIVE on screen, as selectors the
 // notice can find at the moment it appears. A card that says "the frame control is on
 // the timeline bar" while floating at the top of a screen whose timeline bar is at the
-// bottom has told the reader nothing they can act on — so when the control is on
-// screen the card anchors beside it and marks it, and the sentence becomes a label
+// bottom has told the reader nothing they can act on — so when the controls are on
+// screen the card anchors clear of them and marks them, and the sentence becomes a label
 // for something the eye is already on.
 //
-// null = no persistent control to point at (it lives behind a menu, or in a settings
+// Empty = no persistent control to point at (it lives behind a menu, or in a settings
 // section that may well be collapsed). Those keep the neutral position; the copy names
-// where to go instead. A selector that matches nothing falls back the same way, which
+// where to go instead. A selector that matches nothing falls out the same way, which
 // is what makes it safe to name a control that isn't always rendered.
 export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
-  // The frame segments in the timeline bar's returns row — always on screen when this
-  // fires, since the snap that triggered it was clicked two controls away.
-  'overlay-frame': { target: '.thud-frame-seg', tone: 'warn', once: false },
+  // TWO controls, because the card names two things and both are on screen: the chip in
+  // the timeline nub (the record of the hold, and the ✕ that ends it) and the frame
+  // segments in the returns row (the setting being held). Chip first — it is the nearer
+  // of the two to where the card lands, so the arrow makes the shorter hop, and it is the
+  // one the reader has never seen before.
+  //
+  // Both are always on screen when this fires: the snap that triggers it takes the borrow
+  // in the same handler, so the chip renders in the same commit as this card.
+  'overlay-frame-held': {
+    targets: ['.thud-return-chip', '.thud-frame-seg'],
+    tone: 'warn',
+    once: false,
+  },
   // Both line-system kinds point at the same list in the Calculation panel, when the
   // sidebar happens to be open on it.
-  'line-system': { target: '[data-autoflip="line-system"]', tone: 'warn', once: false },
+  'line-system': {
+    targets: ['[data-autoflip="line-system"]'],
+    tone: 'warn',
+    once: false,
+  },
   'line-system-held': {
-    target: '[data-autoflip="line-system"]',
+    targets: ['[data-autoflip="line-system"]'],
     tone: 'warn',
     once: false,
   },
   // Reopened from a menu, so there is nothing persistent to point at.
-  'local-space-off': { target: null, tone: 'warn', once: false },
+  'local-space-off': { targets: [], tone: 'warn', once: false },
   // Fired by opening the panel this control lives in, so it is guaranteed on screen.
   'line-projection': {
-    target: '[data-autoflip="line-projection"]',
+    targets: ['[data-autoflip="line-projection"]'],
     tone: 'info',
     once: true,
   },

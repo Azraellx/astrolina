@@ -102,6 +102,11 @@
   --afn-tone: var(--cool-rgb);
   outline: 2px solid transparent;
   outline-offset: 3px;
+  /* An outline follows the element's OWN border-radius, so this is a default for targets
+     that are plain boxes — not a shape to impose. A target with a radius of its own must
+     restate it beside this class (`.x.auto-flip-target { border-radius: … }`) or the ring
+     will reshape the control while it is being pointed at, which is a strange thing to do
+     to something you are asking someone to look at. See .thud-return-chip, a pill. */
   border-radius: 7px;
   animation:
     afn-target-pulse 0.75s var(--ease-settle) 3,

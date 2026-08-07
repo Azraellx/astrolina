@@ -11,14 +11,14 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from 'react';
 import {
   minorStepMs,
   TIME_UNITS,
-  type AngleProgression,
+  type ArcMethod,
   type OverlayMode,
   type PrimaryRate,
+  type ProgAngleFrame,
   type TimeUnit,
   type TransitFrame,
 } from '../../lib/astro/timeline';
@@ -37,14 +37,10 @@ import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { shouldShowNudge, nudgeAction, tierOfEntitlement } from '../../lib/plan';
 import { getMapExtensions, isAvailable, isEntitled } from '../../lib/extensions/mapExtensions';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { AnglesIcon } from '../ui/AnglesIcon';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
-import {
-  HintMenu,
-  StepperField,
-  ANGLE_PROGRESSION_VALUES,
-  PRIMARY_RATE_VALUES,
-} from '../Sidebar/Sidebar';
+import { HintMenu, InfoTip, StepperField } from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { useT } from '../../i18n';
 import './TimelineHud.css';
@@ -76,8 +72,11 @@ interface TimelineHudProps {
   /** Snap the target date to a solar/lunar return (dir 0 = nearest, ±1 = next/
    *  previous). Transits mode only — the Returns group hides otherwise. */
   onSnapReturn: (body: ReturnBody, dir: -1 | 0 | 1) => void;
-  /** Overlay frame — the natal chart's sidereal time ("My angles") or the moment's own
-   *  ("Sky now") — chosen by the segmented control in the transits returns row.
+  /** Overlay frame — the birth chart's own angles ("Natal angles") or the moment's
+   *  ("Transit angles", "Return angles" on a return) — chosen by the segmented control in
+   *  the transits returns row. This is the EFFECTIVE frame, not the stored preference: a
+   *  returns borrow or an unknown birth time can be masking it, and a control marking a
+   *  value the map isn't drawing asserts a distinction that isn't there.
    *  `lineSystem` gates it: framing only has an effect on Celestial lines, so the
    *  control is disabled for Mundane/Geodetic. */
   transitFrame: TransitFrame;
@@ -87,6 +86,18 @@ interface TimelineHudProps {
    *  framing is forced to the moment's own sky upstream — the control marks that
    *  value, disabled, rather than the stored preference it is ignoring. */
   frameLocked?: boolean;
+  /** The live returns borrow, or null. Non-null means the frame above is being HELD on
+   *  the moment's own sky for this return — so the bar shows the chip, names the second
+   *  segment "Return angles", and swaps in the copy written for a return. Unlike
+   *  `frameLocked` the segments stay live: picking one by hand is a way out. */
+  returnHold?: { body: ReturnBody; ms: number } | null;
+  /** Give the frame back and clear the chip (the ✕). Leaves the date alone — the reader
+   *  is still looking at the return's moment, just no longer in its frame. */
+  onEndReturnHold?: () => void;
+  /** Bump to mark the frame control — the status strip's frame item points at it, and
+   *  arriving on a dense row with nothing highlighted is arriving nowhere. A counter
+   *  rather than a flag so repeated clicks each re-fire it. */
+  flashFrameSeq?: number;
   /** The Natal-linework display toggle, relocated from Settings ▸ Display into the
    *  bar's right-side drawer. (Synastry/eclipses don't render this HUD, so they keep
    *  their own UI.) The active overlay's zenith stamps now follow the shared
@@ -99,11 +110,20 @@ interface TimelineHudProps {
    *  simply don't render. */
   openExtensions: ReadonlySet<string>;
   onToggleExtension: (id: string) => void;
-  /** Chart-Angle method (Solar Arc / Progressed / Tertiary) and the Primary-Directions
-   *  rate, relocated from the Calculations tab into this bar's bottom settings row —
-   *  each shown only for the overlay that consumes it. */
-  angleProgression: AngleProgression;
-  setAngleProgression: (a: AngleProgression) => void;
+  /** The arc/angle controls and the Primary-Directions rate, relocated from the
+   *  Calculations tab into this bar's bottom settings row — each shown only for the
+   *  overlay that consumes it.
+   *
+   *  `arcMethod` is Solar Arc's `Arc`: how far the BODIES advance. The progressed pair is
+   *  `Angles`: whose angles the map is drawn against, and — only once they advance — the
+   *  calculation they advance by. Same four calculations either side, different question,
+   *  which is why they are no longer one control. */
+  arcMethod: ArcMethod;
+  setArcMethod: (m: ArcMethod) => void;
+  progAngleFrame: ProgAngleFrame;
+  setProgAngleFrame: (f: ProgAngleFrame) => void;
+  progAngleMethod: ArcMethod;
+  setProgAngleMethod: (m: ArcMethod) => void;
   primaryRate: PrimaryRate;
   setPrimaryRate: (r: PrimaryRate) => void;
   userPrimaryRate: number;
@@ -117,59 +137,37 @@ const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'yea
 // read as "is this the current state or the thing a click would do?". Reading order
 // puts the chart-carried frame first and the live sky second.
 //
-// The icons are deliberately parallel — each shows a body meeting a set of axes,
-// and the only difference is WHOSE axes: the frame the chart carries from birth, or
-// the real horizon under the sky right now.
+// Both options end in the same noun — Natal ANGLES, Transit ANGLES — so the pair was
+// spending a third of its width saying one word twice, on the busiest row in the bar. The
+// noun is drawn ONCE instead, as the shared angles mark (ui/AnglesIcon) trailing each
+// face, and each button's text is only what distinguishes it. The progressed overlays'
+// pair below gets the same treatment, so the two read as one pattern rather than two
+// vocabularies — and because they are the same question, the mark is the same mark.
 //
-// 12px, one under the return buttons' 13px glyph: this is a drawn box whose ink runs
-// to its own edge, where a font glyph carries side bearings, so matching the NUMBER
-// would not match the mass. Keep each drawing's ink centred in the viewBox — flexbox
-// centres the BOX, so ink that sits high in it renders a mark that looks off-centre
-// beside its word and unmatched beside its sibling segment.
-const FRAME_OPTIONS: { value: TransitFrame; icon: ReactNode }[] = [
-  {
-    value: 'relative-to-natal',
-    // Natal angular cross (meridian + horizon) with a body arriving on the ring.
-    icon: (
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-        aria-hidden="true"
-      >
-        <circle cx="12" cy="12" r="8.4" />
-        <path d="M12 2v20M2 12h20" />
-        <circle cx="12" cy="3.6" r="2.2" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    value: 'transit-moment',
-    // A body angular over the REAL horizon — the sky of the moment, no carried frame.
-    icon: (
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-        aria-hidden="true"
-      >
-        {/* Every y is one unit below the original drawing: the ink ran 2.25–19.75,
-            centred on 11 rather than 12, so the whole mark rode high in a box the
-            flexbox was centring correctly. Now 3.25–20.75, centred on 12. */}
-        <circle cx="12" cy="13.4" r="4.1" />
-        <path d="M12 4.2v2M18.9 7.1l-1.4 1.4M5.1 7.1l1.4 1.4M2.6 13.4h2M19.4 13.4h2" />
-        <path d="M2 19.8h20" />
-      </svg>
-    ),
-  },
+// Because the mark now carries the noun, every segment needs the spelled-out name as its
+// ACCESSIBLE name: there is no longer a visible word for a screen reader to reach.
+//
+// (Until August 2026 each segment carried its own drawing instead — a body on the natal
+// cross, a body over a live horizon. A decent pair, but they illustrated the two frames
+// rather than naming the thing both are, so the words carried the whole load anyway.)
+const FRAME_VALUES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
+
+// Menu orderings for this bar's three calculation controls. They lived in Sidebar and
+// were exported back to here, from when the Calculations tab drew them; all three controls
+// are on this bar now and nothing else reads the lists, so they came with them.
+//
+// The two arc lists hold the SAME four calculations in different orders, on purpose: each
+// menu leads with its own overlay's default. A fixed shared order would have to bury one of
+// the two defaults, and leading with a default the reader can't have is the less honest of
+// the two options.
+const ARC_METHOD_VALUES: ArcMethod[] = [
+  'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra',
+];
+const PROG_METHOD_VALUES: ArcMethod[] = [
+  'naibod-ra', 'naibod-long', 'sa-ra', 'sa-long',
+];
+const PRIMARY_RATE_VALUES: PrimaryRate[] = [
+  'ptolemy', 'naibod', 'cardan', 'kepler-ra', 'solar-long', 'placidus-ra', 'user',
 ];
 
 // How long the one-shot cue on an externally-changed frame runs (--dur-flourish).
@@ -379,12 +377,19 @@ export function TimelineHud({
   setTransitFrame,
   lineSystem,
   frameLocked = false,
+  returnHold = null,
+  onEndReturnHold,
+  flashFrameSeq = 0,
   showNatal,
   setShowNatal,
   openExtensions,
   onToggleExtension,
-  angleProgression,
-  setAngleProgression,
+  arcMethod,
+  setArcMethod,
+  progAngleFrame,
+  setProgAngleFrame,
+  progAngleMethod,
+  setProgAngleMethod,
   primaryRate,
   setPrimaryRate,
   userPrimaryRate,
@@ -392,12 +397,20 @@ export function TimelineHud({
 }: TimelineHudProps) {
   const { t, fmt, labels } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
-  // Dropdowns relocated from the Calculations tab into the bottom settings row
-  // (each shown per-overlay below): Chart Angle for the directed sets, Rate for primaries.
-  const chartAngleOptions = ANGLE_PROGRESSION_VALUES.map((value) => ({
+  // Dropdowns relocated from the Calculations tab into the bottom settings row (each
+  // shown per-overlay below): Arc for Solar Arc, Angles for the progressed sets, Rate for
+  // primaries. The two arc menus carry the SAME four calculations with the same labels —
+  // and different hints, because the arc is applied to different things, and different
+  // orders, because each leads with its own overlay's default.
+  const arcOptions = ARC_METHOD_VALUES.map((value) => ({
     value,
-    label: labels.chartAngle(value),
-    hint: labels.chartAngleHint(value),
+    label: labels.arcMethod(value),
+    hint: labels.arcMethodBodiesHint(value),
+  }));
+  const progMethodOptions = PROG_METHOD_VALUES.map((value) => ({
+    value,
+    label: labels.arcMethod(value),
+    hint: labels.arcMethodAnglesHint(value),
   }));
   const primaryRateOptions = PRIMARY_RATE_VALUES.map((value) => ({
     value,
@@ -482,6 +495,15 @@ export function TimelineHud({
   const yearMin = new Date(sliderMin).getUTCFullYear();
   const yearMax = new Date(sliderMax).getUTCFullYear();
 
+  // The returns chip's date, in the same zone as everything else in this bar (the chart's).
+  // Date only: the return's clock time is on the date field two rows down, and the chip
+  // shares the nub with the mode name, where every character costs width on touch.
+  const holdDate = (() => {
+    if (!returnHold) return null;
+    const d = new Date(returnHold.ms + offsetMs);
+    return `${d.getUTCDate()} ${fmt.monthAbbr(d.getUTCMonth() + 1)} ${d.getUTCFullYear()}`;
+  })();
+
   // Step increment: defaults to the scale's mini-notch (count × baseMs), but the
   // user can override the count in the box next to the step buttons. Reset to the
   // unit's default whenever the scale changes. The override only affects the step
@@ -533,11 +555,12 @@ export function TimelineHud({
     [overlayMode, current, targetDate],
   );
 
-  // Whether a snap would visibly move the frame — App switches to the moment's own
-  // sky, but only on celestial lines, and a time-unknown chart is already forced
-  // there. All three return buttons carry the warning when it's true and none when
-  // it isn't, so the disclosure tracks the side effect instead of tracking which
-  // button happens to be the "main" one.
+  // Whether a snap would visibly move the frame — App borrows the moment's own sky, but
+  // only on celestial lines, and a time-unknown chart is already forced there. All three
+  // return buttons carry the disclosure when it's true and none when it isn't, so it
+  // tracks the side effect instead of tracking which button happens to be the "main" one.
+  // `transitFrame` being the EFFECTIVE frame is what makes stepping returns quiet: the
+  // borrow is already up, so ‹ › move the date without promising a move that won't happen.
   const snapWillReframe =
     lineSystem === 'celestial' && !frameLocked && transitFrame === 'relative-to-natal';
   const reframeHint = snapWillReframe ? t('timeline.returns.reframes') : undefined;
@@ -611,6 +634,25 @@ export function TimelineHud({
     const id = window.setTimeout(() => setThrobFrame(null), FRAME_THROB_MS);
     return () => window.clearTimeout(id);
   }, [transitFrame]);
+
+  // The same cue, fired from OUTSIDE on request: the status strip names the frame and
+  // points here, and this row is dense enough that arriving at it without a mark leaves
+  // the reader hunting. Marks the whole GROUP rather than one segment, because the strip
+  // points at "the frame control" — which is the transits frame pair on one overlay and
+  // the progressed Angles pair on another, and a cue that only knew about the first would
+  // silently do nothing on the second. Skips the initial render (seq 0).
+  const [flashSeg, setFlashSeg] = useState(false);
+  const prevFlashRef = useRef(flashFrameSeq);
+  useEffect(() => {
+    // Guarded on the ref, like the frame cue above: this must fire on a genuine BUMP and
+    // not on any re-render that happens to re-run the effect, which would re-mark a
+    // control the reader is already looking at.
+    if (prevFlashRef.current === flashFrameSeq) return;
+    prevFlashRef.current = flashFrameSeq;
+    setFlashSeg(true);
+    const id = window.setTimeout(() => setFlashSeg(false), FRAME_THROB_MS);
+    return () => window.clearTimeout(id);
+  }, [flashFrameSeq]);
 
   const touch = useTouchLayout();
   // Modes that render a settings/returns second row — on touch the display toggles ride on the
@@ -753,6 +795,47 @@ export function TimelineHud({
         <span className="hud-grip" aria-hidden="true" />
         <span className="thud-measure-label">{modeLabel}</span>
         {readout && <span className="thud-measure-value">{readout}</span>}
+        {/* The returns chip. It sits beside the mode name because that is where the
+            reader looks to find out what the map currently IS, and a borrowed frame is
+            part of that answer — not a setting tucked in a row they may have collapsed.
+            It renders only while the borrow is actually masking something (App decides),
+            so it can never claim to hold a frame that nothing is holding.
+
+            Its date is the return INSTANT the snap found, not the cursor: the two are the
+            same until the reader nudges the timeline, and by then the chip is gone
+            anyway — but reading the cursor would let a rounding difference print a date
+            one day off the return the chip is named for. */}
+        {returnHold && (
+          <span className="thud-return-chip">
+            <TipSpan
+              className="thud-return-chip-name"
+              placement="top"
+              tip={t('timeline.returns.chip.tip')}
+              hint={t('timeline.returns.chip.hint')}
+            >
+              <span className="astro-glyph" aria-hidden="true">
+                {PLANET_GLYPHS[returnHold.body === 'solar' ? 'Sun' : 'Moon']}
+              </span>
+              {t(`timeline.returns.chip.${returnHold.body}`)}
+              <span className="thud-return-chip-date">{holdDate}</span>
+            </TipSpan>
+            {/* stopPropagation on pointerdown: the nub around this is the bar's drag
+                handle, so without it a click on the ✕ starts a drag (the same reason the
+                eye button below carries it). */}
+            <TipButton
+              type="button"
+              className="thud-return-chip-x"
+              placement="top"
+              tip={t('timeline.returns.chip.clear')}
+              hint={t('timeline.returns.chip.clearHint')}
+              aria-label={t('timeline.returns.chip.clearAria')}
+              onClick={() => onEndReturnHold?.()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              ✕
+            </TipButton>
+          </span>
+        )}
         {/* Show/hide the ruler + transport (the bar's old Settings toggle, moved
             here so it's reachable while the bar is collapsed). stopPropagation keeps
             a tap/double-tap on the eye from starting a nub drag or re-centre. */}
@@ -948,10 +1031,15 @@ export function TimelineHud({
       {/* Returns snap on its OWN row (transits only), so the main transport row
           keeps the same width as the other overlay bars. Clicking the luminary
           snaps the target date to the nearest solar/lunar return; ‹ › walk whole
-          returns. The snap also moves the frame to the moment's own sky (App side) —
+          returns. The snap also BORROWS the frame for the moment's own sky (App side) —
           only that framing makes the snapped map the return chart's astrocartography
-          — which every button's tip discloses, and which the frame segments throb to
-          acknowledge. */}
+          — which every button's tip discloses, which the frame segments throb to
+          acknowledge, and which the chip in the nub holds until it is given back.
+
+          The two ‹ › pairs in this bar are not the same control, and the code must not
+          be tidied into pretending they are: the TRANSPORT pair above (`step()`) moves
+          the cursor and therefore ENDS a borrow, while THESE walk whole returns and keep
+          it. They differ only by which handler they call. */}
       {overlayMode === 'transits' && (
         <div
           className="thud-row thud-returns-row"
@@ -967,8 +1055,8 @@ export function TimelineHud({
           {/* The overlay frame, relocated from Settings. Both options stay on screen
               with the live one marked — the old single flip button showed one word and
               left it ambiguous whether that was the current state or what a click would
-              do. The group carries its own meaning ("My angles" / "Sky now"), so it
-              needs no separate heading; the tips hold the full explanation.
+              do. The group carries its own meaning ("Natal angles" / "Transit angles"),
+              so it needs no separate heading; the tips hold the full explanation.
               Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
               longitude — so on those the group is DISABLED with NEITHER segment marked
               (highlighting a stored frame that isn't in force would assert a distinction
@@ -978,15 +1066,47 @@ export function TimelineHud({
             // forced to the moment's own sky upstream, so mark that value disabled
             // rather than the stored (ignored) preference.
             const posEnabled = lineSystem === 'celestial' && !frameLocked;
+            // `transitFrame` is the EFFECTIVE frame, so a returns borrow is already in it
+            // and needs no separate branch here — the mark follows the map either way.
             const shownFrame = frameLocked ? 'transit-moment' : transitFrame;
             return (
               <div
-                className={`thud-frame-seg${posEnabled ? '' : ' is-disabled'}`}
+                className={`thud-frame-seg${posEnabled ? '' : ' is-disabled'}${
+                  flashSeg ? ' is-flash' : ''
+                }`}
                 role="group"
                 aria-label={t('timeline.positioning.groupAria')}
               >
-                {FRAME_OPTIONS.map(({ value, icon }) => {
+                {FRAME_VALUES.map((value) => {
                   const active = (posEnabled || frameLocked) && shownFrame === value;
+                  // On a return the moment's frame IS the return's frame, so the segment
+                  // is named for the technique in play; and both segments swap to the
+                  // copy written for a return, where each answers a different question
+                  // from the one it answers on a plain transit map.
+                  const onReturn = !!returnHold && posEnabled;
+                  // `label` is the spelled-out name and goes on the ACCESSIBLE name; `face`
+                  // is the visible word, with the angles mark after it carrying the noun.
+                  const label =
+                    onReturn && value === 'transit-moment'
+                      ? t('settings.positioning.transit-moment.returnLabel')
+                      : t(`settings.positioning.${value}.label`);
+                  const face =
+                    onReturn && value === 'transit-moment'
+                      ? t('settings.positioning.transit-moment.returnShort')
+                      : t(`settings.positioning.${value}.short`);
+                  const tip =
+                    onReturn && value === 'transit-moment'
+                      ? t('settings.positioning.transit-moment.returnTip')
+                      : t(`settings.positioning.${value}.tip`);
+                  // The natal segment's return copy is per-luminary: the Sun carries no
+                  // ecliptic latitude and the Moon does, which is the whole difference
+                  // between "exactly" and "close but not exactly".
+                  const returnHint =
+                    value === 'transit-moment'
+                      ? t('settings.positioning.transit-moment.returnHint')
+                      : returnHold?.body === 'lunar'
+                        ? t('settings.positioning.relative-to-natal.returnHintLunar')
+                        : t('settings.positioning.relative-to-natal.returnHintSolar');
                   return (
                     <TipButton
                       key={value}
@@ -994,29 +1114,42 @@ export function TimelineHud({
                       className={`thud-frame-btn${active ? ' active' : ''}${
                         throbFrame === value ? ' is-throb' : ''
                       }`}
+                      // The spelled-out name: the visible face is one word plus a mark, so
+                      // without this the control announces itself as "Natal" / "Transit"
+                      // and the noun the whole choice is about never reaches a reader who
+                      // can't see the drawing.
+                      aria-label={label}
                       aria-pressed={active}
                       aria-disabled={!posEnabled}
                       placement="top"
-                      tip={t(`settings.positioning.${value}.tip`)}
-                      // Enabled: each segment explains the reading it produces. Disabled
+                      tip={tip}
+                      // Enabled: each segment explains the reading it produces — the
+                      // return wording while a return holds the frame, with the held
+                      // segment's line saying that choosing it is a way out. Disabled
                       // (non-Celestial lines / locked frame): explain why instead.
                       hint={
-                        posEnabled
-                          ? t(`settings.positioning.${value}.hint`)
-                          : frameLocked
+                        !posEnabled
+                          ? frameLocked
                             ? t('timeline.positioning.lockedNoTime')
                             : t('timeline.positioning.disabled')
+                          : !onReturn
+                            ? t(`settings.positioning.${value}.hint`)
+                            : active
+                              ? returnHint
+                              : `${returnHint} ${t('timeline.positioning.heldForReturn')}`
                       }
                       onClick={() => {
+                        // Compares the EFFECTIVE frame, so under a borrow the held
+                        // segment is a no-op (it is already what the map draws) while the
+                        // other one is live — and picking it by hand cancels the borrow
+                        // upstream rather than fighting it.
                         if (!posEnabled || transitFrame === value) return;
                         frameSelfSetRef.current = true;
                         setTransitFrame(value);
                       }}
                     >
-                      {icon}
-                      <span className="thud-frame-word">
-                        {t(`settings.positioning.${value}.label`)}
-                      </span>
+                      <span className="thud-frame-word">{face}</span>
+                      <AnglesIcon className="thud-frame-angles" />
                     </TipButton>
                   );
                 })}
@@ -1027,19 +1160,97 @@ export function TimelineHud({
         </div>
       )}
 
-      {/* Chart-Angle method — relocated from the Calculations tab. Shown for the
-          directed overlays that read it (Solar Arc / Secondary / Tertiary), centred. */}
-      {(overlayMode === 'solar-arc' ||
-        overlayMode === 'progressed' ||
-        overlayMode === 'tertiary-progressed') && (
+      {/* Solar Arc's ARC: how far the bodies advance. Four calculations, no frame answer
+          among them — Solar Arc is natal-framed by construction, and the "Natal Frame"
+          entry this menu used to carry had no distinct solar-arc form, so it produced the
+          same map as SA-in-longitude under a different name. */}
+      {overlayMode === 'solar-arc' && (
         <div className="thud-row thud-setting-row">
           <div className="thud-mode thud-setting">
-            <span className="thud-mode-label">{t('settings.headings.chartAngle')}</span>
+            <span className="thud-mode-label">{t('settings.headings.arc')}</span>
             <HintMenu
-              value={angleProgression}
-              onChange={setAngleProgression}
-              options={chartAngleOptions}
+              value={arcMethod}
+              onChange={setArcMethod}
+              options={arcOptions}
+              header={t('settings.arcMethod.headerBodies')}
             />
+          </div>
+          {/* Roomy second row — toggles sit inline (no chevron); only transits needs the drawer. */}
+          {touch && displayToggles}
+        </div>
+      )}
+
+      {/* The progressed overlays' ANGLES: whose angles the map is drawn against. Built as
+          a segmented pair mirroring the transits bar's frame control, because it asks the
+          same question — the calculation menu hangs off the second segment and only comes
+          into it once the angles are advancing at all. Under Natal angles the menu is
+          still shown, holding the choice the reader would return to.
+
+          Tertiary shares this control unchanged. Its angle arc is the SECONDARY progressed
+          solar arc (lib/astro/timeline: the tertiary clock reaches the bodies only), which
+          is under review — but that is a question about the maths, not about this control,
+          and the two overlays' menus agreeing is worth more than pre-empting the answer. */}
+      {(overlayMode === 'progressed' || overlayMode === 'tertiary-progressed') && (
+        <div className="thud-row thud-setting-row">
+          <div className="thud-mode thud-setting">
+            <span className="thud-mode-label">{t('settings.headings.progAngles')}</span>
+            <div
+              className={`thud-frame-seg${flashSeg ? ' is-flash' : ''}`}
+              role="group"
+              aria-label={t('settings.headings.progAngles')}
+            >
+              {(['natal', 'progressed'] as const).map((value) => (
+                <TipButton
+                  key={value}
+                  type="button"
+                  className={`thud-frame-btn${progAngleFrame === value ? ' active' : ''}`}
+                  // Same split as the transits pair: the mark carries the shared noun, so
+                  // the spelled-out name has to be the accessible one.
+                  aria-label={t(`settings.progAngles.${value}.label`)}
+                  aria-pressed={progAngleFrame === value}
+                  placement="top"
+                  tip={t(`settings.progAngles.${value}.tip`)}
+                  hint={t(`settings.progAngles.${value}.hint`)}
+                  onClick={() => setProgAngleFrame(value)}
+                >
+                  <span className="thud-frame-word">
+                    {t(`settings.progAngles.${value}.short`)}
+                  </span>
+                  <AnglesIcon className="thud-frame-angles" />
+                </TipButton>
+              ))}
+            </div>
+            {/* Under Natal angles no arc is applied, so the menu is showing a
+                calculation that isn't running. Left CLICKABLE — picking one is the
+                natural way to say "advance them, like this" — but dimmed and carrying
+                its own tip saying so, because a control reading as live while it does
+                nothing is the exact misreading this whole rework is about. */}
+            <span
+              className={`thud-prog-method${
+                progAngleFrame === 'natal' ? ' is-idle' : ''
+              }`}
+            >
+              <HintMenu
+                value={progAngleMethod}
+                onChange={(m) => {
+                  // Picking a calculation is also a statement that the angles should
+                  // advance — otherwise the choice lands in a control whose effect the
+                  // other segment is suppressing, and nothing on the map moves.
+                  setProgAngleMethod(m);
+                  setProgAngleFrame('progressed');
+                }}
+                options={progMethodOptions}
+                header={t('settings.arcMethod.headerAngles')}
+                triggerTip={
+                  progAngleFrame === 'natal'
+                    ? {
+                        title: t('settings.progAngles.idle.tip'),
+                        hint: t('settings.progAngles.idle.hint'),
+                      }
+                    : undefined
+                }
+              />
+            </span>
           </div>
           {/* Roomy second row — toggles sit inline (no chevron); only transits needs the drawer. */}
           {touch && displayToggles}
@@ -1052,7 +1263,23 @@ export function TimelineHud({
       {overlayMode === 'primary-directions' && (
         <div className="thud-row thud-setting-row">
           <div className="thud-mode thud-setting thud-rate">
-            <span className="thud-mode-label">{t('timeline.rate.label')}</span>
+            {/* Unlike the other controls in this row, Rate has no self-describing pair of
+                buttons — seven school names, and a reader meeting them needs to know what
+                a time-key IS before any of the seven means anything. The shared info tip
+                carries that; each entry's own hint carries its rate.
+
+                It sits INSIDE the label, the way the Sidebar's headings carry theirs: the
+                (i) annotates the word "Rate", it is not a third control on the row. As a
+                flex sibling it inherited the row's 8px control gap and drifted away from
+                the label it belongs to, reading as a lone mark between two things. */}
+            <span className="thud-mode-label">
+              {t('timeline.rate.label')}
+              <InfoTip
+                title={t('settings.primaryRate.control.tip')}
+                hint={t('settings.primaryRate.control.hint')}
+                placement="top"
+              />
+            </span>
             <HintMenu
               value={primaryRate}
               onChange={setPrimaryRate}

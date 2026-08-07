@@ -27,11 +27,7 @@ import {
 } from '../../lib/ephemeris';
 import type { LineType } from '../../lib/astro/lines';
 import { overlayAuxBlocked } from '../../lib/astro/timeline';
-import type {
-  AngleProgression,
-  OverlayMode,
-  PrimaryRate,
-} from '../../lib/astro/timeline';
+import type { OverlayMode } from '../../lib/astro/timeline';
 import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { useViewLock } from '../../lib/extensions/viewLock';
@@ -200,15 +196,9 @@ const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
 
-// Exported so the timeline bar can build the same dropdowns — the Chart Angle and
-// Pri.-directions Rate controls were relocated there from the Calculations tab.
-export const ANGLE_PROGRESSION_VALUES: AngleProgression[] = [
-  'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra', 'mean-quotidian',
-];
-
-export const PRIMARY_RATE_VALUES: PrimaryRate[] = [
-  'ptolemy', 'naibod', 'cardan', 'kepler-ra', 'solar-long', 'placidus-ra', 'user',
-];
+// (The arc/angle and Pri.-directions Rate orderings used to live here and be exported,
+// from when this panel drew those dropdowns. All three controls are on the timeline bar
+// now, which is their only consumer, so the lists went with them — see TimelineHud.)
 
 // Sidebar sections behave as an accordion — at most one open at a time — so the
 // panel never grows into a tall stack of expanded sections. The open section is
@@ -498,6 +488,7 @@ export function HintMenu<V extends string>({
   value,
   onChange,
   options,
+  header,
   note,
   tier,
   locked,
@@ -513,6 +504,10 @@ export function HintMenu<V extends string>({
     glyph?: string;
     disabled?: boolean;
   }[];
+  /** A line above the options naming the question they answer. Static text, not a
+   *  selectable row — use it where the option labels alone don't say what is being
+   *  chosen between. */
+  header?: string;
   note?: string;
   /** Hover tip on the CLOSED trigger (e.g. the current option's description,
    *  readable without opening). Owned by the menu — not a wrapper — because it
@@ -706,6 +701,11 @@ export function HintMenu<V extends string>({
               visibility: box ? 'visible' : 'hidden',
             }}
           >
+            {/* The QUESTION the options answer, above them. Worth its own line where a
+                list of four calculations would otherwise leave the reader to infer what
+                the arc is being applied to — which is exactly what one shared menu used
+                to make them do. */}
+            {header && <span className="navmenu-header">{header}</span>}
             {options.map((o) => (
               <HintMenuItem
                 key={o.value}

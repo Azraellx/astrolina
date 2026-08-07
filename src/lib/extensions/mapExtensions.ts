@@ -139,7 +139,8 @@ export interface MapExtensionContext {
   lineSystem: LineSystem;
   /** Which sidereal time a DATED overlay's lines are framed by: the natal chart's
    *  ('relative-to-natal') or the overlay moment's own ('transit-moment'). EFFECTIVE
-   *  — a chart with no birth time has no natal frame to hold, so it reads
+   *  — a chart with no birth time has no natal frame to hold, and a return BORROWS the
+   *  moment's own frame for as long as the map is on it, so either can report
    *  'transit-moment' whatever the stored preference says. Inert under the geodetic
    *  mapping, which keys off zodiacal longitude and has no sidereal frame to choose.
    *
@@ -152,15 +153,25 @@ export interface MapExtensionContext {
   transitFrame: TransitFrame;
   /** Set the overlay frame — the write half of {@link transitFrame}. Drives exactly
    *  the state the timeline bar's own control drives, so a consumer that has just
-   *  disclosed a mismatch can offer to resolve it. */
+   *  disclosed a mismatch can offer to resolve it.
+   *
+   *  Calling it also CANCELS a returns borrow rather than being outranked by it: once a
+   *  frame has been chosen deliberately, the app stops holding one on the reader's
+   *  behalf. Without that, the offered fix would be refused by a hold the reader has no
+   *  idea is there. */
   setTransitFrame: (frame: TransitFrame) => void;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
    *  extension drawing its own day/night treatment can follow the same switch. */
   nightShadeOn: boolean;
   overlayMode: OverlayMode;
   /** The Progressions/Directions settings the directed overlays advance by
-   *  (Chart-Angle method, Primary-Directions rate + user rate), so an extension
-   *  reading a directed overlay can reproduce its arc exactly. */
+   *  (angle/arc method, Primary-Directions rate + user rate), so an extension
+   *  reading a directed overlay can reproduce its arc exactly.
+   *
+   *  RESOLVED, not raw: the bar splits this across two controls now — Solar Arc's `Arc`
+   *  and the progressed overlays' `Angles` (whose "Natal angles" segment is what
+   *  'mean-quotidian' means here) — and this is the single value the overlay builder
+   *  reads, joined back together for the active mode. */
   angleProgression: AngleProgression;
   primaryRate: PrimaryRate;
   userPrimaryRate: number;
@@ -196,7 +207,12 @@ export interface MapExtensionContext {
    *  Don't use it for an area (a region or country centroid): a dot in a field
    *  captioned with the country's name asserts a precision that isn't there. */
   markArrival: (point: { lat: number; lng: number } | null, label?: string) => void;
-  /** Set the timeline to an instant (epoch milliseconds). */
+  /** Set the timeline to an instant (epoch milliseconds).
+   *
+   *  This is the reader MOVING, so it also ends a returns borrow: while the map is on a
+   *  return its frame is held on that return's own moment, and carrying that frame off to
+   *  an unrelated instant would draw a map framed on a moment the reader has left. Jumping
+   *  to a row, a marker or a date all go through here and all behave the same way. */
   setTargetDate: (epochMs: number) => void;
   /** Switch the active time-overlay mode (e.g. start a transits overlay). */
   setOverlayMode: (mode: OverlayMode) => void;

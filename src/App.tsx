@@ -173,6 +173,8 @@ import {
   overlayBlockedFor,
   overlayAuxBlocked,
   type AngleProgression,
+  type ArcMethod,
+  type ProgAngleFrame,
   type OverlayMode,
   type PrimaryRate,
   type RelationshipMethod,
@@ -208,7 +210,9 @@ import {
   DEFAULT_ASPECT_LINE_FILTERS,
 } from './lib/aspectPrefs';
 import {
-  loadAngleProgression,
+  loadArcMethod,
+  loadProgAngleFrame,
+  loadProgAngleMethod,
   loadEclipseChart,
   loadEclipseMapLines,
   loadEclipseId,
@@ -238,7 +242,9 @@ import {
   loadSynastryMethod,
   loadZodiacMode,
   saveZodiacMode,
-  saveAngleProgression,
+  saveArcMethod,
+  saveProgAngleFrame,
+  saveProgAngleMethod,
   saveEclipseChart,
   saveEclipseMapLines,
   saveEclipseId,
@@ -892,6 +898,16 @@ export default function App() {
     () => localStorage.getItem('astro:show-timeline:v1') !== '0',
   );
   const toggleOverlayExpanded = () => setOverlayExpanded((v) => !v);
+  // A bump counter, not a boolean: the status strip's frame item points at a control on
+  // the timeline bar rather than at a settings tab, so "go there" has to mean expanding
+  // the bar (it may be collapsed to its nub) and then MARKING the control, since the row
+  // it lives on is dense. A counter re-fires the mark on every click; a boolean would
+  // need clearing, and a second click before the clear would do nothing.
+  const [flashFrameSeq, setFlashFrameSeq] = useState(0);
+  const showFrameControl = useCallback(() => {
+    setOverlayExpanded(true);
+    setFlashFrameSeq((n) => n + 1);
+  }, []);
   // Appearance ▸ Details ▸ Zeniths/Nadirs: draw the NATAL bodies' zenith (overhead)
   // stamps, their antipodal nadir (underfoot) stamps, and the ecliptic reference
   // curve through the Sun's zenith. On by default. This ONE toggle also governs the
@@ -967,8 +983,16 @@ export default function App() {
     loadSynastryMethod(),
   );
   // Progressions & Directions ("Progs/Dirns") settings — drive the directed overlays.
-  const [angleProgression, setAngleProgression] = useState<AngleProgression>(() =>
-    loadAngleProgression(),
+  // Three values where there used to be one shared five-valued control: the arc
+  // calculation for Solar Arc, and — for the progressed overlays — whether the angles
+  // advance at all, plus which calculation they advance by when they do. See
+  // overlayPrefs for why they are separate keys and how the old one migrates.
+  const [arcMethod, setArcMethod] = useState<ArcMethod>(() => loadArcMethod());
+  const [progAngleFrame, setProgAngleFrame] = useState<ProgAngleFrame>(() =>
+    loadProgAngleFrame(),
+  );
+  const [progAngleMethod, setProgAngleMethod] = useState<ArcMethod>(() =>
+    loadProgAngleMethod(),
   );
   const [primaryRate, setPrimaryRate] = useState<PrimaryRate>(() =>
     loadPrimaryRate(),
@@ -980,6 +1004,62 @@ export default function App() {
   const [transitFrame, setTransitFrame] = useState<TransitFrame>(() =>
     loadTransitFrame(),
   );
+  // The returns BORROW. A return snap needs the moment's own frame — in the natal frame
+  // the returning body is pinned to its birth degree by construction, so its lines would
+  // never move from one return to the next. That used to be written straight into
+  // `transitFrame`, which is PERSISTED: one press of the Solar button destroyed the
+  // reader's real frame choice, in this session and every session after it, from a
+  // control two steps away from the one that owns the preference.
+  //
+  // So the frame is BORROWED rather than taken (the shape CLAUDE.md rule 2 asks for, and
+  // the same one lineSystemPref/overlayModePref use): the preference is never written, a
+  // derived value masks it for as long as the reader is on a return, and the chip in the
+  // timeline nub is both the record that it happened and the handle for giving it back.
+  //
+  // Deliberately NOT persisted. It is a fact about what the reader is doing right now, not
+  // a preference; a reload lands back on their own frame, which is the honest default when
+  // the chip that explains the hold isn't on screen to explain it.
+  const [returnBorrow, setReturnBorrow] = useState<{
+    body: ReturnBody;
+    /** The return instant, for the chip's date — not re-derived from the cursor, which
+     *  the return arrows move off the exact instant by rounding. */
+    ms: number;
+    /** Whose return. Scoping the borrow to the chart is what lets it be a pure
+     *  derivation below: switching charts ends it without an effect or a clear at each
+     *  of the four places a chart can change. */
+    chartId: string | null;
+  } | null>(null);
+  const endReturnBorrow = useCallback(() => setReturnBorrow(null), []);
+  // Every way of moving the timeline EXCEPT the returns controls ends the borrow. The
+  // distinction that matters is which control moved the cursor, not where it ended up —
+  // that keeps the return arrows walking returns without a tolerance window around the
+  // return instant, and it means a reader who has gone somewhere else is not still being
+  // shown a frame borrowed for a moment they have left.
+  //
+  // Wrapped in ONE place rather than at each call site: this is what the timeline bar and
+  // the extension context are both handed, so a plugin's "jump to this date" exits by
+  // construction and so does the next one somebody writes. `snapToReturn` is the sole
+  // caller of the raw setter.
+  const moveTimeline = useCallback((ms: number) => {
+    setReturnBorrow(null);
+    setTargetDate(ms);
+  }, []);
+  // Starting playback is a departure too: an animating return map is a line set spinning
+  // around the globe, which is not a reading of anything. (Stopping isn't — pausing ON a
+  // return should leave the reader looking at it.)
+  const setPlayingUser = useCallback((v: boolean) => {
+    if (v) setReturnBorrow(null);
+    setPlaying(v);
+  }, []);
+  // Picking a frame by hand CANCELS the borrow rather than cashing it: once a deliberate
+  // choice is made the app has no business holding one on the reader's behalf. So this
+  // both writes the preference and drops the hold — otherwise the segment would refuse to
+  // move, the mask outranking the very click meant to end it. Every route in goes through
+  // here, including the Activations panel's "Use Natal angles" (via the context).
+  const setTransitFrameByUser = useCallback((f: TransitFrame) => {
+    setReturnBorrow(null);
+    setTransitFrame(f);
+  }, []);
   useEffect(() => saveZodiacMode(zodiacMode), [zodiacMode]);
   // Eclipses overlay: the selected catalog eclipse (by id), the magnitude-
   // isoline interval, and the "eclipse chart lines" display toggle.
@@ -1226,7 +1306,61 @@ export default function App() {
   // raw showNatal.)
   // With the birth time unknown there is no natal RAMC to hold, so the transit map
   // is forced to the absolute sky-of-the-moment frame (the only one that's real).
-  const effTransitFrame: TransitFrame = noTime ? 'transit-moment' : transitFrame;
+  //
+  // A returns borrow masks it the same way, for as long as the reader is on the return
+  // they snapped to (see returnBorrow). Both conditions are STANDING states rather than
+  // events, so neither is written: the stored preference is untouched underneath and is
+  // simply back when the condition ends.
+  //
+  // The two extra clauses are what make the borrow a pure derivation instead of something
+  // an effect has to chase: it belongs to one chart, and it only means anything on the
+  // overlay that has the frame control. (Leaving transits CLEARS it outright at the
+  // setter — this clause is for the path where the mode is merely masked to None, e.g. a
+  // chart that can't carry the technique.)
+  const frameHeldForReturn =
+    returnBorrow !== null &&
+    returnBorrow.chartId === currentId &&
+    overlayMode === 'transits' &&
+    lineSystem === 'celestial' &&
+    !noTime;
+  const effTransitFrame: TransitFrame =
+    noTime || frameHeldForReturn ? 'transit-moment' : transitFrame;
+  // The single value the overlay builder and every downstream consumer still read, folded
+  // back together from the three controls. Splitting the CONTROLS did not split the
+  // calculation: 'mean-quotidian' remains what "hold the natal angles" resolves to, and
+  // Solar Arc has never had a distinct natal-frame form, so its menu simply names the arc
+  // it was always applying. Keeping the join here means plugins, the extension context and
+  // the verify scripts all see exactly what they saw before.
+  const angleProgression: AngleProgression =
+    overlayMode === 'solar-arc'
+      ? arcMethod
+      : progAngleFrame === 'natal'
+        ? 'mean-quotidian'
+        : progAngleMethod;
+  // The frame for the status strip: WHOSE ANGLES the drawn lines are measured against.
+  // Only where that is a live question. Solar Arc, Primary Directions and cyclo are
+  // natal-framed by construction and offer no choice, so naming a frame there would
+  // report a decision nobody made; synastry and eclipses have no timeline at all.
+  //
+  // And only on CELESTIAL lines. The geodetic mapping places a meridian from zodiacal
+  // longitude and never reads the overlay's sidereal time, so under it both frames draw
+  // the identical LINES — and this strip reports what the map is drawing, so naming one
+  // would assert a distinction that isn't on screen. (The transits control is disabled
+  // outright there for the same reason. The progressed pair is not, because its arc also
+  // advances the BI-WHEEL's angle marks, which geodetic doesn't touch — so there it is
+  // still a live choice, just not one this row is reporting on.)
+  const infoOverlayFrame: string | null =
+    lineSystem !== 'celestial'
+      ? null
+      : overlayMode === 'transits'
+        ? effTransitFrame === 'relative-to-natal'
+          ? t('settings.positioning.relative-to-natal.label')
+          : frameHeldForReturn
+            ? t('settings.positioning.transit-moment.returnLabel')
+            : t('settings.positioning.transit-moment.label')
+        : overlayMode === 'progressed' || overlayMode === 'tertiary-progressed'
+          ? t(`settings.progAngles.${progAngleFrame}.label`)
+          : null;
   // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
   // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
   // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier
@@ -1467,10 +1601,13 @@ export default function App() {
           // (blocked chart / Advanced off) the bar reads None, so 'o' has to continue
           // from None — resuming from a mode the user can't currently see would skip
           // an entry for no reason they could observe.
+          setReturnBorrow(null);
           setOverlayModePref(cycle[(cycle.indexOf(overlayMode) + 1) % cycle.length]);
           break;
         }
-        case 'n': setActiveOverlayExt(null); setOverlayModePref('off'); break;
+        // 'o' / 'n' are the hotkey twins of the Overlay menu rows, so they end a returns
+        // borrow exactly as selectOverlay does (they predate it and set the pref direct).
+        case 'n': setActiveOverlayExt(null); setReturnBorrow(null); setOverlayModePref('off'); break;
         case 'm': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
@@ -1930,9 +2067,18 @@ export default function App() {
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
   useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
-  useEffect(() => saveAngleProgression(angleProgression), [angleProgression]);
+  // The three CONTROLS, never the joined `angleProgression` above — persisting the join
+  // would collapse "hold the natal angles" and the calculation the reader picked before
+  // they held them into one value again, and lose whichever wasn't showing.
+  useEffect(() => saveArcMethod(arcMethod), [arcMethod]);
+  useEffect(() => saveProgAngleFrame(progAngleFrame), [progAngleFrame]);
+  useEffect(() => saveProgAngleMethod(progAngleMethod), [progAngleMethod]);
   useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
+  // The PREFERENCE again, never effTransitFrame: a returns borrow (or an unknown birth
+  // time) masks that value, and persisting the mask would write the borrowed frame into
+  // storage and destroy the choice it is only holding — visible not now but in the NEXT
+  // session, which is exactly how it went unnoticed before.
   useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
   useEffect(() => saveSynastryMethod(synastryMethod), [synastryMethod]);
   useEffect(() => saveEclipseId(eclipseId), [eclipseId]);
@@ -2855,9 +3001,17 @@ export default function App() {
   // pinned to its birth longitude BY CONSTRUCTION, so its lines would sit on the
   // natal ones and never move from one return to the next, whatever year you walked
   // to. Only 'transit-moment' makes the snapped map the return chart's
-  // astrocartography. Every returns button's tip discloses it (whenever the switch
-  // will actually move), and the frame segments sit in the same row and throb once
-  // to acknowledge it.
+  // astrocartography.
+  //
+  // So the frame is BORROWED, not written (see returnBorrow): the stored preference
+  // stays untouched underneath and comes back the moment the reader leaves the return.
+  // Stepping with the arrows updates the borrow's date and keeps it — walking returns is
+  // a returns-control action, not a departure.
+  //
+  // The borrow is only taken where it would actually mask something. Geodetic lines
+  // ignore sidereal time and a time-unknown chart is already forced to the moment's own
+  // sky, so on either the frame is what it was going to be anyway — and a chip claiming
+  // to hold a setting that nothing is holding is a worse lie than saying nothing.
   const snapToReturn = useCallback(
     (body: ReturnBody, dir: -1 | 0 | 1) => {
       if (!current) return;
@@ -2865,19 +3019,17 @@ export default function App() {
       if (!r) return;
       setPlaying(false);
       setTargetDate(r.ms);
-      announceFlip(
-        'overlay-frame',
-        lineSystem === 'celestial' && transitFrame === 'relative-to-natal',
-      );
-      // Geodetic lines ignore sidereal time, so the frame flip would change nothing
-      // there while silently rewriting a persisted pref whose switch isn't even shown
-      // (it's gated to celestial) — only switch it where it has its documented effect.
-      if (lineSystem === 'celestial') setTransitFrame('transit-moment');
+      const holds = lineSystem === 'celestial' && !noTime;
+      // `changed` reads the EFFECTIVE frame, not the stored one: on the second press of ›
+      // the borrow is already up and the map does not move, and a card about a change
+      // that didn't happen is how a notice becomes something people dismiss unread.
+      announceFlip('overlay-frame-held', holds && effTransitFrame !== 'transit-moment');
+      if (holds) setReturnBorrow({ body, ms: r.ms, chartId: current.id });
     },
-    // transitFrame is a real dependency, not a formality: the announce above decides
+    // effTransitFrame is a real dependency, not a formality: the announce above decides
     // whether anything CHANGED from it, and a stale copy would report a flip that
     // already happened — the one thing a notice must never do.
-    [current, targetDate, lineSystem, transitFrame, announceFlip],
+    [current, targetDate, lineSystem, noTime, effTransitFrame, announceFlip],
   );
 
   const overlayLayer = useMemo(() => {
@@ -4611,12 +4763,18 @@ export default function App() {
   // Single-select, mutually exclusive with the core overlayMode. selectOverlay is the
   // combined setter passed to the Overlay menu's core rows (it clears any active
   // extension as it sets the core mode); selectOverlayExt does the inverse.
+  // Leaving the transits overlay — including to None — ends a returns borrow: the
+  // technique the return was being read under is no longer on screen. Done here rather
+  // than derived, so coming back later doesn't resurrect a hold the reader walked away
+  // from. (The 'o'/'n' hotkeys route through these two, as does the Overlay menu.)
   const selectOverlay = useCallback((mode: OverlayMode) => {
     setActiveOverlayExt(null);
+    setReturnBorrow(null);
     setOverlayModePref(mode);
   }, []);
   const selectOverlayExt = useCallback((id: string) => {
     setOverlayModePref('off');
+    setReturnBorrow(null);
     setActiveOverlayExt(id);
   }, []);
   const clearOverlayExt = useCallback(() => setActiveOverlayExt(null), []);
@@ -4992,7 +5150,7 @@ export default function App() {
       // EFFECTIVE, for the same reason coordSystem is: a time-unknown chart has no
       // natal frame to hold, so the map draws the moment's own whatever is stored.
       transitFrame: effTransitFrame,
-      setTransitFrame,
+      setTransitFrame: setTransitFrameByUser,
       nightShadeOn: showNightShade,
       overlayMode,
       angleProgression,
@@ -5011,7 +5169,9 @@ export default function App() {
       overlayLocalSpace: effOverlayLocalSpace,
       flyTo: extFlyTo,
       markArrival,
-      setTargetDate,
+      // The borrow-ending setter, so a panel's "jump to this date" leaves the return
+      // rather than dragging its frame along to an unrelated moment.
+      setTargetDate: moveTimeline,
       // The exclusion-aware setter (not the raw setOverlayMode) so an extension HUD that
       // drives a core overlay mode also clears any active extension overlay — preserving
       // the Overlay menu's single-select invariant.
@@ -5396,10 +5556,12 @@ export default function App() {
           zodiacMode={zodiacMode}
           nodeType={nodeType}
           advancedMode={advancedWheel}
+          overlayFrame={infoOverlayFrame}
           onOpen={(section) => {
             setShowSettings(true);
             openSidebarSection(section);
           }}
+          onShowFrameControl={showFrameControl}
         />
       )}
       {isTimeMode && (
@@ -5407,27 +5569,40 @@ export default function App() {
           overlayMode={overlayMode}
           mapState={coordSource}
           targetDate={targetDate}
-          setTargetDate={setTargetDate}
+          // The borrow-ending setter — the ruler, the transport ‹ ›, Now and the date
+          // picker all move the cursor through this one. The returns ‹ › do NOT: they
+          // reach snapToReturn, which keeps the hold and updates its date.
+          setTargetDate={moveTimeline}
           stepUnit={stepUnit}
           setStepUnit={setStepUnit}
           playing={playing}
-          setPlaying={setPlaying}
+          setPlaying={setPlayingUser}
           charts={charts}
           currentId={current?.id ?? null}
           overlayMeasure={overlayLayer?.measure ?? null}
           showTimeline={overlayExpanded}
           onToggleTimeline={toggleOverlayExpanded}
           onSnapReturn={snapToReturn}
-          transitFrame={transitFrame}
-          setTransitFrame={setTransitFrame}
+          // The EFFECTIVE frame, so the segments mark what the map is actually drawing
+          // rather than a stored preference a borrow (or an unknown birth time) is
+          // masking — the guard reads the derived value, the persistence reads the pref.
+          transitFrame={effTransitFrame}
+          setTransitFrame={setTransitFrameByUser}
           lineSystem={lineSystem}
           frameLocked={noTime}
+          returnHold={frameHeldForReturn ? returnBorrow : null}
+          onEndReturnHold={endReturnBorrow}
+          flashFrameSeq={flashFrameSeq}
           openExtensions={openExtensions}
           onToggleExtension={toggleExtension}
           showNatal={showNatal}
           setShowNatal={setShowNatal}
-          angleProgression={angleProgression}
-          setAngleProgression={setAngleProgression}
+          arcMethod={arcMethod}
+          setArcMethod={setArcMethod}
+          progAngleFrame={progAngleFrame}
+          setProgAngleFrame={setProgAngleFrame}
+          progAngleMethod={progAngleMethod}
+          setProgAngleMethod={setProgAngleMethod}
           primaryRate={primaryRate}
           setPrimaryRate={setPrimaryRate}
           userPrimaryRate={userPrimaryRate}

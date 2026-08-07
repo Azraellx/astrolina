@@ -35,13 +35,22 @@ the tool: quietly reversing it later would move every line on the map a second t
 from nothing you did, which is the same surprise one step removed.
 
 **A reading is only that reading in one frame.** Jumping a dated overlay to a return —
-the instant a body comes back to its exact natal degree — sets the overlay frame to
-the moment's own sidereal time. In the natal frame the returning body is pinned to its
-birth position by construction, so its lines would sit on the natal ones and never
-move from one return to the next, however many years you stepped through. The map
-would be drawn, and it would be empty of information.
+the instant a body comes back to its exact natal degree — draws the map in the moment's
+own sidereal time. In the natal frame the returning body is pinned to its birth position
+by construction, so its lines would sit on the natal ones and never move from one return
+to the next, however many years you stepped through. The map would be drawn, and it would
+be empty of information.
 
-As above, the app tells you, and leaves the frame where it put it.
+This one is a **borrow**, not a rewrite. Your own frame is not touched; it is held while
+you are on the return, and a small chip appears beside the overlay's name — `☉ Solar
+return · 5 Jun 2027 ✕` — saying so for as long as the hold lasts. Stepping to the next or
+previous return with the arrows keeps it, because that is still reading returns. Anything
+else you do to the timeline gives the frame straight back: the ✕, **Now**, dragging or
+typing a date, pressing play, switching overlay, or simply choosing a frame yourself.
+
+That is the one place in this list where a setting comes back on its own after the app
+has moved the map, and it is allowed to because the move is never invisible: the chip is
+there the whole time it is held, and every way out is something you did.
 
 ## What this means in practice
 
@@ -52,9 +61,9 @@ As above, the app tells you, and leaves the frame where it put it.
 | The projection choice (in mundo / in zodiaco) disappears | While the geodetic mapping is on | **Held.** Geodetic places every body on the ecliptic by construction, so there is no choice left to make |
 | Your overlay technique reads as None | While the active chart can't carry it — a composite has no moment to advance, a chart with no birth time has no exact one, a two-person chart has nobody left to add | **Held.** Back the moment you select a chart that can carry it |
 | Advanced-only techniques read as None | While Advanced is off | **Held.** Back when you turn Advanced on, like every other Advanced setting |
+| The overlay frame reads *Return angles* | While the map is on a return you jumped to | **Held**, announced, and marked by a chip. Back when you leave the return |
 | The line system changes to celestial | When you open the local-space view, or start the globe-spin tool | **Rewritten**, and announced |
 | The local-space view closes | When you choose the geodetic mapping | **Rewritten**, and announced |
-| The overlay frame changes to the moment's own sky | When you jump a dated overlay to a return | **Rewritten**, and announced |
 
 Every announcement carries a *Don't show me again* tick. Turning one off suppresses
 that message everywhere it would appear, including from a different starting point —
@@ -89,3 +98,10 @@ the same line most of the way around the globe from each other, and the two line
 systems disagree about where every angle falls. A map that rearranges itself when you
 close an unrelated window, with no gesture to attribute it to, reads as a broken map.
 Changing something once and saying so is more honest than changing it twice quietly.
+
+The return frame above looks like an exception and is really the same rule read
+carefully. What makes reverting bad is the second move you can't account for — not the
+second move. So the frame is only ever *borrowed*, and the borrowing is on screen the
+entire time it lasts, with the handle for ending it sitting in the middle of it. Nothing
+is put back behind your back; you take it back, and the chip is there to be clicked if
+you would rather do it now than by walking away.

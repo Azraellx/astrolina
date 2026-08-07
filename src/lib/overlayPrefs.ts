@@ -7,9 +7,10 @@
 // localStorage persistence for the timeline/overlay controls, mirroring the
 // load/save shape of theme.ts and chartLibrary.ts.
 import type {
-  AngleProgression,
+  ArcMethod,
   OverlayMode,
   PrimaryRate,
+  ProgAngleFrame,
   RelationshipMethod,
   TimeUnit,
   TransitFrame,
@@ -23,7 +24,9 @@ const PARTNER_KEY = 'astro:overlay-partner:v1';
 // Stores a time-unit name (hour/day/week/month/year).
 const STEP_KEY = 'astro:overlay-step:v1';
 // Progressions & Directions ("Progs/Dirns") settings.
-const ANGLE_PROG_KEY = 'astro:angle-progression:v1';
+// The retired SHARED key: one five-valued control drove both the Solar Arc overlay and
+// the progressed ones. Read once, for migration only (see below); never written again.
+const LEGACY_ANGLE_PROG_KEY = 'astro:angle-progression:v1';
 const PRIMARY_RATE_KEY = 'astro:primary-rate:v1';
 const USER_PRIM_RATE_KEY = 'astro:user-primary-rate:v1';
 
@@ -41,13 +44,8 @@ const MODES: OverlayMode[] = [
   'eclipses',
 ];
 
-const ANGLE_PROGS: AngleProgression[] = [
-  'sa-long',
-  'sa-ra',
-  'naibod-long',
-  'naibod-ra',
-  'mean-quotidian',
-];
+const ARC_METHODS: ArcMethod[] = ['sa-long', 'sa-ra', 'naibod-long', 'naibod-ra'];
+const PROG_ANGLE_FRAMES: ProgAngleFrame[] = ['natal', 'progressed'];
 
 const PRIMARY_RATES: PrimaryRate[] = [
   'ptolemy',
@@ -91,17 +89,72 @@ export function saveOverlayStep(unit: TimeUnit) {
   localStorage.setItem(STEP_KEY, unit);
 }
 
-// Default 'mean-quotidian' — the storage key behind the "Natal Frame" option
-// (historical name, kept for saved prefs): a no-op for both directed overlays
-// (Solar Arc stays SA-in-longitude, Progressed holds the natal RAMC).
-export function loadAngleProgression(): AngleProgression {
-  const v = localStorage.getItem(ANGLE_PROG_KEY);
-  return v && (ANGLE_PROGS as string[]).includes(v)
-    ? (v as AngleProgression)
-    : 'mean-quotidian';
+// ── The angle controls, split ────────────────────────────────────────────────
+// One five-valued "Chart angle" menu used to drive Solar Arc and the progressed
+// overlays together, while the two ask different questions of it: on Solar Arc it sets
+// how far the BODIES advance, on progressions how far the ANGLES do. Sharing it also
+// forced one default onto both, and put a frame answer ('mean-quotidian') in a list of
+// calculations, where on Solar Arc it duplicated SA-in-longitude exactly.
+//
+// So: three keys. The arc calculation per overlay — each with the default its own
+// overlay wants — and, on the progressed side, whether the angles advance at all.
+const ARC_METHOD_KEY = 'astro:arc-method:v1';
+const PROG_ANGLE_FRAME_KEY = 'astro:prog-angle-frame:v1';
+const PROG_ANGLE_METHOD_KEY = 'astro:prog-angle-method:v1';
+
+// The legacy value, if it is one of the four calculations. A stored 'mean-quotidian'
+// (or nothing at all) reads as null: it was the DEFAULT, so it cannot be told apart
+// from an install that never touched the control.
+function legacyArcMethod(): ArcMethod | null {
+  const v = localStorage.getItem(LEGACY_ANGLE_PROG_KEY);
+  return v && (ARC_METHODS as string[]).includes(v) ? (v as ArcMethod) : null;
 }
-export function saveAngleProgression(a: AngleProgression) {
-  localStorage.setItem(ANGLE_PROG_KEY, a);
+
+// Migration note, because CLAUDE.md's rule about mount-written prefs says to ABANDON old
+// values rather than migrate them, and this deliberately does the opposite.
+//
+// That rule exists so a new DEFAULT can reach the installs it was written for: the old
+// key holds whatever the default was at the time, chosen or not, so reading it makes the
+// new default unreachable. Neither half of that applies here. The new defaults reproduce
+// the old default's behaviour exactly on both overlays ('mean-quotidian' gave
+// SA-in-longitude on Solar Arc and natal angles on progressions), so a stored default is
+// indistinguishable from an untouched install and lands in the same place either way. And
+// one of the four calculations is unambiguously a real choice — it was never a default —
+// which maps onto the new pair without changing a single line the map draws.
+//
+// Abandoning it would silently move the drawn map of every astrologer who had picked a
+// method, which is the failure the rule is protecting against, not an instance of it.
+export function loadArcMethod(): ArcMethod {
+  const v = localStorage.getItem(ARC_METHOD_KEY);
+  if (v && (ARC_METHODS as string[]).includes(v)) return v as ArcMethod;
+  return legacyArcMethod() ?? 'sa-long';
+}
+export function saveArcMethod(m: ArcMethod) {
+  localStorage.setItem(ARC_METHOD_KEY, m);
+}
+
+// Default 'natal': the progressed planets read against the birth chart's angular frame,
+// which is what the shared control's default did and what the Transits overlay defaults
+// to as well.
+export function loadProgAngleFrame(): ProgAngleFrame {
+  const v = localStorage.getItem(PROG_ANGLE_FRAME_KEY);
+  if (v && (PROG_ANGLE_FRAMES as string[]).includes(v)) return v as ProgAngleFrame;
+  // A legacy calculation means the angles WERE advancing — same map, said the new way.
+  return legacyArcMethod() ? 'progressed' : 'natal';
+}
+export function saveProgAngleFrame(f: ProgAngleFrame) {
+  localStorage.setItem(PROG_ANGLE_FRAME_KEY, f);
+}
+
+// Default 'naibod-ra' — reachable only once the reader chooses advancing angles, so it is
+// a fresh choice for everyone rather than a default being changed underneath anyone.
+export function loadProgAngleMethod(): ArcMethod {
+  const v = localStorage.getItem(PROG_ANGLE_METHOD_KEY);
+  if (v && (ARC_METHODS as string[]).includes(v)) return v as ArcMethod;
+  return legacyArcMethod() ?? 'naibod-ra';
+}
+export function saveProgAngleMethod(m: ArcMethod) {
+  localStorage.setItem(PROG_ANGLE_METHOD_KEY, m);
 }
 
 export function loadPrimaryRate(): PrimaryRate {
