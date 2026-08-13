@@ -534,6 +534,25 @@ function AngleTipGlyph({
   );
 }
 
+// The "this column sorts" cue, worn by both tables' headers (see .es-sort-cue).
+// Both carets at once — either direction is available from here — against the
+// single ▴/▾ the ACTIVE column shows, which means "sorted this way". Rendered
+// always and revealed by CSS on hover/focus (and kept up at rest where there is
+// no hover to reveal it), so nothing about the resting desktop table changes.
+//
+// It exists because a header that takes its cell's own type is what makes the
+// table read like a table, and is also what makes the sort gesture invisible
+// until someone happens to press one. aria-hidden: the header's aria-sort carries
+// the state, and the button being a button carries the affordance.
+function SortCue() {
+  return (
+    <span className="es-sort-cue" aria-hidden="true">
+      <span>▴</span>
+      <span>▾</span>
+    </span>
+  );
+}
+
 // The clickable label inside a sortable column header, shared by every table and
 // list in the panel that sorts. Same three-state gesture throughout: a new column
 // opens ascending, a second press on the active one flips it, a third hands the
@@ -561,6 +580,7 @@ function SortLabel<K extends string>({
     >
       {label}
       {on && <span className="es-ft-arrow">{sort.dir === 1 ? '▴' : '▾'}</span>}
+      <SortCue />
     </button>
   );
 }
@@ -650,6 +670,13 @@ function sortAspects<T extends Aspect>(rows: T[], sort: SortState<AspectSortKey>
 // The label is also the sort control: the tip stays on the CELL so hovering
 // anywhere in the header still explains the column, while the click target is the
 // label itself.
+//
+// Which is exactly why the tip is hold-to-reveal (the shared default) and NOT
+// tapReveal. tapReveal is for INERT triggers — it swallows the release-click by
+// design, so on a touch screen it turned every tap on a header into "explain this
+// column" and the table could not be sorted by finger at all. A header holds an
+// action, so it takes the same bargain every other button in the app takes: a tap
+// acts, a hold explains.
 function AdvHeader({
   label,
   title,
@@ -667,7 +694,7 @@ function AdvHeader({
   onSort: (key: PosSortKey) => void;
   cellClass?: string;
 }) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right', { tapReveal: true });
+  const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right');
   return (
     <th
       ref={ref}
@@ -2431,6 +2458,10 @@ export function ExpandedChartSidebar({
                     {frameSort.dir === 1 ? '▴' : '▾'}
                   </span>
                 )}
+                {/* Same cue the positions table's headers wear. This table's sort
+                    is never off — one column is always active — so the cue marks
+                    the four columns you could move to. */}
+                <SortCue />
               </TipButton>
             </th>
           );

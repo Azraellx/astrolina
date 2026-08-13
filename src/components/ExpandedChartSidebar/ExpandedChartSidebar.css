@@ -454,15 +454,99 @@
 
 /* The sort button inside a header IS the header text: it takes the cell's type
    rather than the frame table's, so sorting changed nothing about how the table
-   reads. Only the active column brightens. */
+   reads. The active column brightens, and so — transiently — does a hovered one:
+   see the cue below for why the resting header can't be the only thing saying
+   these are pressable. */
 .es-adv-table th .es-adv-sort {
+  position: relative;
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
   color: inherit;
+  transition: color var(--dur-quick) var(--ease-settle);
 }
 .es-adv-table th .es-adv-sort.on {
   color: var(--text-strong);
+}
+.es-adv-table th:hover .es-adv-sort:not(.on) {
+  color: var(--text-muted);
+}
+
+/* --- The "these sort" cue (.es-sort-cue), worn by both sortable tables --------
+   The header labels are deliberately quiet — small, faint, uppercase — which is
+   right for a reading and wrong for a control: taking the cell's own type is what
+   makes a table read like a table, and it is also what makes the sort gesture
+   invisible until someone happens to press one. So the gesture is advertised on
+   hover rather than at rest, which costs the resting table nothing: a pair of
+   stacked carets appears beside the label and pulses twice.
+
+   It is absolutely positioned — an in-flow mark would widen the header under the
+   pointer and shift every column beside it, in a table whose column count is
+   already trimmed to fit the panel — and it sits on whichever side its column
+   leaves free, which is the side its label is NOT aligned to. */
+.es-adv-sort,
+.es-frames-table .es-ft-sort {
+  position: relative;
+}
+.es-sort-cue {
+  position: absolute;
+  top: 50%;
+  left: 100%; /* left-aligned labels (Point, and every frame column): slack right */
+  translate: 0 -50%;
+  margin-left: 4px;
+  display: flex;
+  flex-direction: column;
+  line-height: 0.6;
+  font-size: 7px;
+  color: var(--accent);
+  opacity: 0;
+  pointer-events: none; /* the label is the whole click target; this is decoration */
+  transition: opacity var(--dur-quick) var(--ease-settle);
+}
+/* The coordinate columns are right-aligned, so their slack is on the LEFT — and
+   putting the cue there also keeps it clear of that table's explanation card,
+   which pops to the cell's RIGHT. The affordance and the explanation shouldn't
+   stack on one edge and arrive as a single blur. (Point is exempt: it is the
+   first column and left-aligned, so at right:100% the cue would land outside the
+   scroll box and be clipped away — overflow-x cannot scroll to negative x.) */
+.es-adv-table th.es-adv-num .es-sort-cue {
+  left: auto;
+  right: 100%;
+  margin: 0 4px 0 0;
+}
+/* Revealed by each table's OWN tip trigger, so one gesture produces both the
+   explanation and the affordance: the positions table anchors its card on the
+   whole cell, the frame table on the label. Plus keyboard focus. The ACTIVE
+   column is left out of all of it — its ▴/▾ is already the proof that headers
+   sort, and a second mark pulsing beside it would only be noise. */
+.es-adv-table th:hover .es-adv-sort:not(.on) .es-sort-cue,
+.es-frames-table .es-ft-sort:not(.on):hover .es-sort-cue,
+.es-ft-sort:not(.on):focus-visible .es-sort-cue {
+  opacity: 0.85;
+  animation: ui-throb var(--dur-flourish) var(--ease-pop) 2;
+}
+/* A touch screen has no hover to reveal anything with, and the cue is the only
+   thing these headers have to say they are pressable — so there it simply stays
+   up, quieter, and doesn't pulse (nothing triggered it, so nothing is being
+   answered). */
+@media (pointer: coarse) {
+  .es-sort-cue {
+    opacity: 0.5;
+  }
+  .es-adv-table th:hover .es-adv-sort:not(.on) .es-sort-cue,
+  .es-frames-table .es-ft-sort:not(.on):hover .es-sort-cue {
+    animation: none;
+  }
+  .es-ft-sort.on .es-sort-cue {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .es-adv-table th:hover .es-adv-sort:not(.on) .es-sort-cue,
+  .es-frames-table .es-ft-sort:not(.on):hover .es-sort-cue,
+  .es-ft-sort:not(.on):focus-visible .es-sort-cue {
+    animation: none;
+  }
 }
 
 .es-adv-num {
