@@ -455,7 +455,10 @@ export function PlaceSearchField({
             remove: e.remove,
             onPick: () =>
               take(
-                { label: e.label, lat: e.lat, lng: e.lng, zoom: e.zoom },
+                // `onMap` travels with the point, not with the group: whether the
+                // map already draws this spot is the contributor's fact about
+                // this row, and a host that marks arrivals needs it per pick.
+                { label: e.label, lat: e.lat, lng: e.lng, zoom: e.zoom, onMap: e.onMap },
                 LIBRARY_SCOPE_ID,
               ),
           })),

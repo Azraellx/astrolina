@@ -809,6 +809,25 @@ const ARRIVAL_MARK_SVG =
   '<circle cx="14" cy="14" r="6.4" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
   '<circle cx="14" cy="14" r="2.4" fill="currentColor"/>' +
   '</svg>';
+/** The standing home marker. The SAME teardrop as the placed pin and as any
+ *  marker layer a downstream build draws — a home IS a place on the map, so it
+ *  belongs to the pin family and only its colour and its head separate it. (The
+ *  arrival crosshair above goes the other way for the opposite reason: it marks
+ *  a camera, not a place.) The house sits exactly where a pin's centre dot and
+ *  its optional emblem sit, and `evenodd` cuts the door out of the silhouette —
+ *  one filled path, which is also all the capture compositor can redraw. */
+const HOME_MARK_SVG =
+  '<svg class="map-home-body" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path class="map-home-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
+  '<path class="map-home-glyph" fill-rule="evenodd" ' +
+  // Sized to the head, not to the box: the far corner sits ~5.95 from the head's
+  // centre (12,10), inside the teardrop's r≈7.1 inner edge, and the glyph's own
+  // centre of mass lands on (12,10) — the slot the pin's dot and an adornment's
+  // emblem both occupy. Roof, walls and base are one subpath; the door is a
+  // second, cut out by fill-rule rather than painted over.
+  'd="M12 5.8 16.4 9.6 15 9.6 15 14 9 14 9 9.6 7.6 9.6Z' +
+  'M11 11.3 13 11.3 13 14 11 14Z"/>' +
+  '</svg>';
 
 interface ZenithHit {
   id: string;
@@ -1261,7 +1280,7 @@ interface MapProps {
       ) => string | null)
     | null;
   pin?: { lat: number; lng: number } | null;
-  pinType?: 'custom' | 'natal' | null;
+  pinType?: 'custom' | 'natal' | 'home' | null;
   /** Reference point for the line card's "Distance from …" row: a placed pin, or the natal
    *  location by default. The line card reports how far the clicked spot is from it. */
   distanceRef?: { lat: number; lng: number; type: 'pin' | 'natal' } | null;
@@ -1444,6 +1463,20 @@ interface MapProps {
    *  rather than closed over, so a render the listener never saw can't send a
    *  stale one. Omit it and the mark stays a passive crosshair. */
   onArrivalClick?: (lat: number, lng: number) => void;
+  /** The active chart's HOME place, drawn as a standing marker for as long as it
+   *  is set. Unlike {@link arrivalMark} this answers a question nobody had to ask
+   *  — where this chart lives is true whether or not you just flew there — so it
+   *  neither pings nor expires. `label` names the place in its hover tip; hosts
+   *  that mask personal detail pass an already-masked string (Map never sees the
+   *  raw one). Null while unset, and null while the placed PIN sits on the same
+   *  spot: the pin takes the identity over there (`pinType: 'home'`) rather than
+   *  stacking two teardrops on one coordinate. */
+  home?: { lat: number; lng: number; label?: string } | null;
+  /** The viewer clicked the home marker. Like {@link onArrivalClick}, Map reports
+   *  the gesture and the point and leaves the meaning to the host. Withdraw it
+   *  (rather than ignoring the call) whenever another gesture owns map clicks —
+   *  the marker then drops its pointer events with its affordance. */
+  onHomeClick?: (lat: number, lng: number) => void;
 }
 
 interface MapData {
@@ -2821,6 +2854,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   arrivalMark,
   onCameraJump,
   onArrivalClick,
+  home,
+  onHomeClick,
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3305,6 +3340,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             const dot = body.querySelector('.map-pin-dot, .saved-pin-dot');
             const flag = body.querySelector<SVGImageElement>('.saved-pin-flag');
             const ring = body.querySelector('.saved-pin-flag-ring');
+            // A head that carries a drawn glyph instead of an emblem or a dot
+            // (the home marker's house). Read as a path so the shape lives in ONE
+            // place — the SVG constant — rather than being restated in canvas ops
+            // that would then drift from it.
+            const glyph = body.querySelector('.map-home-glyph');
             const href = flag?.getAttribute('href') ?? '';
             const art = href ? await emblem(href) : null;
             const s = (br.width / 24) * scale;
@@ -3330,6 +3370,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 ctx.strokeStyle = rs.stroke;
                 ctx.stroke();
               }
+            } else if (glyph) {
+              // evenodd, matching the SVG's own fill-rule: the door is a second
+              // subpath cut out of the house, not a shape drawn over it.
+              ctx.fillStyle = getComputedStyle(glyph).fill;
+              ctx.fill(new Path2D(glyph.getAttribute('d') ?? ''), 'evenodd');
             } else {
               const hole = new Path2D();
               hole.arc(12, 10, 3, 0, Math.PI * 2);
@@ -3339,10 +3384,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ctx.restore();
           };
 
-          // Saved pins first, the active pin last — it is the one being composed
-          // around, so it wins any overlap.
-          for (const body of frameEl.querySelectorAll('.saved-pin-body')) {
-            const shape = body.querySelector('.saved-pin-shape');
+          // The standing markers first — the home place and any marker layer a
+          // downstream build draws — then the active pin, which is the thing being
+          // composed around and so wins any overlap. One query for both: every
+          // teardrop here shares the 0 0 24 24 viewBox, which is what lets one
+          // routine draw them all.
+          for (const body of frameEl.querySelectorAll('.map-home-body, .saved-pin-body')) {
+            const shape = body.querySelector('.map-home-shape, .saved-pin-shape');
             if (shape) await drawPin(body, shape);
           }
           const pinBody = frameEl.querySelector('.map-pin-body');
@@ -3373,12 +3421,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // The camera-arrival mark (a DOM marker like the two above, so MapLibre keeps it
   // pinned to its coordinate without a React render per frame).
   const arrivalMarkerRef = useRef<maplibregl.Marker | null>(null);
+  // The standing home marker — the same kind of DOM marker, and the only one of
+  // them that isn't a response to something the viewer just did.
+  const homeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const skyStampRef = useRef<maplibregl.Marker | null>(null);
   const eclipseMarkerKeyRef = useRef<string | null>(null);
   const onRightClickRef = useRef(onRightClick);
   // Its marker's click listener binds once at creation, so the live prop comes
   // through a ref (refreshed in the post-commit effect below, beside onRightClick).
   const onArrivalClickRef = useRef(onArrivalClick);
+  const onHomeClickRef = useRef(onHomeClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
@@ -3450,6 +3502,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     onRightClickRef.current = onRightClick;
     onArrivalClickRef.current = onArrivalClick;
+    onHomeClickRef.current = onHomeClick;
     dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
@@ -4011,6 +4064,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // so its tip is driven imperatively from the marker effect below — never a
   // native `title=` (which the app has retired in favour of the shared .ui-tip).
   const [pinTip, setPinTip] = useState<{ pos: TipPos; title: string } | null>(null);
+  // And the standing home marker's — its own slot, not the pin's: the two can be
+  // on screen together, and a shared one would blank whichever you left first.
+  const [homeTip, setHomeTip] = useState<
+    { pos: TipPos; title: string; hint: string } | null
+  >(null);
   // Single-slot marker decoration (emblem in the head + tip override) — see
   // lib/extensions/pinAdornment. Null in the open core.
   const pinAdornment = usePinAdornment();
@@ -5746,6 +5804,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     }
     const el = markerRef.current.getElement();
     el.classList.toggle('natal', pinType === 'natal');
+    // The pin standing ON the home place wears home's colour: the house marker
+    // stands down under it (the host passes no `home` then), and without this the
+    // spot would silently lose its identity the moment you read the chart there.
+    el.classList.toggle('home', pinType === 'home');
     // Apply the single-slot adornment: show the emblem when a URL is provided.
     // Idempotent on purpose — re-setting even the SAME href on an SVG <image>
     // forces a re-decode, which blanks the emblem for a frame. Adornment
@@ -5786,7 +5848,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       );
     }
     const label =
-      pinAdornment?.tip ?? (pinType === 'natal' ? t('map.pin.natal') : t('map.pin.custom'));
+      pinAdornment?.tip ??
+      (pinType === 'natal'
+        ? t('map.pin.natal')
+        : pinType === 'home'
+          ? t('map.pin.home')
+          : t('map.pin.custom'));
     // The pin is plain MapLibre DOM, so it can't take the shared HoverTip's ref —
     // drive the portaled tip imperatively, exactly like the nav-control tips above
     // (NOT a native `title=`). `aria-label` stays as the accessible name; the shared
@@ -6001,6 +6068,86 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     arrivalMarkerRef.current?.getElement().classList.toggle('is-clickable', !!onArrivalClick);
   }, [onArrivalClick, arrivalMark]);
 
+  // The standing HOME marker: where the active chart's subject lives now, drawn
+  // for as long as that is set. It is the one marker here that answers a question
+  // nobody asked — so it never pings, never expires, and is built once and moved
+  // rather than rebuilt (rebuilt markup is how the other markers replay their
+  // animations, which is exactly what this one must not do).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!home) {
+      homeMarkerRef.current?.remove();
+      homeMarkerRef.current = null;
+      return;
+    }
+    if (!homeMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'map-home-mark';
+      el.innerHTML = HOME_MARK_SVG;
+      // Same contract as the arrival mark's click: stopped here rather than
+      // offered on a claimable channel, because markers live inside the canvas
+      // container and anything left to bubble reaches MapLibre's own click
+      // handling — which would open a line card under the house just tapped. The
+      // early return before preventDefault is load-bearing: with no handler the
+      // click must pass through untouched, so a tool waiting on it still gets it.
+      // Coordinates come off the MARKER, never this closure — bound once, outlives
+      // every later home.
+      el.addEventListener('click', (e) => {
+        const at = homeMarkerRef.current?.getLngLat();
+        if (!at || !onHomeClickRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onHomeClickRef.current(at.lat, at.lng);
+      });
+      // Swallowed, both of them. A double-click through to the map re-places the
+      // pin at the CURSOR, and the icon hangs above its anchor — so the pin creeps
+      // north by a marker's height. A right-click through to the map removes the
+      // placed pin, which is nowhere near what someone aiming at the house meant.
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      homeMarkerRef.current = new maplibregl.Marker({
+        element: el,
+        // The tip marks the point, as on the pin — the house floats above it.
+        anchor: 'bottom',
+        offset: [0, 2],
+      })
+        .setLngLat([home.lng, home.lat])
+        .addTo(map);
+    } else {
+      homeMarkerRef.current.setLngLat([home.lng, home.lat]);
+    }
+    const el = homeMarkerRef.current.getElement();
+    // Title first, place second: the title is the fact, and the place is what a
+    // host masks under a discreet/present-to-others mode — so the tip still says
+    // something when the label is blanked. Driven imperatively like the pin's
+    // (plain MapLibre DOM, and never a native `title=`); bindTouchTip's pointer
+    // mode gives hover on a mouse and hold-to-reveal on touch.
+    const title = t('map.home.tip');
+    const hint = home.label ? `${home.label} · ${t('map.home.hint')}` : t('map.home.hint');
+    el.setAttribute('aria-label', home.label ? `${title} — ${home.label}` : title);
+    const show = () =>
+      setHomeTip({ pos: tipPosFor(el.getBoundingClientRect(), 'top'), title, hint });
+    const { cleanup } = bindTouchTip(el, show, () => setHomeTip(null), { pointer: true });
+    return () => {
+      cleanup();
+      setHomeTip(null);
+    };
+  }, [home, t]);
+
+  // Pointer events only where the click means something — its own effect for the
+  // same reason the arrival mark's is: a host withdraws the handler the moment
+  // another gesture owns map clicks, and this must not disturb the marker itself.
+  useEffect(() => {
+    homeMarkerRef.current?.getElement().classList.toggle('is-clickable', !!onHomeClick);
+  }, [onHomeClick, home]);
+
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
   // precision matters. setState identity is stable, so this only re-runs on a zoom
@@ -6129,6 +6276,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         pos={pinTip?.pos ?? null}
         placement="top"
         title={pinTip?.title ?? ''}
+      />
+      <HoverTip
+        pos={homeTip?.pos ?? null}
+        placement="top"
+        title={homeTip?.title ?? ''}
+        hint={homeTip?.hint}
       />
       {/* Every edge badge labels a line on the map, so a chart-subject export drops the lot:
           the card covers the map, and the export re-stamps badge glyphs from the live DOM

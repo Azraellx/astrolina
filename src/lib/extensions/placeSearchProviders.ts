@@ -29,6 +29,12 @@ export interface PlaceSearchHit {
   zoom?: number;
   /** Optional second line under the label (a district, a region, a note). */
   sub?: string;
+  /** The map ALREADY draws a marker of its own at this point (a place the
+   *  contributor plots, not one the basemap happens to label). A host that marks
+   *  where the camera landed skips its own mark for it — two marks on one spot is
+   *  the confusion an arrival mark exists to prevent. Omit when nothing is drawn
+   *  there; the arrival is then marked on the point's own shape like any other. */
+  onMap?: boolean;
 }
 
 export interface PlaceSearchQuery {
@@ -119,6 +125,14 @@ export interface PlaceSearchLibraryEntry {
   lng: number;
   /** Framing hint for hosts that fly the camera. */
   zoom?: number;
+  /** This entry is already drawn on the map (the contributor plots it there —
+   *  a saved marker, a plotted spot). Rides out to hosts as {@link
+   *  PlaceSearchHit.onMap}, so one that marks arrivals doesn't put a second mark
+   *  on a spot that already has one. **Per entry, and NOT assumed of the group:**
+   *  a standing list mixes places the map draws with places it doesn't (a home
+   *  address is the plain case — nothing plots it), and only the contributor
+   *  knows which is which. */
+  onMap?: boolean;
 }
 
 export interface PlaceSearchLibraryGroup {

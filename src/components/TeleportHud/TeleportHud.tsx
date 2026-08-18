@@ -9,7 +9,7 @@ import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
-import { LIBRARY_SCOPE_ID, PlaceSearchField } from '../ui/PlaceSearchField';
+import { PlaceSearchField } from '../ui/PlaceSearchField';
 import { useHoverTip } from '../ui/useHoverTip';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
 // (.location-* classes), so the window frosts/recolors with the theme for free.
@@ -171,10 +171,16 @@ export function TeleportHud({
         // a settlement or a territory needs no mark: the basemap has drawn and
         // named the town, and a dot on a country's centroid would claim a precision
         // it doesn't have. What's left — an unclassed point — is exactly the case
-        // that lands you on anonymous tiles. The library scope is excluded because
-        // its rows already draw their own marker on the map.
-        onPick={(hit, pickedScope) => {
-          const precise = hit.kind === undefined && pickedScope !== LIBRARY_SCOPE_ID;
+        // that lands you on anonymous tiles.
+        //
+        // `onMap` is the second exemption, and it is likewise the point's own fact:
+        // the map already draws a marker there, so a crosshair would be the second
+        // one. It used to be read as "came from the standing list", which is true of
+        // a saved spot that flies its own marker and false of a home address, which
+        // nothing plots — so the one row most worth marking was the one row that
+        // never got a mark.
+        onPick={(hit) => {
+          const precise = hit.kind === undefined && !hit.onMap;
           onFlyTo(
             hit.lat,
             hit.lng,

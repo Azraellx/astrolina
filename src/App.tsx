@@ -2416,24 +2416,32 @@ export default function App() {
     clearArrivalMark();
     mapRef.current?.flyTo(lat, lng, zoom);
   }, [clearArrivalMark]);
-  const teleportToPoint = (
-    lat: number,
-    lng: number,
-    zoom?: number,
-    duration?: number,
-    // Opt IN to marking the destination. Defaulting to "no mark" keeps the callers
-    // that aren't searches — Local Space's fly-to-origin (which already draws its
-    // compass rose there) and the transparent-export re-frame (a framing gesture,
-    // not a destination) — exactly as they were.
-    mark?: { label?: string } | null,
-  ) => {
-    const target = mapRef.current?.teleportTo(lat, lng, zoom, duration);
-    if (target) {
-      setLocationReturn('back');
-      setTeleportTarget(target);
-    }
-    markArrival(mark ? { lat, lng } : null, mark?.label);
-  };
+  // Memoized so the handlers built on it (the home marker's click) can be stable
+  // themselves — Map withdraws those by identity to decide whether a marker is
+  // clickable at all, and a fresh function every render would churn that. Every
+  // dependency is already stable: a ref, two state setters, and markArrival.
+  const teleportToPoint = useCallback(
+    (
+      lat: number,
+      lng: number,
+      zoom?: number,
+      duration?: number,
+      // Opt IN to marking the destination. Defaulting to "no mark" keeps the callers
+      // that aren't searches — Local Space's fly-to-origin (which already draws its
+      // compass rose there), the home marker (which IS the mark) and the
+      // transparent-export re-frame (a framing gesture, not a destination) —
+      // exactly as they were.
+      mark?: { label?: string } | null,
+    ) => {
+      const target = mapRef.current?.teleportTo(lat, lng, zoom, duration);
+      if (target) {
+        setLocationReturn('back');
+        setTeleportTarget(target);
+      }
+      markArrival(mark ? { lat, lng } : null, mark?.label);
+    },
+    [markArrival],
+  );
   // Turning on the transparent export flies to the local-space origin at the compass's full-size
   // zoom, so the always-on circle mask has the horizon rose to frame. Same teleport hop as Local
   // Space's "fly to origin" (undoable the same way), but near-instant — this toggle wants the
@@ -3485,6 +3493,36 @@ export default function App() {
     !!current &&
     Math.abs(pinned.lat - current.birthplace.lat) < 0.001 &&
     Math.abs(pinned.lng - current.birthplace.lng) < 0.001;
+  // The chart's home place, and whether the placed pin is standing on it — same
+  // tolerance as the natal test above, and for the same reason: these coordinates
+  // come from the same place searches and so match exactly or not at all, but one
+  // that has been through storage and back deserves the epsilon.
+  const chartHome = current?.home ?? null;
+  const isHomePin =
+    !!pinned &&
+    !!chartHome &&
+    Math.abs(pinned.lat - chartHome.lat) < 0.001 &&
+    Math.abs(pinned.lng - chartHome.lng) < 0.001;
+  // The standing home marker Map draws. Withheld while the pin is on the spot:
+  // the pin wears home's colour there instead (pinType below), because two
+  // teardrops on one coordinate is exactly the confusion this marker family
+  // spends its colours avoiding. Discreet mode blanks the LABEL and not the
+  // marker — where someone lives is what the mode is for, but a chart's own map
+  // is not where you hide their home from them; the tip's title still says Home.
+  //
+  // MEMOIZED, and it has to be: Map's marker effect keys on this object, and its
+  // cleanup tears down the hover tip. A fresh object per render would rebuild the
+  // listeners — and blank the tip — on every mouse move across the map, since the
+  // hover readout re-renders App continuously. Every input here is stable between
+  // real changes (`current` is a stable reference, so `current.home` is too, and
+  // `identity` is one of two module constants).
+  const homeMark = useMemo(
+    () =>
+      chartHome && !isHomePin
+        ? { lat: chartHome.lat, lng: chartHome.lng, label: identity.text(chartHome.label) }
+        : null,
+    [chartHome, isHomePin, identity],
+  );
   // Reference point for the line-card "Distance from …" row: the placed custom pin if there
   // is one, otherwise the natal birthplace (the default). Map reads it per line-click.
   const distanceRef: { lat: number; lng: number; type: 'pin' | 'natal' } | null = current
@@ -4242,6 +4280,23 @@ export default function App() {
       setArrivalMark(null);
     },
     [onPlacePin],
+  );
+  // Clicking the home marker does the two things "go home" means, in the order
+  // they read: the pin lands there (so the reading, the readouts and the
+  // relocated-chart panel are all about home), then the camera snaps to it.
+  // CLOSE_ZOOM, the same framing "fly to origin" uses — a region rather than a
+  // rooftop, because what you came to see is which lines run near home, and a
+  // street-level arrival (Teleport's, for an address the basemap can't name) would
+  // put you inside the answer. Through onPlacePin like every other adopted point —
+  // same coordinate hygiene, same hover readout, same onboarding tick — and
+  // through teleportToPoint rather than jumpTo, so the hop registers a back-target
+  // and Backspace returns you to where you were reading before.
+  const onHomeClick = useCallback(
+    (lat: number, lng: number) => {
+      onPlacePin(lat, lng);
+      teleportToPoint(lat, lng, CLOSE_ZOOM);
+    },
+    [onPlacePin, teleportToPoint],
   );
   const onRecenterPin = useCallback(() => {
     if (pinned) jumpTo(pinned.lat, pinned.lng);
@@ -5270,6 +5325,13 @@ export default function App() {
         onArrivalClick={
           mapTool === 'measure' || sliding || spotlightAiming ? undefined : onArrivalClick
         }
+        home={homeMark}
+        // Withdrawn under the same conditions and for the same reason as the
+        // crosshair's handler above — the house is a bigger target than the
+        // crosshair, so a live one left over a tool's aiming click is worse here.
+        onHomeClick={
+          mapTool === 'measure' || sliding || spotlightAiming ? undefined : onHomeClick
+        }
         // Registered-overlay hides apply only while the Capture tool is armed —
         // closing it always restores every overlay, whatever the persisted set says.
         hiddenOverlayIds={
@@ -5310,7 +5372,9 @@ export default function App() {
         eclipseCard={eclipseCard}
         lineCard={lineCard}
         pin={pinned}
-        pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
+        // Natal wins when a chart's home and birthplace are the same place: that
+        // point is the chart's own, and the green pin is the older, louder fact.
+        pinType={isNatalPin ? 'natal' : isHomePin ? 'home' : pinned ? 'custom' : null}
         distanceRef={distanceRef}
         // First-load framing centres on the active chart's birthplace (read once
         // at mount inside Map); later chart switches recenter via their own flyTo.

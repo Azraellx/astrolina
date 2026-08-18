@@ -106,6 +106,14 @@ span.astro-glyph {
   --success-rgb: 141, 224, 163;
   --neutral: #d8d8d8;
   --neutral-rgb: 216, 216, 216;
+  /* The home marker — where a chart's subject LIVES, drawn on the map at all
+     times. Its own hue by necessity rather than taste: the map already spends
+     --accent on the placed pin, --success on the natal one, --gated on a
+     downstream build's saved markers and --cool on the arrival crosshair, and a
+     marker that can be mistaken for any of those is worse than no marker. Rose
+     is what's left that still reads warm at the marker's 34px on a basemap. */
+  --home: #ef92b4;
+  --home-rgb: 239, 146, 180;
 
   /* Map-pin-state accent — the single source for the gray/blue/orange/green that
      the map chrome (HUD bars, minimap, edge glow, measure line) follows. It is
@@ -189,6 +197,9 @@ span.astro-glyph {
   --danger-rgb: 232, 122, 90;
   --success: #a8d68a;
   --success-rgb: 168, 214, 138;
+  /* Warmed toward the parchment, like this theme's other marker colours. */
+  --home: #e79ca9;
+  --home-rgb: 231, 156, 169;
   /* The gated accent as ink, lifted for the parchment panel. The fill colour is
      deliberately NOT retuned: it carries white text on the tier badges, which a
      paler purple would strand. Left alone, the root purple sits at about 2.6:1
@@ -233,6 +244,10 @@ span.astro-glyph {
   --danger-rgb: 208, 74, 58;
   --success: #3aa965;
   --success-rgb: 58, 169, 101;
+  /* Deepened well past the dark themes' rose: a pale pink teardrop on the light
+     basemap is a smudge. Same move the accent/success/danger trio makes here. */
+  --home: #c4457a;
+  --home-rgb: 196, 69, 122;
   /* Keep the natal (neutral) accent a darker gray than the dark themes' lighter
      #d8d8d8, so it stays legible on glass's light panels. */
   --neutral: #8b909c;

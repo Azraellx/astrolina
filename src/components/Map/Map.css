@@ -767,6 +767,13 @@
   --pin-rgb: var(--success-rgb);
 }
 
+/* The pin standing on the chart's home place. The house marker stands down under
+   it (the app stops passing `home` once the pin is there), so without this the
+   spot would lose its identity at exactly the moment you went to read it. */
+.map-pin.home {
+  --pin-rgb: var(--home-rgb);
+}
+
 /* The pin head: the app's standard teardrop icon (the same SVG as the guide window
    and the sidebar's relocated-chart readout), drawn solid so it reads clearly on the
    basemap. The teardrop is filled with the state colour (--pin-rgb: gold pinned,
@@ -1172,6 +1179,81 @@
   /* The hover/press scale still applies — it is the affordance that says the mark
      can be clicked — it just arrives without the tween. */
   .arrival-mark-icon {
+    transition: none;
+  }
+}
+
+/* ── Home marker (DOM marker) ────────────────────────────────────────────────
+   Where the active chart's subject lives NOW, drawn for as long as that is set.
+   A teardrop, unlike the crosshair above — and for the same reason the crosshair
+   isn't one. This IS a place on the map, so it belongs to the pin family; only
+   the colour and the house in its head separate it from the pin and from any
+   marker layer a downstream build draws.
+   It carries no ping and no entrance: an animation announces an event, and this
+   marker's whole point is that it was already true. (It is also the only marker
+   here that can be on screen for an entire session — a pulse would keep the
+   compositor busy forever, which is why even the pin's own pulses are finite.)
+   Click-through by default; Map.tsx adds `.is-clickable` only while the host has
+   a meaning for a click, exactly as it does for the arrival mark. */
+.map-home-mark {
+  /* No `position` — see .arrival-mark above for the full account. MapLibre's
+     .maplibregl-marker already makes this absolute and Map.css loads after it, so
+     `position: relative` here would silently win and drop the house back into the
+     canvas container's flow, offset by every marker appended before it. */
+  width: 34px;
+  height: 46px;
+  /* Under the placed pin (z-index 2) and above the overlay track's marker layers
+     (z auto/1). The pin is the map's most important marker and must win any
+     overlap; this one is a standing fact, not the reading point. */
+  z-index: 1;
+  /* Only the icon takes clicks — the transparent corners of the box stay
+     click-through, so the marker never opens a dead zone over the map. */
+  pointer-events: none;
+  color: var(--home);
+}
+/* Set by Map.tsx only while the host passes onHomeClick — withdrawn whenever a
+   tool owns map clicks, which drops the affordance and the pointer events
+   together rather than leaving a live box that swallows the tool's click. */
+.map-home-mark.is-clickable .map-home-body {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.map-home-mark.is-clickable:hover .map-home-body {
+  scale: 1.09;
+}
+.map-home-mark.is-clickable:active .map-home-body {
+  scale: 1.02;
+}
+/* Same geometry as .map-pin-body, one size down: the pin is the reading point and
+   should stay the largest teardrop on the map. */
+.map-home-body {
+  position: absolute;
+  left: 50%;
+  top: 13px;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  overflow: visible;
+  transform-origin: 50% 92%; /* pivot near the tip, so hover scales from the point */
+  filter: drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, 0.5));
+  transition: scale var(--dur-quick) var(--ease-settle);
+}
+.map-home-shape {
+  /* currentColor, so the one `color` above is the single source for the marker's
+     hue — the same arrangement the arrival and eclipse marks use. The capture
+     compositor reads the COMPUTED fill, so it resolves this for free. */
+  fill: currentColor;
+  stroke: rgb(var(--tint));
+  stroke-width: 1.75;
+}
+/* The house reads as the head's "hole", in the same theme-aware --tint as the rim
+   — the slot a placed pin fills with its centre dot and a saved marker with its
+   emblem. */
+.map-home-glyph {
+  fill: rgb(var(--tint));
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-home-body {
     transition: none;
   }
 }

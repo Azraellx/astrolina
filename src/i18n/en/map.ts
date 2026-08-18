@@ -18,6 +18,14 @@ export const map = {
   pin: {
     natal: 'Natal birth location (right-click to remove)',
     custom: 'Pinned location (right-click to remove)',
+    home: 'Home — where this chart lives now (right-click to remove the pin)',
+  },
+  // The standing home marker: the chart's home place, drawn whenever it is set.
+  // `hint` names the place under the title; it is blanked by discreet mode, so
+  // the title has to carry the meaning on its own.
+  home: {
+    tip: 'Home',
+    hint: 'Click to read the chart here',
   },
   // Fly-to tooltips on the clickable edge badges. {planet} is the planet display
   // name; {prefix} is the optional overlay prefix already followed by a space.
