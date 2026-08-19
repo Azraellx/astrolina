@@ -153,6 +153,13 @@ export const settings = {
   },
 
   projection: {
+    // The (i) on the Projection heading. A reader who has met "Mercator distorts
+    // the world" anywhere else can read this control as a choice about accuracy;
+    // it isn't one. Lines are traced into latitude/longitude before anything is
+    // drawn (lib/astro/lines.ts) and both modes hand the SAME coordinates to the
+    // renderer, so the honest thing to name here is the one real hazard: judging
+    // nearness by eye, which both views get wrong, in opposite directions.
+    hint: 'Which way the world is drawn — not where anything is. Both views plot the same coordinates, and every distance the app reports (a line card’s closest-distance row, the click-drag measure, the orb zones) is a true ground distance measured on the sphere. Neither view is safe to judge nearness by eye, though: Flat stretches the scale toward the poles and the globe compresses it toward its edge, so read the distance rather than the gap.',
     '2d': { label: 'Flat', hint: 'Classic Web-Mercator map' },
     '3d': { label: 'Globe', hint: 'Rotatable 3D globe' },
   },

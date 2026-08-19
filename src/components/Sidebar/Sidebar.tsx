@@ -1218,7 +1218,17 @@ export function Sidebar({
 
           {!viewParked && (
             <>
-              <h2>{t('settings.headings.projection')}</h2>
+              {/* The (i) carries the one thing neither option label can: that this
+                  choice is about the picture and not the positions. It belongs on
+                  the heading rather than in both option hints — the fact is shared,
+                  and stating it twice is how one copy goes stale. */}
+              <h2 className="info-heading">
+                {t('settings.headings.projection')}
+                <InfoTip
+                  title={t('settings.headings.projection')}
+                  hint={t('settings.projection.hint')}
+                />
+              </h2>
               <ul className="theme-list">
                 {PROJECTION_VALUES.map((value) => (
                   <HintOption
