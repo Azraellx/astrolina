@@ -99,8 +99,12 @@ export const topNav = {
     slideItem: 'Slide',
     slideHint:
       'Slide the world under the fixed natal lines — advances time to show how parans build through the day. Works in flat or globe view.',
+    // Three ways the cage can be off the map. The tip names the one the reader can act on
+    // FIRST — a dead control that doesn't say what to do about it is just a dead control
+    // (the settings.inert.* rule, applied to a tool). The image of the world turning under
+    // the lines belongs to slideHint above and is not repeated here.
     slideUnavailable:
-      'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
+      'Slide needs the natal lines drawn. Unavailable while Natal Lines is off (Advanced ▸ Lines, Shift+N), Other Lines has cleared them, or an overlay stands in for the chart.',
     slideToolbarHint: '{pan} to slide the world under the fixed lines',
     // The slide control cluster (secondary bar): nudges, event steps, reset, and
     // the readout chips' hover tips.

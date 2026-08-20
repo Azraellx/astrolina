@@ -217,7 +217,7 @@ import {
   loadEclipseMapLines,
   loadEclipseId,
   loadEclipseIsoStep,
-  loadEclipseNatalLines,
+  loadEclipseOtherLines,
   loadOverlayDate,
   loadOverlayMode,
   loadOverlayPartner,
@@ -235,6 +235,7 @@ import {
   loadPrimaryRate,
   loadShowNightShade,
   loadShowOrbZones,
+  loadShowNatalLines,
   loadShowStarLines,
   loadStarSet,
   loadTransitFrame,
@@ -249,7 +250,7 @@ import {
   saveEclipseMapLines,
   saveEclipseId,
   saveEclipseIsoStep,
-  saveEclipseNatalLines,
+  saveEclipseOtherLines,
   saveSynastryMethod,
   saveOverlayDate,
   saveOverlayMode,
@@ -271,6 +272,7 @@ import {
   savePrimaryRate,
   saveShowNightShade,
   saveShowOrbZones,
+  saveShowNatalLines,
   saveShowStarLines,
   saveStarSet,
   saveTransitFrame,
@@ -1081,8 +1083,11 @@ export default function App() {
   const [showEclipseMapLines, setShowEclipseMapLines] = useState(() =>
     loadEclipseMapLines(),
   );
-  const [showEclipseNatalLines, setShowEclipseNatalLines] = useState(() =>
-    loadEclipseNatalLines(),
+  // Eclipses ▸ Display ▸ Other Lines: everything on the map that isn't the eclipse.
+  // On by default; while it is off it OVERRIDES each of those families' own toggles,
+  // which is the whole point — one press for a clean map, not a tour of the settings.
+  const [showEclipseOtherLines, setShowEclipseOtherLines] = useState(() =>
+    loadEclipseOtherLines(),
   );
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
@@ -1270,11 +1275,15 @@ export default function App() {
     saveProjection(projection);
   }, [projection]);
 
-  // Settings toggles that the global hotkeys below flip (Shift+S / N / O). Declared
+  // Settings toggles that the global hotkeys below flip (Shift+N / S / D / O). Declared
   // here, ahead of the keydown effect that references their setters, so the shortcut
   // closures bind to live state. Their persistence effects and companions (starSet,
   // orb widths) stay with the rest of the map state further down.
   const [showStarLines, setShowStarLines] = useState(loadShowStarLines);
+  // Advanced ▸ Lines ▸ Natal Lines (Shift+N) — the raw PREFERENCE. Nothing reads it
+  // directly except its own control and the persistence effect; the map reads
+  // `hideNatalAngles` further down, which masks it while Advanced is off.
+  const [showNatalLines, setShowNatalLines] = useState(loadShowNatalLines);
   const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
   // A registered surface owning the viewport (lib/extensions/viewLock) parks the
   // View-menu windows + their hotkeys; Settings stays available. Reactive here so
@@ -1521,7 +1530,9 @@ export default function App() {
         const parked = getViewLock() !== null;
         switch (e.key.toLowerCase()) {
           // Advanced ▸ Lines toggles — gated on Advanced mode (no-op while off,
-          // like the section that hosts them).
+          // like the section that hosts them). Each is its family's own first letter,
+          // in the section's own order; that rule is what N cost Night Shade below.
+          case 'n': if (advancedWheel && !parked) setShowNatalLines((v) => !v); break;
           case 'p': if (advancedWheel && !parked) setShowParans((v) => !v); break;
           case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
           case 'm': if (advancedWheel && !parked) setShowMidpointLines((v) => !v); break;
@@ -1538,8 +1549,11 @@ export default function App() {
           case 'o': if (advancedWheel && !parked) setShowOrbZones((v) => !v); break;
           case 'z': if (advancedWheel && !parked) setShowZenith((v) => !v); break;
           // Night Shade lives in Appearance now, so it stays always available
-          // (outside a viewport lock, whose owner shades day/night itself).
-          case 'n': if (!parked) setShowNightShade((v) => !v); break;
+          // (outside a viewport lock, whose owner shades day/night itself). It held
+          // Shift+N until 2026-08-19 and moved to D — for day/night — so the Lines
+          // section above could keep its one-letter-per-family rule once Natal Lines
+          // arrived. Both pills in the Sidebar say so, and the Help table is hand-kept.
+          case 'd': if (!parked) setShowNightShade((v) => !v); break;
           // Appearance ▸ Projection (absolute mode, not a toggle).
           // One key cycles the projection (flat ↔ globe), like 'o' cycles overlays.
           case 'f': if (!parked) setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
@@ -1552,7 +1566,9 @@ export default function App() {
       // a drawer-surface extension claims its registered hotkey FIRST (V =
       // Activations), advertised in its toggle's hover tip. Otherwise every letter
       // keeps its base action in all modes — N turns the overlay off, A adds a
-      // chart. The Natal-linework toggle is click-only now, with no hotkey.
+      // chart. The drawer's own Natal Chart eye stays click-only: it PROMOTES the
+      // overlay rather than hiding anything, and the letter that would name it is
+      // spoken for twice over (plain N, and Shift+N for Advanced ▸ Lines).
       if (advancedWheel && TIME_OVERLAY_MODES.has(overlayMode)) {
         const drawerExt = getMapExtensions().find(
           (x) =>
@@ -2089,8 +2105,8 @@ export default function App() {
     [showEclipseMapLines],
   );
   useEffect(
-    () => saveEclipseNatalLines(showEclipseNatalLines),
-    [showEclipseNatalLines],
+    () => saveEclipseOtherLines(showEclipseOtherLines),
+    [showEclipseOtherLines],
   );
 
   // Animation: advance the target date one minor notch per tick while playing.
@@ -2534,6 +2550,11 @@ export default function App() {
   const [starSet, setStarSet] = useState(loadStarSet);
   useEffect(() => saveShowStarLines(showStarLines), [showStarLines]);
   useEffect(() => saveStarSet(starSet), [starSet]);
+  // The natal-lines PREFERENCE, never the derived `hideNatalAngles`: that value reads
+  // "shown" whenever Advanced is off or an overlay is promoted, so persisting it would
+  // quietly overwrite a stored "hidden" — the bug L52 records for the line system,
+  // invisible until the NEXT session.
+  useEffect(() => saveShowNatalLines(showNatalLines), [showNatalLines]);
 
   // Night-side shading persistence (the showNightShade toggle is declared up top
   // with the other hotkey-driven settings; the wash itself is computed below, after
@@ -3135,7 +3156,7 @@ export default function App() {
   // midpoint, paran, star) render from the OVERLAY's frame and the natal set is
   // hidden — never both. Independent of the Natal display toggle, which keeps
   // governing only the primary angle lines' dual display. Eclipses are excluded:
-  // their map linework is a separate opt-in (showEclipseMapLines / hideNatalLinework).
+  // their map linework is a separate opt-in (showEclipseMapLines / eclipseSolo).
   const overlayAux = !!overlayLayer && overlayMode !== 'eclipses';
 
   // The overlay frame's aspect + midpoint lines — the overlay counterpart of the
@@ -3335,12 +3356,32 @@ export default function App() {
   // "no overlay" leave the natal chart alone.)
   const isTimeOverlay = TIME_OVERLAY_MODES.has(overlayMode);
   const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
-  // Eclipses ▸ Display ▸ Natal Chart Lines: unlike the time overlays' Natal
-  // toggle (which promotes the overlay to stand in for the chart), turning
-  // this off simply clears the natal LINEWORK off the map — lines, derived
-  // aspect/midpoint lines, parans, local space, zenith stamps, ecliptic — so
-  // the eclipse path stands alone. The wheel and readouts keep the natal chart.
-  const hideNatalLinework = overlayMode === 'eclipses' && !showEclipseNatalLines;
+  // Eclipses ▸ Display ▸ Other Lines: unlike the time overlays' Natal toggle
+  // (which promotes the overlay to stand in for the chart), turning this off simply
+  // clears every OTHER line off the map — the chart's angle lines, derived
+  // aspect/midpoint lines, parans, fixed stars, local space, zenith stamps, ecliptic
+  // — so the eclipse path stands alone. It overrides those families' own toggles for
+  // as long as it is off. The wheel and readouts keep the natal chart.
+  const eclipseSolo = overlayMode === 'eclipses' && !showEclipseOtherLines;
+  // Advanced ▸ Lines ▸ Natal Lines. A DRAW-time hide: the lines are still generated,
+  // still measured, and still handed to every panel through the extension context —
+  // only the map stops drawing them. That is the difference from eclipseSolo above,
+  // and it is deliberate: this switch exists to quiet the map while somebody reads one
+  // thing, and a reader who has quieted the map has not stopped asking questions of it.
+  //
+  // MASKED while Advanced is off, never rewritten — the same shape as effShowParans
+  // and its neighbours. That is also what keeps it clear of the showSkyTimes trap: a
+  // downstream plan change writes astro:advanced:v1 directly without ever reaching
+  // setAdvancedMode, and this derivation brings the lines back on its own, with no
+  // cleanup to run and nothing left hidden behind a control that has gone.
+  //
+  // `!promoteOverlay` because a promoted overlay is NOT the natal chart: with the
+  // drawer's Natal Chart eye off, the primary slot carries the overlay's own lines,
+  // and putting down the natal set must not take those with it. The boolean rather
+  // than the `promoted` memo it gates — which is built further down and is null on
+  // exactly this condition — because this has to be readable up here, where orbBands
+  // already reaches it.
+  const hideNatalAngles = advancedWheel && !showNatalLines && !promoteOverlay;
 
   // Orb-of-influence zones (Filters ▸ Orb Zones): bands around whatever line set
   // the map is actually drawing (natal, or the promoted overlay standing in for
@@ -3482,10 +3523,14 @@ export default function App() {
 
   const orbBands = useMemo(() => {
     if (!effShowOrbZones) return null;
-    const bandLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
-    const bandParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
+    // A band is a corridor around a LINE, so it goes when its line does — an empty
+    // halo hugging nothing reads as a rendering fault. The paran bands are untouched:
+    // parans are lines in their own right, with their own toggle.
+    const bandLines =
+      eclipseSolo || hideNatalAngles ? EMPTY_FC : promoted ? promoted.lines : lines;
+    const bandParans = eclipseSolo ? EMPTY_FC : promoted ? promoted.parans : parans;
     return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbKm);
-  }, [effShowOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbKm]);
+  }, [effShowOrbZones, eclipseSolo, hideNatalAngles, promoted, lines, parans, orbZoneKm, paranOrbKm]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -4404,10 +4449,12 @@ export default function App() {
       /* ignore */
     }
   }, []);
-  // Slide needs a natal cage to spin: not available when the natal linework is hidden
-  // (eclipses-only) or an overlay is promoted (the cage is the overlay then, not the
-  // resampled natal chart). Geodetic is handled by an auto-switch in toggleSlide.
-  const slideAvailable = !hideNatalLinework && !promoted;
+  // Slide needs a natal cage to spin, and needs it DRAWN — the tool IS the sight of
+  // those lines holding still while the world turns under them. So it stands down
+  // whenever they are off the map: the eclipse clean-up, an overlay promoted into the
+  // primary slot (the cage is the overlay then, not the resampled natal chart), or the
+  // Natal Lines switch. Geodetic is handled by an auto-switch in toggleSlide.
+  const slideAvailable = !eclipseSolo && !promoted && !hideNatalAngles;
   useEffect(() => {
     slideAvailableRef.current = slideAvailable;
   }, [slideAvailable]);
@@ -4432,7 +4479,25 @@ export default function App() {
   // gesture. Edge-only (prevMapToolRef) so toggling lines / switching charts mid-tool
   // doesn't re-pop a guide the user already dismissed.
   const prevMapToolRef = useRef<MapTool>(mapTool);
-  const canSnapLines = lines.features.length > 0;
+  // Whether anything the measure tool can SNAP to is drawn. The natal set is the usual
+  // answer but never the only one: Map.tsx's SNAP_LINE_LAYERS also covers the overlay's own
+  // lines, aspect and midpoint lines, parans, fixed stars, local space and the eclipse paths.
+  //
+  // So this deliberately keeps the raw-`lines` proxy for every state that existed before —
+  // it was right in all of them, including the eclipse clean-up, whose paths are snappable —
+  // and adds a second clause for the one state Natal Lines newly creates: the natal linework
+  // gone with no other family drawn to snap to instead. Biased to fire, because showing the
+  // guide in a thin state is a smaller error than withholding it from someone who wanted it.
+  const canSnapLines =
+    lines.features.length > 0 &&
+    (!hideNatalAngles ||
+      effShowParans ||
+      effShowAspectLines ||
+      effShowMidpointLines ||
+      effShowStarLines ||
+      lsActive ||
+      !!overlayLayer ||
+      overlayMode === 'eclipses');
   useEffect(() => {
     const wasMeasure = prevMapToolRef.current === 'measure';
     prevMapToolRef.current = mapTool;
@@ -5099,46 +5164,70 @@ export default function App() {
     [lineSpotlight],
   );
 
-  // ── Effective linework actually drawn, resolved once (the eclipse "hide natal lines" toggle +
+  // ── Effective linework actually drawn, resolved once (the eclipse clean-up toggle +
   // the promoted-overlay swap) and shared by the <Map> props and the extension ctx. The ctx
   // exposes this FULL set so a consumer can measure every visible line and decide
   // proximity itself; the <Map> narrows each line family through the spotlight (applySpot) and
   // drops the non-line families while a spotlight is active, for a lines-only reveal on a dim map.
-  const effLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
+  const effLines = eclipseSolo ? EMPTY_FC : promoted ? promoted.lines : lines;
+  // The DRAW-only twin of effLines, for Advanced ▸ Lines ▸ Natal Lines. It forks here
+  // rather than above it because the two hides answer different questions: eclipseSolo
+  // asks "what is on the map", which a report must agree with, while this one asks only
+  // "what am I looking at right now". So the ctx below keeps effLines and every panel
+  // goes on reading, measuring and reporting the lines the map has stopped drawing.
+  //
+  // A spotlight still reveals them, as it already does through the planet and angle
+  // filters: the reveal is a deliberate "show me everything near HERE", and a filter it
+  // honoured would make the one gesture meant to find a line unable to find it.
+  const drawLines = hideNatalAngles ? EMPTY_FC : effLines;
   // Auxiliary families follow the ACTIVE FRAME (one-frame rule): the overlay's own
   // aspect/midpoint/star/paran set when an overlay is active, the natal set otherwise —
   // never both, and independent of the Natal display toggle (which the promoted swap
   // of the PRIMARY lines still honors). Eclipses keep the natal set (overlayAux false).
-  const effAngleLines = hideNatalLinework
+  const effAngleLines = eclipseSolo
     ? EMPTY_FC
     : overlayAux
       ? overlayAngleLines
       : angleLines;
-  const effStarLines = hideNatalLinework
+  const effStarLines = eclipseSolo
     ? EMPTY_FC
     : overlayAux
       ? overlayStarLines
       : starLines;
-  const effParans = hideNatalLinework
+  const effParans = eclipseSolo
     ? EMPTY_FC
     : promoted
       ? promoted.parans
       : overlayAux
         ? EMPTY_FC
         : parans;
-  const effLocalSpace = hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
-  const effLocalSpaceCross = hideNatalLinework
-    ? EMPTY_FC
-    : promoted
-      ? promoted.localSpaceCross
-      : localSpaceCross;
+  const effLocalSpace = eclipseSolo ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
+  // The three below are map-only — nothing on the extension context carries them — so
+  // they take the Natal Lines hide in place rather than needing a draw* twin. Each is a
+  // mark ON a natal angle line (a crossing dot, a zenith circle or nadir diamond) or the
+  // curve those stamps are read against, so each goes when the line under it does.
+  const effLocalSpaceCross =
+    eclipseSolo || hideNatalAngles
+      ? EMPTY_FC
+      : promoted
+        ? promoted.localSpaceCross
+        : localSpaceCross;
   const effLocalSpaceOrigin =
-    lsActive && !hideNatalLinework ? (promoted ? promoted.origin : localSpaceOrigin) : null;
+    lsActive && !eclipseSolo ? (promoted ? promoted.origin : localSpaceOrigin) : null;
   const effZenith =
-    hideNatalLinework || !effShowZenith ? EMPTY_FC : promoted ? promoted.zenith : zenith;
-  const effNadir = hideNatalLinework || !effShowZenith ? EMPTY_FC : mapNadir;
+    eclipseSolo || hideNatalAngles || !effShowZenith
+      ? EMPTY_FC
+      : promoted
+        ? promoted.zenith
+        : zenith;
+  const effNadir =
+    eclipseSolo || hideNatalAngles || !effShowZenith ? EMPTY_FC : mapNadir;
   const effEcliptic =
-    hideNatalLinework || !effShowZenith ? null : promoted ? promoted.eclipticLine : eclipticLine;
+    eclipseSolo || hideNatalAngles || !effShowZenith
+      ? null
+      : promoted
+        ? promoted.eclipticLine
+        : eclipticLine;
   const effOverlayLines = promoted ? null : (mapOverlay?.lines ?? null);
   const effOverlayParans = promoted ? null : (mapOverlay?.parans ?? null);
   const effOverlayLocalSpace = promoted ? null : (mapOverlay?.localSpace ?? null);
@@ -5153,7 +5242,7 @@ export default function App() {
   // Each family passes its EFFECTIVE FC plus the matching FULL family from the spotlight (when the
   // caller supplied one); applySpot reveals the full set within the radius, else the effective.
   const fullSet = lineSpotlight?.lines ?? null;
-  const spotLines = useMemo(() => applySpot(effLines, fullSet?.lines), [applySpot, effLines, fullSet]);
+  const spotLines = useMemo(() => applySpot(drawLines, fullSet?.lines), [applySpot, drawLines, fullSet]);
   const spotAngleLines = useMemo(() => applySpot(effAngleLines, fullSet?.angleLines), [applySpot, effAngleLines, fullSet]);
   const spotParans = useMemo(() => applySpot(effParans, fullSet?.parans), [applySpot, effParans, fullSet]);
   const spotStarLines = useMemo(() => applySpot(effStarLines, fullSet?.starLines), [applySpot, effStarLines, fullSet]);
@@ -5280,7 +5369,7 @@ export default function App() {
       starParans,
       mapOverlay,
       promoted,
-      hideNatalLinework,
+      eclipseSolo,
       extFlyTo,
       selectOverlay,
       openExtensions,
@@ -5501,6 +5590,8 @@ export default function App() {
           visibleLineTypes={visibleLineTypes}
           toggleLineType={toggleLineType}
           setAllLineTypes={setAllLineTypes}
+          showNatalLines={showNatalLines}
+          setShowNatalLines={setShowNatalLines}
           showParans={showParans}
           setShowParans={setShowParans}
           showAspectLines={showAspectLines}
@@ -5709,8 +5800,8 @@ export default function App() {
           }}
           details={eclipseDetails}
           contacts={eclipseContactList}
-          showNatalLines={showEclipseNatalLines}
-          setShowNatalLines={setShowEclipseNatalLines}
+          showOtherLines={showEclipseOtherLines}
+          setShowOtherLines={setShowEclipseOtherLines}
           showChart={showEclipseChart}
           setShowChart={setShowEclipseChart}
           setShowMapLines={setShowEclipseMapLines}

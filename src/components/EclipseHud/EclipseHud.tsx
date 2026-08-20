@@ -75,9 +75,16 @@ interface EclipseHudProps {
    *  tightest first; null outside eclipses mode. */
   contacts: EclipseContact[] | null;
   /** Display toggles + the solar magnitude-isoline interval — relocated here
-   *  from the Settings ▸ Overlay tab. */
-  showNatalLines: boolean;
-  setShowNatalLines: (v: boolean) => void;
+   *  from the Settings ▸ Overlay tab.
+   *
+   *  `showOtherLines` is EVERY line on the map that isn't the eclipse — the chart's
+   *  angle lines, parans, fixed stars, aspect and midpoint lines, local space, and the
+   *  stamps and orb zones riding on them. One press for a clean map; while it is off it
+   *  overrides each of those families' own toggles. (Called "Natal Lines" until
+   *  2026-08-19, which named a fraction of what it takes — and read as a duplicate of
+   *  Advanced ▸ Lines ▸ Natal Lines, which is a different switch and does far less.) */
+  showOtherLines: boolean;
+  setShowOtherLines: (v: boolean) => void;
   /** The eclipse CHART — the overlay ring drawn in the chart wheel. A plain click on
    *  the toggle flips this. */
   showChart: boolean;
@@ -108,8 +115,8 @@ export function EclipseHud({
   onLocate,
   details,
   contacts,
-  showNatalLines,
-  setShowNatalLines,
+  showOtherLines,
+  setShowOtherLines,
   showChart,
   setShowChart,
   setShowMapLines,
@@ -636,21 +643,21 @@ export function EclipseHud({
                 )}
               </div>
 
-              {/* Display options: Natal/Eclipse line toggles + (solar) isolines. */}
+              {/* Display options: the other-lines / eclipse-chart toggles + (solar) isolines. */}
               <div className="eclipse-hud-display">
                 <TipButton
                   type="button"
-                  className={`eclipse-hud-toggle ${showNatalLines ? 'on' : 'off'}`}
+                  className={`eclipse-hud-toggle ${showOtherLines ? 'on' : 'off'}`}
                   placement="top"
-                  tip={t('settings.eclipses.natalLines.title')}
-                  hint={t('settings.eclipses.natalLines.hint')}
-                  aria-label={t('settings.eclipses.natalLines.title')}
-                  aria-pressed={showNatalLines}
-                  onClick={() => setShowNatalLines(!showNatalLines)}
+                  tip={t('settings.eclipses.otherLines.title')}
+                  hint={t('settings.eclipses.otherLines.hint')}
+                  aria-label={t('settings.eclipses.otherLines.title')}
+                  aria-pressed={showOtherLines}
+                  onClick={() => setShowOtherLines(!showOtherLines)}
                 >
-                  <EyeIcon open={showNatalLines} />
+                  <EyeIcon open={showOtherLines} />
                   <span className="eclipse-hud-toggle-name">
-                    {t('settings.eclipses.natalLines.title')}
+                    {t('settings.eclipses.otherLines.title')}
                   </span>
                 </TipButton>
                 {/* The "Eclipse Chart" toggle. A plain click toggles the eclipse chart

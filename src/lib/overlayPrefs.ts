@@ -205,16 +205,20 @@ export function saveTransitFrame(f: TransitFrame) {
 
 // ── Eclipses overlay ─────────────────────────────────────────────────────────
 // The selected eclipse (a catalog id, "YYYY-MM-DD" of greatest eclipse), the
-// magnitude-isoline interval, and the display toggles: the natal chart's map
-// linework (on by default), the eclipse CHART (the overlay ring in the chart
-// wheel), and — HIDDEN — the eclipse-time planet/angle LINES on the map.
+// magnitude-isoline interval, and the display toggles: every OTHER line on the map
+// (on by default), the eclipse CHART (the overlay ring in the chart wheel), and
+// — HIDDEN — the eclipse-time planet/angle LINES on the map.
 const ECLIPSE_ID_KEY = 'astro:eclipse-id:v1';
 const ECLIPSE_ISO_STEP_KEY = 'astro:eclipse-iso-step:v1';
 // Legacy key name ('…-chart-lines…') kept so existing prefs survive: it now backs
 // the eclipse CHART (wheel ring) ALONE — the map lines split off to their own key.
 const ECLIPSE_CHART_KEY = 'astro:eclipse-chart-lines:v1';
 const ECLIPSE_MAP_LINES_KEY = 'astro:eclipse-map-lines:v1';
-const ECLIPSE_NATAL_LINES_KEY = 'astro:eclipse-natal-lines:v1';
+// Legacy key name ('…-natal-lines…') kept so existing prefs survive. The toggle it backs
+// was called "Natal Lines" while it already cleared every other family alongside them;
+// only the NAME moved, so the stored value means exactly what it always did and there
+// is nothing to migrate.
+const ECLIPSE_OTHER_LINES_KEY = 'astro:eclipse-natal-lines:v1';
 
 export type EclipseIsoStep = 10 | 20 | 25;
 const ECLIPSE_ISO_STEPS: EclipseIsoStep[] = [10, 20, 25];
@@ -253,14 +257,20 @@ export function saveEclipseMapLines(show: boolean) {
   localStorage.setItem(ECLIPSE_MAP_LINES_KEY, show ? '1' : '0');
 }
 
-// Kept separate from the time overlays' Natal Chart toggle: that one PROMOTES
-// the overlay to stand in for the chart, while this simply clears the natal
-// linework off the map so the eclipse path stands alone.
-export function loadEclipseNatalLines(): boolean {
-  return localStorage.getItem(ECLIPSE_NATAL_LINES_KEY) !== '0';
+// Every line on the map that ISN'T the eclipse — the chart's own angle lines, parans,
+// fixed stars, aspect and midpoint lines, local space, and the stamps and orb zones that
+// ride on them. One switch takes the lot, so the path can be read on a clean map; while
+// it is off it OVERRIDES each of those families' own toggles.
+//
+// Kept separate from both of its neighbours, which sound alike and aren't: the time
+// overlays' Natal Chart toggle PROMOTES the overlay to stand in for the chart, and
+// Advanced ▸ Lines ▸ Natal Lines (NATAL_LINES_KEY) puts down the chart's angle lines
+// alone, anywhere, leaving every other family standing.
+export function loadEclipseOtherLines(): boolean {
+  return localStorage.getItem(ECLIPSE_OTHER_LINES_KEY) !== '0';
 }
-export function saveEclipseNatalLines(show: boolean) {
-  localStorage.setItem(ECLIPSE_NATAL_LINES_KEY, show ? '1' : '0');
+export function saveEclipseOtherLines(show: boolean) {
+  localStorage.setItem(ECLIPSE_OTHER_LINES_KEY, show ? '1' : '0');
 }
 
 // ── Orb-of-influence zones ───────────────────────────────────────────────────
@@ -487,6 +497,26 @@ export function saveCaptureHiddenOverlays(ids: ReadonlySet<string>) {
 
 // (The 'progressed' vs 'tertiary-progressed' choice is now two separate Overlay-menu
 // modes — see OverlayMode / loadOverlayMode — so there's no separate clock pref.)
+
+// ── Natal angle lines ───────────────────────────────────────────────────────
+// Advanced ▸ Lines ▸ Natal Lines. ON by default: this is the map's headline layer, and
+// the switch exists so a reader can put it down for a moment — not to make showing it a
+// choice they have to find first.
+//
+// A NEW key rather than a migration of ECLIPSE_OTHER_LINES_KEY above, which is the
+// nearest thing that existed before. That key records a decision somebody made about ONE
+// eclipse, on a map they wanted emptied for a minute; carrying a stored '0' across would
+// hide the natal lines everywhere, on every chart, from a choice that was never about any
+// of them. The opposite case from the astro:angle-progression:v1 migration further up
+// this file, where the new keys reproduced the old behaviour exactly and so cost nothing.
+const NATAL_LINES_KEY = 'astro:natal-lines:v1';
+
+export function loadShowNatalLines(): boolean {
+  return localStorage.getItem(NATAL_LINES_KEY) !== '0';
+}
+export function saveShowNatalLines(show: boolean) {
+  localStorage.setItem(NATAL_LINES_KEY, show ? '1' : '0');
+}
 
 // ── Fixed-star lines ─────────────────────────────────────────────────────────
 const STAR_LINES_KEY = 'astro:star-lines:v1';

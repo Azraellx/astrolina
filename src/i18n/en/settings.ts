@@ -53,12 +53,16 @@ export const settings = {
       'Shows the basemap’s city and country text. This is separate from the ACG line-label badges, which stay either way.',
   },
   shiftTag: 'Shift',
-  // The Natal-linework show/hide toggle in the timeline bar's display drawer. (The
-  // overlay's zenith stamps now ride the shared Zeniths/Nadirs toggle, so there's no
-  // separate overlay-zenith key here anymore.)
+  // The Natal Chart toggle in the timeline bar's display drawer — a SWAP, not a hide;
+  // the plain hide is `natalLines` below. (The overlay's zenith stamps now ride the
+  // shared Zeniths/Nadirs toggle, so there's no separate overlay-zenith key here.)
   natal: {
     title: 'Natal Chart',
-    hint: 'The underlying birth chart. Hide it to show just the overlay.',
+    // Not the same act as Advanced ▸ Lines ▸ Natal Lines, though the two sit a click
+    // apart and both start with the word: this one SWAPS rather than hides — the
+    // overlay is promoted into the chart's place, drawn through its path, and the
+    // wheel and readouts follow it. Saying so is what keeps the pair distinguishable.
+    hint: 'The underlying birth chart. Hide it and the overlay stands in for it — taking over the chart’s lines, wheel and readouts.',
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
@@ -118,6 +122,23 @@ export const settings = {
       label: 'Sidereal · Fagan/Bradley',
       hint: 'Signs anchored to the fixed stars, by the Fagan/Bradley ayanamsa (the Western sidereal standard). Changes the wheel and readouts; the map lines stay put.',
     },
+  },
+  // Advanced ▸ Lines ▸ Natal Lines — the first row, and the only one in that list whose
+  // family is on by default. Cap: 180 characters (components/ui/tipWidth.ts), past which the
+  // card steps to a wider shape than every tip beside it.
+  //
+  // The second sentence used to end "line cards and reports still find them", which was HALF
+  // false and therefore worse than saying nothing: a line card is produced by one mechanism
+  // only — a hit test against RENDERED features (Map.tsx LINE_HIT_LAYERS → lineAtPoint) — and
+  // the hide empties the very source those layers read. Reports do still find them; cards
+  // cannot exist. A reader tests a sentence like that one click after reading it.
+  //
+  // Note what this string may NOT say. It ships in the open core, so it cannot promise what
+  // Radar or Reports do with the hidden lines — neither exists there. The Help article can,
+  // and does, because plugins/help is private to the paid build.
+  natalLines: {
+    title: 'Natal Lines',
+    hint: 'The birth chart’s own angle lines — every body on the MC, IC, Ascendant and Descendant. Hide them for a quiet map. The wheel and readouts stay; hidden lines can’t be clicked.',
   },
   starLines: {
     title: 'Fixed Stars',
@@ -432,9 +453,14 @@ export const settings = {
       asc: 'Ascendant',
       mc: 'Midheaven',
     },
-    natalLines: {
-      title: 'Natal Lines',
-      hint: 'The birth chart’s linework on the map. Hide it to see the eclipse path on a clean map — the chart wheel and readouts stay.',
+    // Called "Natal Lines" until 2026-08-19, which named a fraction of what it clears
+    // and collided with the Advanced ▸ Lines switch of that name — a different control
+    // that takes only the chart's angle lines and leaves everything else standing. This
+    // one is the blunt instrument, and the hint says both halves of that: what it covers,
+    // and that it outranks those families' own toggles while it is off.
+    otherLines: {
+      title: 'Other Lines',
+      hint: 'Everything on the map except the eclipse, cleared in one press so the path reads alone — while this is off it overrides the other line switches. The chart wheel and readouts stay.',
     },
     chartLines: {
       title: 'Eclipse Chart',

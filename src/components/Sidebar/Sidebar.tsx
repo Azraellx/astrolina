@@ -81,6 +81,10 @@ interface SidebarProps {
   visibleLineTypes: Set<LineType>;
   toggleLineType: (t: LineType) => void;
   setAllLineTypes: (visible: boolean) => void;
+  /** Advanced ▸ Lines ▸ Natal Lines — the RAW preference, so the row shows what the
+   *  user chose even while Advanced masks it. */
+  showNatalLines: boolean;
+  setShowNatalLines: (v: boolean) => void;
   showParans: boolean;
   setShowParans: (v: boolean) => void;
   showAspectLines: boolean;
@@ -990,6 +994,8 @@ export function Sidebar({
   visibleLineTypes,
   toggleLineType,
   setAllLineTypes,
+  showNatalLines,
+  setShowNatalLines,
   showParans,
   setShowParans,
   showAspectLines,
@@ -1206,7 +1212,7 @@ export function Sidebar({
               onClick={() => setShowNightShade(!showNightShade)}
               ariaPressed={showNightShade}
               title={t('settings.nightShade.title')}
-              hotkey="Shift N"
+              hotkey="Shift D"
               hint={t('settings.nightShade.hint')}
             >
               <EyeIcon open={showNightShade} />
@@ -1596,6 +1602,20 @@ export function Sidebar({
             <>
           <h2>{t('settings.headings.lines')}</h2>
           <ul className="technique-list">
+            {/* First, because it is the layer the rest are drawn against — and the one
+                somebody puts down in order to read any of them on their own. Hiding is
+                a DRAW-time thing: every reading, report and reveal still has them. */}
+            <TipToggle
+              className={`tech-toggle ${showNatalLines ? 'on' : 'off'}`}
+              onClick={() => setShowNatalLines(!showNatalLines)}
+              ariaPressed={showNatalLines}
+              title={t('settings.natalLines.title')}
+              hotkey="Shift N"
+              hint={t('settings.natalLines.hint')}
+            >
+              <EyeIcon open={showNatalLines} />
+              <span className="name">{t('settings.natalLines.title')}</span>
+            </TipToggle>
             <TipToggle
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
