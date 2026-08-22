@@ -4,12 +4,17 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-// Pin adornment — a single-slot decoration for the placed map pin, plus a claimable
+// Marker adornment — a single-slot decoration for the placed map pin, plus a claimable
 // click broadcast from the pin marker itself. Together they let a downstream feature
 // treat the placed pin as an object of its own (badge it, re-title its tip, react to
 // taps on it) without the core knowing what the decoration means. The open core sets
 // no adornment and claims no clicks; a downstream module installs both for its
 // lifetime and MUST clear the adornment on teardown.
+//
+// The standing HOME marker has its own slot further down, decoration only. Two slots in
+// one file rather than two near-identical modules, so their sameness stays visible: they
+// carry the same shape for the same reason, and the head geometry they both write into
+// is one seat that a dot, a house glyph or an emblem takes in turn.
 
 import { useSyncExternalStore } from 'react';
 
@@ -63,6 +68,62 @@ export function subscribePinAdornment(fn: () => void): () => void {
 /** Reactive read for render-time use. */
 export function usePinAdornment(): PinAdornment | null {
   return useSyncExternalStore(subscribePinAdornment, getPinAdornment);
+}
+
+// ── Home marker adornment ───────────────────────────────────────────────────
+// The same single-slot decoration for the STANDING home marker. Decoration only:
+// no click channel (home's own click already places the pin there and flies in,
+// which is a different and still-wanted gesture) and no celebration counter
+// (nothing lands on the house).
+//
+// It exists because the core's own rule — one teardrop per coordinate — needs a
+// way to hold for markers the core doesn't own. The placed pin already yields to
+// home when it stands on the spot (App's `homeMark` is withheld there), but a
+// downstream marker layer sitting on the same coordinate had no way to merge, and
+// two teardrops stacked exactly is precisely what that rule exists to prevent.
+// Setting this lets the house carry the other marker's identity ADDITIVELY — the
+// house keeps the head, the visitor gets a corner badge and the tip's title.
+//
+// That "additively" is the whole lesson of the first version, which gave the head
+// to the visitor's emblem and stood the house down. One teardrop, correctly — but
+// the surviving marker no longer looked like home, so merging two markers read as
+// losing one. A merge has to leave the survivor recognisable, or it isn't a merge.
+
+export interface HomeAdornment {
+  /** Resolved image URL drawn as a small round badge on the home marker's upper right,
+   *  ALONGSIDE the house — never in place of it. The house is the one thing that says
+   *  this marker is home, and a badge announcing what else is here must not cost it
+   *  that. (It did, briefly: the emblem took the head and the house stood down, which
+   *  read as the home marker having vanished.) The SVGs own their circular framing —
+   *  the slot does no clipping. Omit for a tip-only adornment. */
+  badgeUrl?: string;
+  /** Overrides the marker's default hover-tip TITLE ("Home") while set. The place
+   *  label stays on the hint line either way, so the spot is still named. */
+  tip?: string;
+}
+
+let homeAdornment: HomeAdornment | null = null;
+const homeListeners = new Set<() => void>();
+
+/** Install (or, with null, clear) the home adornment. Single slot — last call wins. */
+export function setHomeAdornment(a: HomeAdornment | null): void {
+  homeAdornment = a;
+  for (const fn of homeListeners) fn();
+}
+
+/** Non-reactive read (event handlers). */
+export function getHomeAdornment(): HomeAdornment | null {
+  return homeAdornment;
+}
+
+export function subscribeHomeAdornment(fn: () => void): () => void {
+  homeListeners.add(fn);
+  return () => void homeListeners.delete(fn);
+}
+
+/** Reactive read for render-time use. */
+export function useHomeAdornment(): HomeAdornment | null {
+  return useSyncExternalStore(subscribeHomeAdornment, getHomeAdornment);
 }
 
 // ── One-shot celebration channel ────────────────────────────────────────────

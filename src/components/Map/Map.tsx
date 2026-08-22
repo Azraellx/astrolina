@@ -63,6 +63,7 @@ import {
 import type { MapExtensionContext } from '../../lib/extensions/mapExtensions';
 import {
   PIN_CLICK_EVENT,
+  useHomeAdornment,
   usePinAdornment,
   usePinCelebrations,
   type PinClickDetail,
@@ -836,6 +837,17 @@ const HOME_MARK_SVG =
   // second, cut out by fill-rule rather than painted over.
   'd="M12 5.8 16.4 9.6 15 9.6 15 14 9 14 9 9.6 7.6 9.6Z' +
   'M11 11.3 13 11.3 13 14 11 14Z"/>' +
+  // A corner badge (lib/extensions/pinAdornment → HomeAdornment), for when a downstream
+  // marker layer's own marker stands on this exact coordinate and hands its identity
+  // over rather than stacking a second teardrop here. Deliberately NOT the head itself:
+  // the house is what says this marker is home, and a badge naming what else is here
+  // must not evict it. Centre (18.6, 4.9) puts it 8.34 from the head's centre, just
+  // outside the teardrop's ~8 rim — far enough that it clears the roofline (at 7.5 it
+  // sat on the roof) and close enough to still read as one marker rather than two.
+  // Empty until adorned, which is what .has-badge (Map.css) reveals.
+  '<image class="map-home-badge" x="14.4" y="0.7" width="8.4" height="8.4" ' +
+  'preserveAspectRatio="xMidYMid slice"/>' +
+  '<circle class="map-home-badge-ring" cx="18.6" cy="4.9" r="4.6"/>' +
   '</svg>';
 
 interface ZenithHit {
@@ -3422,6 +3434,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             const dot = body.querySelector('.map-pin-dot, .saved-pin-dot');
             const flag = body.querySelector<SVGImageElement>('.saved-pin-flag');
             const ring = body.querySelector('.saved-pin-flag-ring');
+            // The home marker's corner badge is drawn separately, below: it sits
+            // ALONGSIDE whatever occupies the head rather than competing for it, so it
+            // can't ride the head's one-of-three branch.
+            const badge = body.querySelector<SVGImageElement>('.map-home-badge');
+            const badgeRing = body.querySelector('.map-home-badge-ring');
+            const badgeHref = badge?.getAttribute('href') ?? '';
+            const badgeArt = badgeHref ? await emblem(badgeHref) : null;
             // A head that carries a drawn glyph instead of an emblem or a dot
             // (the home marker's house). Read as a path so the shape lives in ONE
             // place — the SVG constant — rather than being restated in canvas ops
@@ -3462,6 +3481,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               hole.arc(12, 10, 3, 0, Math.PI * 2);
               ctx.fillStyle = dot ? getComputedStyle(dot).fill : cs.stroke;
               ctx.fill(hole);
+            }
+            // On TOP of the head, whatever took it — the badge is an addition to this
+            // marker's identity, not a replacement. Geometry mirrors HOME_MARK_SVG's.
+            if (badgeArt) {
+              ctx.drawImage(badgeArt, 14.4, 0.7, 8.4, 8.4);
+              if (badgeRing) {
+                const bs = getComputedStyle(badgeRing);
+                ctx.beginPath();
+                ctx.arc(18.6, 4.9, 4.6, 0, Math.PI * 2);
+                ctx.lineWidth = parseFloat(bs.strokeWidth) || 0.9;
+                ctx.strokeStyle = bs.stroke;
+                ctx.stroke();
+              }
             }
             ctx.restore();
           };
@@ -4157,6 +4189,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // Single-slot marker decoration (emblem in the head + tip override) — see
   // lib/extensions/pinAdornment. Null in the open core.
   const pinAdornment = usePinAdornment();
+  // The standing home marker's own slot (same module). Set when a downstream marker
+  // layer's marker stands on the home coordinate and hands its identity over rather
+  // than stacking a second teardrop there. Null in the open core.
+  const homeAdornment = useHomeAdornment();
   // One-shot celebration counter (same module): replay the pulses / pop the emblem
   // when a downstream action on the pin completes. Static in the open core.
   const pinCelebrations = usePinCelebrations();
@@ -4413,6 +4449,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       setCtrlTip(null);
       markerRef.current?.remove();
       markerRef.current = null;
+      // Every OTHER DOM marker cached in a ref has to go the same way, and for a
+      // reason that is easy to miss: `map.remove()` destroys the container and every
+      // marker element inside it, but a ref still holding that Marker survives. Each
+      // marker's own effect then reads its ref, takes the "already exists" branch, and
+      // calls setLngLat on an object whose element died with the previous map — so it
+      // is never re-added, and the marker is gone for the rest of the session.
+      //
+      // HOME is the one that actually bit: it is the only marker that can already be
+      // non-null on first paint (it comes from the stored chart rather than from
+      // something the viewer just did), so it is the only one that exists during
+      // StrictMode's mount → cleanup → mount, and it vanished for good on any load of a
+      // chart that had a home. The others are created in response to a later gesture
+      // and so happened to survive; they are listed here because the hazard is the
+      // ref, not the marker, and the next one added would inherit it.
+      homeMarkerRef.current?.remove();
+      homeMarkerRef.current = null;
+      eclipseMarkerRef.current?.remove();
+      eclipseMarkerRef.current = null;
+      arrivalMarkerRef.current?.remove();
+      arrivalMarkerRef.current = null;
+      skyStampRef.current?.remove();
+      skyStampRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -6211,12 +6269,29 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       homeMarkerRef.current.setLngLat([home.lng, home.lat]);
     }
     const el = homeMarkerRef.current.getElement();
+    // Apply the single-slot adornment (lib/extensions/pinAdornment → HomeAdornment).
+    // Idempotent on the href for the same reason the pin's is: re-setting even the
+    // SAME href on an SVG <image> forces a re-decode, which blanks the image for a
+    // frame — and this effect re-runs whenever the tip text changes, which must not
+    // make the badge blink.
+    const badgeUrl = homeAdornment?.badgeUrl ?? '';
+    const badge = el.querySelector('.map-home-badge');
+    if (badge && (badge.getAttribute('href') ?? '') !== badgeUrl) {
+      if (badgeUrl) badge.setAttribute('href', badgeUrl);
+      else badge.removeAttribute('href');
+    }
+    // Reveals the badge. The house is untouched — it keeps the head either way.
+    el.classList.toggle('has-badge', badgeUrl !== '');
     // Title first, place second: the title is the fact, and the place is what a
     // host masks under a discreet/present-to-others mode — so the tip still says
     // something when the label is blanked. Driven imperatively like the pin's
     // (plain MapLibre DOM, and never a native `title=`); bindTouchTip's pointer
     // mode gives hover on a mouse and hold-to-reveal on touch.
-    const title = t('map.home.tip');
+    //
+    // An adornment overrides only the TITLE. The hint keeps the place label and the
+    // home wording, so a merged marker still says it is home and still names where —
+    // absorbing another marker's identity must not cost the marker its own.
+    const title = homeAdornment?.tip ?? t('map.home.tip');
     const hint = home.label ? `${home.label} · ${t('map.home.hint')}` : t('map.home.hint');
     el.setAttribute('aria-label', home.label ? `${title} — ${home.label}` : title);
     const show = () =>
@@ -6226,7 +6301,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       cleanup();
       setHomeTip(null);
     };
-  }, [home, t]);
+  }, [home, t, homeAdornment]);
 
   // Pointer events only where the click means something — its own effect for the
   // same reason the arrival mark's is: a host withdraws the handler the moment

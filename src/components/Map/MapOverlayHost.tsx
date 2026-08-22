@@ -93,6 +93,52 @@ export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOve
     };
   }, [mapRef, ready]);
 
+  // Scroll-zoom over overlay DOM. MapLibre binds its wheel handling to the CANVAS
+  // container, and this track is a SIBLING of that container rather than a descendant of
+  // it — so a wheel event that lands on any overlay marker bubbles up through the frame
+  // and never reaches the map at all. The symptom is that resting the cursor on a marker
+  // silently freezes zoom: the pointer is over the map, the map has stopped responding,
+  // and nothing on screen says why. It applies to every interactive overlay at once, which
+  // is why the fix lives here and not in whichever layer happened to notice.
+  //
+  // So forward it. Non-passive, because the page-scroll default has to be cancellable —
+  // and an overlay that wants the wheel for itself (a scrollable panel of its own) simply
+  // calls preventDefault(), which is the opt-out checked below. The re-dispatched event
+  // carries clientX/clientY so MapLibre still zooms about the CURSOR rather than the map's
+  // centre, and it lands in a different subtree, so it cannot re-enter this handler.
+  useEffect(() => {
+    const el = trackRef.current;
+    const map = mapRef.current;
+    if (!ready || !el || !map) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.defaultPrevented) return;
+      const canvas = map.getCanvasContainer();
+      // Already inside the map's own subtree (nothing to forward), or no canvas yet.
+      if (!canvas || canvas.contains(e.target as Node)) return;
+      e.preventDefault();
+      canvas.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          deltaZ: e.deltaZ,
+          deltaMode: e.deltaMode,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          // Carried so a trackpad pinch (ctrl+wheel) and any modifier-gated zoom
+          // behave over a marker exactly as they do over bare map.
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [mapRef, ready]);
+
   // Re-anchor on EVERY committed render (no deps — a ctx-driven re-render mid-pan also
   // re-projects the children): the overlays just got fresh positions, so the track's
   // correction restarts from zero. Layout effect — applied before paint, no flicker.

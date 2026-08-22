@@ -1252,6 +1252,33 @@
 .map-home-glyph {
   fill: rgb(var(--tint));
 }
+/* Corner badge (lib/extensions/pinAdornment → HomeAdornment): what a downstream marker
+   layer hands over when its own marker stands on this exact coordinate, so the spot
+   keeps one teardrop instead of two stacked. Hidden until adorned.
+
+   NOTE the house is NOT hidden when this appears, and that is the point. An earlier
+   version put the badge in the HEAD and stood the glyph down — one teardrop, correctly,
+   but the survivor no longer looked like home, so a merge of two markers read as the
+   loss of one. The head belongs to the house; a visitor gets the corner and the tip.
+
+   Deliberately NOT supersampled the way .map-pin-emblem is (drawn at 2× and halved in
+   CSS): the capture compositor's drawPin blits this slot at a hardcoded 14.4/0.7/8.4×8.4
+   with its ring at (18.6, 4.9) r 4.6, so the DRAWN geometry has to be the composited
+   geometry. Change one without the other and the badge silently moves in exports only. */
+.map-home-badge,
+.map-home-badge-ring {
+  display: none;
+  pointer-events: none;
+}
+.map-home-mark.has-badge .map-home-badge,
+.map-home-mark.has-badge .map-home-badge-ring {
+  display: block;
+}
+.map-home-badge-ring {
+  fill: none;
+  stroke: rgb(var(--tint));
+  stroke-width: 0.9;
+}
 @media (prefers-reduced-motion: reduce) {
   .map-home-body {
     transition: none;

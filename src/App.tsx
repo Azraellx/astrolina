@@ -3585,12 +3585,15 @@ export default function App() {
 
   // Top-nav location readout — place names only (coordinates live in the optional
   // CoordReadout, top-left). Everything here resolves OFFLINE from the bundled
-  // GeoNames data; the network geocoder is only ever touched for a PINNED point
-  // with no nearby city (open ocean / remote wilderness):
+  // GeoNames data; the network geocoder is only ever touched for a PINNED point,
+  // and only at detail zoom (see useReverseGeocode):
   //  • NON-NATAL PIN → keeps the label you were hovering (the click lands on it, and
   //    hover stays frozen there, so it's usually identical), then the pin's own
-  //    offline "City, Region, Country" (or, on a miss, the network result) fades in
-  //    if it differs. `fadeLocation` gates the fade. No country-name flash between.
+  //    offline "City, Region, Country" fades in if it differs — and, zoomed in, the
+  //    boundary-accurate network name fades in after that, on the points where the
+  //    nearest-centroid atlas named the wrong side of a town line (or where no city
+  //    was in range at all). `fadeLocation` gates the fade. No country-name flash
+  //    between.
   //  • NATAL PIN → the birthplace we already know (no fetch, no fade).
   //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
   //  • HOVER → the offline nearest CITY (no network), falling back to the offline
