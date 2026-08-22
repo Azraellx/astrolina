@@ -303,6 +303,15 @@ function firstLoadBounds(
     [center.lng + FIRST_LOAD_HALF_LNG, north],
   ];
 }
+// How long a capture will wait for `moveend` before giving up and shooting anyway. A
+// liveness guard, not a tuning knob: the moveend handler early-returns while the slide
+// tool owns the drag, so the event a capture waits on is not always coming.
+const CAPTURE_SETTLE_TIMEOUT_MS = 1500;
+// …and then for the motion fades to finish. Covers the longer of the two — the edge-badge
+// layer's 0.12s (Map.css `.acg-edge-badges.is-moving`) and the horizon dial's 0.2s
+// (LocalHorizonWheel.css) — plus a frame's grace. Raise it if either duration grows.
+const CAPTURE_FADE_SETTLE_MS = 240;
+
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
 const COMPASS_ZOOM = 4;
@@ -2937,6 +2946,50 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const map = mapRef.current;
       const frameEl = frameRef.current;
       if (!map || !frameEl) return null;
+
+      // ── Let the camera stop before anything is sampled. ──
+      //
+      // This function reads the frame at two very different instants: the GL canvas is
+      // copied synchronously below, then several awaits later html2canvas clones the DOM
+      // overlays. Nothing used to sit between the click and that first copy, and the map
+      // stays interactive while the Capture tool is armed — composing the shot IS panning
+      // and zooming — so a click landing inside drag inertia, a flyTo, or a wheel-zoom ease
+      // produced a basemap from one camera and overlays from another: the local-space rose
+      // converging on one point with its compass drawn around another.
+      //
+      // Motion also drives two FADES. The edge-badge layer takes `.is-moving` (opacity 0,
+      // 0.12s) and the horizon dial's opacity is forced to 0 (0.2s) for the duration of any
+      // camera move — both baked into the clone at whatever value they hold, which is how a
+      // mid-motion capture lost its badge pills while their glyphs, re-stamped from the live
+      // DOM afterwards, still printed. So this waits out the transitions too, not just the
+      // camera.
+      //
+      // Only pays when the map is actually moving or has just stopped, which is exactly
+      // when the user has moved it and will not notice the beat.
+      await new Promise<void>((resolve) => {
+        if (!map.isMoving()) return resolve();
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          window.clearTimeout(timer);
+          map.off('moveend', finish);
+          resolve();
+        };
+        const timer = window.setTimeout(finish, CAPTURE_SETTLE_TIMEOUT_MS);
+        map.on('moveend', finish);
+      });
+      // Two frames: one for React to commit `mapMoving = false` and drop `.is-moving`, one
+      // for the badge re-anchor riding the same commit. Then whatever is left of the fades,
+      // measured from when the camera actually stopped — so a click landing a few
+      // milliseconds after a drag ends waits out the remainder instead of shooting into a
+      // half-faded layer.
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      const sinceSettle = Date.now() - lastSettleAtRef.current;
+      if (sinceSettle < CAPTURE_FADE_SETTLE_MS) {
+        await new Promise<void>((r) => window.setTimeout(r, CAPTURE_FADE_SETTLE_MS - sinceSettle));
+      }
+
       const mapCanvas = map.getCanvas();
       const rect = frameEl.getBoundingClientRect();
       const scale = Math.min(window.devicePixelRatio || 1, 2);
@@ -3111,6 +3164,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             // It's rasterised separately below (styles inlined) and its glyphs re-stamped, so
             // keep the whole wheel subtree out of this pass.
             if (cl?.contains('wheel-svg') || el.closest?.('.wheel-svg')) return true;
+            // The LOCAL-HORIZON dial is deliberately NOT given the same treatment, though
+            // it looks like it should be: it is an SVG whose every colour is a CSS custom
+            // property, which is the wheel's exact complaint. Excluding it and rasterising
+            // it separately was tried on 2026-08-22 and reverted the same day. Its N/E/S/W
+            // cardinals and its whole degree scale are HTML <span>s SIBLING to the <svg>
+            // (LocalHorizonWheel.tsx), so an exclusion wide enough to catch the wrapper
+            // drops them from the export and an svgToImage pass cannot put them back —
+            // measured before and after: the labels were there, then they were gone.
+            // html2canvas renders this dial acceptably as it stands, because the parts that
+            // need the vars resolved are the HTML ones, which it reads via getComputedStyle.
             return false;
           },
           // Mutate only the CLONE (no live flash): drop the viewfinder ring/scrim so
@@ -3161,6 +3224,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             // hidden (beats the .astro-glyph class — html2canvas-pro gates painting on
             // that), and neutralise any ink belt-and-braces. visibility:hidden keeps the
             // layout box, so surrounding sizing is unaffected.
+            // html2canvas-pro paints a box-shadow OVER its element instead of behind
+            // it, so every badge came out at its own colour times (1 − the shadow's
+            // alpha): `.acg-badge`'s `0 1px 3px rgba(0,0,0,0.38)` darkened each pill to
+            // 62% of itself, uniformly, on every export. Measured rather than inferred —
+            // live (245,184,61) against exported (154,115,38), with the map pixels around
+            // it identical, and full colour restored the moment the shadow is dropped
+            // here (2026-08-22).
+            //
+            // Dropping it costs the export a subtle 1px lift; keeping it cost every badge
+            // 38% of its brightness, which is what a reader actually notices. If the
+            // shadow is ever wanted back, it has to be drawn on the 2D canvas UNDER this
+            // whole layer, not left to the clone.
+            //
+            // Scoped to badges because that is where it was measured. Any other shadowed
+            // element inside the frame will have the same fault — to check one, drop its
+            // shadow in this block and compare a flat interior pixel before and after.
+            el.querySelectorAll<HTMLElement>('.acg-badge').forEach((b) => {
+              b.style.setProperty('box-shadow', 'none', 'important');
+            });
             el.querySelectorAll<HTMLElement>('.astro-glyph').forEach((g) => {
               g.style.setProperty('visibility', 'hidden', 'important');
               g.style.setProperty('color', 'transparent', 'important');
@@ -3534,6 +3616,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // out while moving — anchored to the screen edges, they read as detached from their
   // lines in motion — and fade back in, repositioned, once it settles.
   const [mapMoving, setMapMoving] = useState(false);
+  // When the camera last came to rest. Read by captureFrame to wait out the motion fades;
+  // stamped wherever motion ends, so every settle path feeds it.
+  const lastSettleAtRef = useRef(0);
   // Flips true once the map style has loaded — re-renders so MapOverlayHost (which reads
   // the internal map ref, set in an effect that doesn't itself re-render) gets a live instance.
   const [mapReady, setMapReady] = useState(false);
@@ -4279,6 +4364,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('moveend', () => {
       if (slideDraggingRef.current) return;
       computeBadgesRef.current();
+      lastSettleAtRef.current = Date.now();
       setMapMoving(false);
     });
     // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
@@ -5392,6 +5478,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         secondaryHiddenRef.current = false;
         spinPaint(spinDegRef.current, 'translate');
         computeBadgesRef.current();
+        lastSettleAtRef.current = Date.now();
         setMapMoving(false);
       }, 140);
     };

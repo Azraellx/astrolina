@@ -1301,7 +1301,17 @@ export function WheelSvg({
         })}
 
       {/* Connector from the true zodiac position to the (possibly spread)
-          glyph, plus a tick on the zodiac band marking the exact longitude. */}
+          glyph, plus a tick on the zodiac band marking the exact longitude.
+          The connector is SINGLE-WHEEL ONLY. On a bi-wheel `rPlanets` is pushed
+          deep inside the overlay ring, so the same short leader becomes a line
+          spanning almost the whole radius — one per body, all crossing the outer
+          ring on their way in. That is what reads as "lines from the inner wheel
+          to the outer ring", and it is the same complaint that took the cross-ring
+          aspect web out (b10eb88): two sets of long strokes over one centre are
+          unreadable at any wheel size. The TICK stays either way — it is what
+          actually marks the exact longitude; the leader only said which glyph the
+          tick belonged to, and on a bi-wheel each glyph prints its own degree and
+          sign beside it. Astrologer-asked, 2026-08-21. */}
       {detailed &&
         planets.map((p) => {
           const truePos = svgPos(p.lon, frameAnchor, rZodiacInner, cx, cy);
@@ -1310,15 +1320,17 @@ export function WheelSvg({
           const tipPos = svgPos(p.lon, frameAnchor, rZodiacInner - 8, cx, cy);
           return (
             <g key={`mark-${p.name}`}>
-              <line
-                x1={truePos.x}
-                y1={truePos.y}
-                x2={glyphPos.x}
-                y2={glyphPos.y}
-                stroke={PLANET_COLORS[p.name]}
-                strokeWidth={0.6}
-                opacity={0.4}
-              />
+              {!hasOverlay && (
+                <line
+                  x1={truePos.x}
+                  y1={truePos.y}
+                  x2={glyphPos.x}
+                  y2={glyphPos.y}
+                  stroke={PLANET_COLORS[p.name]}
+                  strokeWidth={0.6}
+                  opacity={0.4}
+                />
+              )}
               <line
                 x1={tickPos.x}
                 y1={tickPos.y}
@@ -1334,7 +1346,10 @@ export function WheelSvg({
       {/* The four angles get the planets' connector + zodiac-band tick: a faint
           line back to the true longitude (the spread may have nudged the disc)
           and a bold tick marking the exact position. The group's `color` carries
-          the axis colour so currentColor resolves the CSS var on the strokes. */}
+          the axis colour so currentColor resolves the CSS var on the strokes.
+          The connector follows the planets' rule above — it spans the same
+          radius, so on a bi-wheel it is the same long stroke across the outer
+          ring, and the axis line itself already says where the angle is. */}
       {showAngleMarks &&
         angleMarks.map((a) => {
           const truePos = svgPos(a.lon, frameAnchor, rZodiacInner, cx, cy);
@@ -1343,15 +1358,17 @@ export function WheelSvg({
           const tipPos = svgPos(a.lon, frameAnchor, rZodiacInner - 8, cx, cy);
           return (
             <g key={`angle-mark-${a.key}`} style={{ color: a.color }}>
-              <line
-                x1={truePos.x}
-                y1={truePos.y}
-                x2={glyphPos.x}
-                y2={glyphPos.y}
-                stroke="currentColor"
-                strokeWidth={0.6}
-                opacity={0.4}
-              />
+              {!hasOverlay && (
+                <line
+                  x1={truePos.x}
+                  y1={truePos.y}
+                  x2={glyphPos.x}
+                  y2={glyphPos.y}
+                  stroke="currentColor"
+                  strokeWidth={0.6}
+                  opacity={0.4}
+                />
+              )}
               <line
                 x1={tickPos.x}
                 y1={tickPos.y}
