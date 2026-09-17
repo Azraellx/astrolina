@@ -350,6 +350,26 @@ const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
 const chartUtcMs = (c: StoredChart) =>
   Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute) - c.tzOffset * 3_600_000;
 
+// The STORED line-system choice (see lineSystemPref in App).
+const loadLineSystemPref = (): LineSystem =>
+  localStorage.getItem('astro:line-system:v1') === 'geodetic' ? 'geodetic' : 'celestial';
+
+// The line system ON SCREEN, from the three things that decide it: the stored choice, the
+// zodiac, and Advanced — which is what lets a sidereal zodiac take effect at all. App's
+// derived `lineSystem` is exactly this (the reasoning is there). It lives out here so that a
+// setter about to change one of the three can ask what the line system is ABOUT to become,
+// and act on the change as the event it is, rather than an effect chasing it afterwards.
+function effectiveLineSystem(
+  pref: LineSystem,
+  zodiac: ZodiacMode,
+  advanced: boolean,
+): LineSystem {
+  const effZodiac = advanced ? zodiac : 'tropical';
+  return pref === 'geodetic' && (GEODETIC_HELD || effZodiac !== 'tropical')
+    ? 'celestial'
+    : pref;
+}
+
 // Some bodies' PLANET_COLORS tint washes out against a light basemap, so the MAP draws
 // their lines/zeniths in a per-theme override instead (MAP_LINE_COLOR_OVERRIDES from
 // lib/theme — the Moon on both light themes, plus Mercury/Uranus on Earth; shared with
@@ -656,10 +676,19 @@ export default function App() {
   // by default for a fresh account.
   // Local Space is Advanced-only, so a stale "open + Advanced off" combo never restores:
   // require BOTH the open flag and the persisted Advanced flag (matches the runtime gating).
+  //
+  // Nor does it restore into Mundane, which it can't be open on (see closeForMundane). A
+  // stored "open" can still meet a Mundane boot without any gesture in between: the window
+  // was opened while a Mundane choice was HELD by the review hold (lib/geodeticHold), and
+  // the hold lifted across the reload — for everyone on release, or for one device through
+  // the console. The held choice was promised back unchanged, so it wins and the window
+  // starts closed; a closed window announces its own absence. (Advanced is on by the clause
+  // above, so the stored zodiac is the effective one.)
   const [showLocalSpace, setShowLocalSpace] = useState(
     () =>
       localStorage.getItem('astro:view-local-space:v1') === '1' &&
-      localStorage.getItem('astro:advanced:v1') === '1',
+      localStorage.getItem('astro:advanced:v1') === '1' &&
+      effectiveLineSystem(loadLineSystemPref(), loadZodiacMode(), true) !== 'geodetic',
   );
   // The "Aspects to angles" line sets — two independent overlays (they can
   // stack), persisted like the other map preferences below.
@@ -724,11 +753,7 @@ export default function App() {
   // this — the geodetic mapping is tropical-only, so a sidereal zodiac masks it. Masking
   // rather than rewriting is the point: sidereal is a standing condition, and when it
   // ends the user's Mundane choice has to still be here.
-  const [lineSystemPref, setLineSystemPref] = useState<LineSystem>(() =>
-    localStorage.getItem('astro:line-system:v1') === 'geodetic'
-      ? 'geodetic'
-      : 'celestial',
-  );
+  const [lineSystemPref, setLineSystemPref] = useState<LineSystem>(loadLineSystemPref);
   // The expanded wheel's Advanced reading mode (degree rim, aspect grid, coordinate
   // tables). Lifted here — same storage key the sidebar always used — so the Info chip
   // can gate its Advanced-tab items on it.
@@ -739,7 +764,8 @@ export default function App() {
   // display-layer choice (see the sidereal block further down).
   const [zodiacMode, setZodiacMode] = useState(loadZodiacMode);
   // These three sit up here, ahead of the other eff* values, only because the derived
-  // line system below needs them and `visiblePlanets` (just under it) needs THAT.
+  // line system below needs them (the first two directly, the third in its setter) and
+  // `visiblePlanets` (just under it) needs THAT.
   const effZodiacMode = advancedWheel ? zodiacMode : 'tropical';
   // The EFFECTIVE line system every consumer reads — the name stays `lineSystem` so the
   // ~80 read sites don't care that a preference sits behind it. The geodetic mapping is
@@ -753,19 +779,45 @@ export default function App() {
   // and it takes the same shape for the same reason: a hold is a standing state,
   // so the preference is masked and never rewritten, and a reader who had Mundane
   // selected still has it the day the hold lifts.
-  const lineSystem: LineSystem =
-    lineSystemPref === 'geodetic' && (GEODETIC_HELD || effZodiacMode !== 'tropical')
-      ? 'celestial'
-      : lineSystemPref;
+  //
+  // (The derivation itself is `effectiveLineSystem`, out at module scope, so the setters
+  // further down can ask what it is about to become before they change one of its inputs.)
+  const lineSystem: LineSystem = effectiveLineSystem(lineSystemPref, zodiacMode, advancedWheel);
   // Acknowledgement for settings this app rewrites on the user's behalf. Declared up
   // here because the earliest thing that announces (the slide tool) is defined well
   // above the other view state. `announce` is only ever called from event handlers.
   const {
-    pending: autoFlipKind,
+    pending: autoFlip,
     announce: announceFlip,
     dismiss: dismissAutoFlip,
   } = useAutoFlipNotice();
   const [autoFlipSuppress, setAutoFlipSuppress] = useState(false);
+  // Local Space, Slide and any tool extension that declares `needsSiderealTime` all read the
+  // sky at the chart's own sidereal time, which Mundane doesn't carry — so each of them
+  // leaves Mundane the same way as it opens: the line system is REWRITTEN to Celestial
+  // (CLAUDE.md situation B: the precondition of a tool just asked for) and the notice NAMES
+  // what it was rewritten for. One wrapper rather than the two lines copied into every
+  // opener, so the next opener can't bring the rewrite without the notice, or the notice
+  // without the name. The reverse direction is closeForMundane, further down.
+  //
+  // Reads the line system through a ref so it can stay stable: the Tools callbacks call it,
+  // and those must not change identity (the keydown handler reads them lazily). Synced after
+  // commit, which is before any gesture can reach it.
+  //
+  // `overLock` is for an opener that takes the viewport's lock as it mounts — its card is
+  // about the very surface that would otherwise park it (see useAutoFlipNotice).
+  const lineSystemRef = useRef(lineSystem);
+  useEffect(() => {
+    lineSystemRef.current = lineSystem;
+  }, [lineSystem]);
+  const leaveMundaneFor = useCallback(
+    (name: string, overLock = false) => {
+      const changed = lineSystemRef.current === 'geodetic';
+      announceFlip('line-system', changed, { vars: { name }, overLock });
+      if (changed) setLineSystemPref('celestial');
+    },
+    [announceFlip],
+  );
   // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
   // extensions, sky band). The Part of Fortune is a zodiacal-frame point: In
   // Mundo it has no map line (its lines exist In-Zodiaco/geodetic only), so
@@ -1117,6 +1169,26 @@ export default function App() {
 
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
+  // The registered Tools-menu extensions that are open (registerToolExtension; toggled in the
+  // Tools-menu extensions block further down, which explains the machinery). Declared up here
+  // beside the built-in tool because closeForMundane, well above that block, closes both kinds.
+  const [openTools, setOpenTools] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    for (const ext of getToolExtensions()) {
+      // A tool that needs sidereal time never restores into Mundane — the showLocalSpace
+      // initializer gives the reason. Its stored flag is left as it was.
+      if (ext.needsSiderealTime && lineSystem === 'geodetic') continue;
+      const saved = ext.storageKey ? localStorage.getItem(ext.storageKey) : null;
+      if (saved === '1' || (saved === null && ext.defaultOpen)) open.add(ext.id);
+    }
+    return open;
+  });
+  // Mirror openTools into a ref so toggleTool can stay STABLE — the once-bound global keydown handler
+  // reads it lazily, and a tool's hotkey needs the CURRENT open-state to toggle right.
+  const openToolsRef = useRef(openTools);
+  useEffect(() => {
+    openToolsRef.current = openTools;
+  }, [openTools]);
   // Capture-frame aspect ratio (width / height), persisted. Only consulted
   // while the Capture tool is armed (mapTool === 'capture'); the CaptureHud picks the preset.
   const [captureAspect, setCaptureAspect] = useState<number>(() => {
@@ -1264,23 +1336,30 @@ export default function App() {
   // Slide tool: elapsed Earth-rotation time (days, signed) the user has spun the
   // globe to. Drives the time-shifted line recompute + the readout; 0 = natal.
   const [slideDt, setSlideDt] = useState(0);
-  // Toggle the Slide tool. It works in either projection (flat or globe); only the
-  // geodetic line frame can't be spun (its lines carry no sidereal time), so turning
-  // it ON switches that to celestial first.
+  // Arm the Slide tool. It works in either projection (flat or globe); only the
+  // geodetic line frame can't be spun (its lines carry no sidereal time), so arming
+  // it switches that to celestial first. Idempotent while armed.
+  //
+  // EVERY route to an armed Slide comes through here — the menu row and the hotkey via
+  // toggleSlide, an extension via ctx.openBuiltinTool. That one arming Slide directly
+  // used to skip all three steps below; under Mundane the tool then armed and was
+  // disarmed again by the effect that guards it, with nothing said at all.
+  const armSlide = useCallback(() => {
+    // No natal cage to spin when natal linework is hidden / an overlay is promoted
+    // (slideAvailableRef, synced below). The hotkey routes here, so gate it too.
+    if (!slideAvailableRef.current) return;
+    leaveMundaneFor(t('topNav.tools.slideItem'));
+    // A playing timeline and a spinning globe fight over the camera/data — pause it.
+    if (playing) setPlaying(false);
+    setMapTool('slide');
+  }, [leaveMundaneFor, t, playing]);
   const toggleSlide = useCallback(() => {
     if (mapTool === 'slide') {
       setMapTool('off');
       return;
     }
-    // No natal cage to spin when natal linework is hidden / an overlay is promoted
-    // (slideAvailableRef, synced below). The hotkey routes here, so gate it too.
-    if (!slideAvailableRef.current) return;
-    announceFlip('line-system', lineSystem === 'geodetic');
-    if (lineSystem === 'geodetic') setLineSystemPref('celestial');
-    // A playing timeline and a spinning globe fight over the camera/data — pause it.
-    if (playing) setPlaying(false);
-    setMapTool('slide');
-  }, [mapTool, lineSystem, playing, announceFlip]);
+    armSlide();
+  }, [mapTool, armSlide]);
   // The current map-pin-state accent resolved to a concrete color, for the WebGL
   // measure layers (which can't read CSS vars). Kept in sync below.
   const [measureColor, setMeasureColor] = useState('#8b909c');
@@ -1623,10 +1702,11 @@ export default function App() {
         case 's': if (advancedWheel && !getViewLock()) setShowSkyTimes((v) => !v); break;
         case 'l':
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
-          // celestial frame (matches the View-menu toggle + the slide tool).
+          // celestial frame (matches the View-menu toggle + the slide tool). Closing it
+          // can't be a rewrite: it is never open on Mundane, so the wrapper finds
+          // nothing to change.
           if (advancedWheel && !getViewLock()) {
-            announceFlip('line-system', lineSystem === 'geodetic');
-            if (lineSystem === 'geodetic') setLineSystemPref('celestial');
+            leaveMundaneFor(t('topNav.view.localSpace'));
             setShowLocalSpace((v) => !v);
           }
           break;
@@ -1708,10 +1788,10 @@ export default function App() {
     pinned,
     toggleSlide,
     advancedWheel,
-    lineSystem,
     mapTool,
     overlayMode,
-    announceFlip,
+    leaveMundaneFor,
+    t,
   ]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
@@ -1729,6 +1809,82 @@ export default function App() {
     window.addEventListener('astro:cheat', onCheat);
     return () => window.removeEventListener('astro:cheat', onCheat);
   }, []);
+
+  // The other direction of leaveMundaneFor's rule. Mundane is about to become the line
+  // system ON SCREEN — chosen in Calculation, handed back by the zodiac returning to
+  // Tropical, or by Advanced going off over a stored sidereal zodiac — so whatever needs
+  // the sky's sidereal time CLOSES, and one notice names all of it. Every setter that can
+  // bring Mundane on screen calls this BEFORE it changes anything, so it sees what is open
+  // now; it is not an effect on `lineSystem`, because by then there is no gesture left to
+  // attribute the closing to.
+  //
+  // Local Space, and Slide beside it: a view and a tool can be open together, and one
+  // change closes both. Slide used to be switched off by the effect that guards it
+  // (further down, still there as a backstop), and it said nothing — the one closure of
+  // the three that went unannounced.
+  //
+  // `forAdvancedOff` leaves Local Space and Slide out: turning Advanced off closes both on
+  // its own account, and naming them here would give them the wrong reason.
+  //
+  // What it names is `siderealOpen`, the same list the Mundane option's tip warns from, so
+  // the warning and the notice can't disagree about what a choice closes.
+  const siderealOpen = useMemo(() => {
+    const open: { name: string; menu: string; tool: boolean }[] = [];
+    if (showLocalSpace) {
+      open.push({ name: t('topNav.view.localSpace'), menu: t('topNav.view.menuLabel'), tool: false });
+    }
+    if (mapTool === 'slide') {
+      open.push({ name: t('topNav.tools.slideItem'), menu: t('topNav.tools.menuLabel'), tool: false });
+    }
+    // Only a tool the reader can see is named; an unentitled one never rendered.
+    for (const ext of getToolExtensions()) {
+      if (ext.needsSiderealTime && openTools.has(ext.id) && isAddonEntitled(ext)) {
+        open.push({ name: ext.label, menu: t('topNav.tools.menuLabel'), tool: true });
+      }
+    }
+    return open;
+  }, [showLocalSpace, mapTool, openTools, t]);
+  const closeForMundane = useCallback(
+    (forAdvancedOff = false) => {
+      // In the same commit as the new line set, on purpose: one visible change, not the
+      // Mundane lines drawn spun for a render before Slide lets go. (That order depends on
+      // Map syncing its data ref in a layout effect — see the note there.)
+      if (!forAdvancedOff) {
+        setShowLocalSpace(false);
+        setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
+      }
+      // Tool extensions that declare `needsSiderealTime` — every one that is open, named or
+      // not. The storage writes mirror closeToolById's.
+      const tools = getToolExtensions().filter(
+        (ext) => ext.needsSiderealTime && openToolsRef.current.has(ext.id),
+      );
+      if (tools.length) {
+        setOpenTools((prev) => {
+          const next = new Set([...prev].filter((id) => !tools.some((x) => x.id === id)));
+          for (const ext of getToolExtensions()) {
+            if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
+          }
+          return next;
+        });
+      }
+      const closed = forAdvancedOff ? siderealOpen.filter((s) => s.tool) : siderealOpen;
+      const menus = [...new Set(closed.map((c) => c.menu))];
+      // Only when something was actually OPEN — "we closed local space" is a lie when it
+      // was already closed, and a notice that lies once is dismissed unread after.
+      announceFlip('closed-for-mundane', closed.length > 0, {
+        vars: {
+          names: fmt.list(closed.map((c) => c.name)),
+          count: closed.length,
+          menus: fmt.list(menus),
+          menuCount: menus.length,
+        },
+        // A tool closing here may be the one holding the view lock (it lets go as it
+        // unmounts, in this same gesture), and this card is about it.
+        overLock: tools.length > 0,
+      });
+    },
+    [siderealOpen, fmt, announceFlip],
+  );
 
   // Turning Advanced OFF deactivates any advanced-only feature that's active (Slide tool,
   // Local Space view, Synastry/Eclipses overlays) so nothing advanced-only lingers without
@@ -1754,23 +1910,36 @@ export default function App() {
   //
   // If either window ever gains a render gate on advancedWheel, revisit: at that point
   // the write becomes redundant and rule 2 (CLAUDE.md) applies cleanly.
-  const setAdvancedMode = useCallback((on: boolean) => {
-    if (!on) {
-      setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
-      setShowLocalSpace(false);
-      setShowSkyTimes(false);
-      // An advanced-tier OVERLAY is not cleared here: the derived overlayMode masks it
-      // while Advanced is off, so turning Advanced back on hands the technique straight
-      // back — the same courtesy the house system, zodiac and orb settings already get.
-    }
-    setAdvancedWheel(on);
-  }, []);
+  //
+  // Advanced also decides whether a stored sidereal zodiac takes effect, so it can move
+  // Mundane in both directions: OFF can hand a held Mundane back (and a tool that needs
+  // sidereal time closes for it, like any other route there), ON can hold it (and says so,
+  // as the zodiac control does).
+  const setAdvancedMode = useCallback(
+    (on: boolean) => {
+      const next = effectiveLineSystem(lineSystemPref, zodiacMode, on);
+      if (!on) {
+        if (lineSystem !== 'geodetic' && next === 'geodetic') closeForMundane(true);
+        setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
+        setShowLocalSpace(false);
+        setShowSkyTimes(false);
+        // An advanced-tier OVERLAY is not cleared here: the derived overlayMode masks it
+        // while Advanced is off, so turning Advanced back on hands the technique straight
+        // back — the same courtesy the house system, zodiac and orb settings already get.
+      }
+      announceFlip('line-system-held', lineSystem === 'geodetic' && next !== 'geodetic');
+      setAdvancedWheel(on);
+    },
+    [lineSystem, lineSystemPref, zodiacMode, closeForMundane, announceFlip],
+  );
 
   // Mundane (geodetic) lines and the Local Space view are mutually exclusive: geodetic
   // is time-independent, while local space needs the specific birth moment (Solar Maps
   // withholds local space in geodetic mode for the same reason). Entering Mundane closes
   // the view (like turning Advanced off); opening the view drops back to the celestial
   // frame (mirrors the slide tool, which also can't run in geodetic — see toggleSlide).
+  // The same holds for Slide itself and for any tool extension that declares
+  // `needsSiderealTime`: see leaveMundaneFor and closeForMundane.
   const setLineSystemSafe = useCallback(
     (next: LineSystem) => {
       // Geodetic (Mundane) maps the TROPICAL zodiac onto Earth's longitudes by
@@ -1780,42 +1949,42 @@ export default function App() {
       // Sidebar's Mundane half is dimmed: this refusal is what makes that dimming
       // true rather than decorative.
       if (next === 'geodetic' && (GEODETIC_HELD || effZodiacMode !== 'tropical')) return;
-      // Only when the view was actually OPEN — "we closed local space" is a lie when
-      // it was already closed, and a notice that lies once is dismissed unread after.
-      announceFlip('local-space-off', next === 'geodetic' && showLocalSpace);
-      if (next === 'geodetic') setShowLocalSpace(false);
+      if (next === 'geodetic' && lineSystem !== 'geodetic') closeForMundane();
       setLineSystemPref(next);
     },
-    [effZodiacMode, showLocalSpace, announceFlip],
+    [effZodiacMode, lineSystem, closeForMundane],
   );
   const setShowLocalSpaceSafe = useCallback(
     (v: boolean) => {
-      announceFlip('line-system', v && lineSystem === 'geodetic');
-      if (v && lineSystem === 'geodetic') setLineSystemPref('celestial');
+      if (v) leaveMundaneFor(t('topNav.view.localSpace'));
       setShowLocalSpace(v);
     },
-    [lineSystem, announceFlip],
+    [leaveMundaneFor, t],
   );
   // Switching INTO sidereal doesn't rewrite the line system any more — it MASKS a
   // geodetic choice (see the derived lineSystem). Nothing is lost, but the Sidebar's
   // selection changes under the user, so the switch still owes them a word.
+  //
+  // And switching back OUT hands that choice back, which is Mundane arriving on screen
+  // like any other way — so whatever needs sidereal time closes for it (closeForMundane).
   const setZodiacModeSafe = useCallback(
     (m: ZodiacMode) => {
+      const next = effectiveLineSystem(lineSystemPref, m, advancedWheel);
       // 'line-system-held', not 'line-system': this path masks the geodetic choice, it
       // doesn't rewrite it. Same visible change to the map, different fact about the
       // reader's setting, so it gets its own message and its own dismissal.
       //
-      // The pref is read here rather than the derived value, deliberately — the fact
-      // being reported is that the STORED choice is being masked. But not while the
-      // hold is already masking it: nothing on the map would change, and a warning
-      // about a no-op teaches people to dismiss warnings unread.
-      announceFlip(
-        'line-system-held',
-        !GEODETIC_HELD && lineSystemPref === 'geodetic' && m !== 'tropical',
-      );
+      // Judged on the line system ON SCREEN before and after, which is the only honest
+      // test of "did the map change". Mundane on screen now means a stored Mundane choice
+      // and no hold; not on screen after means this zodiac is what masks it. Reading the
+      // stored choice alone also fired from one sidereal zodiac to another, and while
+      // Advanced was off — both times with Mundane already held, so a warning about a
+      // no-op, which teaches people to dismiss warnings unread.
+      announceFlip('line-system-held', lineSystem === 'geodetic' && next !== 'geodetic');
+      if (lineSystem !== 'geodetic' && next === 'geodetic') closeForMundane();
       setZodiacMode(m);
     },
-    [lineSystemPref, announceFlip],
+    [lineSystem, lineSystemPref, advancedWheel, closeForMundane, announceFlip],
   );
   // Opening the Calculation panel is the one moment the In Mundo default can be
   // explained to someone who hasn't yet been confused by it. Gated on the projection
@@ -4492,13 +4661,16 @@ export default function App() {
   // those lines holding still while the world turns under them. So it stands down
   // whenever they are off the map: the eclipse clean-up, an overlay promoted into the
   // primary slot (the cage is the overlay then, not the resampled natal chart), or the
-  // Natal Lines switch. Geodetic is handled by an auto-switch in toggleSlide.
+  // Natal Lines switch. Geodetic is handled by an auto-switch in armSlide, and by
+  // closeForMundane in the other direction.
   const slideAvailable = !eclipseSolo && !promoted && !hideNatalAngles;
   useEffect(() => {
     slideAvailableRef.current = slideAvailable;
   }, [slideAvailable]);
   // Exit Slide if its preconditions break mid-spin (geodetic frame, or the cage stops
   // being shown). Un-spins via the Map cleanup → onSlide(0), which resets slideDt.
+  // The geodetic half is only a backstop now: every setter that can bring Mundane on
+  // screen closes Slide itself first, through closeForMundane, and says so.
   useEffect(() => {
     if (mapTool === 'slide' && (lineSystem === 'geodetic' || !slideAvailable)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -4786,41 +4958,49 @@ export default function App() {
   // ── Tools-menu extensions ─────────────────────────────────────────────────
   // Same machinery as the Map-HUD extensions above, surfaced in the Tools dropdown
   // instead of the View menu (registerToolExtension). Each is a toggled HUD with
-  // generic, per-storageKey persistence. The open core registers none.
-  const [openTools, setOpenTools] = useState<Set<string>>(() => {
-    const open = new Set<string>();
-    for (const ext of getToolExtensions()) {
-      const saved = ext.storageKey ? localStorage.getItem(ext.storageKey) : null;
-      if (saved === '1' || (saved === null && ext.defaultOpen)) open.add(ext.id);
-    }
-    return open;
-  });
-  // Mirror openTools into a ref so toggleTool can stay STABLE — the once-bound global keydown handler
-  // reads it lazily, and a tool's hotkey needs the CURRENT open-state to toggle right.
-  const openToolsRef = useRef(openTools);
-  useEffect(() => {
-    openToolsRef.current = openTools;
-  }, [openTools]);
+  // generic, per-storageKey persistence. The open core registers none. (Their open
+  // state, `openTools`, is declared up beside the built-in `mapTool`.)
+  //
   // Tools are mutually exclusive — one at a time, like the built-in Measure/Slide/Capture. Opening a
   // tool extension single-selects it (closes any other open extension) AND disarms any armed built-in
   // tool; the reverse (arming a built-in closes open extensions) is the effect below. Generic — works
   // for any registered tool, no per-tool wiring.
-  const toggleTool = useCallback((id: string) => {
-    const cur = openToolsRef.current;
-    const nowOpen = !cur.has(id);
-    if (nowOpen) setMapTool('off'); // opening a tool disarms any armed built-in tool
-    const next = nowOpen ? new Set([id]) : new Set([...cur].filter((x) => x !== id));
-    for (const ext of getToolExtensions()) {
-      if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
-    }
-    setOpenTools(next);
-  }, []);
+  //
+  // A tool that declares `needsSiderealTime` also leaves Mundane as it opens, named by its own
+  // label (see leaveMundaneFor) — both open paths below go through this. Only for a tool the
+  // reader can see: an unentitled one renders nothing, and a line system rewritten for nothing
+  // on screen is a change nobody could attribute. `overLock`, because such a tool may take the
+  // view lock as it mounts, and this card is about it rather than something it should park.
+  const leaveMundaneForTool = useCallback(
+    (id: string) => {
+      const ext = getToolExtensions().find((e) => e.id === id);
+      if (ext?.needsSiderealTime && isAddonEntitled(ext)) leaveMundaneFor(ext.label, true);
+    },
+    [leaveMundaneFor],
+  );
+  const toggleTool = useCallback(
+    (id: string) => {
+      const cur = openToolsRef.current;
+      const nowOpen = !cur.has(id);
+      if (nowOpen) {
+        setMapTool('off'); // opening a tool disarms any armed built-in tool
+        leaveMundaneForTool(id);
+      }
+      const next = nowOpen ? new Set([id]) : new Set([...cur].filter((x) => x !== id));
+      for (const ext of getToolExtensions()) {
+        if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
+      }
+      setOpenTools(next);
+    },
+    [leaveMundaneForTool],
+  );
 
   // Force a tool extension OPEN (vs. the toggle above) — handed to extensions via the context as
   // openTool, e.g. one HUD launching a companion tool positioned at a chosen point. Single-select
   // (closes any other open tool) and disarms any armed built-in, mirroring toggleTool's open path.
   const openToolById = useCallback((id: string) => {
     setMapTool('off');
+    leaveMundaneForTool(id);
     setOpenTools((prev) => {
       if (prev.size === 1 && prev.has(id)) return prev; // already the only open tool
       const next = new Set([id]);
@@ -4829,7 +5009,7 @@ export default function App() {
       }
       return next;
     });
-  }, []);
+  }, [leaveMundaneForTool]);
 
   // Arm the built-in capture tool — handed to extensions via the context as openCapture, e.g. a HUD
   // offering "grab the current map view" toward a registered capture destination. Idempotent while
@@ -4839,7 +5019,14 @@ export default function App() {
   // Arm one of the other built-in map tools — openCapture's generic twin, handed to extensions
   // via the context as openBuiltinTool, so a registered surface can arm the ruler/rotation tools
   // exactly like their menu rows do. Same one-active-tool effect applies.
-  const openBuiltinTool = useCallback((tool: 'measure' | 'slide') => setMapTool(tool), []);
+  //
+  // For Slide, "exactly like its menu row" means armSlide: the availability gate, pausing
+  // playback, and leaving Mundane with a notice. This used to set the tool directly, so Help's
+  // "Arm Slide" under Mundane armed it and had it disarmed again by its own guard, in silence.
+  const openBuiltinTool = useCallback(
+    (tool: 'measure' | 'slide') => (tool === 'slide' ? armSlide() : setMapTool(tool)),
+    [armSlide],
+  );
 
   // Close a tool extension (the inverse of openToolById; no-op unless open) — handed to extensions
   // via the context as closeTool, e.g. releasing a viewport-owning tool before opening a map window
@@ -5675,6 +5862,7 @@ export default function App() {
           setShowZenith={setShowZenith}
           lineSystem={lineSystem}
           setLineSystem={setLineSystemSafe}
+          mundaneCloses={siderealOpen.map((s) => s.name)}
           siderealActive={effZodiacMode !== 'tropical'}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
@@ -5755,6 +5943,7 @@ export default function App() {
         onToggleExtension={toggleExtension}
         openTools={openTools}
         onToggleTool={toggleTool}
+        mundaneOnScreen={lineSystem === 'geodetic'}
         activeOverlayExt={activeOverlayExt}
         onSelectOverlayExt={selectOverlayExt}
       />
@@ -6219,10 +6408,13 @@ export default function App() {
       {/* A setting this app changed on the user's behalf, said out loud. Parked while a
           registered surface owns the viewport, like every other floating window —
           `announce` checks the same lock and declines to consume the notice there, so
-          it still arrives once the surface lets go. */}
-      {autoFlipKind && !viewParked && (
+          it fires on the next occurrence instead. The exception is a notice ABOUT that
+          surface (opening it, or closing it in this gesture): parking that one would hide
+          the only sentence explaining the surface, for exactly as long as it is up. */}
+      {autoFlip && (!viewParked || autoFlip.overLock) && (
         <AutoFlipNotice
-          kind={autoFlipKind}
+          kind={autoFlip.kind}
+          vars={autoFlip.vars}
           suppress={autoFlipSuppress}
           onSuppressChange={setAutoFlipSuppress}
           onDismiss={() => {

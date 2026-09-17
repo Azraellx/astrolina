@@ -17,7 +17,7 @@
 // hover tip, where it is still there tomorrow — a paragraph in a card that is
 // dismissed in two seconds is a paragraph nobody reads.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useT } from '../../i18n';
+import { useT, type TVars } from '../../i18n';
 import { WarningIcon } from '../ui/WarningIcon';
 import { InfoIcon } from '../ui/InfoIcon';
 import { AUTO_FLIP_META, type AutoFlipKind } from '../../lib/autoFlipNotice';
@@ -41,11 +41,14 @@ interface Anchor {
 
 export function AutoFlipNotice({
   kind,
+  vars,
   suppress,
   onSuppressChange,
   onDismiss,
 }: {
   kind: AutoFlipKind;
+  /** The kind's {tokens} — what the change was made for (see useAutoFlipNotice). */
+  vars?: TVars;
   suppress: boolean;
   onSuppressChange: (v: boolean) => void;
   onDismiss: () => void;
@@ -133,7 +136,7 @@ export function AutoFlipNotice({
       }`}
       style={anchor ? { left: anchor.left, top: anchor.top } : undefined}
       role="alertdialog"
-      aria-label={t(`autoFlip.${kind}.title`)}
+      aria-label={t(`autoFlip.${kind}.title`, vars)}
     >
       {anchor && (
         <span
@@ -153,9 +156,9 @@ export function AutoFlipNotice({
         ) : (
           <InfoIcon className="afn-icon" />
         )}
-        {t(`autoFlip.${kind}.title`)}
+        {t(`autoFlip.${kind}.title`, vars)}
       </p>
-      <p className="afn-body">{t(`autoFlip.${kind}.body`)}</p>
+      <p className="afn-body">{t(`autoFlip.${kind}.body`, vars)}</p>
       <div className="afn-actions">
         {/* A once-only kind has already booked itself as seen by the time it is on
             screen, so the tick would be a control that changes nothing — worse than

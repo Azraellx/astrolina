@@ -86,6 +86,12 @@ export const topNav = {
     controlsTip: 'Map pin controls',
   },
 
+  // The second line on the tip of every row that opens onto the sky's sidereal time — View ▸
+  // Local Space, Tools ▸ Slide, and a registered tool that declares it — shown only while
+  // Mundane is the line system on screen, which is the only time opening one changes it. The
+  // trigger's end of the announcement; the notice card after the click is the other.
+  setsCelestial: 'Opening it sets the line system to Celestial — Mundane carries no sidereal time.',
+
   tools: {
     menuLabel: 'Tools',
     measure: 'Measure distance',

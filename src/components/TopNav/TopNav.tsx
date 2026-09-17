@@ -238,6 +238,10 @@ interface TopNavProps {
    *  toggled HUD surfaced beneath the built-in tools. */
   openTools: ReadonlySet<string>;
   onToggleTool: (id: string) => void;
+  /** Mundane (geodetic) is the line system on screen. Opening anything that needs the sky's
+   *  sidereal time — Local Space, Slide, a tool extension that declares `needsSiderealTime` —
+   *  then switches it to Celestial, so those rows say so on their tips, and only then. */
+  mundaneOnScreen: boolean;
   /** The active Overlay-menu extension id (registerOverlayExtension), or null. Mutually
    *  exclusive with the core overlayMode — selecting one clears the other. */
   activeOverlayExt: string | null;
@@ -577,6 +581,7 @@ function CheckItem({
   disabled,
   locked,
   hint,
+  note,
 }: {
   label: string;
   checked: boolean;
@@ -593,9 +598,12 @@ function CheckItem({
   /** Optional explainer. View rows normally have none, so they show NO tip; but if a row IS
    *  given a hint it surfaces on hover/focus like the other menus (with the ADV marker). */
   hint?: string;
+  /** A second line under the hint: what toggling this row will change besides itself, given
+   *  only while it would (HoverTip's `note`). */
+  note?: string;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
-  const hasTip = !!hint;
+  const hasTip = !!hint || !!note;
   return (
     <>
       <button
@@ -628,6 +636,7 @@ function CheckItem({
           placement="left"
           title={label}
           hint={hint}
+          note={note}
           // Show the shortcut chip in the tip too (like the Tools/Overlay tips); locked teasers
           // suppress it, since their key does nothing until the tier is reached.
           hotkey={locked ? undefined : hotkey}
@@ -650,6 +659,7 @@ function ToolItem({
   disabled,
   locked,
   hint,
+  note,
   onToggle,
   tier,
 }: {
@@ -667,6 +677,9 @@ function ToolItem({
    *  (e.g. Slide with no natal linework) — its key still applies and its click stays a no-op. */
   locked?: boolean;
   hint?: string;
+  /** A second line under the hint: what arming this tool will change besides itself, given
+   *  only while it would (HoverTip's `note`). */
+  note?: string;
   onToggle: () => void;
   /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
   tier?: PlanTier;
@@ -724,6 +737,7 @@ function ToolItem({
           )
         }
         hint={hint}
+        note={note}
         hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
         gated={tier === 'gated'}
@@ -783,6 +797,7 @@ export function TopNav({
   onToggleExtension,
   openTools,
   onToggleTool,
+  mundaneOnScreen,
   activeOverlayExt,
   onSelectOverlayExt,
 }: TopNavProps) {
@@ -811,6 +826,9 @@ export function TopNav({
     /** Registered but not yet usable (MapExtension.unavailable): the row stays, inert,
      *  with this reason in place of its hint. Only extensions can be in this state. */
     unavailable?: string;
+    /** The tip's second line — what opening this row changes besides itself, only while
+     *  it would (Local Space under Mundane). */
+    note?: string;
   }[] = [
     // Built-in windows, on the digit row (1-3) and on mnemonic letters
     // (T = Teleport, S = Sky Times, L = Local Space). Badges mirror App's
@@ -820,7 +838,7 @@ export function TopNav({
     { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: '3', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
     { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
-    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
+    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), note: mundaneOnScreen && !showLocalSpace ? t('topNav.setsCelestial') : undefined, hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions()
@@ -1086,6 +1104,11 @@ export function TopNav({
                           ? t('topNav.tools.slideHint')
                           : t('topNav.tools.slideUnavailable')
                       }
+                      note={
+                        mundaneOnScreen && slideEnabled && !sliding && tierMet(planTier, 'adv')
+                          ? t('topNav.setsCelestial')
+                          : undefined
+                      }
                       hotkey="E"
                       tier="adv"
                       checked={sliding}
@@ -1115,6 +1138,14 @@ export function TopNav({
                           label={ext.label}
                           icon={ext.icon}
                           hint={ext.hint}
+                          note={
+                            mundaneOnScreen &&
+                            ext.needsSiderealTime &&
+                            tierMet(planTier, req) &&
+                            !openTools.has(ext.id)
+                              ? t('topNav.setsCelestial')
+                              : undefined
+                          }
                           hotkey={ext.hotkey}
                           tier={req}
                           disabled={!tierMet(planTier, req)}
@@ -1261,6 +1292,11 @@ export function TopNav({
                   // goes (the key is released), and the click is a no-op — never a
                   // nudge, which would be selling an unfinished feature.
                   hint={it.unavailable ?? it.hint}
+                  // A locked teaser opens nothing (its click is the upgrade nudge), so it
+                  // mustn't promise a side effect of opening.
+                  note={
+                    it.unavailable || !tierMet(planTier, it.tier ?? 'new') ? undefined : it.note
+                  }
                   hotkey={it.unavailable ? undefined : it.hotkey}
                   checked={it.checked && !it.unavailable}
                   tier={it.tier}

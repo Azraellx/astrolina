@@ -194,6 +194,11 @@ export const settings = {
     geodetic: {
       label: 'Mundane',
       hint: "Geodetic mapping: the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries, always tropical), independent of birth time",
+      // The tip's second line, only while something that needs sidereal time is open — the
+      // trigger's end of announcing that choosing Mundane closes it ('closed-for-mundane' in
+      // autoFlip is the other end). {names} is one name, or two joined; {count} counts them.
+      // The reason is left to the hint above, which already says "independent of birth time".
+      closes: 'Choosing it closes {names}, which {count, plural, one {needs} other {need}} the sky’s sidereal time.',
     },
   },
 

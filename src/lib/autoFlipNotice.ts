@@ -39,7 +39,8 @@ export type AutoFlipKind =
   | 'overlay-frame-held'
   /** The line system was REWRITTEN to celestial, because the view or tool asked for
    *  has no meaning under a time-independent mapping. One-way: the stored choice is
-   *  gone and has to be picked again. */
+   *  gone and has to be picked again. Carries `{name}` — the view or tool it was
+   *  rewritten for — so the reader can tell which of several openers did it. */
   | 'line-system'
   /** The geodetic mapping is merely HELD — a sidereal zodiac has no geodetic variant,
    *  so the map falls back to celestial for as long as that lasts. Deliberately a
@@ -49,9 +50,16 @@ export type AutoFlipKind =
    *  who has understood one of these has not thereby understood the other — so it
    *  carries its own dismissal. */
   | 'line-system-held'
-  /** The local-space view was closed, because the mapping just chosen can't carry
-   *  it. */
-  | 'local-space-off'
+  /** Whatever needed the sky's sidereal time was CLOSED, because Mundane just became
+   *  the line system on screen — chosen outright, or handed back by the zodiac
+   *  returning to Tropical. Local Space, Slide, and any tool extension that declares
+   *  `needsSiderealTime`; `{names}` lists what closed, since one change can close two.
+   *
+   *  This replaced 'local-space-off', which reported the same fact for Local Space
+   *  alone. The id changed with the scope rather than being reused, for the reason
+   *  'overlay-frame-held' gives above: someone who silenced a sentence about Local
+   *  Space agreed to nothing about Slide, or a registered tool. */
+  | 'closed-for-mundane'
   /** Not a flip — the one DEFAULT here that routinely reads as a bug. This app draws
    *  In Mundo where most others draw In Zodiaco, so a reader cross-checking against
    *  the program they came from finds lines that don't agree and reasonably concludes
@@ -131,7 +139,7 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     once: false,
   },
   // Reopened from a menu, so there is nothing persistent to point at.
-  'local-space-off': { targets: [], tone: 'warn', once: false },
+  'closed-for-mundane': { targets: [], tone: 'warn', once: false },
   // Fired by opening the panel this control lives in, so it is guaranteed on screen.
   'line-projection': {
     targets: ['[data-autoflip="line-projection"]'],

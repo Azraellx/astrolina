@@ -3823,7 +3823,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // The map's load/style.load/click handlers are bound once and never rebound;
   // refresh these refs after each commit (not during render) so those async
   // handlers always read the latest props.
-  useEffect(() => {
+  //
+  // A LAYOUT effect, and that is load-bearing. Passive effects clean up before any of
+  // them re-run, so a passive sync here is still holding the PREVIOUS commit's props
+  // when another effect's cleanup reads it — and the Slide teardown does exactly that:
+  // it re-pushes `dataRef.current` untranslated as the tool closes. When Slide closes
+  // in the same commit as a new line set (Advanced off with Local Space open; Mundane
+  // arriving while it spins), that push was the OLD set, and it stayed — the closed
+  // window's local-space lines left on the map, measured still there after 8 s.
+  // Layout effects all run before the passive cleanups of the same commit, so every
+  // teardown reads this commit's props.
+  useLayoutEffect(() => {
     onRightClickRef.current = onRightClick;
     onArrivalClickRef.current = onArrivalClick;
     onHomeClickRef.current = onHomeClick;

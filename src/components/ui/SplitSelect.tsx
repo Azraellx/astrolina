@@ -38,6 +38,11 @@ export interface SplitSelectOption<V extends string> {
    *  there is one, and saying what survives the wait where there is not. */
   disabled?: boolean;
   disabledHint?: string;
+  /** A second line under the hint while the option IS available — what picking it will
+   *  change besides itself, said before the click rather than only after (CLAUDE.md's
+   *  "announce at both ends"). Give it only while that side effect would actually happen.
+   *  An unavailable option shows `disabledHint` in this place instead. */
+  note?: string;
 }
 
 export function SplitSelect<V extends string>({
@@ -87,7 +92,7 @@ export function SplitSelect<V extends string>({
           }`}
           onClick={o.disabled ? undefined : () => onSelect(o.value)}
           hotkey={o.hotkey}
-          note={o.disabled ? o.disabledHint : undefined}
+          note={o.disabled ? o.disabledHint : o.note}
           unavailable={o.disabled}
           // ABOVE, not the sidebar's usual 'left'. A left-opening card is anchored
           // to the half it came from, so from the right half it lands squarely on

@@ -49,12 +49,16 @@ export const autoFlip = {
     title: 'Overlay frame held on Return angles',
     body: 'A return chart is a moment of its own, with its own angles, and the map is now drawn against them rather than the natal ones. The previous frame is held, not cleared — it comes back on leaving the return, or straight away from the ✕ on the chip.',
   },
-  // Fires from several tools, so the trigger stays unnamed — but the old "has no meaning
-  // under the Mundane mapping" asserted the conclusion without the fact behind it. The
-  // location stays: this points into the Calculation panel, which is often shut.
+  // Fires from several openers — Local Space, Slide, and any registered tool that declares
+  // it needs sidereal time — so it NAMES the one it fired for ({name}). The sentence used to
+  // say "what you just opened needs it", which was written for Local Space and worked, but
+  // only just: once more than one thing can open onto this card, a reader can no longer tell
+  // which of their gestures moved the map, and a name costs nothing. (Before THAT, "has no
+  // meaning under the Mundane mapping" asserted the conclusion without the fact behind it.)
+  // The location stays: this points into the Calculation panel, which is often shut.
   'line-system': {
     title: 'Line system set to Celestial',
-    body: 'Mundane maps the tropical zodiac onto Earth’s longitudes, so it carries no sidereal time — and what you just opened needs it. The line system lives in Calculation.',
+    body: 'Mundane maps the tropical zodiac onto Earth’s longitudes, so it carries no sidereal time — and {name} needs it. The line system lives in Calculation.',
   },
   // The map changes exactly as it does above, but nothing was taken — so the sentence
   // that matters here is the one about getting it back, not the one about what moved.
@@ -62,13 +66,23 @@ export const autoFlip = {
     title: 'Mundane is on hold',
     body: 'Mundane maps the tropical zodiac onto Earth’s longitudes, so there is no sidereal version of it to draw. Your choice is held, not cleared — set the zodiac back to Tropical and it returns.',
   },
-  // No target at all — it is reopened from a menu — so this card never anchors and never
-  // rings anything. The last sentence is the reader's only route back; don't strip it by
-  // analogy with 'overlay-frame' above, which can afford to drop it precisely because it
-  // is pointing at the thing.
-  'local-space-off': {
-    title: 'Local space closed',
-    body: 'The Mundane mapping is time-independent, and local space is built from the birth moment. Reopen it from the View menu.',
+  // No target at all — everything it names is reopened from a menu — so this card never
+  // anchors and never rings anything. The last sentence is the reader's only route back;
+  // don't strip it by analogy with 'overlay-frame-held' above, which can afford to drop it
+  // precisely because it is pointing at the thing.
+  //
+  // The reason is 'line-system''s, word for word, and that is deliberate: this is the same
+  // rule met from the other side, and a reader who has seen one card should recognise the
+  // other. (It replaced 'local-space-off', whose "time-independent … built from the birth
+  // moment" said the same thing for Local Space alone, in different words.)
+  //
+  // {names} is one name, or two joined — a view and a tool can be open together, and one
+  // change closes both. {count} counts the names; {menus} are the menus they reopen from and
+  // {menuCount} counts those. The plural forms can't hold a {token} of their own (see
+  // i18n/plural), which is why {names} sits outside them.
+  'closed-for-mundane': {
+    title: '{names} closed',
+    body: 'Mundane maps the tropical zodiac onto Earth’s longitudes, so it carries no sidereal time — and {names} {count, plural, one {needs} other {need}} it. Reopen {count, plural, one {it} other {them}} from the {menus} {menuCount, plural, one {menu} other {menus}}.',
   },
   // Not a change — a difference. Worth saying plainly, because the reader's first
   // encounter with it is usually a set of lines that don't match the program they came

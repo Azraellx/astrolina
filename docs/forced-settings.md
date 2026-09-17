@@ -30,9 +30,15 @@ carry none. The local-space view is built from one specific moment, which the
 time-independent geodetic mapping does not have.
 
 Here the setting genuinely is rewritten, because you asked for the tool. The app tells
-you which setting moved and where it lives. It does **not** put it back when you close
-the tool: quietly reversing it later would move every line on the map a second time,
-from nothing you did, which is the same surprise one step removed.
+you which setting moved, what it moved for, and where it lives — and the tool's own menu
+row says so beforehand, while the geodetic mapping is on. It does **not** put it back when
+you close the tool: quietly reversing it later would move every line on the map a second
+time, from nothing you did, which is the same surprise one step removed.
+
+The same rule runs the other way. If the geodetic mapping becomes the line system while
+one of these is open — because you choose it, or because it comes back when you set a
+sidereal zodiac back to tropical — the view or tool closes, and the app says which, and
+where to reopen it. The geodetic option's own hover text names what choosing it will close.
 
 **A reading is only that reading in one frame.** Jumping a dated overlay to a return —
 the instant a body comes back to its exact natal degree — draws the map in the moment's
@@ -64,7 +70,7 @@ there the whole time it is held, and every way out is something you did.
 | Advanced-only techniques read as None | While Advanced is off | **Held.** Back when you turn Advanced on, like every other Advanced setting |
 | The overlay frame reads *Return angles* | While the map is on a return you jumped to | **Held**, announced, and marked by a chip. Back when you leave the return |
 | The line system changes to celestial | When you open the local-space view, or start the globe-spin tool | **Rewritten**, and announced |
-| The local-space view closes | When you choose the geodetic mapping | **Rewritten**, and announced |
+| The local-space view or the globe-spin tool closes | When the geodetic mapping becomes the line system — you choose it, or it returns as the zodiac goes back to tropical | **Rewritten**, and announced |
 
 Every announcement carries a *Don't show me again* tick. Turning one off suppresses
 that message everywhere it would appear, including from a different starting point —

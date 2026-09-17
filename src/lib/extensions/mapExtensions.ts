@@ -256,7 +256,8 @@ export interface MapExtensionContext {
   /** Force-open a registered Tools-menu extension by id (single-select — closes any other open
    *  tool and disarms any built-in; no-op if it's already the only open tool). The Tools twin of
    *  {@link openExtension}: lets one HUD launch a companion tool — e.g. a HUD opening a map tool
-   *  already positioned at a chosen point. */
+   *  already positioned at a chosen point. A tool that declares `needsSiderealTime` leaves the
+   *  geodetic line system as it opens, exactly as from its menu row. */
   openTool: (id: string) => void;
   /** Arm the built-in frame-capture tool (the same action as its Tools-menu entry / hotkey);
    *  idempotent while already armed. Lets a HUD offer "grab the current map view" — pair with a
@@ -264,7 +265,9 @@ export interface MapExtensionContext {
   openCapture: () => void;
   /** Arm one of the other built-in map tools by id (the same action as its Tools-menu entry /
    *  hotkey); idempotent while already armed. Capture keeps its dedicated opener above — it
-   *  predates this and pairs with the capture-sink seam. */
+   *  predates this and pairs with the capture-sink seam. For Slide that includes its gates:
+   *  a no-op while the natal lines aren't drawn, and it leaves the geodetic line system (with
+   *  its notice) as it arms. */
   openBuiltinTool: (tool: 'measure' | 'slide') => void;
   /** Focus the linework to a radius around a point: dims the basemap and reveals only the lines
    *  passing within `radiusKm` of the spotlight's `center` (a null center dims + hides all lines;

@@ -63,6 +63,20 @@ export interface ToolExtension extends GatedExtension {
   /** Defaults to 'core' (inherited). A 'gated' tool is subject to the entitlement
    *  resolver in ./entitlement. */
   tier?: GatedExtension['tier'];
+  /** The tool draws or reads the REAL sky at the chart's moment — bodies over the Earth
+   *  at the chart's sidereal time — so it has no meaning beside the geodetic (Mundane)
+   *  line system, which is time-independent and carries no sidereal time. Declaring it
+   *  gets the tool the handling the host's own Local Space and Slide get, in both
+   *  directions:
+   *
+   *  - opening it while Mundane is on screen REWRITES the line system to Celestial and
+   *    announces it by the tool's `label`;
+   *  - Mundane becoming the line system while it is open — chosen, or handed back by the
+   *    zodiac returning to Tropical — CLOSES it and announces that.
+   *
+   *  The tool never has to check `ctx.lineSystem` for this itself: while it is open, the
+   *  line system it reads is Celestial. */
+  needsSiderealTime?: boolean;
   /** The HUD, rendered when the tool is open AND entitled. */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
 }

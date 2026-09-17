@@ -122,6 +122,10 @@ interface SidebarProps {
   setShowZenith: (v: boolean) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
+  /** The names of what is open right now that needs the sky's sidereal time (Local Space,
+   *  Slide, a registered tool that declares it) — what choosing Mundane would close. Empty
+   *  when nothing would, and then the Mundane half's tip says nothing about it. */
+  mundaneCloses: readonly string[];
   /** Sidereal zodiac active (Advanced ▸ Zodiac ≠ tropical) — hides Geodetic,
    *  which is tropical-only by definition. */
   siderealActive: boolean;
@@ -1036,6 +1040,7 @@ export function Sidebar({
   setShowZenith,
   lineSystem,
   setLineSystem,
+  mundaneCloses,
   siderealActive,
   coordSystem,
   setCoordSystem,
@@ -1066,7 +1071,7 @@ export function Sidebar({
   closing,
   onSlideOutEnd,
 }: SidebarProps) {
-  const { t, labels, locale, setLocale } = useT();
+  const { t, labels, fmt, locale, setLocale } = useT();
   const discreet = useDiscreet();
   const touch = useTouchLayout();
   // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
@@ -1440,7 +1445,12 @@ export function Sidebar({
               and no way back; the dimmed half explains itself, and the stored choice
               is only masked, so it returns with nothing to redo.
               (The half never reads as SELECTED while blocked: `lineSystem` here is
-              the derived value, which is already 'celestial' under either.) */}
+              the derived value, which is already 'celestial' under either.)
+
+              While it IS available, its tip also says what choosing it will close —
+              Local Space, Slide, a tool that needs sidereal time — but only when one
+              of them is open, since a warning about a no-op is dismissed unread. The
+              notice card is the other end of the same announcement. */}
           <SplitSelect
             // Named so the auto-flip notice can point here when it reports a
             // line-system change and this panel happens to be open (lib/autoFlipNotice).
@@ -1461,6 +1471,13 @@ export function Sidebar({
                   ? t('settings.inert.geodeticHeld')
                   : sidereal
                     ? t('settings.inert.geodeticSidereal')
+                    : undefined,
+                note:
+                  value === 'geodetic' && lineSystem !== 'geodetic' && mundaneCloses.length > 0
+                    ? t('settings.lineSystem.geodetic.closes', {
+                        names: fmt.list(mundaneCloses),
+                        count: mundaneCloses.length,
+                      })
                     : undefined,
               };
             })}
