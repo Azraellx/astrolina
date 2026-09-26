@@ -15,11 +15,14 @@ import type { ReactNode } from 'react';
 // The glyphChars.ts character set: planets/nodes and the conjunction/opposition
 // aspects (U+2609-260D, 263D, 263F, 2640-2646), signs (2648-2653), asteroids/
 // Lilith and the sextile (26B3-26B9), square/trine shapes (25A1, 25B3), the Part
-// of Fortune (2297), and Pluto Form Two (2BD3). Each glyph may carry the U+FE0E
+// of Fortune (2297), Pluto Form Two (2BD3), and the catalog minor bodies'
+// MINOR_GLYPHS (2BD9-2BDC, 2BF0-2BF2, and the astral 1F77B-1F77F — which is why the
+// pattern carries the `u` flag: without it a class range can't hold a code point
+// above U+FFFF, which is two UTF-16 units). Each glyph may carry the U+FE0E
 // text-style selector (matched alongside its base, outside the class, to keep the
 // class free of combining characters).
 const GLYPH_RUN =
-  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△⯓]︎?)+)/;
+  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△⯓⯙-⯜⯰-⯲\u{1F77B}-\u{1F77F}]︎?)+)/u;
 
 export function glyphify(text: string): ReactNode {
   const parts = text.split(GLYPH_RUN);

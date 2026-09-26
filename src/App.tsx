@@ -113,6 +113,7 @@ import {
   getAngleCoords,
   getEclipticPositions,
   getHorizontalCoords,
+  getMinorPositions,
   getPlanetPositions,
   gmstRadians,
   isDayBirth,
@@ -121,6 +122,7 @@ import {
   obliquity,
   partOfFortuneLon,
   PLANET_NAMES,
+  projectMinorOntoEcliptic,
   projectOntoEcliptic,
   raDecToEclipticLon,
   relocate,
@@ -204,6 +206,22 @@ import { buildLineCard, type LineCardDistance } from './lib/lineCard';
 import type { RulershipScheme } from './lib/astro/dignities';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
+import {
+  generateMinorLines,
+  generateMinorZenith,
+  type MinorDecor,
+} from './lib/astro/minorLines';
+import { useMinorBodies } from './lib/minorBodies/useMinorBodies';
+import { ensureMinorBodies, minorLoadState, retryMinorBody } from './lib/minorBodies/loader';
+import {
+  deriveMinorRows,
+  minorLoadRequests,
+  minorReadyNumbers,
+  withMinorDrawGate,
+} from './lib/minorBodies/status';
+import { bundledMinorBody } from './lib/minorBodies/bundled';
+import { minorIconId } from './components/Map/glyphImages';
+import { MinorBodiesHud } from './components/MinorBodiesHud/MinorBodiesHud';
 import { generateNightShade } from './lib/astro/nightShade';
 import {
   loadAspectOrbs,
@@ -309,6 +327,7 @@ import {
   applyTheme,
   loadTheme,
   MAP_LINE_COLOR_OVERRIDES,
+  minorLineColor,
   NIGHT_SHADE_STYLE,
   saveTheme,
   STAR_LINE_COLORS,
@@ -714,6 +733,29 @@ export default function App() {
   const [aspectLineFilters, setAspectLineFilters] = useState(loadAspectLineFilters);
   // Stable close handler for the window (kept out of the render JSX).
   const closeAspectLinesHud = useCallback(() => setShowAspectLinesHud(false), []);
+  // The reader's catalog minor bodies (433 Eros, 136199 Eris, …) — the preference and
+  // its only writers; everything about whether each one draws is derived below, next
+  // to the line pipeline.
+  const minorApi = useMinorBodies();
+  // The Minor bodies window (Map filters ▸ Minor bodies ▸ More, or '4'). Catalog bodies
+  // are an Advanced reading, so this window is gated TWICE, the Aspect Lines window's
+  // shape:
+  //   · at LOAD, here — the open flag restores only with astro:advanced:v1 also on. This
+  //     is CLAUDE.md's downstream-tier trap: a build that drives Advanced from an account
+  //     tier writes that key and reloads, never passing through setAdvancedMode, so a
+  //     reader who signed out with the window open boots into Basic with it closed, and
+  //     signing in again doesn't pop it open by itself. (A closed window announces its
+  //     own absence and reopens in one click — the reasoning recorded at setAdvancedMode
+  //     for Local Space and Sky Times.)
+  //   · at RENDER, below — within a session, Advanced going off hides the window and
+  //     holds the flag, and turning Advanced back on (the reader's own gesture) brings
+  //     it back where it was.
+  const [showMinorHud, setShowMinorHud] = useState(
+    () =>
+      localStorage.getItem('astro:minor-bodies-open:v1') === '1' &&
+      localStorage.getItem('astro:advanced:v1') === '1',
+  );
+  const closeMinorHud = useCallback(() => setShowMinorHud(false), []);
   const [coordSystem, setCoordSystem] = useState<CoordSystem>(() =>
     localStorage.getItem('astro:coord-system:v1') === 'zodiaco'
       ? 'zodiaco'
@@ -760,6 +802,14 @@ export default function App() {
   const [advancedWheel, setAdvancedWheel] = useState(
     () => localStorage.getItem('astro:advanced:v1') === '1',
   );
+  // The same flag through a ref, for a gate that must see a setAdvancedMode made in
+  // the SAME gesture: Help runs `setAdvancedMode(true)` and then `openView(...)` in one
+  // handler, where the state value is still the old one. Written by setAdvancedMode
+  // itself and synced after commit, which is before any other gesture can reach it.
+  const advancedRef = useRef(advancedWheel);
+  useEffect(() => {
+    advancedRef.current = advancedWheel;
+  }, [advancedWheel]);
   // Zodiac reading frame (Advanced ▸ Zodiac): tropical, or sidereal by ayanamsa — a
   // display-layer choice (see the sidereal block further down).
   const [zodiacMode, setZodiacMode] = useState(loadZodiacMode);
@@ -1697,6 +1747,9 @@ export default function App() {
         case '1': if (!getViewLock()) setShowCoords((v) => !v); break;
         case '2': if (!getViewLock()) setShowChart((v) => !v); break;
         case '3': setShowSettings((v) => !v); break;
+        // The Minor bodies window — the digit row's next window, beside Settings, where
+        // its More button lives. Catalog bodies are an Advanced reading (like 's').
+        case '4': if (advancedWheel && !getViewLock()) setShowMinorHud((v) => !v); break;
         case 't': if (!getViewLock()) setShowTeleport((v) => !v); break;
         // Sky Times is an 'adv'-tier view (matches its View-menu row).
         case 's': if (advancedWheel && !getViewLock()) setShowSkyTimes((v) => !v); break;
@@ -1928,6 +1981,7 @@ export default function App() {
         // back — the same courtesy the house system, zodiac and orb settings already get.
       }
       announceFlip('line-system-held', lineSystem === 'geodetic' && next !== 'geodetic');
+      advancedRef.current = on;
       setAdvancedWheel(on);
     },
     [lineSystem, lineSystemPref, zodiacMode, closeForMundane, announceFlip],
@@ -2052,6 +2106,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:aspectlines-open:v1', showAspectLinesHud ? '1' : '0');
   }, [showAspectLinesHud]);
+  // The window's OWN open state — the raw flag, never the render-gated visibility.
+  useEffect(() => {
+    localStorage.setItem('astro:minor-bodies-open:v1', showMinorHud ? '1' : '0');
+  }, [showMinorHud]);
   useEffect(() => saveAspectLineFilters(aspectLineFilters), [aspectLineFilters]);
   useEffect(() => {
     localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
@@ -2781,6 +2839,109 @@ export default function App() {
       STAR_LINE_COLORS[theme],
     );
   }, [effShowStarLines, current, noTime, jd, starSet, meridianLng, lineSystem, eps, theme]);
+
+  // ── Catalog minor bodies (lib/minorBodies/) ──────────────────────────────────
+  // The reader's list is a PREFERENCE (minorApi.pref). Whether each body on it draws is
+  // DERIVED here from standing states — Advanced off, its source closed to this reader,
+  // the family switch, a composite chart, a file still loading or failed, a date outside
+  // its file — so none of them ever rewrites the list: each clears by itself and the
+  // reader's choice is still there (CLAUDE.md rule 2).
+  const { pref: minorPref, loadVersion: minorLoadVer } = minorApi;
+  // What should be fetched: switched on, family shown, source open, Advanced on. Built
+  // per render because a source's gate() is per render by contract; the effect below
+  // keys on the request SET, so an unchanged set never re-fires.
+  const minorRequests = minorLoadRequests(minorPref, advancedWheel);
+  const minorRequestKey = minorRequests.map((r) => `${r.n}@${r.source.id}`).join(',');
+  useEffect(() => {
+    // A composite has no instant of its own to sample a catalog body at (its planets
+    // are the parents' midpoints), so nothing is fetched for one.
+    if (!current || current.composite || minorRequests.length === 0) return;
+    void ensureMinorBodies(minorRequests);
+    // Keyed on the request set; minorLoadVer re-runs it after a retry clears a failure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minorRequestKey, current, minorLoadVer]);
+  // Loaded AND wanted: the only bodies ever sampled (a failed file is never sampled —
+  // the engine's failure path is expensive, see lib/minorBodies/se1Header.ts).
+  const minorNumbers = useMemo(
+    () =>
+      current && !current.composite
+        ? minorReadyNumbers(minorPref, advancedWheel, minorLoadState)
+        : [],
+    // minorLoadVer: a file landing or failing changes the ready set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [current, minorPref, advancedWheel, minorLoadVer],
+  );
+  // At the chart's own moment (the rows' "outside its file's dates" reads this), then
+  // at the slid instant for the lines — the same two steps the planets take, so a Slide
+  // keeps catalog lines aligned with the cage.
+  const minorPositions = useMemo(
+    () => (minorNumbers.length ? getMinorPositions(jd, minorNumbers) : []),
+    [jd, minorNumbers],
+  );
+  const minorSlidPositions = useMemo(() => {
+    if (!sliding || minorNumbers.length === 0) return minorPositions;
+    return getMinorPositions(jd + slideBucket * SLIDE_BUCKET_DAYS, minorNumbers);
+  }, [minorPositions, sliding, slideBucket, jd, minorNumbers]);
+  // The planets' own frame rule (linePositions above): In-Zodiaco and Mundane project
+  // onto the ecliptic, In-Mundo keeps the true sky; no birth time, no lines.
+  const minorLinePositions = useMemo(() => {
+    if (noTime) return [];
+    const jdEff = sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd;
+    return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+      ? projectMinorOntoEcliptic(minorSlidPositions, jdEff)
+      : minorSlidPositions;
+  }, [noTime, lineSystem, coordSystem, minorSlidPositions, jd, sliding, slideBucket, current]);
+  // Per-row status — the BASE rows, with the draw gates known here (no birth time, an
+  // Angles filter showing none of the four angles catalog bodies draw). The natal-lines
+  // gates are resolved further down the pipeline and applied there (minorRowsEff /
+  // minorRowsDrawn), so a row never reads 'shown' over a map with none of its lines.
+  const minorAnglesOff = !(['MC', 'IC', 'ASC', 'DSC'] as const).some((a) => visibleLineTypes.has(a));
+  const minorRows = useMemo(
+    () =>
+      deriveMinorRows(minorPref, minorLoadState, {
+        advanced: advancedWheel,
+        none: !current,
+        composite: !!current?.composite,
+        sampled: new Set(minorPositions.map((p) => p.n)),
+        undrawn: noTime ? 'noTime' : minorAnglesOff ? 'angles' : null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [minorPref, advancedWheel, current, minorPositions, minorLoadVer, noTime, minorAnglesOff],
+  );
+  const minorDecor = useMemo(() => {
+    // A plain record: `Map` in this module is the map component.
+    const names: Record<number, string> = {};
+    for (const r of minorRows) names[r.entry.n] = r.name;
+    return (n: number): MinorDecor => ({
+      name: names[n] || bundledMinorBody(n)?.name || '',
+      color: minorLineColor(n, theme),
+      icon: minorIconId(n),
+    });
+  }, [minorRows, theme]);
+  const allMinorLines = useMemo(
+    () => generateMinorLines(minorLinePositions, meridianLng, minorDecor),
+    [minorLinePositions, meridianLng, minorDecor],
+  );
+  // The Angles filter applies to catalog bodies exactly as to the planets.
+  const minorLines = useMemo(
+    () => ({
+      ...allMinorLines,
+      features: allMinorLines.features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
+    }),
+    [allMinorLines, visibleLineTypes],
+  );
+  // A zenith coin sits ON its body's MC line, so it follows the MC toggle in the Angles
+  // filter exactly as the planets' stamps do (filterZenith) — with MC off, a coin left
+  // standing would mark a line the reader switched off.
+  const minorZenith = useMemo(
+    () =>
+      generateMinorZenith(
+        visibleLineTypes.has('MC') ? minorLinePositions : [],
+        meridianLng,
+        minorDecor,
+      ),
+    [minorLinePositions, meridianLng, minorDecor, visibleLineTypes],
+  );
 
   const lines = useMemo(
     () =>
@@ -5043,13 +5204,31 @@ export default function App() {
   }, []);
 
   // Force a BUILT-IN view window open — handed to extensions via the context as openView, the
-  // built-ins' twin of openExtensionById ('charts' is the chart browser). Idempotent opens. An
-  // advanced-gated view opens regardless of the Advanced switch (callers flip setAdvancedMode
-  // first so the menus stay honest — the windows' own render gates don't re-check it), and a
-  // view lock doesn't block the state flip: the window appears once the lock clears.
+  // built-ins' twin of openExtensionById ('charts' is the chart browser). Idempotent opens.
+  // 'skyTimes' and 'localSpace' open regardless of the Advanced switch (callers flip
+  // setAdvancedMode first so the menus stay honest — those windows have no render gate on
+  // it). 'minorBodies' is different: its window RENDERS only with Advanced on, so opening it
+  // with Advanced off would write a persisted open flag with nothing on screen, and the
+  // window would then appear by itself the next time Advanced came on — a move nobody could
+  // attribute (CLAUDE.md rule 4). So it opens only while Advanced is on, read through
+  // advancedRef so a setAdvancedMode(true) earlier in the same gesture counts; otherwise the
+  // call does nothing and writes nothing. A view lock doesn't block the state flip: the
+  // window appears once the lock clears.
   const openViewById = useCallback(
-    (id: 'coordinates' | 'minimap' | 'teleport' | 'skyTimes' | 'localSpace' | 'charts') => {
+    (
+      id:
+        | 'coordinates'
+        | 'minimap'
+        | 'teleport'
+        | 'skyTimes'
+        | 'localSpace'
+        | 'charts'
+        | 'minorBodies',
+    ) => {
       switch (id) {
+        case 'minorBodies':
+          if (advancedRef.current) setShowMinorHud(true);
+          break;
         case 'coordinates':
           setShowCoords(true);
           break;
@@ -5167,6 +5346,7 @@ export default function App() {
         natalAngleLines: EMPTY_FC,
         natalParans: EMPTY_FC,
         natalStarLines: EMPTY_FC,
+        minorLines: EMPTY_FC,
       };
     }
     const effCoordSystem: CoordSystem = lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
@@ -5282,12 +5462,16 @@ export default function App() {
       natalAngleLines,
       natalParans: allParans,
       natalStarLines,
+      // Catalog bodies are natal-only for now (no overlay carries them), so there is
+      // no active-frame twin to choose between: every line type of the ones in play.
+      minorLines: allMinorLines,
     };
   }, [
     current,
     lineSystem,
     coordSystem,
     allLines,
+    allMinorLines,
     theme,
     linePositions,
     meridianLng,
@@ -5341,12 +5525,16 @@ export default function App() {
         angleProgression,
         primaryRate,
         userPrimaryRate,
+        // The catalog bodies in play (switched on AND loaded): one landing or leaving
+        // changes the complete set.
+        minorNumbers.join(','),
       ].join('|'),
     [
       current,
       jd,
       nodeType,
       ephemerisEpoch,
+      minorNumbers,
       lineSystem,
       coordSystem,
       starSet,
@@ -5420,6 +5608,29 @@ export default function App() {
     : overlayAux
       ? overlayStarLines
       : starLines;
+  // Catalog minor-body lines ride WITH the natal planet lines: gone under the eclipse
+  // clean-up and while an overlay is promoted (no overlay carries catalog bodies yet, so
+  // the promoted frame has none), and — for DRAWING only — under Natal Lines, exactly as
+  // effLines/drawLines above split it.
+  const effMinorLines = eclipseSolo || promoted ? EMPTY_FC : minorLines;
+  const drawMinorLines = hideNatalAngles ? EMPTY_FC : effMinorLines;
+  // The rows follow the same split, so a row reads 'shown' only while its lines are
+  // there: the EFF rows (the extension context, beside effMinorLines — a panel that keeps
+  // reading the natal lines under the Natal Lines hide keeps seeing these as shown) and
+  // the DRAWN rows (the window and the More button's count, which describe the screen).
+  const minorRowsEff = useMemo(
+    () => withMinorDrawGate(minorRows, eclipseSolo || promoted ? 'natalOff' : null),
+    [minorRows, eclipseSolo, promoted],
+  );
+  const minorRowsDrawn = useMemo(
+    () => withMinorDrawGate(minorRowsEff, hideNatalAngles ? 'natalOff' : null),
+    [minorRowsEff, hideNatalAngles],
+  );
+  // Their zenith coins follow the planets' stamps' gates (the MC filter, applied where
+  // they're generated; Zeniths/Nadirs, Natal Lines, eclipse clean-up) and, like the
+  // lines, leave with a promoted overlay.
+  const effMinorZenith =
+    eclipseSolo || hideNatalAngles || !effShowZenith || promoted ? EMPTY_FC : minorZenith;
   const effParans = eclipseSolo
     ? EMPTY_FC
     : promoted
@@ -5472,6 +5683,14 @@ export default function App() {
   const spotAngleLines = useMemo(() => applySpot(effAngleLines, fullSet?.angleLines), [applySpot, effAngleLines, fullSet]);
   const spotParans = useMemo(() => applySpot(effParans, fullSet?.parans), [applySpot, effParans, fullSet]);
   const spotStarLines = useMemo(() => applySpot(effStarLines, fullSet?.starLines), [applySpot, effStarLines, fullSet]);
+  // A spotlight carrying its OWN set but no catalog family (a surface that doesn't
+  // handle catalog bodies builds its set without them) reveals NO catalog lines —
+  // falling back to the drawn set would slip lines that surface never measured into
+  // its reveal. Hence `?? EMPTY_FC` rather than passing the optional field through.
+  const spotMinorLines = useMemo(
+    () => applySpot(drawMinorLines, fullSet ? (fullSet.minorLines ?? EMPTY_FC) : undefined),
+    [applySpot, drawMinorLines, fullSet],
+  );
   const spotLocalSpace = useMemo(() => applySpot(effLocalSpace, fullSet?.localSpace), [applySpot, effLocalSpace, fullSet]);
   // The overlay bundle for the <Map>: off → the effective overlay; aiming → hidden; reveal → the
   // overlay's FULL lines within the radius (or the effective overlay as a fallback), non-line
@@ -5548,6 +5767,8 @@ export default function App() {
       localSpace: effLocalSpace,
       starLines: effStarLines,
       overlayLocalSpace: effOverlayLocalSpace,
+      minorLines: effMinorLines,
+      minorBodies: minorRowsEff,
       flyTo: extFlyTo,
       markArrival,
       // The borrow-ending setter, so a panel's "jump to this date" leaves the return
@@ -5610,6 +5831,8 @@ export default function App() {
       mapOverlay,
       promoted,
       eclipseSolo,
+      minorLines,
+      minorRowsEff,
       extFlyTo,
       selectOverlay,
       openExtensions,
@@ -5677,6 +5900,7 @@ export default function App() {
         angleLines={spotAngleLines}
         parans={spotParans}
         starLines={spotStarLines}
+        minorLines={spotMinorLines}
         localSpace={spotLocalSpace}
         overlay={spotMapOverlay}
         // While a spotlight is active the reveal is lines-only on a dimmed map, so the non-line
@@ -5694,6 +5918,7 @@ export default function App() {
         hideLsArrows={lsTransparent}
         lsEdgeLabels={lsTransparent}
         zenith={spotlightActive ? EMPTY_FC : effZenith}
+        minorZenith={spotlightActive ? EMPTY_FC : effMinorZenith}
         nadir={spotlightActive ? EMPTY_FC : effNadir}
         ecliptic={spotlightActive ? null : effEcliptic}
         eclipse={spotlightActive ? null : eclipseMapData}
@@ -5827,6 +6052,13 @@ export default function App() {
           visiblePlanets={visiblePlanetsPref}
           togglePlanet={togglePlanet}
           setAllPlanets={setAllPlanets}
+          minorMore={{
+            open: showMinorHud,
+            onToggle: () => setShowMinorHud((v) => !v),
+            // Counted on the DRAWN rows: '+N' is bodies with lines on screen.
+            shown: minorRowsDrawn.filter((r) => r.status.kind === 'shown').length,
+            held: minorRowsDrawn.filter((r) => r.status.kind === 'held').length,
+          }}
           visibleLineTypes={visibleLineTypes}
           toggleLineType={toggleLineType}
           setAllLineTypes={setAllLineTypes}
@@ -6126,6 +6358,24 @@ export default function App() {
           (the open pref persists for when the gates return). Raw aspectOrbs is
           correct here — the window can only exist while Advanced is on, where
           eff === raw. */}
+      {/* The Minor bodies window (Map filters ▸ Minor bodies ▸ More, or '4'). Catalog
+          bodies are an Advanced reading, so it renders only while Advanced is on — within
+          a session the open flag is held, not cleared; across a reload into Basic its
+          initializer closes it (see showMinorHud for both gates). The rows are the DRAWN
+          twin, so a row reads 'shown' only while its lines are on screen. */}
+      {advancedWheel && showMinorHud && !viewParked && (
+        <MinorBodiesHud
+          onClose={closeMinorHud}
+          theme={theme}
+          // The RAW built-in preference and its own toggle — the five main asteroids
+          // here are the very same switches as in Map filters.
+          visiblePlanets={visiblePlanetsPref}
+          togglePlanet={togglePlanet}
+          api={minorApi}
+          rows={minorRowsDrawn}
+          onRetry={retryMinorBody}
+        />
+      )}
       {effShowAspectLines && gatedTierMet && showAspectLinesHud && !viewParked && (
         <AspectLinesHud
           onClose={closeAspectLinesHud}

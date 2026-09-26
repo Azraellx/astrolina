@@ -12,8 +12,15 @@
 // lib/astro/glyphChars (the same ones the DOM/SVG components use).
 import type { Map as MlMap } from 'maplibre-gl';
 import { PLANET_COLORS, PLANET_NAMES, type PlanetName } from '../../lib/ephemeris';
-import { MAP_LINE_COLOR_OVERRIDES, STAR_LINE_COLORS, type Theme } from '../../lib/theme';
-import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
+import {
+  MAP_LINE_COLOR_OVERRIDES,
+  MINOR_LINE_PALETTE,
+  STAR_LINE_COLORS,
+  minorLineColor,
+  minorPaletteSlot,
+  type Theme,
+} from '../../lib/theme';
+import { MINOR_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
 /** The little five-pointed star repeated along the fixed-star lines. */
@@ -156,14 +163,13 @@ function rasterizeStarMark(color: string, halo: string): ImageData | null {
 // (circle) and nadir (diamond) stamps, which differ only in the shape behind it.
 function drawStampGlyph(
   ctx: CanvasRenderingContext2D,
-  planet: PlanetName,
+  ch: string,
   color: string,
   discFill: string,
   cx: number,
   cy: number,
   fontPx: number,
 ): void {
-  const ch = PLANET_GLYPHS[planet];
   ctx.font = `${fontPx}px ${FONT_FAMILY}`;
   // Centre the glyph's ACTUAL INK box at (cx, cy), measured per-glyph. textAlign:center +
   // textBaseline:middle instead centre the font's EM box, which different engines (notably mobile
@@ -206,7 +212,7 @@ function rasterizeZenith(
   ctx.lineWidth = ZENITH_RING_W;
   ctx.strokeStyle = color;
   ctx.stroke();
-  drawStampGlyph(ctx, planet, color, discFill, c, c, ZENITH_STAMP_GLYPH_PX);
+  drawStampGlyph(ctx, PLANET_GLYPHS[planet], color, discFill, c, c, ZENITH_STAMP_GLYPH_PX);
   return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
 }
 
@@ -238,8 +244,73 @@ function rasterizeNadir(
   ctx.lineWidth = ZENITH_RING_W;
   ctx.strokeStyle = color;
   ctx.stroke();
-  drawStampGlyph(ctx, planet, color, discFill, c, c, NADIR_STAMP_GLYPH_PX);
+  drawStampGlyph(ctx, PLANET_GLYPHS[planet], color, discFill, c, c, NADIR_STAMP_GLYPH_PX);
   return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
+}
+
+// ── Catalog minor bodies ──────────────────────────────────────────────────────
+// A catalog body's zenith stamp (and the bead repeated along its lines) is a coin
+// like a planet's: theme disc, palette-colour ring. Bodies with a Unicode symbol
+// (MINOR_GLYPHS) carry it; every other body — the great majority — carries a small
+// solid diamond, the one mark every such coin shares, so a catalog coin never
+// reads as a planet's. Baked per PALETTE SLOT (12 images), not per body, so the
+// number of sprites doesn't grow with the catalog; glyph bodies add one each.
+export const MINOR_COIN_PREFIX = 'minor-coin-';
+export const MINOR_GLYPH_PREFIX = 'minor-glyph-';
+
+/** The sprite id for catalog body `n` (see MinorDecor.icon). */
+export function minorIconId(n: number): string {
+  return MINOR_GLYPHS.has(n) ? `${MINOR_GLYPH_PREFIX}${n}` : `${MINOR_COIN_PREFIX}${minorPaletteSlot(n)}`;
+}
+
+function rasterizeMinorCoin(
+  color: string,
+  discFill: string,
+  glyph: string | undefined,
+): ImageData | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = ZENITH_STAMP_PX;
+  canvas.height = ZENITH_STAMP_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const c = ZENITH_STAMP_PX / 2;
+  ctx.beginPath();
+  ctx.arc(c, c, ZENITH_DISC_R, 0, Math.PI * 2);
+  ctx.fillStyle = discFill;
+  ctx.fill();
+  ctx.lineWidth = ZENITH_RING_W;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  if (glyph) {
+    drawStampGlyph(ctx, glyph, color, discFill, c, c, ZENITH_STAMP_GLYPH_PX);
+  } else {
+    // The shared catalog mark: a small solid diamond (a path, so it looks the same
+    // on every platform and needs no font).
+    const r = ZENITH_DISC_R * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(c, c - r);
+    ctx.lineTo(c + r * 0.72, c);
+    ctx.lineTo(c, c + r);
+    ctx.lineTo(c - r * 0.72, c);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
+}
+
+function bakeMinorImages(map: MlMap, discFill: string, theme: Theme): void {
+  const put = (id: string, data: ImageData | null) => {
+    if (!data) return;
+    if (map.hasImage(id)) map.removeImage(id);
+    map.addImage(id, data, { pixelRatio: RATIO });
+  };
+  MINOR_LINE_PALETTE[theme].forEach((color, slot) => {
+    put(`${MINOR_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined));
+  });
+  for (const [n, glyph] of MINOR_GLYPHS) {
+    put(`${MINOR_GLYPH_PREFIX}${n}`, rasterizeMinorCoin(minorLineColor(n, theme), discFill, glyph));
+  }
 }
 
 // (Re)bake the planet-glyph images onto the map, each at its planet color with
@@ -290,4 +361,6 @@ export async function ensureGlyphImages(
     if (map.hasImage(STAR_MARK_IMAGE)) map.removeImage(STAR_MARK_IMAGE);
     map.addImage(STAR_MARK_IMAGE, star, { pixelRatio: STAR_RATIO });
   }
+  // Catalog minor-body coins, on the same disc fill as the planets' stamps.
+  bakeMinorImages(map, zenithHalo, theme);
 }

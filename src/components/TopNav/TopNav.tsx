@@ -836,6 +836,9 @@ export function TopNav({
     { id: 'coordinates', label: t('topNav.view.coordinates'), hint: t('topNav.view.coordinatesHint'), hotkey: '1', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
     { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: '2', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: '3', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
+    // (The Minor bodies window has the digit row's '4' but deliberately NO row here —
+    // a product call to keep this menu short. It opens from Map filters ▸ Minor bodies ▸
+    // More, which carries the key pill, and from the key itself; see App's showMinorHud.)
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
     { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
     { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), note: mundaneOnScreen && !showLocalSpace ? t('topNav.setsCelestial') : undefined, hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },

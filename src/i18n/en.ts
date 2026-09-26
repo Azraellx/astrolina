@@ -44,6 +44,7 @@ import { skyTimes } from './en/skyTimes';
 import { captureHud } from './en/captureHud';
 import { synastryHud } from './en/synastryHud';
 import { wheel } from './en/wheel';
+import { minorBodies } from './en/minorBodies';
 
 export const en = {
   common,
@@ -75,4 +76,5 @@ export const en = {
   captureHud,
   synastryHud,
   wheel,
+  minorBodies,
 } as const;

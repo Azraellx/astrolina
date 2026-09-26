@@ -21,7 +21,13 @@ export const planets = {
   Pluto: { name: 'Pluto', theme: 'Power, intensity, and profound transformation and rebirth.' },
   NorthNode: { name: 'N Node', theme: 'Your growth edge: where life calls you forward, and belonging finds you.' },
   SouthNode: { name: 'S Node', theme: 'Familiar ground: inherited gifts, deep roots, and what you’re ready to release.' },
-  Lilith: { name: 'Lilith', theme: 'Raw, untamed instinct and where you refuse to be tamed.' },
+  // tipName: the Map-filters tip's headline gives the full name, because the Minor
+  // bodies window can also draw the asteroid Lilith (1181) — a different thing.
+  Lilith: {
+    name: 'Lilith',
+    tipName: 'Black Moon Lilith',
+    theme: 'Raw, untamed instinct and where you refuse to be tamed.',
+  },
   Chiron: { name: 'Chiron', theme: 'The wounded healer: healing through your own deepest hurt.' },
   Ceres: { name: 'Ceres', theme: 'Nurturing, nourishment, and life’s cycles of loss and return.' },
   Pallas: { name: 'Pallas', theme: 'Strategy, skill, and clear-eyed problem-solving.' },

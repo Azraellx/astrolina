@@ -38,6 +38,9 @@ export function makeEnumLabels(t: TFn) {
   return {
     planet: (p: PlanetName) => t(`planets.${p}.name`),
     planetTheme: (p: PlanetName) => t(`planets.${p}.theme`),
+    /** The Map-filters tip's headline: the display name, except where that is ambiguous —
+     *  Lilith is Black Moon Lilith, not the asteroid Lilith (1181). */
+    planetTipName: (p: PlanetName) => (p === 'Lilith' ? t('planets.Lilith.tipName') : t(`planets.${p}.name`)),
     sign: (index: number) => t(`signs.${SIGN_KEYS[index] ?? 'aries'}`),
 
     theme: (th: Theme) => t(`settings.theme.${th}.label`),

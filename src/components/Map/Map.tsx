@@ -31,6 +31,7 @@ import {
 } from '../CaptureExtras/CaptureExtras';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
+import type { MinorLineProps, MinorZenithProps } from '../../lib/astro/minorLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
 import { aspectBranchReading, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
 import type { ParanProps } from '../../lib/astro/parans';
@@ -47,7 +48,7 @@ import {
 } from '../../lib/theme';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
 import type { MissionEvent } from '../../lib/missions';
-import type { LineCardDistance } from '../../lib/lineCard';
+import { minorMarkHtml, minorNameHtml, type LineCardDistance } from '../../lib/lineCard';
 import {
   isOccluded,
   projectVisible,
@@ -668,6 +669,9 @@ const SNAP_LINE_LAYERS = [
   // filter is off, so snapping honours visibility like the rest. Kept in sync
   // with LINE_HIT_LAYERS (hover tips), which already lists it.
   'star-lines-layer',
+  // Catalog minor-body lines, on the same terms: the line layer is the geometry, the
+  // coin beads along it are not snapped to. Empty source when none are drawn.
+  'minor-lines-layer',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
@@ -814,7 +818,11 @@ function constrainToHoveredLine(
 // circle layers — those are now a hover-only bloom that's transparent at rest, so
 // they're no longer a reliable query target. The stamps are always rendered, and
 // their feature ids/props/geometry match the discs (same source).
-const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer', 'acg-nadir-ov-layer'] as const;
+// The catalog minor bodies' zenith coins join the same hit-test (see MINOR_ZENITH_LAYER
+// below): they hover, name themselves and fly on click like a planet's stamp, but reach
+// that path as their own `kind` of hit, never as a PlanetName.
+const MINOR_ZENITH_LAYER = 'minor-zenith-layer';
+const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer', 'acg-nadir-ov-layer', MINOR_ZENITH_LAYER] as const;
 
 // Each hit-testable stamp layer → the GeoJSON source its features live in (so a
 // hover/click feature-state targets the right source; ids collide across sources).
@@ -823,6 +831,7 @@ const ZENITH_SOURCE_BY_LAYER: Record<string, string> = {
   'acg-zenith-ov-layer': 'acg-zenith-ov',
   'acg-nadir-layer': 'acg-nadir',
   'acg-nadir-ov-layer': 'acg-nadir-ov',
+  [MINOR_ZENITH_LAYER]: 'minor-zenith',
 };
 const ZENITH_HIT_TOLERANCE_PX = 4;
 
@@ -892,11 +901,11 @@ const HOME_MARK_SVG =
   '<circle class="map-home-badge-ring" cx="18.6" cy="4.9" r="4.6"/>' +
   '</svg>';
 
-interface ZenithHit {
+interface ZenithHitBase {
   id: string;
   /** The GeoJSON source the stamp lives in — 'acg-zenith' (natal) or 'acg-zenith-ov'
-   *  (overlay) — so its hover feature-state targets the right one (both number their
-   *  features by planet name, so the ids collide across sources). */
+   *  (overlay) — so its hover feature-state targets the right one (each source keys its
+   *  features by planet name via promoteId, so the ids collide across sources). */
   source: string;
   /** True for an overlay stamp, so the click-to-fly toggle keys it by the overlay's
    *  tag (matching the overlay label) rather than the natal '' prefix. */
@@ -908,10 +917,17 @@ interface ZenithHit {
    *  shown as the hover-tooltip prefix. Absent for the natal chart's own zeniths. A
    *  promoted stamp HAS a tag (display) yet is overlay=false (natal-path routing). */
   tag?: string;
-  planet: PlanetName;
   lng: number;
   lat: number;
 }
+
+// A hit is either a built-in body's stamp (named by PlanetName) or a catalog minor
+// body's coin (named by its `mp:<n>` id, with the raw props for its label). Split by
+// `kind` so a catalog coin can never reach a PlanetName-keyed table: every consumer
+// has to say which one it is handling.
+type ZenithHit =
+  | (ZenithHitBase & { kind: 'planet'; planet: PlanetName })
+  | (ZenithHitBase & { kind: 'minor'; body: string; props: Record<string, unknown> });
 
 function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   const layers = ZENITH_HIT_LAYERS.filter((id) => map.getLayer(id));
@@ -928,12 +944,29 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
+  if (f.layer.id === MINOR_ZENITH_LAYER) {
+    // The source promotes `body` to the feature id (see 'minor-zenith' in
+    // setupCustomLayers), so f.id IS the `mp:<n>` string the hover state keys on.
+    const [mlng, mlat] = f.geometry.coordinates as [number, number];
+    return {
+      kind: 'minor',
+      id: String(f.id),
+      source: ZENITH_SOURCE_BY_LAYER[MINOR_ZENITH_LAYER],
+      overlay: false,
+      nadir: false,
+      body: String(f.id),
+      props: f.properties,
+      lng: mlng,
+      lat: mlat,
+    };
+  }
   const overlay =
     f.layer.id === 'acg-zenith-ov-layer' || f.layer.id === 'acg-nadir-ov-layer';
   const nadir =
     f.layer.id === 'acg-nadir-layer' || f.layer.id === 'acg-nadir-ov-layer';
   const [lng, lat] = f.geometry.coordinates as [number, number];
   return {
+    kind: 'planet',
     id: String(f.id),
     source: ZENITH_SOURCE_BY_LAYER[f.layer.id] ?? 'acg-zenith',
     overlay,
@@ -1001,8 +1034,12 @@ function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
 // Hovering a bare line (not a stamp/dot/badge) shows a .ui-tip naming it — the same
 // label its edge badge carries: planet glyph + name + angle (ACG), "LS" + body
 // (local space), the two-body crossing (parans), or "Ecliptic".
+// Also the set whose click opens an interpretation card (handleClick → lineAtPoint →
+// the lineCard builder), so a layer listed here is clickable too.
 const LINE_HIT_LAYERS = [
   'star-lines-layer',
+  // Catalog minor bodies: named "Eros (433) MC" on hover, and carded on click.
+  'minor-lines-layer',
   'acg-lines-meridian',
   'acg-lines-horizon',
   'acg-lines-meridian-pair',
@@ -1042,7 +1079,7 @@ const POLAR_LAT = 66.5;
 // Whether this hovered line is a rising/setting-type curve, whose reading is
 // ambiguous around a polar crest (meridians are immune).
 function isHorizonLine(layerId: string, props: Record<string, unknown>): boolean {
-  if (layerId.startsWith('acg-lines')) {
+  if (layerId.startsWith('acg-lines') || layerId === 'minor-lines-layer') {
     return props.lineType === 'ASC' || props.lineType === 'DSC';
   }
   if (layerId === 'angle-lines-layer') {
@@ -1128,6 +1165,14 @@ function lineLabelHtml(
       pre +
       `<span class="cross-tip-glyph" style="color:${props.color}">★</span>` +
       `${props.star} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+  } else if (layerId === 'minor-lines-layer') {
+    // Catalog minor body: its mark (own symbol, else the shared diamond — as its map
+    // coin draws it) in the line colour, then "Eros (433)" and the angle, like the
+    // planet rows. Named by number + name, never through props.planet (it has none).
+    row =
+      pre +
+      minorMarkHtml(props, 'cross-tip-glyph') +
+      `${minorNameHtml(props, t)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
     row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
@@ -1300,6 +1345,14 @@ interface MapProps {
   orbBands?: FeatureCollection<Polygon, OrbBandProps> | null;
   /** Fixed-star angle lines (Filters ▸ Fixed Stars); empty when off. */
   starLines?: FeatureCollection<LineString, StarLineProps> | null;
+  /** Catalog minor-body angle lines (lib/astro/minorLines) — a family of their own,
+   *  never mixed into `lines`: their features carry no `planet`, so nothing here that
+   *  reads one (edge badges, crossings, orb bands) can meet them. Empty/absent when
+   *  no catalog body is drawn. */
+  minorLines?: FeatureCollection<LineString, MinorLineProps> | null;
+  /** Their zenith coins, on each body's MC line at latitude = declination. The host
+   *  passes them under the same gates as `zenith` (empty otherwise). */
+  minorZenith?: FeatureCollection<Point, MinorZenithProps> | null;
   /** Night-side wash (Filters ▸ Night Shading); empty when off. */
   nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
@@ -1548,6 +1601,8 @@ interface MapData {
   parans: FeatureCollection<LineString, ParanProps>;
   orbBands?: FeatureCollection<Polygon, OrbBandProps> | null;
   starLines?: FeatureCollection<LineString, StarLineProps> | null;
+  minorLines?: FeatureCollection<LineString, MinorLineProps> | null;
+  minorZenith?: FeatureCollection<Point, MinorZenithProps> | null;
   nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
@@ -2094,6 +2149,69 @@ function setupCustomLayers(
     },
   });
 
+  // ── Catalog minor bodies (lib/astro/minorLines): the numbered minor planets picked
+  // in the Minor bodies window. A source of their own, never merged into acg-lines —
+  // their features carry no `planet`, so the edge badges, the local-space crossings
+  // and every other PlanetName-keyed reader of the planets' source can't meet them.
+  // Stacked above the fixed stars and below the planets, which keep visual priority.
+  //
+  // SOLID, like the planets' own lines, because that is what they are: a real body's
+  // natal angle lines. Dashes are reserved for overlays and dots for the derived
+  // families (aspect/midpoint lines, fixed stars), so either would claim the wrong
+  // kinship. What sets a catalog line apart is weight — a step thinner on every angle,
+  // keeping the planets' order (MC heaviest, then ASC/DSC, then IC, the Vertex axis
+  // lightest) — and its coin beaded along it (below).
+  map.addSource('minor-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'minor-lines-layer',
+    source: 'minor-lines',
+    type: 'line',
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': [
+        'case',
+        ['==', ['get', 'lineType'], 'MC'],
+        1.4,
+        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+        1.1,
+        ['==', ['get', 'lineType'], 'IC'],
+        0.9,
+        0.8, // VX / AVX
+      ],
+      'line-opacity': 1,
+    },
+  });
+  // Rising vs setting, told the way the planets' horizon lines tell it (→ ASC, ← DSC),
+  // a size smaller to match the lighter line. The planets ALSO name the angle on their
+  // edge badge; catalog lines have no badge yet, so without these the two horizon
+  // lines of one body would be indistinguishable short of hovering each.
+  addArrowLayer(map, 'minor-lines-arrows-asc', 'minor-lines', lineTypeIs('ASC'), '→', 12);
+  addArrowLayer(map, 'minor-lines-arrows-dsc', 'minor-lines', lineTypeIs('DSC'), '←', 12);
+  // The body's coin (its own symbol, or the shared diamond, on its palette ring — see
+  // glyphImages' minor coins), beaded along each of its lines. This is what makes a
+  // catalog line identifiable at a glance: a palette colour alone repeats every twelve
+  // bodies, and there is no edge badge to name it. Spaced far wider than the star
+  // sparks (a coin is a label, not a texture) and baked-stamp sprites drawn at 0.4 —
+  // ~12px, enough to read the symbol without crowding the line. Upright (viewport
+  // rotation) for the same reason as the star sparks, and decorative placement, so a
+  // bead never suppresses or collides with anything else. Hit-testing stays on the
+  // line layer; the beads are not a target.
+  map.addLayer({
+    id: 'minor-lines-marks',
+    source: 'minor-lines',
+    type: 'symbol',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': 0.4,
+      'symbol-placement': 'line',
+      'symbol-spacing': 220,
+      'icon-rotation-alignment': 'viewport',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-padding': 0,
+    },
+  });
+
   // lineMetrics:true lets the node-pair layers below colour a single line with a
   // line-gradient (half North Node colour, half South Node colour).
   map.addSource('acg-lines', {
@@ -2378,6 +2496,54 @@ function setupCustomLayers(
     },
   });
 
+  // ── Catalog minor-body zenith coins: each body's sub-point, on its MC line at
+  // latitude = declination, as its baked coin (props.icon) at the planets' stamp size
+  // (the coins are baked on the same canvas, disc and ring as the planet stamps, so
+  // icon-size 1 is the same on-map size). Added BELOW every planet stamp (overlay and
+  // natal, zenith and nadir, all added after this), so a planet wins where the two
+  // coincide — the hit-test takes the topmost, so it wins the hover and click too.
+  //
+  // Interactive like a planet's stamp: it hovers, names itself and flies on click
+  // (zenithAtPoint → the `kind: 'minor'` hit). promoteId is what makes the hover state
+  // land: GeoJSON feature ids reach the tiles only as integers (a string id like
+  // `mp:433` is parsed to NaN on the way and decodes as 0 for every feature), so the
+  // `body` property — the same `mp:<n>` string — is promoted to the id instead.
+  // Feature-state then keys on it directly, one body per id.
+  map.addSource('minor-zenith', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'body',
+  });
+  // Hover-only bloom behind the coin — the planets' acg-zenith-disc treatment, exactly.
+  map.addLayer({
+    id: 'minor-zenith-disc',
+    source: 'minor-zenith',
+    type: 'circle',
+    paint: {
+      'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
+      'circle-radius-transition': { duration: 150, delay: 0 },
+      'circle-color': zenithFill,
+      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+      'circle-opacity-transition': { duration: 150, delay: 0 },
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
+      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
+    },
+  });
+  map.addLayer({
+    id: MINOR_ZENITH_LAYER,
+    source: 'minor-zenith',
+    type: 'symbol',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': 1,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+
   // ── Overlay zenith stamps: the same glyph discs as the natal zeniths below, but
   // for the active overlay's bodies. The App feeds this source points only while
   // Overlay ▸ Display ▸ Zenith is on (empty otherwise, so the stamps vanish). Added
@@ -2386,7 +2552,13 @@ function setupCustomLayers(
   // stamps they hover-grow and fly on click (zenithAtPoint hit-tests this layer too);
   // the click toggle is keyed by the overlay tag, so it's shared with the matching
   // overlay edge label.
-  map.addSource('acg-zenith-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // promoteId: see the natal 'acg-zenith' source below — the same fix, the same reason.
+  map.addSource('acg-zenith-ov', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'planet',
+  });
   map.addLayer({
     id: 'acg-zenith-ov-disc',
     source: 'acg-zenith-ov',
@@ -2426,7 +2598,12 @@ function setupCustomLayers(
   // brightening on hover, hit-tested (ZENITH_HIT_LAYERS) so it hovers + flies like a
   // zenith. Shares the overlay Zeniths/Nadirs toggle. Tucked BENEATH the overlay
   // zenith disc so a nadir coinciding with another overlay body's zenith draws under.
-  map.addSource('acg-nadir-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addSource('acg-nadir-ov', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'planet',
+  });
   map.addLayer(
     {
       id: 'acg-nadir-ov-layer',
@@ -2449,7 +2626,21 @@ function setupCustomLayers(
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
-  map.addSource('acg-zenith', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  //
+  // promoteId makes the hover bloom actually land. The stamps are named by planet, and
+  // MapLibre keeps a GeoJSON feature id only when it is a number (or a numeric string):
+  // a name like 'Sun' reaches the tiles as 0 for EVERY stamp, so setFeatureState({id:
+  // 'Sun'}) matched nothing and the bloom below never showed, on any stamp, while the
+  // tooltip and click (which read properties, not the id) worked as if nothing were
+  // wrong. Promoting `planet` makes the name the id. One stamp per body per source, so
+  // it is unique within each; the four stamp sources (natal/overlay × zenith/nadir)
+  // each promote it, and the catalog coins promote `body` the same way.
+  map.addSource('acg-zenith', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'planet',
+  });
   // The disc + ring now live BAKED in the stamp sprite (acg-zenith-layer below), so
   // each stamp draws as one overlap-stacking coin. This circle is the hover-grow
   // ONLY: transparent at rest, on hover it blooms a larger ring out from BEHIND the
@@ -2502,7 +2693,13 @@ function setupCustomLayers(
   // unless the Zeniths/Nadirs filter is on. Inserted BENEATH the natal zenith stamps
   // (beforeId): a body's nadir is 180° from its OWN zenith, but it CAN coincide with
   // another body's zenith (an opposition) — drawing under keeps the zenith on top.
-  map.addSource('acg-nadir', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // promoteId: see 'acg-zenith' above.
+  map.addSource('acg-nadir', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'planet',
+  });
   map.addLayer(
     {
       id: 'acg-nadir-layer',
@@ -2594,6 +2791,9 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOn
   pushGated('parans', data.parans);
   pushGated('orb-bands', data.orbBands ?? EMPTY_DATA);
   pushGated('star-lines', data.starLines ?? EMPTY_DATA);
+  // Catalog minor bodies: natal-frame linework, so the LS-only export empties them too.
+  pushGated('minor-lines', data.minorLines ?? EMPTY_DATA);
+  pushGated('minor-zenith', data.minorZenith ?? EMPTY_DATA);
   pushGated('night-shade', data.nightShade ?? EMPTY_DATA);
   push('local-space', data.localSpace);
   pushGated('acg-ls-cross', data.localSpaceCross);
@@ -2877,6 +3077,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   parans,
   orbBands,
   starLines,
+  minorLines,
+  minorZenith,
   nightShade,
   localSpace,
   localSpaceCross,
@@ -3755,7 +3957,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // through a ref (refreshed in the post-commit effect below, beside onRightClick).
   const onArrivalClickRef = useRef(onArrivalClick);
   const onHomeClickRef = useRef(onHomeClick);
-  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
   // edge-badge work only during an actual spin-drag (whose per-frame setCenter would
@@ -3837,7 +4039,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onRightClickRef.current = onRightClick;
     onArrivalClickRef.current = onArrivalClick;
     onHomeClickRef.current = onHomeClick;
-    dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
+    dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
     spotlightAimingRef.current = !!spotlightAiming;
@@ -3853,7 +4055,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Natal + overlay line collections whose features can open an interpretation card. Only
     // their geometry matters here; nullable/absent ones are dropped.
     const lineFcs: (ClickableLineFC | null | undefined)[] = [
-      lines, angleLines, parans, localSpace, starLines, ecliptic,
+      lines, angleLines, parans, localSpace, starLines, minorLines, ecliptic,
       overlay?.lines, overlay?.parans, overlay?.localSpace, overlay?.ecliptic,
     ];
     lineGeomRef.current = lineFcs.filter((fc): fc is ClickableLineFC => !!fc);
@@ -4696,6 +4898,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       arrivalMarkerRef.current = null;
       skyStampRef.current?.remove();
       skyStampRef.current = null;
+      // The same hazard in a flag: a data push deferred to `idle` on THIS map is
+      // registered with `once`, and a removed map never fires it — so a flag left set
+      // here refuses every later defer on the next map, and any data change that lands
+      // while its style is busy is dropped until some unrelated change finds it idle.
+      // StrictMode's mount → cleanup → mount hit it on every dev load (a line switched
+      // on stayed undrawn until the next toggle, because its ephemeris file arrived a
+      // moment after the first push).
+      idleDeferRef.current = false;
       map.remove();
       mapRef.current = null;
     };
@@ -4902,7 +5112,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // tag (e.g. "Tr Moon") so its tooltip is distinguishable from the natal body. The
       // tag rides on the zenith feature, so it shows on promoted (natal-path) stamps too.
       const tag = zen.tag ?? '';
-      const base = labels.planet(zen.planet) ?? zen.planet;
+      // A catalog coin names itself "Eros (433)" (escaped — a catalog name is the one
+      // string here that isn't ours); a planet stamp through the enum labels.
+      const base =
+        zen.kind === 'minor' ? minorNameHtml(zen.props, t) : (labels.planet(zen.planet) ?? zen.planet);
       const name = tag ? `${tag} ${base}` : base;
       // Nadir stamps name themselves "underfoot"; zeniths "overhead".
       const titleKey = zen.nadir ? 'map.nadirTitle' : 'map.zenithTitle';
@@ -5053,6 +5266,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // double-tap now, so a plain click no longer relocates the chart.
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
+        if (zen.kind === 'minor') {
+          // A catalog coin keys by its `mp:<n>` id — natal-only, no label badge to
+          // share a toggle with, and an id no PlanetName can collide with.
+          flyToZenith(zenithKey('', zen.body), zen.lng, zen.lat);
+          return;
+        }
         // Key by the routing prefix (the tag for overlay-path stamps, '' otherwise) so
         // the stamp shares one toggle with its label — a promoted stamp shares its tag
         // but keys '' like its natal-source label.
@@ -5655,7 +5874,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // App keeps the whole line pipeline resampled at natal+Δt (via linePositions), so the
   // layers here are already mutually aligned — we just rotate them as one. Empty layers
   // translate to empty — cheap. Reads refs only, so it's stable.
-  // `mode` for the heavy SECONDARY layers (everything but the cage + parans): 'translate'
+  // `mode` for the heavy SECONDARY layers (everything but the cage — the planets' and
+  // the catalog minor bodies' angle lines — and the parans): 'translate'
   // keeps them pinned (full, accurate); 'empty' hides them; 'skip' leaves them as-is.
   // While a spin-drag is in motion we drop them to 'empty'/'skip' so only the light
   // cage + paran parallels re-tile per frame — each setData round-trips through the
@@ -5678,6 +5898,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // (the daily rotation is those pairings' time dimension) — so they must not
       // vanish with the heavy layers mid-drag.
       set('parans', d.parans);
+      // Catalog minor-body lines ARE cage: natal angle lines of real bodies, resampled
+      // at natal+Δt with the planets' (App's minor positions follow the same moment), so
+      // they hold their screen position through a drag rather than blinking out with the
+      // secondary layers. Capped at 20 bodies, their per-frame re-tile is of the order
+      // of the planets' own; empty (the common case) costs nothing.
+      set('minor-lines', d.minorLines);
       if (mode === 'skip') return;
       // 'empty' → undefined, which `set` resolves to the empty collection (hides it).
       const sec = (id: string, fc: FeatureCollection | null | undefined) =>
@@ -5690,6 +5916,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       sec('acg-ls-cross', d.localSpaceCross);
       sec('acg-zenith', d.zenith);
       sec('acg-nadir', d.nadir);
+      // …and their zenith coins travel with the planets' stamps: hidden mid-drag,
+      // restored translated when the spin settles.
+      sec('minor-zenith', d.minorZenith);
       sec('ecliptic', d.ecliptic);
       sec('eclipse', d.eclipse);
       // The overlay (transit/progression) layers are NOT pinned to the natal cage —
@@ -6004,7 +6233,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // re-tile just those.
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
-        pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
+        pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
         computeBadges();
       }
     } else {
@@ -6029,7 +6258,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         }
       });
     }
-  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
+  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
 
   // Toggle basemap road / river / foliage visibility — and the whole-basemap blank
   // (Local Space ▸ "Hide map") — live (theme reloads reapply via the style.load

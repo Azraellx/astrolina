@@ -38,6 +38,25 @@ export const PLANET_GLYPHS: Record<PlanetName, string> = {
   // Bundled from Noto Sans Math (subset-font.sh).
 };
 
+// Catalog minor bodies that HAVE a Unicode astrological symbol, by MPC number — all
+// from Noto Sans Symbols 2 (scripts/subset-font.sh). Every other catalog body draws
+// as a plain coin in its palette colour (see minorLineColor). Deliberately absent:
+// 26 Proserpina — U+2BD8 is the hypothetical planet of that name, not the asteroid.
+// Eris has two encoded forms (U+2BF0 / U+2BF1); Form One is used here.
+export const MINOR_GLYPHS: ReadonlyMap<number, string> = new Map([
+  [5, '⯙' + VS_TEXT], // U+2BD9 ASTRAEA
+  [10, '⯚' + VS_TEXT], // U+2BDA HYGIEA
+  [5145, '⯛' + VS_TEXT], // U+2BDB PHOLUS
+  [7066, '⯜' + VS_TEXT], // U+2BDC NESSUS
+  [136199, '⯰' + VS_TEXT], // U+2BF0 ERIS FORM ONE
+  [90377, '⯲' + VS_TEXT], // U+2BF2 SEDNA
+  [136108, String.fromCodePoint(0x1f77b) + VS_TEXT], // HAUMEA
+  [136472, String.fromCodePoint(0x1f77c) + VS_TEXT], // MAKEMAKE
+  [225088, String.fromCodePoint(0x1f77d) + VS_TEXT], // GONGGONG
+  [50000, String.fromCodePoint(0x1f77e) + VS_TEXT], // QUAOAR
+  [90482, String.fromCodePoint(0x1f77f) + VS_TEXT], // ORCUS
+]);
+
 // The 12 zodiac signs, indexed 0 (Aries, U+2648) … 11 (Pisces, U+2653).
 export const SIGN_GLYPHS: string[] = Array.from(
   { length: 12 },

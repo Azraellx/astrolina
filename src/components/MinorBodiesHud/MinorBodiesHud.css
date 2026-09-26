@@ -1,0 +1,403 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* The Minor bodies window. The frosted panel is the shared .timeline-hud chrome,
+   the header / eye toggles / notes are the floating windows' .location-* set, the
+   section headings are the Capture window's, the search box, scope chips, row
+   actions and "Show more" link are the place search's (.psf-*), and the Hide all
+   switch is the sidebar's (.es-advanced-toggle) — all imported by the component.
+   This file only adds what is the window's own: its widths, the fixed top above a
+   scrolling list, the list's own column, and the catalog rows (eye + mark + name +
+   a status line, with actions beside rather than inside the toggle). */
+.minor-bodies-hud {
+  /* KEEP IN STEP with WIDTH / SPLIT_WIDTH in MinorBodiesHud.tsx, which keeps the
+     window on screen as it widens. */
+  width: 300px;
+  /* A phone narrower than the window: keep an 8px margin either side rather than
+     letting the frame run off the screen edge. */
+  max-width: min(300px, calc(100vw - 16px));
+  /* The list's column opening (or closing) beside the search: the frame widens
+     rather than jumping, clipping the column in as it goes, and a window shifted
+     left to keep that column on screen slides with it. Collapsing to the title
+     bar doesn't animate (max-content can't be interpolated). */
+  transition:
+    width var(--dur-move) var(--ease-settle),
+    left var(--dur-move) var(--ease-settle);
+}
+/* A drag places the window every frame — easing it would make the frame trail
+   the pointer. */
+.minor-bodies-hud.thud-dragging {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .minor-bodies-hud {
+    transition: none;
+  }
+}
+/* Two columns: the first exactly as wide as the one-column body (300 less the
+   frame's 1px border and the section's 8px padding, each side: 282), then the
+   list's (580 → 562 inside; 282 + 8 gap + 272). Only set while the viewport holds
+   it with room to spare — the component decides that. */
+.minor-bodies-hud.is-split {
+  width: 580px;
+  max-width: calc(100vw - 16px);
+}
+/* The header already draws the divider under the title bar. */
+.minor-bodies-hud .location-ls {
+  border-top: none;
+}
+
+/* A column: the search on top, a scrolling list below. One of them in the narrow
+   layout (the whole body), two side by side once the list has its own. */
+.mbh-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.minor-bodies-hud.is-split .mbh {
+  flex-direction: row;
+  gap: 0;
+}
+/* Both widths fixed, so while the frame widens the list column is clipped into
+   view rather than squeezed and re-wrapped. */
+.minor-bodies-hud.is-split .mbh-col-main {
+  flex: 0 0 282px;
+}
+/* A height rather than a cap: the list column takes its height from this one
+   (below), so the window keeps ONE height while results come and go as the
+   reader types — the same height the one-column list tops out at. */
+.minor-bodies-hud.is-split .mbh-col-main .mbh-scroll {
+  height: min(52vh, 440px);
+}
+.mbh-col-list {
+  position: relative;
+  flex: 0 0 272px;
+  margin-left: 8px;
+  border-left: 1px solid rgba(var(--tint), 0.08);
+}
+/* Out of flow, so the list — up to 200 rows — never sets the window's height: the
+   column stretches to the first one's, and its rows scroll inside it. */
+.mbh-col-fill {
+  position: absolute;
+  inset: 0 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mbh-col-list .mbh-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  /* The column's heading already separates the rows from what's above them. */
+  border-top: none;
+  padding-top: 2px;
+}
+
+/* The fixed top — search, its scope row, notes. Stays put while the list scrolls. */
+.mbh-top {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 6px;
+}
+.mbh-top .psf-inputrow {
+  margin: 0 2px;
+}
+.mbh-top .psf-note,
+.mbh-col-list .psf-note {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mbh-note {
+  margin: 0;
+  padding: 0 4px;
+}
+/* Under the search box: the scope chips (only when a downstream build registered
+   a source) on the left, the Hide all switch right-aligned — alone on the row in
+   the open core. A row of its own rather than sharing the input's, as the place
+   search does: the window is narrow and the input is the thing to keep wide. */
+.mbh-scoperow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 2px;
+}
+.mbh-hideall {
+  flex-shrink: 0;
+  margin-left: auto;
+  /* Room for the focus ring, which the sidebar's bare switch doesn't draw. */
+  padding: 2px 3px 2px 5px;
+  border-radius: 999px;
+}
+
+/* Everything below the top scrolls as ONE list — the bundled set alone is ~40 rows,
+   and a search a page at a time. Capped by the viewport as well as by a fixed
+   height, so the window never outgrows a short screen. */
+.mbh-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(52vh, 440px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for a classic scrollbar without it sitting on the row actions. */
+  margin-right: -4px;
+  padding: 4px 4px 0 0;
+  border-top: 1px solid rgba(var(--tint), 0.08);
+}
+/* While results page themselves in as the reader scrolls (the component's
+   `pagedScroll`), the browser's scroll anchoring is off. Measured in Chrome: with it
+   on, a page appended while the scroller sat at its end kept the scroller pinned to
+   the new end, so the "Show more" sentinel stayed in view and paged again, and again
+   — one query change ran to four pages by itself. Nothing above the viewport can
+   change height in this state (the main asteroids and result rows are fixed; the
+   list is in its own column or empty), so anchoring had nothing to protect here. */
+.mbh-scroll.is-paged {
+  overflow-anchor: none;
+}
+.mbh-head {
+  line-height: 1.3;
+}
+/* The bundled set's class subheadings (Centaurs, Main belt…) — quieter than the
+   section heading above them. */
+.mbh-group-head {
+  padding: 4px 8px 1px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* ── The five main asteroids ─────────────────────────────────────────────────
+   Two-up, like Map filters' grid, so the five take three short rows. */
+.mbh-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mbh-main-grid .location-ls-toggle {
+  gap: 6px;
+  padding: 5px 6px;
+}
+.mbh-main-grid .location-ls-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mbh-main-glyph {
+  flex-shrink: 0;
+}
+/* Glyph + name on a main asteroid's tip title (the Map-filters tip's shape). */
+.mbh-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Catalog rows ────────────────────────────────────────────────────────────
+   The LI is the row pill: it paints the hover, so the toggle and its actions light
+   up as one row. */
+.mbh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mbh-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+.mbh-item:hover,
+.mbh-item:focus-within {
+  background: rgba(var(--tint), 0.07);
+}
+
+.mbh-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mbh-toggle:hover {
+  color: var(--text-strong);
+}
+/* Off rows dim the TOGGLE only — the row's actions (remove) stay at full strength. */
+.mbh-toggle.off {
+  opacity: 0.55;
+}
+/* Steady brand accent on a drawn row's eye, as on every eye toggle in the floating
+   windows (never the map pin-state accent). */
+.mbh-toggle.on .location-ls-eye {
+  color: var(--accent-brand);
+}
+
+/* A body's mark in its line colour — its own glyph, or a small diamond. Fixed width
+   so every name starts on one left edge. */
+.mbh-mark {
+  flex-shrink: 0;
+  width: 14px;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+}
+.mbh-diamond {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+}
+.mbh-diamond > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.mbh-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.mbh-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mbh-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Why a switched-on body isn't drawn. Wraps (it's a sentence), and --text-muted
+   rather than the dimmer tiers so it clears AA on the parchment theme at 10.5px —
+   the place search's row sub-label makes the same call. */
+.mbh-sub {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.mbh-sub.is-failed {
+  color: var(--danger);
+}
+/* A held body's tier badge, in the gated rung's colour (the scope chip's pill). */
+.mbh-pill {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(var(--gated-rgb), 0.9);
+  color: #fff;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+/* Row actions, beside the toggle. Quiet until the row is hovered or focused; a
+   failed row keeps its retry in view, and an armed remove keeps its confirm pair.
+   Touch has no hover, so coarse pointers always see them. */
+.mbh-acts {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding-right: 3px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.mbh-item:hover .mbh-acts,
+.mbh-item:focus-within .mbh-acts,
+.mbh-acts.is-confirm,
+.mbh-acts.has-retry {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .mbh-acts {
+    opacity: 1;
+  }
+}
+.mbh-retry {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mbh-retry:hover {
+  background: rgba(var(--accent-rgb), 0.26);
+}
+
+/* A search hit that is really a built-in body: a pointer to its own row, never a
+   second copy. Pluto's is plain text (this window never toggles it); a main
+   asteroid's moves focus to its switch, so it looks like a quiet link. */
+.mbh-pointer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+button.mbh-pointer {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.mbh-pointer:hover {
+  background: rgba(var(--tint), 0.07);
+  color: var(--text-strong);
+}
+
+/* Keyboard focus: a visible ring on every control in the list (the shared toggles
+   carry no ring of their own, and this window is fully keyboard-reachable). */
+.minor-bodies-hud .mbh-toggle:focus-visible,
+.minor-bodies-hud .location-ls-toggle:focus-visible,
+.minor-bodies-hud .mbh-pointer:focus-visible,
+.minor-bodies-hud .mbh-retry:focus-visible,
+.minor-bodies-hud .mbh-hideall:focus-visible,
+.minor-bodies-hud .psf-more:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.55);
+  outline-offset: -2px;
+}

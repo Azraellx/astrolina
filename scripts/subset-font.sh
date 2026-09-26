@@ -44,8 +44,12 @@ SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,1F701-1F704,FE0E
 # From Noto Sans Symbols 2: Pluto Form Two (U+2BD3), the square (U+25A1) and trine
 # (U+25B3) aspect shapes (ASPECT_GLYPHS), and the three MODALITY_GLYPHS — heavy
 # cross (U+271A), black diamond (U+25C6), black medium square (U+25FC) — Geometric
-# Shapes and Dingbats live only here.
-SYM2_UNICODES="25A1,25B3,25C6,25FC,271A,2BD3"
+# Shapes and Dingbats live only here. Also the catalog minor bodies' MINOR_GLYPHS:
+# Astraea/Hygiea/Pholus/Nessus (U+2BD9–2BDC), Eris forms one and two + Sedna
+# (U+2BF0–2BF2), and the Unicode 15 dwarf-planet symbols Haumea/Makemake/Gonggong/
+# Quaoar/Orcus (U+1F77B–1F77F) — every one of them is in THIS font and in neither of
+# the other two (checked against the fonts' character maps, 2026-09-25).
+SYM2_UNICODES="25A1,25B3,25C6,25FC,271A,2BD3,2BD9-2BDC,2BF0-2BF2,1F77B-1F77F"
 # From Noto Sans Math (the only bundled source carrying them): the Sun (U+2609) and
 # the Part of Fortune (U+2297, CIRCLED TIMES — the X sits inside the circle, the
 # conventional Lot symbol; U+29BB's superimposed X spills past the rim). Neither is

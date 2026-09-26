@@ -33,6 +33,7 @@ import type {
   LineSystem,
 } from '../ephemeris';
 import type { ZodiacMode } from '../astro/ayanamsa';
+import type { MinorRow } from '../minorBodies/status';
 
 /** The COMPLETE line set — every planet, line type, and family (natal angular + aspects +
  *  midpoints + parans + star lines + local space, and the active overlay's equivalents) — with the
@@ -58,6 +59,13 @@ export interface AllLines {
   natalAngleLines: FeatureCollection;
   natalParans: FeatureCollection;
   natalStarLines: FeatureCollection;
+  /** Catalog minor-body angle lines (lib/minorBodies/), every line type, for the bodies
+   *  the reader has switched on and that are loaded — "every catalog body" is unbounded,
+   *  so this is the complete set of the ones in play. Features are `kind: 'minor'` and
+   *  carry NO `planet` key (see lib/astro/minorLines.ts). OPTIONAL, and treated as EMPTY
+   *  when absent: a consumer that builds its own AllLines without it (for a spotlight,
+   *  say) reveals no catalog lines rather than falling back to the drawn ones. */
+  minorLines?: FeatureCollection;
 }
 
 /** A point-and-radius "spotlight" on the linework — a neutral view treatment, not tied to any
@@ -206,8 +214,25 @@ export interface MapExtensionContext {
   primaryRate: PrimaryRate;
   userPrimaryRate: number;
   /** Effective linework the map is actually drawing (promotion / eclipse-toggle
-   *  resolved), so a report can never reference a line that isn't on screen. */
+   *  resolved), so a report can never reference a line that isn't on screen.
+   *  The built-in bodies only: catalog minor bodies' lines are in {@link minorLines},
+   *  never here — a consumer that reads only this set must say so while
+   *  {@link minorBodies} has any shown (CLAUDE.md rule 5). */
   lines: FeatureCollection;
+  /** Effective drawn catalog minor-body lines (`kind: 'minor'`, keyed by `number`, no
+   *  `planet` key) — drawn exactly when the natal planet lines are. Absent in builds
+   *  that predate catalog bodies; treat absent as empty. */
+  minorLines?: FeatureCollection;
+  /** The reader's catalog minor bodies and what each is doing right now (shown, held,
+   *  loading, outside its file's dates, …) — derived, never stored. At the same level
+   *  as {@link minorLines}: a body whose lines that set doesn't carry (no chart, no birth
+   *  time, an Angles filter showing none of the four angles, the eclipse clean-up, a
+   *  promoted overlay) reads
+   *  'undrawn', never 'shown'; the draw-only Natal Lines hide leaves it 'shown', as it
+   *  leaves {@link lines} populated. A surface that doesn't include catalog bodies
+   *  checks this for any `status.kind === 'shown'` and, if so, says it isn't counting
+   *  them. */
+  minorBodies?: readonly MinorRow[];
   angleLines: FeatureCollection;
   parans: FeatureCollection;
   /** Fixed-star × planet parans (the Brady-school list). Computed but never drawn
@@ -293,12 +318,21 @@ export interface MapExtensionContext {
    *  turning it OFF also closes any advanced-only feature that's active. */
   setAdvancedMode: (on: boolean) => void;
   /** Force a BUILT-IN view window open by id — the built-ins' twin of
-   *  {@link openExtension} ('charts' is the chart browser). Idempotent. An
-   *  advanced-gated view ('skyTimes'/'localSpace') opens regardless of the Advanced
-   *  switch — flip {@link setAdvancedMode} first so the menus agree — and a view
-   *  lock doesn't block the state flip: the window appears once the lock clears. */
+   *  {@link openExtension} ('charts' is the chart browser). Idempotent. 'skyTimes' and
+   *  'localSpace' open regardless of the Advanced switch — flip {@link setAdvancedMode}
+   *  first so the menus agree. 'minorBodies' REQUIRES Advanced: its window renders only
+   *  with Advanced on, so call {@link setAdvancedMode}(true) first (earlier in the same
+   *  handler is enough); with Advanced off the call does nothing and writes nothing. A
+   *  view lock doesn't block the state flip: the window appears once the lock clears. */
   openView: (
-    id: 'coordinates' | 'minimap' | 'teleport' | 'skyTimes' | 'localSpace' | 'charts',
+    id:
+      | 'coordinates'
+      | 'minimap'
+      | 'teleport'
+      | 'skyTimes'
+      | 'localSpace'
+      | 'charts'
+      | 'minorBodies',
   ) => void;
   /** Open the settings sidebar, optionally at an accordion section (a
    *  SidebarSection id, e.g. 'filters' — typed as plain string so this module

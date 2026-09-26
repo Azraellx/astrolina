@@ -836,6 +836,45 @@ html[data-mapstate='natal-pinned'] .sidebar {
   text-overflow: ellipsis;
 }
 
+/* "More" — the sixth cell under Minor bodies, which opens the Minor bodies window.
+   It opens a window rather than drawing a body, so it never takes the grid's .off
+   dimming (a closed window is its normal state, not a hidden body): it rests at full
+   strength with a hairline edge that marks it as a button among switches, and lights
+   with the accent while its window is open. Unavailable (Advanced off) it takes the
+   shared .ui-inert treatment like any other cell. */
+.planet-toggle.minor-more {
+  border-color: rgba(var(--tint), 0.1);
+}
+.planet-toggle.minor-more.is-open {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.planet-toggle.minor-more.ui-inert {
+  border-color: transparent;
+}
+.minor-more-icon {
+  color: var(--text-muted);
+}
+.planet-toggle.minor-more.is-open .minor-more-icon {
+  color: var(--accent);
+}
+/* "+3" drawn / "2 held": small counts after the label. The label ellipsizes first,
+   so the counts — the part that changes — stay readable in a narrow cell. */
+.minor-more-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(var(--tint), 0.1);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.minor-more-badge.is-held {
+  background: rgba(var(--gated-rgb), 0.18);
+  color: var(--text);
+}
+
 .sidebar .line-type-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

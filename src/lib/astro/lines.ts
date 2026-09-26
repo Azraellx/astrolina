@@ -142,8 +142,8 @@ function horizonByLatitude(
 // (H=0) and nadir (H=±π) points exactly, so ASC and DSC meet with no gap. Each half is
 // monotonic in latitude, so clipping to ±85° leaves one contiguous on-map run.
 // Geometry-only horizon trace for any equatorial position (the fixed-star lines
-// reuse it with their own feature properties); horizonLine below wraps it in the
-// planet-labeled feature.
+// reuse it with their own feature properties; angleLineRuns below uses it for the
+// planets and the catalog minor bodies alike).
 export function traceHorizonCoords(
   p: { ra: number; dec: number },
   meridianLng: MeridianLng,
@@ -188,14 +188,6 @@ export function traceHorizonCoords(
   }
   // One continuous run (longitudes may go past ±180 across the antimeridian).
   return unwrapLongitudes(coords);
-}
-
-function horizonLine(
-  p: PlanetPosition,
-  meridianLng: MeridianLng,
-  side: 'ASC' | 'DSC',
-): Feature<LineString, LineProps>[] {
-  return [makeFeature(traceHorizonCoords(p, meridianLng, side), p.name, side)];
 }
 
 // The Vertex-axis curve: every place where the body stands exactly on the
@@ -274,6 +266,36 @@ export function meridianCoords(lng: number): [number, number][] {
 
 export { normLng };
 
+/**
+ * The angle-line GEOMETRY for one equatorial position — MC, IC, ASC, DSC, then the
+ * Vertex-axis runs — in the order every line family emits them. Shared by the
+ * planet lines below and the catalog minor-body lines (minorLines.ts), so the two
+ * families can never be drawn by different geometry.
+ */
+export function angleLineRuns(
+  p: { ra: number; dec: number },
+  meridianLng: MeridianLng,
+): { lineType: LineType; coords: [number, number][] }[] {
+  // Celestial: meridianLng(ra) = ra − GMST. Geodetic: = the body's zodiacal
+  // longitude (eclipticLonOfRA). IC = MC + 180 holds in both (antipode-preserving).
+  const lngMC = normLng(meridianLng(p.ra));
+  const lngIC = normLng(lngMC + 180);
+  const runs: { lineType: LineType; coords: [number, number][] }[] = [
+    { lineType: 'MC', coords: meridianCoords(lngMC) },
+    { lineType: 'IC', coords: meridianCoords(lngIC) },
+    { lineType: 'ASC', coords: traceHorizonCoords(p, meridianLng, 'ASC') },
+    { lineType: 'DSC', coords: traceHorizonCoords(p, meridianLng, 'DSC') },
+  ];
+  // The Vertex axis (two runs per side — see tracePrimeVerticalCoords);
+  // hidden by default via the line-type filters.
+  for (const side of ['VX', 'AVX'] as const) {
+    for (const run of tracePrimeVerticalCoords(p, meridianLng, side)) {
+      runs.push({ lineType: side, coords: run });
+    }
+  }
+  return runs;
+}
+
 export function generateLines(
   positions: PlanetPosition[],
   meridianLng: MeridianLng,
@@ -281,20 +303,8 @@ export function generateLines(
   const features: Feature<LineString, LineProps>[] = [];
 
   for (const p of positions) {
-    // Celestial: meridianLng(ra) = ra − GMST. Geodetic: = the body's zodiacal
-    // longitude (eclipticLonOfRA). IC = MC + 180 holds in both (antipode-preserving).
-    const lngMC = normLng(meridianLng(p.ra));
-    const lngIC = normLng(lngMC + 180);
-    features.push(makeFeature(meridianCoords(lngMC), p.name, 'MC'));
-    features.push(makeFeature(meridianCoords(lngIC), p.name, 'IC'));
-    features.push(...horizonLine(p, meridianLng, 'ASC'));
-    features.push(...horizonLine(p, meridianLng, 'DSC'));
-    // The Vertex axis (two runs per side — see tracePrimeVerticalCoords);
-    // hidden by default via the line-type filters.
-    for (const side of ['VX', 'AVX'] as const) {
-      for (const run of tracePrimeVerticalCoords(p, meridianLng, side)) {
-        features.push(makeFeature(run, p.name, side));
-      }
+    for (const run of angleLineRuns(p, meridianLng)) {
+      features.push(makeFeature(run.coords, p.name, run.lineType));
     }
   }
 
@@ -324,7 +334,9 @@ export function generateZenithStamps(
     .filter((p) => !NODE_NAMES.includes(p.name))
     .map((p) => ({
       type: 'Feature',
-      // Stable per-body id so the map can drive a hover feature-state on each stamp.
+      // Per-body id. NOT what the map's hover state keys on: MapLibre keeps only a
+      // numeric feature id, so the stamp sources promote the `planet` property to the id
+      // instead (promoteId in Map.tsx). Kept for any consumer reading the collection.
       id: p.name,
       properties: { planet: p.name, color: PLANET_COLORS[p.name] },
       geometry: {
@@ -339,7 +351,8 @@ export function generateZenithStamps(
 // UNDERFOOT (altitude −90°) — the antipode of its zenith. It sits on the planet's IC
 // line, at the antipodal longitude (zenith + 180°) and the negated latitude
 // (−declination). A pure transform of the zenith stamps, so it inherits their ids,
-// planet, and colour (the on-map stamp reuses the same baked glyph coin).
+// planet (which the map promotes to the hover id), and colour (the on-map stamp
+// reuses the same baked glyph coin).
 export function antipodeStamps(
   fc: FeatureCollection<Point, ZenithProps>,
 ): FeatureCollection<Point, ZenithProps> {

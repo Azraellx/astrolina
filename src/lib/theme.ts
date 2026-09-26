@@ -120,6 +120,40 @@ export const STAR_LINE_COLORS: Record<Theme, string> = {
   vintage: '#7e6118',
 };
 
+// Catalog minor bodies (433 Eros, 136199 Eris, …) draw in a small palette of their
+// own rather than the per-body planet colours — there are thousands of them. A
+// body's colour is picked from its NUMBER (minorLineColor below), so it is the same
+// every session and on every surface, and doesn't shift when other bodies are
+// toggled. Per theme like the star tint: the pale hues that read on the dark
+// basemap wash out on Glass/Earth, which get deeper versions of the same twelve.
+export const MINOR_LINE_PALETTE: Record<Theme, readonly string[]> = {
+  dark: [
+    '#e98aa0', '#7fc8e8', '#b9d96f', '#d4a2f2', '#f1b86e', '#6fdcc0',
+    '#e6dc74', '#9eabff', '#ff9f80', '#86d492', '#d98bd8', '#94d2ff',
+  ],
+  glass: [
+    '#b0405c', '#1f76a6', '#5a861f', '#8540ad', '#b0620f', '#12806a',
+    '#857411', '#3f4fbf', '#be4d28', '#2e843f', '#9e3a97', '#27699c',
+  ],
+  vintage: [
+    '#a8384f', '#1c6c98', '#527b1b', '#7b3aa0', '#a45a0d', '#107662',
+    '#7a6a0f', '#3a47ad', '#b04622', '#2a7839', '#91358a', '#236190',
+  ],
+};
+
+/** The palette slot a catalog body draws in — stable per MPC number. A
+ *  multiplicative hash rather than `n % 12`, so neighbours in the catalog (which
+ *  are often shown together: 5 Astraea … 10 Hygiea) don't march through the
+ *  palette in order and so collide less by pattern. */
+export function minorPaletteSlot(n: number): number {
+  const len = MINOR_LINE_PALETTE.dark.length;
+  return (Math.imul(n, 2654435761) >>> 0) % len;
+}
+
+export function minorLineColor(n: number, theme: Theme): string {
+  return MINOR_LINE_PALETTE[theme][minorPaletteSlot(n)];
+}
+
 // Halo behind the eclipse magnitude-isoline percentage labels (e.g. "50%"), whose
 // digits draw in the quiet isoline tint (eclipses.ts PATH_COLORS.iso). Glass pairs
 // its medium-slate digits with a white halo and Dark pairs light-slate digits with a

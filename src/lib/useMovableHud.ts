@@ -99,6 +99,12 @@ export interface MovableHudOptions {
    *  in-memory only: every mount starts at `initial()` and dragging never survives a
    *  reopen — so the window appears in a consistent spot each time. */
   persist?: boolean;
+  /** For a window that widens by itself and keeps the wider frame on screen with a
+   *  shift of its own, derived at render (the Minor bodies window's list column):
+   *  the width the hook's OWN re-clamps (mount, resize, a docked panel's column)
+   *  keep on screen — never more than the rendered width — so they save the spot
+   *  the narrow frame fits, not the shifted one. A drag measures the rendered frame. */
+  clampWidth?: number;
 }
 
 export function useMovableHud(
@@ -142,15 +148,17 @@ export function useMovableHud(
   // RESERVED column changes (its open/close/resize re-clamps every floated window
   // into the remaining map column, like the anchored chrome shifting with it).
   const docked = pos === null;
+  const clampWidth = opts.clampWidth;
   useEffect(() => {
     if (docked) return;
     const onResize = () => {
       const el = barRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
+      const w = clampWidth === undefined ? r.width : Math.min(r.width, clampWidth);
       setPos((p) => {
         if (!p) return p;
-        const c = clampPos(p.x, p.y, r.width, r.height);
+        const c = clampPos(p.x, p.y, w, r.height);
         return c.x === p.x && c.y === p.y ? p : c; // no-op when already on-screen
       });
     };
@@ -161,7 +169,7 @@ export function useMovableHud(
       window.removeEventListener('resize', onResize);
       unsubscribe();
     };
-  }, [docked, barRef]);
+  }, [docked, barRef, clampWidth]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return; // primary button only

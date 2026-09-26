@@ -29,6 +29,7 @@ import {
 // under Vite chunking + static hosting).
 import wasmUrl from '@swisseph/browser/dist/swisseph.wasm?url';
 import type { BirthData } from './birthData';
+import { SEAS_MINOR_ID } from './minorBodies/ids';
 // From the adapter module, NOT eclipsePath — a static import of eclipsePath
 // here would hoist the whole Besselian-fitting module into the entry bundle,
 // defeating the lazy eclipses chunk (see eclipseAdapter.ts).
@@ -342,6 +343,19 @@ function eph(): SwissEphemeris {
   return swe;
 }
 
+/**
+ * Hand ephemeris files to the engine's virtual filesystem, each under its bare
+ * `name` (the engine finds a numbered asteroid's file there by name — see
+ * lib/minorBodies/ids.ts). One call for a whole batch: every load re-points the
+ * engine's path, which closes its open files. The catalog loader passes `blob:`
+ * URLs for bytes it has already validated; `url` is fetched by the engine binding.
+ */
+export async function mountEphemerisFiles(files: Array<{ name: string; url: string }>): Promise<void> {
+  if (files.length === 0) return;
+  await initEphemeris();
+  await eph().loadEphemerisFiles(files);
+}
+
 // ── Constants, flags, body mapping ────────────────────────────────────────────
 const DEG2RAD = Math.PI / 180;
 const TWO_PI = 2 * Math.PI;
@@ -557,6 +571,22 @@ export function projectOntoEcliptic(
   });
 }
 
+// The same In-Zodiaco / geodetic projection for catalog minor bodies, so their
+// lines follow the planets' frame exactly (a consumer answering a question about a
+// line must read the frame the line generator read). Kept beside the planets'
+// version on purpose: the two must never drift into different conventions.
+export function projectMinorOntoEcliptic(
+  positions: readonly MinorPosition[],
+  jd: number,
+): MinorPosition[] {
+  const eps = obliquity(jd);
+  return positions.map((p) => {
+    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps);
+    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+    return { n: p.n, ra, dec, lon };
+  });
+}
+
 // ── Core sampling ─────────────────────────────────────────────────────────────
 export interface BodySample {
   name: PlanetName;
@@ -587,11 +617,18 @@ export function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): Bo
     return { name, ra, dec, lon, lat: 0, speed: nn.speed };
   }
   const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
+  const s = sampleById(jd, id);
+  return s && { name, ...s };
+}
+
+// The two-frame sample for one Swiss body id — shared by the built-in bodies above
+// and the catalog minor bodies below, so both read the engine through the SAME
+// flags and conversions.
+function sampleById(jd: number, id: number): Omit<BodySample, 'name'> | null {
   try {
     const ecl = eph().calculatePosition(jd, id, FLAG_ECL); // lon/lat + speed
     const equ = eph().calculatePosition(jd, id, FLAG_EQ); // RA in .longitude, dec in .latitude
     return {
-      name,
       ra: norm2pi(equ.longitude * DEG2RAD),
       dec: equ.latitude * DEG2RAD,
       lon: norm2pi(ecl.longitude * DEG2RAD),
@@ -603,10 +640,69 @@ export function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): Bo
     // covers 1800+, and Chiron is JD-restricted, so the five asteroids throw for
     // pre-1800 charts (e.g. the year-1452 default). The Sun/Moon/planets/nodes/
     // Lilith fall back to Moshier and only reach here on truly out-of-range dates.
+    // A catalog minor body throws outside its own file's span (1500–2100 for the
+    // short files) and whenever its file isn't mounted — numbered asteroids have
+    // no Moshier fallback at all.
     // Dropping the body keeps the rest of the chart intact rather than unmounting
     // the app (these calls run in a render useMemo with no error boundary).
     return null;
   }
+}
+
+// ── Catalog minor bodies ──────────────────────────────────────────────────────
+// Numbered minor planets read from their own per-asteroid files (see
+// lib/minorBodies/). The engine's body id for MPC number n is 10000 + n — the
+// engine's own offset, restated here rather than imported: the downstream engine
+// build doesn't export the constant, and an import the type-checker accepts but the
+// other build lacks would break that build's bundle. A few numbered bodies live in
+// the bundled main-asteroid file under their own id instead (SEAS_MINOR_ID).
+const MINOR_ID_OFFSET = 10000;
+
+function minorSweId(n: number): number {
+  return SEAS_MINOR_ID.get(n) ?? MINOR_ID_OFFSET + n;
+}
+
+/** A catalog minor body's position — PlanetPosition's shape, keyed by MPC number. */
+export interface MinorPosition {
+  n: number;
+  ra: number;
+  dec: number;
+  /** Ecliptic longitude of record — set by the In-Zodiaco projection. */
+  lon?: number;
+  /** Ecliptic longitude motion, degrees/day. */
+  speed?: number;
+}
+
+export interface MinorSample {
+  n: number;
+  ra: number;
+  dec: number;
+  lon: number;
+  lat: number;
+  speed: number;
+}
+
+/** One catalog body at one instant, or null (file not mounted, or the date is
+ *  outside the file's span). Same two-frame sample the built-ins get. */
+export function sampleMinorBody(jd: number, n: number): MinorSample | null {
+  const s = sampleById(jd, minorSweId(n));
+  return s && { n, ...s };
+}
+
+/**
+ * Positions for a set of catalog bodies at one instant. The engine keeps ONE
+ * numbered-asteroid file open at a time and reopens it whenever the body changes,
+ * so everything for a body is sampled before moving to the next (body-outer) —
+ * one open per body. A time sweep over several bodies should follow the same
+ * order: loop bodies outside, instants inside.
+ */
+export function getMinorPositions(jd: number, numbers: readonly number[]): MinorPosition[] {
+  const out: MinorPosition[] = [];
+  for (const n of numbers) {
+    const s = sampleMinorBody(jd, n);
+    if (s) out.push({ n, ra: s.ra, dec: s.dec, speed: s.speed });
+  }
+  return out;
 }
 
 // Just the ecliptic-longitude speed (deg/day) of one body at an instant — a

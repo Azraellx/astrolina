@@ -735,6 +735,16 @@
   font-size: 13px;
   line-height: 1;
 }
+/* The shared catalog minor-body diamond (lib/lineCard minorMarkHtml), in the hover tip and
+   the line card. A filled shape carries far more ink than a line glyph at the same size, so
+   it steps down to sit level with the name beside it — as the diamond on the map coin sits
+   well inside its ring. Bodies with their own symbol keep the normal glyph size. */
+.cross-tip-glyph.minor-mark {
+  font-size: 10px;
+}
+.line-card-glyph.minor-mark {
+  font-size: 0.78em;
+}
 .cross-tip-x {
   font-size: 12px;
   line-height: 1;

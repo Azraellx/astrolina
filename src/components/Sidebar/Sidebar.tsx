@@ -81,6 +81,11 @@ interface SidebarProps {
   visiblePlanets: Set<PlanetName>;
   togglePlanet: (p: PlanetName) => void;
   setAllPlanets: (bodies: PlanetName[], visible: boolean) => void;
+  /** The sixth button under Minor bodies — "More", which opens the Minor bodies
+   *  window. `open` is the window's RAW open flag (App holds it, never clears it,
+   *  while Advanced is off); `shown` / `held` are catalog bodies drawn / held by a
+   *  closed source right now (derived, for the button's badges). */
+  minorMore: { open: boolean; onToggle: () => void; shown: number; held: number };
   visibleLineTypes: Set<LineType>;
   toggleLineType: (t: LineType) => void;
   setAllLineTypes: (visible: boolean) => void;
@@ -986,7 +991,7 @@ function PlanetToggle({
         title={
           <span className="planet-tip-title">
             <PlanetGlyph planet={planet} size={14} color={glyphColor} />
-            {labels.planet(planet)}
+            {labels.planetTipName(planet)}
           </span>
         }
         hint={labels.planetTheme(planet)}
@@ -1006,6 +1011,7 @@ export function Sidebar({
   visiblePlanets,
   togglePlanet,
   setAllPlanets,
+  minorMore,
   visibleLineTypes,
   toggleLineType,
   setAllLineTypes,
@@ -1369,12 +1375,97 @@ export function Sidebar({
                 planet={p}
                 on={visiblePlanets.has(p)}
                 onToggle={() => togglePlanet(p)}
+                // Show/hide-all stays with these five: the catalog bodies behind
+                // "More" have their own family switch in the window, and a bulk
+                // action here reaching into that preference would be a write from
+                // someone else's control (CLAUDE.md, rule 1).
                 onShiftClick={() =>
                   setAllPlanets(MINOR_BODIES, !visiblePlanets.has(p))
                 }
                 theme={theme}
               />
             ))}
+            {/* The sixth: "More" opens the Minor bodies window (also '4' — the window
+                has no View-menu row, by choice, so this button is where it lives) —
+                search and toggle every minor body, these five included. The wider set
+                is an Advanced reading, so below that rung the button is one of two
+                things, by the build's nudge policy (lib/plan):
+                  • NUDGED (a downstream build that sells the rung — for a guest, say):
+                    a clickable upgrade teaser, like the Aspect Lines opener below. Not
+                    greyed, ADV-tagged in its tip, no key chip (the key does nothing
+                    until the rung is reached — the app's rule for every locked
+                    teaser), and a click runs nudgeAction(), the build's account /
+                    upgrade flow.
+                  • NOT NUDGED (the open core, where Advanced is a free switch): the
+                    standard unavailable state, exactly like Fortune above — visible,
+                    ADV-tagged, dead to the click, its tip naming the setting to change
+                    (.ui-inert).
+                Either way the list is never cleared, and within a session neither is
+                the window's open flag, so both return with Advanced (a reload into
+                Basic closes the window — see App's showMinorHud). Its lit state reads
+                open AND Advanced: the window only renders with Advanced on, and a
+                button lit for a window nobody can see would claim something that
+                isn't on screen.
+
+                It parks with the map-surface rows under a view lock: the window
+                doesn't render while a registered surface owns the viewport (and
+                '4' stands down), so the button would open nothing.
+
+                On touch, OPENING the window also dismisses this dock: the dock is a
+                full-height takeover on the right edge, above every floating window,
+                and the window opens centred — on a phone the dock would cover half
+                of it, row actions included. Both moves come from the one tap, and
+                the dock reopens from its nub as always. */}
+            {!viewParked && (
+              <TipToggle
+                className={`planet-toggle minor-more${minorMore.open && advUnlocked ? ' is-open' : ''}`}
+                onClick={() => {
+                  if (!advUnlocked) {
+                    nudgeAction(); // tier-locked teaser → the account/upgrade flow
+                    return;
+                  }
+                  const opening = !minorMore.open;
+                  minorMore.onToggle();
+                  if (touch && opening) onClose?.();
+                }}
+                ariaPressed={minorMore.open && advUnlocked}
+                title={t('minorBodies.more.title')}
+                hint={t('minorBodies.more.hint')}
+                hotkey={advUnlocked ? '4' : undefined}
+                disabled={!advUnlocked && !shouldShowNudge('adv')}
+                disabledHint={t('minorBodies.more.advancedHint')}
+                advanced={!advUnlocked}
+              >
+                <svg
+                  className="planet-toggle-icon minor-more-icon"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                <span className="name">{t('minorBodies.more.label')}</span>
+                {/* Catalog bodies drawn right now, and any a closed source is
+                    holding — derived counts, so they read 0 (and hide) while
+                    Advanced is off, when nothing is drawn or held. */}
+                {minorMore.shown > 0 && (
+                  <span className="minor-more-badge">
+                    {t('minorBodies.more.count', { n: minorMore.shown })}
+                  </span>
+                )}
+                {minorMore.held > 0 && (
+                  <span className="minor-more-badge is-held">
+                    {t('minorBodies.more.held', { n: minorMore.held })}
+                  </span>
+                )}
+              </TipToggle>
+            )}
           </ul>
 
           <h2>{t('settings.headings.angles')}</h2>

@@ -1,0 +1,203 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
+// Loads catalog minor bodies' ephemeris files into the engine, on demand.
+//
+// Order of operations, each step a gate the next depends on:
+//   1. FETCH the bytes through the body's source (bundled, or a registered one).
+//   2. CHECK them as the exact file the engine will ask for (se1Header.ts). A
+//      failure here never reaches the engine — see that module for why that matters.
+//   3. MOUNT every file that passed, in ONE engine call (each call re-points the
+//      engine's path and closes its open files).
+//   4. PROBE each body at J2000, inside every file's span: a body that doesn't
+//      compute is marked failed and is never sampled again this session.
+//
+// State lives here, outside React, so a load started by one render isn't lost to
+// the next; the App subscribes (useSyncExternalStore) and re-derives on change.
+import { checkSe1Header } from './se1Header';
+import { fileNameFor, SEAS_MINOR_ID } from './ids';
+import {
+  ensureAsteroidEphemeris,
+  mountEphemerisFiles,
+  sampleMinorBody,
+} from '../ephemeris';
+import {
+  MinorBodySourceFailure,
+  type MinorBodySource,
+} from '../extensions/minorBodySources';
+
+export type MinorLoadFailure =
+  /** The network wasn't there (and the file had never been fetched). */
+  | 'offline'
+  /** The source had no such file (a 404, or a host's HTML page in its place). */
+  | 'missing'
+  /** The bytes weren't a usable ephemeris file for this body. */
+  | 'content'
+  /** The source explained itself — see `note`. */
+  | 'source';
+
+export type MinorLoadState =
+  | { status: 'loading' }
+  | { status: 'ready'; name: string | null }
+  | { status: 'failed'; reason: MinorLoadFailure; note?: string };
+
+const states = new Map<number, MinorLoadState>();
+const inflight = new Set<number>();
+const listeners = new Set<() => void>();
+let version = 0;
+
+function publish(): void {
+  version++;
+  for (const l of listeners) l();
+}
+
+function setState(n: number, s: MinorLoadState): void {
+  states.set(n, s);
+}
+
+/** useSyncExternalStore subscribe — the snapshot is {@link minorLoadVersion}. */
+export function subscribeMinorLoads(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** Changes whenever any body's load state does. */
+export function minorLoadVersion(): number {
+  return version;
+}
+
+export function minorLoadState(n: number): MinorLoadState | undefined {
+  return states.get(n);
+}
+
+/** Forget a failure so the next request tries again (the row's retry control). */
+export function retryMinorBody(n: number): void {
+  if (states.get(n)?.status !== 'failed') return;
+  states.delete(n);
+  publish();
+}
+
+// A body that failed only for want of a network gets another chance as soon as
+// the browser says it is back — the reader shouldn't have to find a retry button
+// for a failure that was never about the body.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    let changed = false;
+    for (const [n, s] of states) {
+      if (s.status === 'failed' && s.reason === 'offline') {
+        states.delete(n);
+        changed = true;
+      }
+    }
+    if (changed) publish();
+  });
+}
+
+// Inside every short (1500–2100) and long (−3000–3000) file, and inside the
+// bundled main-asteroid file (1800–2399) that carries Pholus.
+const PROBE_JD = 2451545.0; // J2000
+
+/**
+ * Make sure each requested body's data is in the engine. Bodies already ready,
+ * loading, or failed are skipped (a failure waits for {@link retryMinorBody}, so a
+ * re-render can never turn into a request loop). Resolves when this batch settles.
+ */
+export async function ensureMinorBodies(
+  requests: ReadonlyArray<{ n: number; source: MinorBodySource }>,
+): Promise<void> {
+  const fresh = requests.filter((r) => !inflight.has(r.n) && !states.has(r.n));
+  if (fresh.length === 0) return;
+  for (const r of fresh) {
+    inflight.add(r.n);
+    setState(r.n, { status: 'loading' });
+  }
+  publish();
+
+  try {
+    const fetched = await Promise.all(
+      fresh.map(async (r) => {
+        // Data already inside the bundled main-asteroid file: load that instead.
+        if (SEAS_MINOR_ID.has(r.n)) {
+          try {
+            await ensureAsteroidEphemeris();
+            return { n: r.n, mount: null, name: null };
+          } catch {
+            setState(r.n, { status: 'failed', reason: offline() ? 'offline' : 'missing' });
+            return null;
+          }
+        }
+        const file = fileNameFor(r.n, 'short');
+        let bytes: ArrayBuffer;
+        try {
+          bytes = await r.source.fetchFile(r.n, 'short');
+        } catch (err) {
+          setState(
+            r.n,
+            err instanceof MinorBodySourceFailure
+              ? { status: 'failed', reason: 'source', note: err.note }
+              : { status: 'failed', reason: offline() ? 'offline' : 'missing' },
+          );
+          return null;
+        }
+        const check = checkSe1Header(new Uint8Array(bytes), file, r.n);
+        if (!check.ok) {
+          setState(r.n, {
+            status: 'failed',
+            // A host's HTML page where the file should be means the file isn't there.
+            reason: check.reason === 'html' ? 'missing' : 'content',
+          });
+          return null;
+        }
+        return {
+          n: r.n,
+          mount: { name: file, url: URL.createObjectURL(new Blob([bytes])) },
+          name: check.name,
+        };
+      }),
+    );
+
+    const ok = fetched.filter((x): x is NonNullable<typeof x> => x !== null);
+    const mounts = ok.flatMap((x) => (x.mount ? [x.mount] : []));
+    try {
+      await mountEphemerisFiles(mounts);
+    } catch {
+      // Only the bodies that needed THIS mount failed. A body read from the bundled
+      // main-asteroid file (Pholus) was already loaded before the batch was mounted,
+      // so it falls through to the probe below like any other — returning here
+      // instead left it at 'loading' for the rest of the session, never requested
+      // again (it has a state) and with no retry to offer (it isn't 'failed').
+      for (const x of ok) if (x.mount) setState(x.n, { status: 'failed', reason: 'content' });
+    } finally {
+      for (const m of mounts) URL.revokeObjectURL(m.url);
+    }
+
+    // Every body of the batch leaves this loop settled — ready or failed, never
+    // still 'loading'.
+    for (const x of ok) {
+      if (states.get(x.n)?.status === 'failed') continue;
+      setState(
+        x.n,
+        sampleMinorBody(PROBE_JD, x.n)
+          ? { status: 'ready', name: x.name }
+          : { status: 'failed', reason: 'content' },
+      );
+    }
+  } finally {
+    for (const r of fresh) {
+      inflight.delete(r.n);
+      // Belt and braces for a throw nobody above anticipated: a body this call
+      // started must not be left 'loading', which nothing would ever revisit.
+      if (states.get(r.n)?.status === 'loading') setState(r.n, { status: 'failed', reason: 'content' });
+    }
+    publish();
+  }
+}
+
+function offline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
