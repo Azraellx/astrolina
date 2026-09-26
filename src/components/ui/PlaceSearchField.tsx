@@ -32,6 +32,7 @@ import {
 } from 'react';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
 import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
+import { nudgeAction } from '../../lib/plan';
 import {
   getPlaceSearchLibrary,
   getPlaceSearchProviders,
@@ -642,7 +643,13 @@ export function PlaceSearchField({
                   className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}`}
                   onClick={() => {
                     if (g?.locked) {
-                      setTeasedId((v) => (v === p.id ? null : p.id));
+                      // Explain under the input AND run the build's upgrade flow — the same
+                      // nudgeAction() every other tier-locked teaser runs (TopNav, Sidebar,
+                      // TimelineHud), so a locked chip does what a locked row does. A no-op in
+                      // the open core, which installs no action. The reason stays set rather
+                      // than toggling, so it is still there when that flow is closed.
+                      setTeasedId(p.id);
+                      nudgeAction();
                       return;
                     }
                     setTeasedId(null);

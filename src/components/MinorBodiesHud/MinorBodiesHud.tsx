@@ -69,6 +69,7 @@ import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { getReservedLeftInset, subscribeReservedLeftInset } from '../../lib/leftDock';
 import { useTouchLayout } from '../../lib/touch';
+import { nudgeAction } from '../../lib/plan';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { MinorMark } from '../MinorMark/MinorMark';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -909,8 +910,9 @@ export function MinorBodiesHud({
 
             <div className="mbh-scoperow">
               {/* Scope chips — only when a downstream build registered a source. A
-                  locked scope stays visible and tappable, and a tap explains itself
-                  under the input instead of switching (the place search's idiom). */}
+                  locked scope stays visible and tappable: a tap explains itself under the
+                  input instead of switching, and runs nudgeAction() — the same upgrade flow
+                  every other tier-locked teaser opens (the place search's idiom). */}
               {showChips && (
                 <div className="psf-scopes" role="radiogroup" aria-label={t('minorBodies.hud.scopeAria')}>
                   {scopes.map((s, i) => {
@@ -926,7 +928,9 @@ export function MinorBodiesHud({
                         className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}`}
                         onClick={() => {
                           if (g?.locked) {
-                            setTeasedId((v) => (v === s.id ? null : s.id));
+                            // Leave the reason under the input for when the flow is closed.
+                            setTeasedId(s.id);
+                            nudgeAction();
                             return;
                           }
                           setTeasedId(null);
