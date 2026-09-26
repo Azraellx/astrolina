@@ -137,10 +137,17 @@ function horizonByLatitude(
 // smooth in H, so the curve is evenly, gap-free sampled everywhere — including the
 // turning latitude |lat| = 90 − |dec|, where the latitude sweep's dH/dlat → ∞ drew a
 // long horizontal streak and left a break between the two halves. We sweep H out from
-// 0 (the south apex) to ∓π (ASC: −π, DSC: +π, the north apex) so latitude runs
-// south→north as before (arrows keep their orientation); the halves share the apex
-// (H=0) and nadir (H=±π) points exactly, so ASC and DSC meet with no gap. Each half is
-// monotonic in latitude, so clipping to ±85° leaves one contiguous on-map run.
+// 0 to ∓π (ASC: −π, DSC: +π); the halves share the apex (H=0) and nadir (H=±π) points
+// exactly, so ASC and DSC meet with no gap. Each half is monotonic in latitude, so
+// clipping to ±85° leaves one contiguous on-map run.
+//
+// Every run is returned SOUTH→NORTH — the map's ASC/DSC arrows ride the line's own
+// direction (→ on ASC, ← on DSC), so they point up on a rising line and down on a
+// setting one only if every line runs the same way. H = 0 is the SOUTH apex only for a
+// body north of the equator: lat(0) = atan(−1/tanDec) takes the sign opposite to dec's,
+// so for a southern declination the sweep runs north→south and is reversed at the end.
+// (Until 2026-09-26 it was not, and every body south of the equator — planets and
+// minor bodies alike — drew its rising and setting arrows pointing the wrong way.)
 // Geometry-only horizon trace for any equatorial position (the fixed-star lines
 // reuse it with their own feature properties; angleLineRuns below uses it for the
 // planets and the catalog minor bodies alike).
@@ -186,8 +193,9 @@ export function traceHorizonCoords(
     pushHorizonPoint(coords, lngAt(H), lat);
     prevLat = lat;
   }
-  // One continuous run (longitudes may go past ±180 across the antimeridian).
-  return unwrapLongitudes(coords);
+  // One continuous run (longitudes may go past ±180 across the antimeridian), south→north.
+  const run = unwrapLongitudes(coords);
+  return tanDec < 0 ? run.reverse() : run;
 }
 
 // The Vertex-axis curve: every place where the body stands exactly on the

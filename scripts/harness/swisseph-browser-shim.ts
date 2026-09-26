@@ -14,7 +14,9 @@
 // The smoke script (smoke.ts) asserts enum parity between the two packages
 // rather than assuming it.
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import { resolveObjectURL } from 'node:buffer';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 // Runtime require keeps @swisseph/node out of the esbuild bundle — its native
@@ -34,6 +36,15 @@ export const EclipseType = swe.EclipseType;
 // Verify scripts run via `npm run verify:*`, which executes from the repo root.
 const EPHE_DIR = resolve(process.cwd(), 'public/ephe');
 
+// Where bytes the app streams in from a `blob:` URL are written — this process's stand-in
+// for the browser build's virtual filesystem, created on the first such mount and removed
+// at exit. Short on purpose: it goes on the engine's path after EPHE_DIR, and the engine
+// has a path-length ceiling — past about 201 bytes it exits silently on any date before
+// 1800 — which MAX_PATH_BYTES below guards.
+const MOUNT_DIR = resolve(tmpdir(), `astrolina-mount-${process.pid}`);
+const MAX_PATH_BYTES = 180;
+let mountDirOnPath = false;
+
 export class SwissEphemeris {
   // The browser build streams .se1 files into a WASM virtual filesystem; here
   // they already sit on disk, so init just points Swiss at the directory. The
@@ -48,13 +59,33 @@ export class SwissEphemeris {
     swe.setEphemerisPath(EPHE_DIR);
   }
 
-  // The app "loads" files by fetching them into the virtual FS; on disk we only
-  // need to confirm they exist, so a missing file fails as loudly as a 404 would.
+  // The app "loads" files by fetching them into the virtual FS. A file already on disk
+  // needs only to be confirmed there, so a missing one fails as loudly as a 404 would.
+  // Bytes the app fetched itself and hands over as a `blob:` URL (the minor-body loader
+  // does, for whichever file a source served) are written to MOUNT_DIR under the name
+  // given — flat, as the browser build writes /ephemeris/<name> — and MOUNT_DIR joins
+  // the engine's path after EPHE_DIR. Setting the path closes the engine's open files,
+  // which the browser build does on every call too.
   async loadEphemerisFiles(files: Array<{ name: string; url: string }>): Promise<void> {
+    let mounted = false;
     for (const f of files) {
-      if (!existsSync(resolve(EPHE_DIR, f.name))) {
-        throw new Error(`Missing ephemeris file: ${resolve(EPHE_DIR, f.name)}`);
+      if (existsSync(resolve(EPHE_DIR, f.name))) continue;
+      const blob = f.url.startsWith('blob:') ? resolveObjectURL(f.url) : undefined;
+      if (!blob) throw new Error(`Missing ephemeris file: ${resolve(EPHE_DIR, f.name)}`);
+      if (!existsSync(MOUNT_DIR)) {
+        mkdirSync(MOUNT_DIR, { recursive: true });
+        process.on('exit', () => rmSync(MOUNT_DIR, { recursive: true, force: true }));
       }
+      writeFileSync(resolve(MOUNT_DIR, f.name), Buffer.from(await blob.arrayBuffer()));
+      mounted = true;
+    }
+    if (mounted || mountDirOnPath) {
+      const path = `${EPHE_DIR};${MOUNT_DIR}`;
+      if (Buffer.byteLength(path) > MAX_PATH_BYTES) {
+        throw new Error(`harness: ephemeris path is ${Buffer.byteLength(path)} bytes, over ${MAX_PATH_BYTES} — move the checkout or TMP shorter`);
+      }
+      swe.setEphemerisPath(path);
+      mountDirOnPath = true;
     }
   }
 

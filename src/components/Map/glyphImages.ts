@@ -21,6 +21,7 @@ import {
   type Theme,
 } from '../../lib/theme';
 import { MINOR_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
+import { MINOR_DIAMOND_IN_COIN, minorDiamondPoints } from '../../lib/minorBodies/mark';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
 /** The little five-pointed star repeated along the fixed-star lines. */
@@ -285,13 +286,15 @@ function rasterizeMinorCoin(
     drawStampGlyph(ctx, glyph, color, discFill, c, c, ZENITH_STAMP_GLYPH_PX);
   } else {
     // The shared catalog mark: a small solid diamond (a path, so it looks the same
-    // on every platform and needs no font).
-    const r = ZENITH_DISC_R * 0.42;
+    // on every platform and needs no font). Its proportions are the chart wheel's
+    // too — lib/minorBodies/mark — so the coin on the map and the coin in the chart
+    // carry the same diamond.
+    const [a, b, d, e] = minorDiamondPoints(c, c, ZENITH_DISC_R * MINOR_DIAMOND_IN_COIN);
     ctx.beginPath();
-    ctx.moveTo(c, c - r);
-    ctx.lineTo(c + r * 0.72, c);
-    ctx.lineTo(c, c + r);
-    ctx.lineTo(c - r * 0.72, c);
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+    ctx.lineTo(d[0], d[1]);
+    ctx.lineTo(e[0], e[1]);
     ctx.closePath();
     ctx.fillStyle = color;
     ctx.fill();

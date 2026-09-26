@@ -70,6 +70,7 @@ import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { getReservedLeftInset, subscribeReservedLeftInset } from '../../lib/leftDock';
 import { useTouchLayout } from '../../lib/touch';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { MinorMark } from '../MinorMark/MinorMark';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
@@ -186,21 +187,11 @@ function bundledMatches(q: string): MinorBodyHit[] {
 
 // A catalog body's mark: its own glyph where the font has one, otherwise a small
 // diamond — both in the body's line colour, so the row and its line on the map
-// read as the same thing.
-function MinorMark({ n, theme }: { n: number; theme: Theme }) {
-  const color = minorLineColor(n, theme);
-  const glyph = MINOR_GLYPHS.get(n);
-  if (glyph) {
-    return (
-      <span className="astro-glyph mbh-mark" style={{ color }} aria-hidden="true">
-        {glyph}
-      </span>
-    );
-  }
+// read as the same thing. The mark itself is the shared one (MinorMark), which the
+// chart wheel, its tips and the positions table draw too.
+function RowMark({ n, theme }: { n: number; theme: Theme }) {
   return (
-    <span className="mbh-mark mbh-diamond" aria-hidden="true">
-      <span style={{ background: color }} />
-    </span>
+    <MinorMark color={minorLineColor(n, theme)} glyph={MINOR_GLYPHS.get(n)} className="mbh-mark" />
   );
 }
 
@@ -350,6 +341,8 @@ export function MinorBodiesHud({
   const [teasedId, setTeasedId] = useState<string | null>(null);
   // The list row whose × is mid-confirm (its icons swapped for Remove / Keep).
   const [confirmN, setConfirmN] = useState<number | null>(null);
+  // The list's Clear, mid-confirm (swapped for its own Clear / Keep pair).
+  const [confirmClear, setConfirmClear] = useState(false);
   // Where focus goes once that confirm closes. The Remove / Keep pair holding focus
   // unmounts with the very click that answers it, so without this a keyboard user
   // lands on <body> — the failure the pair's own autoFocus exists to prevent, one
@@ -695,7 +688,7 @@ export function MinorBodiesHud({
           }
         >
           <EyeIcon open={on} className="location-ls-eye" size={14} />
-          <MinorMark n={entry.n} theme={theme} />
+          <RowMark n={entry.n} theme={theme} />
           <span className="mbh-body">
             <span className="mbh-main">
               <span className="mbh-name">{name}</span>
@@ -805,7 +798,55 @@ export function MinorBodiesHud({
     );
     return (
       <>
-        <h3 className="capture-hud-label mbh-head">{t('minorBodies.hud.sections.yours')}</h3>
+        {/* The heading carries Clear at its right: the whole list off in one go, after
+            an inline confirm like the row ×'s (a stray tap never empties it). Harsher
+            than Hide all, which keeps the selection — and Hide all is left as it is. */}
+        <div className="mbh-head-row">
+          <h3 className="capture-hud-label mbh-head">{t('minorBodies.hud.sections.yours')}</h3>
+          {confirmClear ? (
+            <span className="mbh-clear-confirm">
+              <span className="mbh-clear-ask">{t('minorBodies.hud.clear.ask', { count: rows.length })}</span>
+              <button
+                type="button"
+                className="psf-row-confirm"
+                // Focus follows the Clear it replaced, as the row confirm's does.
+                autoFocus
+                onClick={() => {
+                  // The column goes with the list, so focus returns to the search box,
+                  // as it does when the last body is removed.
+                  focusAfter.current = 'input.psf-input';
+                  setConfirmClear(false);
+                  setConfirmN(null);
+                  api.clear();
+                }}
+              >
+                {t('minorBodies.hud.clear.confirm')}
+              </button>
+              <button
+                type="button"
+                className="psf-row-keep"
+                onClick={() => {
+                  focusAfter.current = 'button.mbh-clear';
+                  setConfirmClear(false);
+                }}
+              >
+                {t('minorBodies.hud.clear.keep')}
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="mbh-clear"
+              aria-label={t('minorBodies.hud.clear.aria')}
+              onClick={() => {
+                setConfirmN(null);
+                setConfirmClear(true);
+              }}
+            >
+              {t('minorBodies.hud.clear.label')}
+            </button>
+          )}
+        </div>
         {hideAll && (
           <p className="location-ls-note mbh-note">{t('minorBodies.hud.hideAll.hiddenNote')}</p>
         )}

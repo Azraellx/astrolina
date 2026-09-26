@@ -53,6 +53,14 @@ export const wheel = {
   tip: {
     longitude: 'Longitude {lon}',
     latitude: 'Latitude {lat}',
+    // Catalog minor planets on a wheel too small for their own ring are rim marks a
+    // few px across, and marks close enough to share one hover target share one tip:
+    // this title, then one line per body — its name and degree ({lon} is the degree
+    // WITHIN the sign; the sign's glyph follows the line) — as many as the tip's copy
+    // budget holds, then a count of the rest. A cluster always has two or more.
+    minorCluster: '{n, plural, one {# minor planet} other {# minor planets}}',
+    minorLine: '{name} {lon}',
+    minorMore: '+{n} more',
   },
   // Short keyword gloss per body, keyed by PlanetName. It used to be what the
   // wheel's own discs said on hover, which is where the position belongs — a

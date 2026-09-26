@@ -44,6 +44,72 @@ export const READOUT_OFFER_MIN = 330;
 /** The bi-wheel's own readout ring needs a larger wheel still. */
 export const OVERLAY_READOUT_MIN = 600;
 
+/** The catalog minor bodies' own RING is switched OFF, pending a tuning pass. With it
+ *  off, every wheel at every size draws what a wheel below the gates draws: each
+ *  catalog body as a rim diamond at its true degree, which costs no radius, and the
+ *  built-in planets laid out exactly as they are with no catalog bodies on the wheel.
+ *
+ *  Off because the ring's cost to the built-ins was measured and is far outside its
+ *  budget. The ring is radius taken from the planets, and the budget was +0.2
+ *  percentage points of charts with a built-in pushed past a whole sign. Measured at the
+ *  gates below: +2.62 pp at 500px on a single wheel (2.76% → 5.38%) and still +0.42–0.64
+ *  at 600–800px; up to +5.12 pp on a 700px bi-wheel; within budget only at ~900px. It
+ *  also sheds the second chart's readout ring on a 608–671px bi-wheel (the hub check
+ *  fails a rung earlier), and with twenty coins in one quadrant it draws coins across
+ *  the ASC or MC on up to 23% of charts.
+ *
+ *  Those figures are the snapshot the decision was made on (2026-09-26). The live ones
+ *  come from scripts/verify-wheel-layout.ts (the sections labelled "measured — ring
+ *  disabled") and verify-wheel-bands.ts §10, which still lay the ring out through
+ *  `measureMinorRing` and print them on every run — the tuning pass's baseline.
+ *  Switching this back on turns those sections into assertions
+ *  again, on the budgets already written there, so the ring can only return once they
+ *  pass — and verify-wheel-bands pins this switch as well, so it moves in two places.
+ *
+ *  The ring's code is kept whole behind this switch: the geometry below, the layout in
+ *  lib/wheelRingLayout.ts, and WheelSvg's coins and leaders. */
+export const MINOR_RING_ENABLED: boolean = false;
+
+/** The size at which catalog minor bodies get a RING of their own — when
+ *  MINOR_RING_ENABLED is on, which it is not (see there). The ring is a thin band of
+ *  coins just inside the zodiac band, with the planet ring stepped inward to make room.
+ *  Below it they are drawn as rim diamonds at their true degree, which cost no radius
+ *  at all.
+ *
+ *  A gate rather than a ring at every size, because the ring is radius taken from the
+ *  planets, and a planet ring pushed inward has less circumference to seat the same
+ *  bodies on. On a phone that is the difference between a stellium fanning within its
+ *  sign and a built-in planet drawn in the next one: the catalog bodies would be buying
+ *  their room with the built-ins' positions. Below the gate the built-ins lay out
+ *  exactly as they do with no catalog bodies on the wheel.
+ *
+ *  Nothing is hidden by it. Every body is drawn at its true degree on both sides, so
+ *  crossing the gate changes HOW the catalog bodies are drawn, not whether — a declared
+ *  tier, like the bi-wheel's own 420px one, and nothing to announce.
+ *
+ *  These two figures are provisional, and the measurement did NOT confirm them: at these
+ *  sizes the ring costs the built-ins far more than its budget, which is why it is off.
+ *  They stay as the sizes the suites measure the switched-off ring at, so the tuning
+ *  pass compares like with like. */
+export const MINOR_RING_MIN = 500;
+/** The same gate on a bi-wheel, where the overlay ring has already taken its share of
+ *  the radius. */
+export const MINOR_RING_MIN_BI = 560;
+
+// The strip just inside the zodiac band where every body's true-degree tick is drawn
+// (WheelSvg: rZodiacInner − 2 to − 8) and Advanced's degree graduations hang (up to 8px
+// deep). A catalog body's rim diamond IS its tick, so it lives in the same strip — clear
+// of the band above it and, on a bi-wheel, of the overlay discs, whose outer edge sits
+// at rZodiacInner − 9.
+const TICK_ZONE_OUTER = 1;
+const TICK_ZONE_INNER = 8;
+// A rim diamond grows with the wheel the way the planets' glyphs do, sized off the disc,
+// keeping its outer tip at the strip's outer edge and reaching inward past the strip as
+// far as the room above the planet discs allows, stopping this far short of their
+// outline. At the largest single wheel that is about 12px tall against the strip's 7.
+const PIP_SHARE = 0.36;
+const PIP_CLEAR = 2;
+
 // The share of the radius the aspect hub must KEEP. A floor, not a target: the bands
 // take what they need first and the hub gets the remainder, so on most wheels it
 // lands well above this. It exists to stop the centre being squeezed to nothing,
@@ -72,6 +138,19 @@ export interface WheelGeometryInput {
    *  (the Capture wheel). The geometry still governs: if it does not fit it is
    *  shed exactly as it would be otherwise. */
   readouts?: boolean;
+  /** Catalog minor bodies are on this wheel, or on their way (a file still loading
+   *  holds the ring, so the planets do not step inward a moment after the first
+   *  paint). A REQUEST: the ring is taken only while MINOR_RING_ENABLED is on — it is
+   *  OFF, so today this is never granted — and then only at or above MINOR_RING_MIN
+   *  (MINOR_RING_MIN_BI on a bi-wheel) and never on the minimap. `detail.minorRing`
+   *  says whether it was. Not granted gives exactly the geometry of a wheel with no
+   *  catalog bodies. */
+  minorRing?: boolean;
+  /** MEASUREMENT ONLY — the app never sets this. Grants `minorRing` as if
+   *  MINOR_RING_ENABLED were on (the size gates and the minimap exclusion still apply),
+   *  so the verify suites can keep laying out the switched-off ring and printing what
+   *  it would cost. Nothing outside scripts/ should pass it. */
+  measureMinorRing?: boolean;
 }
 
 /** Which optional detail survived the fit. Reported so a caller — or a test — can
@@ -89,6 +168,11 @@ export interface WheelDetail {
   readoutMin: boolean;
   /** The bi-wheel's own readout ring. */
   overlayReadout: boolean;
+  /** The catalog minor bodies' own ring. Always false while MINOR_RING_ENABLED is off.
+   *  Not a rung of the shed ladder: the switch and size alone decide it
+   *  (MINOR_RING_MIN), and when it is off the bodies are still drawn — as rim diamonds
+   *  at their true degree. */
+  minorRing: boolean;
 }
 
 export interface WheelGeometry {
@@ -101,6 +185,13 @@ export interface WheelGeometry {
   // ── Rings, outermost first ────────────────────────────────────────────────
   rOuter: number;
   rZodiacInner: number;
+  /** Centre of the catalog minor bodies' rim diamonds: their outer tip at the tick
+   *  strip's outer edge just inside the zodiac band (the rim, on the minimap), so the
+   *  centre moves in as the diamond grows. Drawn on every wheel, ring or not. */
+  rPip: number;
+  /** Centre of the catalog minor-body coins, between the zodiac band (the overlay
+   *  ring, on a bi-wheel) and the planets. 0 when the ring is not drawn. */
+  rMinor: number;
   /** Centre of the planet glyph discs. */
   rPlanets: number;
   /** The three readout slots. Degree is OUTERMOST (nearest the glyph), then the
@@ -134,6 +225,22 @@ export interface WheelGeometry {
    *  which is what ringLayout separates marks by. */
   discHalf: number;
   glyphPx: number;
+  /** A catalog minor body's coin: 0.64 of the planet disc, so it reads as a lesser
+   *  body beside the planets rather than as one of them. 0 on the minimap, as are the
+   *  three coin figures below it: the minimap draws catalog bodies as rim diamonds only.
+   *  Non-zero on every detailed wheel whether or not the ring is drawn — to ask whether it
+   *  is, test `detail.minorRing` (or `rMinor > 0`). */
+  minorR: number;
+  /** The coin's outline — solid; a dashed outline is the overlay ring's convention. */
+  minorDiscStroke: number;
+  /** Coin radius plus half its outline: what a coin claims on its ring. */
+  minorDiscHalf: number;
+  /** A catalog body's own glyph, inside its coin. */
+  minorGlyphPx: number;
+  /** How far a rim diamond reaches either side of rPip along the radius. It grows with
+   *  the wheel on a single wheel (PIP_SHARE of the disc, as far as the room above the
+   *  planet discs allows) and keeps half the tick strip on a bi-wheel and the minimap. */
+  pipR: number;
   signGlyphPx: number;
   houseNumPx: number;
   cuspRimPx: number;
@@ -256,11 +363,23 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   const readoutFont = clamp(Math.round(0.037 * R), 11, hasOverlay ? 13 : 17);
   const angleCodePx = clamp(Math.round(0.041 * R), 13, 18);
   const angleCodeHalo = 3;
+  // A catalog body's rim diamond marks its TRUE degree the way a planet's tick does.
+  // Its outer tip sits at the tick strip's outer edge on every wheel; how far it reaches
+  // in depends on the room below (see PIP_SHARE). Strip-sized to start with — what the
+  // minimap and a bi-wheel keep — and grown below, once the band budget is known.
+  const pipStrip = (TICK_ZONE_INNER - TICK_ZONE_OUTER) / 2;
+  const pipMini = clamp(0.28 * discR, 3, pipStrip);
+  /** The rim diamonds' centre, for a diamond of half-length `r`: its outer tip at the
+   *  tick strip's outer edge under `rZodiacInner`. */
+  const pipAt = (rZodiacInner: number, r: number) => rZodiacInner - TICK_ZONE_OUTER - r;
 
   // ── The minimap keeps its own figures ─────────────────────────────────────
   // It draws no zodiac band, houses or readout, so none of the budget below
   // applies. Reproducing its four numbers here rather than leaving them in the
   // component keeps every wheel in the app answering one function.
+  //
+  // Catalog bodies are rim diamonds here at every size — it runs no layout pass to
+  // seat coins with — so of their figures it carries only the diamond's.
   if (!detailed) {
     const rOuter = R - 4;
     const rPlanets = rOuter - 26;
@@ -269,6 +388,8 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
       size, cx, cy, R,
       rOuter,
       rZodiacInner: rOuter,
+      rPip: pipAt(rOuter, pipMini),
+      rMinor: 0,
       rPlanets,
       rReadoutDeg: 0, rReadoutSign: 0, rReadoutMin: 0,
       houseRingOuter: 0, houseRingInner: 0, houseBand: 0,
@@ -276,13 +397,15 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
       rOverlay: 0, rOverlayReadout: 0, rOverlayDivider: 0, overlayFan: 0,
       overlayDiscR: 9,
       discR, discStroke, discHalf: discR + discStroke / 2,
-      glyphPx, signGlyphPx: 22, houseNumPx, cuspRimPx,
+      glyphPx,
+      minorR: 0, minorDiscStroke: 0, minorDiscHalf: 0, minorGlyphPx: 0, pipR: pipMini,
+      signGlyphPx: 22, houseNumPx, cuspRimPx,
       cuspSignPx: 0, cuspUnitStepPx: 0, cuspUnitHalfPx: 0, readoutFont,
       readoutFan: 0, angleCodePx, angleCodeHalo,
       ringSep: 0, overlaySpreadRadius: 0, overlayRingSep: 0, bodyOverlap: 0,
       detail: {
         cuspRim: false, readout: false, readoutSign: false,
-        readoutMin: false, overlayReadout: false,
+        readoutMin: false, overlayReadout: false, minorRing: false,
       },
     };
   }
@@ -301,6 +424,15 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   // They hang INWARD from rZodiacInner by up to 8px, into exactly this gap, and the
   // disc's outer edge sits at the far end of it.
   const gapZodiacGlyph = bandPx(R, 0.035, 10, 16);
+  // The rim diamond grows into the gap between the tick strip and the planet discs —
+  // on a single wheel. On a bi-wheel the overlay discs sit right under the strip
+  // (their outer edge at rZodiacInner − 9), so it keeps the strip's size there. Never
+  // smaller than the strip allows: on the smallest wheels the gap is 10px, and the
+  // diamond keeps the size it always had.
+  const pipRoom = hasOverlay
+    ? pipStrip
+    : Math.max(pipStrip, (gapZodiacGlyph - TICK_ZONE_OUTER - discStroke / 2 - PIP_CLEAR) / 2);
+  const pipR = clamp(PIP_SHARE * discR, 3, pipRoom);
   // Kept tight, and deliberately NOT where the hub's radius went. Two reasons, and
   // the second is counter-intuitive enough to be worth writing down:
   //
@@ -366,9 +498,29 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   const ovToNatalPlain = 32;
   const overlayFan = Math.round(18 * (readoutFont / 11));
 
+  // ── The catalog ring ──────────────────────────────────────────────────────
+  // SWITCHED OFF (MINOR_RING_ENABLED, and why, at the top of this module): in the app
+  // this is false on every wheel, and everything below that reads it takes the
+  // no-ring path. Only `measureMinorRing` — the suites' way to keep measuring it —
+  // reaches the rest.
+  //
+  // With the switch on, size alone decides it, not the shed ladder: it is not detail a
+  // crowded wheel can give up but WHERE a set of bodies is drawn, and below the gate
+  // they are still drawn — as rim diamonds, which take no radius.
+  const minorRingOn =
+    (MINOR_RING_ENABLED || (input.measureMinorRing ?? false)) &&
+    (input.minorRing ?? false) &&
+    size >= (hasOverlay ? MINOR_RING_MIN_BI : MINOR_RING_MIN);
+  const minorR = Math.round(0.64 * discR);
+  const minorDiscStroke = 1;
+  const minorGlyphPx = clamp(1.5 * minorR, 10, 16);
+  // Daylight between a coin's inner edge and a planet disc's outer edge.
+  const minorGap = Math.max(3, Math.round(0.012 * R));
+
   interface Solved {
     rOuter: number;
     rZodiacInner: number;
+    rMinor: number;
     rPlanets: number;
     rReadoutDeg: number;
     rReadoutSign: number;
@@ -392,11 +544,18 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
 
     const rOverlay = hasOverlay ? rZodiacInner - ovInset : 0;
     const rOverlayReadout = t.overlayReadout ? rOverlay - ovReadoutGap : 0;
-    const rPlanets = hasOverlay
+    const rPlanetsBase = hasOverlay
       ? t.overlayReadout
         ? rOverlayReadout - ovToNatalWithReadout
         : rOverlay - ovToNatalPlain
       : rZodiacInner - gapZodiacGlyph - discR;
+    // With the catalog ring on, the coins take the planets' old slot — a coin's OUTER
+    // edge lands exactly where the disc's did, so nothing outside it moves (the tick
+    // strip, the overlay ring, the divider between the two charts) — and the planet
+    // ring steps inward by a coin's width and a gap. Everything below hangs off
+    // rPlanets and follows it in.
+    const rMinor = minorRingOn ? rPlanetsBase + discR - minorR : 0;
+    const rPlanets = minorRingOn ? rMinor - minorR - minorGap - discR : rPlanetsBase;
 
     // The glyph disc's INNER EDGE — everything below hangs off that, not off the
     // disc's centre. Hanging it off the centre is what let the old model park a
@@ -424,7 +583,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
     const houseRingInner = houseRingOuter - houseBand;
 
     return {
-      rOuter, rZodiacInner, rPlanets,
+      rOuter, rZodiacInner, rMinor, rPlanets,
       rReadoutDeg, rReadoutSign, rReadoutMin,
       houseRingOuter, houseBand, houseRingInner,
       rOverlay, rOverlayReadout,
@@ -486,9 +645,14 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   }
   const overlayReadout = trial.overlayReadout;
 
+  // Midway between the overlay ring's innermost ink and the natal chart's outermost —
+  // the coins' outer edge when the catalog ring is drawn, the planet discs' otherwise.
+  // (On any one rung of the ladder that is the same radius either way, by construction
+  // of rMinor above; it is stated against the coins so it stays right if that changes.)
+  const natalOuterInk = minorRingOn ? solved.rMinor + minorR : solved.rPlanets + discR;
   const rOverlayDivider = hasOverlay
     ? ((overlayReadout ? solved.rOverlayReadout - overlayFan : solved.rOverlay - overlayDiscR) +
-        (solved.rPlanets + discR)) /
+        natalOuterInk) /
       2
     : 0;
 
@@ -533,6 +697,8 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
     size, cx, cy, R,
     rOuter: solved.rOuter,
     rZodiacInner: solved.rZodiacInner,
+    rPip: pipAt(solved.rZodiacInner, pipR),
+    rMinor: solved.rMinor,
     rPlanets: solved.rPlanets,
     rReadoutDeg: solved.rReadoutDeg,
     rReadoutSign: solved.rReadoutSign,
@@ -549,6 +715,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
     overlayDiscR,
     discR, discStroke, discHalf: discR + discStroke / 2,
     glyphPx,
+    minorR, minorDiscStroke, minorDiscHalf: minorR + minorDiscStroke / 2, minorGlyphPx, pipR,
     // The rim signs fill their band instead of sitting at a fixed 22px in a band
     // that runs 24px on a phone to 52px at the maximum.
     signGlyphPx: clamp(zodiacBand * 0.75, 16, 32),
@@ -563,6 +730,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
       readoutSign: trial.readout && trial.readoutSign,
       readoutMin: trial.readout && trial.readoutMin,
       overlayReadout,
+      minorRing: minorRingOn,
     },
   };
 }

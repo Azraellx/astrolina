@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
+import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import { ARIES_FRAME, WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { NoChartWheel } from '../Wheel/NoChartWheel';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -27,6 +28,11 @@ interface ChartWheelProps {
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
+  /** The natal chart's catalog minor bodies, passed straight to the wheel. They draw as
+   *  rim diamonds at their true degree — both sizes here sit below the size for a
+   *  catalog ring even when it is switched on, which it is not — and the minimap is
+   *  static, so there are no tips to name them. */
+  minorBodies?: readonly WheelMinorBody[];
   /** Map Filter visibility — planets toggled off are hidden in the wheel too. */
   visiblePlanets: Set<PlanetName>;
   /** A promoted overlay with no coherent chart (Cyclo·cartography, Natal hidden): show
@@ -62,6 +68,7 @@ export function ChartWheel({
   isNatalPin,
   angles,
   planets,
+  minorBodies,
   visiblePlanets,
   noChart = false,
   planetsOnly = false,
@@ -158,6 +165,7 @@ export function ChartWheel({
             size={enlarged ? ENLARGED_SIZE : COMPACT_SIZE}
             angles={frame}
             planets={shownPlanets}
+            minorBodies={minorBodies}
             detailed={enlarged}
             visibleAspects={NO_ASPECTS}
             planetsOnly={planetsOnly && !angles}

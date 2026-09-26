@@ -73,6 +73,15 @@ export const minorBodies = {
       mainBelt: 'Main belt',
       nearEarth: 'Near-Earth',
     },
+    // Beside "Your list": empties it after an inline confirm. Harsher than Hide all,
+    // which keeps the selection; Hide all itself is left as it is.
+    clear: {
+      label: 'Clear',
+      aria: 'Clear your list',
+      ask: '{count, plural, one {Remove # body?} other {Remove all #?}}',
+      confirm: 'Clear',
+      keep: 'Keep',
+    },
     row: {
       // The title of a row's tip when a cap would refuse switching it on (a row
       // otherwise names itself by its text and pressed state).
@@ -106,11 +115,16 @@ export const minorBodies = {
       // Loaded and in range, but the map has no lines for ANY body at the moment —
       // so the row says why rather than reading "drawn" over an empty map. Each
       // names a state of the map, not a fault in the body.
+      //
+      // "No lines", not "Not drawn": the body is still placed in the natal chart wheel
+      // in every one of these states (a line gate takes lines away, never the body), so
+      // "not drawn" would be false of the wheel beside the map. The one exception is not
+      // a line gate: while an overlay chart takes the wheel, no catalog body is on it.
       undrawn: {
         noChart: 'Drawn once a chart is open.',
         noTime: 'No lines on a chart without a birth time — for this body or any other.',
-        angles: 'Not drawn while Map filters ▸ Angles shows none of ASC, DSC, MC or IC.',
-        natalOff: 'Not drawn while the natal lines are off the map — it returns with them.',
+        angles: 'No lines while Map filters ▸ Angles shows none of ASC, DSC, MC or IC.',
+        natalOff: 'No lines while the natal lines are off the map — its lines return with them.',
       },
     },
     cap: 'Up to {max} minor bodies beyond the main five can be drawn at once — switch one off first.',

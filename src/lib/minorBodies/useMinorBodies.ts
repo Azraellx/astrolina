@@ -34,6 +34,10 @@ export interface MinorBodiesApi {
   toggle: (entry: MinorListEntry) => MinorToggleResult;
   /** Take a body off the list entirely. */
   remove: (n: number) => void;
+  /** Empty the list: every body off it, and so off the map and the wheel. Harsher than
+   *  Hide all, which keeps the selection. Hide all itself (`shown`) is its own control
+   *  and is left exactly as it is. */
+  clear: () => void;
 }
 
 export function useMinorBodies(): MinorBodiesApi {
@@ -96,7 +100,13 @@ export function useMinorBodies(): MinorBodiesApi {
     [commit],
   );
 
+  const clear = useCallback(() => {
+    const p = prefRef.current;
+    if (p.list.length === 0 && p.visible.length === 0) return;
+    commit({ ...p, list: [], visible: [] });
+  }, [commit]);
+
   const loadVersion = useSyncExternalStore(subscribeMinorLoads, minorLoadVersion, minorLoadVersion);
 
-  return { pref, loadVersion, setShown, toggle, remove };
+  return { pref, loadVersion, setShown, toggle, remove, clear };
 }

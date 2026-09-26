@@ -7,18 +7,22 @@
 // Loads catalog minor bodies' ephemeris files into the engine, on demand.
 //
 // Order of operations, each step a gate the next depends on:
-//   1. FETCH the bytes through the body's source (bundled, or a registered one).
-//   2. CHECK them as the exact file the engine will ask for (se1Header.ts). A
-//      failure here never reaches the engine — see that module for why that matters.
+//   1. FETCH the bytes through the body's source (bundled, or a registered one), in
+//      the span the source serves the body in (MinorBodySource.spanFor — short unless
+//      it says otherwise).
+//   2. CHECK them as the exact file the engine will ask for (se1Header.ts) — that
+//      span's file name. A failure here never reaches the engine — see that module
+//      for why that matters.
 //   3. MOUNT every file that passed, in ONE engine call (each call re-points the
-//      engine's path and closes its open files).
+//      engine's path and closes its open files), under that same bare name — a long
+//      file's is one the engine's lookup tries before the short name.
 //   4. PROBE each body at J2000, inside every file's span: a body that doesn't
 //      compute is marked failed and is never sampled again this session.
 //
 // State lives here, outside React, so a load started by one render isn't lost to
 // the next; the App subscribes (useSyncExternalStore) and re-derives on change.
 import { checkSe1Header } from './se1Header';
-import { fileNameFor, SEAS_MINOR_ID } from './ids';
+import { fileNameFor, SEAS_MINOR_ID, type EpheSpan } from './ids';
 import {
   ensureAsteroidEphemeris,
   mountEphemerisFiles,
@@ -98,8 +102,11 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Inside every short (1500–2100) and long (−3000–3000) file, and inside the
-// bundled main-asteroid file (1800–2399) that carries Pholus.
+// Inside the short (1500–2100) and long (−3000–3000) files, and inside the bundled
+// main-asteroid file (1800–2399) that carries Pholus. Not guaranteed: a file's span is
+// its own — 367943 Duende's short file starts in 2009, its long one runs 1993–2091 — and
+// a file that starts after J2000 would fail here as 'content'. None served does (every
+// short file the hosted catalog held on 2026-09-26, and both long files it serves).
 const PROBE_JD = 2451545.0; // J2000
 
 /**
@@ -131,10 +138,13 @@ export async function ensureMinorBodies(
             return null;
           }
         }
-        const file = fileNameFor(r.n, 'short');
+        // The span first, then the file in it — and the check below expects THAT span's
+        // name, so bytes of the other file fail it rather than being mounted as this one.
+        let span: EpheSpan;
         let bytes: ArrayBuffer;
         try {
-          bytes = await r.source.fetchFile(r.n, 'short');
+          span = (await r.source.spanFor?.(r.n)) ?? 'short';
+          bytes = await r.source.fetchFile(r.n, span);
         } catch (err) {
           setState(
             r.n,
@@ -144,6 +154,7 @@ export async function ensureMinorBodies(
           );
           return null;
         }
+        const file = fileNameFor(r.n, span);
         const check = checkSe1Header(new Uint8Array(bytes), file, r.n);
         if (!check.ok) {
           setState(r.n, {

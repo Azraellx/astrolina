@@ -38,7 +38,7 @@ import {
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
-import { generateLines, generateZenithStamps, normLng, type MeridianLng } from '../src/lib/astro/lines';
+import { generateLines, generateZenithStamps, normLng, traceHorizonCoords, type MeridianLng } from '../src/lib/astro/lines';
 import type { BirthData } from '../src/lib/birthData';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -577,6 +577,39 @@ for (const b of CHARTS) {
   check('polar: every Porphyry fallback carries the flag', unflagged === 0, `${unflagged}/24 unflagged`);
   // ...and a mid-latitude chart must NOT be flagged.
   check('mid-latitude Placidus is not flagged as fallback', !relocate(jd, 48.4, 9.99, 'placidus').fallback);
+}
+
+// ── Rising and setting lines run south→north, whatever the declination ────────────
+// INTERNAL-IDENTITY. The map's ASC/DSC arrows ride the line's own direction (→ on ASC,
+// ← on DSC), so they point up on a rising line and down on a setting one only when every
+// horizon line runs the same way. The hour-angle trace starts at the SOUTH apex only for
+// a northern declination; a southern one used to come back north→south, flipping every
+// arrow on every body south of the equator. Both signs, both near-zero branches, and
+// both sides, at several right ascensions and a geodetic-style meridian mapping.
+{
+  const DEG = Math.PI / 180;
+  const celestial: MeridianLng = (ra) => normLng((ra / DEG) - 100);
+  const decs = [23, 5, 0.00001, -0.00001, -5, -23, -28];
+  let bad = 0;
+  const detail: string[] = [];
+  for (const decDeg of decs) {
+    for (const raDeg of [0, 77, 190, 301]) {
+      for (const side of ['ASC', 'DSC'] as const) {
+        const run = traceHorizonCoords({ ra: raDeg * DEG, dec: decDeg * DEG }, celestial, side);
+        const first = run[0][1];
+        const last = run[run.length - 1][1];
+        if (!(first < last)) {
+          bad += 1;
+          if (detail.length < 4) detail.push(`dec ${decDeg}° ra ${raDeg}° ${side}: ${first.toFixed(1)}→${last.toFixed(1)}`);
+        }
+      }
+    }
+  }
+  check(
+    'horizon lines run south→north for every declination (the ASC/DSC arrows point up/down)',
+    bad === 0,
+    bad ? detail.join('; ') : `${decs.length * 4 * 2} runs`,
+  );
 }
 
 console.log(failures === 0 ? '\nverify-lines: ALL PASS' : `\nverify-lines: ${failures} FAILURE(S)`);

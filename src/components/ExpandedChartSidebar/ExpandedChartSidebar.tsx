@@ -34,6 +34,8 @@ import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { MinorMark } from '../MinorMark/MinorMark';
+import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import {
   ARIES_FRAME,
   WheelSvg,
@@ -172,6 +174,18 @@ interface ExpandedChartSidebarProps {
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
+  /** The natal chart's catalog minor bodies (lib/minorBodies/wheel): placed on the
+   *  natal wheel, and listed in the positions table after the built-in bodies in the
+   *  reader's own list order. Never on the overlay's wheel, and never in an aspect
+   *  list, the balance or the local-space dials — placed, not aspected or counted.
+   *  Empty (or absent) whenever the wheel is not the natal chart. */
+  minorBodies?: readonly WheelMinorBody[];
+  /** Hold the natal wheel's catalog ring while their files load (see WheelSvg) — no
+   *  effect while the ring is switched off (MINOR_RING_ENABLED). */
+  minorReserve?: boolean;
+  /** Azimuth + altitude for the table's catalog rows, by MPC number — the same observer
+   *  and instant as `advancedCoords`. */
+  minorCoords?: ReadonlyMap<number, { az: number; alt: number }> | null;
   overlayPlanets?: EclipticPosition[] | null;
   overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
@@ -267,6 +281,9 @@ interface ExpandedChartSidebarProps {
   /** Tab quick-swap feedback for the panel's switcher (null when idle). */
   chartFlash?: ChartQuickFlash | null;
 }
+
+/** No catalog minor bodies — one stable reference for the prop's default. */
+const NO_MINOR: readonly WheelMinorBody[] = [];
 
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const FRAMES_KEY = 'astro:aspect-frames:v1';
@@ -519,6 +536,29 @@ function PlanetTipGlyph({
       hint={planetMeaning(t, planet)}
     >
       <PlanetGlyph planet={planet} size={size} />
+    </TipGlyph>
+  );
+}
+
+// A catalog minor planet's mark below the wheel (the positions list or table) that
+// names itself on hover. The name matters more here than a planet's does: most catalog
+// bodies share one diamond, told apart only by colour, and a compact panel hides the
+// name column beside it. The gloss under the name says why the body has a row here and
+// none in the aspect lists or the balance.
+function MinorTipGlyph({ m }: { m: WheelMinorBody }) {
+  const { t } = useT();
+  return (
+    <TipGlyph
+      className="es-glyph"
+      title={
+        <span className="es-tip-title">
+          <MinorMark color={m.color} glyph={m.glyph} size={14} />
+          {m.label}
+        </span>
+      }
+      hint={t('expandedSidebar.minorHint')}
+    >
+      <MinorMark color={m.color} glyph={m.glyph} size={13} />
     </TipGlyph>
   );
 }
@@ -877,6 +917,9 @@ export function ExpandedChartSidebar({
   isNatalPin,
   angles,
   planets,
+  minorBodies = NO_MINOR,
+  minorReserve = false,
+  minorCoords = null,
   overlayPlanets,
   overlayAngles,
   overlayLabel,
@@ -1292,6 +1335,8 @@ export function ExpandedChartSidebar({
   // Everything it needs is an argument: the bodies, their horizon coordinates,
   // the angle rows and theirs, and the sort state (each table sorts on its own,
   // so ordering the overlay by declination does not disturb the chart above it).
+  // The catalog minor bodies and their horizon figures come last and default to
+  // none: only the natal chart has them (there is no sample at an overlay's instant).
   const positionsBlock = (
     bodies: EclipticPosition[],
     coords: Map<PlanetName, HorizontalCoords>,
@@ -1299,13 +1344,18 @@ export function ExpandedChartSidebar({
     aCoords: Record<string, AngleCoords> | null | undefined,
     sort: SortState<PosSortKey>,
     onSortCol: (key: PosSortKey) => void,
+    minors: readonly WheelMinorBody[] = NO_MINOR,
+    mCoords: ReadonlyMap<number, { az: number; alt: number }> | null = null,
   ): ReactNode => {
-    // Simple view: planets then angles in one row-by-row two-column grid
-    // (even index → left, odd → right), so the angles flow straight on from
-    // the last planet.
+    // Simple view: planets, then the catalog bodies, then angles in one row-by-row
+    // two-column grid (even index → left, odd → right), so each group flows straight
+    // on from the last. (Catalog bodies are an Advanced reading, so in practice they
+    // reach the table below rather than this list — but a list promised to carry
+    // every body in the chart should not depend on that.)
     const planetItems = bodies.map((p) => ({ kind: 'planet' as const, p }));
+    const minorItems = minors.map((m) => ({ kind: 'minor' as const, m }));
     const angleItems = angleRows.map((a) => ({ kind: 'angle' as const, ...a }));
-    const rows = [...planetItems, ...angleItems];
+    const rows = [...planetItems, ...minorItems, ...angleItems];
     const leftCol = rows.filter((_, i) => i % 2 === 0);
     const rightCol = rows.filter((_, i) => i % 2 === 1);
     const renderRow = (row: (typeof rows)[number]) =>
@@ -1316,6 +1366,16 @@ export function ExpandedChartSidebar({
             <span className="es-name">{labels.planet(row.p.name)}</span>
             <span className="es-lon">
               <Longitude lon={row.p.lon} advanced={advanced} />
+            </span>
+          </div>
+        </li>
+      ) : row.kind === 'minor' ? (
+        <li key={row.m.id}>
+          <div className="es-row-main">
+            <MinorTipGlyph m={row.m} />
+            <span className="es-name">{row.m.label}</span>
+            <span className="es-lon">
+              <Longitude lon={row.m.lon} advanced={advanced} />
             </span>
           </div>
         </li>
@@ -1340,43 +1400,71 @@ export function ExpandedChartSidebar({
     // the panel full-width, landscape caps it at 70% of a short viewport, so NEITHER can reach
     // the cutoff by dragging — where the table scrolls sideways instead.
     const advExtraCols = width >= 640 || phone;
+    // The ℞ / S badge after a body's name, and the declination cell with its
+    // out-of-bounds flag — one copy each, for the built-in rows and the catalog rows
+    // alike, so the two kinds of body can never flag the same state differently.
+    const motionBadge = (b: { stationary?: boolean; retrograde?: boolean }) =>
+      b.stationary ? (
+        <TipGlyph
+          className="es-station"
+          title={
+            <span className="es-tip-title">
+              <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
+            </span>
+          }
+          hint={t('expandedSidebar.stationaryHint')}
+        >
+          S
+        </TipGlyph>
+      ) : b.retrograde ? (
+        <TipGlyph
+          className="es-rx"
+          title={
+            <span className="es-tip-title">
+              <span style={{ color: 'var(--danger)' }}>℞</span> {t('expandedSidebar.retrograde')}
+            </span>
+          }
+          hint={t('expandedSidebar.retrogradeHint')}
+        >
+          ℞
+        </TipGlyph>
+      ) : null;
+    const decCell = (decRad: number | undefined) => {
+      const decCls = decRad !== undefined ? decClass(decRad, oobLimitDeg) : '';
+      const dec = decRad !== undefined ? fmtDM(decRad * RAD2DEG, true) : '—';
+      return (
+        <td className={`es-adv-num ${decCls}`}>
+          {decCls ? (
+            <TipGlyph
+              title={
+                <span className="es-tip-title">
+                  <span className="es-dec-oob es-dec-dot" />
+                  {t('expandedSidebar.outOfBounds', {
+                    dir: (decRad ?? 0) > 0 ? t('expandedSidebar.north') : t('expandedSidebar.south'),
+                  })}
+                </span>
+              }
+              hint={t('expandedSidebar.outOfBoundsHint')}
+            >
+              {dec}
+            </TipGlyph>
+          ) : (
+            dec
+          )}
+        </td>
+      );
+    };
     // Advanced view: one planet per row across labelled coordinate columns.
     // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
     // from coords (computed for the relocated observer).
     const renderAdvRow = (p: EclipticPosition) => {
       const hc = coords.get(p.name);
-      const decCls = p.dec !== undefined ? decClass(p.dec, oobLimitDeg) : '';
-      const dec = p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—';
       return (
         <tr key={p.name}>
           <td className="es-adv-point">
             <PlanetTipGlyph planet={p.name} size={13} />
             <span className="es-name">{labels.planet(p.name)}</span>
-            {p.stationary ? (
-              <TipGlyph
-                className="es-station"
-                title={
-                  <span className="es-tip-title">
-                    <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
-                  </span>
-                }
-                hint={t('expandedSidebar.stationaryHint')}
-              >
-                S
-              </TipGlyph>
-            ) : p.retrograde ? (
-              <TipGlyph
-                className="es-rx"
-                title={
-                  <span className="es-tip-title">
-                    <span style={{ color: 'var(--danger)' }}>℞</span> {t('expandedSidebar.retrograde')}
-                  </span>
-                }
-                hint={t('expandedSidebar.retrogradeHint')}
-              >
-                ℞
-              </TipGlyph>
-            ) : null}
+            {motionBadge(p)}
           </td>
           <td className="es-adv-num es-adv-lon">
             {advFullSign ? (
@@ -1392,25 +1480,43 @@ export function ExpandedChartSidebar({
             {p.lat !== undefined ? fmtDM(p.lat * RAD2DEG, true) : '—'}
           </td>
           <td className="es-adv-num">{hc ? fmtDM(hc.ra * RAD2DEG) : '—'}</td>
-          <td className={`es-adv-num ${decCls}`}>
-            {decCls ? (
-              <TipGlyph
-                title={
-                  <span className="es-tip-title">
-                    <span className="es-dec-oob es-dec-dot" />
-                    {t('expandedSidebar.outOfBounds', {
-                      dir: (p.dec ?? 0) > 0 ? t('expandedSidebar.north') : t('expandedSidebar.south'),
-                    })}
-                  </span>
-                }
-                hint={t('expandedSidebar.outOfBoundsHint')}
-              >
-                {dec}
-              </TipGlyph>
+          {decCell(p.dec)}
+          {advExtraCols && (
+            <>
+              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">
+                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+              </td>
+            </>
+          )}
+        </tr>
+      );
+    };
+    // A catalog minor planet's row: the same columns, every figure off the one sample
+    // the wheel placed it from — longitude in the reader's zodiac, speed, latitude, and
+    // the tropical RA and declination of record — with azimuth and altitude from
+    // mCoords, at the planets' own observer. The ℞ / S badges and the out-of-bounds
+    // flag are the built-ins' own.
+    const renderAdvMinorRow = (m: WheelMinorBody) => {
+      const hc = mCoords?.get(m.n);
+      return (
+        <tr key={m.id}>
+          <td className="es-adv-point">
+            <MinorTipGlyph m={m} />
+            <span className="es-name">{m.label}</span>
+            {motionBadge(m)}
+          </td>
+          <td className="es-adv-num es-adv-lon">
+            {advFullSign ? (
+              <Longitude lon={m.lon} advanced={false} />
             ) : (
-              dec
+              <SignLon lon={m.lon} />
             )}
           </td>
+          <td className="es-adv-num">{fmtDM(m.speed, true)}</td>
+          <td className="es-adv-num">{fmtDM(m.lat * RAD2DEG, true)}</td>
+          <td className="es-adv-num">{fmtDM(m.ra * RAD2DEG)}</td>
+          {decCell(m.dec)}
           {advExtraCols && (
             <>
               <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
@@ -1460,11 +1566,16 @@ export function ExpandedChartSidebar({
     // wrongly rather than narrowly. Only Speed has nothing to say for an
     // angle — and the rule below sinks every empty cell to the bottom, in
     // both directions, so an em-dash never heads a sorted column.
+    //
+    // The catalog bodies join the same list, between the two: after every built-in
+    // body, in the reader's own list order, and before the angles.
     type PosRow =
       | { kind: 'planet'; p: EclipticPosition }
+      | { kind: 'minor'; m: WheelMinorBody }
       | { kind: 'angle'; a: (typeof angleRows)[number] };
     const posRows: PosRow[] = [
       ...bodies.map((p): PosRow => ({ kind: 'planet', p })),
+      ...minors.map((m): PosRow => ({ kind: 'minor', m })),
       ...angleRows.map((a): PosRow => ({ kind: 'angle', a })),
     ];
     // Every value in the units the CELL is computed from, so a column sorts by
@@ -1472,6 +1583,22 @@ export function ExpandedChartSidebar({
     // radians (both sides of each column share one unit, which is all a
     // comparison needs).
     const posVal = (r: PosRow, key: PosSortKey): number | null => {
+      if (r.kind === 'minor') {
+        const mc = mCoords?.get(r.m.n);
+        switch (key) {
+          // Past every built-in body's rank and short of the angles' 1000, in the
+          // reader's own list order — so a Point sort ascending reproduces the
+          // table's natural order here too.
+          case 'point': return 500 + r.m.rank;
+          case 'lon': return r.m.lon;
+          case 'speed': return r.m.speed;
+          case 'lat': return r.m.lat;
+          case 'ra': return r.m.ra;
+          case 'dec': return r.m.dec;
+          case 'az': return mc?.az ?? null;
+          case 'alt': return mc?.alt ?? null;
+        }
+      }
       if (r.kind === 'angle') {
         const ac = aCoords?.[r.a.key];
         switch (key) {
@@ -1537,7 +1664,11 @@ export function ExpandedChartSidebar({
                 </thead>
                 <tbody>
                   {sortedPosRows.map((r) =>
-                    r.kind === 'planet' ? renderAdvRow(r.p) : renderAdvAngleRow(r.a),
+                    r.kind === 'planet'
+                      ? renderAdvRow(r.p)
+                      : r.kind === 'minor'
+                        ? renderAdvMinorRow(r.m)
+                        : renderAdvAngleRow(r.a),
                   )}
                 </tbody>
               </table>
@@ -2081,6 +2212,8 @@ export function ExpandedChartSidebar({
 
                         angles={frame}
                         planets={shownPlanets}
+                        minorBodies={minorBodies}
+                        minorReserve={minorReserve}
                         detailed={true}
                         advanced={advanced}
                         aspectOrbs={aspectOrbs}
@@ -2138,6 +2271,8 @@ export function ExpandedChartSidebar({
                             </span>
                           </div>
                         )}
+                        {/* No catalog bodies on this wheel: theirs were sampled at the
+                            birth moment, and this chart is another instant's. */}
                         <WheelSvg
                           size={wheelSize}
                           angles={overlayAngles!}
@@ -2159,6 +2294,8 @@ export function ExpandedChartSidebar({
                         angles={frame}
 
                         planets={shownPlanets}
+                        minorBodies={minorBodies}
+                        minorReserve={minorReserve}
                         detailed={true}
                         advanced={advanced}
                         aspectOrbs={aspectOrbs}
@@ -2211,9 +2348,11 @@ export function ExpandedChartSidebar({
       </section>
 
       {/* Planet + angle readout below the wheel — no heading. Planets come
-          first, then the visible angles (Mc, Ic, As, Ds) tack onto the end of
-          the same list. The angles also render in the wheel above. */}
-      {frame && (shownPlanets.length > 0 || shownAngleRows.length > 0) && (
+          first, then the catalog minor bodies, then the visible angles (Mc, Ic,
+          As, Ds) tack onto the end of the same list. The angles also render in
+          the wheel above. */}
+      {frame &&
+        (shownPlanets.length > 0 || minorBodies.length > 0 || shownAngleRows.length > 0) && (
         <section className="es-section es-section-details">
           {positionsBlock(
             shownPlanets,
@@ -2222,6 +2361,8 @@ export function ExpandedChartSidebar({
             angleCoords,
             posSort,
             (key) => setPosSort((s) => nextSort(s, key)),
+            minorBodies,
+            minorCoords,
           )}
           {/* The overlay's own positions, one press away. Same block, same
               columns, same sort gesture — the overlay is a chart too, and the
@@ -2265,6 +2406,9 @@ export function ExpandedChartSidebar({
           >
             {t('expandedSidebar.balanceHeading')}
           </TipHeading>
+          {/* The built-in bodies only. The catalog minor bodies are placed in the
+              chart but not counted: with them in, the tallies would measure how many
+              bodies are switched on rather than the chart (calculation-methods.md). */}
           {balanceBlock(shownPlanets)}
           {/* The SECOND chart's balance, one press away. Same block, same
               groupings, its own bodies — the overlay is a chart too, and "how is

@@ -1,0 +1,27 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* The HTML form of the shared catalog diamond (MinorMark): a small square turned on
+   its corner, in em so it follows the row it sits in — a 13px row gets the 7px square
+   the Minor bodies window has always drawn. The box is as tall as the turned square's
+   own diagonal (0.54em × √2 ≈ 0.76em), so the shape is never clipped and a row that
+   centres its items seats it level with the name beside it. A surface that wants a
+   fixed box (the Minor bodies window) sizes it with its own class. */
+.minor-mark-diamond {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 0.76em;
+  flex-shrink: 0;
+}
+.minor-mark-diamond > span {
+  width: 0.54em;
+  height: 0.54em;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}

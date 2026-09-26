@@ -23,7 +23,10 @@ import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 // pixels off a Chrome screenshot of this very markup. Across the nineteen glyphs
 // the ink sits between 0.045 and 0.155 of the size below the em-box centre, and
 // 0.10 is the middle of that — within 0.005 for most of them.
-const GLYPH_LIFT = 0.1;
+//
+// Exported so any other symbol drawn in a wheel disc (the catalog minor bodies'
+// coins, MinorMarkSvg) is lifted by this figure rather than a restatement of it.
+export const GLYPH_LIFT = 0.1;
 
 // The exceptions, and only where the eye can see them. ⊗ is a CIRCLE INSIDE A
 // CIRCLE once it is drawn in a disc, and nothing shows a few pixels of offset like

@@ -6,10 +6,11 @@
 
 // The Capture "Details" panel: an opaque overlay inside the capture frame, exported with
 // the map. Two shapes, chosen by the HUD's Wheel/List control:
-//   • LIST — planet / angle positions (☽ Moon 21°38' ♉ Taurus) + an element/modality
-//     tally, the same rows the wheel sidebar shows.
+//   • LIST — planet / catalog minor body / angle positions (☽ Moon 21°38' ♉ Taurus) + an
+//     element/modality tally, the same rows the wheel sidebar shows.
 //   • WHEEL — the shared chart wheel (WheelSvg) with the bodies/angles the Map Filter
-//     keeps visible, and (optional) a 3×4 element/modality balance grid beneath it.
+//     keeps visible, plus the reader's catalog minor bodies (which the Map Filter doesn't
+//     gate), and (optional) a 3×4 element/modality balance grid beneath it.
 //
 // Three placements, set by `orientation`:
 //   • LEFT — a rail down landscape frames (16:9).
@@ -38,7 +39,9 @@ import {
 import { PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, type BalanceSeg, type BalanceGrid } from '../../lib/astro/format';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
+import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
+import { MinorMark } from '../MinorMark/MinorMark';
 import { CaptureBalanceGrid } from './CaptureBalanceGrid';
 import './CaptureExtras.css';
 
@@ -62,6 +65,9 @@ export type CaptureFrameExtras =
   | {
       view: 'list';
       planets: CaptureExtraPlanet[];
+      /** Catalog minor bodies, listed after the planets in the reader's own list order
+       *  — the sidebar's readout. Omitted → none. Never in the balance rows. */
+      minors?: readonly WheelMinorBody[];
       angles: CaptureExtraAngle[];
       balance: BalanceSeg[];
     }
@@ -69,6 +75,11 @@ export type CaptureFrameExtras =
       view: 'wheel';
       angles: RelocatedAngles;
       planets: EclipticPosition[];
+      /** Catalog minor bodies on the natal wheel. Not one of the full-chart extras
+       *  below: they cost a rail wheel no room — they are rim diamonds at their true
+       *  degree (the catalog ring is switched off; with it on, each wheel's own size
+       *  would decide) — so both placements carry them. Omitted → none. */
+      minorBodies?: readonly WheelMinorBody[];
       visibleAngles: Set<CaptureWheelAngleKey>;
       balanceGrid: BalanceGrid | null;
       /* The rest are the full-chart extras — the same ones the expanded sidebar draws.
@@ -171,6 +182,7 @@ export function CaptureExtras({
             size={wheelSize}
             angles={data.angles}
             planets={data.planets}
+            minorBodies={data.minorBodies ?? null}
             detailed
             interactive
             readouts
@@ -193,6 +205,19 @@ export function CaptureExtras({
               </span>
               <span className="cx-name">{labels.planet(p.name)}</span>
               {sign(p.lon)}
+            </div>
+          ))}
+          {/* The catalog minor bodies: the shared mark (its own symbol, else the diamond)
+              in its line colour, then its catalog name and number. A symbol is an
+              .astro-glyph span and is re-stamped by the export's glyph pass like the
+              planets'; the diamond is a plain CSS shape and needs no stamping. */}
+          {(data.minors ?? []).map((m) => (
+            <div className="cx-row" key={m.id}>
+              <span className="cx-glyph">
+                <MinorMark color={m.color} glyph={m.glyph} />
+              </span>
+              <span className="cx-name">{m.label}</span>
+              {sign(m.lon)}
             </div>
           ))}
           {data.angles.map((a) => (

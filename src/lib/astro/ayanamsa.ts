@@ -60,11 +60,18 @@ export function ayanamsaRad(jd: number, mode: ZodiacMode): number {
 }
 
 /** Display clones with every longitude moved into the sidereal frame; the
- *  equatorial fields (dec) and motion flags ride along untouched. */
-export function shiftEclipticPositions(
-  positions: EclipticPosition[],
+ *  equatorial fields (dec) and motion flags ride along untouched.
+ *
+ *  Generic over anything with a `lon`, so a family outside EclipticPosition (the
+ *  catalog minor bodies on the wheel) is shifted by THIS function rather than by a
+ *  restated `lon - ayan` beside it — one shift, so no ring can end up in a zodiac
+ *  the planets beside it are not in. A call site that builds its argument inline
+ *  from a literal name (`{ name: 'Fortune', … }`) passes `<EclipticPosition>`,
+ *  since inference would otherwise widen the name to `string`. */
+export function shiftEclipticPositions<T extends { lon: number }>(
+  positions: T[],
   ayan: number,
-): EclipticPosition[] {
+): T[] {
   if (ayan === 0) return positions;
   return positions.map((p) => ({ ...p, lon: wrap2pi(p.lon - ayan) }));
 }

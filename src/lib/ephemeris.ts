@@ -689,20 +689,65 @@ export function sampleMinorBody(jd: number, n: number): MinorSample | null {
   return s && { n, ...s };
 }
 
+// Just the ecliptic-longitude speed (deg/day) of one catalog body — the minor-body
+// twin of longitudeSpeedAt below, for bracketing a station. Null outside the file.
+function minorSpeedAt(jd: number, n: number): number | null {
+  try {
+    return eph().calculatePosition(jd, minorSweId(n), FLAG_ECL).longitudeSpeed;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Positions for a set of catalog bodies at one instant. The engine keeps ONE
- * numbered-asteroid file open at a time and reopens it whenever the body changes,
- * so everything for a body is sampled before moving to the next (body-outer) —
- * one open per body. A time sweep over several bodies should follow the same
- * order: loop bodies outside, instants inside.
+ * Full samples for a set of catalog bodies at one instant — both frames and the
+ * speed, plus (with `withStation`) the same station flag the built-ins carry. The
+ * engine keeps ONE numbered-asteroid file open at a time and reopens it whenever the
+ * body changes, so everything for a body is sampled before moving to the next
+ * (body-outer) — one open per body, the station bracket included: its two extra
+ * speeds are taken while the body's file is still the open one. A time sweep over
+ * several bodies should follow the same order: loop bodies outside, instants inside.
  */
-export function getMinorPositions(jd: number, numbers: readonly number[]): MinorPosition[] {
-  const out: MinorPosition[] = [];
+export function getMinorSamples(
+  jd: number,
+  numbers: readonly number[],
+  withStation = false,
+): (MinorSample & { stationary?: boolean })[] {
+  const out: (MinorSample & { stationary?: boolean })[] = [];
   for (const n of numbers) {
     const s = sampleMinorBody(jd, n);
-    if (s) out.push({ n, ra: s.ra, dec: s.dec, speed: s.speed });
+    if (!s) continue;
+    if (!withStation) {
+      out.push(s);
+      continue;
+    }
+    const before = minorSpeedAt(jd - STATION_BRACKET_DAYS, n);
+    const after = minorSpeedAt(jd + STATION_BRACKET_DAYS, n);
+    out.push({ ...s, stationary: stationFromBracket(before, after, s.speed) });
   }
   return out;
+}
+
+/**
+ * One sample stripped to the line generator's shape — the ONE place that stripping is
+ * written, for getMinorPositions below and for a caller that already holds the full
+ * samples (the App samples once, for the wheel and the lines both).
+ *
+ * Never carries `lon`. On a MinorPosition that field means a longitude OF RECORD, and
+ * projectMinorOntoEcliptic prefers it over the ra/dec round-trip — so passing the
+ * sample's longitude through here would quietly change which point the In-Zodiaco
+ * lines are drawn from.
+ */
+export function minorPositionOf(s: MinorSample): MinorPosition {
+  return { n: s.n, ra: s.ra, dec: s.dec, speed: s.speed };
+}
+
+/**
+ * Positions for a set of catalog bodies at one instant — getMinorSamples stripped to
+ * the line generator's shape (minorPositionOf).
+ */
+export function getMinorPositions(jd: number, numbers: readonly number[]): MinorPosition[] {
+  return getMinorSamples(jd, numbers).map(minorPositionOf);
 }
 
 // Just the ecliptic-longitude speed (deg/day) of one body at an instant — a
@@ -741,6 +786,18 @@ function stationaryFlag(
   }
   const before = longitudeSpeedAt(jd - STATION_BRACKET_DAYS, name, nodeType);
   const after = longitudeSpeedAt(jd + STATION_BRACKET_DAYS, name, nodeType);
+  return stationFromBracket(before, after, speed);
+}
+
+/** The station test itself, on speeds already in hand (deg/day): a sign change
+ *  across the ±STATION_BRACKET_DAYS bracket. Pure, and the ONE copy of the rule —
+ *  the built-ins (stationaryFlag) and the catalog bodies (getMinorSamples) both
+ *  read it, so the two families cannot come to disagree about what a station is. */
+export function stationFromBracket(
+  before: number | null,
+  after: number | null,
+  speed: number,
+): boolean {
   // At the very edge of ephemeris coverage a neighbor may be unavailable; fall
   // back to a tight near-zero instantaneous-speed test (real stations only).
   if (before === null || after === null) return Math.abs(speed) < 0.002;
@@ -913,6 +970,15 @@ export interface HorizontalCoords {
   alt: number;  // altitude above the horizon, radians (negative = below)
 }
 
+// One observer, as horizontalAt takes it: local sidereal time and the sine/cosine of
+// the latitude. Shared so the planets' table and the catalog bodies' rows below are
+// set up for the observer by the same three lines rather than two copies of them.
+function observerAt(gmst: number, obsLatDeg: number, obsLngDeg: number) {
+  const lst = norm2pi(gmst + obsLngDeg * DEG2RAD);
+  const phi = obsLatDeg * DEG2RAD;
+  return { lst, sinPhi: Math.sin(phi), cosPhi: Math.cos(phi) };
+}
+
 export function getHorizontalCoords(
   ecliptic: EclipticPosition[],
   gmst: number,
@@ -920,10 +986,7 @@ export function getHorizontalCoords(
   obsLatDeg: number,
   obsLngDeg: number,
 ): Map<PlanetName, HorizontalCoords> {
-  const lst = norm2pi(gmst + obsLngDeg * DEG2RAD);
-  const phi = obsLatDeg * DEG2RAD;
-  const sinPhi = Math.sin(phi);
-  const cosPhi = Math.cos(phi);
+  const { lst, sinPhi, cosPhi } = observerAt(gmst, obsLatDeg, obsLngDeg);
   const out = new Map<PlanetName, HorizontalCoords>();
   for (const p of ecliptic) {
     // Equatorial coordinates of record (midpoint charts) win over the geometric
@@ -933,20 +996,55 @@ export function getHorizontalCoords(
       p.ra !== undefined && p.dec !== undefined
         ? { ra: p.ra, dec: p.dec }
         : eclipticToRaDec(p.lon, p.lat ?? 0, eps);
-    const H = lst - ra; // local hour angle
-    const alt = Math.asin(
-      sinPhi * Math.sin(dec) + cosPhi * Math.cos(dec) * Math.cos(H),
-    );
-    // Azimuth measured from north, increasing clockwise (matches the local-space
-    // bearing in localSpace.ts).
-    const az = norm2pi(
-      Math.atan2(
-        -Math.sin(H),
-        Math.tan(dec) * cosPhi - Math.cos(H) * sinPhi,
-      ),
-    );
+    const { az, alt } = horizontalAt(ra, dec, lst, sinPhi, cosPhi);
     out.set(p.name, { ra, az, alt });
   }
+  return out;
+}
+
+/** Azimuth + altitude of one equatorial point for one observer — the per-body step
+ *  of getHorizontalCoords, taken out so a body that is not a PlanetName (a catalog
+ *  minor body) is converted by the same arithmetic rather than a copy of it. Pass
+ *  `lst` = norm2pi(gmst + observer longitude) and the sine/cosine of the observer's
+ *  latitude; ra/dec are the tropical equatorial coordinates of record, never a
+ *  zodiac-shifted display value. */
+export function horizontalAt(
+  ra: number,
+  dec: number,
+  lst: number,
+  sinPhi: number,
+  cosPhi: number,
+): { az: number; alt: number } {
+  const H = lst - ra; // local hour angle
+  const alt = Math.asin(
+    sinPhi * Math.sin(dec) + cosPhi * Math.cos(dec) * Math.cos(H),
+  );
+  // Azimuth measured from north, increasing clockwise (matches the local-space
+  // bearing in localSpace.ts).
+  const az = norm2pi(
+    Math.atan2(
+      -Math.sin(H),
+      Math.tan(dec) * cosPhi - Math.cos(H) * sinPhi,
+    ),
+  );
+  return { az, alt };
+}
+
+/** Azimuth + altitude for catalog minor bodies, keyed by MPC number — the positions
+ *  table's catalog rows, getHorizontalCoords' twin for a family that is not keyed by
+ *  PlanetName. Same observer set-up, same per-body arithmetic (horizontalAt), so a
+ *  catalog body and a planet at one ra/dec read the same azimuth and altitude. Feed it
+ *  the TROPICAL ra/dec of record (as sampled), with the gmst and observer the planets'
+ *  table uses; RA is not repeated here, since each body already carries its own. */
+export function getMinorHorizontalCoords(
+  bodies: readonly { n: number; ra: number; dec: number }[],
+  gmst: number,
+  obsLatDeg: number,
+  obsLngDeg: number,
+): Map<number, { az: number; alt: number }> {
+  const { lst, sinPhi, cosPhi } = observerAt(gmst, obsLatDeg, obsLngDeg);
+  const out = new Map<number, { az: number; alt: number }>();
+  for (const b of bodies) out.set(b.n, horizontalAt(b.ra, b.dec, lst, sinPhi, cosPhi));
   return out;
 }
 

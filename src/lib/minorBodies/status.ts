@@ -19,7 +19,7 @@ import type { MinorBodiesPref, MinorListEntry } from './prefs';
 export type MinorRowStatus =
   /** On the list, switched off. */
   | { kind: 'off' }
-  /** Drawn on the map. */
+  /** Has lines on the map. */
   | { kind: 'shown' }
   /** Switched on; its file is on its way. */
   | { kind: 'loading' }

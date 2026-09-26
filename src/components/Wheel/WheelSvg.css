@@ -162,7 +162,8 @@
 .wheel-svg.interactive .planet-mark,
 .wheel-svg.interactive .sign-hit,
 .wheel-svg.interactive .house-hit,
-.wheel-svg.interactive .sign-mark {
+.wheel-svg.interactive .sign-mark,
+.wheel-svg.interactive .minor-pip-hit {
   cursor: help;
 }
 
@@ -233,6 +234,34 @@
   fill: rgba(var(--accent-rgb), 0.12);
 }
 
+/* Catalog minor bodies' rim diamonds (the body's tick at its true degree) are never a
+   hover target themselves: below the ring size, a cluster's zone drawn beneath them
+   names the bodies, and on the ring the coins do. Pointer-transparent so the zone stays
+   hot across its whole strip, which tints on hover like the sign and house zones. */
+.wheel-svg .minor-pip {
+  pointer-events: none;
+}
+/* On Earth the catalog palette is the map's deep set, tuned for the parchment basemap,
+   and on this theme's dark-brown panel it sinks to about 1.1–1.4:1 — a speck, and with
+   the catalog ring off it is the body's only mark on the wheel. A parchment halo makes it
+   findable without changing its colour, so it stays the colour of its lines. paint-order
+   keeps the fill whole; the export inlines all four properties (lib/wheelRaster). `> path`
+   leaves the ring's leader line alone. */
+:root[data-theme='vintage'] .wheel-svg .minor-pip > path {
+  stroke: rgba(var(--tint), 0.85);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.wheel-svg.interactive .minor-pip-hit {
+  fill: rgba(var(--accent-rgb), 0);
+  pointer-events: all;
+  transition: fill 0.14s ease;
+}
+.wheel-svg.interactive .minor-pip-hit:hover {
+  fill: rgba(var(--accent-rgb), 0.12);
+}
+
 /* The four angle codes (As/Ds/Mc/Ic), bare text on the glyph ring (no disc, so
    they don't read as planets) — a touch larger to hold their own without one. A
    panel-colored halo (paint-order:stroke keeps it behind the fill) keeps the
@@ -254,6 +283,11 @@
   z-index: 6;
   pointer-events: none;
   white-space: nowrap;
+  /* Sized to its own content (capped by the inline max-width), never to the room between
+     `left` and the wheel's edge: the box is shifted back by half its width only after it
+     is sized, so a shrink-to-fit width squeezes every tip anchored on the right half — and
+     since the title may wrap, it would wrap there too. */
+  width: max-content;
   animation: wheel-tip-in 0.12s ease-out;
 }
 .wheel-tip[data-placement='above'] {
@@ -262,10 +296,23 @@
 .wheel-tip[data-placement='below'] {
   transform: translate(-50%, 0);
 }
+/* The wrap is for the catalog minor bodies: "Makemake (136472) | ♐ Sagittarius" is
+   wider than the tag, and would otherwise run out of it. It breaks between the title's
+   parts — never inside one — and a title that fits stays on one line exactly as before. */
 .wheel-tip-title {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 1px 6px;
+}
+
+/* One body per line in a catalog cluster's tip: its mark in its line colour — which is
+   what ties the line to its diamond on the rim — then its name and degree, then the
+   sign glyph. */
+.wheel-tip-minor-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* The ℞ / S motion tag: appended to a retrograde / stationary readout sign's
@@ -283,6 +330,8 @@
   color: var(--text-faint);
   font-weight: 400;
   opacity: 0.7;
+  /* With the sign group's 4px gap, the same 6px the title's own gap gave it. */
+  margin-right: 2px;
 }
 .wheel-tip-sign {
   display: inline-flex;
@@ -317,7 +366,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wheel-svg.interactive .planet-mark-visual {
+  .wheel-svg.interactive .planet-mark-visual,
+  .wheel-svg.interactive .minor-pip-hit {
     transition: none;
   }
   .wheel-svg.interactive .planet-mark:hover .planet-mark-visual {

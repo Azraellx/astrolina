@@ -102,6 +102,10 @@ export const expandedSidebar = {
   north: 'north',
   south: 'south',
   outOfBoundsHint: 'Declination beyond the Sun’s maximum (23°26′), past the zodiac’s normal latitude band, an astrologically notable extreme.',
+  // A catalog minor planet's mark in the Advanced table (its name is the tip's title).
+  // Says what the table can't: why the body has a row here and none in the aspect
+  // lists or the balance below.
+  minorHint: 'A minor planet from your list, at the chart’s own moment. Placed in the chart, but not aspected and not counted in the balance.',
 
   // Aspect names + descriptions for the Advanced aspect-symbol hover tips.
   aspect: {
@@ -138,9 +142,17 @@ export const expandedSidebar = {
   // Balance section: element/modality glyph constellations (always shown) +
   // essential dignities (Advanced) over the bodies the map filter shows. The
   // dignities read whichever rulership table Settings ▸ Calculation is set to.
+  //
+  // "Shown planets, points and main asteroids", not "the shown bodies": the catalog minor
+  // planets are shown in the chart and deliberately left out of these tallies (with them
+  // in, the counts would measure how many bodies are switched on rather than the chart —
+  // the reason is on calculation-methods.md), so "shown bodies" would promise a set this
+  // isn't. The three named groups are exactly what Map filters toggles ("main asteroids"
+  // is the Minor bodies window's name for the five built-in ones, which ARE counted), and
+  // "shown" says the tally follows that filter.
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
-  balanceHint: 'How the shown bodies spread across the four elements (fire, earth, air, water) and three modalities (cardinal, fixed, mutable) — a quick read of where the chart’s emphasis lies.',
+  balanceHint: 'How the shown planets, points and main asteroids spread across the elements (fire, earth, air, water) and modalities (cardinal, fixed, mutable) — where the chart’s emphasis lies.',
   element: { fire: 'Fire', earth: 'Earth', air: 'Air', water: 'Water' },
   modality: { cardinal: 'Cardinal', fixed: 'Fixed', mutable: 'Mutable' },
   // Blurbs shown beneath the name in each balance category's hover tip: the

@@ -113,11 +113,14 @@ import {
   getAngleCoords,
   getEclipticPositions,
   getHorizontalCoords,
+  getMinorHorizontalCoords,
   getMinorPositions,
+  getMinorSamples,
   getPlanetPositions,
   gmstRadians,
   isDayBirth,
   jdToCivil,
+  minorPositionOf,
   needsAsteroidEphemeris,
   obliquity,
   partOfFortuneLon,
@@ -220,6 +223,7 @@ import {
   withMinorDrawGate,
 } from './lib/minorBodies/status';
 import { bundledMinorBody } from './lib/minorBodies/bundled';
+import { buildWheelMinor, type WheelMinorBody } from './lib/minorBodies/wheel';
 import { minorIconId } from './components/Map/glyphImages';
 import { MinorBodiesHud } from './components/MinorBodiesHud/MinorBodiesHud';
 import { generateNightShade } from './lib/astro/nightShade';
@@ -346,6 +350,9 @@ interface Point {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+// The wheel's catalog set when it has none — one stable reference, so a wheel with no
+// catalog bodies never re-runs its ring layout on a fresh empty array.
+const NO_WHEEL_MINOR: readonly WheelMinorBody[] = [];
 
 // Persists the active Overlay-menu extension id (registerOverlayExtension). A single
 // key (not per-extension) since the Overlay menu is single-select; the core ships no
@@ -2874,10 +2881,17 @@ export default function App() {
   // At the chart's own moment (the rows' "outside its file's dates" reads this), then
   // at the slid instant for the lines — the same two steps the planets take, so a Slide
   // keeps catalog lines aligned with the cage.
-  const minorPositions = useMemo(
-    () => (minorNumbers.length ? getMinorPositions(jd, minorNumbers) : []),
+  //
+  // ONE sample at the chart's moment, taken in full — both frames, the speed, and the
+  // station bracket — because the chart wheel places these same bodies from it (see
+  // wheelMinor below). The lines get it stripped to their own shape, so the wheel and
+  // the map read one instant from one engine call per body rather than two samplings
+  // that could only agree by coincidence.
+  const minorSamples = useMemo(
+    () => (minorNumbers.length ? getMinorSamples(jd, minorNumbers, true) : []),
     [jd, minorNumbers],
   );
+  const minorPositions = useMemo(() => minorSamples.map(minorPositionOf), [minorSamples]);
   const minorSlidPositions = useMemo(() => {
     if (!sliding || minorNumbers.length === 0) return minorPositions;
     return getMinorPositions(jd + slideBucket * SLIDE_BUCKET_DAYS, minorNumbers);
@@ -4360,7 +4374,7 @@ export default function App() {
     const moon = ecliptic.find((p) => p.name === 'Moon');
     if (!sun || !moon) return null;
     const lon = partOfFortuneLon(angles.asc, sun.lon, moon.lon, fortuneDay, effFortuneFormula);
-    return shiftEclipticPositions([{ name: 'Fortune', lon, lat: 0 }], natalAyan)[0];
+    return shiftEclipticPositions<EclipticPosition>([{ name: 'Fortune', lon, lat: 0 }], natalAyan)[0];
   }, [fortuneDay, angles, current, ecliptic, effFortuneFormula, natalAyan]);
   const displayAngles = useMemo(
     () =>
@@ -4399,24 +4413,78 @@ export default function App() {
   // angles fall away with it.
   const isCyclo = overlayMode === 'cyclo';
   const noChart = promoteOverlay && isCyclo;
+  // Whether the wheel's single chart IS the natal chart — ONE test, read by both the
+  // planets and the catalog bodies below, so nothing natal can ride onto a wheel that
+  // is standing in for another chart. False for the NO CHART state and for a promoted
+  // overlay, whose bodies are another instant's: a catalog body sampled at the birth
+  // moment has no place on a transit chart, and there is no sample at the overlay's own
+  // instant to put there instead (see wheelMinor).
+  const wheelIsNatal = !noChart && !(promoteOverlay && displayOverlayEcliptic);
   // Memoized so appending Fortune (a fresh array on the common natal path) doesn't
   // hand the wheel + capture memos a new reference every render.
   const wheelPlanets = useMemo(
     () =>
-      noChart
-        ? []
-        : promoteOverlay && displayOverlayEcliptic
-          ? displayOverlayEcliptic
-          : fortuneWheelPos
-            ? [...displayEcliptic, fortuneWheelPos]
-            : displayEcliptic,
-    [noChart, promoteOverlay, displayOverlayEcliptic, displayEcliptic, fortuneWheelPos],
+      wheelIsNatal
+        ? fortuneWheelPos
+          ? [...displayEcliptic, fortuneWheelPos]
+          : displayEcliptic
+        : noChart
+          ? []
+          : // Promoted: wheelIsNatal is false here only because this is set.
+            (displayOverlayEcliptic ?? []),
+    [wheelIsNatal, noChart, displayOverlayEcliptic, displayEcliptic, fortuneWheelPos],
   );
   const wheelAngles = noChart
     ? null
     : promoteOverlay && displayOverlayAngles
       ? displayOverlayAngles
       : displayAngles;
+  // The catalog minor bodies the NATAL wheel places — every one that is wanted, loaded
+  // and sampled at the chart's own moment, moved into the reader's zodiac by the natal
+  // ring's own ayanamsa.
+  //
+  // Deliberately NOT the map's drawn set. The holds that belong to a BODY apply here as
+  // they do everywhere (its switch, Hide all, Advanced, a held source, a composite, a
+  // date outside its file) — minorNumbers and the sample already carry them. The gates
+  // that belong to the LINES do not: no birth time, the Angles filter, the natal lines
+  // hidden, the eclipse clean-up. Each of those takes a body's lines off the map while
+  // the body itself is still where it is, exactly as it does for the planets, whose
+  // wheel set has never read a line switch either. So this must never read
+  // drawMinorLines, effMinorLines, minorRowsEff, minorRowsDrawn or minorAnglesOff — a
+  // wheel that followed them would lose a body every time a reader tidied the map.
+  const wheelMinor = useMemo<readonly WheelMinorBody[]>(
+    () =>
+      wheelIsNatal && minorSamples.length > 0
+        ? buildWheelMinor(minorSamples, {
+            ayan: natalAyan,
+            decor: minorDecor,
+            t,
+            list: minorPref.list,
+          })
+        : NO_WHEEL_MINOR,
+    [wheelIsNatal, minorSamples, natalAyan, minorDecor, t, minorPref.list],
+  );
+  // Hold the catalog ring while a wanted body's file is still on its way. A body with no
+  // load state yet already reads 'loading', so the ring is held from the first paint —
+  // without this the planet ring would draw, then step inward a moment later when the
+  // files land. Only a REQUEST: the wheel takes the ring only where its size allows.
+  //
+  // TODAY THIS HAS NO EFFECT ANYWHERE. The catalog ring is switched off
+  // (MINOR_RING_ENABLED in lib/wheelGeometry, with the reason), so no wheel is granted it,
+  // and WheelSvg reads this only as part of that request. Kept rather than deleted: it is
+  // the part of the ring that has to be right the day the ring comes back, and nothing
+  // would flag its absence then — the planets would just step inward after first paint.
+  const wheelMinorReserve = wheelIsNatal && minorRows.some((r) => r.status.kind === 'loading');
+  // Azimuth and altitude for the positions table's catalog rows, at the very observer
+  // and sidereal time the planets' rows use (advancedCoords). From the TROPICAL ra/dec
+  // each body was sampled with — horizon coordinates are frame-independent physics, and
+  // a zodiac-shifted input would corrupt them. Null when the wheel is not the natal
+  // chart, since then there are no catalog rows to fill.
+  const minorCoords = useMemo(() => {
+    const obs = activePoint ?? current?.birthplace;
+    if (!obs || wheelMinor.length === 0) return null;
+    return getMinorHorizontalCoords(wheelMinor, gmst, obs.lat, obs.lng);
+  }, [activePoint, current, wheelMinor, gmst]);
   // Capture "Extras" rows: the SAME planet/angle readout the wheel sidebar shows, filtered
   // by the on-map planet + line-type toggles so the panel matches what's drawn. lonToZodiac
   // (in the panel) formats each from these longitudes, so the two readouts can't diverge.
@@ -4528,6 +4596,13 @@ export default function App() {
   // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
   // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
   // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
+  //
+  // The catalog bodies ride on BOTH wheels and in the list: they are the chart's bodies as
+  // much as the planets are, and the list is promised to match the sidebar's readout. Top
+  // level on the wheel payload rather than among the card's extras, because they are not a
+  // crowding detail a rail wheel has to give up: they are rim marks at their degree, which
+  // cost no room. (With the catalog ring switched back on, each wheel's own size would
+  // decide between the two; see MINOR_RING_ENABLED in lib/wheelGeometry.)
   const captureFrameExtras: CaptureFrameExtras | null =
     mapTool !== 'capture' || captureViewEff === 'none'
       ? null
@@ -4538,6 +4613,7 @@ export default function App() {
                 view: 'wheel',
                 angles: captureCardFrame,
                 planets: captureWheelPlanets,
+                minorBodies: wheelMinor,
                 visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
                 balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
                 overlayPlanets: captureCardOverlay,
@@ -4554,6 +4630,7 @@ export default function App() {
                 view: 'wheel',
                 angles: wheelAngles,
                 planets: captureWheelPlanets, // baseline of any view — no planets toggle
+                minorBodies: wheelMinor,
                 visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
                 balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
               }
@@ -4563,7 +4640,11 @@ export default function App() {
           ? {
               view: 'list',
               planets: captureExtraPlanets, // baseline — always shown in a chosen view
+              // After the planets, in the reader's own list order — the sidebar's order.
+              minors: wheelMinor,
               angles: captureExtras.angles ? captureExtraAngles : [],
+              // The tally stays the planets' own: the catalog bodies are placed, not
+              // counted (captureBalance is built from captureExtraPlanets alone).
               balance: captureExtras.balance ? captureBalance : [],
             }
           : null;
@@ -6507,6 +6588,11 @@ export default function App() {
           isNatalPin={isNatalPin}
           angles={wheelAngles}
           planets={wheelPlanets}
+          // The natal chart's catalog bodies (empty unless the wheel IS the natal chart),
+          // the ring held while their files load, and their rows' horizon figures.
+          minorBodies={wheelMinor}
+          minorReserve={wheelMinorReserve}
+          minorCoords={minorCoords}
           planetsOnly={noTime}
           // CCG never rides as an overlay ring/caption either (no coherent chart to
           // show alongside the natal) — isCyclo drops it whether or not it's promoted.
@@ -6589,6 +6675,7 @@ export default function App() {
             isNatalPin={isNatalPin}
             angles={wheelAngles}
             planets={wheelPlanets}
+            minorBodies={wheelMinor}
             visiblePlanets={visiblePlanets}
             noChart={noChart}
             planetsOnly={noTime}

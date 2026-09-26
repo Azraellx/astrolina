@@ -58,7 +58,16 @@ export interface MinorBodySource {
    *  kept, shown, never fetched — and return by themselves when it opens again. */
   gate?: () => MinorBodySourceGate | null;
   search(query: string, opts: { limit: number; signal?: AbortSignal }): Promise<MinorBodyHit[]>;
-  /** The raw bytes of body `n`'s ephemeris file. Throw a {@link MinorBodySourceFailure}
+  /** Which of body `n`'s two files this source serves it from. Omit it and every body is
+   *  served SHORT — the bundled set's case. A source says 'long' for a body whose short
+   *  file it can't serve and whose long one it can (a hosted catalog whose copy of that
+   *  short file failed its checks). The loader asks this first, then asks
+   *  {@link fetchFile} for that span and checks the bytes as THAT span's file — so a
+   *  source can't hand over one file while naming the other. May throw, as fetchFile
+   *  may, and the body's row reads the same way. */
+  spanFor?(n: number): EpheSpan | Promise<EpheSpan>;
+  /** The raw bytes of body `n`'s ephemeris file in `span` — 'short' unless
+   *  {@link spanFor} said otherwise. Throw a {@link MinorBodySourceFailure}
    *  to put a specific sentence on the body's row (no session, not in the catalog,
    *  upstream down); anything else reads as a generic load failure. */
   fetchFile(n: number, span: EpheSpan, signal?: AbortSignal): Promise<ArrayBuffer>;
