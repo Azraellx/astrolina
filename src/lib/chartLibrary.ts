@@ -121,6 +121,20 @@ export function chartTag(c: StoredChart): ChartTag {
   return c.tag ?? 'none';
 }
 
+/** Marks the example charts a fresh library starts with. Their ids are DETERMINISTIC,
+ *  unlike every other chart's: a minted id (`newChartId`) is random per page load, and
+ *  the seeds are persisted on first boot, so an identity test against a freshly minted
+ *  set would hold on the first visit and quietly stop holding on the second. This
+ *  prefix is what "the reader hasn't added anything of their own yet" is measured by,
+ *  so it has to survive a reload. Editing an example keeps its id, and so keeps it an
+ *  example — which is the reading we want. */
+export const SEED_CHART_ID_PREFIX = 'seed_';
+
+/** One of the example charts a fresh library starts with (see SEED_CHART_ID_PREFIX). */
+export function isSeedChart(c: StoredChart): boolean {
+  return c.id.startsWith(SEED_CHART_ID_PREFIX);
+}
+
 // Chart-name length limits. Hard: the most a name can be (enforced on entry). Soft:
 // where it gets ellipsised for display around the app (the full name is still stored).
 // Starred rows reserve a little width for the star badge, so they ellipsise sooner.

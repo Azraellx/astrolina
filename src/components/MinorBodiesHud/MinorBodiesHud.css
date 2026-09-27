@@ -139,6 +139,43 @@
   border-radius: 999px;
 }
 
+/* The one-time scope hint: a small bubble under the chip row whose caret points up
+   at the chip it names (--mbh-hint-caret, measured by the component), and a ring on
+   that chip while it shows. In the window's own flow rather than a portaled tip, so
+   it moves with the window when dragged. The caret sits wholly above the bubble, so
+   the translucent fill never doubles where the two would overlap. */
+.mbh-scopehint {
+  position: relative;
+  margin: 3px 2px 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--text-strong);
+  font-size: 11px;
+  line-height: 1.4;
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+.mbh-scopehint::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: var(--mbh-hint-caret, 24px);
+  width: 10px;
+  height: 5px;
+  translate: -50% 0;
+  background: inherit;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.psf-scope.is-hinted {
+  box-shadow: 0 0 0 1.5px rgba(var(--accent-rgb), 0.7);
+  color: var(--text-strong);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbh-scopehint {
+    animation: none;
+  }
+}
+
 /* Everything below the top scrolls as ONE list — the bundled set alone is ~40 rows,
    and a search a page at a time. Capped by the viewport as well as by a fixed
    height, so the window never outgrows a short screen. */

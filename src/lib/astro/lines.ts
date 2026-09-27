@@ -278,11 +278,13 @@ export { normLng };
  * The angle-line GEOMETRY for one equatorial position — MC, IC, ASC, DSC, then the
  * Vertex-axis runs — in the order every line family emits them. Shared by the
  * planet lines below and the catalog minor-body lines (minorLines.ts), so the two
- * families can never be drawn by different geometry.
+ * families can never be drawn by different geometry. `vertex: false` leaves the
+ * Vertex-axis runs out — the catalog bodies draw the four classical angles only.
  */
 export function angleLineRuns(
   p: { ra: number; dec: number },
   meridianLng: MeridianLng,
+  { vertex = true }: { vertex?: boolean } = {},
 ): { lineType: LineType; coords: [number, number][] }[] {
   // Celestial: meridianLng(ra) = ra − GMST. Geodetic: = the body's zodiacal
   // longitude (eclipticLonOfRA). IC = MC + 180 holds in both (antipode-preserving).
@@ -296,6 +298,7 @@ export function angleLineRuns(
   ];
   // The Vertex axis (two runs per side — see tracePrimeVerticalCoords);
   // hidden by default via the line-type filters.
+  if (!vertex) return runs;
   for (const side of ['VX', 'AVX'] as const) {
     for (const run of tracePrimeVerticalCoords(p, meridianLng, side)) {
       runs.push({ lineType: side, coords: run });

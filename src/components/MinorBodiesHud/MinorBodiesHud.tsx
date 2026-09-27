@@ -100,6 +100,31 @@ const SPLIT_WIDTH = 580;
 // scrolls toward it; the bundled browse (~40, fixed) is never paged.
 const PAGE_SIZE = 24;
 
+// The scope hint — shown ONCE, ever: a bundled search that finds nothing points at the
+// registered scope that searches further, so a reader learns the chips are a switch.
+// Spent once it has been up long enough to read (a no-match that flickers past between
+// two keystrokes doesn't count), or the moment the reader switches scope by themselves
+// — either way they know. Spent, it stays up for the rest of this window's life
+// wherever it would apply, and never comes back after. A teaching flag, not a
+// preference: nothing reads it but this window. Unreadable storage reads as spent, so
+// a browser that can't remember never repeats it.
+const SCOPE_HINT_KEY = 'astro:minor-scope-hint:v1';
+const SCOPE_HINT_READ_MS = 2000;
+function scopeHintSpent(): boolean {
+  try {
+    return localStorage.getItem(SCOPE_HINT_KEY) === '1';
+  } catch {
+    return true;
+  }
+}
+function spendScopeHint(): void {
+  try {
+    localStorage.setItem(SCOPE_HINT_KEY, '1');
+  } catch {
+    // Ignore persistence failures (private mode, quota, etc.).
+  }
+}
+
 // The viewport's width as a store, so the layout (one column or two) and the
 // on-screen shift below re-render when it changes.
 function subscribeViewport(cb: () => void): () => void {
@@ -551,6 +576,34 @@ export function MinorBodiesHud({
   const noMatch =
     settled && !failure && hits.length === 0 && builtinPointers.length === 0;
 
+  // The one-time scope hint (see SCOPE_HINT_KEY): a bundled search with no match, and
+  // a registered scope this reader can switch to. Never toward a locked one — the hint
+  // teaches a switch, and a locked chip isn't one.
+  const [scopeHintLive, setScopeHintLive] = useState(() => !scopeHintSpent());
+  const hintScope = scopes.find((_, i) => i > 0 && !scopeGates[i]?.locked) ?? null;
+  const showScopeHint =
+    scopeHintLive && noMatch && scope.id === BUNDLED_SOURCE_ID && hintScope !== null;
+  useEffect(() => {
+    if (!showScopeHint) return;
+    const timer = window.setTimeout(spendScopeHint, SCOPE_HINT_READ_MS);
+    return () => window.clearTimeout(timer);
+  }, [showScopeHint]);
+  // Its caret points at the chip it names. Measured before paint, and set on the
+  // element directly — the chip only moves with the layout, which re-renders this.
+  const scopeHintRef = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const hint = scopeHintRef.current;
+    const chip = hintScope
+      ? hudRef.current?.querySelector<HTMLElement>(`[data-mb-scope="${hintScope.id}"]`)
+      : null;
+    if (!hint || !chip) return;
+    const c = chip.getBoundingClientRect();
+    hint.style.setProperty(
+      '--mbh-hint-caret',
+      `${Math.round(c.left + c.width / 2 - hint.getBoundingClientRect().left)}px`,
+    );
+  }, [showScopeHint, hintScope, split, collapsed]);
+
   const changeQuery = (next: string) => {
     setQuery(next);
     setTeasedId(null);
@@ -925,13 +978,19 @@ export function MinorBodiesHud({
                         role="radio"
                         aria-checked={isOn}
                         aria-disabled={g?.locked || undefined}
-                        className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}`}
+                        data-mb-scope={s.id}
+                        className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}${showScopeHint && s.id === hintScope?.id ? ' is-hinted' : ''}`}
                         onClick={() => {
                           if (g?.locked) {
                             // Leave the reason under the input for when the flow is closed.
                             setTeasedId(s.id);
                             nudgeAction();
                             return;
+                          }
+                          // Switching scope is what the hint teaches: done, shown or not.
+                          if (s.id !== BUNDLED_SOURCE_ID && scopeHintLive) {
+                            spendScopeHint();
+                            setScopeHintLive(false);
                           }
                           setTeasedId(null);
                           setScopeId(s.id);
@@ -966,6 +1025,11 @@ export function MinorBodiesHud({
               </TipButton>
             </div>
 
+            {showScopeHint && hintScope && (
+              <p ref={scopeHintRef} className="mbh-scopehint" role="status">
+                {t('minorBodies.hud.scopeHint', { scope: scopeLabel(hintScope) })}
+              </p>
+            )}
             {note && <p className="psf-note mbh-searchnote">{note}</p>}
             {capNote && !(split && capNote.inList) && capNoteEl}
             {q === '' && <p className="location-ls-note mbh-note">{t('minorBodies.hud.empty')}</p>}

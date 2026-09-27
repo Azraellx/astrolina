@@ -773,7 +773,7 @@ if (!pairPresent) {
     const text = `${r?.title ?? ''} ${r?.body ?? ''} ${card ?? ''}`;
     if (!r || !card || leaks(text)) badReading ||= `${f.properties.label}: ${text.slice(0, 120)}`;
   }
-  check('cards: every catalog line (all six angles, named and unnamed) reads cleanly', !badReading, badReading);
+  check('cards: every catalog line (all four angles, named and unnamed) reads cleanly', !badReading, badReading);
   check('cards: a catalog line is never read through the planet branch',
     lineReading('acg-lines', named.features[0].properties as unknown as Record<string, unknown>, t) === null);
 }
@@ -807,7 +807,13 @@ if (!pairPresent) {
 
   const decor = (): MinorDecor => ({ name: 'x', color: '#000', icon: 'i' });
   const ml = generateMinorLines(minors, meridianLng, decor).features;
-  const pl = generateLines(planets, meridianLng).features;
+  // Catalog bodies draw the four classical angles only (minorLines.ts); the planets'
+  // Vertex-axis runs are set aside, and what remains must match one for one.
+  const plAll = generateLines(planets, meridianLng).features;
+  const isVertex = (lt: string) => lt === 'VX' || lt === 'AVX';
+  const pl = plAll.filter((f) => !isVertex(f.properties.lineType));
+  check('frame: no catalog line on the Vertex axis, while the planets at the same places draw it',
+    ml.every((f) => !isVertex(f.properties.lineType)) && plAll.some((f) => isVertex(f.properties.lineType)));
   check('frame: same line count, same angle order',
     ml.length === pl.length && ml.every((f, i) => f.properties.lineType === pl[i].properties.lineType), `${ml.length} vs ${pl.length}`);
   check('frame: identical geometry, vertex for vertex',

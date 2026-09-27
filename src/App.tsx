@@ -317,6 +317,7 @@ import {
   registerChartPatch,
   saveCharts,
   saveCurrentId,
+  SEED_CHART_ID_PREFIX,
   type StoredChart,
 } from './lib/chartLibrary';
 import {
@@ -560,14 +561,9 @@ function tagZeniths(
   };
 }
 
-/** Marks the example charts a fresh library starts with. Their ids are DETERMINISTIC,
- *  unlike every other chart's: a minted id (`newChartId`) is random per page load, and
- *  the seeds are persisted on first boot, so an identity test against a freshly minted
- *  set would hold on the first visit and quietly stop holding on the second. This
- *  prefix is what "the reader hasn't added anything of their own yet" is measured by,
- *  so it has to survive a reload. Editing an example keeps its id, and so keeps it an
- *  example — which is the reading we want. */
-export const SEED_CHART_ID_PREFIX = 'seed_';
+// The seed-id prefix lives in lib/chartLibrary (with its reasoning), so a module that
+// asks "is this an example chart?" needn't import App; re-exported for existing callers.
+export { SEED_CHART_ID_PREFIX };
 
 const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
   ...b,

@@ -8,6 +8,12 @@
 // geometry is the planets' own (angleLineRuns in lines.ts — one function draws
 // both families); only the feature properties differ.
 //
+// The four classical angles only — no Vertex axis. That stays with the planets and
+// the five built-in minor bodies (Chiron, Ceres, Pallas, Juno, Vesta), which draw
+// through generateLines. The reason is on calculation-methods.md ("Numbered minor
+// planets"). The window's "no lines" status (deriveMinorRows' `angles` gate in
+// App.tsx) already tests only MC/IC/ASC/DSC, and must keep matching this.
+//
 // These features deliberately carry NO `planet` key. Everything written for the
 // built-in bodies reads `props.planet` and decorates it through PlanetName-keyed
 // tables; a catalog feature that carried one would reach those tables with an id
@@ -75,7 +81,7 @@ export function generateMinorLines(
   for (const p of positions) {
     const d = decor(p.n);
     const body = minorId(p.n);
-    for (const run of angleLineRuns(p, meridianLng)) {
+    for (const run of angleLineRuns(p, meridianLng, { vertex: false })) {
       features.push({
         type: 'Feature',
         properties: {

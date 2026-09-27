@@ -37,6 +37,10 @@ export const minorBodies = {
     searchFailed: 'Couldn’t run that search. Try again.',
     scopeBundled: 'Bundled',
     scopeAria: 'Search scope',
+    // Shown once, ever: a bundled search found nothing and another scope's chip (a
+    // downstream build's — the open core has none) can search further. {scope} is
+    // that chip's label; the hint's caret points at it.
+    scopeHint: 'Not bundled — switch to {scope} to search further.',
     // The family switch, on the row under the search box. Named for what turning it
     // ON does — off by default, so the switch reads "not hiding" until the reader
     // asks — and its label never flips with the state: one constant name plus
