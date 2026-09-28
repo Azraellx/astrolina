@@ -1,6 +1,6 @@
 # Calculation Methods
 
-This note documents the calculation conventions AstroLina uses, in plain astrological terms: the ephemeris and the bodies it computes, how the map lines are placed, parans, the relationship charts (Davison and composite), house systems, the Geodetic ("Mundane") line mode, and the Progressions & Directions overlays. The underlying positions come from the Swiss Ephemeris, reading genuine JPL DE441 data, verified against JPL Horizons in a June 2026 audit (see the companion [About](about.md) page). The planetary accuracy is therefore settled; what these notes lay out is which *conventions* were chosen, so it is always clear what the map is showing.
+This note documents the calculation conventions AstroLina uses, in plain astrological terms: the ephemeris and the bodies it computes, how the map lines are placed, parans, the daily rise and set times and the planetary hours, the relationship charts (Davison and composite), house systems, the Geodetic ("Mundane") line mode, and the Progressions & Directions overlays. The underlying positions come from the Swiss Ephemeris, reading genuine JPL DE441 data, verified against JPL Horizons in a June 2026 audit (see the companion [About](about.md) page). The planetary accuracy is therefore settled; what these notes lay out is which *conventions* were chosen, so it is always clear what the map is showing.
 
 ## Ephemeris engine & data
 
@@ -40,9 +40,9 @@ Numbered minor planets — those with a Minor Planet Center number — each have
 
 ## Astronomical conventions
 
-These are the physical conventions every line, paran, and readout shares. They match the standard astrocartography practice established by the Jim Lewis maps:
+These are the physical conventions every line, paran, and readout shares, with one exception: the daily rise and set times, which are [treated below](#daily-rise-and-set-times). They match the standard astrocartography practice established by the Jim Lewis maps:
 
-- **Geometric horizon, no refraction.** A rising/setting line marks where the body's true (airless) altitude is exactly 0°. Atmospheric refraction, which lifts the *visible* rise a few minutes earlier, is deliberately not applied — astrological angularity is geometric, not optical.
+- **Geometric horizon, no refraction.** A rising/setting line marks where the body's true (airless) altitude is exactly 0°. Atmospheric refraction, which lifts the *visible* rise a few minutes earlier, is deliberately not applied — astrological angularity is geometric, not optical. The daily rise and set *times* are the exception: they are clock times for a place, meant to be checked against the sky and an almanac, so they are the visible ones. A printed rise therefore comes before the body's rising line reaches the place — by about two to five minutes at low and middle latitudes, and by longer toward the poles.
 - **Geocentric body centers.** Positions are Earth-centered. For the planets the difference from an observer on the surface is arcseconds; for the **Moon** it can reach a degree (her parallax), so the Moon's ASC line is the geocentric convention's line, not the place you would *watch* moonrise at that instant. This is the standard ACG convention.
 - **Apparent positions, frame of date.** All positions are apparent (light-time and aberration applied), referred to the true equator and equinox of date; the sidereal-time reference is Greenwich **apparent** sidereal time and the obliquity is the **true** obliquity of date. One consistent frame end to end — mixing in a mean value anywhere would skew conversions by the ~9″ nutation terms.
 - **Universal Time in, ΔT inside.** The birth moment is converted to a Universal-Time instant; the Swiss Ephemeris applies the ΔT correction to its internal dynamical timescale itself. (Verified against JPL Horizons via the Moon, the fastest hand on the clock.)
@@ -107,6 +107,32 @@ The app computes all **planet-to-planet** parans:
 **Under an overlay.** When a technique or relationship overlay is active — transits, secondary or tertiary progressions, solar arc, primary directions, cyclocartography, or synastry — the parans are drawn from the **overlay's** frame only; the base-chart parans are hidden (never both frames at once), independent of the Natal display toggle. A paran is two bodies angular at one moment, so a cross-frame pair — one natal body, one overlay body — is not a paran and is never listed. Cyclocartography is the further exception that draws no parans at all: its sky blends two epochs (secondary-progressed personal planets with transiting outers), so no single simultaneous moment exists for any pair to share. The **Eclipses** overlay sits outside this rule — it leaves the natal parans on the map, and the eclipse chart's own parans are a separate opt-in (the eclipse map linework), so the two sets can appear together.
 
 **Fixed-star parans** (star × planet) are computed with the same closed forms, using each star's proper-motion-corrected, precessed position of date — a star culminating while a planet rises, and every other mundane combination. They are computed but not drawn as map lines: a bright-set catalog times the planet set yields hundreds of latitude rows (which would bury the map), and the conventional reading — Bernadette Brady's school, the classic ACG latitude-crossing listings — is a per-location list anyway. Star-to-star parans are not computed. These star × planet parans are the natal frame's own: an active overlay hides them (no overlay-frame replacement is generated), on the same one-frame rule and with the same Eclipses exception as the planet-to-planet parans above.
+
+## Daily rise and set times
+
+A place's daily clock — when each body rises, culminates, sets and anti-culminates there on a given day — is read in the place's own local time: the civil day from midnight to midnight, with the time-zone database's offset for that date, daylight saving included.
+
+**Visible rise and set.** Unlike the lines, these are the instants you would see from the place, over a sea-level horizon in a standard atmosphere. A body rises or sets when its centre is 0°34′ below the geometric horizon — the standard allowance for refraction, which lifts a body into view before it is geometrically up — and the Sun when its upper edge is, which puts its centre at 0°50′ below. This is the definition published sunrise and sunset tables use, so a sunrise here can be checked against the reader's own almanac. The alternative is the lines' own definition, the body's centre on the geometric horizon; it is not used for these times, because it would print a sunrise several minutes later than the almanac's. Culminations are unaffected: refraction doesn't change when a body crosses the meridian.
+
+**The Moon.** Positions are geocentric (see [Astronomical conventions](#astronomical-conventions)), and the Moon's rise and set are not corrected for her parallax, which lowers her by up to a degree as seen from the Earth's surface. A printed moonrise therefore comes a few minutes before the one an almanac gives for the same place.
+
+**Each crossing on its own motion.** Each rise and set is solved on the body's position at the crossing itself: its right ascension and declination are re-read at every step of the solution, so the Moon's fast motion and the Sun's drift in declination through the day are both accounted for. A body that stays above the horizon all day, or below it, at that latitude is reported as such, with no rise or set time — never an interpolated one.
+
+### Planetary days and hours
+
+A **planetary day** runs from one sunrise to the next. Its daylight, from sunrise to sunset, is divided into twelve equal **planetary hours**, and its night, from sunset to the next sunrise, into twelve more. A day hour and a night hour therefore differ in length, the more so the further the place is from the equator and the date from an equinox. The sunrise and sunset are the visible ones above — the same instants the daily times give for the Sun — for the same reason: they can be checked against an almanac.
+
+**Rulers.** Each day is ruled by the planet of its weekday — the Sun on Sunday, the Moon on Monday, Mars on Tuesday, Mercury on Wednesday, Jupiter on Thursday, Venus on Friday and Saturn on Saturday — and that planet also rules the day's first hour. The hours then follow the **Chaldean order**, the planets ranked from the slowest to the fastest: Saturn, Jupiter, Mars, the Sun, Venus, Mercury, the Moon, and round again. Twenty-four hours advance that cycle by three places (24 = 3 × 7 + 3), which lands the next day's first hour on the next weekday's planet: the order of the weekdays falls out of the order of the hours.
+
+**The day begins at sunrise.** An instant between midnight and sunrise belongs to the previous planetary day: to its night hours, under the previous weekday's ruler. At three in the morning on a Friday it is still Thursday's night.
+
+**Which date names the day.** A planetary day is named for the calendar date of its midday. That is also the date of its sunrise, except near the polar circles at a place whose clock runs well behind the Sun, where the sunrise after a short summer night can fall just before local midnight. Naming the day by its sunrise there would give two days running the same ruler.
+
+**Clock changes.** The hours are equal in elapsed time. On a night when the clocks change, each hour keeps its length, and the clock times printed for the hours jump or repeat by an hour.
+
+**Where there is no planetary day.** Where the Sun doesn't rise or doesn't set — polar night and midnight sun — there is no sunrise-to-sunrise day to divide, and the planetary hours are reported as unavailable for that date. They are never replaced with equal or clock hours.
+
+**What they depend on.** Only the Sun's rise and set at the place. The zodiac (tropical or sidereal), the line system, the house system, the chart's birth time and which bodies are shown play no part.
 
 ## Local space
 
@@ -539,6 +565,7 @@ With an overlay active, the expanded chart wheel becomes a bi-wheel (natal inner
 - **Ptolemy key:** the "one degree for one year" rate (1°/yr), the simplest primary-directions time-key.
 - **Quotidian:** "of each day", the progressed angle obtained from the day-for-a-year sidereal time (the genuine progressed chart angle).
 - **Mundane / geodetic:** placing the zodiac directly onto the Earth's longitudes (here Greenwich = 0° Aries), so each angle's location is fixed by zodiacal position rather than by birth time.
+- **Planetary hour:** one twelfth of the daylight (sunrise to sunset) or of the night (sunset to the next sunrise) at a place, ruled in turn by the planets in the Chaldean order; the planetary day they make up begins at sunrise and is ruled by the planet of its weekday.
 - **Zenith / sub-planetary point:** the single spot on Earth where a body stands exactly overhead (altitude 90°), sitting on its MC line at the latitude equal to its declination. With **In Zodiaco** (or Mundane) selected, the stamp marks the sub-point of the body's *ecliptic-projected* position — keeping it on the In-Zodiaco MC line — which for an off-ecliptic body is not the physical overhead point (Pluto can differ by ~17° of latitude, the Moon by ~5°). The lunar nodes draw no stamp: the nodal axis renders as one merged two-toned line, and its two antipodal sub-points would label the same axis twice.
 
 ## How this was validated
@@ -551,6 +578,7 @@ A second, deeper audit (June 2026) verifies the app's **own geometry code** — 
 - polyline sampling strays at most ~0.004° off the true curves;
 - every paran latitude is confirmed by event simultaneity, and an independent brute-force scan finds *exactly* the paran set the closed forms produce — nothing missing, nothing extra;
 - local-space azimuths match JPL Horizons and the navigation bearing to the body's sub-point;
+- the Sun's visible sunrise and sunset agree with the Swiss Ephemeris's own rise/transit/set search (upper edge, standard atmosphere) within 9 seconds up to 60° of latitude and 14 seconds at 64°, through 2026 and on dates in 1850 and 2150; the daily times and the planetary day come from one computation and agree to within milliseconds; the planetary hours tile each day exactly, every day's 25th hour falls on the next weekday's planet, and the hours before sunrise, clock changes, the date line, polar night, midnight sun and sunrises before local midnight are each pinned by named cases;
 - relocated angles match an independent closed-form ASC/MC computation to machine precision, and a polar-latitude battery covers all eight house systems;
 - the time chain is pinned by tz-database goldens (LMT-era, Paris Mean Time, 1918 DST, double summer time, half-hour zones), calendar-reform continuity, and Horizons checks of the Moon and apparent sidereal time (≤0.1″);
 - progression ratios, solar-arc and primary-direction keys, transit frames, synastry framing, and the Davison midpoints are each pinned by exact assertions;

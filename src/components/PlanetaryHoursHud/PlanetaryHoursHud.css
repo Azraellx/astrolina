@@ -1,0 +1,200 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ *
+ * The Planetary hours window — the Sky Times band's module. The frame, header and
+ * collapse come from the shared floating-window chrome (.timeline-hud +
+ * .location-*); this file only lays out the body, at a size meant to be READ
+ * rather than glanced at (the band's chip is the glance).
+ */
+
+/* Width kept in sync with HUD_W in PlanetaryHoursHud.tsx; narrow phones get the
+   viewport less a margin. */
+.planetary-hours-hud {
+  width: 300px;
+  max-width: min(300px, calc(100vw - 16px));
+}
+/* The shared window cap (100dvh − 72px) ignores the band this window sits over —
+   subtract it, so a short landscape screen scrolls the body instead of running
+   the frame under the band. Three classes, to outrank the shared two-class rule
+   whatever order the sheets load in. */
+.timeline-hud.location-hud.planetary-hours-hud {
+  max-height: calc(100dvh - var(--sky-band-h, 0px) - 40px);
+}
+/* A single-section window: no divider under the header's own. */
+.planetary-hours-hud .location-ls {
+  border-top: none;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ph-where {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ph-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ── The hour in force ── */
+.ph-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.ph-hero-glyph {
+  flex: none;
+  display: flex;
+  line-height: 1;
+}
+.ph-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ph-hero-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.ph-hero-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ph-note {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* ── The listed day ── */
+.ph-dayline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-top: 2px;
+}
+
+.ph-grid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  column-gap: 6px;
+  row-gap: 1px;
+  align-items: center;
+}
+.ph-head {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0 5px 3px;
+}
+.ph-n {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: right;
+  padding-right: 2px;
+}
+.ph-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 0;
+}
+.ph-cell-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ph-cell-time {
+  flex: none;
+  color: var(--text-muted);
+}
+/* Hours already run on the day being read — still there, stepped back. */
+.ph-cell.is-past {
+  opacity: 0.45;
+}
+.ph-cell.is-now {
+  color: var(--text-strong);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.ph-cell.is-now .ph-cell-time {
+  color: var(--text-strong);
+}
+
+.ph-foot {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-left: 2px;
+}
+
+/* ── No planetary day here ── */
+.ph-unavailable {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed rgba(var(--tint), 0.24);
+}
+.ph-unavailable-glyph {
+  flex: none;
+  opacity: 0.55;
+  line-height: 1;
+  padding-top: 1px;
+}
+.ph-unavailable-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 3px;
+}
+.ph-unavailable-reason {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.ph-order {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  border-top: 1px solid rgba(var(--tint), 0.1);
+  padding-top: 7px;
+}
+.ph-order-glyphs {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 5px;
+  vertical-align: -2px;
+}

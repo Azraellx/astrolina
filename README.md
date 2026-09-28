@@ -62,8 +62,9 @@ geocoding.
   from a bundled GeoNames dataset with an OpenStreetMap fallback, with
   historical-DST handling and an "uncertain" flag for pre-1970 births outside the
   Americas or Europe.
-- **Import**: paste an AstroDataBank-style text block or a comma-delimited export,
-  or drop a `.txt` / `.csv`, to add charts in bulk.
+- **Import**: paste a chart's details copied from another program — name, date,
+  place and coordinates, several charts at once — or a comma-delimited export, or
+  drop a `.txt` / `.csv`, to add charts in bulk.
 - **Flat or globe** map projection, and **three basemap themes** (Earth, Glass,
   Dark).
 

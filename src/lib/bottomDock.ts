@@ -16,11 +16,29 @@
 // by the home-indicator inset and includes it here, so consumers combine the
 // var with env(safe-area-inset-bottom) via max(), never by adding the two.
 const heights = new Map<string, number>();
+const listeners = new Set<() => void>();
+let published = -1;
 
 function apply(): void {
   let max = 0;
   for (const h of heights.values()) if (h > max) max = h;
   document.documentElement.style.setProperty('--sky-band-h', `${max}px`);
+  // Tell the listeners only on a real change — after the var is written, so a
+  // listener that reads it (the movable-HUD clamp) sees the new band.
+  if (max !== published) {
+    published = max;
+    for (const cb of listeners) cb();
+  }
+}
+
+/** Subscribe to changes of the reserved bottom height — the band growing into its
+ *  Table layout or a track, shrinking back, opening or closing. The movable
+ *  windows re-clamp on it, so a band that grows under a window parked just above it
+ *  pushes the window up instead of sliding beneath it. Returns an unsubscribe fn;
+ *  the twin of leftDock's subscribeReservedLeftInset. */
+export function subscribeBottomDock(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => void listeners.delete(cb);
 }
 
 /** Publish (or update) a bottom band's height. Call from a layout effect. */

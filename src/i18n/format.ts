@@ -9,13 +9,16 @@
 // across several components: month names come from Luxon (already a dependency), and
 // numbers from the native Intl API. Coordinate DMS notation stays language-neutral
 // (see coordFormat.ts) — only its cardinal letters are localized, via common.cardinal.
-import { DateTime } from 'luxon';
+import { DateTime, Info } from 'luxon';
 
 export interface Formatters {
   /** Full month name in the active locale for a 1–12 month number (replaces MONTHS). */
   monthName(month1to12: number): string;
   /** Abbreviated month name in the active locale (replaces the MON/short arrays). */
   monthAbbr(month1to12: number): string;
+  /** Full weekday name in the active locale, 0 = Sunday (the `Date#getUTCDay`
+   *  numbering, not Luxon's Monday-first one). */
+  weekdayName(weekday0Sun: number): string;
   /** Locale-aware number formatting (decimal separator, grouping). */
   num(value: number, opts?: Intl.NumberFormatOptions): string;
   /**
@@ -36,6 +39,7 @@ export function makeFormatters(locale: string): Formatters {
       DateTime.fromObject({ month }).setLocale(locale).toFormat('LLLL'),
     monthAbbr: (month) =>
       DateTime.fromObject({ month }).setLocale(locale).toFormat('LLL'),
+    weekdayName: (wd) => Info.weekdays('long', { locale })[(wd + 6) % 7],
     num: (value, opts) => new Intl.NumberFormat(locale, opts).format(value),
     list: (items, type = 'conjunction') =>
       new Intl.ListFormat(locale, { style: 'long', type }).format(items),

@@ -15,7 +15,7 @@ This page explains what the app computes, what it deliberately doesn't do yet, a
 - **Time overlays:** lay transits, secondary or tertiary progressions, solar-arc directions, primary directions, cyclo·carto·graphy (progressed inners with transiting outers), or eclipse charts over the natal map, with a timeline you can scrub or animate to sweep the lines across the map over time.
 - **Relationship maps:** overlay a second chart's lines, with a bi-wheel and natal-to-overlay cross-aspects in the expanded view.
 - **Relocation:** hover or drop a pin anywhere on the map; the relocated angles and chart wheel update in real time, with the place name and coordinates resolved as you go.
-- **Import and library:** paste an AstroDataBank-style text block or a comma-delimited export (or drop a `.txt` / `.csv`) to add charts in bulk; charts live in a local library you can switch between, edit, and delete.
+- **Import and library:** paste a chart's details copied from another program — name, date, place and coordinates, several charts at once — or a comma-delimited export (or drop a `.txt` / `.csv`) to add charts in bulk; charts live in a local library you can switch between, edit, and delete.
 
 ## Why a web-based tool
 

@@ -223,6 +223,62 @@
   color: var(--text-faint);
 }
 
+/* ── The planetary-hours chip at the legend's head ──
+   The day's ruler │ the hour in force → its end (or the shown day's ruler alone,
+   away from the present) — the glance, and the switch for the Planetary hours
+   window (the band's module), lit while that window is open: the same pill as the
+   Table toggle beside it. A sibling of the legend, never inside it, so the
+   legend's scroll / drag / edge fades can't reach it. */
+.sky-band-planetary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  align-self: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 5px;
+  background: rgba(var(--tint), 0.05);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sky-band-detail-toggle + .sky-band-planetary {
+  margin-left: 4px;
+}
+.sky-band-planetary:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.32);
+}
+.sky-band-planetary.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* Dimmed, not disabled: it still opens the window, which carries the reason. */
+.sky-band-planetary.is-unavailable > * {
+  opacity: 0.55;
+}
+.sky-band-ph-sep {
+  width: 1px;
+  height: 11px;
+  background: rgba(var(--tint), 0.24);
+}
+.sky-band-ph-until {
+  color: var(--text);
+}
+/* A narrow desktop band (the same is-narrow that drops the body names) keeps the
+   two rulers and lets the hour's end go to the window — the legend sharing the row
+   with the context column is what gets squeezed otherwise. Phones keep it: there
+   the legend has a row of its own. The unavailable dash stays: it IS the reading. */
+.sky-band.is-narrow:not(.is-phone) .sky-band-planetary:not(.is-unavailable) .sky-band-ph-until {
+  display: none;
+}
+
 /* ── RIGHT: the context column ── */
 .sky-band-side {
   flex: none;
@@ -426,14 +482,15 @@
    and the shifted bottom furniture max()es the var against env() rather than adding the two. */
 .sky-band.is-phone {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* toggle | planetary-hours chip | legend | close */
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   /* Row 1 takes whatever the published height leaves beyond the two 28px rows — exactly the
      registered track's height while it shows, 0 otherwise. */
   grid-template-rows: minmax(0, 1fr) 28px 28px;
   grid-template-areas:
-    'center center center'
-    'toggle legend legend'
-    'side   side   close';
+    'center center center center'
+    'toggle ph     legend legend'
+    'side   side   side   close';
   height: var(--sky-band-h, 56px);
   /* The safe-area inset plus a small tap cushion (SKY_BAND_PHONE_CUSHION in the TSX — the
      two must stay in sync): controls in the bottom row — the ✕ hugs the bottom-right —
@@ -449,6 +506,9 @@
 }
 .sky-band.is-phone .sky-band-legend {
   grid-area: legend;
+}
+.sky-band.is-phone .sky-band-planetary {
+  grid-area: ph;
 }
 /* The context column becomes the bottom row; its three side-rows sit inline. */
 .sky-band.is-phone .sky-band-side {
@@ -495,12 +555,12 @@
 /* Empty state (no chart, no pin): the message fills the band; the ✕ centres on the right. */
 .sky-band.is-phone .sky-band-empty {
   grid-row: 1 / -1;
-  grid-column: 1 / 3;
+  grid-column: 1 / 4;
 }
 .sky-band.is-phone:has(.sky-band-empty) .sky-band-close {
   grid-area: auto;
   grid-row: 1 / -1;
-  grid-column: 3;
+  grid-column: 4;
 }
 
 /* ── TABLE layout (is-table — the speculum, no track showing) ──
@@ -590,8 +650,8 @@
 .sky-band.is-phone.is-table {
   grid-template-rows: minmax(0, 1fr) 28px;
   grid-template-areas:
-    'toggle legend legend'
-    'side   side   close';
+    'toggle ph     legend legend'
+    'side   side   side   close';
 }
 
 /* ── Follow-the-cursor toggle (desktop only — hidden on phones in the TSX) ──

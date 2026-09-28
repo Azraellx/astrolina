@@ -976,6 +976,38 @@ export default function App() {
       localStorage.getItem('astro:view-skytimes:v1') === '1' &&
       localStorage.getItem('astro:advanced:v1') === '1',
   );
+  // The Planetary hours window — a module of the sky band, not a view: its only
+  // opener is the chip at the head of the band, and the band renders it, so it
+  // shows only while the band does. Whatever hides the band (its ✕, Capture, a view
+  // lock, Advanced going off) hides the window and HOLDS this flag — reopening the
+  // band, the reader's own gesture, brings the window back as it was left.
+  //
+  // It defaults OPEN — the first time a reader opens Sky Times, the hours come with
+  // it (a product decision, 2026-09-28) — so the flag is stored ONLY when the reader
+  // toggles it (the chip or the window's ✕, via togglePlanetaryHud below), never by
+  // a mount-time effect: an absent key has to go on meaning "never chosen" for the
+  // default to reach anyone. (That also keeps the default changeable later without a
+  // key bump — nothing but a real choice is ever in storage; CLAUDE.md rule 6.)
+  //
+  // No Advanced check at load, unlike showSkyTimes above, and deliberately: the
+  // downstream-tier trap is a surface left on screen with nothing to close it, and
+  // this window can't be on screen without the band, which carries that check
+  // itself. A load gate here would only CLEAR the default — a reader who turns
+  // Advanced on mid-session would open Sky Times the first time to find it shut. If
+  // the window ever becomes able to outlive the band, the check becomes load-bearing
+  // and belongs back (showMinorHud's shape).
+  //
+  // :v2 because :v1 existed only in development builds, whose mount-time write
+  // stored a '0' in every browser that loaded them — a closed "choice" nobody made,
+  // which would hide the new default from exactly the people testing it.
+  const [showPlanetaryHud, setShowPlanetaryHud] = useState(
+    () => localStorage.getItem('astro:planetary-hours-open:v2') !== '0',
+  );
+  const togglePlanetaryHud = () => {
+    const next = !showPlanetaryHud;
+    localStorage.setItem('astro:planetary-hours-open:v2', next ? '1' : '0');
+    setShowPlanetaryHud(next);
+  };
   useEffect(() => {
     localStorage.setItem('astro:advanced:v1', advancedWheel ? '1' : '0');
   }, [advancedWheel]);
@@ -6404,6 +6436,8 @@ export default function App() {
           onToggleTable={() => setSkyBandTable((v) => !v)}
           follow={skyFollowMode}
           onToggleFollow={() => setSkyFollowOn((v) => !v)}
+          planetaryOpen={showPlanetaryHud}
+          onTogglePlanetary={togglePlanetaryHud}
           // While the Slide tool spins the sky, the track's time cursor follows
           // the slid instant — the clock shifts with the spin. And while the
           // tool is ARMED, a registered track may scrub that instant back

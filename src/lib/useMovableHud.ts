@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './leftDock';
+import { subscribeBottomDock } from './bottomDock';
 
 // Shared movable-HUD behavior for the bottom overlay bars (timeline + synastry).
 // They occupy the same bottom-centre slot, so they share ONE saved position: grab
@@ -144,9 +145,14 @@ export function useMovableHud(
 
   // Keep a floated bar on-screen — clamped against the CURRENT viewport on mount
   // (a position saved on a larger/other screen may now be off-screen, and the grip
-  // is the only way to recover it), on resize, and whenever a docked panel's
-  // RESERVED column changes (its open/close/resize re-clamps every floated window
-  // into the remaining map column, like the anchored chrome shifting with it).
+  // is the only way to recover it), on resize, whenever a docked panel's RESERVED
+  // column changes (its open/close/resize re-clamps every floated window into the
+  // remaining map column, like the anchored chrome shifting with it), whenever the
+  // reserved BOTTOM band changes (the sky band growing into its table or a track
+  // pushes a window parked just above it up, rather than sliding beneath it and
+  // burying the band's own controls), and whenever the frame itself changes size
+  // (a window whose content grows downward — or that is expanded from collapsed —
+  // stays clear of the band the same way).
   const docked = pos === null;
   const clampWidth = opts.clampWidth;
   useEffect(() => {
@@ -164,10 +170,16 @@ export function useMovableHud(
     };
     onResize();
     window.addEventListener('resize', onResize);
-    const unsubscribe = subscribeReservedLeftInset(onResize);
+    const unsubscribeLeft = subscribeReservedLeftInset(onResize);
+    const unsubscribeBottom = subscribeBottomDock(onResize);
+    const el = barRef.current;
+    const ro = el ? new ResizeObserver(onResize) : null;
+    if (el) ro?.observe(el);
     return () => {
       window.removeEventListener('resize', onResize);
-      unsubscribe();
+      unsubscribeLeft();
+      unsubscribeBottom();
+      ro?.disconnect();
     };
   }, [docked, barRef, clampWidth]);
 
@@ -216,8 +228,20 @@ export function useMovableHud(
       onPointerMove,
       onPointerUp,
       onPointerCancel: onPointerUp,
-      // Bottom bars re-dock (null); a floating window re-centres to its home spot.
-      onDoubleClick: () => setPos(homePos()),
+      // Bottom bars re-dock (null); a floating window re-centres to its home spot —
+      // clamped like any other placement, since a home spot is computed from the
+      // screen rather than measured against the frame it has to fit.
+      onDoubleClick: () => {
+        const home = homePos();
+        const el = barRef.current;
+        if (!home || !el) {
+          setPos(home);
+          return;
+        }
+        const r = el.getBoundingClientRect();
+        const w = clampWidth === undefined ? r.width : Math.min(r.width, clampWidth);
+        setPos(clampPos(home.x, home.y, w, r.height));
+      },
     },
   };
 }

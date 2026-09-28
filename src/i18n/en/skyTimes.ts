@@ -58,4 +58,78 @@ export const skyTimes = {
     hintHeld: 'Held at the clicked spot — click the map again to resume following, or turn this off to return to the pin or birthplace.',
     hintTouch: 'Tap a spot on the map to read its sky clock there; tap again to move the stamp. Turn off to return to the pin or birthplace.',
   },
+  // PLANETARY HOURS — the band's module: a chip at the legend's head (the day's
+  // ruler and the hour in force at the point, at the current moment or the Slide
+  // tool's slid one) that opens and closes a window listing the shown day's 24
+  // hours. {hour} / {day} are planet display names — the noun-adjunct form the
+  // map's own tips use ("Venus zenith", "Mars rising").
+  planetary: {
+    // The chip's tip headline while an hour is in force on the shown day
+    // (glyph-prefixed).
+    now: '{hour} hour, until {end}',
+    // The chip's headline when the shown day isn't today, and the window's line
+    // over the day's list — the day and its ruler.
+    day: '{weekday} · day ruler {day}',
+    // The chip's hint: what a click does, by the window's state.
+    chip: {
+      openHint: 'Open the day’s 24 planetary hours in their own window.',
+      // The shown day has no hours here (polar day or night): the window says why.
+      openHintNone: 'Open the planetary hours window to read why there are none here.',
+      closeHint: 'Close the planetary hours window.',
+    },
+    // The window itself.
+    hud: {
+      title: 'Planetary hours',
+      closeAria: 'Close planetary hours',
+      closeHint: 'Close this window. The hours chip at the start of the Sky Times band brings it back.',
+    },
+    // The window's lead block: the hour in force, where it falls, and the instant
+    // it was read at — the present (refreshed on the minute while the window is
+    // open), or the Slide tool's slid moment.
+    hourName: '{hour} hour',
+    hourOfDay: 'Hour {n} of the day',
+    hourOfNight: 'Hour {n} of the night',
+    until: 'until {end}',
+    nowAt: 'Now {time}',
+    slideAt: 'Slid to {time}',
+    // Column heads: each half of the day and the length of one of its hours.
+    colDay: 'Day · {len}',
+    colNight: 'Night · {len}',
+    minutes: '{m} min',
+    nextSunrise: 'Next sunrise {time}',
+    // The hour in force belongs to a neighbouring planetary day — the day starts at
+    // sunrise, not midnight — so it isn't in the list. {prev} / {next} name that
+    // day, {day} the listed one, {time} the sunrise between them.
+    beforeSunrise: 'Still {prev}’s night — {day}’s hours begin at sunrise, {time}.',
+    // …and the listed day itself has none (its block below says why).
+    beforeSunriseNone: 'Still {prev}’s night — {day} itself has no planetary hours here.',
+    afterNextSunrise: '{next}’s hours have begun — its sunrise was at {time}.',
+    // The instant belongs to a neighbouring day that has NO hours here — the night
+    // before a polar day's first sunrise, or a polar day already begun. The chip
+    // reads "not available" then; this is the window's matching explanation.
+    prevNone: '{prev}’s night has no planetary hours here — {day}’s begin at sunrise, {time}.',
+    prevNoneEither: '{prev}’s night has no planetary hours here, and neither has {day}.',
+    nextNone: '{next} has begun, and has no planetary hours here.',
+    order: 'Hour 1 goes to the day ruler; the rest follow this order, repeating:',
+    // The chip's tip headline for an unavailable reading.
+    unavailable: 'Planetary hours · not available here',
+    // The window's: over a polar day's reason, or its whole body in the rare case
+    // no planetary days could be computed at all (no ephemeris for the Sun). The
+    // window's own title already says "Planetary hours".
+    unavailableShort: 'Not available here',
+    reason: {
+      sunUp:
+        'The Sun stays up all night here around {weekday}, so there is no sunrise-to-sunrise day to divide into hours. Try another date or a place nearer the equator.',
+      sunDown:
+        'The Sun doesn’t rise here on {weekday}, so there is no daylight to divide into hours. Try another date or a place nearer the equator.',
+      noNextSunrise:
+        'The Sun doesn’t rise here the morning after {weekday}, so that night has no end to divide into hours. Try another date or a place nearer the equator.',
+    },
+    // The chip button's accessible name (its pressed state carries open/closed).
+    aria: {
+      now: 'Planetary hours: {hour} hour until {end}, day ruler {day}',
+      day: 'Planetary hours for {weekday}, day ruler {day}',
+      unavailable: 'Planetary hours: not available here',
+    },
+  },
 } as const;

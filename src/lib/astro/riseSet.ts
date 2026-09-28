@@ -11,6 +11,7 @@
 import {
   getPlanetPositions,
   gmstRadians,
+  sampleBody,
   type NodeType,
   type PlanetName,
 } from '../ephemeris';
@@ -68,6 +69,81 @@ function solveHourAngle(
   return jd;
 }
 
+type Sampler = (jd: number) => { ra: number; dec: number } | null;
+type Circumpolar = 'up' | 'down';
+
+// cos of the semi-diurnal arc: the hour angle at which a body of declination
+// `dec` stands at altitude `h0`. Beyond ±1 it never reaches that altitude —
+// below −1 it stays above it all day, above +1 it never climbs to it.
+const cosSemiArc = (h0: number, latRad: number, dec: number) =>
+  (Math.sin(h0) - Math.sin(latRad) * Math.sin(dec)) / (Math.cos(latRad) * Math.cos(dec));
+
+// Solve a horizon crossing nearest `jdGuess` — a rise (side −1, east of the
+// meridian) or a set (+1). Unlike the meridian solve above, the TARGET moves
+// too: the semi-diurnal arc is re-read from the declination at each step, so
+// the crossing is timed on the body's declination AT the crossing rather than
+// at noon (worth ~30 s for the Sun at 50°, minutes for the Moon). Returns the
+// sense a step found the body circumpolar in when the arc vanishes mid-solve
+// (a day at the edge of midnight sun or polar night), and null when there is
+// no data or the solve fails to settle — never an extrapolated instant.
+function solveHorizon(
+  jdGuess: number,
+  side: -1 | 1,
+  h0: number,
+  latRad: number,
+  lngRad: number,
+  sample: Sampler,
+): number | Circumpolar | null {
+  let jd = jdGuess;
+  for (let i = 0; i < 6; i++) {
+    const s = sample(jd);
+    if (!s) return null;
+    const c = cosSemiArc(h0, latRad, s.dec);
+    if (c < -1) return 'up';
+    if (c > 1) return 'down';
+    const step = wrapPi(side * Math.acos(c) - hourAngle(jd, s.ra, lngRad)) / RATE;
+    jd += step;
+    if (Math.abs(step) < 1e-6) return jd; // ≈ 0.1 s
+  }
+  return null;
+}
+
+interface HorizonCrossings {
+  rise: number | null;
+  set: number | null;
+  /** Circumpolar at the transit itself: no crossing either side of it. */
+  circumpolar: Circumpolar | null;
+  /** The sense a rise or set solve found the body circumpolar in, when the
+   *  transit's own arc exists but the crossing's does not. */
+  edge: Circumpolar | null;
+}
+
+// The rise before and the set after an upper transit `culm`, at altitude `h0`.
+// The one horizon solve every caller shares, so the band's printed times and
+// anything built on the Sun's day (planetary hours) are the same instants.
+function riseSetAround(
+  culm: number,
+  h0: number,
+  latRad: number,
+  lngRad: number,
+  sample: Sampler,
+): HorizonCrossings | null {
+  const s = sample(culm);
+  if (!s) return null;
+  const c = cosSemiArc(h0, latRad, s.dec);
+  if (c < -1) return { rise: null, set: null, circumpolar: 'up', edge: null };
+  if (c > 1) return { rise: null, set: null, circumpolar: 'down', edge: null };
+  const H0 = Math.acos(c);
+  const r = solveHorizon(culm - H0 / RATE, -1, h0, latRad, lngRad, sample);
+  const st = solveHorizon(culm + H0 / RATE, 1, h0, latRad, lngRad, sample);
+  return {
+    rise: typeof r === 'number' ? r : null,
+    set: typeof st === 'number' ? st : null,
+    circumpolar: null,
+    edge: typeof r === 'string' ? r : typeof st === 'string' ? st : null,
+  };
+}
+
 // Normalize an instant into [dayStart, dayStart + 1) by whole sidereal days.
 const intoDay = (jd: number | null, dayStart: number): number | null => {
   if (jd === null) return null;
@@ -123,33 +199,57 @@ export function dailySkyEvents(
     const anti = solveHourAngle(mid, Math.PI, lngRad, sample);
     if (culm === null || anti === null) continue;
 
-    // Semi-diurnal arc at the (mid-day) declination. |cos H₀| > 1 → the body
-    // never crosses the horizon here: circumpolar above (same hemisphere as
-    // the observer) or below.
+    // Rise and set around the transit, each timed on its own declination.
+    // Circumpolar at the transit → the body never crosses the horizon here:
+    // above all day (same hemisphere as the observer) or below.
     const h0 = body === 'Sun' ? H0_SUN : H0_PLANET;
-    const cosH0 =
-      (Math.sin(h0) - Math.sin(latRad) * Math.sin(s0.dec)) /
-      (Math.cos(latRad) * Math.cos(s0.dec));
-    let rise: number | null = null;
-    let set: number | null = null;
-    let circumpolar: BodyDayEvents['circumpolar'] = null;
-    if (cosH0 < -1) circumpolar = 'up';
-    else if (cosH0 > 1) circumpolar = 'down';
-    else {
-      const H0 = Math.acos(cosH0);
-      rise = solveHourAngle(culm - H0 / RATE, -H0, lngRad, sample);
-      set = solveHourAngle(culm + H0 / RATE, H0, lngRad, sample);
-    }
+    const x = riseSetAround(culm, h0, latRad, lngRad, sample);
+    if (!x) continue;
 
     out.push({
       body,
-      rise: intoDay(rise, dayStartJd),
-      set: intoDay(set, dayStartJd),
+      rise: intoDay(x.rise, dayStartJd),
+      set: intoDay(x.set, dayStartJd),
       culminate: intoDay(culm, dayStartJd) as number,
       anticulminate: intoDay(anti, dayStartJd) as number,
-      circumpolar,
+      circumpolar: x.circumpolar,
     });
   }
   return out;
+}
+
+/** The Sun's day around one upper transit: the visible rise before it and the
+ *  visible set after it (upper limb with standard refraction, as the band prints
+ *  them). Instants are JD (UT). */
+export interface SunHorizonDay {
+  /** The upper transit (local apparent noon) the day is built around. */
+  noon: number;
+  rise: number | null;
+  set: number | null;
+  /** 'up' = the Sun doesn't set (midnight sun), 'down' = it doesn't rise (polar
+   *  night) — at the transit itself, or at the edge where a rise or set that the
+   *  noon arc promised isn't there. Null when both crossings were found — or,
+   *  rarely, when a crossing's solve failed to settle, leaving it null unexplained. */
+  circumpolar: 'up' | 'down' | null;
+}
+
+/**
+ * The Sun's rise and set around the upper transit nearest `jdNear`, at (lat, lng).
+ * NOT folded into a civil day, unlike {@link dailySkyEvents}: a sunset after local
+ * midnight (high summer at high latitude) stays on the day whose noon it follows.
+ * The same horizon solve the band's rows use, so for a day where neither needed
+ * folding the two agree to the sample. Null when there is no ephemeris data.
+ */
+export function sunHorizonDay(jdNear: number, lat: number, lng: number): SunHorizonDay | null {
+  const latRad = lat * D2R;
+  const lngRad = lng * D2R;
+  // The Sun alone — the band's sampler pays for every body per step. The node
+  // type only matters to the nodes.
+  const sample: Sampler = (jd) => sampleBody(jd, 'Sun', 'mean');
+  const noon = solveHourAngle(jdNear, 0, lngRad, sample);
+  if (noon === null) return null;
+  const x = riseSetAround(noon, H0_SUN, latRad, lngRad, sample);
+  if (!x) return null;
+  return { noon, rise: x.rise, set: x.set, circumpolar: x.circumpolar ?? x.edge };
 }
 

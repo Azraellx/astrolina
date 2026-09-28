@@ -9,8 +9,10 @@
 // and publishes it to the bottom-dock registry so the rest of the chrome lifts).
 // The core band is the compact row: the body LEGEND on the left (each visible
 // body's glyph + name; hover = its four angle times at the active point, in
-// that place's own clock) and the context column on the right (place, day pager
-// ‹ › + Today, zone, close). A downstream build may register an expandable
+// that place's own clock) headed by the PLANETARY-HOURS chip (the day's ruler and
+// the hour in force there — lib/astro/planetaryHours.ts — and the switch for the
+// band's Planetary hours window, components/PlanetaryHoursHud), and the context
+// column on the right (place, day pager ‹ › + Today, zone, close). A downstream build may register an expandable
 // TRACK for the center (lib/extensions/skyBandTrack.ts) — its eye-toggle shows
 // here only when registered AND entitled (no teaser), tagged with the gated
 // tier in its hover tip. Chart-time-INDEPENDENT: the band reads the sky of the
@@ -30,6 +32,13 @@ import {
 } from 'react';
 import { PLANET_COLORS, type NodeType, type PlanetName } from '../../lib/ephemeris';
 import { dailySkyEvents, type BodyDayEvents, type EventKind } from '../../lib/astro/riseSet';
+import {
+  planetaryDaysAround,
+  planetaryHourAt,
+  type PlanetaryDay,
+} from '../../lib/astro/planetaryHours';
+import { PlanetaryHoursHud } from '../PlanetaryHoursHud/PlanetaryHoursHud';
+import { PLANETARY_HOURS_HELD } from '../../lib/planetaryHoursHold';
 import {
   getSkyBandTrack,
   isSkyBandTrackEntitled,
@@ -106,6 +115,11 @@ interface SkyBandProps {
    *  the followed point back through `point`). */
   follow: 'off' | 'live' | 'held';
   onToggleFollow: () => void;
+  /** The Planetary hours window (this band's module, opened from its chip) is
+   *  open. Owned by App, which persists the reader's choice; the band renders the
+   *  window, so it shows only while the band does. */
+  planetaryOpen: boolean;
+  onTogglePlanetary: () => void;
   /** The Slide tool's slid instant (epoch ms UT) while it spins the sky — handed
    *  to the track so its time cursor can follow the spin. Null = idle. */
   slideMs?: number | null;
@@ -127,6 +141,8 @@ export function SkyBand({
   onToggleTable,
   follow,
   onToggleFollow,
+  planetaryOpen,
+  onTogglePlanetary,
   slideMs = null,
   slideTo,
   onClose,
@@ -188,10 +204,95 @@ export function SkyBand({
     return dailySkyEvents(msToJD(dayStart), point.lat, point.lng, bodies, nodeType);
   }, [point, dayStart, visiblePlanets, nodeType]);
 
+  // PLANETARY HOURS: the shown day's, with its neighbours (the hour in force can
+  // belong to either — a planetary day runs sunrise to sunrise). Built from the
+  // Sun alone, so it shows whichever bodies are toggled; named for the shown
+  // day's midday, the same noon the day label reads. Not computed at all while the
+  // feature is HELD (lib/planetaryHoursHold.ts) — and with no planetary days there
+  // is no chip, no hour to wake for, and nothing for the window to open on.
+  const planetary = useMemo(() => {
+    if (PLANETARY_HOURS_HELD || !point || !zone || dayStart === null) return null;
+    return planetaryDaysAround(dayStart + MS_DAY / 2, point.lat, point.lng, zone);
+  }, [point, zone, dayStart]);
+
+  // The chip and its window read a LIVE instant — unlike the pager's nowMs, which is
+  // frozen so the shown day can't slide at midnight: the hour in force changes about
+  // hourly and has to be followed. While the Slide tool spins the sky they read the
+  // slid instant instead (the instant a track's time cursor reads). They give the
+  // hour in force while that instant is on the shown calendar day — the cursor's own
+  // gate — OR inside the shown PLANETARY day, sunrise to sunrise: past midnight the
+  // listed day's night hours are still running, and the one in force belongs marked
+  // in the list that holds it.
+  const [liveNow, setLiveNow] = useState(() => Date.now());
+  const instant = slideMs ?? liveNow;
+  const onShownDay = dayStart !== null && instant >= dayStart && instant < dayStart + MS_DAY;
+  const shownPlanetary = planetary?.shown;
+  const inShownPlanetaryDay =
+    !!shownPlanetary?.ok &&
+    msToJD(instant) >= shownPlanetary.sunrise &&
+    msToJD(instant) < shownPlanetary.nextSunrise;
+  const phNow =
+    planetary && (onShownDay || inShownPlanetaryDay) ? planetaryHourAt(planetary, instant) : null;
+
+  // Wake at the next moment the reading can change: the end of the hour in force;
+  // for an instant no hour covers (the night before a polar day's first sunrise),
+  // the next sunrise that begins one; else the shown day's edges (when the present
+  // enters or leaves it). While the window is open it also wakes on the minute, for
+  // its "Now" clock — only then, so a closed window costs nothing. Clamped so a
+  // missed wake — a suspended laptop — is caught within the hour; re-armed on every
+  // liveNow, so a clamped wake that lands early simply sets the next.
+  const sunriseAhead = (() => {
+    if (!planetary || !phNow || phNow.ok) return null;
+    const ahead = [planetary.shown, planetary.next]
+      .filter((d): d is PlanetaryDay => d.ok)
+      .map((d) => jdToMs(d.sunrise))
+      .filter((ms) => ms > liveNow);
+    return ahead.length ? Math.min(...ahead) : null;
+  })();
+  const baseWake =
+    dayStart === null || PLANETARY_HOURS_HELD
+      ? null
+      : phNow?.ok
+        ? jdToMs(phNow.hour.end)
+        : (sunriseAhead ??
+          (liveNow < dayStart ? dayStart : liveNow < dayStart + MS_DAY ? dayStart + MS_DAY : null));
+  const nextMinute = (Math.floor(liveNow / 60_000) + 1) * 60_000;
+  const wakeAt =
+    slideMs != null || baseWake === null
+      ? null
+      : planetaryOpen && phNow?.ok
+        ? Math.min(baseWake, nextMinute)
+        : baseWake;
+  useEffect(() => {
+    if (wakeAt === null) return;
+    const wait = Math.min(Math.max(wakeAt - Date.now() + 250, 1000), 3_600_000);
+    const id = window.setTimeout(() => setLiveNow(Date.now()), wait);
+    return () => window.clearTimeout(id);
+  }, [wakeAt, liveNow]);
+  // A tab brought back from the background re-reads at once rather than at the
+  // next wake (timers are throttled while hidden). Nothing reads the live instant
+  // while the feature is held, so nothing listens then either.
+  useEffect(() => {
+    if (PLANETARY_HOURS_HELD) return;
+    const refresh = () => {
+      if (document.visibilityState === 'visible') setLiveNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+
   // Wall-clock helpers (shared with the track through its context).
   const clock = (jd: number): string => {
     if (!zone) return '—';
-    const ms = jdToMs(jd);
+    // Rounded to the millisecond: the ms → JD → ms round trip loses a few
+    // hundredths of one, which the minute truncation below would otherwise turn
+    // into a whole minute for an instant exactly on the minute ("Now 14:09" at
+    // 14:10:00).
+    const ms = Math.round(jdToMs(jd));
     const wall = new Date(ms + offsetHoursAt(zone, ms) * 3_600_000);
     return `${String(wall.getUTCHours()).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`;
   };
@@ -271,6 +372,94 @@ export function SkyBand({
         })}
       </span>
     );
+
+  // ── The planetary-hours chip: the glance, and the switch for the window ──
+  // Three readings. An hour in force: the day ruler │ the hour ruler → its end. The
+  // shown day away from the present: its ruler alone. Unavailable (polar day or
+  // night): dimmed — the reason is in the window, never replaced by clock hours.
+  // Every state opens the window: that is where the reason is read, too.
+  const phChip = ((): ReactNode => {
+    if (!planetary) return null;
+    const shown = planetary.shown;
+    // The hour in force when there is one on the shown day, else the shown day.
+    const unavailable = phNow ? !phNow.ok : !shown.ok;
+    let reading: { tip: ReactNode; aria: string; face: ReactNode };
+    if (phNow?.ok) {
+      const { day, hour } = phNow;
+      const end = clock(hour.end);
+      reading = {
+        tip: (
+          <span className="sky-band-tip">
+            {tipGlyph(hour.ruler)}
+            <span>{t('skyTimes.planetary.now', { hour: bodyName(hour.ruler), end })}</span>
+          </span>
+        ),
+        aria: t('skyTimes.planetary.aria.now', {
+          hour: bodyName(hour.ruler),
+          end,
+          day: bodyName(day.ruler),
+        }),
+        face: (
+          <>
+            <PlanetGlyph planet={day.ruler} size={13} color={PLANET_COLORS[day.ruler]} />
+            <span className="sky-band-ph-sep" aria-hidden="true" />
+            <PlanetGlyph planet={hour.ruler} size={13} color={PLANET_COLORS[hour.ruler]} />
+            <span className="sky-band-ph-until">→ {end}</span>
+          </>
+        ),
+      };
+    } else if (unavailable || !shown.ok) {
+      reading = {
+        tip: t('skyTimes.planetary.unavailable'),
+        aria: t('skyTimes.planetary.aria.unavailable'),
+        face: (
+          <>
+            <PlanetGlyph planet="Sun" size={13} color={PLANET_COLORS.Sun} />
+            <span className="sky-band-ph-until">—</span>
+          </>
+        ),
+      };
+    } else {
+      const weekday = fmt.weekdayName(shown.date.weekday);
+      reading = {
+        tip: (
+          <span className="sky-band-tip">
+            {tipGlyph(shown.ruler)}
+            <span>{t('skyTimes.planetary.day', { weekday, day: bodyName(shown.ruler) })}</span>
+          </span>
+        ),
+        aria: t('skyTimes.planetary.aria.day', { weekday, day: bodyName(shown.ruler) }),
+        face: <PlanetGlyph planet={shown.ruler} size={13} color={PLANET_COLORS[shown.ruler]} />,
+      };
+    }
+    return (
+      <TipButton
+        type="button"
+        className={`sky-band-planetary${planetaryOpen ? ' on' : ''}${unavailable ? ' is-unavailable' : ''}`}
+        placement="top"
+        aria-pressed={planetaryOpen}
+        aria-label={reading.aria}
+        tip={reading.tip}
+        // The hint says what the window will hold — keyed on the listed day, which
+        // is what the window's list is built from, not on the chip's own reading.
+        hint={t(
+          planetaryOpen
+            ? 'skyTimes.planetary.chip.closeHint'
+            : shown.ok
+              ? 'skyTimes.planetary.chip.openHint'
+              : 'skyTimes.planetary.chip.openHintNone',
+        )}
+        onClick={() => {
+          // Re-read the present on the way in: the live instant only moves on its
+          // wakes, and the window prints it.
+          setLiveNow(Date.now());
+          onTogglePlanetary();
+        }}
+      >
+        {reading.face}
+      </TipButton>
+    );
+  })();
 
   // The registered track (a downstream build's expandable center). The track ITSELF is
   // entitled-only; its TOGGLE also shows as a locked teaser for a user the build nudges
@@ -471,6 +660,10 @@ export function SkyBand({
             </TipButton>
           )}
 
+          {/* The planetary-hours chip — outside the legend's scroll container,
+              so it never scrolls away, fades or starts a drag. */}
+          {phChip}
+
           {/* LEFT — the body legend: glyph + name (hover = the four-times card), with the times
               listed inline or laid out as the table when the density toggle says so. Scrolls /
               drags when it runs wider than the space before the context column, its edges fading
@@ -654,6 +847,25 @@ export function SkyBand({
       >
         ×
       </button>
+
+      {/* The Planetary hours window — this band's module. Rendered here, not by App,
+          because the hours it lists are this band's own computation (the same
+          instant and day the chip reads); it portals itself out of the band's
+          stacking layer. Outside the place/no-place branch, so losing the point
+          empties the window rather than making it vanish and reappear. */}
+      {planetaryOpen && !PLANETARY_HOURS_HELD && (
+        <PlanetaryHoursHud
+          days={planetary}
+          now={phNow}
+          instantMs={instant}
+          sliding={slideMs != null}
+          hasPoint={!!point}
+          placeLabel={placeLabel}
+          dayLabel={dayLabel}
+          clock={clock}
+          onClose={onTogglePlanetary}
+        />
+      )}
     </div>
   );
 }
