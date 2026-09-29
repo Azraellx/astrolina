@@ -27,6 +27,9 @@ export type CaptureFailure =
   | 'no-canvas'
   /** The basemap canvas is tainted, so nothing drawn from it can be read back. */
   | 'taint-basemap'
+  /** The DOM pass (caption, badge labels, panel) came back dead twice — tainted, empty or
+   *  blank. Refused rather than exported without them, which is what it used to do. */
+  | 'overlay'
   /** toBlob refused the bitmap; in practice, its size. */
   | 'encode';
 

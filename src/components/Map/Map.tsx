@@ -3464,215 +3464,339 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // (2.2.0 in the app that ships, 2.3.9 in this repo), so `dev:core` rasterised with a
         // build no user had and a fault reproduced in one could be absent in the other. The
         // box-shadow compensation in onclone below is calibrated against THIS build's
-        // behaviour; re-measure it before moving the pin.
-        const { default: html2canvas } = await import('html2canvas-pro');
-        const overlay = await html2canvas(frameEl, {
-          backgroundColor: null,
-          scale,
-          useCORS: true,
-          logging: false,
-          // Pin the clone to THIS viewport. Left unset, html2canvas falls back to its own
-          // reading of the window and re-derives the element box inside the iframe — so a
-          // media query, a viewport unit or a scrollbar resolving differently there moves
-          // this whole layer relative to every live-measured one above. Stating it is the
-          // cheap half of the guarantee the assertion at the end of onclone checks.
-          windowWidth: window.innerWidth,
-          windowHeight: window.innerHeight,
-          scrollX: window.scrollX,
-          scrollY: window.scrollY,
-          ignoreElements: (el: Element) => {
-            if (el === mapCanvas) return true;
-            const cl = el.classList;
-            if (cl?.contains('maplibregl-canvas')) return true;
-            // Drop the zoom/compass control (top-right) — also hidden live via CSS while
-            // framing. The attribution/credits control (bottom-right) is intentionally
-            // KEPT: it's a real on-map disclosure the user composes with, so it belongs
-            // in the exported image (WYSIWYG).
-            if (
-              cl?.contains('maplibregl-ctrl-top-right') ||
-              el.closest?.('.maplibregl-ctrl-top-right')
-            )
-              return true;
-            // Drop hover tooltips (a bare .ui-tip), but KEEP a .ui-tip that lives inside
-            // a maplibre popup — those are the pinned line / eclipse interpretation cards
-            // the user clicked open, which should appear in the export (WYSIWYG).
-            if (
-              (cl?.contains('ui-tip') || el.closest?.('.ui-tip')) &&
-              !el.closest?.('.maplibregl-popup')
-            )
-              return true;
-            // Pin markers (MapLibre marker SVGs) are RE-DRAWN on the 2D canvas after this
-            // pass — keep their whole subtrees out of html2canvas, because a marker in the
-            // tree can make the entire overlay pass fail (→ map-only "broken" export). A
-            // marker carrying an <image> is a second, sharper reason: html2canvas would have
-            // to resolve that href, and a single unresolvable one taints its canvas — which
-            // does not surface until toBlob, far too late to attribute. Edge labels stay
-            // (they're plain DOM and composite fine).
-            if (
-              cl?.contains('map-pin') ||
-              el.closest?.('.map-pin') ||
-              cl?.contains('saved-pin-marker') ||
-              el.closest?.('.saved-pin-marker') ||
-              (cl?.contains('maplibregl-marker') &&
-                !!el.querySelector?.('.map-pin, .saved-pin-marker'))
-            )
-              return true;
-            // The chart WHEEL (Details ▸ Wheel) is colour-styled via CSS vars + the bundled
-            // glyph font, neither of which survive html2canvas's SVG-to-image serialisation.
-            // It's rasterised separately below (styles inlined) and its glyphs re-stamped, so
-            // keep the whole wheel subtree out of this pass.
-            if (cl?.contains('wheel-svg') || el.closest?.('.wheel-svg')) return true;
-            // The LOCAL-HORIZON dial is deliberately NOT given the same treatment, though
-            // it looks like it should be: it is an SVG whose every colour is a CSS custom
-            // property, which is the wheel's exact complaint. Excluding it and rasterising
-            // it separately was tried on 2026-08-22 and reverted the same day. Its N/E/S/W
-            // cardinals and its whole degree scale are HTML <span>s SIBLING to the <svg>
-            // (LocalHorizonWheel.tsx), so an exclusion wide enough to catch the wrapper
-            // drops them from the export and an svgToImage pass cannot put them back —
-            // measured before and after: the labels were there, then they were gone.
-            // html2canvas renders this dial acceptably as it stands, because the parts that
-            // need the vars resolved are the HTML ones, which it reads via getComputedStyle.
-            return false;
-          },
-          // Mutate only the CLONE (no live flash): drop the viewfinder ring/scrim so
-          // they don't bleed in, and make the map container transparent. The container
-          // carries an OPAQUE void background in 3D globe mode — left as-is, html2canvas
-          // would repaint it over the globe we already drew in step 1. The void colour
-          // is preserved by the backdrop fill in step 0.
-          onclone: async (cloneDoc: Document, el: HTMLElement) => {
-            el.style.outline = 'none';
-            el.style.boxShadow = 'none';
-            // Set with priority: the "Hide map" transparency checkerboard (Map.css,
-            // .basemap-hidden) is an !important rule, which a plain inline style
-            // would lose to — baking the checker into the export.
-            el.querySelectorAll<HTMLElement>('.map-container').forEach((c) => {
-              c.style.setProperty('background', 'transparent', 'important');
-            });
-            // html2canvas measures text a hair wider than the browser, so a caption that
-            // fits on screen (no ellipsis) can lose a letter or two to its overflow:hidden +
-            // text-overflow:ellipsis clip in the export. If the LIVE caption isn't actually
-            // truncated (scrollWidth fits clientWidth), drop the clip on the clone so the full
-            // text renders — it already fits its box, so it stays clear of the watermark.
-            const liveCap = frameEl.querySelector('.capture-caption-text');
-            if (liveCap && liveCap.scrollWidth <= liveCap.clientWidth + 1) {
-              el.querySelectorAll<HTMLElement>('.capture-caption-text').forEach((c) => {
-                c.style.setProperty('overflow', 'visible', 'important');
-                c.style.setProperty('text-overflow', 'clip', 'important');
-                c.style.setProperty('max-width', 'none', 'important');
+        // behaviour; re-measure it before moving the pin. So is the filter strip.
+        //
+        // One html2canvas pass over the frame, run at most twice (see the judging loop after
+        // it). `hardened` is the retry: every filter in the clone goes, not only the
+        // drop-shadows known to taint — the retry exists for the fault nobody has measured
+        // yet, and filters are the class that has already cost an export. The import sits
+        // inside so a chunk that failed to load is retried too, and judged like any failure.
+        const runOverlay = async (hardened: boolean): Promise<HTMLCanvasElement> => {
+          const { default: html2canvas } = await import('html2canvas-pro');
+          return html2canvas(frameEl, {
+            backgroundColor: null,
+            scale,
+            useCORS: true,
+            logging: false,
+            // Pin the clone to THIS viewport. Left unset, html2canvas falls back to its own
+            // reading of the window and re-derives the element box inside the iframe — so a
+            // media query, a viewport unit or a scrollbar resolving differently there moves
+            // this whole layer relative to every live-measured one above. Stating it is the
+            // cheap half of the guarantee the assertion at the end of onclone checks.
+            windowWidth: window.innerWidth,
+            windowHeight: window.innerHeight,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            ignoreElements: (el: Element) => {
+              if (el === mapCanvas) return true;
+              const cl = el.classList;
+              if (cl?.contains('maplibregl-canvas')) return true;
+              // Drop the zoom/compass control (top-right) — also hidden live via CSS while
+              // framing. The attribution/credits control (bottom-right) is intentionally
+              // KEPT: it's a real on-map disclosure the user composes with, so it belongs
+              // in the exported image (WYSIWYG).
+              if (
+                cl?.contains('maplibregl-ctrl-top-right') ||
+                el.closest?.('.maplibregl-ctrl-top-right')
+              )
+                return true;
+              // Drop hover tooltips (a bare .ui-tip), but KEEP a .ui-tip that lives inside
+              // a maplibre popup — those are the pinned line / eclipse interpretation cards
+              // the user clicked open, which should appear in the export (WYSIWYG).
+              if (
+                (cl?.contains('ui-tip') || el.closest?.('.ui-tip')) &&
+                !el.closest?.('.maplibregl-popup')
+              )
+                return true;
+              // Pin markers (MapLibre marker SVGs) are RE-DRAWN on the 2D canvas after this
+              // pass — keep their whole subtrees out of html2canvas, because a marker in the
+              // tree can make the entire overlay pass fail (→ map-only "broken" export). A
+              // marker carrying an <image> is a second, sharper reason: html2canvas would have
+              // to resolve that href, and a single unresolvable one taints its canvas — which
+              // does not surface until toBlob, far too late to attribute. Edge labels stay
+              // (they're plain DOM and composite fine).
+              // The HOME marker belongs on this list for both reasons and was missing from it
+              // until 2026-09-29: drawPin below already redrew it, so it was painted twice, and
+              // its drop-shadow filter taints this pass outright (see the filter strip in
+              // onclone) — every export with a home place set lost its caption and labels.
+              if (
+                cl?.contains('map-pin') ||
+                el.closest?.('.map-pin') ||
+                cl?.contains('map-home-mark') ||
+                el.closest?.('.map-home-mark') ||
+                cl?.contains('saved-pin-marker') ||
+                el.closest?.('.saved-pin-marker') ||
+                (cl?.contains('maplibregl-marker') &&
+                  !!el.querySelector?.('.map-pin, .saved-pin-marker'))
+              )
+                return true;
+              // The chart WHEEL (Details ▸ Wheel) is colour-styled via CSS vars + the bundled
+              // glyph font, neither of which survive html2canvas's SVG-to-image serialisation.
+              // It's rasterised separately below (styles inlined) and its glyphs re-stamped, so
+              // keep the whole wheel subtree out of this pass.
+              if (cl?.contains('wheel-svg') || el.closest?.('.wheel-svg')) return true;
+              // The LOCAL-HORIZON dial is deliberately NOT given the same treatment, though
+              // it looks like it should be: it is an SVG whose every colour is a CSS custom
+              // property, which is the wheel's exact complaint. Excluding it and rasterising
+              // it separately was tried on 2026-08-22 and reverted the same day. Its N/E/S/W
+              // cardinals and its whole degree scale are HTML <span>s SIBLING to the <svg>
+              // (LocalHorizonWheel.tsx), so an exclusion wide enough to catch the wrapper
+              // drops them from the export and an svgToImage pass cannot put them back —
+              // measured before and after: the labels were there, then they were gone.
+              // html2canvas renders this dial acceptably as it stands, because the parts that
+              // need the vars resolved are the HTML ones, which it reads via getComputedStyle.
+              return false;
+            },
+            // Mutate only the CLONE (no live flash): drop the viewfinder ring/scrim so
+            // they don't bleed in, and make the map container transparent. The container
+            // carries an OPAQUE void background in 3D globe mode — left as-is, html2canvas
+            // would repaint it over the globe we already drew in step 1. The void colour
+            // is preserved by the backdrop fill in step 0.
+            onclone: async (cloneDoc: Document, el: HTMLElement) => {
+              el.style.outline = 'none';
+              el.style.boxShadow = 'none';
+              // Set with priority: the "Hide map" transparency checkerboard (Map.css,
+              // .basemap-hidden) is an !important rule, which a plain inline style
+              // would lose to — baking the checker into the export.
+              el.querySelectorAll<HTMLElement>('.map-container').forEach((c) => {
+                c.style.setProperty('background', 'transparent', 'important');
               });
-            }
-            // A downstream brand may colour a letter of the watermark via
-            // background-clip:text (a gradient), which html2canvas can't honour — it
-            // would render that glyph transparent. Force any such element to a solid
-            // fill of its own live computed colour, so the export is reliable and the
-            // exact colour stays brand-owned (no hard-coded value in core).
-            const liveBrandO = document.querySelector('.capture-watermark-o');
-            const brandOColor = liveBrandO ? getComputedStyle(liveBrandO).color : '';
-            if (brandOColor) {
-              el.querySelectorAll<HTMLElement>('.capture-watermark-o').forEach((o) => {
-                o.style.setProperty('background', 'none');
-                o.style.setProperty('-webkit-text-fill-color', brandOColor);
-                o.style.setProperty('color', brandOColor);
-              });
-            }
-            // Hide every SYMBOL glyph (badge planet/aspect glyphs AND any in an open
-            // interpretation card) in the clone: html2canvas mis-renders the Noto symbol
-            // font's vertical baseline (the glyph floats high), so we stamp them back with
-            // the 2D API below. Use !important so the span's COMPUTED visibility is actually
-            // hidden (beats the .astro-glyph class — html2canvas-pro gates painting on
-            // that), and neutralise any ink belt-and-braces. visibility:hidden keeps the
-            // layout box, so surrounding sizing is unaffected.
-            // html2canvas-pro paints a box-shadow OVER its element instead of behind
-            // it, so every badge came out at its own colour times (1 − the shadow's
-            // alpha): `.acg-badge`'s `0 1px 3px rgba(0,0,0,0.38)` darkened each pill to
-            // 62% of itself, uniformly, on every export. Measured rather than inferred —
-            // live (245,184,61) against exported (154,115,38), with the map pixels around
-            // it identical, and full colour restored the moment the shadow is dropped
-            // here (2026-08-22).
-            //
-            // Dropping it costs the export a subtle 1px lift; keeping it cost every badge
-            // 38% of its brightness, which is what a reader actually notices. If the
-            // shadow is ever wanted back, it has to be drawn on the 2D canvas UNDER this
-            // whole layer, not left to the clone.
-            //
-            // Scoped to badges because that is where it was measured. Any other shadowed
-            // element inside the frame will have the same fault — to check one, drop its
-            // shadow in this block and compare a flat interior pixel before and after.
-            el.querySelectorAll<HTMLElement>('.acg-badge').forEach((b) => {
-              b.style.setProperty('box-shadow', 'none', 'important');
-            });
-            el.querySelectorAll<HTMLElement>('.astro-glyph').forEach((g) => {
-              g.style.setProperty('visibility', 'hidden', 'important');
-              g.style.setProperty('color', 'transparent', 'important');
-              g.style.setProperty('text-shadow', 'none', 'important');
-              g.style.setProperty('-webkit-text-stroke', '0', 'important');
-            });
-            // The popup close (✕) button is UI chrome, not part of the captured image.
-            el.querySelectorAll<HTMLElement>('.maplibregl-popup-close-button').forEach(
-              (b) => b.style.setProperty('display', 'none', 'important'),
-            );
-            // The wheel SVG is dropped from this pass (ignoreElements) and rasterised
-            // separately onto the 2D canvas. But removing it from the clone collapses the
-            // flex cluster, which would SHIFT the balance grid beside/below it into the
-            // wheel's vacated space — while the grid's glyphs, re-stamped from the LIVE DOM,
-            // stay put, so the grid's cell boxes/lines would land in the wrong spot. Pin the
-            // wheel wrapper to its live size so the clone's layout (and the grid) is unchanged.
-            const liveWrap = frameEl.querySelector('.wheel-svg-wrap');
-            if (liveWrap) {
-              const lw = liveWrap.getBoundingClientRect();
-              el.querySelectorAll<HTMLElement>('.wheel-svg-wrap').forEach((w) => {
-                w.style.setProperty('width', `${lw.width}px`, 'important');
-                w.style.setProperty('height', `${lw.height}px`, 'important');
-                w.style.setProperty('flex', '0 0 auto', 'important');
-              });
-            }
-            // The font waits before this call resolve against THIS document. The clone is a
-            // separate document in its own iframe with its own font set, and text measured
-            // against a fallback face is a different width — which, for a badge centred by a
-            // percentage of its own size, moves the pill without moving the glyph stamped
-            // beside it. Wait for the clone's copies too. html2canvas awaits this callback,
-            // so the delay is honoured.
-            try {
-              await cloneDoc.fonts.load('16px "Noto Sans Symbols"', '☉');
-              if (brandFonts?.length) {
-                await Promise.all(brandFonts.map((spec) => cloneDoc.fonts.load(spec)));
+              // html2canvas measures text a hair wider than the browser, so a caption that
+              // fits on screen (no ellipsis) can lose a letter or two to its overflow:hidden +
+              // text-overflow:ellipsis clip in the export. If the LIVE caption isn't actually
+              // truncated (scrollWidth fits clientWidth), drop the clip on the clone so the full
+              // text renders — it already fits its box, so it stays clear of the watermark.
+              const liveCap = frameEl.querySelector('.capture-caption-text');
+              if (liveCap && liveCap.scrollWidth <= liveCap.clientWidth + 1) {
+                el.querySelectorAll<HTMLElement>('.capture-caption-text').forEach((c) => {
+                  c.style.setProperty('overflow', 'visible', 'important');
+                  c.style.setProperty('text-overflow', 'clip', 'important');
+                  c.style.setProperty('max-width', 'none', 'important');
+                });
               }
-              await cloneDoc.fonts.ready;
-            } catch {
-              /* clone document may not expose the font API — fall through to the check */
-            }
-            // Does the clone lay out like the live page? Measured LAST, so it reflects the
-            // mutations above rather than the state they started from. A warning here is the
-            // difference between "the export is broken" and "the clone laid out N pixels off,
-            // and here is the environment it happened in".
-            const cloneFrameRect = el.getBoundingClientRect();
-            if (
-              Math.abs(cloneFrameRect.width - liveFrameRect.width) > 1 ||
-              Math.abs(cloneFrameRect.height - liveFrameRect.height) > 1
-            ) {
-              console.warn(
-                '[capture] the cloned frame is a different SIZE from the live one, so this ' +
-                  'overlay layer will not line up with the map, the glyph stamps or the pins. ' +
-                  `live ${Math.round(liveFrameRect.width)}×${Math.round(liveFrameRect.height)}, ` +
-                  `clone ${Math.round(cloneFrameRect.width)}×${Math.round(cloneFrameRect.height)}`,
-                captureEnv(),
+              // A downstream brand may colour a letter of the watermark via
+              // background-clip:text (a gradient), which html2canvas can't honour — it
+              // would render that glyph transparent. Force any such element to a solid
+              // fill of its own live computed colour, so the export is reliable and the
+              // exact colour stays brand-owned (no hard-coded value in core).
+              const liveBrandO = document.querySelector('.capture-watermark-o');
+              const brandOColor = liveBrandO ? getComputedStyle(liveBrandO).color : '';
+              if (brandOColor) {
+                el.querySelectorAll<HTMLElement>('.capture-watermark-o').forEach((o) => {
+                  o.style.setProperty('background', 'none');
+                  o.style.setProperty('-webkit-text-fill-color', brandOColor);
+                  o.style.setProperty('color', brandOColor);
+                });
+              }
+              // Hide every SYMBOL glyph (badge planet/aspect glyphs AND any in an open
+              // interpretation card) in the clone: html2canvas mis-renders the Noto symbol
+              // font's vertical baseline (the glyph floats high), so we stamp them back with
+              // the 2D API below. Use !important so the span's COMPUTED visibility is actually
+              // hidden (beats the .astro-glyph class — html2canvas-pro gates painting on
+              // that), and neutralise any ink belt-and-braces. visibility:hidden keeps the
+              // layout box, so surrounding sizing is unaffected.
+              // html2canvas-pro paints a box-shadow OVER its element instead of behind
+              // it, so every badge came out at its own colour times (1 − the shadow's
+              // alpha): `.acg-badge`'s `0 1px 3px rgba(0,0,0,0.38)` darkened each pill to
+              // 62% of itself, uniformly, on every export. Measured rather than inferred —
+              // live (245,184,61) against exported (154,115,38), with the map pixels around
+              // it identical, and full colour restored the moment the shadow is dropped
+              // here (2026-08-22).
+              //
+              // Dropping it costs the export a subtle 1px lift; keeping it cost every badge
+              // 38% of its brightness, which is what a reader actually notices. If the
+              // shadow is ever wanted back, it has to be drawn on the 2D canvas UNDER this
+              // whole layer, not left to the clone.
+              //
+              // Scoped to badges because that is where it was measured. Any other shadowed
+              // element inside the frame will have the same fault — to check one, drop its
+              // shadow in this block and compare a flat interior pixel before and after.
+              el.querySelectorAll<HTMLElement>('.acg-badge').forEach((b) => {
+                b.style.setProperty('box-shadow', 'none', 'important');
+              });
+              // A drop-shadow FILTER is worse than the box-shadow above: it doesn't dim the
+              // export, it destroys it. html2canvas-pro's filter translation keeps only
+              // lengths, numbers and idents, so `drop-shadow(0 1.5px 1.5px rgba(0,0,0,.5))`
+              // reaches the canvas as a drop-shadow with NO colour — and Chrome (measured on
+              // 154) taints a canvas drawn under a colourless drop-shadow, whatever is drawn.
+              // canExport then refuses this whole layer: caption, watermark, panel background
+              // and every badge pill. That was Lina's export of 2026-09-29, via the home marker
+              // (excluded above since); the eclipse and arrival marks carry the same filter,
+              // and anything that gains one later would do it again. So strip drop-shadow() off
+              // every node in the clone, keeping any other filter it carries. The shadow is
+              // lost in the export, as the badge box-shadow already is. The retry pass
+              // (`hardened`) drops every filter outright.
+              const cloneView = cloneDoc.defaultView;
+              if (cloneView) {
+                const nodes = [el, ...el.querySelectorAll<HTMLElement | SVGElement>('*')];
+                for (const n of nodes) {
+                  if (hardened) {
+                    n.style.setProperty('filter', 'none', 'important');
+                    n.style.setProperty('backdrop-filter', 'none', 'important');
+                    continue;
+                  }
+                  const f = cloneView.getComputedStyle(n).filter;
+                  if (!f || !f.includes('drop-shadow(')) continue;
+                  // One level of nesting is enough: the colour's rgba()/color() is the only
+                  // function a drop-shadow argument list holds.
+                  const rest = f
+                    .replace(/drop-shadow\((?:[^()]|\([^()]*\))*\)/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                  n.style.setProperty('filter', rest || 'none', 'important');
+                }
+              }
+              el.querySelectorAll<HTMLElement>('.astro-glyph').forEach((g) => {
+                g.style.setProperty('visibility', 'hidden', 'important');
+                g.style.setProperty('color', 'transparent', 'important');
+                g.style.setProperty('text-shadow', 'none', 'important');
+                g.style.setProperty('-webkit-text-stroke', '0', 'important');
+              });
+              // The popup close (✕) button is UI chrome, not part of the captured image.
+              el.querySelectorAll<HTMLElement>('.maplibregl-popup-close-button').forEach(
+                (b) => b.style.setProperty('display', 'none', 'important'),
               );
-            }
-            const cloneProbe = probeOffset(el.querySelector('.acg-badge'), cloneFrameRect);
-            if (liveProbe && cloneProbe) {
-              const dx = cloneProbe.x - liveProbe.x;
-              const dy = cloneProbe.y - liveProbe.y;
-              if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+              // The wheel SVG is dropped from this pass (ignoreElements) and rasterised
+              // separately onto the 2D canvas. But removing it from the clone collapses the
+              // flex cluster, which would SHIFT the balance grid beside/below it into the
+              // wheel's vacated space — while the grid's glyphs, re-stamped from the LIVE DOM,
+              // stay put, so the grid's cell boxes/lines would land in the wrong spot. Pin the
+              // wheel wrapper to its live size so the clone's layout (and the grid) is unchanged.
+              const liveWrap = frameEl.querySelector('.wheel-svg-wrap');
+              if (liveWrap) {
+                const lw = liveWrap.getBoundingClientRect();
+                el.querySelectorAll<HTMLElement>('.wheel-svg-wrap').forEach((w) => {
+                  w.style.setProperty('width', `${lw.width}px`, 'important');
+                  w.style.setProperty('height', `${lw.height}px`, 'important');
+                  w.style.setProperty('flex', '0 0 auto', 'important');
+                });
+              }
+              // The font waits before this call resolve against THIS document. The clone is a
+              // separate document in its own iframe with its own font set, and text measured
+              // against a fallback face is a different width — which, for a badge centred by a
+              // percentage of its own size, moves the pill without moving the glyph stamped
+              // beside it. Wait for the clone's copies too. html2canvas awaits this callback,
+              // so the delay is honoured.
+              try {
+                await cloneDoc.fonts.load('16px "Noto Sans Symbols"', '☉');
+                if (brandFonts?.length) {
+                  await Promise.all(brandFonts.map((spec) => cloneDoc.fonts.load(spec)));
+                }
+                await cloneDoc.fonts.ready;
+              } catch {
+                /* clone document may not expose the font API — fall through to the check */
+              }
+              // Does the clone lay out like the live page? Measured LAST, so it reflects the
+              // mutations above rather than the state they started from. A warning here is the
+              // difference between "the export is broken" and "the clone laid out N pixels off,
+              // and here is the environment it happened in".
+              const cloneFrameRect = el.getBoundingClientRect();
+              if (
+                Math.abs(cloneFrameRect.width - liveFrameRect.width) > 1 ||
+                Math.abs(cloneFrameRect.height - liveFrameRect.height) > 1
+              ) {
                 console.warn(
-                  '[capture] the first map badge sits somewhere else in the clone than it does ' +
-                    'on screen, so its pill will be drawn away from its glyph (which is stamped ' +
-                    `from the live DOM). Off by ${dx.toFixed(1)}, ${dy.toFixed(1)} px.`,
+                  '[capture] the cloned frame is a different SIZE from the live one, so this ' +
+                    'overlay layer will not line up with the map, the glyph stamps or the pins. ' +
+                    `live ${Math.round(liveFrameRect.width)}×${Math.round(liveFrameRect.height)}, ` +
+                    `clone ${Math.round(cloneFrameRect.width)}×${Math.round(cloneFrameRect.height)}`,
                   captureEnv(),
                 );
               }
-            }
-          },
-        });
+              const cloneProbe = probeOffset(el.querySelector('.acg-badge'), cloneFrameRect);
+              if (liveProbe && cloneProbe) {
+                const dx = cloneProbe.x - liveProbe.x;
+                const dy = cloneProbe.y - liveProbe.y;
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                  console.warn(
+                    '[capture] the first map badge sits somewhere else in the clone than it does ' +
+                      'on screen, so its pill will be drawn away from its glyph (which is stamped ' +
+                      `from the live DOM). Off by ${dx.toFixed(1)}, ${dy.toFixed(1)} px.`,
+                    captureEnv(),
+                  );
+                }
+              }
+            },
+          });
+        };
+
+        // Judge a pass BEFORE anything composites it. html2canvas-pro 2.2.0 can resolve with
+        // a dead layer three ways: a 0×0 canvas (the clone root had no box), a tainted one
+        // (an unreadable image or paint op — the filter strip in onclone is the measured
+        // case, and taint does not throw until toBlob), or a readable canvas with nothing on
+        // it (the root failed its visibility test in the clone). Each of them used to ship
+        // as a "successful" export with no caption, no badge labels and no panel — worse
+        // than no export, because whoever holds it can't tell it is wrong until someone
+        // else reads it. So a dead pass is retried once, hardened, and a second dead pass
+        // fails the export with a reason instead of handing back half a picture.
+        type OverlayFault = 'threw' | 'empty' | 'tainted' | 'blank';
+        const faultText: Record<OverlayFault, string> = {
+          threw: 'with an error',
+          empty: 'empty (0×0: the cloned frame had no box)',
+          tainted:
+            'tainted (unreadable: a cross-origin image without CORS, or a paint op the ' +
+            'browser treats as one, such as a colourless drop-shadow filter)',
+          blank: 'blank (readable, but the band that must be opaque holds no ink)',
+        };
+        const judgeOverlay = (c: HTMLCanvasElement): OverlayFault | null => {
+          if (c.width === 0 || c.height === 0) return 'empty';
+          if (!canExport(c)) return 'tainted';
+          // The blank test needs something that MUST be opaque in a good pass: the caption
+          // band (Map.css: "fully opaque so the band reads solidly") or, with no band, the
+          // details panel, on the same solid background. Neither → no test: Transparent
+          // Local Space draws only translucent ink, where finding none proves nothing.
+          const band = ['.capture-caption', '.capture-extras']
+            .map((sel) => frameEl.querySelector(sel)?.getBoundingClientRect())
+            .find((r) => r && r.width >= 8 && r.height >= 2);
+          if (!band) return null;
+          // One row across the band's middle, in the pass's own pixels (its size comes
+          // from the clone, so scale by it rather than by `scale`), clear of the ends.
+          const kx = c.width / liveFrameRect.width;
+          const ky = c.height / liveFrameRect.height;
+          const x0 = Math.max(0, Math.floor((band.left - liveFrameRect.left + 3) * kx));
+          const x1 = Math.min(c.width, Math.ceil((band.right - liveFrameRect.left - 3) * kx));
+          const y = Math.round((band.top + band.height / 2 - liveFrameRect.top) * ky);
+          if (x1 <= x0 || y < 0 || y >= c.height) return null;
+          const row = c.getContext('2d')?.getImageData(x0, y, x1 - x0, 1).data;
+          if (!row) return null;
+          let opaque = 0;
+          for (let i = 3; i < row.length; i += 4) if (row[i] >= 250) opaque++;
+          // Half, not all: this catches a DEAD layer, not an imperfect one.
+          return opaque < row.length / 8 ? 'blank' : null;
+        };
+        let overlay: HTMLCanvasElement | null = null;
+        for (const hardened of [false, true]) {
+          let pass: HTMLCanvasElement | null = null;
+          let fault: OverlayFault | null;
+          let cause: unknown;
+          try {
+            pass = await runOverlay(hardened);
+            fault = judgeOverlay(pass);
+          } catch (e) {
+            fault = 'threw';
+            cause = e;
+          }
+          if (!fault) {
+            overlay = pass;
+            break;
+          }
+          (hardened ? console.error : console.warn)(
+            `[capture] the DOM overlay pass (caption, labels, panel) came back ${faultText[fault]}` +
+              (hardened
+                ? ' on the hardened retry too — failing the export rather than shipping it without them.'
+                : ' — retrying once with every filter removed.'),
+            captureEnv({
+              attempt: hardened ? 2 : 1,
+              overlay: pass ? `${pass.width}×${pass.height}` : null,
+              frame: `${W}×${H}`,
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+          );
+        }
+        if (!overlay) {
+          setCaptureFailure('overlay');
+          return null;
+        }
         // The camera may have moved while the fonts loaded, the chunk arrived and the clone
         // rendered — see cameraSig. The map already on the canvas would then be a different
         // view from everything measured since, so repaint it from where the map actually is
@@ -3687,18 +3811,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           ctx.clearRect(0, 0, W, H);
           if (!paintMapLayer()) return null;
         }
-        if (canExport(overlay)) {
-          ctx.drawImage(overlay, 0, 0, W, H);
-        } else {
-          // Best-effort, as documented above — but taint cannot be caught by the
-          // try/catch around this block, because it does not throw until toBlob.
-          // Dropping the layer keeps the promise the comment makes.
-          console.error(
-            '[capture] the DOM overlay layer cannot be exported (an image inside the frame ' +
-              'is cross-origin without CORS) — exporting the map without it. The culprit is an ' +
-              '<img>/background-image rendered inside the capture frame.',
-          );
-        }
+        ctx.drawImage(overlay, 0, 0, W, H);
 
         // Re-stamp the badge symbol glyphs (hidden in the clone above) at their real
         // on-screen positions. Read from the LIVE badges (the clone's hidden state
@@ -3917,8 +4030,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           if (pinBody && pinShape) await drawPin(pinBody, pinShape);
         }
       } catch (err) {
-        // Overlay compositing is best-effort — a failure still yields the map image.
-        console.warn('[capture] overlay capture failed; exporting map only', err);
+        // The DOM pass never reaches here — it is judged, retried and failed above. What
+        // does is one of the layers stamped after it (wheel raster, glyphs, pins), which
+        // stay best-effort: a failure there costs the export that layer, not the export.
+        console.warn('[capture] a layer after the DOM pass failed; exporting without it', err);
       }
 
       const blob = await new Promise<Blob | null>((resolve) =>

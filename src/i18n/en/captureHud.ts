@@ -159,5 +159,7 @@ export const captureHud = {
     'taint-basemap':
       'The map tiles refused to be exported. Tracking prevention or a content blocker is the usual cause — allow this site, then try again.',
     encode: 'The image was too large to encode. Try a smaller frame ratio.',
+    overlay:
+      'The caption and labels could not be drawn, so no image was made. Reload the app and try again.',
   },
 } as const;
