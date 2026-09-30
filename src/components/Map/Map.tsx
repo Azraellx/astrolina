@@ -56,6 +56,13 @@ import {
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles, applyLabelContrast } from './basemapStyle';
+import {
+  boundedWait,
+  createBasemapRecovery,
+  LIVE_BASEMAP_WAIT_MS,
+  watchLiveBasemap,
+  type BasemapMode,
+} from './basemapFallback';
 import { MapOverlayHost } from './MapOverlayHost';
 import {
   MAP_CLICK_EVENT,
@@ -1772,20 +1779,22 @@ const lineTypeIs = (t: 'ASC' | 'DSC'): ExpressionSpecification =>
 // ── Offline basemap fallback ─────────────────────────────────────────────────────────────────
 // The live basemap (styles + vector tiles) streams from OpenFreeMap — and the glass/dark STYLES
 // themselves are remote, so offline a fresh load wouldn't even reach the background. So with no
-// connection the map opens on a self-contained style (a plain ocean) and draws the bundled coarse
-// world outline (Natural Earth 1:110m — the same data the offline country lookup already ships and
-// precaches) on top, so continents + borders still show beneath the chart lines.
+// connection — or one that answers nothing, which navigator.onLine can't see (basemapFallback.ts) —
+// the map is on a self-contained style (a plain ocean) and draws the bundled coarse world outline
+// (Natural Earth 1:110m — the same data the offline country lookup already ships and precaches) on
+// top, so continents + borders still show beneath the chart lines.
 const WF_SOURCE = 'world-fallback';
 const WF_FILL = 'world-fallback-fill';
 const WF_LINE = 'world-fallback-line';
 
 // A style with NO external sources/sprite, so it loads with zero network. It keeps the live glyphs
-// URL only so chart-line TEXT can reuse the SW-cached font PBFs when present; the outline's
-// fills/lines need no glyphs, so even a cold cache still shows continents + borders.
+// URL only so chart-line TEXT can reuse the SW-cached font PBFs when present — each with a bounded
+// wait, so a network that answers nothing can't hold the chart lines back (basemapFallback.ts);
+// the outline's fills/lines need no glyphs, so even a cold cache still shows continents + borders.
 function offlineStyle(theme: Theme): StyleSpecification {
   return {
     version: 8,
-    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    glyphs: boundedWait('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'),
     sources: {},
     layers: [
       {
@@ -4097,6 +4106,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     null,
   );
   const themeRef = useRef(theme);
+  // Put the map on the basemap for themeRef's theme through the one style-swap path, which lives
+  // with the map in the mount effect (the theme effect is its caller from outside).
+  const restyleRef = useRef<() => void>(() => {});
+  // spinPaint (the Slide tool's, below), for that style path: a style that lands while Slide is
+  // on must be painted at the current spin, as the data effect does.
+  const spinPaintRef = useRef<(deg: number, mode?: 'translate' | 'empty' | 'skip') => void>(() => {});
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
   const projectionRef = useRef(projection);
@@ -4765,6 +4780,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // already on screen, and there's nothing for the map to render into.
     if (glStatus !== 'ok') return;
 
+    // Which basemap the map is on or loading. Offline: the live OpenFreeMap styles/tiles need the
+    // network (the glass/dark STYLES are remote too), so open on the self-contained offline style
+    // instead of a blank map. After that it moves only when a live load demonstrably fails or the
+    // tile host answers again (basemapFallback.ts).
+    let mode: BasemapMode = navigator.onLine ? 'live' : 'offline';
+
     // The probe passing doesn't fully guarantee construction succeeds (a context
     // can be granted then immediately lost), so guard the constructor too and fall
     // back the same way rather than letting an uncaught throw blank the app.
@@ -4772,11 +4793,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        // Offline: the live OpenFreeMap styles/tiles need the network (the glass/dark STYLES are
-        // remote too), so open on the self-contained offline style instead of a blank map.
-        style: navigator.onLine
-          ? BASEMAP_STYLE_URLS[themeRef.current]
-          : offlineStyle(themeRef.current),
+        style: mode === 'live' ? BASEMAP_STYLE_URLS[themeRef.current] : offlineStyle(themeRef.current),
         // Open framed on a continental box centred on the active chart's birthplace
         // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
         // once at mount; fitBoundsOptions keeps the continent off the very edges and
@@ -4891,38 +4908,129 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       });
     });
 
-    map.on('load', async () => {
-      // Apply the persisted projection first (before the async glyph load) so a
-      // 3D reload doesn't briefly flash the flat map.
+    // ── The one path every style takes ──
+    // `installed` is the style last handed to MapLibre; `building`, the chart build running on it;
+    // `wanted`, a swap waiting for that build to finish. A swap must not land mid-build: the build
+    // would carry on into the new style and that style's own build would then add every layer twice.
+    let installed = { mode, theme: themeRef.current };
+    let loadedOnce = false;
+    let building: Promise<void> | null = null;
+    let wanted: { deadline: boolean } | null = null;
+    let onStyleLoad: (() => void) | null = null;
+    let stopWatch = () => {};
+
+    // Everything the app draws, built on each style that lands (a swap drops every source, layer
+    // and image the app added) — the first load and every swap after it alike.
+    const build = async ({ mode: styleMode, theme }: typeof installed, first: boolean) => {
+      // Apply the persisted projection first (before the async glyph load): setStyle resets it,
+      // and a 3D reload mustn't briefly flash the flat map.
       applyProjection(map, projectionRef.current);
       await ensureGlyphImages(
         map,
-        themeRef.current === 'dark' ? '' : LABEL_HALO_COLORS[themeRef.current],
-        ZENITH_DISC_COLORS[themeRef.current],
-        themeRef.current,
+        theme === 'dark' ? '' : LABEL_HALO_COLORS[theme],
+        ZENITH_DISC_COLORS[theme],
+        theme,
       );
       applyDetailToggles(map, detailRef.current);
-      applyLabelContrast(map, themeRef.current);
+      applyLabelContrast(map, theme);
       setupCustomLayers(
         map,
-        LABEL_HALO_COLORS[themeRef.current],
+        LABEL_HALO_COLORS[theme],
         measureColorRef.current,
-        ZENITH_DISC_COLORS[themeRef.current],
-        ECLIPSE_LABEL_HALO[themeRef.current],
+        ZENITH_DISC_COLORS[theme],
+        ECLIPSE_LABEL_HALO[theme],
       );
       applyLsArrowVisibility(map, hideLsArrowsRef.current);
       pushData(map, dataRef.current, true, lsTransparentRef.current);
-      // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
-      // basemap of its own). A no-op online. The outline lands async, so re-run the
-      // detail toggles after it: a live basemap blank must catch it too.
-      if (!navigator.onLine)
-        void installWorldFallback(map, themeRef.current).then(() => {
-          if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
-        });
+      // A running Slide owns the sources, rotated to its spin (see the data effect). A style that
+      // lands mid-Slide — a theme change, or the basemap falling back or coming back by itself —
+      // must paint at that spin too, or the lines leave the spun cage for their natal places while
+      // the camera stays turned. Mid-drag the secondary layers stay empty, as the drag keeps them.
+      if (slideActiveRef.current)
+        spinPaintRef.current(spinDegRef.current, secondaryHiddenRef.current ? 'empty' : 'translate');
       computeBadgesRef.current();
       // The internal map ref is live now — let MapOverlayHost subscribe to a real instance.
-      setMapReady(true);
+      if (first) setMapReady(true);
+      // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
+      // basemap of its own). The outline lands async, so re-run the detail toggles after it: a
+      // live basemap blank must catch it too.
+      if (styleMode === 'offline') {
+        await installWorldFallback(map, theme);
+        if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
+      }
+    };
+    const runBuild = (first: boolean) => {
+      const done: Promise<void> = build(installed, first).finally(() => {
+        if (building !== done) return;
+        building = null;
+        applyWanted();
+      });
+      building = done;
+    };
+
+    // While on the live style, watch its load; while on the offline one, look for the way back.
+    const recovery = createBasemapRecovery({
+      styleUrl: () => BASEMAP_STYLE_URLS[themeRef.current],
+      onBack: () => swapBasemap('live', false),
     });
+    const watch = (deadline: boolean) => {
+      stopWatch();
+      stopWatch = () => {};
+      if (mode === 'offline') return recovery.start();
+      recovery.stop();
+      const styleUrl = BASEMAP_STYLE_URLS[installed.theme];
+      stopWatch = watchLiveBasemap(map, deadline ? LIVE_BASEMAP_WAIT_MS : null, styleUrl, {
+        ok: () => {
+          recovery.reset();
+          // The live style's credit arrives with its tile source, after a swap's build placed the
+          // edge badges around the shorter one they replaced: place them again, clear of it.
+          if (loadedOnce) computeBadgesRef.current();
+        },
+        fail: () => swapBasemap('offline', false),
+      });
+    };
+    // `deadline` false after a probe the tile host answered: a load that is merely slow then isn't
+    // swapped away again — only a failed request can send it back.
+    const swapBasemap = (next: BasemapMode, deadline: boolean) => {
+      mode = next;
+      wanted = { deadline };
+      applyWanted();
+    };
+    const applyWanted = () => {
+      if (!wanted || building || mapRef.current !== map) return;
+      const { deadline } = wanted;
+      wanted = null;
+      const from = installed.mode;
+      installed = { mode, theme: themeRef.current };
+      watch(deadline);
+      if (onStyleLoad) map.off('style.load', onStyleLoad);
+      onStyleLoad = null;
+      // Before the first load there is nothing to rebuild: `load` builds on whichever style lands.
+      // After it, the handler goes on BEFORE setStyle — a JSON style can diff in, and fire
+      // style.load, inside that call.
+      if (loadedOnce) {
+        const handler = () => {
+          onStyleLoad = null;
+          runBuild(false);
+        };
+        onStyleLoad = handler;
+        map.once('style.load', handler);
+      }
+      // Between the live and the offline style, replace rather than diff: the old style's requests
+      // go with it, where a diff keeps a hung sprite request that holds back `load` and `idle` for
+      // as long as it hangs. A theme change keeps the diff it always had.
+      map.setStyle(
+        mode === 'live' ? BASEMAP_STYLE_URLS[installed.theme] : offlineStyle(installed.theme),
+        from === mode ? undefined : { diff: false },
+      );
+    };
+    restyleRef.current = () => swapBasemap(navigator.onLine ? mode : 'offline', true);
+
+    map.on('load', () => {
+      loadedOnce = true;
+      runBuild(true);
+    });
+    watch(true);
 
     // Edge labels fade out while the camera animates and fade back in once it settles
     // (see mapMoving). Positions are still recomputed every frame so the compass wheel
@@ -5021,6 +5129,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // on stayed undrawn until the next toggle, because its ephemeris file arrived a
       // moment after the first push).
       idleDeferRef.current = false;
+      // The basemap watch and probes answer to this map only; a swap still waiting for a build
+      // is dropped by applyWanted's own map check.
+      stopWatch();
+      recovery.stop();
+      restyleRef.current = () => {};
       map.remove();
       mapRef.current = null;
     };
@@ -5038,22 +5151,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!map) return;
     if (themeRef.current === theme) return;
     themeRef.current = theme;
-    map.setStyle(navigator.onLine ? BASEMAP_STYLE_URLS[theme] : offlineStyle(theme));
-    map.once('style.load', async () => {
-      applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
-      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
-      applyDetailToggles(map, detailRef.current);
-      applyLabelContrast(map, theme);
-      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
-      applyLsArrowVisibility(map, hideLsArrowsRef.current);
-      pushData(map, dataRef.current, true, lsTransparentRef.current);
-      if (!navigator.onLine)
-        void installWorldFallback(map, theme).then(() => {
-          if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
-        });
-      computeBadges();
-    });
-  }, [theme, computeBadges]);
+    // The same basemap in the new theme — the offline one if the browser is offline or the live
+    // one has fallen back — rebuilt through the mount effect's style path.
+    restyleRef.current();
+  }, [theme]);
 
   // Switch projection on demand (2D ↔ 3D). To 2D snaps flat north-up; to 3D leaves
   // the camera where it is (free rotate/tilt). Overlays recompute for the new view.
@@ -6042,6 +6143,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     },
     [],
   );
+  useEffect(() => {
+    spinPaintRef.current = spinPaint;
+  }, [spinPaint]);
 
   // Slide tool (3D globe): drag east/west to spin the Earth about its polar axis under
   // the fixed natal line-cage. The cage is the celestial sphere projected onto Earth, so

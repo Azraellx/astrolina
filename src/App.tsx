@@ -1898,6 +1898,16 @@ export default function App() {
     return () => window.removeEventListener('astro:cheat', onCheat);
   }, []);
 
+  // Neutral seam: open My Charts — the same window the chart switcher's "Search + Add" and
+  // the A key open. A downstream build's onboarding dispatches
+  // `window.dispatchEvent(new Event('astro:open-my-charts'))` to take a new reader straight
+  // to where a birth chart goes in, rather than through the quick-switch menu first.
+  useEffect(() => {
+    const onOpenMyCharts = () => setCreating(true);
+    window.addEventListener('astro:open-my-charts', onOpenMyCharts);
+    return () => window.removeEventListener('astro:open-my-charts', onOpenMyCharts);
+  }, []);
+
   // The other direction of leaveMundaneFor's rule. Mundane is about to become the line
   // system ON SCREEN — chosen in Calculation, handed back by the zodiac returning to
   // Tropical, or by Advanced going off over a stored sidereal zodiac — so whatever needs

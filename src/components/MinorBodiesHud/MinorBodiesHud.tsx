@@ -710,12 +710,25 @@ export function MinorBodiesHud({
   // the bundled copy is free, offline and never held, and recording it against a
   // gated source would hold a body this build ships with the moment that source
   // closed.
-  const entryFor = (n: number, name: string, sourceId: string): MinorListEntry =>
-    listByN.get(n) ?? {
+  //
+  // A listed entry stored WITHOUT a name (a body added before its source could name it)
+  // is shown by the name its list row shows — the one that arrived with its file — or,
+  // failing that, by the name the scope offers now, so a search result never reads
+  // "(579513)" beside a list row reading "2014 SE357 (579513)". Shown, not stored: the
+  // entry itself is handed on unchanged in every other respect.
+  const entryFor = (n: number, name: string, sourceId: string): MinorListEntry => {
+    const listed = listByN.get(n);
+    if (listed) {
+      if (listed.name) return listed;
+      const shown = rows.find((r) => r.entry.n === n)?.name || name;
+      return shown ? { ...listed, name: shown } : listed;
+    }
+    return {
       n,
       name,
       source: bundledMinorBody(n) ? BUNDLED_SOURCE_ID : sourceId,
     };
+  };
 
   // "Eros (433)", "(433)", or "Zeus (hyp)" — the one naming rule every surface shares.
   const displayName = (n: number, name: string) => minorDisplayLabel(n, name, t);

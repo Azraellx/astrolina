@@ -183,12 +183,15 @@ export const minorBodies = {
   },
   // A body's class tag, at the right of its name line in the Minor bodies window: on
   // every row of Your list, and on search results — never in the Featured browse, whose
-  // headings already say it, and never on the map. Each is the class's shortest plain
-  // word ("Main belt", not the heading's singular "Main-belt asteroid"), because the tag
-  // shares ONE line with the name (see .mbh-main in MinorBodiesHud.css for the widths it
-  // has to fit); the heading and the Help say the rest. Which body gets which is
-  // lib/minorBodies/classTags.ts (orbit classes from NASA JPL's Small-Body Database,
-  // dwarf-planet status from the IAU). JPL's own codes are never shown.
+  // headings already say it, and never on the map. The rule (the house astrologer's,
+  // 2026-09-30): a tag uses the key word(s) of its heading, in sentence case, short
+  // enough to fit ONE line with the name (see .mbh-main in MinorBodiesHud.css for the
+  // widths it has to fit); the heading and the Help say the rest. "Main belt" is the one
+  // exception — its heading, "Main-belt asteroids", keeps the hyphen. A body in none of
+  // the classes is "Unusual orbit" (it was "Other" until that ruling; the key stays
+  // `other`). Which body gets which is lib/minorBodies/classTags.ts (orbit classes from
+  // NASA JPL's Small-Body Database, dwarf-planet status from the IAU). JPL's own codes
+  // are never shown.
   tags: {
     dwarf: 'Dwarf planet',
     tno: 'Trans-Neptunian',
@@ -197,7 +200,7 @@ export const minorBodies = {
     nearEarth: 'Near-Earth',
     trojan: 'Jupiter Trojan',
     marsCrosser: 'Mars-crosser',
-    other: 'Other',
+    other: 'Unusual orbit',
     uranian: 'Uranian',
     otherHyp: 'Hypothetical',
   },

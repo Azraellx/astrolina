@@ -27,8 +27,16 @@ export interface MinorBodyHit {
    *  hypothetical point's reserved negative key (lib/minorBodies/ids.ts). A registered
    *  source answers with MPC numbers. */
   n: number;
-  /** Display name. May be empty for a numbered body whose name the source doesn't
-   *  know yet (the name then arrives with the file's own header). */
+  /** Display name, shown with the number: "Eros (433)". For a numbered body that has
+   *  no name yet, a source that knows its provisional designation answers that here
+   *  ("2014 SE357", so the row reads "2014 SE357 (579513)"), and one that doesn't
+   *  answers '' — the row then reads "(579513)".
+   *  Whatever is answered is stored as the list entry's name when the reader adds the
+   *  body. The list shows a stored name before the one in the file's own header, and
+   *  falls back to the header's only for an entry stored without one
+   *  (lib/minorBodies/status.ts). The name is read once, when the search answers: a
+   *  source that has to fetch it has search() wait, since nothing asks a hit for its
+   *  name again. */
   name: string;
   /** Optional second line under the name (a class, a note). */
   sub?: string;

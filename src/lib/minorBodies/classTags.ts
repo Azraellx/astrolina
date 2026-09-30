@@ -14,7 +14,8 @@
 //   • Ceres, Eris, Haumea and Makemake are 'dwarf', whatever their orbit class.
 //   • Pluto is never tagged: it is a planet here (and never a catalog body — ids.ts).
 //   • Otherwise the JPL code decides, and a code none of the classes below claims is
-//     'other' — rare, and still a real class rather than a guess.
+//     'other' — rare, and still a real class rather than a guess. Its label is
+//     "Unusual orbit"; the key keeps the older word.
 //   • A hypothetical point is tagged by its group ('uranian' | 'otherHyp'), which the
 //     bundled source answers from its own table (hypothetical.ts), not from here.
 //

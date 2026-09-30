@@ -112,9 +112,11 @@ import {
   bundledMinorBody,
   bundledSearch,
   bundledSource,
+  foldMinorName,
   MINOR_BODY_GROUPS,
   needsMinorFile,
   rankBundledMatch,
+  rankMinorMatch,
 } from '../src/lib/minorBodies/bundled';
 import {
   ensureMinorBodies,
@@ -2177,7 +2179,9 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
 //                  by hand) — §1 holds the group to the class; this holds what the reader
 //                  sees to both. Then the source's answers, by name.
 //   10c IDENTITY   search: the older spelling "Hygeia" finds 10 Hygiea, as Hygiea, and
-//                  "White Moon" finds Selena (hyp), as Selena — each ranked as a name.
+//                  "White Moon" finds Selena (hyp), as Selena — each ranked as a name. And
+//                  the fold: a name is found however its marks are typed (apostrophes, the
+//                  click letters, accents), and nothing that matched before stops matching.
 //   10d IDENTITY   the list's keys (A4): no built-in's number can stand on it.
 {
   // 10a — the rule. 5000 stands for any numbered body that isn't a dwarf planet.
@@ -2269,6 +2273,59 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
   check('10c the aliases add no entry: one body keyed 10, named Hygiea, one keyed −56, named Selena, and none named Hygeia or White Moon',
     tens.length === 1 && tens[0].name === 'Hygiea' && selenas.length === 1 && selenas[0].name === 'Selena' &&
       !BUNDLED_SET.some((b) => ['hygeia', 'white moon'].includes(b.name.toLowerCase())));
+
+  // 10c — the fold (foldMinorName). A name is found however its marks are typed: accents,
+  // an apostrophe of any kind or none, the click letters or the | = ! plain text writes them
+  // with, and a plain letter for one that has no separable accent. The names are real ones,
+  // in the letters the Minor Planet Center gives them; 5000 stands for any number.
+  const TYPED: Array<[string, string[]]> = [
+    ['Kaʻepaokaʻāwela', ['Kaepaokaawela', "Ka'epaoka'awela", 'Ka`epaoka`awela', 'Ka’epaoka’awela', 'kaʻepaokaʻāwela']],
+    ['ǂKá̦gára', ['kagara', '|=Kagara', '=Kagara', 'ǂKagara']],
+    ['Gǃkúnǁʼhòmdímà', ["G!kun||'homdima", 'gkunhomdima', 'Gǃkúnǁʼhòmdímà']],
+    ['Ó Briain', ['O Briain', 'o briain', 'ó briain']],
+    ['Prokofʹev', ["Prokof'ev", 'prokofev']],
+    ['Søren', ['Soren']],
+    ['Michałowski', ['Michalowski']],
+    ['Yücelkılıç', ['Yucelkilic', 'YUCELKILIC']],
+    ['Reißfelder', ['Reissfelder']],
+    ["O'Higgins", ['ohiggins', 'O’Higgins', 'O`Higgins']],
+  ];
+  const unfound = TYPED.flatMap(([name, typed]) => typed.filter((q) => rankMinorMatch(q, 5000, name) !== 2).map((q) => `"${q}" for ${name}`));
+  check(`10c the fold finds a name exactly however its marks are typed — ${TYPED.reduce((k, t) => k + t[1].length, 0)} spellings of ${TYPED.length} names: "Kaepaokaawela" and "Ka'epaoka'awela" are Kaʻepaokaʻāwela, "kagara" is ǂKá̦gára, "O Briain" is Ó Briain`,
+    unfound.length === 0, unfound.join('; '));
+  const marksOnly = ["'", '’', '‘', '`', 'ʻ', 'ʼ', 'ǀ', 'ǁ', 'ǂ', 'ǃ', '|=', '!'];
+  check('10c what is typed with nothing but those marks in it folds to nothing and finds nothing',
+    marksOnly.every((q) => foldMinorName(q) === '' && rankMinorMatch(q, 3192, "A'Hearn") === null),
+    marksOnly.filter((q) => foldMinorName(q) !== '').join(' '));
+  // Nothing that matched before stops matching. The fold before it dropped those marks —
+  // accents and case only — restated, over every name here and every piece of one a reader
+  // could type: each match it made is still a match, ranked no worse.
+  const foldBefore = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  const rankBefore = (q: string, name: string) => {
+    const fq = foldBefore(q.trim());
+    const fn = foldBefore(name);
+    return !fq ? null : fn === fq ? 2 : fn.startsWith(fq) ? 3 : fn.includes(fq) ? 4 : null;
+  };
+  const foldNames = [...BUNDLED_SET.map((b) => b.name), ...TYPED.map(([name]) => name), "A'Hearn", 'Wilson-Harrington', 'Mr. Spock', "van 't Hoff"];
+  const pieces = new Set<string>();
+  for (const name of foldNames) {
+    for (let i = 0; i < name.length; i++) for (let j = i + 1; j <= Math.min(name.length, i + 4); j++) pieces.add(name.slice(i, j));
+    for (let j = 5; j <= name.length; j++) pieces.add(name.slice(0, j));
+  }
+  let matchesBefore = 0;
+  const lostMatches: string[] = [];
+  for (const q of pieces) {
+    if (!foldMinorName(q.trim())) continue; // marks alone: the check above
+    for (const name of foldNames) {
+      const before = rankBefore(q, name);
+      if (before === null) continue;
+      matchesBefore++;
+      const now = rankMinorMatch(q, 5000, name);
+      if (now === null || now > before) lostMatches.push(`"${q}" in ${name}: ${before} → ${now}`);
+    }
+  }
+  check(`10c nothing that matched before the fold dropped those marks stops matching, or ranks worse — ${matchesBefore} matches of ${pieces.size} typed pieces against ${foldNames.length} names`,
+    matchesBefore > 1000 && lostMatches.length === 0, lostMatches.slice(0, 5).join('; '));
 
   // 10d — the list's keys. Its one writer, useMinorBodies' toggle, refuses a built-in's
   // number (BUILTIN_ALIAS) and any other non-key (isListKey); its loader (prefs.ts) drops

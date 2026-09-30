@@ -68,11 +68,26 @@ export function bundledMinorBody(n: number): BundledMinorBody | undefined {
   return byKey.get(n);
 }
 
-// Accent-insensitive folding for name search — the same folding the place search
-// uses (lib/atlas/cityLookup.ts `foldName`), restated here so this module doesn't
-// pull the city index into the bundle.
+// Folding for name search, so a name is found however it is typed. Accents go — the
+// folding the place search uses (lib/atlas/cityLookup.ts `foldName`), restated here so
+// this module doesn't pull the city index into the bundle — and so does what a keyboard
+// writes several ways, or can't write at all:
+//   • an apostrophe of any kind: ' ’ ‘ here, and the backtick, the ʻokina and the modifier
+//     apostrophe (` ʻ ʼ) with the accents, whose rule already drops them;
+//   • the click letters ǀ ǁ ǂ ǃ, and the | = ! that plain text writes them with;
+//   • a letter with no separable accent, spelled as plain lists spell it (FOLD_LETTERS).
+// So "Kaepaokaawela", "Ka'epaoka'awela" and "Kaʻepaokaʻāwela" are one name, "kagara" is
+// ǂKá̦gára, and "O Briain" is Ó Briain. Only marks are dropped, from the name and the query
+// alike, so whatever matched a name before still matches it. A build that restates this
+// fold outside the app (to prepare the names it searches) has to change it with this one.
+const FOLD_LETTERS: Record<string, string> = { ø: 'o', æ: 'ae', œ: 'oe', ß: 'ss', ł: 'l', đ: 'd', ð: 'd', þ: 'th', ı: 'i' };
 export const foldMinorName = (s: string): string =>
-  s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/['’‘ǀǁǂǃ|=!]/g, '')
+    .replace(/[øæœßłđðþı]/g, (c) => FOLD_LETTERS[c]);
 
 /** A query that names a body by NUMBER: "433", "(433)", " 433 ". */
 export function numberQuery(q: string): number | null {
@@ -107,15 +122,21 @@ export function rankMinorMatch(q: string, n: number, name: string): number | nul
 // that most need care (TransPluto's older names Isis, Persephone and Bacchus) belong
 // to real asteroids — 42, 399 and 2063 — that search must keep finding as themselves.
 //
-// 10 Hygiea: the official (MPC) spelling. "Hygeia" is an older one that astrological
-// software still uses — the house astrologer's review met it in the program she checks
-// against — so a reader typing it should land on the body.
+// THE RULE (the house astrologer's, 2026-09-30). An alias is allowed in two cases only:
+//   1. a spelling in common use elsewhere that differs from the official name;
+//   2. another name AstroLina itself uses for a hypothetical point.
+// Nothing else gets one — TransPluto's older names, above, are the standing example.
 //
-// −56 Selena: "White Moon" is the point's other common name (the engine's own is
-// "Selena/White Moon"). Lina's brief V2 specified Hygeia as the only alias; this one
-// is the product owner's call (2026-09-29). No asteroid is named White Moon, so unlike
-// TransPluto's older names it can't be mistaken for a real body's; the asteroid 580
-// Selene is found by its own name as before.
+// 10 Hygiea (case 1): the official (MPC) spelling. "Hygeia" is an older one that
+// astrological software still uses — the house astrologer's review met it in the program
+// she checks against — so a reader typing it should land on the body.
+//
+// −56 Selena (case 2): "White Moon" is the point's other name here — its heading's info
+// line reads "Selena (White Moon)" — and the engine's own is "Selena/White Moon". Lina's
+// brief V2 specified Hygeia as the only alias; this one was the product owner's call
+// (2026-09-29), which she approved with the rule above. No asteroid is named White Moon,
+// so unlike TransPluto's older names it can't be mistaken for a real body's; the asteroid
+// 580 Selene is found by its own name as before.
 const NAME_ALIASES: ReadonlyMap<number, readonly string[]> = new Map([
   [10, ['Hygeia']],
   [-56, ['White Moon']],
