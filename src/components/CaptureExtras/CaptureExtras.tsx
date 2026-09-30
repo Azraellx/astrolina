@@ -207,14 +207,15 @@ export function CaptureExtras({
               {sign(p.lon)}
             </div>
           ))}
-          {/* The catalog minor bodies: the shared mark (its own symbol, else the diamond)
-              in its line colour, then its catalog name and number. A symbol is an
-              .astro-glyph span and is re-stamped by the export's glyph pass like the
-              planets'; the diamond is a plain CSS shape and needs no stamping. */}
+          {/* The catalog minor bodies: the shared mark (its own symbol, else the diamond,
+              hollow for a hypothetical point) in its line colour, then its catalog name
+              and number. A symbol is an .astro-glyph span and is re-stamped by the
+              export's glyph pass like the planets'; the diamond is a plain CSS shape
+              (a border, when hollow) and needs no stamping. */}
           {(data.minors ?? []).map((m) => (
             <div className="cx-row" key={m.id}>
               <span className="cx-glyph">
-                <MinorMark color={m.color} glyph={m.glyph} />
+                <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} />
               </span>
               <span className="cx-name">{m.label}</span>
               {sign(m.lon)}

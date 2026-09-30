@@ -23,7 +23,7 @@ import { fmtDM, lonToZodiac } from '../../lib/astro/format';
 import { placeOnRing, type RingMark } from '../../lib/ringLayout';
 import { angleLabelHalfPx, wheelGeometry } from '../../lib/wheelGeometry';
 import { layoutMinorRing, minorRingWalls } from '../../lib/wheelRingLayout';
-import { minorDiamondPath } from '../../lib/minorBodies/mark';
+import { minorDiamondPath, minorHollowPath } from '../../lib/minorBodies/mark';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import {
   DEFAULT_ASPECT_ORBS,
@@ -1052,7 +1052,7 @@ export function WheelSvg({
     title: m.label,
     ...bodyTip(t, labels, m),
     color: m.color,
-    marker: <MinorMark color={m.color} glyph={m.glyph} size={14} />,
+    marker: <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} size={14} />,
   });
   // Several bodies under one target: how many, then each by mark, name and degree —
   // the colour is what ties a line to its diamond on the rim — as many as the copy
@@ -1084,7 +1084,7 @@ export function WheelSvg({
             <Fragment key={l.m.id}>
               {i > 0 && <br />}
               <span className="wheel-tip-minor-line">
-                <MinorMark color={l.m.color} glyph={l.m.glyph} size={10} />
+                <MinorMark color={l.m.color} glyph={l.m.glyph} hollow={l.m.hypothetical} size={10} />
                 {l.text}
                 <ZodiacGlyph sign={l.signIdx} size={11} />
               </span>
@@ -1578,7 +1578,9 @@ export function WheelSvg({
           while it is switched off), a single wheel adds the faint leader in to the
           coin, on the planets' own rule (never on a bi-wheel, where it would cross the
           overlay ring). Drawn before the planet ticks, so a planet's tick at the same
-          degree stays on top. */}
+          degree stays on top. A hypothetical point's diamond is HOLLOW: still a fill,
+          the solid outline with the hole cut out (lib/minorBodies/mark), so it keeps
+          the solid mark's footprint in the strip and takes Earth's halo the same way. */}
       {minorList.map((m) => {
         const at = svgPos(m.lon, frameAnchor, rPip, cx, cy);
         const out = svgPos(m.lon, frameAnchor, 1, 0, 0);
@@ -1597,7 +1599,10 @@ export function WheelSvg({
                 opacity={0.4}
               />
             )}
-            <path d={minorDiamondPath(at.x, at.y, pipR, out.x, out.y)} fill={m.color} />
+            <path
+              d={(m.hypothetical ? minorHollowPath : minorDiamondPath)(at.x, at.y, pipR, out.x, out.y)}
+              fill={m.color}
+            />
           </g>
         );
       })}
@@ -1720,6 +1725,7 @@ export function WheelSvg({
                 <MinorMarkSvg
                   color={m.color}
                   glyph={m.glyph}
+                  hollow={m.hypothetical}
                   x={pos.x}
                   y={pos.y}
                   r={minorR}

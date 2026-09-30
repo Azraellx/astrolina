@@ -53,12 +53,17 @@ export const wheel = {
   tip: {
     longitude: 'Longitude {lon}',
     latitude: 'Latitude {lat}',
-    // Catalog minor planets on a wheel too small for their own ring are rim marks a
+    // Catalog minor bodies on a wheel too small for their own ring are rim marks a
     // few px across, and marks close enough to share one hover target share one tip:
     // this title, then one line per body — its name and degree ({lon} is the degree
     // WITHIN the sign; the sign's glyph follows the line) — as many as the tip's copy
     // budget holds, then a count of the rest. A cluster always has two or more.
-    minorCluster: '{n, plural, one {# minor planet} other {# minor planets}}',
+    //
+    // "Minor bodies", not "minor planets": one cluster can hold minor planets and
+    // hypothetical points together, and the window both are added from, and the cap
+    // both count toward, already call the whole set minor bodies. Each line's own
+    // mark (◆, or the hollow ◇ of a point) and name say which is which.
+    minorCluster: '{n, plural, one {# minor body} other {# minor bodies}}',
     minorLine: '{name} {lon}',
     minorMore: '+{n} more',
   },

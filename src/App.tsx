@@ -2906,9 +2906,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [current, minorPref, advancedWheel, minorLoadVer],
   );
-  // At the chart's own moment (the rows' "outside its file's dates" reads this), then
-  // at the slid instant for the lines — the same two steps the planets take, so a Slide
-  // keeps catalog lines aligned with the cage.
+  // At the chart's own moment, then at the slid instant for the lines — the same two
+  // steps the planets take, so a Slide keeps catalog lines aligned with the cage. The
+  // rows' "no data for this date" reads the SLID sample, the instant the lines are drawn
+  // at (CLAUDE.md rule 5): read at the chart's moment, a Slide past the end of a body's
+  // file left its row saying 'shown' over a map with none of its lines.
   //
   // ONE sample at the chart's moment, taken in full — both frames, the speed, and the
   // station bracket — because the chart wheel places these same bodies from it (see
@@ -2944,11 +2946,13 @@ export default function App() {
         advanced: advancedWheel,
         none: !current,
         composite: !!current?.composite,
-        sampled: new Set(minorPositions.map((p) => p.n)),
+        // Whatever sampled where the lines are drawn — minorPositions itself when not
+        // sliding (the same array), the slid instant's sample while sliding.
+        sampled: new Set(minorSlidPositions.map((p) => p.n)),
         undrawn: noTime ? 'noTime' : minorAnglesOff ? 'angles' : null,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [minorPref, advancedWheel, current, minorPositions, minorLoadVer, noTime, minorAnglesOff],
+    [minorPref, advancedWheel, current, minorSlidPositions, minorLoadVer, noTime, minorAnglesOff],
   );
   const minorDecor = useMemo(() => {
     // A plain record: `Map` in this module is the map component.

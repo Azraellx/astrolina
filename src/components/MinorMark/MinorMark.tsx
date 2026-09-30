@@ -5,13 +5,15 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { GLYPH_LIFT } from '../PlanetGlyph/PlanetGlyph';
-import { MINOR_DIAMOND_IN_COIN, minorDiamondPath } from '../../lib/minorBodies/mark';
+import { MINOR_DIAMOND_IN_COIN, minorDiamondPath, minorHollowPath } from '../../lib/minorBodies/mark';
 import './MinorMark.css';
 
 // A catalog minor body's mark: its own astrological symbol where one is encoded
 // (MINOR_GLYPHS — Eris, Sedna, Pholus, …), otherwise the diamond every other catalog
 // body shares — always in the body's map-line colour, so a mark and its lines read as
-// the same thing wherever the reader meets them.
+// the same thing wherever the reader meets them. A hypothetical point has no symbol and
+// draws the diamond HOLLOW (`hollow`): same colour, same size, empty centre — what tells
+// a point computed from orbital elements from an observed body wherever the two meet.
 //
 // Two forms, as PlanetGlyph has:
 //   • MinorMark — HTML, for rows and tips: the Minor bodies window, the chart wheel's
@@ -29,6 +31,9 @@ interface MinorMarkBase {
   color: string;
   /** Its own symbol, where one is encoded; absent draws the shared diamond. */
   glyph?: string;
+  /** A hypothetical point (WheelMinorBody.hypothetical): the diamond drawn hollow. A
+   *  symbol, where there is one, wins — no point has one. */
+  hollow?: boolean;
 }
 
 /** The HTML mark. `size` (px) sets the font size it draws at; omitted, it inherits the
@@ -36,6 +41,7 @@ interface MinorMarkBase {
 export function MinorMark({
   color,
   glyph,
+  hollow = false,
   size,
   className,
 }: MinorMarkBase & { size?: number; className?: string }) {
@@ -50,13 +56,14 @@ export function MinorMark({
       </span>
     );
   }
+  const cls = `minor-mark-diamond${hollow ? ' is-hollow' : ''}`;
   return (
     <span
-      className={className ? `${className} minor-mark-diamond` : 'minor-mark-diamond'}
+      className={className ? `${className} ${cls}` : cls}
       style={size === undefined ? undefined : { fontSize: size }}
       aria-hidden="true"
     >
-      <span style={{ background: color }} />
+      <span style={hollow ? { borderColor: color } : { background: color }} />
     </span>
   );
 }
@@ -73,6 +80,7 @@ export function MinorMark({
 export function MinorMarkSvg({
   color,
   glyph,
+  hollow = false,
   x,
   y,
   r,
@@ -93,5 +101,6 @@ export function MinorMarkSvg({
       </text>
     );
   }
-  return <path d={minorDiamondPath(x, y, r * MINOR_DIAMOND_IN_COIN)} fill={color} />;
+  const half = r * MINOR_DIAMOND_IN_COIN;
+  return <path d={hollow ? minorHollowPath(x, y, half) : minorDiamondPath(x, y, half)} fill={color} />;
 }

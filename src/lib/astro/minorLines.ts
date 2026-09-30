@@ -21,7 +21,8 @@
 // and every consumer that handles it does so on purpose.
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import type { MinorPosition } from '../ephemeris';
-import { minorId, type MinorBodyId } from '../minorBodies/ids';
+import { isHypotheticalKey, minorId, type MinorBodyId } from '../minorBodies/ids';
+import { hypotheticalPoint } from '../minorBodies/hypothetical';
 import {
   angleLineRuns,
   LINE_TYPE_LABEL,
@@ -67,8 +68,16 @@ export interface MinorDecor {
   icon: string;
 }
 
-/** The short reference a label uses: the name, or "(433)" when no name is known. */
+/** The short reference a label uses: the name, or "(433)" when no name is known —
+ *  and "Zeus (hyp)" for a hypothetical point, never a number. That half restates
+ *  minorBodies/naming.ts's card.hyp template (this module has no t()); the verify
+ *  suite pins the two equal. It matters beyond wording: the map keys its hover popup
+ *  on this label, so the asteroid Zeus and the point Zeus must never share one. */
 export function minorLabelName(n: number, name: string): string {
+  if (isHypotheticalKey(n)) {
+    const own = name || hypotheticalPoint(n)?.name || '';
+    return own ? `${own} (hyp)` : '';
+  }
   return name || `(${n})`;
 }
 

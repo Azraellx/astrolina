@@ -25,3 +25,13 @@
   border-radius: 1px;
   transform: rotate(45deg);
 }
+/* A hypothetical point's mark: the same square, hollow — a border in the line colour
+   (set inline) round an empty centre. border-box keeps the footprint the solid mark's,
+   so a surface's fixed box (the Minor bodies window's 7px) holds either. The wall is
+   lib/minorBodies/mark's MINOR_HOLLOW_WALL of the reach, as on the map coin and the
+   wheel: 0.28 × (0.54em ÷ √2) ≈ 0.107em — 1.4px in a 13px row. */
+.minor-mark-diamond.is-hollow > span {
+  box-sizing: border-box;
+  border: 0.107em solid;
+  background: transparent;
+}

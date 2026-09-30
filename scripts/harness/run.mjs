@@ -9,16 +9,20 @@
 // the verify suite test the code the app actually ships instead of re-deriving
 // the same math in a parallel .mjs copy (where a shared mistake would hide).
 //
-// Three things keep the browser-targeted source happy under Node:
+// Four things keep the browser-targeted source happy under Node:
 //   1. '@swisseph/browser' is aliased to swisseph-browser-shim.ts, which
 //      delegates to @swisseph/node (same Swiss Ephemeris C core, same .se1
 //      files from public/ephe).
 //   2. The Vite-only `swisseph.wasm?url` import is stubbed (no WASM in Node).
 //   3. `import.meta.env.BASE_URL` is defined to '/' (Vite injects it at build
 //      time; esbuild does the same here).
+//   4. A Vite `?raw` import (the hypothetical points' elements file, ephemeris.ts)
+//      is the file's text, as Vite gives it — the REAL file, never a stub, so the
+//      suite mounts exactly the bytes the app ships.
 //
 // Usage: node scripts/harness/run.mjs scripts/verify-something.ts
 import { build } from 'esbuild';
+import { readFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -44,6 +48,14 @@ const browserShim = {
     b.onLoad({ filter: /.*/, namespace: 'wasm-url-stub' }, () => ({
       contents: 'export default "";',
       loader: 'js',
+    }));
+    b.onResolve({ filter: /\?raw$/ }, (args) => ({
+      path: resolve(args.resolveDir, args.path.replace(/\?raw$/, '')),
+      namespace: 'raw-text',
+    }));
+    b.onLoad({ filter: /.*/, namespace: 'raw-text' }, async (args) => ({
+      contents: await readFile(args.path, 'utf8'),
+      loader: 'text',
     }));
   },
 };

@@ -39,9 +39,13 @@ public/).
 
 Astronomy
   - Swiss Ephemeris — planetary positions (JPL DE441 data), via
-    @swisseph/browser, and the bundled fixed-star catalog (a 40-star extract
-    of its sefstars.txt). © Astrodienst AG. Licensed AGPL-3.0.
+    @swisseph/browser, the bundled fixed-star catalog (a 40-star extract
+    of its sefstars.txt), and the hypothetical points' orbital elements (its
+    seorbel.txt from version 2.10.03: every element line unchanged, some
+    comment lines removed). © Astrodienst AG. Licensed AGPL-3.0.
     https://www.astro.com/swisseph/
+  - JPL Small-Body Database — the orbit class behind each bundled minor
+    planet's class tag. NASA/JPL-Caltech. https://ssd.jpl.nasa.gov/tools/sbdb_query.html
   - Five Millennium Catalogs of Solar and of Lunar Eclipses — the bundled
     eclipse catalogs (dates, types, Saros series). Eclipse Predictions by
     Fred Espenak and Jean Meeus (NASA's GSFC); reproduced with the required

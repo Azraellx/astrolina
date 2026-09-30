@@ -12,8 +12,9 @@
    actions and "Show more" link are the place search's (.psf-*), and the Hide all
    switch is the sidebar's (.es-advanced-toggle) — all imported by the component.
    This file only adds what is the window's own: its widths, the fixed top above a
-   scrolling list, the list's own column, and the catalog rows (eye + mark + name +
-   a status line, with actions beside rather than inside the toggle). */
+   scrolling list, the list's own column, the Featured headings' info lines and level-2
+   headings, and the catalog rows (eye + mark + name + class tag + a status line, with
+   actions beside rather than inside the toggle, and the word actions under it). */
 .minor-bodies-hud {
   /* KEEP IN STEP with WIDTH / SPLIT_WIDTH in MinorBodiesHud.tsx, which keeps the
      window on screen as it widens. */
@@ -41,10 +42,11 @@
 }
 /* Two columns: the first exactly as wide as the one-column body (300 less the
    frame's 1px border and the section's 8px padding, each side: 282), then the
-   list's (580 → 562 inside; 282 + 8 gap + 272). Only set while the viewport holds
-   it with room to spare — the component decides that. */
+   list's (605 → 587 inside; 282 + 8 gap + 297 — the width its rows need, see
+   .mbh-main). Only set while the viewport holds it with room to spare — the
+   component decides that. */
 .minor-bodies-hud.is-split {
-  width: 580px;
+  width: 605px;
   max-width: calc(100vw - 16px);
 }
 /* The header already draws the divider under the title bar. */
@@ -77,7 +79,7 @@
 }
 .mbh-col-list {
   position: relative;
-  flex: 0 0 272px;
+  flex: 0 0 297px;
   margin-left: 8px;
   border-left: 1px solid rgba(var(--tint), 0.08);
 }
@@ -176,7 +178,7 @@
   }
 }
 
-/* Everything below the top scrolls as ONE list — the bundled set alone is ~40 rows,
+/* Everything below the top scrolls as ONE list — the Featured set alone is ~50 rows,
    and a search a page at a time. Capped by the viewport as well as by a fixed
    height, so the window never outgrows a short screen. */
 .mbh-scroll {
@@ -244,14 +246,28 @@ button.mbh-clear:hover {
   color: var(--text-muted);
   white-space: nowrap;
 }
-/* The bundled set's class subheadings (Centaurs, Main belt…) — quieter than the
-   section heading above them. */
-.mbh-group-head {
-  padding: 4px 8px 1px;
+/* The one-line info text under a heading ("Orbiting between Mars and Jupiter") — small
+   and muted, tucked up under its heading, and a little apart from the rows below. At
+   the heading's own inset, so the two read as one block. */
+.mbh-info {
+  margin: 0 2px 3px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+/* Level 2 (Uranian points, Other hypothetical points, under Hypothetical points) —
+   quieter than the section heading above them, and set in from it. */
+.mbh-subgroup-head {
+  margin: 0;
+  padding: 4px 8px 0;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-muted);
+}
+.mbh-info.is-sub {
+  padding: 0 8px;
+  margin-left: 0;
 }
 
 /* ── The five main asteroids ─────────────────────────────────────────────────
@@ -294,8 +310,11 @@ button.mbh-clear:hover {
   padding: 0;
   list-style: none;
 }
+/* Wraps only to put a row's word actions (.mbh-below) on a line of their own: the toggle
+   shrinks and the × never grows, so nothing else ever leaves the first line. */
 .mbh-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   border-radius: 6px;
@@ -331,6 +350,14 @@ button.mbh-clear:hover {
 .mbh-toggle.off {
   opacity: 0.55;
 }
+/* Switched on, but no data at the date the map is drawn for: greyed the same way
+   (still on the list, eye still open) — the eye, the mark and the name line only, while
+   the status line saying why keeps its AA contrast (.mbh-sub, below). */
+.mbh-toggle.is-nodata .location-ls-eye,
+.mbh-toggle.is-nodata .mbh-mark,
+.mbh-toggle.is-nodata .mbh-main {
+  opacity: 0.5;
+}
 /* Steady brand accent on a drawn row's eye, as on every eye toggle in the floating
    windows (never the map pin-state accent). */
 .mbh-toggle.on .location-ls-eye {
@@ -363,17 +390,53 @@ button.mbh-clear:hover {
   min-width: 0;
   gap: 1px;
 }
+/* The name line — name, the list icon on a search row, class tag — is ONE line, always
+   (2026-09-29: tags had been wrapping under long names in the list's column). The tag and
+   icon never shrink; the name gives way (.mbh-name). The tags are worded short so that is
+   rare. Measured in Chrome (Segoe UI) at the narrowest split: the list column's rows leave
+   this line 205px, 195 once the list scrolls. The window is 25px wider than it was for
+   exactly that (the product owner's call): at 170 Gonggong (225088) with "Trans-Neptunian"
+   lost 20px of its name and Makemake 4; now every Featured body and hypothetical point fits
+   in every state, scrolling included, the tightest Gonggong with 4.8px to spare. A result
+   carrying the list icon in the first column has the same 195 while the results scroll.
+   Of a catalog of ~26,000 names, about 100 are still cut in a scrolling list. The one-column
+   window's stacked list had 189 while it scrolls, 1.2px short for Gonggong; the ×'s outer
+   padding went to it (.mbh-acts, below), so it now has 192. */
 .mbh-main {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
+/* A body's class tag ("Main belt") at the right of its name line — lists only, never
+   the map. Plain muted text rather than a chip: a label for what the body is, where the
+   list icon on this line says what it is doing. */
+.mbh-class {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* A name too long for its line is cut from the end of the NAME, not of the label —
+   "Kaʻepaoka… (514107)" — so the number, or (hyp), that tells two bodies of one name
+   apart stays whole (minorDisplayParts). The whole label is then the row's tip. */
 .mbh-name {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.mbh-name-own {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+/* `pre` keeps the space before "(514107)", which a flex item would otherwise trim. */
+.mbh-name-keep {
+  flex-shrink: 0;
+  white-space: pre;
 }
 /* Why a switched-on body isn't drawn. Wraps (it's a sentence), and --text-muted
    rather than the dimmer tiers so it clears AA on the parchment theme at 10.5px —
@@ -386,21 +449,18 @@ button.mbh-clear:hover {
 .mbh-sub.is-failed {
   color: var(--danger);
 }
-/* A held body's tier badge, in the gated rung's colour (the scope chip's pill). */
-.mbh-pill {
+/* "On your list" on a search or browsing row whose body is on the list but switched off:
+   a list icon in the colour of the chip it replaced (the place search's .psf-row-tag),
+   named by its aria-label and the row's tip. The chip's words took ~74px of this line;
+   the icon takes 13. */
+.mbh-onlist {
   flex-shrink: 0;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: rgba(var(--gated-rgb), 0.9);
-  color: #fff;
-  font-size: 7.5px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
-/* Row actions, beside the toggle. Quiet until the row is hovered or focused; a
-   failed row keeps its retry in view, and an armed remove keeps its confirm pair.
-   Touch has no hover, so coarse pointers always see them. */
+/* The remove ×, beside the toggle. Quiet until the row is hovered or focused; touch
+   has no hover, so coarse pointers always see it. While its confirm is open below, it
+   keeps its place unseen, so the name line keeps its width. */
 .mbh-acts {
   display: flex;
   flex-shrink: 0;
@@ -411,15 +471,33 @@ button.mbh-clear:hover {
   transition: opacity 0.12s;
 }
 .mbh-item:hover .mbh-acts,
-.mbh-item:focus-within .mbh-acts,
-.mbh-acts.is-confirm,
-.mbh-acts.has-retry {
+.mbh-item:focus-within .mbh-acts {
   opacity: 1;
+}
+/* The one-column window's stacked list is the narrowest name line (189px while it
+   scrolls), and Gonggong (225088) with "Trans-Neptunian" needed 1.2px more than it had.
+   The ×'s own hit area already clears the scrollbar, so its outer padding goes here. */
+.minor-bodies-hud:not(.is-split) .mbh-acts {
+  padding-right: 0;
 }
 @media (pointer: coarse) {
   .mbh-acts {
     opacity: 1;
   }
+}
+.mbh-acts.is-confirm {
+  visibility: hidden;
+}
+/* The actions that are words — Try again, and the remove's Remove / Keep — on a line of
+   their own under the row, right-aligned under the ×, and always in view. Beside the
+   name they took 60–70px of the 180 it had then (measured), which is the class tag's
+   room. */
+.mbh-below {
+  display: flex;
+  flex: 0 0 100%;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 3px 4px;
 }
 .mbh-retry {
   padding: 3px 7px;
@@ -454,6 +532,10 @@ button.mbh-clear:hover {
   font: inherit;
   font-size: 12px;
   text-align: left;
+}
+/* A pointer's class tag sits at the row's right edge, as on a body's row. */
+.mbh-pointer .mbh-class {
+  padding-left: 4px;
 }
 button.mbh-pointer {
   cursor: pointer;

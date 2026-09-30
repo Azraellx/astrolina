@@ -106,6 +106,9 @@ export const expandedSidebar = {
   // Says what the table can't: why the body has a row here and none in the aspect
   // lists or the balance below.
   minorHint: 'A minor planet from your list, at the chart’s own moment. Placed in the chart, but not aspected and not counted in the balance.',
+  // The same, for a hypothetical point (its hollow ◇ and "(hyp)" name): what it is,
+  // since it is not a minor planet, then the same placed-not-aspected reason.
+  minorHintHyp: 'A hypothetical point from your list, computed from orbital elements at the chart’s own moment. Placed in the chart, but not aspected and not counted in the balance.',
 
   // Aspect names + descriptions for the Advanced aspect-symbol hover tips.
   aspect: {

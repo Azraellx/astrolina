@@ -24,6 +24,7 @@ type NoteKey =
   | 'photon'
   | 'swisseph'
   | 'nasaEclipse'
+  | 'jplSbdb'
   | 'noto'
   | 'maplibre'
   | 'other';
@@ -119,6 +120,14 @@ const CREDIT_GROUPS: CreditGroup[] = [
         href: 'https://eclipse.gsfc.nasa.gov',
         license: 'NASA',
         noteKey: 'nasaEclipse',
+      },
+      {
+        // The bundled set's `cls` codes (bundled.json) come from here; a downstream
+        // catalog tagging from the same database is covered by this row too.
+        name: 'NASA JPL Small-Body Database',
+        href: 'https://ssd.jpl.nasa.gov/tools/sbdb_query.html',
+        license: 'NASA',
+        noteKey: 'jplSbdb',
       },
     ],
   },

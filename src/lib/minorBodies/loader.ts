@@ -19,12 +19,17 @@
 //   4. PROBE each body at J2000, inside every file's span: a body that doesn't
 //      compute is marked failed and is never sampled again this session.
 //
+// A hypothetical point skips 1–3: it has no file, only its element set in the
+// engine's elements file, which ensureHypotheticalElements mounts once and CHECKS
+// (ephemeris.ts). It then takes the same probe as every other body.
+//
 // State lives here, outside React, so a load started by one render isn't lost to
 // the next; the App subscribes (useSyncExternalStore) and re-derives on change.
 import { checkSe1Header } from './se1Header';
-import { fileNameFor, SEAS_MINOR_ID, type EpheSpan } from './ids';
+import { fileNameFor, isHypotheticalKey, SEAS_MINOR_ID, type EpheSpan } from './ids';
 import {
   ensureAsteroidEphemeris,
+  ensureHypotheticalElements,
   mountEphemerisFiles,
   sampleMinorBody,
 } from '../ephemeris';
@@ -41,7 +46,10 @@ export type MinorLoadFailure =
   /** The bytes weren't a usable ephemeris file for this body. */
   | 'content'
   /** The source explained itself — see `note`. */
-  | 'source';
+  | 'source'
+  /** A hypothetical point: the elements file couldn't be mounted, or was mounted and
+   *  not read. Nothing is computed in its place (ephemeris.ts). */
+  | 'elements';
 
 export type MinorLoadState =
   | { status: 'loading' }
@@ -79,11 +87,23 @@ export function minorLoadState(n: number): MinorLoadState | undefined {
   return states.get(n);
 }
 
-/** Forget a failure so the next request tries again (the row's retry control). */
+/** Forget a failure so the next request tries again (the row's retry control). A
+ *  hypothetical point's retry is every point's: they share one mount. */
 export function retryMinorBody(n: number): void {
   if (states.get(n)?.status !== 'failed') return;
   states.delete(n);
+  if (isHypotheticalKey(n)) releaseHypotheticalFailures();
   publish();
+}
+
+// The ten hypothetical points share one mount (ensureHypotheticalElements), so a
+// mount failure is all of theirs: forget every point that failed for THAT reason and
+// the App re-requests whichever are on. Not 'content': a point the probe refused after
+// the mount is its own failure.
+function releaseHypotheticalFailures(): void {
+  for (const [k, s] of states) {
+    if (isHypotheticalKey(k) && s.status === 'failed' && s.reason === 'elements') states.delete(k);
+  }
 }
 
 // A body that failed only for want of a network gets another chance as soon as
@@ -135,6 +155,20 @@ export async function ensureMinorBodies(
             return { n: r.n, mount: null, name: null };
           } catch {
             setState(r.n, { status: 'failed', reason: offline() ? 'offline' : 'missing' });
+            return null;
+          }
+        }
+        // A hypothetical point: its element set is in the engine's elements file. One
+        // mount serves all ten; a failure fails every point in the batch, and resets the
+        // mount so a retry tries it again for all of them (releaseHypotheticalFailures).
+        // Never 'offline': the file is bundled with the engine code (ephemeris.ts), so no
+        // network is involved and there is nothing for coming back online to fix.
+        if (isHypotheticalKey(r.n)) {
+          try {
+            await ensureHypotheticalElements();
+            return { n: r.n, mount: null, name: null };
+          } catch {
+            setState(r.n, { status: 'failed', reason: 'elements' });
             return null;
           }
         }
@@ -197,6 +231,11 @@ export async function ensureMinorBodies(
           ? { status: 'ready', name: x.name }
           : { status: 'failed', reason: 'content' },
       );
+    }
+    // A point that just computed proves the shared mount good: a sibling still
+    // failed from an earlier batch's mount would fail no longer.
+    if (ok.some((x) => isHypotheticalKey(x.n) && states.get(x.n)?.status === 'ready')) {
+      releaseHypotheticalFailures();
     }
   } finally {
     for (const r of fresh) {

@@ -58,6 +58,26 @@ catalog files itself (through a registered minor-body source,
 `src/lib/extensions/minorBodySources.ts`). Nothing in this repository uses it; don't
 put files there.
 
+## `seorbel.txt` lives in `src/lib/minorBodies/`, not here
+
+The hypothetical points (Cupido … Poseidon, TransPluto, Selena) are computed from
+the engine's elements file, `seorbel.txt`. It ships beside the code that loads it,
+`src/lib/minorBodies/seorbel.txt`, and **must not be copied into this folder**:
+
+- The app imports it as text (`?raw`), so it becomes one more hashed script chunk,
+  fetched the first time a point is switched on and mounted into the engine from
+  memory (`ensureHypotheticalElements` in `src/lib/ephemeris.ts`). A downstream
+  build's service worker precaches that chunk with the rest of the app; the rule it
+  applies to this folder stores binary ephemeris responses only.
+- `public/_headers` marks this folder immutable for a year. A file that can be
+  revised under the same name doesn't belong under that promise.
+- The verify harness puts this folder on the engine's path. A copy here would let the
+  suite pass with the mount broken, which is exactly the failure it has to catch:
+  without the file the engine does not fail for bodies 40–54, it silently computes
+  them from element sets compiled into it (Kronos 14–20″ off the file's). The app
+  therefore computes nothing for a point until body 56, which has no built-in set,
+  has computed from the mounted file.
+
 ## Source & license
 
 Downloaded from Astrodienst's Swiss Ephemeris distribution: the planet, Moon and
@@ -70,3 +90,17 @@ data files, the per-asteroid files included) under the **GNU Affero General Publ
 License v3.0 (AGPL-3.0)**, the same license as the rest of this repository.
 Minor-planet numbers and names are those assigned by the Minor Planet Center and
 the IAU, as carried in each file's header.
+
+`seorbel.txt` (in `src/lib/minorBodies/`, see above) is the same distribution's
+`ephe/seorbel.txt` for version 2.10.03, from the repository linked above: added there
+on 2023-09-20 (commit `eecb996`), unchanged since, and identical at the
+`v2.10.3final` tag, whose `sweph.h` reports version 2.10.03 (the `v2.10.03` tag
+itself predates the file's arrival in the repository). Retrieved 2026-09-29 and
+shipped under the same license, header included, with every element line unchanged;
+some comment lines were removed or shortened, those naming people. A note in its
+header says so, as the license asks of a modified file. The app normalises its line
+endings to LF when it hands the file to the engine and changes nothing else.
+`npm run verify:minor-bodies` (§9b) pins its element lines against the official
+file's, and the shipped file as a whole separately. The copy inside
+`@swisseph/node` is an older revision of the same file: its numbered element sets
+1–25 are identical, but it lacks set 26 and carries older comments.

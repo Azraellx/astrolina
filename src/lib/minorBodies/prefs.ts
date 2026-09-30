@@ -19,10 +19,10 @@
 // The five built-in minor bodies (Chiron, Ceres, Pallas, Juno, Vesta) are NOT
 // here — they stay in the map filter's own preference, whichever control toggles
 // them.
-import { isCatalogNumber } from './ids';
+import { isListKey } from './ids';
 
 export interface MinorListEntry {
-  /** MPC number. */
+  /** MPC number, or a hypothetical point's reserved negative key (ids.ts). */
   n: number;
   /** Display name, cached so the row renders before (or without) its file. */
   name: string;
@@ -67,8 +67,15 @@ export function loadMinorBodiesPref(): MinorBodiesPref {
     if (!e || typeof e !== 'object') continue;
     const { n, name, source } = e as Partial<MinorListEntry>;
     // A number that is really a built-in (1 Ceres, 2060 Chiron…) is dropped, not
-    // shown twice — it lives on its own row already.
-    if (!isCatalogNumber(n) || seen.has(n)) continue;
+    // shown twice — it lives on its own row already. A hypothetical point's reserved
+    // key (ids.ts) is kept, a newer build's included: it derives 'unavailable' here
+    // rather than vanishing from the reader's list.
+    //
+    // No key bump (rule 6): the points are new values of `n` in the same shape, and
+    // nothing is pre-seeded. The one cost is a rollback — an older build, which reads
+    // with isCatalogNumber, drops a hypothetical entry on load, and the next change the
+    // reader makes there writes the list without it.
+    if (!isListKey(n) || seen.has(n)) continue;
     seen.add(n);
     list.push({
       n,

@@ -13,6 +13,7 @@
 // explains) and any plugin (which discloses) all read the same answer.
 import type { MinorBodySource, MinorBodySourceGate } from '../extensions/minorBodySources';
 import { bundledMinorBody, bundledSource, minorSourceById } from './bundled';
+import { isHypotheticalKey } from './ids';
 import type { MinorLoadFailure, MinorLoadState } from './loader';
 import type { MinorBodiesPref, MinorListEntry } from './prefs';
 
@@ -25,13 +26,16 @@ export type MinorRowStatus =
   | { kind: 'loading' }
   /** Switched on; its file couldn't be loaded (a retry is offered). */
   | { kind: 'failed'; reason: MinorLoadFailure; note?: string }
-  /** Loaded, but the chart's moment is outside the file's span. */
+  /** Loaded, but the instant the lines are drawn at — the chart's moment, or the slid
+   *  one while Slide moves the map — is outside the file's span (a hypothetical
+   *  point's: the planets'). Greyed on the list, never taken off it. */
   | { kind: 'noData' }
   /** Catalog bodies aren't built for composite charts yet. */
   | { kind: 'composite' }
   /** Its source is closed to this reader (a plan that doesn't reach it): kept,
-   *  never fetched, back by itself when the source opens again. */
-  | { kind: 'held'; note: string; pill?: string }
+   *  never fetched, back by itself when the source opens again. `note` is the
+   *  source's own sentence, which is all the row says — no tier pill beside it. */
+  | { kind: 'held'; note: string }
   /** Added from a source this build doesn't have. */
   | { kind: 'unavailable' }
   /** Switched on, but the whole family is hidden (its own switch). */
@@ -66,8 +70,12 @@ export interface MinorRow {
 }
 
 /** The source to load an entry from: the one it was added from; a bundled body
- *  falls back to the bundled set if that source is gone. */
+ *  falls back to the bundled set if that source is gone. A hypothetical point is the
+ *  bundled set's whatever it was stored under — and one this build doesn't know (a
+ *  newer build's) has no source at all, so it reads 'unavailable' and is never
+ *  requested. */
 export function resolveMinorSource(entry: MinorListEntry): MinorBodySource | null {
+  if (isHypotheticalKey(entry.n)) return bundledMinorBody(entry.n) ? bundledSource : null;
   const s = minorSourceById(entry.source);
   if (s) return s;
   return bundledMinorBody(entry.n) ? bundledSource : null;
@@ -84,7 +92,8 @@ export interface MinorChartContext {
   /** No chart open. */
   none: boolean;
   composite: boolean;
-  /** Numbers that sampled at the chart's moment (loaded AND in range). */
+  /** Numbers that sampled at the instant the lines are drawn at (loaded AND in range) —
+   *  the slid one while sliding, so a row and its lines never disagree. */
   sampled: ReadonlySet<number>;
   /** A map-wide reason no catalog body has lines right now, known where the rows
    *  are derived (no birth time, the Angles filter). The natal-lines gates are
@@ -108,7 +117,7 @@ export function deriveMinorRows(
     const src = resolveMinorSource(entry);
     if (!src) return row({ kind: 'unavailable' });
     const gate = sourceGate(src);
-    if (gate?.locked) return row({ kind: 'held', note: gate.note, pill: gate.pill });
+    if (gate?.locked) return row({ kind: 'held', note: gate.note });
     if (!pref.shown) return row({ kind: 'familyHidden' });
     // Before the loading test: with no chart open nothing is fetched at all, so a
     // body that has never loaded would otherwise read "Loading…" indefinitely — a

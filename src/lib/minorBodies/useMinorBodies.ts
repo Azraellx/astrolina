@@ -19,9 +19,11 @@ import {
   type MinorListEntry,
 } from './prefs';
 import { minorLoadVersion, subscribeMinorLoads } from './loader';
+import { BUILTIN_ALIAS, isListKey } from './ids';
 
-/** What a visibility toggle did — 'cap' means it refused and wrote nothing. */
-export type MinorToggleResult = 'on' | 'off' | 'cap';
+/** What a visibility toggle did — 'cap' means a cap refused it, 'refused' that the key
+ *  can't stand on the list at all (see toggle); both wrote nothing. */
+export type MinorToggleResult = 'on' | 'off' | 'cap' | 'refused';
 
 export interface MinorBodiesApi {
   pref: MinorBodiesPref;
@@ -62,6 +64,12 @@ export function useMinorBodies(): MinorBodiesApi {
 
   const toggle = useCallback(
     (entry: MinorListEntry): MinorToggleResult => {
+      // A built-in body's number (1–4 Ceres–Vesta, 2060 Chiron, 134340 Pluto) is never
+      // a second copy of that body — search points at its own row instead, and a stored
+      // list drops one on load (prefs.ts). Refused HERE too, the one writer, so no
+      // caller (a plugin, a future surface) can add one by skipping those. A hypothetical
+      // point's key passes: isListKey, never isCatalogNumber, which would refuse it.
+      if (BUILTIN_ALIAS.has(entry.n) || !isListKey(entry.n)) return 'refused';
       const p = prefRef.current;
       const inList = p.list.some((e) => e.n === entry.n);
       if (p.visible.includes(entry.n)) {

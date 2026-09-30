@@ -48,8 +48,12 @@ SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,1F701-1F704,FE0E
 # Astraea/Hygiea/Pholus/Nessus (U+2BD9–2BDC), Eris forms one and two + Sedna
 # (U+2BF0–2BF2), and the Unicode 15 dwarf-planet symbols Haumea/Makemake/Gonggong/
 # Quaoar/Orcus (U+1F77B–1F77F) — every one of them is in THIS font and in neither of
-# the other two (checked against the fonts' character maps, 2026-09-25).
-SYM2_UNICODES="25A1,25B3,25C6,25FC,271A,2BD3,2BD9-2BDC,2BF0-2BF2,1F77B-1F77F"
+# the other two (checked against the fonts' character maps, 2026-09-25). And the white
+# diamond (U+25C7), the hollow mark a hypothetical point carries in the map's hover tip
+# and line card (lib/lineCard minorMarkHtml) beside the real bodies' U+25C6 — present
+# in this font, same box as U+25C6 (checked 2026-09-29). pyftsubset drops a code point
+# the source lacks WITHOUT a word, so check the output's cmap after adding one.
+SYM2_UNICODES="25A1,25B3,25C6,25C7,25FC,271A,2BD3,2BD9-2BDC,2BF0-2BF2,1F77B-1F77F"
 # From Noto Sans Math (the only bundled source carrying them): the Sun (U+2609) and
 # the Part of Fortune (U+2297, CIRCLED TIMES — the X sits inside the circle, the
 # conventional Lot symbol; U+29BB's superimposed X spills past the rim). Neither is

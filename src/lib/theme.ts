@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import type { PlanetName } from './ephemeris';
+import { hypotheticalPoint } from './minorBodies/hypothetical';
 
 export type Theme = 'glass' | 'dark' | 'vintage';
 
@@ -144,8 +145,11 @@ export const MINOR_LINE_PALETTE: Record<Theme, readonly string[]> = {
 /** The palette slot a catalog body draws in — stable per MPC number. A
  *  multiplicative hash rather than `n % 12`, so neighbours in the catalog (which
  *  are often shown together: 5 Astraea … 10 Hygiea) don't march through the
- *  palette in order and so collide less by pattern. */
+ *  palette in order and so collide less by pattern. A hypothetical point takes the
+ *  slot its table gives it instead (hypothetical.ts says why the hash won't do). */
 export function minorPaletteSlot(n: number): number {
+  const hyp = hypotheticalPoint(n);
+  if (hyp) return hyp.slot;
   const len = MINOR_LINE_PALETTE.dark.length;
   return (Math.imul(n, 2654435761) >>> 0) % len;
 }

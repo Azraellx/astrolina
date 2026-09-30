@@ -26,16 +26,18 @@ import type { MinorSample } from '../ephemeris';
 import type { MinorDecor } from '../astro/minorLines';
 import { shiftEclipticPositions } from '../astro/ayanamsa';
 import { MINOR_GLYPHS } from '../astro/glyphChars';
-import { minorId, type MinorBodyId } from './ids';
+import { isHypotheticalKey, minorId, type MinorBodyId } from './ids';
+import { minorDisplayLabel } from './naming';
 
 /** One catalog body, ready to place on the natal wheel. */
 export interface WheelMinorBody {
-  /** `mp:<n>` — its key on the ring, which no built-in body or angle code can share. */
+  /** `mp:<n>` (`hyp:<se>` for a hypothetical point) — its key on the ring, which no
+   *  built-in body or angle code can share. */
   id: MinorBodyId;
-  /** MPC number. */
+  /** MPC number, or a hypothetical point's reserved key (ids.ts). */
   n: number;
-  /** "Eros (433)", or "(433)" when the catalog knows no name — the naming rule every
-   *  surface uses (lineCard.minorDisplayName), read from the same two strings. */
+  /** "Eros (433)", "(433)" when the catalog knows no name, "Zeus (hyp)" for a
+   *  hypothetical point — the naming rule every surface uses (naming.ts). */
   label: string;
   /** DISPLAY ecliptic longitude, radians — already in the reader's zodiac. The only
    *  field the ayanamsa touches. */
@@ -58,6 +60,10 @@ export interface WheelMinorBody {
   /** Its own astrological symbol where one is encoded; absent for most bodies, which
    *  draw the shared diamond instead. */
   glyph?: string;
+  /** A hypothetical point (hypothetical.ts) — drawn with the diamond HOLLOW on every
+   *  surface (MinorMark, the rim mark), since it has no symbol. Read off the key, the
+   *  same test the map's coin makes (glyphImages.minorIconId). */
+  hypothetical: boolean;
   /** Its place in the reader's own list — the order the Minor bodies window shows,
    *  and so the order anything listing these bodies should follow. */
   rank: number;
@@ -97,13 +103,9 @@ export function buildWheelMinor(
     return {
       id: minorId(s.n),
       n: s.n,
-      // lineCard.minorDisplayName's rule, over the same two strings. Restated rather
-      // than imported because lineCard reaches the engine through its aspect module,
-      // and this file stays engine-free; `n` here is always a sampled number, so the
-      // "(undefined)" guard that function carries has nothing to catch.
-      label: name
-        ? t('minorBodies.card.name', { name, n: s.n })
-        : t('minorBodies.card.unnamed', { n: s.n }),
+      // The one naming rule (naming.ts) — the same call lineCard.minorDisplayName
+      // makes, over the same two strings.
+      label: minorDisplayLabel(s.n, name, t),
       lon: s.lon,
       lat: s.lat,
       ra: s.ra,
@@ -113,6 +115,7 @@ export function buildWheelMinor(
       stationary: s.stationary ?? false,
       color: d.color,
       ...(glyph ? { glyph } : {}),
+      hypothetical: isHypotheticalKey(s.n),
       // A sampled body is always on the list; were one not, it would sort after every
       // body that is, in the order it was sampled, rather than drop out of the set.
       rank: order[s.n] ?? list.length + i,

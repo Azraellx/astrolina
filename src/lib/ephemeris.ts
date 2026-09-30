@@ -29,7 +29,11 @@ import {
 // under Vite chunking + static hosting).
 import wasmUrl from '@swisseph/browser/dist/swisseph.wasm?url';
 import type { BirthData } from './birthData';
-import { SEAS_MINOR_ID } from './minorBodies/ids';
+import { isHypotheticalKey, SEAS_MINOR_ID } from './minorBodies/ids';
+import { HYP_SENTINEL_SE, hypotheticalPoint } from './minorBodies/hypothetical';
+// The hypothetical points' elements file, as text in this module (see below for why
+// it is not a separate chunk).
+import HYP_ELEMENTS_TEXT from './minorBodies/seorbel.txt?raw';
 // From the adapter module, NOT eclipsePath — a static import of eclipsePath
 // here would hoist the whole Besselian-fitting module into the entry bundle,
 // defeating the lazy eclipses chunk (see eclipseAdapter.ts).
@@ -334,6 +338,64 @@ export function ensureAsteroidEphemeris(): Promise<void> {
     });
   }
   return seasPromise;
+}
+
+// ── Hypothetical points' elements ─────────────────────────────────────────────
+// The hypothetical points (lib/minorBodies/hypothetical.ts) are computed from the
+// engine's elements file, seorbel.txt — shipped beside that table, NOT in public/ephe:
+// a downstream build's service worker caches only binary responses under /ephe,
+// public/_headers marks that folder immutable for a year, and the verify harness puts
+// public/ephe on the engine's path, where a file sitting there would hide a mount that
+// never happened (public/ephe/README.md).
+//
+// THE TRAP this guards: without the file the engine does not fail for bodies 40–54. It
+// answers from fifteen element sets compiled into it, which differ from the file's —
+// Kronos's semi-axis is 64.81960 built in against the file's 64.81690, which moves
+// Kronos 14–20″ — and says nothing. So nothing is computed until the file is proven
+// read: after mounting, body 56 (HYP_SENTINEL_SE), which has no built-in set and so
+// throws without the file, must compute; only then does hypElementsVerified turn on.
+// minorSweId below refuses every hypothetical point while it is off, whatever the caller.
+//
+// COST: the engine re-opens and re-parses the file on EVERY call for these bodies (it
+// keeps no copy): ≈160–175 µs a call natively against ≈9 µs for a planet (the
+// downstream WASM build's parity check prints its own figure). About 7 ms for all ten
+// on a chart change, both frames and the station bracket — acceptable there. Any
+// future time sweep that adopts these bodies must measure before it does.
+const HYP_ELEMENTS_FILE = 'seorbel.txt';
+let hypPromise: Promise<void> | null = null;
+let hypElementsVerified = false;
+
+/** Mount the elements file once and prove the engine reads it. Re-callable on
+ *  failure: the promise resets, so a row's retry tries again. */
+export function ensureHypotheticalElements(): Promise<void> {
+  if (!hypPromise) {
+    hypPromise = (async () => {
+      await initEphemeris();
+      // The text rides in this module (≈2.8 KB gzipped) rather than as a lazy chunk:
+      // the browser keeps a FAILED module import for the life of the page, so a chunk
+      // that missed the network once could never be fetched again by a retry, and a
+      // failed chunk load also trips the app's deploy-skew reload. Bundled, the only
+      // ways left to fail are the mount and the check below. Normalised to LF: a
+      // checkout's line endings are not the file's.
+      const url = URL.createObjectURL(
+        new Blob([HYP_ELEMENTS_TEXT.replace(/\r\n/g, '\n')], { type: 'text/plain' }),
+      );
+      try {
+        // Under its bare name, where the engine looks for it — setting the path also
+        // clears the engine's saved positions.
+        await eph().loadEphemerisFiles([{ name: HYP_ELEMENTS_FILE, url }]);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      // Throws unless the file was read (see the trap, above).
+      eph().calculatePosition(2451545.0, HYP_SENTINEL_SE, FLAG_ECL);
+      hypElementsVerified = true;
+    })().catch((err: unknown) => {
+      hypPromise = null;
+      throw err;
+    });
+  }
+  return hypPromise;
 }
 
 function eph(): SwissEphemeris {
@@ -658,7 +720,15 @@ function sampleById(jd: number, id: number): Omit<BodySample, 'name'> | null {
 // the bundled main-asteroid file under their own id instead (SEAS_MINOR_ID).
 const MINOR_ID_OFFSET = 10000;
 
-function minorSweId(n: number): number {
+/** The engine's body id for list key `n`, or null when it must not be computed. A
+ *  hypothetical point is refused until its elements file is proven read, and always
+ *  when this build doesn't know it — the ONE chokepoint every sample and speed goes
+ *  through, so no caller can reach the engine's built-in elements (see above). */
+function minorSweId(n: number): number | null {
+  if (isHypotheticalKey(n)) {
+    const p = hypotheticalPoint(n);
+    return p && hypElementsVerified ? p.se : null;
+  }
   return SEAS_MINOR_ID.get(n) ?? MINOR_ID_OFFSET + n;
 }
 
@@ -683,17 +753,22 @@ export interface MinorSample {
 }
 
 /** One catalog body at one instant, or null (file not mounted, or the date is
- *  outside the file's span). Same two-frame sample the built-ins get. */
+ *  outside the file's span; for a hypothetical point, its elements not yet proven
+ *  read). Same two-frame sample the built-ins get. */
 export function sampleMinorBody(jd: number, n: number): MinorSample | null {
-  const s = sampleById(jd, minorSweId(n));
+  const id = minorSweId(n);
+  if (id === null) return null;
+  const s = sampleById(jd, id);
   return s && { n, ...s };
 }
 
 // Just the ecliptic-longitude speed (deg/day) of one catalog body — the minor-body
 // twin of longitudeSpeedAt below, for bracketing a station. Null outside the file.
 function minorSpeedAt(jd: number, n: number): number | null {
+  const id = minorSweId(n);
+  if (id === null) return null;
   try {
-    return eph().calculatePosition(jd, minorSweId(n), FLAG_ECL).longitudeSpeed;
+    return eph().calculatePosition(jd, id, FLAG_ECL).longitudeSpeed;
   } catch {
     return null;
   }

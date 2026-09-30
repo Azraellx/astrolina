@@ -738,11 +738,12 @@
 /* The shared catalog minor-body diamond (lib/lineCard minorMarkHtml), in the hover tip and
    the line card. A filled shape carries far more ink than a line glyph at the same size, so
    it steps down to sit level with the name beside it — as the diamond on the map coin sits
-   well inside its ring. Bodies with their own symbol keep the normal glyph size. */
-.cross-tip-glyph.minor-mark {
+   well inside its ring. Bodies with their own symbol keep the normal glyph size, and so does
+   a hypothetical point's hollow diamond (.is-hollow): an outline, it is a line glyph. */
+.cross-tip-glyph.minor-mark:not(.is-hollow) {
   font-size: 10px;
 }
-.line-card-glyph.minor-mark {
+.line-card-glyph.minor-mark:not(.is-hollow) {
   font-size: 0.78em;
 }
 .cross-tip-x {

@@ -20,7 +20,8 @@ import type { PlanetName } from './ephemeris';
 import type { LineType } from './astro/lines';
 import { aspectBranchReading, type AspectKind } from './astro/angleAspects';
 import { ASPECT_GLYPHS, MINOR_GLYPHS, PLANET_GLYPHS } from './astro/glyphChars';
-import { isMinorNumber, minorNumberOf } from './minorBodies/ids';
+import { isHypotheticalKey, isMinorNumber, minorKeyOf } from './minorBodies/ids';
+import { minorDisplayLabel } from './minorBodies/naming';
 
 const OVERLAY_NOTE_TAGS = ['Tr', 'Sp', 'Tp', 'Sa', 'Pd', 'Cy', 'Sy'] as const;
 type NoteTag = (typeof OVERLAY_NOTE_TAGS)[number];
@@ -66,30 +67,32 @@ const glyph = (planet: PlanetName, color: unknown) =>
  *  is already in the bundled symbol subset (subset-font.sh, the modality bar's
  *  "mutable" icon), so `.astro-glyph` draws it in the same font as every other mark. */
 const MINOR_MARK = '\u25C6\uFE0E'; // + VS15 "text presentation", as glyphChars does
+/** U+25C7 WHITE DIAMOND — a hypothetical point's mark, the text twin of its hollow
+ *  coin. Added to the symbol subset for this alone (subset-font.sh), so it draws in the
+ *  same font as the ◆ it stands beside rather than in a system fallback face. */
+const MINOR_HOLLOW_MARK = '\u25C7\uFE0E';
 
 const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) =>
     c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;',
   );
 
-/** A catalog feature's MPC number: its `number` prop, else the one inside `body`. */
+/** A catalog feature's list key — an MPC number, or a hypothetical point's reserved
+ *  key: its `number` prop, else the one inside `body` (`mp:<n>` or `hyp:<se>`). */
 function minorNumberProp(props: Record<string, unknown>): number | null {
-  return isMinorNumber(props.number) ? props.number : minorNumberOf(props.body);
+  return isMinorNumber(props.number) || isHypotheticalKey(props.number) ? props.number : minorKeyOf(props.body);
 }
 
 /**
- * How a catalog body is named everywhere a reader meets it: "Eros (433)", or
- * "(433)" when the catalog knows no name. The number is always shown — it is what
- * tells asteroid 1181 Lilith from Black Moon Lilith, and 19 Fortuna from the Lot.
- * Plain text; see minorNameHtml for the escaped form.
+ * How a catalog body is named everywhere a reader meets it: "Eros (433)", "(433)"
+ * when the catalog knows no name, "Zeus (hyp)" for a hypothetical point — the one
+ * rule, minorBodies/naming.ts. Plain text; see minorNameHtml for the escaped form.
  */
 export function minorDisplayName(props: Record<string, unknown>, t: TFn): string {
-  const name = typeof props.name === 'string' ? props.name.trim() : '';
-  const n = minorNumberProp(props);
+  const name = typeof props.name === 'string' ? props.name : '';
   // Never print "(undefined)" or "(NaN)": a feature without a readable number falls
   // back to whatever name it has (the verify suite checks for exactly that leak).
-  if (n === null) return name;
-  return name ? t('minorBodies.card.name', { name, n }) : t('minorBodies.card.unnamed', { n });
+  return minorDisplayLabel(minorNumberProp(props), name, t);
 }
 
 /** minorDisplayName, escaped for splicing into tip/card HTML. */
@@ -100,28 +103,32 @@ export function minorNameHtml(props: Record<string, unknown>, t: TFn): string {
 /**
  * The body's mark as an inline span in its line colour: its own astrological symbol
  * where one is encoded (MINOR_GLYPHS — Eris, Sedna, Pholus, …), otherwise the shared
- * diamond, exactly as its map coin draws it. `className` carries the surface's own
- * glyph class (the card's `line-card-glyph`, the hover tip's `cross-tip-glyph`);
- * `minor-mark` lets the diamond step down a size (Map.css), since a filled shape
- * carries more ink than a line glyph.
+ * diamond, exactly as its map coin draws it — hollow (◇) for a hypothetical point.
+ * `className` carries the surface's own glyph class (the card's `line-card-glyph`, the
+ * hover tip's `cross-tip-glyph`); `minor-mark` lets the filled diamond step down a size
+ * (Map.css), since a filled shape carries more ink than a line glyph. The hollow one is
+ * `is-hollow` as well and keeps the glyph size: it IS a line glyph, and this font draws
+ * its outline thin enough that, stepped down, it would read faint.
  */
 export function minorMarkHtml(props: Record<string, unknown>, className: string): string {
   const n = minorNumberProp(props);
   const sym = n === null ? undefined : MINOR_GLYPHS.get(n);
   const color = typeof props.color === 'string' ? props.color : 'inherit';
-  return sym
-    ? `<span class="astro-glyph ${className}" style="color:${color}">${sym}</span>`
+  if (sym) return `<span class="astro-glyph ${className}" style="color:${color}">${sym}</span>`;
+  return isHypotheticalKey(n)
+    ? `<span class="astro-glyph ${className} minor-mark is-hollow" style="color:${color}">${MINOR_HOLLOW_MARK}</span>`
     : `<span class="astro-glyph ${className} minor-mark" style="color:${color}">${MINOR_MARK}</span>`;
 }
 
 // The reading for one catalog line, over an already-resolved display name — shared by
 // lineReading (plain name) and buildLineCard (escaped name), so the two cannot drift.
 // No bespoke texts: a catalog body has no curated theme here, so it reads through the
-// angle essence alone, framed as a minor planet's narrow emphasis.
-function minorReading(angle: LineType, name: string, t: TFn): LineReading {
+// angle essence alone, framed as a minor planet's narrow emphasis — or, for a
+// hypothetical point (read off the feature's own key), as a point's.
+function minorReading(angle: LineType, name: string, props: Record<string, unknown>, t: TFn): LineReading {
   return {
     title: t(`lineMeanings.title.${angle}`, { planet: name }),
-    body: t('minorBodies.card.body', {
+    body: t(isHypotheticalKey(minorNumberProp(props)) ? 'minorBodies.card.hypBody' : 'minorBodies.card.body', {
       name,
       essence: t(`lineMeanings.angleEssence.${angle}`),
     }),
@@ -251,7 +258,7 @@ export function lineReading(
     const angle = props.lineType as LineType;
     const name = minorDisplayName(props, t);
     if (!angle || !name) return null;
-    return minorReading(angle, name, t);
+    return minorReading(angle, name, props, t);
   }
 
   if (layerId.startsWith('acg-lines')) {
@@ -349,7 +356,7 @@ export function buildLineCard(
     // Re-composed over the ESCAPED name (see the note on catalog names above) rather
     // than splicing reading.title/body, which lineReading keeps as plain text. Same
     // templates via minorReading, so the card and the plain reading cannot disagree.
-    const html = minorReading(props.lineType as LineType, minorNameHtml(props, t), t);
+    const html = minorReading(props.lineType as LineType, minorNameHtml(props, t), props, t);
     return card(minorMarkHtml(props, 'line-card-glyph') + html.title, html.body, [...notes, footer]);
   }
 

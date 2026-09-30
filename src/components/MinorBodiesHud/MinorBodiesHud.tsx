@@ -7,18 +7,23 @@
 // The movable "Minor bodies" window (Map filters ▸ Minor bodies ▸ More, or '4' — it
 // has no View-menu row, by choice) — every minor body in one place. Four parts:
 //
-//   • one search over the bundled set and every registered source (the scope chips
-//     only exist when a downstream build registered one — the open core has none),
-//     with the FAMILY switch ("Hide all") on the row under it, which hides every
-//     body on the reader's list at once and keeps the selection (its own preference
-//     field, never touched by a row);
-//   • the five main asteroids, as the very SAME switches as Map filters (the raw
+//   • one search over the Featured set (the bundled bodies and the hypothetical
+//     points) and every registered source (the scope chips only exist when a
+//     downstream build registered one — the open core has none), with the FAMILY
+//     switch ("Hide all") on the row under it, which hides every body on the reader's
+//     list at once and keeps the selection (its own preference field, never touched
+//     by a row);
+//   • the five main minor bodies, as the very SAME switches as Map filters (the raw
 //     built-in preference and its own toggle, so the two surfaces can't disagree);
-//   • the search results, a page at a time — or, while nothing is typed, the set
-//     bundled with the app to browse;
+//   • the search results, a page at a time — or, while nothing is typed in the
+//     Featured scope, that set to browse under its headings;
 //   • the reader's own list, with why each body is or isn't drawn: a column of its
 //     own beside the rest once it holds anything and the screen has room for two,
 //     a section below the results otherwise (touch, a narrow window).
+//
+// Every row that isn't under a heading says what the body is: a class tag at the
+// right of its name (lib/minorBodies/classTags.ts) on the reader's list and on search
+// results. The Featured browse carries none — its headings say it.
 //
 // Nothing here writes on the reader's behalf. Every write is the gesture of the row
 // it came from; a toggle the caps would refuse says so on its tip BEFORE the click
@@ -30,6 +35,7 @@
 // 134340 Pluto) never becomes a second copy: search shows a pointer to the row that
 // already draws it, and never toggles Pluto from here.
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -42,22 +48,31 @@ import { MINOR_BODIES, PLANET_COLORS, type PlanetName } from '../../lib/ephemeri
 import { minorLineColor, type Theme } from '../../lib/theme';
 import { MINOR_GLYPHS } from '../../lib/astro/glyphChars';
 import type { MinorBodiesApi } from '../../lib/minorBodies/useMinorBodies';
-import type { MinorRow, MinorRowStatus } from '../../lib/minorBodies/status';
+import {
+  resolveMinorSource,
+  type MinorRow,
+  type MinorRowStatus,
+} from '../../lib/minorBodies/status';
 import {
   MINOR_LIST_CAP,
   MINOR_VISIBLE_CAP,
   type MinorListEntry,
 } from '../../lib/minorBodies/prefs';
-import { BUILTIN_ALIAS, isCatalogNumber } from '../../lib/minorBodies/ids';
+import { BUILTIN_ALIAS, isHypotheticalKey, isListKey } from '../../lib/minorBodies/ids';
 import {
-  BUNDLED_MINOR_BODIES,
+  BUNDLED_SET,
   BUNDLED_SOURCE_ID,
-  MINOR_BODY_GROUPS,
   bundledMinorBody,
+  bundledSearch,
   bundledSource,
   numberQuery,
+  rankBundledMatch,
   rankMinorMatch,
+  type BundledMinorBody,
+  type MinorBodyGroup,
 } from '../../lib/minorBodies/bundled';
+import { builtinClassTag, type MinorClassTag } from '../../lib/minorBodies/classTags';
+import { minorDisplayLabel, minorDisplayParts } from '../../lib/minorBodies/naming';
 import {
   getMinorBodySources,
   MinorBodySourceFailure,
@@ -93,11 +108,13 @@ import './MinorBodiesHud.css';
 const POS_KEY = 'astro:minor-bodies-pos:v1';
 // The window's width in one column, and with the reader's list open beside the
 // search — KEEP IN STEP with .minor-bodies-hud / .is-split in MinorBodiesHud.css.
+// The split is as wide as the list's column needs for every Featured body and
+// hypothetical point to fit its name line whole (see .mbh-main there).
 const WIDTH = 300;
-const SPLIT_WIDTH = 580;
+const SPLIT_WIDTH = 605;
 // Search results arrive a page at a time. A one-letter query in a registered catalog
 // can match thousands, and none of them should reach the DOM until the reader
-// scrolls toward it; the bundled browse (~40, fixed) is never paged.
+// scrolls toward it; the Featured browse (~50, fixed) is never paged.
 const PAGE_SIZE = 24;
 
 // The scope hint — shown ONCE, ever: a bundled search that finds nothing points at the
@@ -174,62 +191,91 @@ function revealPage(p: Paging, key: string, from: number, n: number): Paging {
   return cur === from ? { key, shown: from + n } : p;
 }
 
-// The bundled set, grouped for browsing once (it is fixed at build time).
-const BUNDLED_BY_GROUP = MINOR_BODY_GROUPS.map((group) => ({
+// The Featured set, laid out for browsing once (it is fixed at build time). Level 1:
+// the four physical groups, then Hypothetical points; level 2: that heading's two
+// groups (Uranian points in the engine's number order, then TransPluto and Selena).
+// The Main minor bodies heading above them is the built-in switches' own, not part of
+// this set. Every heading carries its info line (hud.groupInfo), keyed like its title.
+type FeaturedHead = Exclude<MinorBodyGroup, 'uranian' | 'otherHyp'> | 'hypothetical';
+interface FeaturedSection {
+  head: FeaturedHead;
+  /** One group without a heading of its own, or the level-2 groups under `head`. */
+  groups: { group: MinorBodyGroup; sub: boolean; bodies: BundledMinorBody[] }[];
+}
+const featuredGroup = (group: MinorBodyGroup, sub: boolean) => ({
   group,
-  bodies: BUNDLED_MINOR_BODIES.filter((b) => b.group === group),
-})).filter((g) => g.bodies.length > 0);
+  sub,
+  bodies: BUNDLED_SET.filter((b) => b.group === group),
+});
+const FEATURED_BROWSE: FeaturedSection[] = [
+  ...(['dwarf', 'centaur', 'mainBelt', 'nearEarth'] as const).map((g) => ({
+    head: g,
+    groups: [featuredGroup(g, false)],
+  })),
+  { head: 'hypothetical' as const, groups: [featuredGroup('uranian', true), featuredGroup('otherHyp', true)] },
+]
+  .map((s) => ({ ...s, groups: s.groups.filter((g) => g.bodies.length > 0) }))
+  .filter((s) => s.groups.length > 0);
 
-// Sort one scope's hits the way every scope sorts (rankMinorMatch), dropping
-// duplicates and any number that is really a built-in body — those get a pointer
-// row instead (see builtinPointers), never a second, toggleable copy. A hit the
-// shared ranker can't place (a source that also matches alternate names, say)
-// keeps its source's order after the ranked ones rather than vanishing.
+// Sort one scope's hits the way every scope sorts (rankMinorMatch — with a bundled
+// body's aliases counted, rankBundledMatch), dropping duplicates and any number that
+// is really a built-in body — those get a pointer row instead (see builtinPointers),
+// never a second, toggleable copy. A hypothetical point's key stays (isListKey, not
+// isCatalogNumber). A hit the shared ranker can't place (a source that also matches
+// alternate names, say) keeps its source's order after the ranked ones rather than
+// vanishing.
 function rankHits(q: string, hits: readonly MinorBodyHit[]): MinorBodyHit[] {
   const seen = new Set<number>();
   const ranked: { hit: MinorBodyHit; rank: number; i: number }[] = [];
   hits.forEach((hit, i) => {
-    if (!isCatalogNumber(hit.n) || seen.has(hit.n)) return;
+    if (!isListKey(hit.n) || seen.has(hit.n)) return;
     seen.add(hit.n);
-    ranked.push({ hit, rank: rankMinorMatch(q, hit.n, hit.name) ?? 5, i });
+    ranked.push({ hit, rank: rankBundledMatch(q, hit.n, hit.name) ?? 5, i });
   });
   ranked.sort((a, b) => a.rank - b.rank || a.i - b.i);
   return ranked.map((r) => r.hit);
 }
 
-// The bundled set's matches for `q`, ranked — computed here rather than through
-// bundledSource.search because it is local and synchronous, so it can answer in
-// every scope (locked or not) without waiting on, or being cancelled with, the
-// active scope's request. ~40 bodies: not worth memoising.
-function bundledMatches(q: string): MinorBodyHit[] {
-  const out: { hit: MinorBodyHit; rank: number }[] = [];
-  for (const b of BUNDLED_MINOR_BODIES) {
-    const rank = rankMinorMatch(q, b.n, b.name);
-    if (rank !== null) out.push({ hit: { n: b.n, name: b.name }, rank });
-  }
-  out.sort((a, b) => a.rank - b.rank || a.hit.n - b.hit.n);
-  return out.map((o) => o.hit);
-}
-
 // A catalog body's mark: its own glyph where the font has one, otherwise a small
 // diamond — both in the body's line colour, so the row and its line on the map
-// read as the same thing. The mark itself is the shared one (MinorMark), which the
-// chart wheel, its tips and the positions table draw too.
+// read as the same thing; a hypothetical point's diamond is hollow, as on the map.
+// The mark itself is the shared one (MinorMark), which the chart wheel, its tips and
+// the positions table draw too.
 function RowMark({ n, theme }: { n: number; theme: Theme }) {
   return (
-    <MinorMark color={minorLineColor(n, theme)} glyph={MINOR_GLYPHS.get(n)} className="mbh-mark" />
+    <MinorMark
+      color={minorLineColor(n, theme)}
+      glyph={MINOR_GLYPHS.get(n)}
+      hollow={isHypotheticalKey(n)}
+      className="mbh-mark"
+    />
   );
+}
+
+// Whether a row's name (.mbh-name) is cut short: its own name ellipsised, or — in a row
+// too narrow even for the number it keeps — the whole name clipped.
+function nameCut(row: HTMLElement | null): boolean {
+  const name = row?.querySelector<HTMLElement>('.mbh-name');
+  if (!name) return false;
+  if (name.scrollWidth > name.clientWidth) return true;
+  const own = name.querySelector<HTMLElement>('.mbh-name-own');
+  if (!own) return false;
+  const text = document.createRange();
+  text.selectNodeContents(own);
+  return text.getBoundingClientRect().width > own.getBoundingClientRect().width + 0.05;
 }
 
 // A button that reveals a shared .ui-tip (title + hint + note) on hover/focus — the
 // affordance the Local Space and Aspect Lines windows use for their toggles. The tip
 // is optional: a catalog row only carries one when there is something its row does
-// not already say (a toggle the caps would refuse).
+// not already say in words (a toggle the caps would refuse, the dates a greyed row's
+// data doesn't reach, what its list icon means, a name its row cuts short).
 function MbTipButton({
   className,
   onClick,
   ariaPressed,
   tip,
+  fullName,
   mainPlanet,
   listRow,
   hitRow,
@@ -239,6 +285,9 @@ function MbTipButton({
   onClick: () => void;
   ariaPressed?: boolean;
   tip?: { title: ReactNode; hint?: string; note?: string };
+  /** The row's whole name — its tip's title while the row cuts the name short, and only
+   *  then (a `tip` of its own already opens with the name). */
+  fullName?: string;
   /** Marks one of the five main-asteroid switches, so a search pointer can move
    *  focus to it. */
   mainPlanet?: PlanetName;
@@ -251,6 +300,14 @@ function MbTipButton({
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top');
+  // Whether the name is cut, read as the tip opens: that depends on the row's width and on
+  // what shares the name's line, and only the committed row knows either — so the layout
+  // effect + setState is the tool (before paint, so a tip never shows without its title).
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    if (pos && fullName) setCut(nameCut(ref.current));
+  }, [pos, fullName, ref]);
+  const rowTip = tip ?? (cut && fullName ? { title: fullName } : undefined);
   return (
     <>
       <button
@@ -269,8 +326,8 @@ function MbTipButton({
       >
         {children}
       </button>
-      {tip && (
-        <HoverTip pos={pos} placement="top" title={tip.title} hint={tip.hint} note={tip.note} />
+      {rowTip && (
+        <HoverTip pos={pos} placement="top" title={rowTip.title} hint={rowTip.hint} note={rowTip.note} />
       )}
     </>
   );
@@ -410,6 +467,10 @@ export function MinorBodiesHud({
   // nothing to choose — so there is no chip row at all.
   const showChips = scopes.length > 1;
   const scope = scopes.find((s) => s.id === scopeId) ?? bundledSource;
+  // The Featured browse is the bundled scope's alone: a registered scope (a catalog of
+  // thousands) has nothing to browse, and showing the Featured groups under its chip
+  // read as its contents — so while nothing is typed it only asks for a search.
+  const featuredScope = scope.id === BUNDLED_SOURCE_ID;
   const gate = scopeGates[scopes.indexOf(scope)] ?? null;
   const locked = !!gate?.locked;
   const teased = teasedId
@@ -486,8 +547,11 @@ export function MinorBodiesHud({
   // source would be held the moment that source closed, though this build ships
   // the file), so without this, typing "Eros" with another scope selected would
   // find nothing. First because the bundled copy is the one that is always there —
-  // offline, and never held. The bundled scope itself needs no merge.
-  const bundledHits = q && scope.id !== BUNDLED_SOURCE_ID ? bundledMatches(q) : [];
+  // offline, and never held. The bundled scope itself needs no merge. Read directly
+  // (bundledSearch) rather than through bundledSource.search: it is local and
+  // synchronous, so it answers in any scope, locked or not, without waiting on or
+  // being cancelled with the active scope's request. ~50 bodies: not worth memoising.
+  const bundledHits = q && scope.id !== BUNDLED_SOURCE_ID ? bundledSearch(q) : [];
   const bundledNs = new Set(bundledHits.map((h) => h.n));
   const hits =
     bundledHits.length > 0
@@ -540,13 +604,10 @@ export function MinorBodiesHud({
   // otherwise keeps its offset: a reader deep into "a" who types "ab" would land
   // part-way down the new, shorter results with the best matches out of view above
   // — and, sat at the end of them, page the next lot in unasked. Before paint, so
-  // the old offset never shows. A scope switch over the browse (nothing typed
-  // before or after) changes nothing on screen, so that one keeps its place.
-  const lastQ = useRef(q);
+  // the old offset never shows. A scope switch with nothing typed counts too: the
+  // Featured browse belongs to its own scope only, so the switch swaps it for the
+  // other scope's prompt, or back.
   useLayoutEffect(() => {
-    const was = lastQ.current;
-    lastQ.current = q;
-    if (q === '' && was === '') return;
     scrollRef.current?.scrollTo({ top: 0 });
   }, [q, scope.id]);
 
@@ -635,6 +696,7 @@ export function MinorBodiesHud({
   };
   const toggleEntry = (entry: MinorListEntry, inList: boolean) => {
     const refusal = refusalFor(entry.n);
+    // 'refused' (a built-in body's number) says nothing: no row here offers one.
     const result = api.toggle(entry);
     setCapNote(
       result === 'cap'
@@ -655,14 +717,36 @@ export function MinorBodiesHud({
       source: bundledMinorBody(n) ? BUNDLED_SOURCE_ID : sourceId,
     };
 
-  const displayName = (n: number, name: string) =>
-    name ? t('minorBodies.card.name', { name, n }) : t('minorBodies.card.unnamed', { n });
+  // "Eros (433)", "(433)", or "Zeus (hyp)" — the one naming rule every surface shares.
+  const displayName = (n: number, name: string) => minorDisplayLabel(n, name, t);
+
+  // A body's class tag, as the source it would load from answers it (resolveMinorSource:
+  // the bundled set for its own bodies and the hypothetical points, a registered source
+  // for the rest) — so a search result and the same body on the list always agree. A
+  // source whose classes load lazily answers nothing until they land; the row draws
+  // untagged meanwhile and picks its tag up when the source says so (below).
+  const tagLabel = (tag: MinorClassTag) => t(`minorBodies.tags.${tag}`);
+  const classLabel = (entry: MinorListEntry): string | undefined => {
+    const tag = resolveMinorSource(entry)?.classTag?.(entry.n) ?? null;
+    return tag ? tagLabel(tag) : undefined;
+  };
+  const [, setClassesLanded] = useState(0);
+  useEffect(() => {
+    // The registered set is fixed after startup (registerMinorBodySource's contract).
+    const offs = getMinorBodySources().map((s) =>
+      s.onClassTags?.(() => setClassesLanded((v) => v + 1)),
+    );
+    return () => {
+      for (const off of offs) off?.();
+    };
+  }, []);
 
   // The second line under a list row: why a switched-on body isn't drawn. 'shown'
-  // and 'off' need nothing.
+  // and 'off' need nothing. `hint`: a longer why, for the row's tip.
   const statusLine = (
     s: MinorRowStatus,
-  ): { text: string; failed?: boolean; pill?: string } | null => {
+    n: number,
+  ): { text: string; failed?: boolean; hint?: string } | null => {
     switch (s.kind) {
       case 'off':
       case 'shown':
@@ -678,11 +762,20 @@ export function MinorBodiesHud({
               : t(`minorBodies.hud.status.${s.reason}`),
         };
       case 'noData':
-        return { text: t('minorBodies.hud.status.noData') };
+        // Short on the row, which greys out (the body stays on the list — the date is a
+        // standing state that ends by itself); the span it fell outside is the tip's.
+        return {
+          text: t('minorBodies.hud.status.noData'),
+          hint: isHypotheticalKey(n)
+            ? t('minorBodies.hud.status.noDataHintHyp')
+            : t('minorBodies.hud.status.noDataHint'),
+        };
       case 'composite':
         return { text: t('minorBodies.hud.status.composite') };
+      // The source's note alone, no tier pill beside the name: the note already says
+      // which plan it takes, and the pill cost a long name its line (2026-09-29).
       case 'held':
-        return { text: s.note, pill: s.pill };
+        return { text: s.note };
       case 'unavailable':
         return { text: t('minorBodies.hud.status.unavailable') };
       case 'familyHidden':
@@ -695,7 +788,9 @@ export function MinorBodiesHud({
   };
 
   // One catalog row: the whole row is the eye toggle (mark + name + a second line),
-  // with the list's own actions (retry, remove) beside it rather than inside it.
+  // with the list's own actions beside it rather than inside it — the remove ×, and on a
+  // line of their own under the row, the actions that are words (Try again, and the
+  // remove's confirm pair), which beside the name would crowd its line.
   const catalogRow = (
     key: string,
     entry: MinorListEntry,
@@ -706,17 +801,26 @@ export function MinorBodiesHud({
       removable?: boolean;
       /** A search result — marked so a reveal can put focus on it. */
       hit?: boolean;
+      /** Its class tag's label, at the right of the name line — the list's rows and
+       *  search results carry one, the Featured browse never does. */
+      cls?: string;
     } = {},
   ) => {
     const name = displayName(entry.n, entry.name);
-    const status = opts.status ? statusLine(opts.status) : null;
+    // The same name in parts, so a row too narrow for it cuts the name and keeps its number.
+    const parts = minorDisplayParts(entry.n, entry.name, t);
+    const status = opts.status ? statusLine(opts.status, entry.n) : null;
     const sub = status?.text ?? opts.sub;
     const inList = listByN.has(entry.n);
-    // "On your list" on a browsing/search row whose body is on the list but
-    // switched off — switched ON already says so with its eye.
-    const tag = !opts.removable && inList && !on ? t('minorBodies.hud.row.added') : undefined;
+    // A list icon on a browsing/search row whose body is on the list but switched
+    // off — switched ON already says so with its eye. "On your list" is its label:
+    // the icon's accessible name, and the row's tip.
+    const added = !opts.removable && inList && !on ? t('minorBodies.hud.row.added') : undefined;
     const refusal = refusalFor(entry.n);
     const failed = opts.status?.kind === 'failed';
+    // Switched on, but no data at the instant the lines are drawn: greyed rather than
+    // hidden — it is still on the list, and draws again on a date its data covers.
+    const noData = opts.status?.kind === 'noData';
     const confirming = opts.removable && confirmN === entry.n;
     // After a Remove, focus moves to the row that takes this one's place (the next,
     // else the one above); with the list emptied, to the search box.
@@ -730,86 +834,110 @@ export function MinorBodiesHud({
     return (
       <li key={key} className="mbh-item">
         <MbTipButton
-          className={`mbh-toggle ${on ? 'on' : 'off'}`}
+          className={`mbh-toggle ${on ? 'on' : 'off'}${noData ? ' is-nodata' : ''}`}
           onClick={() => toggleEntry(entry, !!opts.removable)}
           ariaPressed={on}
           listRow={opts.removable ? entry.n : undefined}
           hitRow={opts.hit ? entry.n : undefined}
           tip={
             refusal
-              ? { title: t('minorBodies.hud.row.show', { name }), hint: refusal }
-              : undefined
+              ? { title: t('minorBodies.hud.row.show', { name }), hint: refusal, note: added }
+              : status?.hint
+                ? { title: name, hint: status.hint }
+                : added
+                  ? { title: name, hint: added }
+                  : undefined
           }
+          fullName={name}
         >
           <EyeIcon open={on} className="location-ls-eye" size={14} />
           <RowMark n={entry.n} theme={theme} />
           <span className="mbh-body">
             <span className="mbh-main">
-              <span className="mbh-name">{name}</span>
-              {tag && <span className="psf-row-tag">{tag}</span>}
-              {status?.pill && <span className="mbh-pill">{status.pill}</span>}
+              <span className="mbh-name">
+                {parts.before && <span className="mbh-name-keep">{parts.before}</span>}
+                {parts.own && <span className="mbh-name-own">{parts.own}</span>}
+                {parts.after && <span className="mbh-name-keep">{parts.after}</span>}
+              </span>
+              {/* An icon, not the words: the "On your list" chip took ~74px of a line
+                  the name and its tag need, crushing a name like Salacia to a letter. */}
+              {added && (
+                <svg className="mbh-onlist" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={added}>
+                  <path d="M16 6H3" />
+                  <path d="M16 12H3" />
+                  <path d="M11 18H3" />
+                  <path d="m15 18 2 2 4-4" />
+                </svg>
+              )}
+              {opts.cls && <span className="mbh-class">{opts.cls}</span>}
             </span>
             {sub && <span className={`mbh-sub${status?.failed ? ' is-failed' : ''}`}>{sub}</span>}
           </span>
         </MbTipButton>
-        {opts.removable &&
-          (confirming ? (
-            // The armed remove: an explicit confirm / keep pair, so a stray tap
-            // on the × never drops a body (and its name) from the list.
-            <span className="mbh-acts is-confirm">
+        {opts.removable && (
+          // The × stays in its place while its confirm is open below (hidden, never
+          // removed), so the name line doesn't widen and narrow under the reader.
+          <span className={`mbh-acts${confirming ? ' is-confirm' : ''}`}>
+            <button
+              type="button"
+              className="psf-row-act psf-row-act-danger"
+              data-mb-remove={entry.n}
+              aria-label={t('minorBodies.hud.row.remove', { name })}
+              onClick={() => setConfirmN(entry.n)}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </span>
+        )}
+        {confirming ? (
+          // The armed remove: an explicit confirm / keep pair, so a stray tap
+          // on the × never drops a body (and its name) from the list.
+          <span className="mbh-below">
+            <button
+              type="button"
+              className="psf-row-confirm"
+              // Focus follows the × it replaced, so a keyboard user lands on
+              // the choice instead of on <body>.
+              autoFocus
+              onClick={() => {
+                focusAfter.current = afterRemove();
+                setConfirmN(null);
+                api.remove(entry.n);
+              }}
+            >
+              {t('minorBodies.hud.row.removeConfirm')}
+            </button>
+            <button
+              type="button"
+              className="psf-row-keep"
+              onClick={() => {
+                // Back to the × it came from: the row is unchanged, so the
+                // reader continues exactly where they were.
+                focusAfter.current = `[data-mb-remove="${entry.n}"]`;
+                setConfirmN(null);
+              }}
+            >
+              {t('minorBodies.hud.row.removeKeep')}
+            </button>
+          </span>
+        ) : (
+          opts.removable &&
+          failed && (
+            <span className="mbh-below">
               <button
                 type="button"
-                className="psf-row-confirm"
-                // Focus follows the × it replaced, so a keyboard user lands on
-                // the choice instead of on <body>.
-                autoFocus
-                onClick={() => {
-                  focusAfter.current = afterRemove();
-                  setConfirmN(null);
-                  api.remove(entry.n);
-                }}
+                className="mbh-retry"
+                aria-label={t('minorBodies.hud.row.retryAria', { name })}
+                onClick={() => onRetry(entry.n)}
               >
-                {t('minorBodies.hud.row.removeConfirm')}
-              </button>
-              <button
-                type="button"
-                className="psf-row-keep"
-                onClick={() => {
-                  // Back to the × it came from: the row is unchanged, so the
-                  // reader continues exactly where they were.
-                  focusAfter.current = `[data-mb-remove="${entry.n}"]`;
-                  setConfirmN(null);
-                }}
-              >
-                {t('minorBodies.hud.row.removeKeep')}
+                {t('minorBodies.hud.row.retry')}
               </button>
             </span>
-          ) : (
-            <span className={`mbh-acts${failed ? ' has-retry' : ''}`}>
-              {failed && (
-                <button
-                  type="button"
-                  className="mbh-retry"
-                  aria-label={t('minorBodies.hud.row.retryAria', { name })}
-                  onClick={() => onRetry(entry.n)}
-                >
-                  {t('minorBodies.hud.row.retry')}
-                </button>
-              )}
-              <button
-                type="button"
-                className="psf-row-act psf-row-act-danger"
-                data-mb-remove={entry.n}
-                aria-label={t('minorBodies.hud.row.remove', { name })}
-                onClick={() => setConfirmN(entry.n)}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M18 6 6 18" />
-                  <path d="m6 6 12 12" />
-                </svg>
-              </button>
-            </span>
-          ))}
+          )
+        )}
       </li>
     );
   };
@@ -846,6 +974,7 @@ export function MinorBodiesHud({
           catalogRow(`row-${row.entry.n}`, { ...row.entry, name: row.name }, row.on, {
             status: row.status,
             removable: true,
+            cls: classLabel(row.entry),
           }),
         )}
       </ul>
@@ -1032,15 +1161,20 @@ export function MinorBodiesHud({
             )}
             {note && <p className="psf-note mbh-searchnote">{note}</p>}
             {capNote && !(split && capNote.inList) && capNoteEl}
-            {q === '' && <p className="location-ls-note mbh-note">{t('minorBodies.hud.empty')}</p>}
+            {q === '' && (
+              <p className="location-ls-note mbh-note">
+                {featuredScope ? t('minorBodies.hud.empty') : t('minorBodies.hud.emptyScope')}
+              </p>
+            )}
           </div>
 
           <div ref={scrollRef} className={`mbh-scroll${pagedScroll ? ' is-paged' : ''}`}>
-            {/* ── Main asteroids ──────────────────────────────────────────────
+            {/* ── Main minor bodies ───────────────────────────────────────────
                 The five built-in minor bodies — the SAME switches as Map filters
                 (the raw preference and its own toggle), so every minor body can
                 be reached from this one window without a second copy of any. */}
             <h3 className="capture-hud-label mbh-head">{t('minorBodies.hud.sections.builtin')}</h3>
+            <p className="mbh-info">{t('minorBodies.hud.groupInfo.builtin')}</p>
             <ul className="mbh-main-grid">
               {MINOR_BODIES.map((p) => {
                 const on = visiblePlanets.has(p);
@@ -1081,40 +1215,41 @@ export function MinorBodiesHud({
                     const glyph = (
                       <PlanetGlyph planet={planet} size={13} color={PLANET_COLORS[planet]} className="mbh-mark" />
                     );
-                    // A main asteroid points (and moves focus) to its switch above;
-                    // Pluto lives with the planets in Map filters, and this window
-                    // never toggles it — so its pointer is text, not a control.
+                    // A main minor body points (and moves focus) to its switch
+                    // above; Pluto lives with the planets in Map filters, and this
+                    // window never toggles it — so its pointer is text, not a control.
+                    // Each carries its own class tag like any result (Ceres a dwarf
+                    // planet, Chiron a centaur); Pluto, a planet here, none.
+                    const tag = builtinClassTag(n);
+                    const cls = tag && <span className="mbh-class">{tagLabel(tag)}</span>;
                     return (
                       <li key={`builtin-${n}`}>
                         {MINOR_BODIES.includes(planet) ? (
                           <button type="button" className="mbh-pointer" onClick={() => focusMain(planet)}>
                             {glyph}
                             <span>{t('minorBodies.hud.builtinHit.minor', { name })}</span>
+                            {cls}
                           </button>
                         ) : (
                           <div className="mbh-pointer">
                             {glyph}
                             <span>{t('minorBodies.hud.builtinHit.planet', { name })}</span>
+                            {cls}
                           </div>
                         )}
                       </li>
                     );
                   })}
                   {shownHits.map((hit) => {
-                    const bundled = bundledMinorBody(hit.n);
-                    return catalogRow(
-                      `hit-${hit.n}`,
-                      entryFor(hit.n, hit.name, scope.id),
-                      visibleSet.has(hit.n),
-                      {
-                        // A bundled body's class ("Centaurs") is the useful second
-                        // line when its source didn't supply one of its own.
-                        sub:
-                          hit.sub ??
-                          (bundled ? t(`minorBodies.hud.groups.${bundled.group}`) : undefined),
-                        hit: true,
-                      },
-                    );
+                    const entry = entryFor(hit.n, hit.name, scope.id);
+                    // Results have no headings, so each says what it is with its tag
+                    // (a bundled body's group used to be its second line — the tag
+                    // says it now, once). A source's own second line still shows.
+                    return catalogRow(`hit-${hit.n}`, entry, visibleSet.has(hit.n), {
+                      sub: hit.sub,
+                      hit: true,
+                      cls: classLabel(entry),
+                    });
                   })}
                   {/* The next page: a plain button (the keyboard and screen-reader
                       way on, the place search's reveal link), which is also the
@@ -1143,26 +1278,39 @@ export function MinorBodiesHud({
             {/* ── Your list, stacked (one column) ─────────────────────────────── */}
             {!split && rows.length > 0 && yourList(false)}
 
-            {/* ── Bundled with the app (browsing, while nothing is typed) ──────── */}
-            {q === '' && BUNDLED_BY_GROUP.length > 0 && (
-              <>
-                <h3 className="capture-hud-label mbh-head">{t('minorBodies.hud.sections.bundled')}</h3>
-                {BUNDLED_BY_GROUP.map(({ group, bodies }) => (
-                  <div key={group} className="mbh-group">
-                    <div className="mbh-group-head">{t(`minorBodies.hud.groups.${group}`)}</div>
-                    <ul className="mbh-list">
-                      {bodies.map((b) =>
-                        catalogRow(
-                          `bundled-${b.n}`,
-                          entryFor(b.n, b.name, BUNDLED_SOURCE_ID),
-                          visibleSet.has(b.n),
-                        ),
+            {/* ── The Featured browse (its own scope, while nothing is typed) ──────
+                Level-1 headings in the section style, level-2 under Hypothetical
+                points, each with its info line. No class tags: the headings say it. */}
+            {/* Fragments, not wrappers: every heading stays a child of the scroll
+                area, so the section style's spacing above a heading that isn't
+                first applies to these as it does to Results and Your list. */}
+            {q === '' &&
+              featuredScope &&
+              FEATURED_BROWSE.map(({ head, groups }) => (
+                <Fragment key={head}>
+                  <h3 className="capture-hud-label mbh-head">{t(`minorBodies.hud.groups.${head}`)}</h3>
+                  <p className="mbh-info">{t(`minorBodies.hud.groupInfo.${head}`)}</p>
+                  {groups.map(({ group, sub, bodies }) => (
+                    <Fragment key={group}>
+                      {sub && (
+                        <>
+                          <h4 className="mbh-subgroup-head">{t(`minorBodies.hud.groups.${group}`)}</h4>
+                          <p className="mbh-info is-sub">{t(`minorBodies.hud.groupInfo.${group}`)}</p>
+                        </>
                       )}
-                    </ul>
-                  </div>
-                ))}
-              </>
-            )}
+                      <ul className="mbh-list">
+                        {bodies.map((b) =>
+                          catalogRow(
+                            `bundled-${b.n}`,
+                            entryFor(b.n, b.name, BUNDLED_SOURCE_ID),
+                            visibleSet.has(b.n),
+                          ),
+                        )}
+                      </ul>
+                    </Fragment>
+                  ))}
+                </Fragment>
+              ))}
           </div>
         </div>
 

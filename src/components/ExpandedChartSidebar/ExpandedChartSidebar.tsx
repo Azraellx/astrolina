@@ -544,7 +544,8 @@ function PlanetTipGlyph({
 // names itself on hover. The name matters more here than a planet's does: most catalog
 // bodies share one diamond, told apart only by colour, and a compact panel hides the
 // name column beside it. The gloss under the name says why the body has a row here and
-// none in the aspect lists or the balance.
+// none in the aspect lists or the balance — and, for a hypothetical point (the hollow
+// diamond), what one is, since "a minor planet" would be false of it.
 function MinorTipGlyph({ m }: { m: WheelMinorBody }) {
   const { t } = useT();
   return (
@@ -552,13 +553,13 @@ function MinorTipGlyph({ m }: { m: WheelMinorBody }) {
       className="es-glyph"
       title={
         <span className="es-tip-title">
-          <MinorMark color={m.color} glyph={m.glyph} size={14} />
+          <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} size={14} />
           {m.label}
         </span>
       }
-      hint={t('expandedSidebar.minorHint')}
+      hint={t(m.hypothetical ? 'expandedSidebar.minorHintHyp' : 'expandedSidebar.minorHint')}
     >
-      <MinorMark color={m.color} glyph={m.glyph} size={13} />
+      <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} size={13} />
     </TipGlyph>
   );
 }

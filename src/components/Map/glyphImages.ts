@@ -21,7 +21,8 @@ import {
   type Theme,
 } from '../../lib/theme';
 import { MINOR_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
-import { MINOR_DIAMOND_IN_COIN, minorDiamondPoints } from '../../lib/minorBodies/mark';
+import { MINOR_DIAMOND_IN_COIN, minorDiamondPoints, minorHollowPoints } from '../../lib/minorBodies/mark';
+import { isHypotheticalKey } from '../../lib/minorBodies/ids';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
 /** The little five-pointed star repeated along the fixed-star lines. */
@@ -254,20 +255,27 @@ function rasterizeNadir(
 // like a planet's: theme disc, palette-colour ring. Bodies with a Unicode symbol
 // (MINOR_GLYPHS) carry it; every other body — the great majority — carries a small
 // solid diamond, the one mark every such coin shares, so a catalog coin never
-// reads as a planet's. Baked per PALETTE SLOT (12 images), not per body, so the
-// number of sprites doesn't grow with the catalog; glyph bodies add one each.
+// reads as a planet's. A HYPOTHETICAL point (minorBodies/hypothetical.ts) carries the
+// same diamond hollow: it has no symbol, and the empty centre is what says the point is
+// computed rather than observed. Baked per PALETTE SLOT (12 images each), not per body,
+// so the number of sprites doesn't grow with the catalog; glyph bodies add one each.
 export const MINOR_COIN_PREFIX = 'minor-coin-';
+export const MINOR_HOLLOW_COIN_PREFIX = 'minor-hcoin-';
 export const MINOR_GLYPH_PREFIX = 'minor-glyph-';
 
-/** The sprite id for catalog body `n` (see MinorDecor.icon). */
+/** The sprite id for catalog body `n` (see MinorDecor.icon) — the lines' beads and
+ *  the zenith coin both draw it (Map.tsx, `icon-image: ['get', 'icon']`). */
 export function minorIconId(n: number): string {
-  return MINOR_GLYPHS.has(n) ? `${MINOR_GLYPH_PREFIX}${n}` : `${MINOR_COIN_PREFIX}${minorPaletteSlot(n)}`;
+  if (MINOR_GLYPHS.has(n)) return `${MINOR_GLYPH_PREFIX}${n}`;
+  const prefix = isHypotheticalKey(n) ? MINOR_HOLLOW_COIN_PREFIX : MINOR_COIN_PREFIX;
+  return `${prefix}${minorPaletteSlot(n)}`;
 }
 
 function rasterizeMinorCoin(
   color: string,
   discFill: string,
   glyph: string | undefined,
+  hollow = false,
 ): ImageData | null {
   const canvas = document.createElement('canvas');
   canvas.width = ZENITH_STAMP_PX;
@@ -288,14 +296,19 @@ function rasterizeMinorCoin(
     // The shared catalog mark: a small solid diamond (a path, so it looks the same
     // on every platform and needs no font). Its proportions are the chart wheel's
     // too — lib/minorBodies/mark — so the coin on the map and the coin in the chart
-    // carry the same diamond.
-    const [a, b, d, e] = minorDiamondPoints(c, c, ZENITH_DISC_R * MINOR_DIAMOND_IN_COIN);
+    // carry the same diamond. Hollow, it is the same outline with the hole traced the
+    // other way round, so the one nonzero fill leaves the centre showing the disc —
+    // a wall ≈1.5px across at this size, the ring's own weight.
+    const half = ZENITH_DISC_R * MINOR_DIAMOND_IN_COIN;
+    const rings = hollow
+      ? Object.values(minorHollowPoints(c, c, half))
+      : [minorDiamondPoints(c, c, half)];
     ctx.beginPath();
-    ctx.moveTo(a[0], a[1]);
-    ctx.lineTo(b[0], b[1]);
-    ctx.lineTo(d[0], d[1]);
-    ctx.lineTo(e[0], e[1]);
-    ctx.closePath();
+    for (const [first, ...rest] of rings) {
+      ctx.moveTo(first[0], first[1]);
+      for (const p of rest) ctx.lineTo(p[0], p[1]);
+      ctx.closePath();
+    }
     ctx.fillStyle = color;
     ctx.fill();
   }
@@ -310,6 +323,7 @@ function bakeMinorImages(map: MlMap, discFill: string, theme: Theme): void {
   };
   MINOR_LINE_PALETTE[theme].forEach((color, slot) => {
     put(`${MINOR_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined));
+    put(`${MINOR_HOLLOW_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined, true));
   });
   for (const [n, glyph] of MINOR_GLYPHS) {
     put(`${MINOR_GLYPH_PREFIX}${n}`, rasterizeMinorCoin(minorLineColor(n, theme), discFill, glyph));

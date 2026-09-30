@@ -246,7 +246,9 @@
    the catalog ring off it is the body's only mark on the wheel. A parchment halo makes it
    findable without changing its colour, so it stays the colour of its lines. paint-order
    keeps the fill whole; the export inlines all four properties (lib/wheelRaster). `> path`
-   leaves the ring's leader line alone. */
+   leaves the ring's leader line alone. A hypothetical point's hollow mark is a fill too —
+   a ring, not a stroked outline (lib/minorBodies/mark) — so this halo frames it inside
+   and out and never replaces its colour, as it would a stroke's. */
 :root[data-theme='vintage'] .wheel-svg .minor-pip > path {
   stroke: rgba(var(--tint), 0.85);
   stroke-width: 0.9;

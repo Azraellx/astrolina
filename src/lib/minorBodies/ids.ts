@@ -12,19 +12,50 @@
 // built-ins can meet an id it cannot decorate. A catalog body is identified by its
 // MPC number and carried as `mp:<n>` where a string id is needed.
 //
+// The same family also carries the HYPOTHETICAL POINTS (Cupido, TransPluto, Selena…;
+// hypothetical.ts), which have no MPC number and no file. Each takes a reserved
+// NEGATIVE key, n = −(its engine body number), and is carried as `hyp:<se>`. Negative
+// so it can never meet an MPC number: the engine's own number would, since Zeus is
+// engine body 42 and 42 Isis is bundled. Every list, map and memo is keyed by n, so
+// the points ride through all of them unchanged; only the tests below tell them apart.
+//
 // PURE: no engine import (only a type), so lineCard.ts and the map can use it
-// without pulling the WASM into their module graph.
+// without pulling the WASM into their module graph — and with no value import at
+// all, because a downstream build's vite config and catalog scripts load this file
+// directly under Node, where a value import could pull in modules only a Vite build
+// can load.
 import type { PlanetName } from '../ephemeris';
 
-export type MinorBodyId = `mp:${number}`;
+export type MinorBodyId = `mp:${number}` | `hyp:${number}`;
 
-export const minorId = (n: number): MinorBodyId => `mp:${n}`;
+export const minorId = (n: number): MinorBodyId => (n < 0 ? `hyp:${-n}` : `mp:${n}`);
 
-/** The MPC number inside a `mp:<n>` id, or null for anything else. */
+/** The MPC number inside a `mp:<n>` id, or null for anything else — a `hyp:` id
+ *  included, which names no MPC number. */
 export function minorNumberOf(id: unknown): number | null {
   if (typeof id !== 'string' || !id.startsWith('mp:')) return null;
   const n = Number(id.slice(3));
   return isMinorNumber(n) ? n : null;
+}
+
+/** The list key inside either form of id — the MPC number of `mp:<n>`, the reserved
+ *  negative key of `hyp:<se>` — or null for anything else. The inverse of minorId. */
+export function minorKeyOf(id: unknown): number | null {
+  if (typeof id !== 'string') return null;
+  if (id.startsWith('hyp:')) {
+    const se = id.slice(4);
+    const n = se === '' ? NaN : -Number(se);
+    return isHypotheticalKey(n) ? n : null;
+  }
+  return minorNumberOf(id);
+}
+
+/** A reserved key for a hypothetical point: −40 … −999, the engine's range of
+ *  fictitious bodies, negated. Whether THIS build knows the point is a separate
+ *  question (hypothetical.ts) — a key a newer build added is still a key here, so a
+ *  stored list keeps it. */
+export function isHypotheticalKey(n: unknown): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n <= -40 && n >= -999;
 }
 
 /** A plausible MPC number: a positive integer. */
@@ -96,7 +127,15 @@ export const BUILTIN_ALIAS: ReadonlyMap<number, PlanetName> = new Map<number, Pl
 // file: 5145 Pholus is Swiss body 16.
 export const SEAS_MINOR_ID: ReadonlyMap<number, number> = new Map([[5145, 16]]);
 
-/** The number can be a catalog body at all (not an alias of a built-in). */
+/** The number can be a catalog body at all (not an alias of a built-in). MPC
+ *  numbers only — a hypothetical point's key never passes: parseFilePath, and a
+ *  downstream build's hosted catalog and its sync, depend on that. */
 export function isCatalogNumber(n: unknown): n is number {
   return isMinorNumber(n) && !BUILTIN_ALIAS.has(n);
+}
+
+/** A key that may stand on the reader's list: a catalog number or a hypothetical
+ *  point's reserved key. */
+export function isListKey(n: unknown): n is number {
+  return isCatalogNumber(n) || isHypotheticalKey(n);
 }

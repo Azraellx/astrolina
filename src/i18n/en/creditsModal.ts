@@ -58,6 +58,10 @@ export const creditsModal = {
     swisseph: 'Planetary positions (JPL DE441). © Astrodienst AG, via @swisseph/browser.',
     nasaEclipse:
       'Solar- and lunar-eclipse catalogs (dates, types, Saros series). Eclipse Predictions by Fred Espenak and Jean Meeus (NASA/GSFC).',
+    // The orbit class behind each minor planet's tag (lib/minorBodies/classTags.ts).
+    // Dwarf-planet status is the IAU's, not this database's, so the note claims only
+    // the orbit classes.
+    jplSbdb: 'Orbit classes behind the minor-planet tags.',
     noto: 'Astrological glyphs. © 2022 The Noto Project Authors.',
     maplibre: 'Interactive map rendering.',
     other: 'Plus other MIT-licensed libraries listed in the project repository.',

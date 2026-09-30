@@ -21,8 +21,13 @@ import type { ReactNode } from 'react';
 // above U+FFFF, which is two UTF-16 units). Each glyph may carry the U+FE0E
 // text-style selector (matched alongside its base, outside the class, to keep the
 // class free of combining characters).
+//
+// Also the two minor-body marks, filled ◆ and hollow ◇ (25C6, 25C7 — lineCard's
+// MINOR_MARK / MINOR_HOLLOW_MARK), for copy that explains them. U+25C6 is also the
+// Mutable modality glyph; no clash, since this picks a font, not a meaning, and both
+// uses draw the subset's one outline.
 const GLYPH_RUN =
-  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△⯓⯙-⯜⯰-⯲\u{1F77B}-\u{1F77F}]︎?)+)/u;
+  /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△◆◇⯓⯙-⯜⯰-⯲\u{1F77B}-\u{1F77F}]︎?)+)/u;
 
 export function glyphify(text: string): ReactNode {
   const parts = text.split(GLYPH_RUN);

@@ -12,16 +12,20 @@
 // list — which appears as an extra chip in the Minor bodies window's scope row.
 //
 // A source answers two questions: which bodies match a query, and what the bytes
-// of a body's ephemeris file are. The core validates those bytes itself before
+// of a body's ephemeris file are — and, optionally, a third: which class each body
+// belongs to, for the tag beside its name. The core validates those bytes itself before
 // the engine ever sees them (lib/minorBodies/se1Header.ts), so a source only has
 // to fetch. Sources own their strings, network discipline and (optional) access
 // gate; the window only drives them. The open core registers none, so the window
 // shows the bundled set alone and no chip row at all.
 import type { EpheSpan } from '../minorBodies/ids';
+import type { MinorClassTag } from '../minorBodies/classTags';
 
 /** One search result. */
 export interface MinorBodyHit {
-  /** MPC number. */
+  /** The body's list key: its MPC number — or, from the bundled source only, a
+   *  hypothetical point's reserved negative key (lib/minorBodies/ids.ts). A registered
+   *  source answers with MPC numbers. */
   n: number;
   /** Display name. May be empty for a numbered body whose name the source doesn't
    *  know yet (the name then arrives with the file's own header). */
@@ -36,7 +40,8 @@ export interface MinorBodyHit {
 export interface MinorBodySourceGate {
   locked: boolean;
   note: string;
-  /** Short badge on the chip / a held row while locked (a tier tag, say). */
+  /** Short badge on the scope chip while locked (a tier tag, say). A held row
+   *  doesn't repeat it: its line under the name already says so in `note`. */
   pill?: string;
   hidden?: boolean;
 }
@@ -71,6 +76,18 @@ export interface MinorBodySource {
    *  to put a specific sentence on the body's row (no session, not in the catalog,
    *  upstream down); anything else reads as a generic load failure. */
   fetchFile(n: number, span: EpheSpan, signal?: AbortSignal): Promise<ArrayBuffer>;
+  /** Body `n`'s class tag — the word the window shows beside its name in lists, never on
+   *  the map — or null when the source doesn't know it. Build the answer with
+   *  minorClassTag (lib/minorBodies/classTags.ts) from the body's JPL orbit-class code,
+   *  so every source tags dwarf planets and Pluto alike. Called per render, so it must be
+   *  cheap and synchronous: a source whose classes load lazily starts that load here,
+   *  answers null meanwhile, and tells {@link onClassTags}'s listeners once it lands.
+   *  Omit it and this source's rows carry no tag. */
+  classTag?(n: number): MinorClassTag | null;
+  /** Subscribe to {@link classTag}'s answers changing (a lazily loaded table landing),
+   *  so rows drawn untagged meanwhile pick their tags up. Returns the unsubscribe. Omit
+   *  it when classTag answers from the start. */
+  onClassTags?(listener: () => void): () => void;
 }
 
 /** Thrown by a source to put a SPECIFIC, user-facing sentence on a body's row
