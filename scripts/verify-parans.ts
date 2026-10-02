@@ -18,6 +18,8 @@
 //      missing, nothing extra (within the scan's resolution).
 // Plus the mirrored-solution symmetry of horizon×horizon pairs, and numeric
 // notes on the two guards in paranLat (the |tanφ|>6 cap and the ±72° clip).
+// The geometry sections run on five charts (1941–2008, both hemispheres, the
+// equator to 51°) with the Sun through Pluto.
 import { createRequire } from 'node:module';
 import {
   birthDataToJD,
@@ -77,6 +79,32 @@ function altSlope(jd: number, ra: number, dec: number, latDeg: number, lngDeg: n
 
 const normDelta = (x: number) => Math.atan2(Math.sin(x), Math.cos(x));
 
+// A brute-force latitude cell [lo, hi] whose function has no value at one end:
+// the cell runs past a body's circumpolar limit (|lat| = 90° − |dec|), beyond
+// which it has no horizon crossing. Until 2026-10-02 such a cell was skipped
+// whole, so a real paran within a cell of the limit (~0.06° of it) was missing
+// from the scan and the generated one read as SPURIOUS — invisible on the one
+// battery chart, and failing as soon as more charts and bodies were scanned.
+// Shrinks the cell to its defined part by bisecting on definedness.
+function definedCell(
+  g: (lat: number) => number | null,
+  lo: number,
+  hi: number,
+): [number, number] | null {
+  const a = g(lo) !== null;
+  const b = g(hi) !== null;
+  if (a && b) return [lo, hi];
+  if (!a && !b) return null;
+  let inside = a ? lo : hi;
+  let outside = a ? hi : lo;
+  for (let i = 0; i < 50; i++) {
+    const m = (inside + outside) / 2;
+    if (g(m) !== null) inside = m;
+    else outside = m;
+  }
+  return a ? [lo, inside] : [inside, hi];
+}
+
 await initEphemeris();
 
 const CHART: BirthData = {
@@ -96,224 +124,266 @@ const positions = getPlanetPositions(jd, 'mean').filter((p) => BODY_SET.includes
 const byName = new Map(positions.map((p) => [p.name, p]));
 // The App's celestial meridian mapping (App.tsx): RA − GMST, in degrees.
 const celestialLng: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI;
-const parans = generateParans(positions, celestialLng);
-const props = parans.features.map((f) => f.properties as ParanProps);
 
-console.log(`generated parans: ${props.length}`);
+// Sections 1–3 and 5 run on five charts with the default ten bodies, the Sun
+// through Pluto (extended 2026-10-02 from the battery chart's five; the Part of
+// Fortune has no sampled position and never enters the parans). Sections 6 and
+// the overlay frame stay on the battery chart and its five bodies.
+const TEN: PlanetName[] = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
+const utChart = (name: string, y: number, mo: number, d: number, h: number, mi: number, lat: number, lng: number): BirthData => ({
+  name,
+  year: y,
+  month: mo,
+  day: d,
+  hour: h,
+  minute: mi,
+  tzOffset: 0,
+  birthplace: { label: name, lat, lng },
+});
+const CHARTS: BirthData[] = [
+  CHART,
+  utChart('London 1952', 1952, 3, 14, 6, 30, 51.507, -0.128),
+  utChart('New York 1975', 1975, 10, 20, 18, 45, 40.713, -74.006),
+  utChart('Sydney 1990', 1990, 7, 4, 12, 0, -33.869, 151.209),
+  utChart('Singapore 2008', 2008, 12, 21, 3, 0, 1.352, 103.82),
+];
 
-// ── 1. Simultaneity + labels at every generated paran ─────────────────────────
-{
-  let worstHorizonAlt = 0; // how far off the horizon the "on the horizon" body is
-  let worstMeridian = 0; // how far off the meridian the culminating body is
-  let labelErrors = 0;
-  for (const p of props) {
-    const A = byName.get(p.planetA)!;
-    const B = byName.get(p.planetB)!;
-    const lat = p.latitude;
-    const lng = p.intersectionLng;
+for (const chart of CHARTS) verifyChart(chart);
 
-    // Body B is on the horizon at the chart instant at the intersection point.
-    const altB = Math.abs(altitudeOf(jd, B.ra, B.dec, lat, lng));
-    if (altB > worstHorizonAlt) worstHorizonAlt = altB;
-    // ...and its ASC/DSC label matches whether it is actually rising there.
-    const rising = altSlope(jd, B.ra, B.dec, lat, lng) > 0;
-    if ((p.angleB === 'ASC') !== rising) labelErrors += 1;
+// Sections 1–3 for one chart. The names jd / gmst / positions / byName /
+// celestialLng / props are this chart's own here, as they were the battery
+// chart's when these sections ran on it alone.
+function verifyChart(chart: BirthData) {
+  const jd = birthDataToJD(chart);
+  const gmst = gmstRadians(jd);
+  const positions = getPlanetPositions(jd, 'mean').filter((p) => TEN.includes(p.name));
+  const byName = new Map(positions.map((p) => [p.name, p]));
+  const celestialLng: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI;
+  const parans = generateParans(positions, celestialLng);
+  const props = parans.features.map((f) => f.properties as ParanProps);
+  const tag = chart.name;
 
-    if (p.angleA === 'MC' || p.angleA === 'IC') {
-      // A's hour angle at the intersection: 0 on the MC, π on the IC.
-      const H = normDelta(gastRad(jd) + lng * DEG2RAD - A.ra);
-      const err = p.angleA === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
-      if (err > worstMeridian) worstMeridian = err;
-    } else {
-      // Horizon × horizon: A is on the horizon too, with a matching label.
-      const altA = Math.abs(altitudeOf(jd, A.ra, A.dec, lat, lng));
-      if (altA > worstHorizonAlt) worstHorizonAlt = altA;
-      const risingA = altSlope(jd, A.ra, A.dec, lat, lng) > 0;
-      if ((p.angleA === 'ASC') !== risingA) labelErrors += 1;
-    }
-  }
-  check('paran horizon body altitude 0 at intersection', worstHorizonAlt < 1e-9, `max ${worstHorizonAlt.toExponential(2)} rad`);
-  check('paran meridian body on MC/IC at intersection', worstMeridian < 1e-9, `max ${worstMeridian.toExponential(2)} rad`);
-  check('paran ASC/DSC labels match actual rising/setting', labelErrors === 0, `${labelErrors} mislabeled`);
-}
+  console.log(`\n${tag}: generated parans: ${props.length}`);
 
-// ── 1b. theta — the pairing's shared sidereal time holds along the whole line ──
-// ParanProps.theta claims: wherever local sidereal time equals theta, both
-// bodies stand on their claimed angles (the paran recurring with the daily
-// turn, at ANY longitude along the latitude). For each paran, solve the
-// instant LST hits theta at three longitudes — the intersection plus two
-// arbitrary ones — and re-run the section-1 angle conditions there against the
-// chart's fixed (ra, dec). Cross-validates theta jointly against the latitude
-// and both bodies, on the sidereal-time side the intersection checks never
-// exercise directly.
-{
-  const TWO_PI = Math.PI * 2;
-  const RATE = TWO_PI * 1.00273790935; // mean sidereal turn rate, rad/day
-  const wrap2pi = (x: number) => ((x % TWO_PI) + TWO_PI) % TWO_PI;
-  let worstAlt = 0;
-  let worstMeridian = 0;
-  let badRange = 0;
-  for (const p of props) {
-    if (!(Number.isFinite(p.theta) && p.theta >= 0 && p.theta < TWO_PI)) {
-      badRange += 1;
-      continue;
-    }
-    const A = byName.get(p.planetA)!;
-    const B = byName.get(p.planetB)!;
-    for (const lng of [p.intersectionLng, -117.25, 31.5]) {
-      // The instant local sidereal time reaches theta at this longitude: one
-      // wrapped sidereal step from the chart instant, one refinement.
-      let jdT = jd + wrap2pi(p.theta - lng * DEG2RAD - gastRad(jd)) / RATE;
-      jdT += normDelta(p.theta - lng * DEG2RAD - gastRad(jdT)) / RATE;
-      const altB = Math.abs(altitudeOf(jdT, B.ra, B.dec, p.latitude, lng));
-      if (altB > worstAlt) worstAlt = altB;
+  // ── 1. Simultaneity + labels at every generated paran ─────────────────────────
+  {
+    let worstHorizonAlt = 0; // how far off the horizon the "on the horizon" body is
+    let worstMeridian = 0; // how far off the meridian the culminating body is
+    let labelErrors = 0;
+    for (const p of props) {
+      const A = byName.get(p.planetA)!;
+      const B = byName.get(p.planetB)!;
+      const lat = p.latitude;
+      const lng = p.intersectionLng;
+
+      // Body B is on the horizon at the chart instant at the intersection point.
+      const altB = Math.abs(altitudeOf(jd, B.ra, B.dec, lat, lng));
+      if (altB > worstHorizonAlt) worstHorizonAlt = altB;
+      // ...and its ASC/DSC label matches whether it is actually rising there.
+      const rising = altSlope(jd, B.ra, B.dec, lat, lng) > 0;
+      if ((p.angleB === 'ASC') !== rising) labelErrors += 1;
+
       if (p.angleA === 'MC' || p.angleA === 'IC') {
-        const H = normDelta(gastRad(jdT) + lng * DEG2RAD - A.ra);
+        // A's hour angle at the intersection: 0 on the MC, π on the IC.
+        const H = normDelta(gastRad(jd) + lng * DEG2RAD - A.ra);
         const err = p.angleA === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
         if (err > worstMeridian) worstMeridian = err;
       } else {
-        const altA = Math.abs(altitudeOf(jdT, A.ra, A.dec, p.latitude, lng));
-        if (altA > worstAlt) worstAlt = altA;
+        // Horizon × horizon: A is on the horizon too, with a matching label.
+        const altA = Math.abs(altitudeOf(jd, A.ra, A.dec, lat, lng));
+        if (altA > worstHorizonAlt) worstHorizonAlt = altA;
+        const risingA = altSlope(jd, A.ra, A.dec, lat, lng) > 0;
+        if ((p.angleA === 'ASC') !== risingA) labelErrors += 1;
       }
     }
+    check(`${tag}: paran horizon body altitude 0 at intersection`, worstHorizonAlt < 1e-9, `max ${worstHorizonAlt.toExponential(2)} rad`);
+    check(`${tag}: paran meridian body on MC/IC at intersection`, worstMeridian < 1e-9, `max ${worstMeridian.toExponential(2)} rad`);
+    check(`${tag}: paran ASC/DSC labels match actual rising/setting`, labelErrors === 0, `${labelErrors} mislabeled`);
   }
-  check('theta in [0, 2π) on every paran', badRange === 0, `${badRange} out of range`);
-  check('theta: horizon bodies on the horizon when LST = theta (3 lngs each)', worstAlt < 1e-6, `max ${worstAlt.toExponential(2)} rad`);
-  check('theta: meridian bodies on the MC/IC when LST = theta (3 lngs each)', worstMeridian < 1e-6, `max ${worstMeridian.toExponential(2)} rad`);
-}
 
-// ── 2. Completeness vs an independent brute-force scan ────────────────────────
-// For each configuration, scan latitude and root-find where the constraint
-// crosses zero, using only textbook horizon algebra (no parans.ts code). Every
-// root must appear in the generated set and vice versa.
-{
-  type Found = { a: PlanetName; angleA: 'MC' | 'IC' | 'ASC' | 'DSC'; b: PlanetName; angleB: 'ASC' | 'DSC'; lat: number };
-  const found: Found[] = [];
-
-  // Altitude of body B at the sidereal moment body A sits on a given angle, as
-  // a function of latitude. Roots in φ are the meridian×horizon parans.
-  const altBatThetaOf = (theta: number, B: PlanetPosition) => (latDeg: number) => {
-    const phi = latDeg * DEG2RAD;
-    return Math.asin(
-      Math.max(-1, Math.min(1,
-        Math.cos(phi) * Math.cos(B.dec) * Math.cos(theta - B.ra) + Math.sin(phi) * Math.sin(B.dec),
-      )),
-    );
-  };
-  const bisect = (f: (x: number) => number, lo: number, hi: number): number => {
-    let a = lo;
-    let b = hi;
-    for (let i = 0; i < 60; i++) {
-      const m = (a + b) / 2;
-      if ((f(a) <= 0) === (f(m) <= 0)) a = m;
-      else b = m;
-    }
-    return (a + b) / 2;
-  };
-
-  for (const A of positions) {
-    for (const B of positions) {
-      if (A.name === B.name) continue;
-      for (const angleA of ['MC', 'IC'] as const) {
-        const theta = A.ra + (angleA === 'IC' ? Math.PI : 0);
-        const f = altBatThetaOf(theta, B);
-        for (let lat = -72; lat < 72; lat += 0.1) {
-          const y0 = f(lat);
-          const y1 = f(lat + 0.1);
-          if ((y0 <= 0) === (y1 <= 0)) continue;
-          const root = bisect(f, lat, lat + 0.1);
-          // Label by whether B is rising at that sidereal moment: with frozen
-          // positions, d(alt)/dθ ∝ −sin(θ − ra).
-          const angleB: 'ASC' | 'DSC' = -Math.sin(theta - B.ra) > 0 ? 'ASC' : 'DSC';
-          found.push({ a: A.name, angleA, b: B.name, angleB, lat: root });
+  // ── 1b. theta — the pairing's shared sidereal time holds along the whole line ──
+  // ParanProps.theta claims: wherever local sidereal time equals theta, both
+  // bodies stand on their claimed angles (the paran recurring with the daily
+  // turn, at ANY longitude along the latitude). For each paran, solve the
+  // instant LST hits theta at three longitudes — the intersection plus two
+  // arbitrary ones — and re-run the section-1 angle conditions there against the
+  // chart's fixed (ra, dec). Cross-validates theta jointly against the latitude
+  // and both bodies, on the sidereal-time side the intersection checks never
+  // exercise directly.
+  {
+    const TWO_PI = Math.PI * 2;
+    const RATE = TWO_PI * 1.00273790935; // mean sidereal turn rate, rad/day
+    const wrap2pi = (x: number) => ((x % TWO_PI) + TWO_PI) % TWO_PI;
+    let worstAlt = 0;
+    let worstMeridian = 0;
+    let badRange = 0;
+    for (const p of props) {
+      if (!(Number.isFinite(p.theta) && p.theta >= 0 && p.theta < TWO_PI)) {
+        badRange += 1;
+        continue;
+      }
+      const A = byName.get(p.planetA)!;
+      const B = byName.get(p.planetB)!;
+      for (const lng of [p.intersectionLng, -117.25, 31.5]) {
+        // The instant local sidereal time reaches theta at this longitude: one
+        // wrapped sidereal step from the chart instant, one refinement.
+        let jdT = jd + wrap2pi(p.theta - lng * DEG2RAD - gastRad(jd)) / RATE;
+        jdT += normDelta(p.theta - lng * DEG2RAD - gastRad(jdT)) / RATE;
+        const altB = Math.abs(altitudeOf(jdT, B.ra, B.dec, p.latitude, lng));
+        if (altB > worstAlt) worstAlt = altB;
+        if (p.angleA === 'MC' || p.angleA === 'IC') {
+          const H = normDelta(gastRad(jdT) + lng * DEG2RAD - A.ra);
+          const err = p.angleA === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
+          if (err > worstMeridian) worstMeridian = err;
+        } else {
+          const altA = Math.abs(altitudeOf(jdT, A.ra, A.dec, p.latitude, lng));
+          if (altA > worstAlt) worstAlt = altA;
         }
       }
     }
+    check(`${tag}: theta in [0, 2π) on every paran`, badRange === 0, `${badRange} out of range`);
+    check(`${tag}: theta: horizon bodies on the horizon when LST = theta (3 lngs each)`, worstAlt < 1e-6, `max ${worstAlt.toExponential(2)} rad`);
+    check(`${tag}: theta: meridian bodies on the MC/IC when LST = theta (3 lngs each)`, worstMeridian < 1e-6, `max ${worstMeridian.toExponential(2)} rad`);
   }
 
-  // Horizon×horizon: at each latitude both bodies have (up to) two horizon
-  // crossings per sidereal day; a paran is where one of A's coincides with one
-  // of B's. Track each rise/set pairing's sidereal-time gap across latitude.
-  const horizonTheta = (P: PlanetPosition, latDeg: number, which: 'rise' | 'set'): number | null => {
-    const x = -Math.tan(latDeg * DEG2RAD) * Math.tan(P.dec);
-    if (x < -1 || x > 1) return null;
-    // alt(θ) = 0 at hour angle ±H0; rising at −H0 (altitude increasing), setting at +H0.
-    const H0 = Math.acos(x);
-    return P.ra + (which === 'rise' ? -H0 : H0);
-  };
-  for (let i = 0; i < positions.length; i++) {
-    for (let j = i + 1; j < positions.length; j++) {
-      const A = positions[i];
-      const B = positions[j];
-      for (const wa of ['rise', 'set'] as const) {
-        for (const wb of ['rise', 'set'] as const) {
-          const g = (latDeg: number): number | null => {
-            const ta = horizonTheta(A, latDeg, wa);
-            const tb = horizonTheta(B, latDeg, wb);
-            if (ta === null || tb === null) return null;
-            return normDelta(ta - tb);
-          };
+  // ── 2. Completeness vs an independent brute-force scan ────────────────────────
+  // For each configuration, scan latitude and root-find where the constraint
+  // crosses zero, using only textbook horizon algebra (no parans.ts code). Every
+  // root must appear in the generated set and vice versa.
+  {
+    type Found = { a: PlanetName; angleA: 'MC' | 'IC' | 'ASC' | 'DSC'; b: PlanetName; angleB: 'ASC' | 'DSC'; lat: number };
+    const found: Found[] = [];
+
+    // Altitude of body B at the sidereal moment body A sits on a given angle, as
+    // a function of latitude. Roots in φ are the meridian×horizon parans.
+    const altBatThetaOf = (theta: number, B: PlanetPosition) => (latDeg: number) => {
+      const phi = latDeg * DEG2RAD;
+      return Math.asin(
+        Math.max(-1, Math.min(1,
+          Math.cos(phi) * Math.cos(B.dec) * Math.cos(theta - B.ra) + Math.sin(phi) * Math.sin(B.dec),
+        )),
+      );
+    };
+    const bisect = (f: (x: number) => number, lo: number, hi: number): number => {
+      let a = lo;
+      let b = hi;
+      for (let i = 0; i < 60; i++) {
+        const m = (a + b) / 2;
+        if ((f(a) <= 0) === (f(m) <= 0)) a = m;
+        else b = m;
+      }
+      return (a + b) / 2;
+    };
+
+    for (const A of positions) {
+      for (const B of positions) {
+        if (A.name === B.name) continue;
+        for (const angleA of ['MC', 'IC'] as const) {
+          const theta = A.ra + (angleA === 'IC' ? Math.PI : 0);
+          const f = altBatThetaOf(theta, B);
           for (let lat = -72; lat < 72; lat += 0.1) {
-            const y0 = g(lat);
-            const y1 = g(lat + 0.1);
-            if (y0 === null || y1 === null) continue;
+            const y0 = f(lat);
+            const y1 = f(lat + 0.1);
             if ((y0 <= 0) === (y1 <= 0)) continue;
-            if (Math.abs(y0) > 1 || Math.abs(y1) > 1) continue; // ±π wrap, not a root
-            const root = bisect((x) => g(x) ?? NaN, lat, lat + 0.1);
-            found.push({
-              a: A.name,
-              angleA: wa === 'rise' ? 'ASC' : 'DSC',
-              b: B.name,
-              angleB: wb === 'rise' ? 'ASC' : 'DSC',
-              lat: root,
-            });
+            const root = bisect(f, lat, lat + 0.1);
+            // Label by whether B is rising at that sidereal moment: with frozen
+            // positions, d(alt)/dθ ∝ −sin(θ − ra).
+            const angleB: 'ASC' | 'DSC' = -Math.sin(theta - B.ra) > 0 ? 'ASC' : 'DSC';
+            found.push({ a: A.name, angleA, b: B.name, angleB, lat: root });
           }
         }
       }
     }
+
+    // Horizon×horizon: at each latitude both bodies have (up to) two horizon
+    // crossings per sidereal day; a paran is where one of A's coincides with one
+    // of B's. Track each rise/set pairing's sidereal-time gap across latitude.
+    const horizonTheta = (P: PlanetPosition, latDeg: number, which: 'rise' | 'set'): number | null => {
+      const x = -Math.tan(latDeg * DEG2RAD) * Math.tan(P.dec);
+      if (x < -1 || x > 1) return null;
+      // alt(θ) = 0 at hour angle ±H0; rising at −H0 (altitude increasing), setting at +H0.
+      const H0 = Math.acos(x);
+      return P.ra + (which === 'rise' ? -H0 : H0);
+    };
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const A = positions[i];
+        const B = positions[j];
+        for (const wa of ['rise', 'set'] as const) {
+          for (const wb of ['rise', 'set'] as const) {
+            const g = (latDeg: number): number | null => {
+              const ta = horizonTheta(A, latDeg, wa);
+              const tb = horizonTheta(B, latDeg, wb);
+              if (ta === null || tb === null) return null;
+              return normDelta(ta - tb);
+            };
+            for (let lat = -72; lat < 72; lat += 0.1) {
+              const cell = definedCell(g, lat, lat + 0.1);
+              if (!cell) continue;
+              const y0 = g(cell[0]) as number;
+              const y1 = g(cell[1]) as number;
+              if ((y0 <= 0) === (y1 <= 0)) continue;
+              if (Math.abs(y0) > 1 || Math.abs(y1) > 1) continue; // ±π wrap, not a root
+              const root = bisect((x) => g(x) ?? NaN, cell[0], cell[1]);
+              found.push({
+                a: A.name,
+                angleA: wa === 'rise' ? 'ASC' : 'DSC',
+                b: B.name,
+                angleB: wb === 'rise' ? 'ASC' : 'DSC',
+                lat: root,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Match the two sets both ways. Generated horizon×horizon parans are stored
+    // for unordered pairs, so allow the scan's (A,B) to match a generated (B,A).
+    const matches = (f: Found, p: ParanProps) =>
+      Math.abs(f.lat - p.latitude) < 0.02 &&
+      ((p.planetA === f.a && p.angleA === f.angleA && p.planetB === f.b && p.angleB === f.angleB) ||
+        (p.planetA === f.b && p.planetB === f.a && p.angleA === f.angleB && p.angleB === f.angleA &&
+          (p.angleA === 'ASC' || p.angleA === 'DSC')));
+
+    const missing = found.filter((f) => !props.some((p) => matches(f, p)));
+    const extra = props.filter((p) => !found.some((f) => matches(f, p)));
+    check(
+      `${tag}: completeness: every brute-force paran generated (${found.length} scanned)`,
+      found.length > 0 && missing.length === 0,
+      missing.slice(0, 4).map((m) => `${m.a} ${m.angleA} × ${m.b} ${m.angleB} @ ${m.lat.toFixed(2)}°`).join('; '),
+    );
+    check(
+      `${tag}: completeness: no spurious generated parans (${props.length} generated)`,
+      props.length > 0 && extra.length === 0,
+      extra.slice(0, 4).map((p) => `${p.planetA} ${p.angleA} × ${p.planetB} ${p.angleB} @ ${p.latitude.toFixed(2)}°`).join('; '),
+    );
   }
 
-  // Match the two sets both ways. Generated horizon×horizon parans are stored
-  // for unordered pairs, so allow the scan's (A,B) to match a generated (B,A).
-  const matches = (f: Found, p: ParanProps) =>
-    Math.abs(f.lat - p.latitude) < 0.02 &&
-    ((p.planetA === f.a && p.angleA === f.angleA && p.planetB === f.b && p.angleB === f.angleB) ||
-      (p.planetA === f.b && p.planetB === f.a && p.angleA === f.angleB && p.angleB === f.angleA &&
-        (p.angleA === 'ASC' || p.angleA === 'DSC')));
-
-  const missing = found.filter((f) => !props.some((p) => matches(f, p)));
-  const extra = props.filter((p) => !found.some((f) => matches(f, p)));
-  check(
-    `completeness: every brute-force paran generated (${found.length} scanned)`,
-    missing.length === 0,
-    missing.slice(0, 4).map((m) => `${m.a} ${m.angleA} × ${m.b} ${m.angleB} @ ${m.lat.toFixed(2)}°`).join('; '),
-  );
-  check(
-    'completeness: no spurious generated parans',
-    extra.length === 0,
-    extra.slice(0, 4).map((p) => `${p.planetA} ${p.angleA} × ${p.planetB} ${p.angleB} @ ${p.latitude.toFixed(2)}°`).join('; '),
-  );
-}
-
-// ── 3. Horizon×horizon mirror symmetry ────────────────────────────────────────
-// The two sidereal-time solutions of each pair sit at mirrored latitudes. Only
-// observable here when both survive the ±72° clip.
-{
-  const hh = props.filter((p) => p.angleA === 'ASC' || p.angleA === 'DSC');
-  const byPair = new Map<string, ParanProps[]>();
-  for (const p of hh) {
-    const key = `${p.planetA}|${p.planetB}`;
-    byPair.set(key, [...(byPair.get(key) ?? []), p]);
+  // ── 3. Horizon×horizon mirror symmetry ────────────────────────────────────────
+  // The two sidereal-time solutions of each pair sit at mirrored latitudes. Only
+  // observable here when both survive the ±72° clip.
+  {
+    const hh = props.filter((p) => p.angleA === 'ASC' || p.angleA === 'DSC');
+    const byPair = new Map<string, ParanProps[]>();
+    for (const p of hh) {
+      const key = `${p.planetA}|${p.planetB}`;
+      byPair.set(key, [...(byPair.get(key) ?? []), p]);
+    }
+    let worst = 0;
+    let pairs = 0;
+    for (const list of byPair.values()) {
+      if (list.length !== 2) continue;
+      pairs += 1;
+      const d = Math.abs(list[0].latitude + list[1].latitude);
+      if (d > worst) worst = d;
+    }
+    check(
+      `${tag}: horizon×horizon solutions mirror in latitude (${pairs} pairs)`,
+      pairs > 0 && worst < 1e-9,
+      `max |lat1+lat2| ${worst.toExponential(2)}°`,
+    );
   }
-  let worst = 0;
-  let pairs = 0;
-  for (const list of byPair.values()) {
-    if (list.length !== 2) continue;
-    pairs += 1;
-    const d = Math.abs(list[0].latitude + list[1].latitude);
-    if (d > worst) worst = d;
-  }
-  check(`horizon×horizon solutions mirror in latitude (${pairs} pairs)`, worst < 1e-9, `max |lat1+lat2| ${worst.toExponential(2)}°`);
 }
 
 // ── 4. Notes (numeric facts for the audit report) ─────────────────────────────
@@ -327,13 +397,19 @@ console.log(`generated parans: ${props.length}`);
 // The paran's recorded intersection point is the badge's fly-to target; it must
 // land where the drawn lines visibly cross the paran latitude, in BOTH line
 // systems (in Mundane/geodetic mode the meridian mapping changes — a celestial-
-// frame fly-to would miss the drawn crossing by roughly the GMST, ~96° here).
-{
+// frame fly-to would miss the drawn crossing by roughly the GMST, ~96° on the
+// battery chart). Every chart, the ten bodies.
+for (const chart of CHARTS) {
+  const jd = birthDataToJD(chart);
+  const gmst = gmstRadians(jd);
+  const positions = getPlanetPositions(jd, 'mean').filter((p) => TEN.includes(p.name));
+  const celestialLng: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI;
+  const tag = chart.name;
   const eps = obliquity(jd);
   const geodeticLng: MeridianLng = (ra) => (eclipticLonOfRA(ra, eps) * 180) / Math.PI;
   const frames: Array<[string, PlanetPosition[], MeridianLng]> = [
     ['celestial', positions, celestialLng],
-    ['geodetic', projectOntoEcliptic(positions, jd).filter((p) => BODY_SET.includes(p.name)), geodeticLng],
+    ['geodetic', projectOntoEcliptic(positions, jd).filter((p) => TEN.includes(p.name)), geodeticLng],
   ];
   for (const [frame, pos, ml] of frames) {
     const ps = generateParans(pos, ml);
@@ -343,12 +419,14 @@ console.log(`generated parans: ${props.length}`);
     );
     let worstMc = 0; // intersectionLng vs the drawn MC/IC meridian longitude
     let worstHorizon = 0; // distance from the horizon curve to the intersection point
+    let nMc = 0;
     for (const f of ps.features) {
       const p = f.properties as ParanProps;
       if (p.angleA === 'MC' || p.angleA === 'IC') {
         const meridian = byKey.get(`${p.planetA}|${p.angleA}`)!;
         const d = Math.abs(normLng(p.intersectionLng - meridian[0][0]));
         if (d > worstMc) worstMc = d;
+        nMc += 1;
       }
       // The horizon body's drawn curve must pass through the intersection point
       // (within polyline sampling).
@@ -360,8 +438,17 @@ console.log(`generated parans: ${props.length}`);
       }
       if (best > worstHorizon) worstHorizon = best;
     }
-    check(`${frame}: paran fly-to sits on the drawn MC/IC meridian`, worstMc < 1e-9, `max Δlng ${worstMc.toExponential(2)}°`);
-    check(`${frame}: drawn horizon curve passes through the fly-to point`, worstHorizon < 1.2, `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`);
+    // Both fail on an empty set: a frame that generated no parans compared nothing.
+    check(
+      `${tag}: ${frame}: paran fly-to sits on the drawn MC/IC meridian (${nMc} parans)`,
+      nMc > 0 && worstMc < 1e-9,
+      `max Δlng ${worstMc.toExponential(2)}°`,
+    );
+    check(
+      `${tag}: ${frame}: drawn horizon curve passes through the fly-to point (${ps.features.length} parans)`,
+      ps.features.length > 0 && worstHorizon < 1.2,
+      `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`,
+    );
   }
 }
 
@@ -448,13 +535,14 @@ console.log(`generated parans: ${props.length}`);
       return normDelta(ts - tp);
     };
     for (let lat = -72; lat < 72; lat += 0.1) {
-      const y0 = g(lat);
-      const y1 = g(lat + 0.1);
-      if (y0 === null || y1 === null) continue;
+      const cell = definedCell(g, lat, lat + 0.1);
+      if (!cell) continue;
+      const y0 = g(cell[0]) as number;
+      const y1 = g(cell[1]) as number;
       if ((y0 <= 0) === (y1 <= 0)) continue;
       if (Math.abs(y0) > 1 || Math.abs(y1) > 1) continue; // ±π wrap, not a root
-      let lo = lat;
-      let hi = lat + 0.1;
+      let lo = cell[0];
+      let hi = cell[1];
       for (let i = 0; i < 50; i++) {
         const m = (lo + hi) / 2;
         if (((g(lo) ?? NaN) <= 0) === ((g(m) ?? NaN) <= 0)) lo = m;

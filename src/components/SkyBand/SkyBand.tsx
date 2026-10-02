@@ -33,7 +33,13 @@ import {
   type ReactNode,
 } from 'react';
 import { PLANET_COLORS, type NodeType, type PlanetName } from '../../lib/ephemeris';
-import { dailySkyEvents, type BodyDayEvents, type EventKind } from '../../lib/astro/riseSet';
+import {
+  skyDayRows,
+  skyEventsBetween,
+  type BodyDayEvents,
+  type EventKind,
+  type SkyEvent,
+} from '../../lib/astro/riseSet';
 import {
   planetaryDaysAround,
   planetaryHourAt,
@@ -136,6 +142,19 @@ interface SkyBandProps {
    *  spin (so fast repeats never race the throttled report back). The band's
    *  ‹ › use it while the tool is armed. Present only then. */
   slideBy?: (deltaDays: number) => void;
+  /** Whether the active chart has a birth time. The band itself never depends on
+   *  it (it reads the shown day's sky); it is handed to a registered track — a
+   *  chart without a time has no angular lines, so no parans, of its own. Absent =
+   *  true (no chart, or a host that doesn't say). */
+  chartHasTime?: boolean;
+  /** Whether the map draws the Part of Fortune for the active chart (the host's
+   *  own gate for its lines, short of the visible set the band already has). The
+   *  band's Fortune entry shows only then, so it never explains a Lot that isn't
+   *  there. Absent = false. */
+  fortuneOnMap?: boolean;
+  /** Bumped by the host when deferred ephemeris data arrives (the asteroid
+   *  file): the shown day is re-solved with it. Never read otherwise. */
+  ephemerisEpoch?: number;
   onClose: () => void;
 }
 
@@ -155,6 +174,9 @@ export function SkyBand({
   slideMs = null,
   slideTo,
   slideBy,
+  chartHasTime = true,
+  fortuneOnMap = false,
+  ephemerisEpoch = 0,
   onClose,
 }: SkyBandProps) {
   const { t, fmt } = useT();
@@ -225,12 +247,34 @@ export function SkyBand({
     const guess = wallMidnight - offH * 3_600_000;
     return wallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
   }, [point, zone, refMs]);
+  // ...and its END, the next local midnight, by the same refine: a clock-change
+  // day runs 23 or 25 hours, as the wall clock does, not 24.
+  const dayEnd = useMemo(() => {
+    if (!point || !zone) return null;
+    const offH = offsetHoursAt(zone, refMs);
+    const nextWallMidnight = Math.floor((refMs + offH * 3_600_000) / MS_DAY) * MS_DAY + MS_DAY;
+    const guess = nextWallMidnight - offH * 3_600_000;
+    return nextWallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
+  }, [point, zone, refMs]);
 
-  const days = useMemo<BodyDayEvents[]>(() => {
-    if (!point || dayStart === null) return [];
+  // The day's sky, solved ONCE over the shown day widened by 12 hours each side,
+  // every occurrence on its own motion (lib/astro/riseSet.ts): the rows are read
+  // from that solve, and a track gets the whole of it — so a pairing across
+  // midnight is visible from both days, and the rows and the track can't differ.
+  const sky = useMemo<{ events: SkyEvent[]; days: BodyDayEvents[] }>(() => {
+    if (!point || dayStart === null || dayEnd === null) return { events: [], days: [] };
     const bodies = [...visiblePlanets].sort((a, b) => planetRank(a) - planetRank(b));
-    return dailySkyEvents(msToJD(dayStart), point.lat, point.lng, bodies, nodeType);
-  }, [point, dayStart, visiblePlanets, nodeType]);
+    const startJd = msToJD(dayStart);
+    const endJd = msToJD(dayEnd);
+    const events = skyEventsBetween(startJd - 0.5, endJd + 0.5, point.lat, point.lng, bodies, nodeType);
+    return { events, days: skyDayRows(events, bodies, startJd, endJd) };
+    // ephemerisEpoch isn't read by the solve — it marks the deferred asteroid file
+    // arriving, after the solve that asked for it had already run without it (so
+    // Chiron … Vesta were missing from the shown day until it was paged away and
+    // back; seen 2026-10-02).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [point, dayStart, dayEnd, visiblePlanets, nodeType, ephemerisEpoch]);
+  const days = sky.days;
 
   // PLANETARY HOURS: the shown day's, with its neighbours (the hour in force can
   // belong to either — a planetary day runs sunrise to sunrise). Built from the
@@ -351,19 +395,33 @@ export function SkyBand({
     <PlanetGlyph planet={p} size={14} color={PLANET_COLORS[p]} />
   );
 
+  // A body's times for one moment of the day. Usually one; both when it genuinely
+  // has two in the civil day (its own day is not 24 hours: a body culminating at
+  // 00:01 culminates again at 23:57), and none — the dash — when it has none (the
+  // Moon skips a culmination about once a month). Never one borrowed from the next
+  // day: each is a crossing solved on its own.
+  const timesText = (d: BodyDayEvents, k: EventKind): string =>
+    d[k].length ? d[k].map(clock).join(' · ') : '—';
+
+  // The Part of Fortune, while the map draws it — in the visible set (a zodiacal
+  // frame; App's set drops it otherwise) AND drawn for this chart (fortuneOnMap:
+  // Advanced on, a birth time, not a composite), the gate its lines read: an entry
+  // with no times, whose tip says why. The Lot is built from the Ascendant, so it
+  // has no rise or set of its own to time, and the solve has nothing to sample for
+  // it. Without the entry it was simply missing here while the map drew its lines,
+  // with nothing to say why (2026-10-02).
+  const fortuneShown = fortuneOnMap && visiblePlanets.has('Fortune');
+  const fortuneGlyph = <PlanetGlyph planet="Fortune" size={14} color={PLANET_COLORS.Fortune} />;
+
   // The per-body times card (the legend hover's hint).
   const timesCard = (d: BodyDayEvents): ReactNode => (
     <span className="sky-band-card">
-      {KINDS.map((k) => {
-        const jd =
-          k === 'rise' ? d.rise : k === 'set' ? d.set : k === 'culminate' ? d.culminate : d.anticulminate;
-        return (
-          <span key={k} className="sky-band-card-row">
-            <span className="sky-band-card-kind">{kindLabel(k)}</span>
-            <span>{jd !== null ? clock(jd) : '—'}</span>
-          </span>
-        );
-      })}
+      {KINDS.map((k) => (
+        <span key={k} className="sky-band-card-row">
+          <span className="sky-band-card-kind">{kindLabel(k)}</span>
+          <span>{timesText(d, k)}</span>
+        </span>
+      ))}
       {d.circumpolar && (
         <span className="sky-band-card-note">
           {d.circumpolar === 'up' ? t('skyTimes.circumpolarUp') : t('skyTimes.circumpolarDown')}
@@ -382,22 +440,12 @@ export function SkyBand({
       </span>
     ) : (
       <span className="sky-band-times">
-        {KINDS.map((k) => {
-          const jd =
-            k === 'rise'
-              ? d.rise
-              : k === 'set'
-                ? d.set
-                : k === 'culminate'
-                  ? d.culminate
-                  : d.anticulminate;
-          return (
-            <span key={k} className="sky-band-time">
-              <span className="sky-band-time-kind">{kindLabel(k)}</span>
-              <span>{jd !== null ? clock(jd) : '—'}</span>
-            </span>
-          );
-        })}
+        {KINDS.map((k) => (
+          <span key={k} className="sky-band-time">
+            <span className="sky-band-time-kind">{kindLabel(k)}</span>
+            <span>{timesText(d, k)}</span>
+          </span>
+        ))}
       </span>
     );
 
@@ -496,10 +544,23 @@ export function SkyBand({
   const trackAvailable = !!trackExt && isSkyBandTrackEntitled(trackExt);
   const trackNudge =
     !!trackExt && trackExt.tier === 'gated' && !trackAvailable && shouldShowNudge('gated');
-  const trackVisible = trackAvailable && trackShown && !!point && !!zone && dayStart !== null;
+  const trackVisible =
+    trackAvailable && trackShown && !!point && !!zone && dayStart !== null && dayEnd !== null;
   const trackCtx: SkyBandTrackContext | null =
-    trackVisible && point && zone && dayStart !== null
-      ? { point, zone, dayStart, days, frac, clock, slideMs, slideTo }
+    trackVisible && point && zone && dayStart !== null && dayEnd !== null
+      ? {
+          point,
+          zone,
+          dayStart,
+          dayEnd,
+          days,
+          events: sky.events,
+          frac,
+          clock,
+          slideMs,
+          slideTo,
+          chartHasTime,
+        }
       : null;
 
   // The two layouts only apply while no track shows — the expanded track draws
@@ -625,15 +686,7 @@ export function SkyBand({
               <PlanetGlyph planet={d.body} size={14} color={PLANET_COLORS[d.body]} />
             </span>
             {KINDS.map((k) => {
-              const jd =
-                k === 'rise'
-                  ? d.rise
-                  : k === 'set'
-                    ? d.set
-                    : k === 'culminate'
-                      ? d.culminate
-                      : d.anticulminate;
-              const time = jd !== null ? clock(jd) : '—';
+              const time = timesText(d, k);
               return (
                 <TipSpan
                   key={k}
@@ -657,6 +710,30 @@ export function SkyBand({
           </Fragment>
         );
       })}
+      {fortuneShown && (
+        <Fragment key="Fortune">
+          <span className="sky-band-tbl-body">{fortuneGlyph}</span>
+          {KINDS.map((k) => (
+            <TipSpan
+              key={k}
+              className="sky-band-tbl-cell"
+              placement="top"
+              tapReveal
+              tip={
+                <span className="sky-band-tip">
+                  {tipGlyph('Fortune')}
+                  <span>
+                    {bodyName('Fortune')} · {kindLabel(k)} · —
+                  </span>
+                </span>
+              }
+              hint={t('skyTimes.fortuneNote')}
+            >
+              —
+            </TipSpan>
+          ))}
+        </Fragment>
+      )}
     </>
   );
 
@@ -708,9 +785,11 @@ export function SkyBand({
             onPointerUp={onLegendPointerEnd}
             onPointerCancel={onLegendPointerEnd}
           >
-            {tableMode
-              ? tableGrid
-              : days.map((d) => (
+            {tableMode ? (
+              tableGrid
+            ) : (
+              <>
+                {days.map((d) => (
                   <TipSpan
                     key={d.body}
                     className={`sky-band-body${d.circumpolar === 'down' ? ' is-dim' : ''}`}
@@ -729,6 +808,26 @@ export function SkyBand({
                     {inlineMode && inlineTimes(d)}
                   </TipSpan>
                 ))}
+                {fortuneShown && (
+                  <TipSpan
+                    key="Fortune"
+                    className="sky-band-body"
+                    placement="top"
+                    tapReveal
+                    tip={
+                      <span className="sky-band-tip">
+                        {tipGlyph('Fortune')}
+                        <span>{bodyName('Fortune')}</span>
+                      </span>
+                    }
+                    hint={t('skyTimes.fortuneNote')}
+                  >
+                    {fortuneGlyph}
+                    <span className="sky-band-body-name">{bodyName('Fortune')}</span>
+                  </TipSpan>
+                )}
+              </>
+            )}
           </div>
 
           {/* CENTER — the registered track, while expanded. */}

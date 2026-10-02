@@ -12,7 +12,7 @@
 // AND entitled (the shared entitlement resolver; NO teaser — un-entitled users
 // simply don't see it), carrying the gated-tier tag in its hover tip.
 import type { ReactNode } from 'react';
-import type { BodyDayEvents } from '../astro/riseSet';
+import type { BodyDayEvents, SkyEvent } from '../astro/riseSet';
 import { isEntitled as sharedIsEntitled } from './entitlement';
 
 /** Everything the band computes that a track needs: the day's events at the
@@ -23,8 +23,20 @@ export interface SkyBandTrackContext {
   zone: string;
   /** UT epoch ms of the shown day's local midnight. */
   dayStart: number;
-  /** Per-body rise/culminate/set/anticulminate for the shown day. */
+  /** UT epoch ms of the NEXT local midnight — the shown day's end. 23 or 25 hours
+   *  after `dayStart` on a clock-change day. */
+  dayEnd: number;
+  /** Per-body rise/culminate/set/anticulminate for the shown day: the displayed
+   *  (visible-horizon) instants in [dayStart, dayEnd), an ARRAY per moment — two
+   *  when the body has two in the day, none when it has none. Read from `events`. */
   days: BodyDayEvents[];
+  /** Every angular event of the visible bodies over the shown day widened by 12
+   *  hours each side, [dayStart − 12 h, dayEnd + 12 h), in time order — each solved
+   *  on its own, never copied from a neighbouring day, so a pairing that straddles
+   *  midnight is in both days' lists. A rise or set carries its visible instant
+   *  (`jd`, what the band prints) and its geometric one (`geoJd`, the map's horizon
+   *  convention); either is null on a pass that doesn't reach that horizon. */
+  events: SkyEvent[];
   /** An instant's wall-clock fraction of the shown day (x-position, 0..1). */
   frac: (jd: number) => number;
   /** An instant as "HH:MM" in the point's zone. */
@@ -35,6 +47,11 @@ export interface SkyBandTrackContext {
    *  Present only while that tool is ARMED; absent otherwise — a track may key
    *  a scrubbing affordance off its presence. */
   slideTo?: (ms: number) => void;
+  /** Whether the active chart has a birth time. The band reads the shown day's
+   *  sky either way; without a time the chart has no angular lines, so no parans,
+   *  of its own (an overlay can still draw its own), which a track pairing events
+   *  may want to say. */
+  chartHasTime: boolean;
 }
 
 export interface SkyBandTrack {

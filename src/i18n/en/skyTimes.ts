@@ -28,6 +28,10 @@ export const skyTimes = {
   },
   circumpolarUp: 'Above the horizon all day at this latitude',
   circumpolarDown: 'Below the horizon all day at this latitude',
+  // The hint on the Part of Fortune's legend entry, which has no times: it is
+  // shown on the map in a zodiacal frame, so its absence here needs a reason.
+  fortuneNote:
+    'No rise or set of its own to time: the Lot is built from the Ascendant, so it keeps almost the same distance from it all day.',
   today: 'Today',
   prevDay: 'Previous day',
   nextDay: 'Next day',

@@ -170,7 +170,7 @@ import {
   type AngleOverlayLineProps,
 } from './lib/astro/angleAspects';
 import { generateParans, generateStarParans, type ParanProps } from './lib/astro/parans';
-import { dailySkyEvents } from './lib/astro/riseSet';
+import { nextSkyEvent } from './lib/astro/riseSet';
 import {
   generateLocalSpace,
   localSpaceCoordMap,
@@ -5072,39 +5072,28 @@ export default function App() {
   }, []);
   // Jump to the previous/next ANGULAR EVENT — the nearest rise / culmination / set /
   // anti-culmination of any visible body at the active point (pin, else birthplace),
-  // before/after the slid instant. Windows are anchored to the slid instant in
-  // absolute time (dailySkyEvents clamps events into a fixed 24h span from any
-  // start), so midnight and DST need no special casing; k reaches further only when
-  // a window has no qualifying event (sparse visible sets).
+  // after/before the slid instant: the next REAL one, every crossing solved on its
+  // own (nextSkyEvent, riseSet.ts — searched a day at a time outward from the slid
+  // instant in absolute time, so midnight and DST need no special casing; walked
+  // against the full solve by verify:rise-set). The instant is the one the band
+  // prints (the visible horizon for a rise or set), so a jump lands on the band's
+  // time. (Until 2026-10-02 the windows came from the civil-day solve, which moved
+  // out-of-window events by a sidereal day: a lunar step could land about an hour
+  // from any moonrise.)
   const stepSlideEvent = useCallback(
     (dir: 1 | -1) => {
       if (!current || visiblePlanets.size === 0) return;
       const point = pinned ?? current.birthplace;
       const base = chartUtcMs(current);
-      const slidMs = base + slideDt * MS_DAY;
-      const bodies = [...visiblePlanets];
-      const EPS = 1000; // keep a just-snapped event from re-matching
-      for (let k = 0; k < 3; k++) {
-        const winStart = slidMs - MS_DAY / 2 + dir * k * MS_DAY;
-        const days = dailySkyEvents(msToJD(winStart), point.lat, point.lng, bodies, nodeType);
-        let best: number | null = null;
-        for (const d of days) {
-          for (const jd of [d.rise, d.culminate, d.set, d.anticulminate]) {
-            if (jd === null) continue;
-            const ms = jdToMs(jd);
-            const ok = dir > 0 ? ms > slidMs + EPS : ms < slidMs - EPS;
-            if (ok && (best === null || (dir > 0 ? ms < best : ms > best))) best = ms;
-          }
-        }
-        if (best !== null) {
-          const dt = (best - base) / MS_DAY;
-          // Optimistic: land slideDt now so a fast second press steps from the
-          // NEW instant instead of the throttled report's stale one.
-          setSlideDt(dt);
-          mapRef.current?.slideTo(dt);
-          return;
-        }
-      }
+      const slidJd = msToJD(base + slideDt * MS_DAY);
+      // skipJd (1 s, the default) keeps a just-snapped event from re-matching.
+      const next = nextSkyEvent(slidJd, dir, point.lat, point.lng, [...visiblePlanets], nodeType);
+      if (next === null) return;
+      const dt = (jdToMs(next) - base) / MS_DAY;
+      // Optimistic: land slideDt now so a fast second press steps from the
+      // NEW instant instead of the throttled report's stale one.
+      setSlideDt(dt);
+      mapRef.current?.slideTo(dt);
     },
     [current, pinned, visiblePlanets, nodeType, slideDt],
   );
@@ -6644,6 +6633,16 @@ export default function App() {
           slideMs={slide?.ms ?? null}
           slideTo={sliding ? slideToMs : undefined}
           slideBy={sliding ? slideByDays : undefined}
+          // For a registered track only: the band reads the day's sky either way,
+          // but without a birth time the chart has no lines, so no parans, of its
+          // own (linePositions is empty; an overlay can still draw its own).
+          chartHasTime={!noTime}
+          // The band's Fortune entry shows only while the map draws the Lot — the
+          // same gate as its lines: in the visible set (a zodiacal frame), and
+          // fortuneMapPos (Advanced on, a birth time, not a composite). Rule 5.
+          fortuneOnMap={fortuneMapPos !== null}
+          // The deferred asteroid file arriving: re-solve the shown day with it.
+          ephemerisEpoch={ephemerisEpoch}
           onClose={() => setShowSkyTimes(false)}
         />
       )}

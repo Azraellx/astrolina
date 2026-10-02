@@ -68,18 +68,23 @@ const zoneOf = (s: Site) => getIanaTimezone(s.lat, s.lng);
 const localNoon = (y: number, m: number, d: number, zone: string) =>
   DateTime.fromObject({ year: y, month: m, day: d, hour: 12 }, { zone }).toMillis();
 
-// The band's own shown-day start (SkyBand.tsx `dayStart`), reproduced: the zone's
-// offset at a reference instant, floored to the wall-clock day, then shifted back
-// by the offset in force AT that midnight (one refine pass — since 2026-09-30, so
-// the day's edges don't depend on what time of day the reference falls at). Its
-// noon is what the band hands planetaryDaysAround.
-function bandNoon(y: number, m: number, d: number, zone: string): number {
+// The band's own shown day (SkyBand.tsx `dayStart` and `dayEnd`), reproduced: the
+// zone's offset at a reference instant, floored to the wall-clock day, then shifted
+// back by the offset in force AT that midnight (one refine pass — since 2026-09-30,
+// so the day's edges don't depend on what time of day the reference falls at); the
+// end is the next wall midnight, the same way (2026-10-02), so a clock-change day
+// is 23 or 25 hours long.
+function bandDay(y: number, m: number, d: number, zone: string): { start: number; end: number } {
   const ref = localNoon(y, m, d, zone);
   const off = offsetHoursAt(zone, ref) * 3_600_000;
   const wallMidnight = Math.floor((ref + off) / MS_DAY) * MS_DAY;
-  const dayStart = wallMidnight - offsetHoursAt(zone, wallMidnight - off) * 3_600_000;
-  return dayStart + MS_DAY / 2;
+  const start = wallMidnight - offsetHoursAt(zone, wallMidnight - off) * 3_600_000;
+  const end = wallMidnight + MS_DAY - offsetHoursAt(zone, wallMidnight + MS_DAY - off) * 3_600_000;
+  return { start, end };
 }
+// Its noon is what the band hands planetaryDaysAround.
+const bandNoon = (y: number, m: number, d: number, zone: string): number =>
+  bandDay(y, m, d, zone).start + MS_DAY / 2;
 
 const around = (s: Site, y: number, m: number, d: number) =>
   planetaryDaysAround(localNoon(y, m, d, zoneOf(s)), s.lat, s.lng, zoneOf(s));
@@ -146,32 +151,47 @@ for (const s of SITES) {
 // ─────────────────────────────────────────────────────────────────────────────
 section('§2 TWO PARTS AGREE — the band rows vs the planetary day');
 {
-  // (a) The band's Sun ASC/DSC (dailySkyEvents) and the planetary day's sunrise/
-  // sunset are one solve — wherever the band didn't fold the event into its
-  // civil day, they must be the same instant.
+  // (a) The band's Sun ASC/DSC (its civil-day rows, dailySkyEvents) and the
+  // planetary day's sunrise/sunset are one solve. Since 2026-10-02 the rows hold
+  // every crossing in the civil day, solved on its own (nothing is moved in from
+  // a neighbouring day any more), so there is no day to skip: every crossing the
+  // planetary days around a date put inside its civil day must be in that day's
+  // row, the same instant, and the row must hold nothing else.
   let compared = 0;
   let worst = 0;
+  let missing = 0;
+  let extra = 0;
   for (const s of SITES) {
+    const zone = zoneOf(s);
     for (const [y, m, d] of dates2026) {
-      const noonMs = bandNoon(y, m, d, zoneOf(s));
-      const dayStartJd = msToJD(noonMs - MS_DAY / 2);
-      const band = dailySkyEvents(dayStartJd, s.lat, s.lng, ['Sun'], 'mean')[0];
-      const sun = sunHorizonDay(dayStartJd + 0.5, s.lat, s.lng);
-      if (!band || !sun) continue;
-      for (const [a, b] of [
-        [band.rise, sun.rise],
-        [band.set, sun.set],
-      ]) {
-        if (a === null || b === null || Math.abs(a - b) > 0.01) continue; // folded
-        compared += 1;
-        worst = Math.max(worst, Math.abs(a - b) * 86400);
+      const day = bandDay(y, m, d, zone);
+      const startJd = msToJD(day.start);
+      const endJd = msToJD(day.end);
+      const band = dailySkyEvents(startJd, s.lat, s.lng, ['Sun'], 'mean', endJd)[0];
+      // The noons before, of and after the day: every crossing inside it hangs on one.
+      const suns = [-1, 0, 1].map((k) => sunHorizonDay(startJd + 0.5 + k, s.lat, s.lng));
+      if (!band) continue;
+      for (const kind of ['rise', 'set'] as const) {
+        const ref = suns
+          .map((sun) => sun?.[kind] ?? null)
+          .filter((v): v is number => v !== null && v >= startJd && v < endJd);
+        for (const r of ref) {
+          const b = band[kind].find((x) => Math.abs(x - r) < 1 / 1440);
+          if (b === undefined) {
+            missing += 1;
+            continue;
+          }
+          compared += 1;
+          worst = Math.max(worst, Math.abs(b - r) * 86400);
+        }
+        for (const b of band[kind]) if (!ref.some((r) => Math.abs(r - b) < 1 / 1440)) extra += 1;
       }
     }
   }
   check(
-    `band Sun ASC/DSC = planetary sunrise/sunset (${compared} pairs)`,
-    compared >= 400 && worst < 1,
-    `worst Δ ${worst.toFixed(3)} s`,
+    `band Sun ASC/DSC = planetary sunrise/sunset on every day (${compared} pairs)`,
+    compared >= 400 && worst < 1 && missing === 0 && extra === 0,
+    `worst Δ ${worst.toFixed(3)} s; ${missing} missing from the rows, ${extra} in the rows with no planetary-day match`,
   );
 
   // (b) Independent calls for consecutive dates agree about the day between them.
@@ -338,7 +358,8 @@ section('§5 High latitude in summer — sunset after local midnight');
   let hit = 0;
   let broken = 0;
   let worst = 0;
-  let folded = 0;
+  let inNextRow = 0;
+  let inOwnRow = 0;
   for (let d = 10; d <= 30; d++) {
     const a = around(rk, 2026, 6, d);
     if (!a || !a.shown.ok) {
@@ -347,19 +368,33 @@ section('§5 High latitude in summer — sunset after local midnight');
     }
     const setMs = jdToMs(a.shown.sunset);
     const setDate = DateTime.fromMillis(setMs, { zone }).day;
-    if (setDate !== d) hit += 1;
     if (tilingErrors(a.shown).length) broken += 1;
     const ref = swissEvent(a.shown.sunrise, SET, rk);
     if (ref !== null) worst = Math.max(worst, Math.abs(ref - a.shown.sunset) * 86400);
-    // The band's row for the same date folds that sunset back into the civil
-    // day (a known limit of the row solve — riseSet.ts intoDay). Reported only.
-    const band = dailySkyEvents(msToJD(bandNoon(2026, 6, d, zone) - MS_DAY / 2), rk.lat, rk.lng, ['Sun'], 'mean')[0];
-    if (band?.set != null && Math.abs(band.set - a.shown.sunset) > 0.01) folded += 1;
+    if (setDate === d) continue;
+    hit += 1;
+    // The band files a sunset under the civil day it falls on, so one after local
+    // midnight is in the NEXT day's row — the same instant the planetary day ends
+    // its daylight on — and not in this day's (until 2026-10-02 this day's row
+    // moved it back by a sidereal day, to an instant the Sun wasn't setting).
+    const next = DateTime.fromObject({ year: 2026, month: 6, day: d }).plus({ days: 1 });
+    const rowOf = (y: number, m: number, dd: number) => {
+      const day = bandDay(y, m, dd, zone);
+      return dailySkyEvents(msToJD(day.start), rk.lat, rk.lng, ['Sun'], 'mean', msToJD(day.end))[0];
+    };
+    const sunset = a.shown.sunset;
+    const near = (x: number) => Math.abs(x - sunset) * 86400 < 1;
+    if (rowOf(next.year, next.month, next.day)?.set.some(near)) inNextRow += 1;
+    if (rowOf(2026, 6, d)?.set.some(near)) inOwnRow += 1;
   }
   check(`Reykjavik June: sunset after midnight actually occurs (${hit} of 21 days)`, hit >= 5);
   check('Reykjavik June: every day valid and tiled', broken === 0, `${broken} broken`);
   check('Reykjavik June: sunsets within 30 s of Swiss', worst <= 30, `worst Δ ${worst.toFixed(1)} s`);
-  console.log(`      note: the band row folds that sunset into the civil day on ${folded} of 21 days`);
+  check(
+    `Reykjavik June: each after-midnight sunset is in the next civil day's row (${inNextRow} of ${hit})`,
+    hit > 0 && inNextRow === hit && inOwnRow === 0,
+    `${hit - inNextRow} missing there, ${inOwnRow} still in the day its noon belongs to`,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
