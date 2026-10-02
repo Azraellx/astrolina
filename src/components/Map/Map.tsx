@@ -6,6 +6,7 @@
 
 import {
   forwardRef,
+  Fragment,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -18,13 +19,13 @@ import maplibregl, {
   type ExpressionSpecification,
   type StyleSpecification,
 } from 'maplibre-gl';
-import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
+import type { Feature, FeatureCollection, Geometry, LineString, Point, Polygon } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
 import { setCaptureFailure } from '../../lib/captureFailure';
 import { cloneWithInlineStyles, svgToImage } from '../../lib/wheelRaster';
-import { isTouchLayout, usePhone } from '../../lib/touch';
+import { isPhone, isPhonePortrait, isTouchLayout, usePhone } from '../../lib/touch';
 import {
   CaptureExtras,
   type CaptureFrameExtras,
@@ -48,18 +49,42 @@ import {
 } from '../../lib/theme';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
 import type { MissionEvent } from '../../lib/missions';
-import { minorMarkHtml, minorNameHtml, type LineCardDistance } from '../../lib/lineCard';
+import {
+  escapeHtml,
+  minorMarkHtml,
+  minorMarkText,
+  minorNameHtml,
+  type LineCardDistance,
+} from '../../lib/lineCard';
+import { minorDisplayLabel, minorDisplayParts } from '../../lib/minorBodies/naming';
 import {
   isOccluded,
   projectVisible,
   screenAngleOfNorth,
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
-import { applyDetailToggles, applyLabelContrast } from './basemapStyle';
+import {
+  applyDetailToggles,
+  applyLabelContrast,
+  isChartSource,
+  WORLD_FALLBACK_SOURCE,
+} from './basemapStyle';
+import { setLabelColliders } from './labelCollider';
+// Importing it registers MapLibre's right-to-left text plugin, once per page (see the module).
+import { ensureRtlTextPlugin } from './rtlTextPlugin';
+import {
+  BAND_SOURCE_OPTS,
+  LINE_SOURCE_OPTS,
+  PARAN_SOURCE_OPTS,
+  WASH_SOURCE_OPTS,
+  translateLng,
+  wrapSpin,
+} from './tiling';
 import {
   boundedWait,
   createBasemapRecovery,
   LIVE_BASEMAP_WAIT_MS,
+  transformBasemapRequest,
   watchLiveBasemap,
   type BasemapMode,
 } from './basemapFallback';
@@ -82,13 +107,34 @@ import { HoverTip, TipButton } from '../ui/HoverTip';
 import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
   computeLineBadges,
+  computeMinorBadges,
   dodgeBadges,
+  placeMinorChips,
   spreadBadges,
   clipSegmentToView,
-  type AvoidRect,
   type BadgeSize,
   type LineBadge,
+  type MinorBadge,
 } from './edgeAnchors';
+import {
+  CHIP_RANK,
+  CHIP_SLIDE_CAP,
+  ChipOccupancy,
+  arcPath,
+  arcPoint,
+  chipStack,
+  pathInRect,
+  placeOnPath,
+  type ArcPath,
+  type AvoidRect,
+  type ChipPt,
+} from './chipOccupancy';
+import {
+  estimateParanChip,
+  paranChipFace,
+  placeParanChips,
+  type ParanBadge,
+} from './paranChips';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
@@ -107,31 +153,8 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   features: [],
 });
 
-// Tile options for the line / paran / zenith sources. The buffer makes neighbouring
-// tiles overlap so an antimeridian-crossing line has no hairline seam at the ±180°
-// world boundary (geojson-vt wraps the out-of-range longitudes into the adjacent
-// world copy; the overlap hides the join), and tolerance is geojson-vt's per-zoom
-// line simplification. Both are tuned for render cost: an earlier {512, 0} kept
-// every vertex of every line in maximal-overlap tiles, which made low zooms — where
-// the world copies multiply the geometry — disproportionately expensive to tile and
-// tessellate. 128/0.375 (the geojson-vt defaults) render visually identical output,
-// including the ±180° crossing at world zoom. Before touching these again, re-check
-// the seam: centre on lng 180 with every line overlay on and screenshot z1/z2/z4 in
-// 2D and tilted 3D — any gap, kink, or dash-phase jump at the join is a regression.
-const LINE_SOURCE_OPTS = { buffer: 128, tolerance: 0.375 } as const;
-// Parans (and their orb-zone fills) are the exception: a paran is a perfect parallel
-// of latitude, so its densified geometry (parallelCoords in parans.ts; the constant-
-// latitude top/bottom edges of paranRing in orbBands.ts) is PERFECTLY collinear in
-// lng/lat. geojson-vt's tolerance simplification then strips every interior vertex,
-// collapsing the parallel back to one −180→180 span — whose 360° longitude jump it
-// mis-handles at the antimeridian, so it gets clipped off near the world centre when
-// zoomed far out (2D) and can collapse through the globe (3D). The densification
-// exists precisely to avoid that, so these sources keep the same seam buffer but
-// disable simplification. The curved line bands in the orb source survive 0.375 fine
-// (the ACG lines do), so the only cost is keeping their vertices too — acceptable for
-// an off-by-default fill; split the paran bands into their own source if low-zoom orb
-// perf ever bites. (Re-run the ±180° seam check from LINE_SOURCE_OPTS if you touch this.)
-const PARAN_SOURCE_OPTS = { buffer: 128, tolerance: 0 } as const;
+// The sources' tile options (LINE_ / PARAN_ / WASH_ / BAND_SOURCE_OPTS) and the Slide rotation
+// (translateLng, wrapSpin) live in tiling.ts, where the slide check can tile them as the map does.
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
 // Covers every line type — a paran's body A may sit on the MC/IC or the horizon,
@@ -166,6 +189,12 @@ const HUD_SELECTORS = [
   '.maplibregl-ctrl-top-right',
   '.maplibregl-ctrl-bottom-right',
   '.info-bar', // active-systems chip (bottom-right, above the attribution)
+  // The "Zoom out" pill (bottom-centre, from CLOSE_ZOOM in). Off this list until 2026-10-02 because
+  // it mounts a render after the pass that crosses its zoom, so the cached rects never had it; it
+  // has its own trigger now (zoomOutShown, in the component). It mattered once the Local Space
+  // labels started keeping off the panels (L84): at close zoom they sit at full radius, which is
+  // where the pill rests, and a phone's LS ♅ label was wholly under it — and under its tap.
+  '.map-zoom-out',
 ];
 
 // While the Capture frame is armed, badges ignore the HUD panels (Capture window, sidebar,
@@ -173,6 +202,26 @@ const HUD_SELECTORS = [
 // disclosure (bottom-right), which is part of the exported image, so badges still dodge
 // it so a label never sits on top of it.
 const CAPTURE_AVOID_SELECTORS = ['.maplibregl-ctrl-bottom-right'];
+
+// The markers a reader TAPS are places the line labels step off too — every kind of label, through
+// the shared occupancy (chipOccupancy.ts) — so a label never sits on one and takes its tap. On a
+// phone a chip is wide enough that a pin dropped near an edge had its head under one, and a tap
+// there flew the map to the chip's zenith instead of saving the spot; the Pro hint tells readers to
+// tap exactly there. The core's own two (the placed pin and the home marker) are PROJECTED each
+// pass from their coordinates (markerRects in computeBadges), so their boxes are current on every
+// frame and never caught mid-drop-animation. These are their tap targets around the point, from
+// Map.css: each marker box is anchored on its bottom edge 2px below the point (offset [0, 2]) — the
+// pin's 38×52 box with its 38×38 icon 15px down, home's 34×46 with a 34×34 icon 13px down. Change
+// the CSS geometry and these with it — and the silhouettes in labelCollider.ts, which keep the
+// basemap's own names out from under the same two markers.
+const PIN_HIT = { hw: 19, up: 35, down: 3 };
+const HOME_HIT = { hw: 17, up: 31, down: 3 };
+// A marker layer a downstream build draws in the overlay track is read off the DOM instead, on
+// every pass the camera is still (overlayMarkersRef in the component), and the labels re-placed
+// when the host reports its markers have moved or changed (onOverlayPlaced). `.saved-pin-marker`
+// is the Pro saved-pin layer's button, the class the capture path below already names; a ghost is
+// its 0.34s exit, not a target.
+const OVERLAY_MARKER_SELECTORS = ['.saved-pin-marker:not(.saved-pin-ghost)'];
 
 // Current screen rects of the given selectors (default: the HUD panels), in
 // map-container coordinates.
@@ -195,6 +244,29 @@ function readHudRects(
     });
   }
   return out;
+}
+
+// What a read of rects found, to the pixel — for telling whether markers have moved since the
+// labels last stepped off them (onOverlayPlaced) without re-placing the labels to find out.
+function rectsKey(rects: readonly AvoidRect[]): string {
+  return rects
+    .map((r) => `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`)
+    .join('|');
+}
+
+// A core marker's tap target (PIN_HIT / HOME_HIT) in map-container coordinates, projected from
+// where MapLibre itself places it; null when there is no marker or it is round the far side of
+// the globe (MapLibre hides it there, so there is nothing to keep clear of).
+function markerHitRect(
+  map: maplibregl.Map,
+  marker: maplibregl.Marker | null,
+  hit: { hw: number; up: number; down: number },
+): AvoidRect | null {
+  if (!marker) return null;
+  const ll = marker.getLngLat();
+  if (isOccluded(map, ll.lng, ll.lat)) return null;
+  const p = map.project(ll);
+  return { left: p.x - hit.hw, top: p.y - hit.up, right: p.x + hit.hw, bottom: p.y + hit.down };
 }
 
 // Shallow equality over arrays of flat badge records. computeBadges runs on every
@@ -270,21 +342,101 @@ function badgePos(x: number, y: number): CSSProperties {
   } as CSSProperties;
 }
 
-// One badge per paran, parked at the horizontal centre of the screen on the line's
-// latitude row (replaces the old repeated along-the-line labels).
-interface ParanBadge {
-  key: string;
-  x: number;
-  y: number;
-  planetA: ParanProps['planetA'];
-  angleA: ParanProps['angleA'];
-  planetB: ParanProps['planetB'];
-  angleB: ParanProps['angleB'];
-  prefix: string;
-  /** Click-to-fly target: the paran's intersection point. */
-  targetLng: number;
-  targetLat: number;
+// Everything an edge chip's WIDTH depends on, and nothing else — the key its measured size is
+// cached under (chipSizesRef), and the chip's `data-bface`. Not the badge key: that is an index
+// that shifts as lines come on and off screen, while "Tr ☉ As" is the same 47 px pill wherever
+// it is. Mirrors the face the render below draws: prefix (plain and node-pair chips only), glyphs,
+// the aspect symbol, and the angle code(s) — for an aspect, its true branch (aspectBranchReading).
+function edgeChipFace(b: LineBadge): string {
+  const prefix = b.aspect || b.planetB ? '' : b.prefix;
+  const code = b.aspect ? (b.branch ?? b.lineType) : b.lineType;
+  return `${prefix}|${b.planet}|${b.planetB ?? ''}|${b.aspect ?? ''}|${code}|${b.pair ? 1 : 0}`;
 }
+
+// A chip's size before it has ever been drawn (a face not yet in the cache): built up from what
+// it holds, calibrated against measured chips (2026-10-01: 31–53 × 15 px; 12 px of padding, an
+// 11 px glyph, ~6 px per code letter, ~4.5 per prefix letter, 3 px flex gaps). Within a few px,
+// and only for the one placement before the chip is measured and the labels re-placed.
+function estimateEdgeChip(b: LineBadge): BadgeSize {
+  const angle = b.aspect ? aspectBranchReading(b.aspect, b.branch ?? b.lineType).angle : b.lineType;
+  const glyphs = 1 + (b.planetB ? 1 : 0) + (b.aspect ? 1 : 0) + (b.pair ? 1 : 0);
+  const codeChars =
+    ANGLE_CODE[angle].length + (b.pair ? ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]].length : 0);
+  const prefixChars = b.aspect || b.planetB ? 0 : b.prefix.length;
+  const items = glyphs + (b.pair ? 2 : 1) + (prefixChars ? 1 : 0) + (b.pair ? 1 : 0);
+  const w = 12 + 11 * glyphs + 6 * codeChars + 4.5 * prefixChars + 3 * (items - 1);
+  return { hw: w / 2, hh: 7.5 };
+}
+
+// A catalog minor body's edge chip (computeMinorBadges, #34), with the words it prints — resolved
+// once a pass, where it is placed, so the face its size is cached under and what is drawn agree.
+//
+// What it prints: the body's mark, its name, its number, and the angle — "◆ Eros (433) MC",
+// "⯰ Eris (136199) As", "◇ Zeus (hyp) MC". The default, 2026-10-01, with the house astrologer
+// deferring on catalog-body calls as she does (recorded in the seams doc, L85, under the calls an
+// expert might revisit):
+//  - WORDS, not colour. A planet's chip names its line by glyph and colour; a catalog line's colour
+//    is one of twelve picked by number (minorLineColor), so two bodies on one map can share it, and
+//    only the chip's text can tell their lines apart.
+//  - WITH THE NUMBER, which is the published naming rule, not a choice for this surface: the methods
+//    page says a numbered minor planet "is always named with its number", and Help says the same —
+//    it is what tells the asteroid Lilith (1181) from Black Moon Lilith, whose chip, "⚸ MC", can sit
+//    beside it. So the words are lib/minorBodies/naming's, as on every other surface (a hypothetical
+//    point "(hyp)", never a number). Without the number a chip would be some 20–40 px narrower,
+//    and would name the asteroid exactly as that rule exists to prevent.
+//  - THE MARK every other surface draws (minorMarkText, Lina's ruling of 2026-09-30): the body's own
+//    symbol where it has one, else ◆, and ◇ for a hypothetical point — in the chip's text colour,
+//    as a planet's glyph is on its chip.
+//  - KEPT COMPACT within that: the number in the smaller, lighter type of an overlay tag, so the name
+//    reads first; and a name longer than MINOR_CHIP_NAME_MAX cut from its end, keeping the number
+//    whole — the Minor bodies window's own rule for a row too narrow (minorDisplayParts). No bundled
+//    name or point reaches the cut (the longest, Persephone and Proserpina, are 10); it bounds a
+//    catalog body's chip at about the width of an aspect line's.
+interface MinorChip extends MinorBadge {
+  /** The name as the chip prints it, cut to MINOR_CHIP_NAME_MAX ('' for a body known by number only). */
+  label: string;
+  /** What the label adds to the name: "(433)", "(hyp)" — or, with no name, the whole label. */
+  tail: string;
+}
+const MINOR_CHIP_NAME_MAX = 12;
+function minorChipText(b: MinorBadge, t: TFn): { label: string; tail: string } {
+  const { before, own, after } = minorDisplayParts(b.n, b.name, t);
+  const cps = Array.from(own);
+  const cut =
+    cps.length > MINOR_CHIP_NAME_MAX ? `${cps.slice(0, MINOR_CHIP_NAME_MAX - 1).join('')}…` : own;
+  return { label: `${before}${cut}`.trim(), tail: after.trim() };
+}
+// Everything its width depends on (edgeChipFace's counterpart). No edge face starts with "◆", and
+// no paran face does ("×").
+function minorChipFace(b: MinorChip): string {
+  return `◆|${b.prefix}|${minorMarkText(b.n).char}|${b.label}|${b.tail}|${b.lineType}`;
+}
+// Its size before it is first measured, on estimateEdgeChip's padding, gaps and codes, and the
+// spans of drawn chips (2026-10-01, twelve bodies, 83–123 × 15 px): the bold 10 px name at up to
+// ~5.4 px a character, the 9 px number at ~4.2, the mark 9.5 (◆), 12 (◇) or up to 11 (a symbol).
+function estimateMinorChip(b: MinorChip): BadgeSize {
+  const { cls } = minorMarkText(b.n);
+  const mark = cls === 'minor-mark' ? 9.5 : cls ? 12 : 11;
+  const items = 2 + (b.prefix ? 1 : 0) + (b.label ? 1 : 0) + (b.tail ? 1 : 0);
+  const w =
+    12 +
+    mark +
+    5.4 * Array.from(b.label).length +
+    (b.label ? 4.2 : 5.4) * b.tail.length +
+    6 * ANGLE_CODE[b.lineType].length +
+    4.5 * b.prefix.length +
+    3 * (items - 1);
+  return { hw: w / 2, hh: 7.5 };
+}
+
+// Stacking value for a Local Space label the occupancy didn't place: the top of its rank
+// (chipStack), so it still draws above every less important chip and under every more important
+// one — a label with none would draw under all of them. That is the LS-only transparent still,
+// which places its labels on its own (computeBadges), and the "Degrees" labels, which share this
+// value and come after the pills in the DOM, so they still draw over them, as they always did.
+// (The paran chips take theirs from the occupancy since 2026-10-01 — paranChips.ts — and the
+// Local Space pills too, everywhere else, since the same day.)
+const LS_CHIP_Z = chipStack(CHIP_RANK.localSpace);
 
 // One badge per local-space line ("LS" + planet glyph), parked on a ring around
 // the origin point at the planet's azimuth. North is up and Mercator is conformal,
@@ -345,6 +497,10 @@ const CAPTURE_SETTLE_TIMEOUT_MS = 1500;
 // layer's 0.12s (Map.css `.acg-edge-badges.is-moving`) and the horizon dial's 0.2s
 // (LocalHorizonWheel.css) — plus a frame's grace. Raise it if either duration grows.
 const CAPTURE_FADE_SETTLE_MS = 240;
+// …and for the frame's content to finish drawing: the right-to-left text plugin, then every
+// visible tile (see captureFrame). Liveness again: a tile request into a network that answers
+// nothing never settles, and past this the shot is taken of what is there.
+const CAPTURE_CONTENT_TIMEOUT_MS = 5000;
 
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
@@ -404,6 +560,14 @@ const LS_BADGE_HALF_H = 11;
 // labels so far off their lines (esp. with many planets enabled) that it was hard to tell which badge
 // belonged to which line. 2× this is the min gap between any two.
 const LS_BADGE_GAP = 1;
+// An LS pill's REAL half-extents, where the Capture pass hasn't measured it — for everything but
+// the spacing between two LS labels: keeping the whole pill on screen, and clear of the panels, the
+// tapped markers and the other kinds of label (the shared occupancy, which the kinds placed after
+// it test against these too). The spread's own figures above are about twice the real pill
+// (measured live 2026-10-01: 66–70 × 15 px with a bearing, 30–35 × 15 without) — right for spacing
+// a crowded fan, but tested against a marker they'd shove every near-horizontal label off a pin
+// it was nowhere near, and against the screen edge they'd hold every label ~30 px short of it.
+const LS_PILL_HIT = { out: 36, bare: 18, hh: 8 };
 // Closest a crowded label may slide toward the origin (px) — keeps a clear zone around the centre
 // where all the lines converge, so staggered labels never pile on the origin pin / compass hub.
 const LS_BADGE_MIN_RAD = 26;
@@ -431,23 +595,38 @@ interface LocalSpaceBadge {
    *  the origin (badge x/y is the pill centre). Set once the layout settles, else undefined. */
   degX?: number;
   degY?: number;
+  /** Where it stacks among the map's labels (chipStack, from the occupancy); LS_CHIP_Z where the
+   *  occupancy didn't place it. */
+  z?: number;
 }
 
-// Resolve crowding among the LS labels by sliding each one ALONG ITS OWN LINE (the ray out from the
-// origin), never off it. A label's direction (dx,dy — a unit vector from the origin) is fixed; only
-// its RADIUS changes, so it always sits ON its line — just nearer to or farther from the centre.
+// Resolve crowding among the LS labels by sliding each one ALONG ITS OWN LINE (its `path`, out from
+// the origin), never off it. Only how far along the line a label sits (`rad`, an arc length from the
+// origin) changes, so it always sits ON its line — just nearer to or farther from the centre.
 // Because the lines fan OUT from the origin, a bundle resolves by staggering radii: when two labels
-// overlap, the outer one moves further out and the inner one further in, and since the rays diverge
-// that radial offset clears them — the more labels pile up, the more line they use. A weak pull back
-// toward each label's rest radius (rad0, where its line meets the ring) keeps uncrowded labels on the
-// ring and stops the stagger from drifting. Each radius is bounded to [minRad, maxRad] so a label
-// never piles on the origin nor slides off-screen. Writes the resulting screen x/y back onto each item.
+// overlap, the outer one moves further out and the inner one further in, and since the lines diverge
+// that offset clears them — the more labels pile up, the more line they use. A weak pull back toward
+// each label's rest (rad0, where its line meets the ring) keeps uncrowded labels on the ring and
+// stops the stagger from drifting. Each is bounded to [minRad, maxRad] so a label never piles on the
+// origin nor slides off-screen. Writes the resulting screen x/y back onto each item.
+//
+// The path is the line AS DRAWN since 2026-10-01 — a great circle, which on the map bends away from
+// the straight screen ray its bearing starts along, by roughly κr²/2: 25 px at the ring at a world
+// view, and 165 px out at 540 px on a desktop at z 2.7. That was a straight ray until then, which was
+// near enough while a label stayed by the ring; once a label could be sent out past a window (#28)
+// it would have named a line it sat well away from. The LS-only still passes a straight ray through
+// its anchor, as it always had: a two-point path.
+//
+// Those bounds are also what keeps a label off everything that isn't another Local Space label.
+// The caller makes [minRad, maxRad] one stretch of the line that is clear of the panels and the
+// tapped markers (ChipOccupancy.clearSpans), so nothing in here can push a label under any of them:
+// those constraints are hard where the label-vs-label overlap is soft. Until 2026-10-01 the tapped
+// markers were tested here instead, on every seat, and the panels not at all (#28).
 function spreadLsBadgesRadial(
   items: {
     x: number;
     y: number;
-    dx: number;
-    dy: number;
+    path: ArcPath;
     rad: number;
     rad0: number;
     minRad: number;
@@ -455,21 +634,26 @@ function spreadLsBadgesRadial(
     hw: number;
     hh: number;
   }[],
-  ocx: number,
-  ocy: number,
   iterations: number,
 ): void {
   const ATTRACT = 0.15; // fraction of the way back to the rest radius reclaimed each pass
   const seat = (it: (typeof items)[number]) => {
     it.rad = Math.min(Math.max(it.rad, it.minRad), it.maxRad);
-    it.x = ocx + it.rad * it.dx;
-    it.y = ocy + it.rad * it.dy;
+    const p = arcPoint(it.path, it.rad);
+    it.x = p.x;
+    it.y = p.y;
   };
   for (const it of items) seat(it);
   for (let iter = 0; iter < iterations; iter++) {
+    // Done once a round moves nothing — no pair overlapping and every label at its rest (or held
+    // short of it by its bounds) to a hundredth of a px — since every round after would move
+    // nothing either. This runs on every frame of a pan; an uncrowded fan is done in one round.
+    let still = true;
     for (const it of items) {
+      const was = it.rad;
       it.rad += (it.rad0 - it.rad) * ATTRACT;
       seat(it);
+      if (Math.abs(it.rad - was) > 0.01) still = false;
     }
     for (let i = 0; i < items.length; i++) {
       for (let j = i + 1; j < items.length; j++) {
@@ -478,6 +662,7 @@ function spreadLsBadgesRadial(
         const ox = a.hw + b.hw - Math.abs(b.x - a.x);
         const oy = a.hh + b.hh - Math.abs(b.y - a.y);
         if (ox <= 0 || oy <= 0) continue;
+        still = false;
         const mag = Math.min(ox, oy) / 2 + 0.5;
         // Stagger along the rays: the already-outer label goes further out, the inner one further in.
         if (a.rad >= b.rad) {
@@ -491,7 +676,46 @@ function spreadLsBadgesRadial(
         seat(b);
       }
     }
+    if (still) break;
   }
+}
+
+// How far radius r lies from span k of a flat [from, to, …] list (ChipOccupancy.clearSpans): 0
+// inside it.
+function spanGap(spans: readonly number[], k: number, r: number): number {
+  return r < spans[k] ? spans[k] - r : r > spans[k + 1] ? r - spans[k + 1] : 0;
+}
+// How far along `path` (which starts at the origin c) the line first reaches distance r from c —
+// where it meets the ring — or the whole path's length if it leaves the screen before that.
+function ringArc(path: ArcPath, c: ChipPt, r: number): number {
+  const { pts, cum } = path;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const fx = pts[i].x - c.x;
+    const fy = pts[i].y - c.y;
+    const dx = pts[i + 1].x - pts[i].x;
+    const dy = pts[i + 1].y - pts[i].y;
+    const a = dx * dx + dy * dy;
+    if (!(a > 0)) continue;
+    const k = fx * fx + fy * fy - r * r;
+    if (k >= 0) return cum[i];
+    const bq = fx * dx + fy * dy;
+    const t = (-bq + Math.sqrt(bq * bq - a * k)) / a;
+    if (t <= 1) return cum[i] + t * Math.sqrt(a);
+  }
+  return cum[cum.length - 1];
+}
+// The span nearest radius r (the inner one on a tie), or -1 when there are none.
+function nearestSpan(spans: readonly number[], r: number): number {
+  let pick = -1;
+  let pickD = Infinity;
+  for (let k = 0; k < spans.length; k += 2) {
+    const d = spanGap(spans, k, r);
+    if (d < pickD) {
+      pick = k;
+      pickD = d;
+    }
+  }
+  return pick;
 }
 
 // The mask-mode twin of spreadLsBadgesRadial: the badges sit on a FIXED-radius rim, so de-overlap
@@ -594,42 +818,6 @@ export interface SlideInfo {
 // i.e. 15.0410686°/h. The Slide tool maps a spin angle to a sidereal-time offset
 // and back through this rate (the celestial frame the natal lines live in).
 export const SIDEREAL_DEG_PER_HOUR = 360 / 23.9344696;
-
-// Rigidly rotate a geometry collection about the polar axis by shifting every
-// vertex's longitude. The generators emit antimeridian-continuous coordinates (see
-// unwrapLongitudes), so a constant offset keeps each feature unbroken and the globe
-// wraps any out-of-range longitudes onto the sphere natively — no re-normalization.
-// Handles every geometry the line/band/zenith layers use (lines, polygons, points).
-function translateLng(
-  fc: FeatureCollection,
-  dLng: number,
-): FeatureCollection {
-  if (dLng === 0) return fc;
-  const ring = (pts: number[][]) => pts.map((c) => [c[0] + dLng, c[1]]);
-  return {
-    type: 'FeatureCollection',
-    features: fc.features.map((f): Feature => {
-      const g = f.geometry;
-      switch (g.type) {
-        case 'LineString':
-          return { ...f, geometry: { type: 'LineString', coordinates: ring(g.coordinates) } };
-        case 'MultiLineString':
-          return { ...f, geometry: { type: 'MultiLineString', coordinates: g.coordinates.map(ring) } };
-        case 'Polygon':
-          return { ...f, geometry: { type: 'Polygon', coordinates: g.coordinates.map(ring) } };
-        case 'MultiPolygon':
-          return {
-            ...f,
-            geometry: { type: 'MultiPolygon', coordinates: g.coordinates.map((poly) => poly.map(ring)) },
-          };
-        case 'Point':
-          return { ...f, geometry: { type: 'Point', coordinates: [g.coordinates[0] + dLng, g.coordinates[1]] } };
-        default:
-          return f;
-      }
-    }),
-  };
-}
 
 const EARTH_RADIUS_KM = 6371.0088;
 const KM_PER_MILE = 1.609344;
@@ -936,10 +1124,14 @@ type ZenithHit =
   | (ZenithHitBase & { kind: 'planet'; planet: PlanetName })
   | (ZenithHitBase & { kind: 'minor'; body: string; props: Record<string, unknown> });
 
-function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
+function zenithAtPoint(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+  tol: number = ZENITH_HIT_TOLERANCE_PX,
+): ZenithHit | null {
   const layers = ZENITH_HIT_LAYERS.filter((id) => map.getLayer(id));
   if (layers.length === 0) return null;
-  const t = ZENITH_HIT_TOLERANCE_PX;
+  const t = tol;
   const feats = map.queryRenderedFeatures(
     [
       [pt.x - t, pt.y - t],
@@ -947,7 +1139,9 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
     ],
     { layers: layers as unknown as string[] },
   );
-  const f = feats[0];
+  // Nearest stamp, not the top-most: a finger-sized box can take in two stamps (a body's
+  // natal and overlay zeniths sit close when the overlay is near its natal place).
+  const f = nearestFeature(map, pt, feats);
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
@@ -1010,9 +1204,13 @@ interface CrossHit {
   acgLineType: LineType;
 }
 
-function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
+function crossAtPoint(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+  tol: number = CROSS_HIT_TOLERANCE_PX,
+): CrossHit | null {
   if (!map.getLayer(CROSS_HIT_LAYER)) return null;
-  const t = CROSS_HIT_TOLERANCE_PX;
+  const t = tol;
   const feats = map.queryRenderedFeatures(
     [
       [pt.x - t, pt.y - t],
@@ -1020,7 +1218,7 @@ function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
     ],
     { layers: [CROSS_HIT_LAYER] },
   );
-  const f = feats[0];
+  const f = nearestFeature(map, pt, feats);
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
@@ -1070,6 +1268,27 @@ const LINE_HIT_LAYERS = [
   'eclipse-lunar-horizon',
 ];
 const LINE_HIT_TOLERANCE_PX = 3;
+
+// A fingertip is not a cursor. The reaches above are sized for a mouse, which lands where
+// it's aimed; a tap lands somewhere under a pad about 7–10 mm across, and the browser
+// reports one point of it. A paran line is drawn 0.7 px wide, so at 3 px a tap had to fall
+// inside a target about 6.7 CSS px tall — and a miss doesn't just do nothing, it closes
+// whatever card was open. So a touch layout reaches further. Lines get the most help
+// (they're hairlines); the stamps and dots less, because they already have a body to hit
+// and widening them further would let them swallow taps meant for the line they sit on.
+// On a touch layout every "hover" is itself a tap (the browser's compatibility mousemove
+// just before the click), so the move handler takes the same reach as the click — the tip
+// a tap raises and the card it opens can't then name two different lines.
+const TAP_LINE_TOLERANCE_PX = 11;
+const TAP_ZENITH_TOLERANCE_PX = 8;
+const TAP_CROSS_TOLERANCE_PX = 10;
+
+/** The hit-test reach per target kind, for a mouse or for a finger. */
+function hitReach(touch: boolean): { line: number; zenith: number; cross: number } {
+  return touch
+    ? { line: TAP_LINE_TOLERANCE_PX, zenith: TAP_ZENITH_TOLERANCE_PX, cross: TAP_CROSS_TOLERANCE_PX }
+    : { line: LINE_HIT_TOLERANCE_PX, zenith: ZENITH_HIT_TOLERANCE_PX, cross: CROSS_HIT_TOLERANCE_PX };
+}
 
 function glyphHtml(planet: PlanetName, color: string): string {
   return `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${PLANET_GLYPHS[planet]}</span>`;
@@ -1222,9 +1441,35 @@ function lineLabelHtml(
   return `<div class="ui-tip"><span class="cross-tip-row">${row}</span>${polar}</div>`;
 }
 
-// A clickable line collection — for the closest-approach search we need only the geometry
-// (the per-line-type props are irrelevant), so keep the shape minimal and structural.
-type ClickableLineFC = { features: { geometry: LineString }[] };
+// A clickable line collection, as the closest-approach row needs it: the full geometry, and
+// the properties that let a clicked feature be found again (see sameFeatureProps). Minimal
+// and structural, so every family's collection fits without naming its prop type.
+type ClickableLineFC = { features: { geometry: LineString; properties: unknown }[] };
+
+// Whether a source feature is the one a hit-test handed back. The click needs the clicked
+// line's FULL geometry for its closest-approach row, and the rendered feature can't supply
+// it: queryRenderedFeatures returns the geometry cut to its tile. Rendered properties are
+// the source's own values passed through the tiler — primitives verbatim (doubles stay
+// doubles), objects re-encoded as JSON strings, nulls dropped — so the test is that every
+// primitive the source feature carries comes back unchanged. That names one line: the
+// generators already give each line a distinct primitive identity, because the hover tip
+// and the edge badge needed one (planet + angle + tag, an aspect branch's targetLng, a
+// paran's pairing and latitude). A line cut into pieces (at the antimeridian, or where a
+// horizon curve breaks) matches on every piece, which is right: the row is about the LINE.
+function sameFeatureProps(source: unknown, rendered: Record<string, unknown>): boolean {
+  if (!source || typeof source !== 'object') return false;
+  let compared = false;
+  for (const [k, v] of Object.entries(source)) {
+    if (v === null || v === undefined || typeof v === 'object') continue;
+    if (typeof v === 'number' && Number.isNaN(v)) continue;
+    if (rendered[k] !== v) return false;
+    compared = true;
+  }
+  if (compared) return true;
+  // Nothing to compare — the natal ecliptic's empty bag, the one line in its source. It is
+  // the feature whose rendered twin carries nothing either.
+  return !Object.values(rendered).some((v) => v !== null && v !== undefined);
+}
 
 // Normalised longitude difference in degrees, within [-180, 180] (antimeridian-safe).
 function lngDelta(a: number, b: number): number {
@@ -1268,15 +1513,69 @@ function nearestApproachKm(pLat: number, pLng: number, geom: LineString): number
   return best;
 }
 
+// nearestApproachKm over any GeoJSON geometry a hit-test can return: a rendered line can
+// come back as a MultiLineString (a feature split across a tile seam), a stamp as a Point.
+// Points are measured as points, rings as closed lines. Infinity for anything unmeasurable,
+// which the rankers below read as "keep the stacking order".
+function distToGeometryKm(lat: number, lng: number, g: Geometry | null | undefined): number {
+  if (!g) return Infinity;
+  const line = (coordinates: number[][]): number =>
+    coordinates.length ? nearestApproachKm(lat, lng, { type: 'LineString', coordinates }) : Infinity;
+  switch (g.type) {
+    case 'Point':
+      return line([g.coordinates]);
+    case 'MultiPoint':
+      return Math.min(Infinity, ...g.coordinates.map((c) => line([c])));
+    case 'LineString':
+      return line(g.coordinates);
+    case 'MultiLineString':
+      return Math.min(Infinity, ...g.coordinates.map(line));
+    case 'Polygon':
+      return Math.min(Infinity, ...g.coordinates.map(line));
+    case 'MultiPolygon':
+      return Math.min(Infinity, ...g.coordinates.flat().map(line));
+    case 'GeometryCollection':
+      return Math.min(Infinity, ...g.geometries.map((c) => distToGeometryKm(lat, lng, c)));
+    default:
+      return Infinity;
+  }
+}
+
+// The candidate nearest the pointer, among everything a hit box returned. queryRenderedFeatures
+// orders by STACKING (top-most first), which is the wrong question once the box is wider than
+// the gap between two lines: an ACG line drawn over a paran won the tap even when the finger
+// was squarely on the paran. Measured on the sphere from the pointer's own coordinate — at
+// this range that ranks exactly as screen distance does (both projections are conformal
+// locally), and unlike projecting the feature back to the screen it can't be fooled by a
+// world copy on the flat map. Ties, and anything unmeasurable, keep the stacking order.
+function nearestFeature<F extends maplibregl.MapGeoJSONFeature>(
+  map: maplibregl.Map,
+  pt: ScreenPt,
+  feats: F[],
+): F | undefined {
+  if (feats.length < 2) return feats[0];
+  const at = map.unproject([pt.x, pt.y]);
+  let best = feats[0];
+  let bestKm = Infinity;
+  for (const f of feats) {
+    const km = distToGeometryKm(at.lat, at.lng, f.geometry);
+    if (km < bestKm) {
+      bestKm = km;
+      best = f;
+    }
+  }
+  return best;
+}
+
 function lineAtPoint(
   map: maplibregl.Map,
   pt: ScreenPt,
   t: TFn,
   labels: EnumLabels,
-): { id: string; html: string; layerId: string; props: Record<string, unknown> } | null {
+  tol: number = LINE_HIT_TOLERANCE_PX,
+): { id: string; html: string; layerId: string; source: string; props: Record<string, unknown> } | null {
   const layers = LINE_HIT_LAYERS.filter((l) => map.getLayer(l));
   if (!layers.length) return null;
-  const tol = LINE_HIT_TOLERANCE_PX;
   const feats = map.queryRenderedFeatures(
     [
       [pt.x - tol, pt.y - tol],
@@ -1284,7 +1583,9 @@ function lineAtPoint(
     ],
     { layers },
   );
-  const f = feats[0];
+  // Nearest first, so a tap names the line under the finger rather than the top-most line
+  // in the box — hover and click both come through here, so the tip and the card agree.
+  const f = nearestFeature(map, pt, feats);
   if (!f || !f.properties) return null;
   const hoverLat = map.unproject([pt.x, pt.y]).lat;
   const html = lineLabelHtml(f.layer.id, f.properties, t, labels, hoverLat);
@@ -1300,6 +1601,9 @@ function lineAtPoint(
     id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${f.properties.targetLng ?? ''}|${polarKey}`,
     html,
     layerId: f.layer.id,
+    // The GeoJSON source the line was drawn from — what the click's distance row looks the
+    // line's FULL geometry up by (the rendered geometry is cut to its tile).
+    source: f.source,
     props: f.properties,
   };
 }
@@ -1394,12 +1698,16 @@ interface MapProps {
   eclipseCard?: ((lat: number, lng: number) => string | null) | null;
   /** Click-a-line interpretation card: ready-made .ui-tip HTML for the clicked
    *  line feature, or null for lines without a reading. Not consulted while the
-   *  eclipse card is armed (eclipses mode owns clicks there). */
+   *  eclipse card is armed (eclipses mode owns clicks there). `extra` is a plain-text
+   *  line the map computed for the clicked POSITION — today a paran's registered
+   *  annotation (lib/extensions/paranAnnotation) — for the builder to set as a sub-line
+   *  (buildLineCard's `extra`); null when there is none. */
   lineCard?:
     | ((
         layerId: string,
         props: Record<string, unknown>,
         dist: LineCardDistance | null,
+        extra: string | null,
       ) => string | null)
     | null;
   pin?: { lat: number; lng: number } | null;
@@ -1488,6 +1796,12 @@ interface MapProps {
   /** The caption fields as separate lines (same content as frameCaptionText, unjoined). The
    *  Transparent export has no footer band, so it stacks these in the frame's top-left instead. */
   frameCaptionLines?: readonly string[];
+  /** Index into `frameCaptionLines` of a field that stays whole when a caption line still
+   *  overflows at two lines: another field on its line gives way first, and it ellipsizes
+   *  only if it is alone there. The host names its figures here — a latitude cut short
+   *  reads as a different place, where a place name cut short still names the place.
+   *  Absent (or out of range): the widest field on the line gives way, whatever it is. */
+  frameCaptionKeep?: number | null;
   /** Drop the caption band + watermark from the frame (and its reserved height): a caption-free
    *  export. Set only by the gated Transparent (Local Space) mode for a clean see-through PNG;
    *  the watermark is otherwise the mandatory AGPL-7(b) attribution, so this stays gated. */
@@ -1783,7 +2097,7 @@ const lineTypeIs = (t: 'ASC' | 'DSC'): ExpressionSpecification =>
 // the map is on a self-contained style (a plain ocean) and draws the bundled coarse world outline
 // (Natural Earth 1:110m — the same data the offline country lookup already ships and precaches) on
 // top, so continents + borders still show beneath the chart lines.
-const WF_SOURCE = 'world-fallback';
+const WF_SOURCE = WORLD_FALLBACK_SOURCE;
 const WF_FILL = 'world-fallback-fill';
 const WF_LINE = 'world-fallback-line';
 
@@ -1806,14 +2120,42 @@ function offlineStyle(theme: Theme): StyleSpecification {
   };
 }
 
+// The world outline's module, imported once. It is dynamic-imported, so it stays off the start-up
+// path; an offline START finds it in the service worker's precache (a Pro install).
+//
+// But a connection lost MID-session needs it at the moment the network has gone, and on a session
+// that hasn't loaded it yet — the open core and dev have no service worker, and an installed app
+// may not have one installed yet — the import then fails (net::ERR_INTERNET_DISCONNECTED): the
+// light watch swapped a drawn live basemap for a bare ocean, worse than leaving it (measured
+// 2026-10-01). So it is warmed while the network is still there, once the live basemap has drawn
+// its first tile and the browser is idle (warmWorldOutline). The cost is small: the 145-byte
+// chunk, and the countries data it shares with the hover readout's country lookup (countryOf),
+// which a desktop session loads at its first hover anyway. A failed import is let go, so a later
+// one can try again.
+let worldOutlineModule: Promise<typeof import('../../lib/worldFallback')> | null = null;
+function loadWorldOutline(): Promise<typeof import('../../lib/worldFallback')> {
+  worldOutlineModule ??= import('../../lib/worldFallback').catch((err: unknown) => {
+    worldOutlineModule = null;
+    throw err;
+  });
+  return worldOutlineModule;
+}
+function warmWorldOutline(): void {
+  const go = () => void loadWorldOutline().catch(() => {});
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(go, { timeout: 5000 });
+  } else {
+    window.setTimeout(go, 2000);
+  }
+}
+
 // Draw the world outline into the current (offline) style, just above the background so it sits
-// BENEATH the chart lines (added by setupCustomLayers before this async load resolves). The GeoJSON
-// is dynamic-imported, so online users never download it; the chunk is precached for offline use.
+// BENEATH the chart lines (added by setupCustomLayers before this async load resolves).
 async function installWorldFallback(map: maplibregl.Map, theme: Theme): Promise<void> {
   if (!map.getStyle() || map.getLayer(WF_FILL)) return;
   let worldOutline: () => GeoJSON.FeatureCollection;
   try {
-    ({ worldOutline } = await import('../../lib/worldFallback'));
+    ({ worldOutline } = await loadWorldOutline());
   } catch {
     return; // chunk unavailable — leave the plain ocean background
   }
@@ -1848,7 +2190,8 @@ function setupCustomLayers(
 ) {
   // Night-side shading (Filters ▸ Night Shading): the very bottom of the
   // custom stack — an environment wash that everything astrological draws over.
-  map.addSource('night-shade', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // No tile buffer: see WASH_SOURCE_OPTS (a buffered z0 tile shaded a band twice on the globe).
+  map.addSource('night-shade', { type: 'geojson', data: EMPTY_FC(), ...WASH_SOURCE_OPTS });
   map.addLayer({
     id: 'night-shade-layer',
     source: 'night-shade',
@@ -1863,10 +2206,11 @@ function setupCustomLayers(
   // Orb-of-influence zones: under everything the chart draws — ecliptic,
   // eclipse curves, lines, parans, overlays, stamps (only the night wash sits
   // deeper). One source carries both band kinds; opacity is per-feature
-  // (paran latitude bands run fainter than line bands). PARAN_SOURCE_OPTS (no
-  // simplification) because that source includes the flat paran latitude bands,
-  // which simplification would collapse at the antimeridian (see PARAN_SOURCE_OPTS).
-  map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
+  // (paran latitude bands run fainter than line bands). BAND_SOURCE_OPTS: no
+  // simplification, because that source includes the flat paran latitude bands, which
+  // simplification would collapse at the antimeridian (see PARAN_SOURCE_OPTS); and no
+  // tile buffer, for the night shade's reason (WASH_SOURCE_OPTS).
+  map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...BAND_SOURCE_OPTS });
   map.addLayer({
     id: 'orb-bands-layer',
     source: 'orb-bands',
@@ -1919,27 +2263,37 @@ function setupCustomLayers(
   // props, themed by the App). Added here so the shaded fills and contour
   // lines sit beneath all chart linework; the greatest-eclipse / sub-lunar
   // marker layers are added later, above the lines, beside the zenith stamps.
+  // Its two washes (the solar umbral band, the lunar visibility hemisphere) ride a source of
+  // their own, `eclipse-fill`, unbuffered like the night shade (WASH_SOURCE_OPTS: a buffered
+  // hemisphere at z0 shaded a band of the globe twice); the curves and labels keep the line
+  // buffer their joins need. pushData splits the one collection the App hands over
+  // (splitEclipse). No buffer means a fill edge on every tile edge, so neither wash draws the
+  // antialiased outline — the band has its limit lines over that edge anyway, and the
+  // hemisphere is too faint for its edge to show stepping.
+  map.addSource('eclipse-fill', { type: 'geojson', data: EMPTY_FC(), ...WASH_SOURCE_OPTS });
   map.addSource('eclipse', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
     id: 'eclipse-band-fill',
-    source: 'eclipse',
+    source: 'eclipse-fill',
     type: 'fill',
     filter: ['==', ['get', 'kind'], 'band'],
     paint: {
       'fill-color': ['get', 'color'],
       'fill-opacity': 0.16,
+      'fill-antialias': false,
     },
   });
   // The Moon-above-horizon hemisphere at a lunar eclipse's maximum — a wash
   // even fainter than the umbral band (it spans half the planet).
   map.addLayer({
     id: 'eclipse-lunar-vis-fill',
-    source: 'eclipse',
+    source: 'eclipse-fill',
     type: 'fill',
     filter: ['==', ['get', 'kind'], 'lunar-vis'],
     paint: {
       'fill-color': ['get', 'color'],
       'fill-opacity': 0.12,
+      'fill-antialias': false,
     },
   });
   // The solar 0%-magnitude outer boundary: how far ANY trace of the eclipse
@@ -2051,8 +2405,9 @@ function setupCustomLayers(
       'line-opacity': 1,
     },
   });
-  // Paran labels are drawn as centred DOM badges (see the paran-badge overlay in
-  // the Map component), not repeated along the line.
+  // Paran labels are DOM chips in one column at the centre meridian, the ranked rows that fit
+  // (paranChips.ts, drawn in the paran-badge overlay in the Map component), not repeated along the
+  // line.
 
   map.addSource('local-space', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   // Both halves at the normal LS weight; direction reads from the dash pattern (and
@@ -2160,8 +2515,9 @@ function setupCustomLayers(
 
   // ── Catalog minor bodies (lib/astro/minorLines): the numbered minor planets picked
   // in the Minor bodies window. A source of their own, never merged into acg-lines —
-  // their features carry no `planet`, so the edge badges, the local-space crossings
-  // and every other PlanetName-keyed reader of the planets' source can't meet them.
+  // their features carry no `planet`, so the planets' edge badges, the local-space
+  // crossings and every other PlanetName-keyed reader of the planets' source can't meet
+  // them. (Their own edge chips, since 2026-10-01, read them on purpose: computeMinorBadges.)
   // Stacked above the fixed stars and below the planets, which keep visual priority.
   //
   // SOLID, like the planets' own lines, because that is what they are: a real body's
@@ -2191,17 +2547,20 @@ function setupCustomLayers(
     },
   });
   // Rising vs setting, told the way the planets' horizon lines tell it (→ ASC, ← DSC),
-  // a size smaller to match the lighter line. The planets ALSO name the angle on their
-  // edge badge; catalog lines have no badge yet, so without these the two horizon
-  // lines of one body would be indistinguishable short of hovering each.
+  // a size smaller to match the lighter line. Like the planets, catalog lines also name
+  // the angle on their edge chip (since 2026-10-01) — but only where a chip is, at the
+  // screen's edges, so mid-map these are still what tells the two horizon lines of one
+  // body apart short of hovering each.
   addArrowLayer(map, 'minor-lines-arrows-asc', 'minor-lines', lineTypeIs('ASC'), '→', 12);
   addArrowLayer(map, 'minor-lines-arrows-dsc', 'minor-lines', lineTypeIs('DSC'), '←', 12);
   // The body's coin (its own symbol, or the shared diamond, on its palette ring — see
   // glyphImages' minor coins), beaded along each of its lines. This is what makes a
   // catalog line identifiable at a glance: a palette colour alone repeats every twelve
-  // bodies, and there is no edge badge to name it. Spaced far wider than the star
-  // sparks (a coin is a label, not a texture) and baked-stamp sprites drawn at 0.4 —
-  // ~12px, enough to read the symbol without crowding the line. Upright (viewport
+  // bodies, and the edge chip that names it (since 2026-10-01) is only at the screen's
+  // edges, and only where it finds room — the least important label, placed last.
+  // Spaced far wider than the star sparks (a coin is a label, not a texture) and
+  // baked-stamp sprites drawn at 0.4 — ~12px, enough to read the symbol without
+  // crowding the line. Upright (viewport
   // rotation) for the same reason as the star sparks, and decorative placement, so a
   // bead never suppresses or collides with anything else. Hit-testing stays on the
   // line layer; the beads are not a target.
@@ -2375,7 +2734,7 @@ function setupCustomLayers(
       'line-dasharray': [2, 3],
     },
   });
-  // Overlay paran labels are also centred DOM badges, not drawn along the line.
+  // Overlay paran labels are the same DOM chips (paranChips.ts), not drawn along the line.
 
   map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
@@ -2775,6 +3134,47 @@ const lastPushed = new WeakMap<maplibregl.Map, Record<string, unknown>>();
 // `EMPTY_FC()` per call would look like new data and defeat the skip above).
 const EMPTY_DATA: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
+// Whether the chart's own sources are mid-update — a setData still tiling — which is when the
+// data effect holds a push back, so a burst of changes lands as one. Only the chart's sources are
+// asked (basemapStyle.isChartSource, the same split the basemap toggles make): GeoJSON the app adds
+// itself, less the offline world outline — GeoJSON too, but ground. Counted, the outline held every
+// push back while it tiled (at each new zoom, and after each fallback swap): the basemap wait this
+// probe exists to avoid, in a smaller form. The probe this replaced, isStyleLoaded(), also
+// reads false while BASEMAP tiles load, so on a slow link any change of chart — and, once the
+// first build stopped waiting for `load`, the chart's own first lines whenever they were computed
+// after the style landed — waited for every visible tile. Reached through the layers rather than
+// getStyle(), which would serialize every chart source's GeoJSON. No style yet reads as busy.
+function chartSourcesBusy(map: maplibregl.Map): boolean {
+  try {
+    const ids = new Set(map.getLayersOrder().map((id) => map.getLayer(id)?.source));
+    return [...ids].some(
+      (id) => !!id && isChartSource(id, map.getSource(id)?.type) && !map.isSourceLoaded(id),
+    );
+  } catch {
+    return true;
+  }
+}
+
+// The eclipse overlay's washes and its curves, for their two sources (see the `eclipse-fill`
+// source in setupCustomLayers). Memoized per collection, so the identity-based push skip
+// (lastPushed) still sees an unchanged eclipse as unchanged — and spinPaint, which re-splits on
+// every spin frame, costs nothing extra.
+const ECLIPSE_FILL_KINDS: ReadonlySet<unknown> = new Set(['band', 'lunar-vis']);
+const eclipseParts = new WeakMap<FeatureCollection, { fills: FeatureCollection; curves: FeatureCollection }>();
+function splitEclipse(fc: FeatureCollection | null | undefined): { fills: FeatureCollection; curves: FeatureCollection } {
+  if (!fc || fc.features.length === 0) return { fills: EMPTY_DATA, curves: EMPTY_DATA };
+  let parts = eclipseParts.get(fc);
+  if (!parts) {
+    const isFill = (f: Feature) => ECLIPSE_FILL_KINDS.has(f.properties?.kind);
+    parts = {
+      fills: { type: 'FeatureCollection', features: fc.features.filter(isFill) },
+      curves: { type: 'FeatureCollection', features: fc.features.filter((f) => !isFill(f)) },
+    };
+    eclipseParts.set(fc, parts);
+  }
+  return parts;
+}
+
 // `freshSources` forces every push: pass it right after setupCustomLayers (initial
 // load and theme/style reloads), where the just-recreated sources hold empty data
 // regardless of what was pushed before.
@@ -2809,7 +3209,9 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOn
   pushGated('acg-zenith', data.zenith);
   pushGated('acg-nadir', data.nadir);
   pushGated('ecliptic', data.ecliptic ?? EMPTY_DATA);
-  pushGated('eclipse', data.eclipse ?? EMPTY_DATA);
+  const eclipse = splitEclipse(data.eclipse);
+  pushGated('eclipse', eclipse.curves);
+  pushGated('eclipse-fill', eclipse.fills);
 
   const ov = data.overlay;
   pushGated('acg-lines-ov', ov ? ov.lines : EMPTY_DATA);
@@ -2861,6 +3263,94 @@ function detectWebGL(): boolean {
 // the caption text and the (mandatory) watermark.
 const CAPTURE_CAPTION_BAND_FRAC = 0.05;
 
+// The caption text size for a band of one-line height `unit` — Map.css's
+// `clamp(10px, unit * 0.42, 19px)` on .capture-caption, restated because the frame
+// geometry needs it before anything renders. Change both together.
+function captionFontPx(unit: number): number {
+  return Math.min(19, Math.max(10, unit * 0.42));
+}
+// A band carrying more than one caption line, in caption-font ems: each line at the 1.25
+// line height `.capture-caption.is-two-line` sets, plus about half an em above and below —
+// the one-line band's breathing room, in proportion to its text. Two lines: 3.4em.
+const CAPTION_LINE_EM = 1.25;
+const CAPTION_BAND_PAD_EM = 0.9;
+// The most lines the band grows to. Two is the norm. A THIRD only where two can't hold the
+// fields even with every field that may give cut to its floor (CAPTION_FIELD_FLOOR_EM): a
+// 4:5 or 1:1 frame on a landscape phone with Coordinates on, 230–260 px wide, where the
+// coordinates alone nearly fill a line and the four fields before them can't share the other.
+const CAPTION_MAX_LINES = 3;
+// Between two caption fields on a line: the App's one-line join ("  ·  ") as it rendered —
+// its runs of spaces collapsed to one each side. Non-breaking, because here the separator
+// is its own flex item, where ordinary edge spaces would be trimmed away entirely.
+const CAPTION_FIELD_SEP = ' · ';
+// The least a caption field that gives way keeps, in caption-font ems: a few characters and
+// the ellipsis ("12:3…", "Rom…"), so a cut field still shows it was there.
+const CAPTION_FIELD_FLOOR_EM = 3;
+
+/** Where a caption of fields `widths` (px, separated by `sep`) breaks into lines — the index of
+ *  the first field on each line after the first, empty for one line. A line fits when its
+ *  fields and separators come to no more than `room`; it CAN fit when they would with every
+ *  field that may give cut to `floor` (the `keep` field gives only alone on its line).
+ *
+ *  The fewest lines on which nothing is cut, up to two. Failing that, two lines, split where
+ *  the least has to be cut in all — if two can fit at all. Only where they can't, three, the
+ *  same way (CAPTION_MAX_LINES). And past that, three lines cut as little as they can be,
+ *  with the line clipping the rest. Among equal splits the later break wins, line one carrying
+ *  the most, as the greedy fill this replaced did. A handful of fields, so every split is
+ *  simply tried. */
+function chooseCaptionBreaks(
+  widths: number[],
+  sep: number,
+  { room, floor, keep }: { room: number; floor: number; keep: number | null },
+): number[] {
+  const n = widths.length;
+  const line = (a: number, b: number) => {
+    let natural = (b - a - 1) * sep;
+    let least = natural;
+    for (let i = a; i < b; i++) {
+      natural += widths[i];
+      least += i === keep && b - a > 1 ? widths[i] : Math.min(widths[i], floor);
+    }
+    return { cut: Math.max(0, natural - room), canFit: least <= room };
+  };
+  type Split = { brks: number[]; cut: number; canFit: boolean };
+  const best = (lines: number): Split | null => {
+    let pick: Split | null = null;
+    const tryBreaks = (brks: number[]) => {
+      const starts = [0, ...brks];
+      let cut = 0;
+      let canFit = true;
+      starts.forEach((a, i) => {
+        const l = line(a, starts[i + 1] ?? n);
+        cut += l.cut;
+        canFit &&= l.canFit;
+      });
+      // Strictly better, or as good: the later breaks come later in this enumeration.
+      if (
+        !pick ||
+        (canFit && !pick.canFit) ||
+        (canFit === pick.canFit && cut <= pick.cut)
+      ) {
+        pick = { brks, cut, canFit };
+      }
+    };
+    if (lines === 1) tryBreaks([]);
+    else if (lines === 2) for (let a = 1; a < n; a++) tryBreaks([a]);
+    else for (let a = 1; a < n - 1; a++) for (let b = a + 1; b < n; b++) tryBreaks([a, b]);
+    return pick;
+  };
+  const one = best(1);
+  if (!one || one.cut === 0 || n < 2) return [];
+  const two = best(2)!;
+  if (two.cut === 0 || two.canFit || n < 3 || CAPTION_MAX_LINES < 3) return two.brks;
+  const three = best(3)!;
+  return three.canFit || three.cut < two.cut ? three.brks : two.brks;
+}
+
+// The clear air between the top bars and a portrait phone's capture frame, which sits just
+// under them (the frame geometry effect) — the same 8 px the bars leave between themselves.
+const FRAME_NAV_GAP = 8;
+
 /** The capture frame's geometry: insets from each host edge, the reserved caption band,
  *  and the box's own dimensions (which the details panel sizes itself against). */
 interface CaptureFrameBox {
@@ -2868,10 +3358,17 @@ interface CaptureFrameBox {
   t: number;
   r: number;
   b: number;
-  /** Caption-band height reserved in the map inset — 0 when no band is drawn. */
+  /** Caption-band height reserved in the map inset — 0 when no band is drawn. One line's
+   *  height (`bandH`) normally; taller when the caption needs more lines. */
   cap: number;
-  /** The band's height whether or not it's drawn (a caption-free export still places its
-   *  brand mark as if the band were there). */
+  /** How many caption lines `cap` was sized for: 0 (no band), 1, 2 or (rarely) 3. The band
+   *  draws its extra lines only once the geometry has made room for them, so a break that has
+   *  been measured but not yet laid out never spills lines out of a shorter band. */
+  capLines: number;
+  /** The band's ONE-LINE height, whether or not it's drawn (a caption-free export still
+   *  places its brand mark as if the band were there). Everything that scales with the
+   *  band — the caption and watermark text, the details panel's type — scales off this,
+   *  not off `cap`, so a second caption line adds height without enlarging anything. */
   bandH: number;
   boxW: number;
   boxH: number;
@@ -2927,7 +3424,7 @@ const WHEEL_MAX_DOCKED = 460;
  *  wheel gains no detail, only pixels. */
 const WHEEL_MAX_CARD = 900;
 /** Room to keep for the balance grid when it's shown. It's a fixed 5-row table sized off
- *  the caption-band height (CaptureBalanceGrid.css: `clamp(8px, cap * 0.34, 12px)`, cells
+ *  the caption band's one-line height (CaptureBalanceGrid.css: `clamp(8px, unit * 0.34, 12px)`, cells
  *  at `min-height: 1.7em`, 1px gaps, a 1px border and a 6px top margin), so its extent is
  *  DERIVED rather than measured — measuring it would reintroduce the feedback loop above.
  *  Deliberately a shade generous: a crowded cell wraps its glyphs onto a second line, and
@@ -2962,9 +3459,12 @@ function fitCaptureWheel(
     return { wheelPx: px, canWheel: true };
   }
   const { boxW, boxH, cap } = box;
+  // The grid's type scales off the band's ONE-line height (--capture-caption-unit), the
+  // room it leaves off the whole band: a two-line caption takes height, not type size.
+  const unit = cap > 0 ? box.bandH : 0;
   // The grid takes width when it sits beside the wheel, height when it stacks below.
-  const gridW = grid && gridAxis === 'row' ? balanceGridReserve(cap, 'row') : 0;
-  const gridH = grid && gridAxis === 'column' ? balanceGridReserve(cap, 'column') : 0;
+  const gridW = grid && gridAxis === 'row' ? balanceGridReserve(unit, 'row') : 0;
+  const gridH = grid && gridAxis === 'column' ? balanceGridReserve(unit, 'column') : 0;
   let availW: number;
   let availH: number;
   let wanted: number;
@@ -3131,6 +3631,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   frameAspect,
   frameCaptionText,
   frameCaptionLines = [],
+  frameCaptionKeep = null,
   frameExtras,
   frameSubject = 'map',
   frameWheelGrid = false,
@@ -3276,6 +3777,32 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         const timer = window.setTimeout(finish, CAPTURE_SETTLE_TIMEOUT_MS);
         map.on('moveend', finish);
       });
+      // ── …and let what the camera shows finish drawing. ──
+      //
+      // The chart is built when the style arrives, not when the last basemap tile does (a slow
+      // link used to hold every line back behind every tile), so the lines can be on screen over
+      // a basemap still filling in — and a pan or zoom just before the click leaves new tiles in
+      // flight the same way. Shooting then printed lines over bare background. The right-to-left
+      // text plugin is the other thing still arriving early in a session: until it registers,
+      // Arabic and Hebrew labels are laid out unshaped, and its registration re-tiles every source
+      // — so wait for it first, then for the tiles (its re-tile included). One budget for both; a
+      // map with everything loaded passes straight through.
+      const contentDeadline = Date.now() + CAPTURE_CONTENT_TIMEOUT_MS;
+      await Promise.race([
+        ensureRtlTextPlugin(),
+        new Promise<void>((r) => window.setTimeout(r, CAPTURE_CONTENT_TIMEOUT_MS)),
+      ]);
+      if (!map.areTilesLoaded()) {
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            window.clearTimeout(timer);
+            map.off('idle', finish);
+            resolve();
+          };
+          const timer = window.setTimeout(finish, Math.max(0, contentDeadline - Date.now()));
+          map.on('idle', finish);
+        });
+      }
       // Two frames: one for React to commit `mapMoving = false` and drop `.is-moving`, one
       // for the badge re-anchor riding the same commit. Then whatever is left of the fades,
       // measured from when the camera actually stopped — so a click landing a few
@@ -3575,9 +4102,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               // text-overflow:ellipsis clip in the export. If the LIVE caption isn't actually
               // truncated (scrollWidth fits clientWidth), drop the clip on the clone so the full
               // text renders — it already fits its box, so it stays clear of the watermark.
-              const liveCap = frameEl.querySelector('.capture-caption-text');
-              if (liveCap && liveCap.scrollWidth <= liveCap.clientWidth + 1) {
-                el.querySelectorAll<HTMLElement>('.capture-caption-text').forEach((c) => {
+              // Element by element: a caption is one or two lines, each a row of fields of
+              // which one may ellipsize, and each clipping box is judged on its own live
+              // twin (a long place name may truly be cut while everything else fits).
+              for (const sel of ['.capture-caption-text', '.capture-caption-field']) {
+                const lives = frameEl.querySelectorAll(sel);
+                el.querySelectorAll<HTMLElement>(sel).forEach((c, i) => {
+                  const live = lives[i];
+                  if (!live || live.scrollWidth > live.clientWidth + 1) return;
                   c.style.setProperty('overflow', 'visible', 'important');
                   c.style.setProperty('text-overflow', 'clip', 'important');
                   c.style.setProperty('max-width', 'none', 'important');
@@ -3870,47 +4402,109 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           }
         }
 
+        // The line labels' glyphs go down in the order their pills are PAINTED, and none prints
+        // over a pill painted after its own. Every label carries a stacking value since
+        // 2026-10-01 (chipStack: the more important on top where two still meet), which the
+        // pills above already honour, and that order is not the DOM's (the edge chips: natal,
+        // overlay, nodes, aspect lines; then the catalog, paran and Local Space chips).
+        // Stamped in DOM order over everything, a glyph from the label underneath printed on
+        // the pill drawn over it: an aspect line's glyph on a natal chip, an LS glyph on an
+        // overlay's. So each is stamped in paint order (z, then DOM order, which is how the
+        // layer stacks two equal values) and clipped out of every later pill it meets. Every
+        // other glyph (the wheel, the Extras panel) draws over the label layer, which is the
+        // frame's first child, and keeps its DOM order after these.
+        const labelLayer = frameEl.querySelector('.acg-edge-badges');
+        const pills = labelLayer
+          ? [...labelLayer.querySelectorAll<HTMLElement>('.acg-badge')].map((el, i) => ({
+              el,
+              z: parseInt(el.style.zIndex, 10) || 0,
+              i,
+              r: el.getBoundingClientRect(),
+            }))
+          : [];
+        const pillOf = new globalThis.Map(pills.map((p) => [p.el, p]));
+        const painted = (a: (typeof pills)[number], b: (typeof pills)[number]) => a.z - b.z || a.i - b.i;
+        const stamps = [...frameEl.querySelectorAll<HTMLElement>('.astro-glyph')].map((g, i) => {
+          const el = labelLayer?.contains(g) ? g.closest<HTMLElement>('.acg-badge') : null;
+          return { g, i, pill: el ? pillOf.get(el) : undefined };
+        });
+        stamps.sort((a, b) =>
+          a.pill && b.pill
+            ? painted(a.pill, b.pill) || a.i - b.i
+            : a.pill
+              ? -1
+              : b.pill
+                ? 1
+                : a.i - b.i,
+        );
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
-        frameEl
-          .querySelectorAll<HTMLElement>('.astro-glyph')
-          .forEach((g) => {
-            const gr = g.getBoundingClientRect();
-            if (gr.width <= 0 || gr.height <= 0) return;
-            const char = (g.textContent ?? '').replace(/\uFE0E/g, '');
-            if (!char) return;
-            // The Extras panel clips overflow (overflow:hidden), so the live DOM hides glyphs
-            // that spill past it (many bodies on a small frame). ctx.fillText ignores CSS
-            // clipping, so skip any panel glyph whose centre is outside the panel \u2014 otherwise
-            // it would land on the map, unlike what's shown on screen.
-            const clip = g.closest('.capture-extras');
-            if (clip) {
-              const cr = clip.getBoundingClientRect();
-              const mx = gr.left + gr.width / 2;
-              const my = gr.top + gr.height / 2;
-              if (mx < cr.left || mx > cr.right || my < cr.top || my > cr.bottom) return;
-            }
-            const cs = getComputedStyle(g);
-            const px = parseFloat(cs.fontSize) || 11;
-            ctx.font = `${px * scale}px "Noto Sans Symbols", sans-serif`;
-            // The wheel's glyphs are SVG <text> (colour in `fill`); the list/badge glyphs are
-            // HTML spans (colour in `color`). Source whichever this element uses.
-            ctx.fillStyle =
-              g.namespaceURI === 'http://www.w3.org/2000/svg' ? cs.fill : cs.color;
-            const cx = (gr.left + gr.width / 2 - frameRect.left) * scale;
-            const cyBox = (gr.top + gr.height / 2 - frameRect.top) * scale;
-            // 'alphabetic' baseline: ink spans [cy − ascent, cy + descent]; shift the pen
-            // so the ink midpoint lands on the box centre. Fall back to the box centre if
-            // metrics are unavailable.
-            const m = ctx.measureText(char);
-            const asc = m.actualBoundingBoxAscent;
-            const desc = m.actualBoundingBoxDescent;
-            const cy =
-              Number.isFinite(asc) && Number.isFinite(desc)
-                ? cyBox + (asc - desc) / 2
-                : cyBox;
+        stamps.forEach(({ g, pill }) => {
+          const gr = g.getBoundingClientRect();
+          if (gr.width <= 0 || gr.height <= 0) return;
+          const char = (g.textContent ?? '').replace(/\uFE0E/g, '');
+          if (!char) return;
+          // The pills painted over this one that reach its glyph: cut out of the stamp.
+          const over = pill
+            ? pills.filter(
+                (p) =>
+                  painted(p, pill) > 0 &&
+                  p.r.left < gr.right + 2 &&
+                  p.r.right > gr.left - 2 &&
+                  p.r.top < gr.bottom + 2 &&
+                  p.r.bottom > gr.top - 2,
+              )
+            : [];
+          // The Extras panel clips overflow (overflow:hidden), so the live DOM hides glyphs
+          // that spill past it (many bodies on a small frame). ctx.fillText ignores CSS
+          // clipping, so skip any panel glyph whose centre is outside the panel \u2014 otherwise
+          // it would land on the map, unlike what's shown on screen.
+          const clip = g.closest('.capture-extras');
+          if (clip) {
+            const cr = clip.getBoundingClientRect();
+            const mx = gr.left + gr.width / 2;
+            const my = gr.top + gr.height / 2;
+            if (mx < cr.left || mx > cr.right || my < cr.top || my > cr.bottom) return;
+          }
+          const cs = getComputedStyle(g);
+          const px = parseFloat(cs.fontSize) || 11;
+          ctx.font = `${px * scale}px "Noto Sans Symbols", sans-serif`;
+          // The wheel's glyphs are SVG <text> (colour in `fill`); the list/badge glyphs are
+          // HTML spans (colour in `color`). Source whichever this element uses.
+          ctx.fillStyle =
+            g.namespaceURI === 'http://www.w3.org/2000/svg' ? cs.fill : cs.color;
+          const cx = (gr.left + gr.width / 2 - frameRect.left) * scale;
+          const cyBox = (gr.top + gr.height / 2 - frameRect.top) * scale;
+          // 'alphabetic' baseline: ink spans [cy − ascent, cy + descent]; shift the pen
+          // so the ink midpoint lands on the box centre. Fall back to the box centre if
+          // metrics are unavailable.
+          const m = ctx.measureText(char);
+          const asc = m.actualBoundingBoxAscent;
+          const desc = m.actualBoundingBoxDescent;
+          const cy =
+            Number.isFinite(asc) && Number.isFinite(desc)
+              ? cyBox + (asc - desc) / 2
+              : cyBox;
+          if (!over.length) {
             ctx.fillText(char, cx, cy);
-          });
+            return;
+          }
+          // Each clip intersects the last, so the stamp keeps what lies outside all of them.
+          ctx.save();
+          for (const p of over) {
+            ctx.beginPath();
+            ctx.rect(0, 0, W, H);
+            ctx.rect(
+              (p.r.left - frameRect.left) * scale,
+              (p.r.top - frameRect.top) * scale,
+              p.r.width * scale,
+              p.r.height * scale,
+            );
+            ctx.clip('evenodd');
+          }
+          ctx.fillText(char, cx, cy);
+          ctx.restore();
+        });
 
         // Re-stamp the location pin (kept out of html2canvas above): draw its teardrop at
         // the LIVE marker's screen rect, in the current state colours (gold custom / green
@@ -4082,6 +4676,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const onArrivalClickRef = useRef(onArrivalClick);
   const onHomeClickRef = useRef(onHomeClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
+  // The translator, for computeBadges (bound once, refs only): a catalog chip's words decide its
+  // size, so they are resolved where it is placed (minorChipText).
+  const tRef = useRef(t);
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
   // edge-badge work only during an actual spin-drag (whose per-frame setCenter would
@@ -4096,8 +4693,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // re-push of the cage geometry can re-assert the rotation rather than snap to anchor,
   // and so badge clicks / flies can shift their geographic target by the same θ.
   const spinDegRef = useRef(0);
-  // One pending style-busy defer at a time (the data effect's `idle` fallback):
-  // the callback reads the latest refs, so queueing more would only repeat it.
+  // One pending sources-busy defer at a time (the data effect's fallback, run when the
+  // chart's sources settle or at `idle`): the callback reads the latest refs, so queueing
+  // more would only repeat it.
   const idleDeferRef = useRef(false);
   // Programmatic slide drive, populated by the slide effect while the tool is
   // active (null otherwise — MapHandle.slideTo/slideBy no-op then). Targets are
@@ -4143,9 +4741,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // line click still pops its card.
   const spotlightActiveRef = useRef(false);
   const spotlightAimingRef = useRef(false);
-  // Every clickable line collection, refreshed each commit (below). The click handler scans
-  // these to find the clicked line's full geometry and measure its closest approach.
-  const lineGeomRef = useRef<ClickableLineFC[]>([]);
+  // Every clickable line collection, keyed by the GeoJSON source that draws it and refreshed
+  // each commit (below). The click handler looks the clicked line up here by its source and
+  // properties, for the full geometry its closest-approach row is measured on.
+  const lineGeomRef = useRef<Record<string, ClickableLineFC>>({});
   // The pinned local-circumstances card (one per map). Held in a ref so the
   // close-on-selection-change effect below can reach the instance the
   // long-lived click handler owns.
@@ -4170,6 +4769,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onArrivalClickRef.current = onArrivalClick;
     onHomeClickRef.current = onHomeClick;
     dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
+    tRef.current = t;
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
     spotlightAimingRef.current = !!spotlightAiming;
@@ -4182,18 +4782,32 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     eclipseCardRef.current = eclipseCard;
     lineCardRef.current = lineCard;
     distanceRefRef.current = distanceRef;
-    // Natal + overlay line collections whose features can open an interpretation card. Only
-    // their geometry matters here; nullable/absent ones are dropped.
-    const lineFcs: (ClickableLineFC | null | undefined)[] = [
-      lines, angleLines, parans, localSpace, starLines, minorLines, ecliptic,
-      overlay?.lines, overlay?.parans, overlay?.localSpace, overlay?.ecliptic,
-    ];
-    lineGeomRef.current = lineFcs.filter((fc): fc is ClickableLineFC => !!fc);
+    // Natal + overlay line collections whose features can open an interpretation card, under
+    // the source ids pushData() feeds them to — a hit-test reports the source, so the two
+    // tables must agree. Nullable/absent ones are dropped.
+    const lineFcs: Record<string, ClickableLineFC | null | undefined> = {
+      'acg-lines': lines,
+      'angle-lines': angleLines,
+      parans,
+      'local-space': localSpace,
+      'star-lines': starLines,
+      'minor-lines': minorLines,
+      ecliptic,
+      'acg-lines-ov': overlay?.lines,
+      'parans-ov': overlay?.parans,
+      'local-space-ov': overlay?.localSpace,
+      'ecliptic-ov': overlay?.ecliptic,
+    };
+    const geom: Record<string, ClickableLineFC> = {};
+    for (const [source, fc] of Object.entries(lineFcs)) if (fc) geom[source] = fc;
+    lineGeomRef.current = geom;
   });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
   // the viewport. Recomputed (rAF-throttled) on every map move + when data changes.
   const [badges, setBadges] = useState<LineBadge[]>([]);
+  // …and the catalog minor bodies' (#34), placed last of all the labels.
+  const [minorBadges, setMinorBadges] = useState<MinorChip[]>([]);
   const [paranBadges, setParanBadges] = useState<ParanBadge[]>([]);
   const [localSpaceBadges, setLocalSpaceBadges] = useState<LocalSpaceBadge[]>([]);
   // True while the map camera is animating (pan / zoom / flyTo). The edge labels fade
@@ -4297,10 +4911,31 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
   // `reuseHudRects` is passed by the per-frame rAF path (scheduleBadges): the HUD
   // panels can't move during a pan/zoom — anything that CAN move them (a HUD drag,
-  // a map resize) clears hudRectsRef first — so mid-move frames reuse the cached
-  // rects instead of paying 9 querySelectorAll + getBoundingClientRect layouts per
-  // frame. Every other caller (moveend, data pushes, theme reloads) reads fresh.
+  // a map resize, the nav, the top-left stack or the zoom control coming to rest
+  // somewhere new — lib/hudSettled and the control's own transitionend, which until
+  // 2026-10-01 nothing announced, so a dock opening left labels under them until the
+  // next pan; and a projection flip, which shows or hides the control's compass)
+  // clears hudRectsRef first — so mid-move
+  // frames reuse the cached rects instead of paying 9 querySelectorAll +
+  // getBoundingClientRect layouts per frame. Every other caller (moveend, data
+  // pushes, theme reloads) reads fresh.
   const hudRectsRef = useRef<AvoidRect[] | null>(null);
+  // A downstream layer's markers (OVERLAY_MARKER_SELECTORS) are NOT cached with the panels:
+  // they move with the camera — and without it, re-projected a commit after a projection
+  // switch — and come and go with the layer's own state (a journal sync, a delete, the layer
+  // shown or hidden), none of which clears a HUD cache. Cached with the panels until 2026-10-01,
+  // which left labels on saved pins after Shift+F (17 edge chips on 192 seeded pins) and after
+  // any marker came or went, until the next pan. So every pass the camera isn't moving in reads
+  // them fresh (one querySelectorAll); a pass mid-move reuses the last read, stale in a way
+  // nothing shows — the label layer is faded out in motion. `key` is what the last read found,
+  // for onOverlayPlaced below to tell whether the markers have moved since.
+  const overlayMarkersRef = useRef<{ rects: AvoidRect[]; key: string }>({ rects: [], key: '' });
+  // Each edge chip's rendered half-extents, by face (edgeChipFace), for the placement to pack
+  // them by their real size. Filled after the chips are drawn (the measuring effect below the
+  // scheduler) rather than read here: computeBadges runs per move frame and at every settle, and
+  // a chip it is about to place may not have been drawn yet. A face is measured once and stays
+  // valid — a pill's width is its content's — so after the first settle this is all cache hits.
+  const chipSizesRef = useRef(new globalThis.Map<string, BadgeSize>());
   const computeBadges = useCallback((reuseHudRects = false) => {
     const map = mapRef.current;
     if (!map) return;
@@ -4313,7 +4948,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // −θ (to stay screen-fixed) but `data` here holds the un-translated props — so shift
     // the pinned feature sets (and the LS origin) by the same −θ to anchor badges onto
     // the rendered lines. Overlay/paran badges aren't shifted: overlay rides with the
-    // basemap, and paran badges sit at the (live) centre longitude.
+    // basemap, and a paran row is a whole parallel, which a shift in longitude leaves
+    // where it was — its chip is placed along it from the (live) centre longitude.
     const slideShift = slideActiveRef.current ? spinDegRef.current : 0;
     const pinShift = <F extends Feature>(feats: F[]): F[] =>
       slideShift
@@ -4321,18 +4957,78 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             .features as F[])
         : feats;
     const cont = map.getContainer();
-    // Edge badges are skipped while the camera is in motion: they fade out
-    // within ~0.12s of movestart (.is-moving — in motion they'd float detached
+    const framing = frameActiveRef.current;
+    // What the labels keep clear of, read at most once a pass and only by a section that
+    // places labels (a mid-move frame with no Local Space on reads nothing). While the Capture
+    // frame is armed, badges hug the frame edges and ignore the HUD panels (Capture window etc.)
+    // — EXCEPT the on-map attribution disclosure, which is in the exported image, so they still
+    // dodge that one.
+    let avoidRead: AvoidRect[] | null = null;
+    const avoid = () =>
+      (avoidRead ??= framing
+        ? readHudRects(map, CAPTURE_AVOID_SELECTORS)
+        : reuseHudRects && hudRectsRef.current
+          ? hudRectsRef.current
+          : (hudRectsRef.current = readHudRects(map)));
+    // The tapped markers every label steps off (PIN_HIT): the core's two projected now, a
+    // downstream layer's read off the DOM (fresh unless the camera is moving — see
+    // overlayMarkersRef). Framing too, since the export draws its markers OVER the labels (the
+    // pin stamp in captureFrame) — except an LS-only transparent still, which draws no marker
+    // at all, so its labels have nothing there to clear. The downstream read happens even then,
+    // so the record onOverlayPlaced compares against is never left behind.
+    let markersRead: AvoidRect[] | null = null;
+    const markerRects = (): AvoidRect[] => {
+      if (markersRead) return markersRead;
+      let overlay = overlayMarkersRef.current.rects;
+      if (framing || !map.isMoving()) {
+        overlay = readHudRects(map, OVERLAY_MARKER_SELECTORS);
+        overlayMarkersRef.current = { rects: overlay, key: rectsKey(overlay) };
+      }
+      return (markersRead =
+        framing && lsTransparentRef.current
+          ? []
+          : [
+              markerHitRect(map, markerRef.current, PIN_HIT),
+              markerHitRect(map, homeMarkerRef.current, HOME_HIT),
+            ]
+              .filter((r): r is AvoidRect => r !== null)
+              .concat(overlay));
+    };
+    // Where the labels may not go this pass — the panels, the markers, and every label placed so
+    // far (chipOccupancy). One per pass, made by the first section that places through it, so a
+    // pass that places nothing reads nothing. Every kind that places through it does so in
+    // CHIP_RANK order, so a chip only ever steps aside for a more important one.
+    let occ: ChipOccupancy | null = null;
+    const occupancy = () =>
+      (occ ??= new ChipOccupancy(
+        cont.clientWidth,
+        cont.clientHeight,
+        avoid().concat(markerRects()),
+      ));
+    // Tighter edge gap while framing (the exported still wants the labels hugging the edge).
+    const inset = framing ? CAPTURE_BADGE_INSET : BADGE_INSET;
+    const w = cont.clientWidth;
+    const h = cont.clientHeight;
+    // Each chip at its real size (measured per face, an estimate for a face not yet drawn).
+    const sizes = chipSizesRef.current;
+    const sizeOf = (b: LineBadge) => sizes.get(edgeChipFace(b)) ?? estimateEdgeChip(b);
+    const paranSizeOf = (b: ParanBadge) => sizes.get(paranChipFace(b)) ?? estimateParanChip(b);
+    const minorSizeOf = (b: MinorChip) => sizes.get(minorChipFace(b)) ?? estimateMinorChip(b);
+    // Labels are skipped while the camera is in motion: the whole label layer fades
+    // out within ~0.12s of movestart (.is-moving — in motion they'd float detached
     // from their lines) and the moveend pass re-anchors them before the fade-in,
-    // so recomputing them per move frame is pure waste. It is also the heaviest
-    // badge set by far — with the aspect/midpoint overlays on it anchors and
+    // so placing them per move frame is pure waste. The edge chips are also the
+    // heaviest set by far — with the aspect/midpoint overlays on it anchors and
     // dodges hundreds of badges (they render at ALL zooms; an earlier zoom gate
-    // was a render-cost mitigation this skip makes unnecessary). The paran and
-    // local-space sections below still run per frame: the compass and paran
-    // rows track the camera live and are far cheaper.
-    if (!map.isMoving()) {
-      // Tighter edge gap while framing (the exported still wants the labels hugging the edge).
-      const inset = frameActiveRef.current ? CAPTURE_BADGE_INSET : BADGE_INSET;
+    // was a render-cost mitigation this skip makes unnecessary). What the Local Space
+    // section DOES keep per frame is what is drawn outside that layer — the compass's
+    // origin and north, and the canvas mask — so the dial tracks the camera live.
+    // The paran and Local Space chips were placed per frame too until 2026-10-02,
+    // into the same faded layer: 0.3–0.6 ms a frame for LS and 0.4 for the parans
+    // (measured 2026-10-01), plus a React commit of both lists, for nothing on screen.
+    const moving = map.isMoving();
+    let edgePlaced: LineBadge[] | null = null;
+    if (!moving) {
       const natal = computeLineBadges(map, pinShift(data.lines.features), inset, false);
       const ov = data.overlay?.lines
         ? computeLineBadges(map, data.overlay.lines.features, inset, true)
@@ -4340,82 +5036,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
       // their aspect/planetB props give them distinct group keys and badge faces.
       const ang = computeLineBadges(map, pinShift(data.angleLines.features), inset, false, 'ang');
-      // While the Capture frame is armed, badges hug the frame edges and ignore the HUD
-      // panels (Capture window etc.) — EXCEPT the on-map attribution disclosure, which is
-      // in the exported image, so they still dodge that one.
-      const hudRects = frameActiveRef.current
-        ? readHudRects(map, CAPTURE_AVOID_SELECTORS)
-        : reuseHudRects && hudRectsRef.current
-          ? hudRectsRef.current
-          : (hudRectsRef.current = readHudRects(map));
-      let placed = dodgeBadges(
+      // Every edge chip on its own line, clear of the panels, the markers and each other where
+      // the slide cap allows, in CHIP_RANK order (dodgeBadges) — the chart's own and an overlay's
+      // here; the nodes and the aspect lines below, once the kinds ranked between them are placed
+      // (the Local Space chips above the nodes, the parans above the aspect lines).
+      edgePlaced = dodgeBadges(
         natal.concat(ov, ang),
-        hudRects,
-        cont.clientWidth,
-        cont.clientHeight,
+        occupancy(),
+        sizeOf,
         inset,
+        CHIP_RANK.natal,
+        CHIP_RANK.overlay,
       );
-      // While the Capture frame is armed, the export is a STILL — overlapping labels can't be
-      // disambiguated by panning, so spread them apart for legibility. Measure each badge's
-      // real box from the live DOM (keyed by data-bkey) so wide aspect/node labels separate
-      // correctly; sizes are intrinsic, so this stays a fixed point (no measure→resize loop).
-      if (frameActiveRef.current) {
-        // `globalThis.Map`: in this file the bare name `Map` is the component itself.
-        const sizes = new globalThis.Map<string, BadgeSize>();
-        frameRef.current
-          ?.querySelector('.acg-edge-badges')
-          ?.querySelectorAll<HTMLElement>('.acg-badge[data-bkey]')
-          .forEach((el) => {
-            sizes.set(el.dataset.bkey as string, {
-              hw: el.offsetWidth / 2,
-              hh: el.offsetHeight / 2,
-            });
-          });
-        placed = spreadBadges(
-          placed,
-          sizes,
-          hudRects,
-          cont.clientWidth,
-          cont.clientHeight,
-          inset,
-        );
-      }
-      setBadges((cur) => (sameBadges(cur, placed) ? cur : placed));
     }
-
-    // Paran centre badges: one per visible paran, parked on its latitude row at the
-    // map's centre longitude (the visible meridian arc). In 2D that's screen-centre;
-    // on a globe it tracks the curved row and is culled when it's on the far side.
-    const centerLng = map.getCenter().lng;
-    const w = cont.clientWidth;
-    const h = cont.clientHeight;
-    const pbadges: ParanBadge[] = [];
-    const pushParans = (
-      fc: FeatureCollection<LineString, ParanProps>,
-      overlay: boolean,
-    ) => {
-      fc.features.forEach((f, i) => {
-        const p = f.properties;
-        const sp = projectVisible(map, centerLng, p.latitude);
-        if (!sp || sp.x < 0 || sp.x > w || sp.y < 0 || sp.y > h) return;
-        pbadges.push({
-          key: `${overlay ? 'pov' : 'pn'}-${i}`,
-          x: sp.x,
-          y: sp.y,
-          planetA: p.planetA,
-          angleA: p.angleA,
-          planetB: p.planetB,
-          angleB: p.angleB,
-          // Tag prefix (overlay or promoted); empty for the natal chart's own parans.
-          prefix: p.tag ?? '',
-          targetLng: p.intersectionLng,
-          targetLat: p.latitude,
-        });
-      });
-    };
-    pushParans(data.parans, false);
-    if (data.overlay?.parans) pushParans(data.overlay.parans, true);
-    setParanBadges((cur) => (sameBadges(cur, pbadges) ? cur : pbadges));
+    // The Local Space chips' real boxes, as placed below — for the Capture spread to keep the
+    // edge and paran chips off them.
+    const lsBoxes: AvoidRect[] = [];
 
     // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
     // the origin at the outward (toward-planet) azimuth — measured from the on-screen
@@ -4423,6 +5059,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // is on the globe's far side. (The Capture-time "Standard labels" mode swaps the
     // ring anchor for the line's outermost visible point — see edgeMode below.)
     const lsbadges: LocalSpaceBadge[] = [];
+    // …and the ones drawn: those that found somewhere to go (all of them in the LS-only still).
+    let lsShown = lsbadges;
     // The LS lines + origin are pinned natal linework, so shift them by −θ too while
     // sliding (the lines converge at origin−θ on screen, matching the rendered source).
     const lsFeats = pinShift(data.localSpace.features);
@@ -4460,7 +5098,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       const north = screenAngleOfNorth(map, origin.lng, origin.lat);
       setOriginNorthDeg((north * 180) / Math.PI);
+      // The labels themselves wait for the settle (`moving`, above): none are built in motion, so
+      // nothing below places anything (or reads a panel) then, and the drawn ones are left as
+      // they were, faded out with their layer.
       const r = lsBadgeRadius(map.getZoom());
+      // The flat map has no far side, and MapLibre's test for one allocates (the edge chips skip
+      // it there too) — this walk runs for every line on every frame while the origin is off screen.
+      const flatMap = map.getProjection()?.type !== 'globe';
       // Anchor an off-screen LS label on its ACTUAL projected arc (a great circle that
       // curves away from a straight ring ray the farther out it runs): walk from the
       // pin outward and return where the line first enters the view — its pin-ward end.
@@ -4468,7 +5112,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         let prev: { x: number; y: number } | null = null;
         for (let i = 0; i < coords.length; i++) {
           const c = coords[i];
-          const cur = isOccluded(map, c[0], c[1]) ? null : map.project([c[0], c[1]]);
+          const cur =
+            !flatMap && isOccluded(map, c[0], c[1]) ? null : map.project([c[0], c[1]]);
           if (prev && cur) {
             const seg = clipSegmentToView(prev, cur, w, h, BADGE_INSET);
             if (seg) return seg.near; // first crossing from the pin = pin-ward edge
@@ -4527,7 +5172,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // its face, so LS lines read exactly like the rest of the chart's linework.
       const edgeMode = lsEdgeLabelsRef.current;
       const seen = new Set<string>();
-      for (const f of lsFeats) {
+      // Each label's line, for the labels the occupancy places along it (below), and which of them
+      // were anchored at their ring point — on the straight bearing ray, which the drawn line bends
+      // away from.
+      const lsCoords = new globalThis.Map<string, number[][]>();
+      const lsAtRing = new Set<string>();
+      for (const f of moving ? [] : lsFeats) {
         const lp = f.properties;
         const k = `${lp.planet}-${lp.direction}`;
         if (seen.has(k)) continue;
@@ -4571,6 +5221,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           placed = lsOutermostVisible(f.geometry.coordinates);
         } else if (inView(ringPt)) {
           placed = ringPt;
+          lsAtRing.add(k);
         } else if (inView(oc)) {
           const seg = clipSegmentToView(oc, ringPt, w, h, BADGE_INSET);
           placed = seg ? seg.far : null;
@@ -4593,14 +5244,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // The always-present bearing, for the transparent "Degrees" along-the-line label.
           bearing: azLabel,
         });
+        lsCoords.set(k, f.geometry.coordinates);
       }
+      // A label's line as drawn, projected from the origin out to the end of its first run across
+      // the screen — the run its label sits on — or to where it goes round the globe. Projected for
+      // the labels the occupancy places, which slide along it (below).
+      const lsDrawnRun = (key: string): ChipPt[] => {
+        const run: ChipPt[] = [];
+        let entered = false;
+        for (const c of lsCoords.get(key) ?? []) {
+          const p = flatMap ? map.project([c[0], c[1]]) : projectVisible(map, c[0], c[1]);
+          if (!p) {
+            if (run.length) break;
+            continue;
+          }
+          const prev = run[run.length - 1];
+          run.push({ x: p.x, y: p.y });
+          if (!prev) continue;
+          if (clipSegmentToView(prev, p, w, h, 0)) entered = true;
+          else if (entered) break;
+        }
+        return run;
+      };
       // Per-badge half-extents for separation: in a capture STILL the export can't be panned to
       // disambiguate overlapping labels, so measure each pill's REAL box from the live DOM (keyed
       // by data-lskey) — the wide 'out' pills carry a bearing and would crowd at the nominal width
       // (exactly what the ACG edge badges do in capture). Live, the nominal pill size is fine; sizes
       // are intrinsic, so measuring stays a fixed point (no measure→resize loop).
       const lsSizes = new globalThis.Map<string, { hw: number; hh: number }>();
-      if (frameActiveRef.current) {
+      if (frameActiveRef.current && lsbadges.length) {
         frameRef.current
           ?.querySelectorAll<HTMLElement>('.acg-badge[data-lskey]')
           .forEach((el) => {
@@ -4613,33 +5285,54 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             });
           });
       }
-      // De-overlap the badges. Only when the origin is on-screen — off-screen the rays don't define
-      // a sensible centre, so the edge-hugged anchors stand as-is.
+      // Per-badge half-extents. `hw`/`hh` space two LS labels apart: a pill that PRINTS its
+      // bearing keeps the deliberately over-wide floor even when measured — the long faces crowd
+      // at close azimuths and must land fully clear of each other in a still (which also rides out
+      // the one render where a face was measured before its bearing span re-appeared). A blank-
+      // faced pill instead trusts its measured box: flooring it too would space a glyph-only pill
+      // (name toggle off) as if it still carried its name, pushing badges off their lines with no
+      // visible crowding to justify it — the narrow floor only stands in while unmeasured.
+      // + LS_BADGE_GAP so neighbours clear by a hair. `mhw`/`mhh` are the real box (measured while
+      // framing, else LS_PILL_HIT), for everything else: the screen edge, the panels, the markers
+      // and the other kinds of label.
+      const sized = lsbadges.map((b) => {
+        const s = lsSizes.get(b.key);
+        const hw =
+          (b.out && b.azLabel
+            ? Math.max(s?.hw ?? 0, LS_BADGE_OUT_HALF_W)
+            : s
+              ? s.hw
+              : LS_BADGE_HALF_W) + LS_BADGE_GAP;
+        const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
+        const mhw = s?.hw ?? (b.out && b.azLabel ? LS_PILL_HIT.out : LS_PILL_HIT.bare);
+        const mhh = s?.hh ?? LS_PILL_HIT.hh;
+        return { b, hw, hh, mhw, mhh };
+      });
+      // Through the shared occupancy (chipOccupancy.ts), like every other kind of label, since
+      // 2026-10-01 (#28). Until then this pass knew only the screen's inset: on a phone the labels
+      // slid under the top bar and under the docked Local Space window, which covers the lower half
+      // of its own ring; a label hidden there still shoved visible ones about in the de-overlap; and
+      // one anchored at the screen edge kept its centre on the inset line, half its pill cut off.
+      // Now a label only goes where its whole REAL pill is on screen and clear of the panels and the
+      // tapped markers (the placed pin above all, which so often IS the origin); and it steps off
+      // the chart's and an overlay's edge chips, placed before it, as far as the slide cap allows,
+      // overlapping under them past that — CHIP_RANK puts Local Space under those and over the
+      // nodes, the parans and the aspect lines, which are placed after it and step off it in turn.
+      // The geometry stays its own: a label moves only along its own line. A label with nowhere on
+      // its line clear of the panels isn't drawn — it would be under one or off screen anyway, and
+      // leaving it out is what keeps it from pushing the others.
+      //
+      // Not in the LS-only transparent still (the rim, or Standard labels): it has no other labels
+      // to make room for, its own placement is what the mode is for, and while the frame is armed
+      // there are no panels in the picture to clear.
+      const dodge = !maskActive && !edgeMode;
       const ocOnScreen = oc.x >= 0 && oc.x <= w && oc.y >= 0 && oc.y <= h;
-      if (ocOnScreen && lsbadges.length > 1) {
-        // Per-badge half-extents. A pill that PRINTS its bearing keeps the deliberately
-        // over-wide floor even when measured — the long faces crowd at close azimuths and
-        // must land fully clear of each other in a still (which also rides out the one
-        // render where a face was measured before its bearing span re-appeared). A blank-
-        // faced pill instead trusts its measured box: flooring it too would space a
-        // glyph-only pill (name toggle off) as if it still carried its name, pushing
-        // badges off their lines with no visible crowding to justify it — the narrow
-        // floor only stands in while unmeasured. + LS_BADGE_GAP so neighbours clear by
-        // a hair.
-        const sized = lsbadges.map((b) => {
-          const s = lsSizes.get(b.key);
-          const hw =
-            (b.out && b.azLabel
-              ? Math.max(s?.hw ?? 0, LS_BADGE_OUT_HALF_W)
-              : s
-                ? s.hw
-                : LS_BADGE_HALF_W) + LS_BADGE_GAP;
-          const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
-          return { b, hw, hh };
-        });
-        if (maskActive) {
-          // On the rim (fixed radius): spread ANGULARLY so pills don't overlap, staying near each
-          // line's bearing. (The radial spread below would slide them off the rim.)
+      if (maskActive) {
+        // On the rim (fixed radius): spread ANGULARLY so pills don't overlap, staying near each
+        // line's bearing. (The radial spread below would slide them off the rim.) No markers to
+        // step off here: the rim exists only in the transparent LS-only still, which draws none
+        // (markerRects is empty while it is armed).
+        if (ocOnScreen && lsbadges.length > 1) {
           const items = sized.map(({ b, hw, hh }) => {
             const ang = Math.atan2(b.x - oc.x, -(b.y - oc.y));
             return { x: b.x, y: b.y, ang, ang0: ang, hw, hh, ref: b };
@@ -4649,39 +5342,166 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             it.ref.x = it.x;
             it.ref.y = it.y;
           }
-        } else {
-          // Slide each label along its OWN line (the ray from oc through its anchor): fix the unit
-          // direction and let only the radius move, so a crowded fan staggers in/out along its lines.
-          const lsItems = sized.map(({ b, hw, hh }) => {
+        }
+      } else if (ocOnScreen && lsbadges.length) {
+        // Slide each label along its OWN line, out from the origin: only how far along it a label
+        // sits changes, so a crowded fan staggers in/out along its lines.
+        const lsItems: (Parameters<typeof spreadLsBadgesRadial>[0][number] & {
+          mhw: number;
+          mhh: number;
+          ref: LocalSpaceBadge;
+        })[] = [];
+        for (const { b, hw, hh, mhw, mhh } of sized) {
+          let path: ArcPath;
+          let rad0: number;
+          if (dodge) {
+            // Its line as drawn, and its rest where that line first meets the ring — or, with the
+            // ring off screen, where the line leaves it.
+            path = arcPath(lsDrawnRun(b.key));
+            rad0 = ringArc(path, oc, r);
+          } else {
+            // The LS-only still: the straight ray from the origin through its anchor, as it always
+            // was there.
             const vx = b.x - oc.x;
             const vy = b.y - oc.y;
-            const rad0 = Math.hypot(vx, vy) || 1; // rest radius: where this line meets the ring
-            const dx = vx / rad0;
-            const dy = vy / rad0;
-            // Farthest radius along this ray that keeps the badge box inside the inset viewport, so a
-            // label can slide all the way out to its line's edge but never off-screen (no extra clamp).
-            let tx = Infinity;
-            let ty = Infinity;
-            if (dx > 1e-6) tx = (w - BADGE_INSET - hw - oc.x) / dx;
-            else if (dx < -1e-6) tx = (BADGE_INSET + hw - oc.x) / dx;
-            if (dy > 1e-6) ty = (h - BADGE_INSET - hh - oc.y) / dy;
-            else if (dy < -1e-6) ty = (BADGE_INSET + hh - oc.y) / dy;
-            const maxRad = Math.max(rad0, Math.min(tx, ty));
-            const minRad = Math.min(rad0, LS_BADGE_MIN_RAD);
-            return { x: b.x, y: b.y, dx, dy, rad: rad0, rad0, minRad, maxRad, hw, hh, ref: b };
-          });
-          spreadLsBadgesRadial(lsItems, oc.x, oc.y, 60);
-          for (const it of lsItems) {
-            it.ref.x = it.x;
-            it.ref.y = it.y;
+            rad0 = Math.hypot(vx, vy) || 1;
+            const far = 2 * (w + h);
+            path = arcPath([
+              { x: oc.x, y: oc.y },
+              { x: oc.x + (vx / rad0) * far, y: oc.y + (vy / rad0) * far },
+            ]);
           }
+          // The stretch of the line on which the label's real pill is wholly on screen inside the
+          // inset, and no nearer the origin than the clear zone round it. Measured with the real
+          // pill, not the spacing box, and never widened to the anchor: until 2026-10-01 this was
+          // max(rad0, …) of the spacing box's fit, which let a label anchored where its line leaves
+          // the screen keep its centre on the inset line (#28: bearings cut at the left edge at
+          // close zoom), while holding an uncrowded one ~30 px short of an edge it could reach.
+          const fit = pathInRect(path, inset + mhw, inset + mhh, w - inset - mhw, h - inset - mhh);
+          const f = nearestSpan(fit, rad0);
+          let minRad = f >= 0 ? Math.max(fit[f], Math.min(rad0, LS_BADGE_MIN_RAD)) : Infinity;
+          let maxRad = f >= 0 ? fit[f + 1] : -Infinity;
+          if (dodge) {
+            const occ = occupancy();
+            // …and of that, the stretch clear of the panels and the tapped markers nearest the
+            // rest: inside it nothing can push the label under one. A label whose line has none is
+            // left out before the stagger, so it moves nobody.
+            const open = occ.clearSpans(path, mhw, mhh, minRad, maxRad, 'panels');
+            const k = nearestSpan(open, rad0);
+            if (k < 0) continue;
+            minRad = open[k];
+            maxRad = open[k + 1];
+            // Inside that, the stretch clear of the labels placed before it (the chart's and an
+            // overlay's edge chips) nearest its rest, if it is within CHIP_SLIDE_CAP — as far as
+            // any label slides to make room. Past that it overlaps one, drawn under it, as an edge
+            // chip does: overlapped is still partly read, where a panel hides it outright.
+            const rest = Math.min(Math.max(rad0, minRad), maxRad);
+            const free = occ.clearSpans(path, mhw, mhh, minRad, maxRad, 'chips');
+            const j = nearestSpan(free, rest);
+            if (j >= 0 && spanGap(free, j, rest) <= CHIP_SLIDE_CAP) {
+              minRad = free[j];
+              maxRad = free[j + 1];
+            }
+          } else if (!(maxRad >= minRad)) {
+            // The still has no room on this line for the whole pill (the origin hard by the frame
+            // edge, the line leaving through it): it stays near its anchor, as it always did.
+            minRad = Math.min(rad0, LS_BADGE_MIN_RAD);
+            maxRad = rad0;
+          }
+          lsItems.push({ x: b.x, y: b.y, path, rad: rad0, rad0, minRad, maxRad, hw, hh, mhw, mhh, ref: b });
         }
+        spreadLsBadgesRadial(lsItems, 60);
+        for (const it of lsItems) {
+          it.ref.x = it.x;
+          it.ref.y = it.y;
+        }
+        if (dodge) {
+          // Into the occupancy, so the kinds ranked under Local Space step off them: the outward
+          // halves first, which carry the bearing, each in the chart's body order.
+          //
+          // Two LS labels never overlap on the live map (2026-10-02, L86's open call). The stagger
+          // spaces a fan only as far as each label's bounds let it, and with the LS window docked at
+          // the bottom of a phone, the lower half of the ring had about 54 px above the window for
+          // nine lines: 15 overlapping LS pairs on a 432×768 phone, 21 with the origin under the top
+          // bar (measured 2026-10-02). So, taken in that same order, a label that overlaps one
+          // already kept moves to the nearest spot within its bounds that clears the kept ones by
+          // CHIP_GAP, at most CHIP_SLIDE_CAP along its line, and failing that is left out. An inward
+          // half goes before an outward one, a later body before an earlier one, and nothing already
+          // kept is moved. The line stays drawn, and hover and a tap still name it. A label that is
+          // only closer than CHIP_GAP stays where the stagger put it, as it always did: it still
+          // reads as its own pill. Not in a Capture still: it can't be hovered, so a label left out
+          // there would leave its line unnamed, where an overlapped one is still partly read.
+          const occ = occupancy();
+          const lsOnly = framing ? null : new ChipOccupancy(w, h, []);
+          const kept = new Set<LocalSpaceBadge>();
+          for (const out of [true, false]) {
+            for (const it of lsItems) {
+              if (it.ref.out !== out) continue;
+              if (lsOnly?.crowded(it.x, it.y, it.mhw, it.mhh, 0)) {
+                const free = lsOnly.clearSpans(it.path, it.mhw, it.mhh, it.minRad, it.maxRad, 'chips');
+                const j = nearestSpan(free, it.rad);
+                if (j < 0 || spanGap(free, j, it.rad) > CHIP_SLIDE_CAP) continue;
+                it.rad = Math.min(Math.max(it.rad, free[j]), free[j + 1]);
+                const p = arcPoint(it.path, it.rad);
+                it.x = it.ref.x = p.x;
+                it.y = it.ref.y = p.y;
+              }
+              lsOnly?.add(it.x, it.y, it.mhw, it.mhh, CHIP_RANK.localSpace);
+              it.ref.z = occ.add(it.x, it.y, it.mhw, it.mhh, CHIP_RANK.localSpace);
+              lsBoxes.push({ left: it.x - it.mhw, top: it.y - it.mhh, right: it.x + it.mhw, bottom: it.y + it.mhh });
+              kept.add(it.ref);
+            }
+          }
+          lsShown = lsItems.filter((it) => kept.has(it.ref)).map((it) => it.ref);
+        }
+      } else if (dodge && lsbadges.length) {
+        // The origin off screen: no centre for a fan to stagger round, so the anchors (where each
+        // line enters the view, or its ring point) are each placed on their own, as an edge chip
+        // is: along its own projected line to the nearest spot clear of the panels, the markers and
+        // the labels already placed, sliding at most CHIP_SLIDE_CAP to get off another label and
+        // overlapping past that (placeOnPath). The outward halves first, which carry the bearing.
+        // The line is projected only for a ring-point anchor, or one that isn't clear already. Left
+        // out when no stretch of its line on screen is clear of the panels, and, live, when the
+        // spot it falls back to past the cap overlaps another LS label (the rule above, 2026-10-02).
+        const occ = occupancy();
+        const lsOnly = framing ? null : new ChipOccupancy(w, h, []);
+        const kept = new Set<LocalSpaceBadge>();
+        for (const { b, mhw, mhh } of [...sized].sort((p, q) => Number(q.b.out) - Number(p.b.out))) {
+          // A ring-point anchor moves onto the line as drawn, where it meets the ring; the pin-ward
+          // entry is on it already.
+          let run: ChipPt[] | null = null;
+          let anchor: ChipPt = b;
+          if (lsAtRing.has(b.key)) {
+            run = lsDrawnRun(b.key);
+            const ap = arcPath(run);
+            anchor = arcPoint(ap, ringArc(ap, oc, r));
+          }
+          let spot: ChipPt | null = anchor;
+          if (
+            anchor.x - mhw < inset ||
+            anchor.x + mhw > w - inset ||
+            anchor.y - mhh < inset ||
+            anchor.y + mhh > h - inset ||
+            occ.blocked(anchor.x, anchor.y, mhw, mhh) ||
+            occ.crowded(anchor.x, anchor.y, mhw, mhh)
+          ) {
+            spot = placeOnPath(occ, run ?? lsDrawnRun(b.key), anchor, mhw, mhh, inset);
+          }
+          if (!spot || lsOnly?.crowded(spot.x, spot.y, mhw, mhh, 0)) continue;
+          lsOnly?.add(spot.x, spot.y, mhw, mhh, CHIP_RANK.localSpace);
+          b.x = spot.x;
+          b.y = spot.y;
+          b.z = occ.add(b.x, b.y, mhw, mhh, CHIP_RANK.localSpace);
+          lsBoxes.push({ left: b.x - mhw, top: b.y - mhh, right: b.x + mhw, bottom: b.y + mhh });
+          kept.add(b);
+        }
+        lsShown = lsbadges.filter((b) => kept.has(b));
       }
       // Along-the-line "Degrees" anchor (transparent export): park each bearing just past its
       // badge's edge on the ray toward the origin, so it reads as that line's degree and clears
       // the (variable-width) name pill. Offset from the MEASURED half-extent — a fixed offset from
       // the pill centre would land on the name whenever the line runs toward it (horizontal lines).
-      for (const b of lsbadges) {
+      for (const b of lsShown) {
         const vx = oc.x - b.x;
         const vy = oc.y - b.y;
         const len = Math.hypot(vx, vy) || 1;
@@ -4704,7 +5524,103 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       originScreenRef.current = null;
       map.getCanvas().style.removeProperty('clip-path');
     }
-    setLocalSpaceBadges((cur) => (sameBadges(cur, lsbadges) ? cur : lsbadges));
+    const lsDrawn = lsShown;
+    if (!moving) setLocalSpaceBadges((cur) => (sameBadges(cur, lsDrawn) ? cur : lsDrawn));
+
+    // The lunar nodes' edge chips, which rank under Local Space's.
+    if (edgePlaced) {
+      edgePlaced = dodgeBadges(
+        edgePlaced,
+        occupancy(),
+        sizeOf,
+        inset,
+        CHIP_RANK.node,
+        CHIP_RANK.node,
+      );
+    }
+
+    // Paran chips: one column where the rows cross the centre meridian, never moved from it; rows
+    // walked in PARAN_RANK order, and a row whose spot is taken (a panel, a marker, a label placed
+    // above, a higher-ranked paran chip) gets none (paranChips.ts; #23). At a settle, with the rest
+    // (`moving`, above). Not in the LS-only transparent still, which draws none.
+    let pbadges =
+      moving || lsTransparentRef.current
+        ? []
+        : placeParanChips(
+            map,
+            data.overlay?.parans
+              ? [
+                  { fc: data.parans, overlay: false },
+                  { fc: data.overlay.parans, overlay: true },
+                ]
+              : [{ fc: data.parans, overlay: false }],
+            occupancy,
+            paranSizeOf,
+            inset,
+            w,
+            h,
+          );
+
+    if (edgePlaced) {
+      edgePlaced = dodgeBadges(
+        edgePlaced,
+        occupancy(),
+        sizeOf,
+        inset,
+        CHIP_RANK.paran + 1,
+        CHIP_RANK.aspect,
+      );
+      // The catalog minor bodies' chips, last of all (CHIP_RANK.catalog; #34): on their own lines
+      // like a planet's, stepping off every label placed above, and drawn under them where the
+      // slide cap runs out. At a settle only, with the edge chips (whose motion fade they share).
+      // The pinned set, shifted by the Slide's −θ like the chart's own lines: catalog lines are
+      // natal linework (spinPaint holds them screen-fixed through a drag). Not in the LS-only
+      // still, which empties their lines at the source.
+      const minorFeats = lsTransparentRef.current ? [] : (data.minorLines?.features ?? []);
+      let minorPlaced: MinorChip[] = [];
+      if (minorFeats.length) {
+        const tr = tRef.current;
+        minorPlaced = placeMinorChips(
+          computeMinorBadges(map, pinShift(minorFeats), inset).map((b) => ({
+            ...b,
+            ...minorChipText(b, tr),
+          })),
+          occupancy(),
+          minorSizeOf,
+          inset,
+        );
+      }
+      // While the Capture frame is armed, the export is a STILL — it can't be panned or hovered,
+      // so the overlaps the slide cap left are relaxed apart too, off the lines if need be
+      // (spreadBadges: the one step the live map doesn't take). The paran chips go through it with
+      // the edge chips, every visible row's, but only ALONG their rows: sideways on the flat map,
+      // not at all on the globe (spreadBadges' `axisOf` says why). So do the catalog chips. The
+      // Local Space chips stay out of it — their fan is spaced by its own stagger, on its own
+      // lines — and are in its avoid-rects instead, so nothing the spread moves lands on one.
+      if (framing) {
+        const n = edgePlaced.length;
+        const np = n + pbadges.length;
+        const paranAxis = map.getProjection()?.type === 'globe' ? 'none' : 'x';
+        const spread = spreadBadges<LineBadge | ParanBadge | MinorChip>(
+          [...edgePlaced, ...pbadges, ...minorPlaced],
+          (b) => ('planetA' in b ? paranSizeOf(b) : 'body' in b ? minorSizeOf(b) : sizeOf(b)),
+          lsBoxes.length ? occupancy().obstacles.concat(lsBoxes) : occupancy().obstacles,
+          w,
+          h,
+          inset,
+          (b) => ('planetA' in b ? paranAxis : 'xy'),
+        );
+        edgePlaced = spread.slice(0, n) as LineBadge[];
+        pbadges = spread.slice(n, np) as ParanBadge[];
+        minorPlaced = spread.slice(np) as MinorChip[];
+      }
+      const edge = edgePlaced;
+      setBadges((cur) => (sameBadges(cur, edge) ? cur : edge));
+      const minor = minorPlaced;
+      setMinorBadges((cur) => (sameBadges(cur, minor) ? cur : minor));
+    }
+    const parans = pbadges;
+    if (!moving) setParanBadges((cur) => (sameBadges(cur, parans) ? cur : parans));
   }, []);
   const scheduleBadges = useCallback(() => {
     if (badgeRafRef.current) return;
@@ -4715,6 +5631,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       computeBadges(true);
     });
   }, [computeBadges]);
+
+  // The "Zoom out" pill is one of the panels the labels keep off (HUD_SELECTORS), but it comes and
+  // goes with the zoom a pass has just set (setZoom), so it mounts a render AFTER the pass that read
+  // the panels — a settle landing past CLOSE_ZOOM placed the labels as if it weren't there. Nothing
+  // else announces it (it doesn't move by itself the way the nav does: lib/hudSettled), so its own
+  // arrival and departure drop the cached rects and re-place the labels, a frame later, with it in.
+  const zoomOutShown = !lsTransparent && (zoom >= CLOSE_ZOOM || !!keepZoomOutVisible);
+  useEffect(() => {
+    hudRectsRef.current = null;
+    scheduleBadges();
+  }, [zoomOutShown, scheduleBadges]);
 
   // The mount-once map effect below wires move/moveend/'astro:hud-moved' to these
   // badge callbacks through refs rather than listing them in its deps. In prod they
@@ -4728,6 +5655,96 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     computeBadgesRef.current = computeBadges;
     scheduleBadgesRef.current = scheduleBadges;
   }, [computeBadges, scheduleBadges]);
+
+  // Measure the edge chips once they are drawn, one per face (chipSizesRef), and re-place the
+  // labels if a face turned out a different size from what the placement used — a face drawn
+  // for the first time (an overlay or the aspect lines just switched on), or a pill that changed
+  // width under it (the symbol font arriving). A passive effect, normally run after the paint
+  // that already laid the chips out, so the reads add no layout of their own. It ends itself:
+  // the re-place uses the sizes just recorded, and the commit it causes finds them unchanged.
+  // Only when the edge chips change, which is only at a settle (they are not recomputed in
+  // motion). The paran chips on screen then are re-checked with them (they carry a data-bface
+  // too); a paran face never measured before is the next effect's. The catalog minor bodies'
+  // chips are placed at a settle too, so their own change is a trigger as well (a body switched
+  // on can leave the planets' chips exactly where they were).
+  useEffect(() => {
+    if (!badges.length && !minorBadges.length) return;
+    const sizes = chipSizesRef.current;
+    const seen = new Set<string>();
+    let changed = false;
+    frameRef.current
+      ?.querySelector('.acg-edge-badges')
+      ?.querySelectorAll<HTMLElement>('.acg-badge[data-bface]')
+      .forEach((el) => {
+        const face = el.dataset.bface as string;
+        if (seen.has(face)) return;
+        seen.add(face);
+        // A zero box isn't laid out (hidden), which is "no measurement", not "no size".
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (!w || !h) return;
+        const s = sizes.get(face);
+        if (s && s.hw * 2 === w && s.hh * 2 === h) return;
+        sizes.set(face, { hw: w / 2, hh: h / 2 });
+        changed = true;
+      });
+    if (changed) scheduleBadgesRef.current();
+  }, [badges, minorBadges]);
+
+  // A paran chip's face the first time it is drawn — a row newly on screen, or the parans just
+  // switched on. The paran chips are re-placed at every settle, so this reads the DOM only when
+  // some chip on screen has a face never measured (a check over the state, no DOM, otherwise):
+  // after a row's first appearance it costs nothing. A changed size of a face already measured is
+  // caught by the settle's pass above, with the edge chips'.
+  useEffect(() => {
+    const sizes = chipSizesRef.current;
+    if (paranBadges.every((b) => sizes.has(paranChipFace(b)))) return;
+    let changed = false;
+    frameRef.current
+      ?.querySelector('.acg-edge-badges')
+      ?.querySelectorAll<HTMLElement>('.paran-badge[data-bface]')
+      .forEach((el) => {
+        const face = el.dataset.bface as string;
+        if (sizes.has(face)) return;
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (!w || !h) return;
+        sizes.set(face, { hw: w / 2, hh: h / 2 });
+        changed = true;
+      });
+    if (changed) scheduleBadgesRef.current();
+  }, [paranBadges]);
+
+  // The overlay host reports every commit and every change to the DOM in its track
+  // (MapOverlayHost onPlaced). While the camera is still, a downstream layer's markers that are
+  // no longer where the labels last stepped off them (overlayMarkersRef) re-place the labels:
+  // a projection switch re-projects them a commit AFTER the projection effect's pass; a settle
+  // that rotated or tilted re-projects them a frame after moveend's (the track's pan correction
+  // can't follow a rotation, so moveend read them where they had been); and a layer re-rendering
+  // on its own state — a saved pin added, deleted or synced in, the layer hidden — tells nobody
+  // else. One read a frame at most, and a re-place only when something moved, which is also what
+  // ends it: the re-place records what it read, and the commit it causes finds the same. Mid-
+  // move it waits — moveend re-places, and the host's settle commit comes back here after it.
+  const overlayCheckRafRef = useRef(0);
+  const onOverlayPlaced = useCallback(() => {
+    if (overlayCheckRafRef.current) return;
+    overlayCheckRafRef.current = requestAnimationFrame(() => {
+      overlayCheckRafRef.current = 0;
+      const map = mapRef.current;
+      if (!map || map.isMoving()) return;
+      const now = rectsKey(readHudRects(map, OVERLAY_MARKER_SELECTORS));
+      if (now !== overlayMarkersRef.current.key) computeBadgesRef.current();
+    });
+  }, []);
+  // Zeroed as well as cancelled (the mount effect's cleanup says why): a non-zero ref reads as
+  // "a check is already booked", and StrictMode's remount would otherwise start with a dead one.
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(overlayCheckRafRef.current);
+      overlayCheckRafRef.current = 0;
+    },
+    [],
+  );
 
   // Hover/focus tip for the MapLibre-rendered zoom + compass buttons (plain DOM,
   // so the portaled HoverTip is driven imperatively from the init effect below).
@@ -4789,6 +5806,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // The probe passing doesn't fully guarantee construction succeeds (a context
     // can be granted then immediately lost), so guard the constructor too and fall
     // back the same way rather than letting an uncaught throw blank the app.
+    // Right-to-left label shaping: registered by the first map, never at import (rtlTextPlugin.ts
+    // says why). Before the map, so a tile that meets RTL text finds the registration under way.
+    void ensureRtlTextPlugin();
     let map: maplibregl.Map;
     try {
       map = new maplibregl.Map({
@@ -4812,6 +5832,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // small, one-time GPU memory bump — negligible for this app's frame rate.
         // (maplibre-gl v5 groups WebGL context flags under canvasContextAttributes.)
         canvasContextAttributes: { preserveDrawingBuffer: true },
+        // The live style's sprite and glyph ranges go through a wait that gives up on silence:
+        // MapLibre never does, and a hung sprite held `load` and `idle` — and the tiles with icons —
+        // for as long as it hung (basemapFallback.ts, PATIENT).
+        transformRequest: transformBasemapRequest,
       });
     } catch (err) {
       console.error('[map] MapLibre could not initialise WebGL', err);
@@ -4913,7 +5937,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // `wanted`, a swap waiting for that build to finish. A swap must not land mid-build: the build
     // would carry on into the new style and that style's own build would then add every layer twice.
     let installed = { mode, theme: themeRef.current };
-    let loadedOnce = false;
+    let landedOnce = false;
     let building: Promise<void> | null = null;
     let wanted: { deadline: boolean } | null = null;
     let onStyleLoad: (() => void) | null = null;
@@ -4968,7 +5992,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       building = done;
     };
 
-    // While on the live style, watch its load; while on the offline one, look for the way back.
+    // While on the live style, watch it — its load closely, then lightly for as long as it stays, so
+    // a connection lost mid-session falls back too; while on the offline one, look for the way back.
     const recovery = createBasemapRecovery({
       styleUrl: () => BASEMAP_STYLE_URLS[themeRef.current],
       onBack: () => swapBasemap('live', false),
@@ -4981,10 +6006,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const styleUrl = BASEMAP_STYLE_URLS[installed.theme];
       stopWatch = watchLiveBasemap(map, deadline ? LIVE_BASEMAP_WAIT_MS : null, styleUrl, {
         ok: () => {
-          recovery.reset();
-          // The live style's credit arrives with its tile source, after a swap's build placed the
-          // edge badges around the shorter one they replaced: place them again, clear of it.
-          if (loadedOnce) computeBadgesRef.current();
+          recovery.landed();
+          // The outline the light watch's swap will need, fetched while it still can be.
+          warmWorldOutline();
+          // The live style's credit arrives with its tile source, after the build placed the edge
+          // badges around the shorter one it replaced (or, on the first load, around none): place
+          // them again, clear of it.
+          if (landedOnce) computeBadgesRef.current();
         },
         fail: () => swapBasemap('offline', false),
       });
@@ -5005,10 +6033,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       watch(deadline);
       if (onStyleLoad) map.off('style.load', onStyleLoad);
       onStyleLoad = null;
-      // Before the first load there is nothing to rebuild: `load` builds on whichever style lands.
-      // After it, the handler goes on BEFORE setStyle — a JSON style can diff in, and fire
-      // style.load, inside that call.
-      if (loadedOnce) {
+      // Before the first style lands there is nothing to rebuild: the first-build handler below
+      // builds on whichever style that is. After it, the handler goes on BEFORE setStyle — a JSON
+      // style can diff in, and fire style.load, inside that call.
+      if (landedOnce) {
         const handler = () => {
           onStyleLoad = null;
           runBuild(false);
@@ -5017,8 +6045,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         map.once('style.load', handler);
       }
       // Between the live and the offline style, replace rather than diff: the old style's requests
-      // go with it, where a diff keeps a hung sprite request that holds back `load` and `idle` for
-      // as long as it hangs. A theme change keeps the diff it always had.
+      // go with it, where a diff keeps a hung sprite request that holds back `load` and `idle` until
+      // its bounded wait gives up on it. A theme change keeps the diff it always had.
       map.setStyle(
         mode === 'live' ? BASEMAP_STYLE_URLS[installed.theme] : offlineStyle(installed.theme),
         from === mode ? undefined : { diff: false },
@@ -5026,8 +6054,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     restyleRef.current = () => swapBasemap(navigator.onLine ? mode : 'offline', true);
 
-    map.on('load', () => {
-      loadedOnce = true;
+    // The first build rides the first style to land, exactly as every swap's does — not MapLibre's
+    // `load`, which waits for every visible basemap tile too. On a slow link that held the whole
+    // chart back behind the basemap: on DevTools' "3G" preset the installed app's first tile came
+    // at 22.7 s and the lines at about 40 s (2026-09-30). So on a healthy start the lines can now
+    // appear a moment before the tiles fill in beneath them — the chart is what the reader opened
+    // the app for, and a slow link shows that order anyway. Capture waits for the tiles itself
+    // (captureFrame), and a data push isn't held behind them either (chartSourcesBusy).
+    map.once('style.load', () => {
+      landedOnce = true;
       runBuild(true);
     });
     watch(true);
@@ -5055,7 +6090,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
     // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
     // when it moves, so re-dodge the labels off its new rect right away rather
-    // than waiting for the next pan/zoom. A stable wrapper (created once with the
+    // than waiting for the next pan/zoom. So do the windows (useMovableHud), and the
+    // nav and the top-left stack once they settle after moving by themselves
+    // (lib/hudSettled). A stable wrapper (created once with the
     // map) lets add/removeEventListener pair on the same reference. The drag has
     // invalidated the cached HUD rects, so drop them before the recompute.
     const onHudMoved = () => {
@@ -5063,6 +6100,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       scheduleBadgesRef.current();
     };
     window.addEventListener('astro:hud-moved', onHudMoved);
+    // The +/− control is one of those panels (HUD_SELECTORS) and moves by itself too: it eases
+    // its own `top` over 0.32 s (Map.css) when the nav's published corner drops it under the bar
+    // or lets it back up. The nav's announcement can land while it is still on its way — at
+    // 560×820, toggling the readout, the first one came ~8 ms into its drop, and only a second,
+    // from the top-left stack settling on the same curve, happened to catch it at rest (none where
+    // the stack doesn't move, or isn't mounted). So its own transition's end re-places the labels.
+    // Its own `top` only: transitionend bubbles from its buttons' colour fades.
+    const ctrlCorner = ctrlRoot.querySelector<HTMLElement>('.maplibregl-ctrl-top-right');
+    const onCtrlSettled = (e: TransitionEvent) => {
+      if (e.target === ctrlCorner && e.propertyName === 'top') onHudMoved();
+    };
+    ctrlCorner?.addEventListener('transitionend', onCtrlSettled);
+    ctrlCorner?.addEventListener('transitioncancel', onCtrlSettled);
     // A container resize reflows the HUD panels too (and the rects are measured
     // in container coordinates), so the cache is stale the same way.
     map.on('resize', () => {
@@ -5092,8 +6142,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     }
 
     return () => {
+      // Zeroed as well as cancelled: scheduleBadges takes a non-zero ref to mean "a frame is
+      // already booked" and returns. StrictMode's mount → cleanup → mount hit it on every dev
+      // load — the transparent-mode effect below books a frame on the first pass, this cancelled
+      // it and left its id behind, and every later move, `astro:hud-moved` and resize then found
+      // the ref set and did nothing for the rest of the session (the badges only moved on
+      // moveend). Production mounts once and never saw it.
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
+      badgeRafRef.current = 0;
       window.removeEventListener('astro:hud-moved', onHudMoved);
+      ctrlCorner?.removeEventListener('transitionend', onCtrlSettled);
+      ctrlCorner?.removeEventListener('transitioncancel', onCtrlSettled);
       ctrlRoot.removeEventListener('click', onCreditsClick);
       ctrlTipCleanups.forEach((fn) => fn());
       setCtrlTip(null);
@@ -5121,13 +6180,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       arrivalMarkerRef.current = null;
       skyStampRef.current?.remove();
       skyStampRef.current = null;
-      // The same hazard in a flag: a data push deferred to `idle` on THIS map is
-      // registered with `once`, and a removed map never fires it — so a flag left set
-      // here refuses every later defer on the next map, and any data change that lands
-      // while its style is busy is dropped until some unrelated change finds it idle.
-      // StrictMode's mount → cleanup → mount hit it on every dev load (a line switched
-      // on stayed undrawn until the next toggle, because its ephemeris file arrived a
-      // moment after the first push).
+      // The same hazard in a flag: a data push deferred on THIS map waits on its events, and a
+      // removed map never fires them — so a flag left set here refuses every later defer on the
+      // next map, and any data change that lands while its sources are busy is dropped until
+      // some unrelated change finds them settled. StrictMode's mount → cleanup → mount hit it on
+      // every dev load (a line switched on stayed undrawn until the next toggle, because its
+      // ephemeris file arrived a moment after the first push).
       idleDeferRef.current = false;
       // The basemap watch and probes answer to this map only; a swap still waiting for a build
       // is dropped by applyWanted's own map check.
@@ -5162,18 +6220,31 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map || projectionRef.current === projection) return;
     projectionRef.current = projection;
-    // Guard against a toggle before the first style load (setProjection throws):
-    // the load handler will apply projectionRef.current once it's ready.
-    if (map.isStyleLoaded()) {
+    // Before a style has landed setProjection throws, and the build that style gets applies
+    // projectionRef.current itself. NOT gated on isStyleLoaded(): that also reads false while
+    // tiles load — the first ones included, now that the chart is built before them — and a
+    // toggle dropped there stays dropped: the control saying 3D over a flat map.
+    try {
       applyProjection(map, projection);
-      scheduleBadges();
+    } catch {
+      return;
     }
+    // The flip resizes one of the panels the labels keep clear of: the corner control gains or
+    // loses its compass (the `proj-2d` class, toggled just now), so the cached panel rects are
+    // stale. This pass reused them until 2026-10-01 and nothing re-read them before the next pan:
+    // at 1440×810, 2D → 3D left two transit DSC lines' chips 5 and 594 px off their own lines.
+    hudRectsRef.current = null;
+    scheduleBadges();
   }, [projection, scheduleBadges]);
 
   // Toggling transparent mode (which now carries the circle mask) doesn't move the camera, so
   // recompute the badges right away to apply / clear the clip + re-place the rim badges (a DIRECT
-  // computeBadges, like the lsEdgeLabels effect — a deferred scheduleBadges rAF can be skipped /
-  // cancelled, which is why the flip looked delayed). computeBadges reads lsTransparentRef, synced
+  // computeBadges, like the lsEdgeLabels effect, so the clip lands in the same frame as the
+  // toggle rather than one later). This comment used to say a deferred pass "can be skipped /
+  // cancelled" and that this was why the flip looked delayed. A booked frame is never skipped in
+  // production; in development every deferred pass WAS a no-op for the whole session — the dead
+  // scheduleBadges guard fixed in the mount effect's cleanup above — so a flip tried under
+  // `npm run dev` waited for the next camera move. computeBadges reads lsTransparentRef, synced
   // by the commit effect that runs before this one. The trailing scheduleBadges settles the layout
   // one frame later: the direct pass measures pill faces that still show the PREVIOUS badge state
   // (the bearing span renders from that state, which the pass itself replaces), so a second pass
@@ -5296,13 +6367,34 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Which line the open card is ABOUT. Both popups anchor on the same click
     // coordinate, so without this the hover tip lands on top of the card the
     // click just asked for — and it names the line the card's own title already
-    // names, so it is pure duplication there. Cleared on every close path (the
-    // ✕, an empty-map click's remove(), and the [lineCard] identity effect
-    // below) by the one listener.
+    // names, so it is pure duplication there. That includes a paran's computed
+    // line ("Returns to the angles today · …"): the card carries it too, for the
+    // spot that was clicked, so the way to read another spot along the same line
+    // is to click there — the card moves and re-reads. Cleared on every close
+    // path (the ✕, an empty-map click's remove(), and the [lineCard] identity
+    // effect below) by the one listener — and set early, while a tap's card is
+    // still pending (below), so the tip the tap raised doesn't flash up first.
     let cardLine: string | null = null;
     lineCardPopup.on('close', () => {
       cardLine = null;
     });
+    // On a touch layout a line card waits a beat before it opens. A pin is placed by
+    // a DOUBLE tap, and the first tap of one is an ordinary click — so with a finger's
+    // reach a pin dropped anywhere near a line used to pop that line's card as a side
+    // effect, left open over the pin it had nothing to do with. The wait is about one
+    // double-tap interval; a second tap inside it re-arms with its own card (it may
+    // be aimed elsewhere), and the double-click that follows cancels whatever is
+    // pending. A mouse has a real click/double-click distinction and opens at once.
+    const TAP_CARD_DELAY_MS = 300;
+    let pendingCard: ReturnType<typeof setTimeout> | null = null;
+    let tapCardOpenedAt = 0;
+    const cancelPendingCard = () => {
+      if (pendingCard == null) return;
+      clearTimeout(pendingCard);
+      pendingCard = null;
+      // The early claim was only for the pending card; an open one keeps its own.
+      if (!lineCardPopup.isOpen()) cardLine = null;
+    };
     const clearLine = () => {
       hoveredLine = null;
       linePopup.remove();
@@ -5358,16 +6450,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const setCursor = (c: string) => {
         if (!slideActiveRef.current) map.getCanvas().style.cursor = c;
       };
+      // A mouse hovers at a mouse's reach; on a touch layout this event is the tap's
+      // own compatibility mousemove, so it takes the finger's reach the click does
+      // (see hitReach).
+      const reach = hitReach(isTouchLayout());
       // A zenith stamp under the cursor wins: animate it + show the tooltip;
       // otherwise fall back to the map's CSS grab cursor.
-      const zen = zenithAtPoint(map, e.point);
+      const zen = zenithAtPoint(map, e.point, reach.zenith);
       if (zen) {
         clearCross();
         clearLine();
         setCursor('pointer');
         showZenith(zen);
       } else {
-        const cross = crossAtPoint(map, e.point);
+        const cross = crossAtPoint(map, e.point, reach.cross);
         if (cross) {
           clearZenith();
           clearLine();
@@ -5381,9 +6477,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // titles itself with that name and sits on the same coordinate, so the
           // tip would only cover the reading it was clicked for. Tested on the
           // RAW id, before the eclipse/paran salting below appends a cursor cell
-          // to it. Any other line still names itself as usual.
-          const line = lineAtPoint(map, e.point, t, labels);
-          if (line && !(lineCardPopup.isOpen() && line.id === cardLine)) {
+          // to it. Any other line still names itself as usual. A tap's card that
+          // is still pending counts as open: its tip would show for the wait and
+          // then be swept away by the card it announced.
+          //
+          // The eclipse card the same way, for the eclipse's own curves: the card is
+          // the full reading for its spot (every contact, the magnitude, the
+          // obscuration) and the curve's tip is a one-line slice of the same thing,
+          // so while it is open the tip only covers it. On a phone that was every
+          // tap near the central line — the tap's own mousemove raises the tip at
+          // the finger's reach (hitReach), and the card it opens sat under it. As
+          // with a line card, reading another spot is a click there: the card moves.
+          const line = lineAtPoint(map, e.point, t, labels, reach.line);
+          if (
+            line &&
+            !((lineCardPopup.isOpen() || pendingCard != null) && line.id === cardLine) &&
+            !(eclipseCardPopup.isOpen() && line.id.startsWith('eclipse'))
+          ) {
             // Eclipse curves add the LOCAL circumstances at the cursor ("63%
             // obscured at 18:14 UTC"). The id is salted with a coarse cursor
             // cell so the figure refreshes while sliding along the line without
@@ -5408,9 +6518,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 { lat: e.lngLat.lat, lng: e.lngLat.lng },
               );
               if (sub) {
+                // Plain text by the seam's contract — escaped here as on the card.
                 line.html = line.html.replace(
                   '</div>',
-                  `<span class="ui-tip-sub">${sub}</span></div>`,
+                  `<span class="ui-tip-sub">${escapeHtml(sub)}</span></div>`,
                 );
                 line.id += `@${Math.round(e.lngLat.lng * 4)}`;
               }
@@ -5480,11 +6591,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // zenith). Natal stamps key off '' ; overlay stamps key off the overlay tag, so
       // a stamp shares its toggle with its overlay label. Pin placement is a
       // double-tap now, so a plain click no longer relocates the chart.
-      const zen = zenithAtPoint(map, e.point);
+      //
+      // A finger reaches further than a cursor (hitReach), here and for the lines below.
+      const touch = isTouchLayout();
+      const reach = hitReach(touch);
+      const zen = zenithAtPoint(map, e.point, reach.zenith);
       if (zen) {
         if (zen.kind === 'minor') {
-          // A catalog coin keys by its `mp:<n>` id — natal-only, no label badge to
-          // share a toggle with, and an id no PlanetName can collide with.
+          // A catalog coin keys by its `mp:<n>` id — natal-only, and an id no PlanetName
+          // can collide with. Its edge chips use the same key (since 2026-10-01), so the
+          // chip and the coin share one fly-out / fly-back toggle, as a planet's do.
           flyToZenith(zenithKey('', zen.body), zen.lng, zen.lat);
           return;
         }
@@ -5509,42 +6625,91 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           .setLngLat(e.lngLat)
           .setHTML(html ?? `<div class="ui-tip">${t('map.eclipseCard.notVisible')}</div>`);
         if (!eclipseCardPopup.isOpen()) eclipseCardPopup.addTo(map);
+        // A curve's tip already up on this coordinate would sit over the card; handleMove
+        // keeps the curves' tips down while the card stays open.
+        if (hoveredLine?.startsWith('eclipse')) clearLine();
       } else if (lineCardRef.current) {
         // Outside eclipses mode, a click on a line pins its interpretation
         // card; a click on empty map dismisses it.
-        const hit = lineAtPoint(map, e.point, t, labels);
+        //
+        // Every tap supersedes the one before it, including a card still waiting
+        // to open (see TAP_CARD_DELAY_MS).
+        cancelPendingCard();
+        if (touch) {
+          // A crossing dot has no card of its own — only the tip its hover shows,
+          // and a finger has no hover. So a tap on one shows that tip (the same
+          // reach as the tap's own mousemove, so the two agree) rather than opening
+          // the card of whichever of its two lines happened to rank first; and any
+          // other tap takes a tip a previous tap left up.
+          const cross = crossAtPoint(map, e.point, reach.cross);
+          if (cross) {
+            lineCardPopup.remove();
+            clearLine();
+            showCross(cross);
+            return;
+          }
+          clearCross();
+        }
+        const hit = lineAtPoint(map, e.point, t, labels, reach.line);
         // The clicked line's CLOSEST approach to the reference point (placed pin, or natal
-        // default): pick the line-collection feature whose geometry runs nearest the click,
-        // then measure that line's nearest great-circle distance to the reference.
+        // default), measured on THAT line's full geometry: found again by its source and
+        // properties (sameFeatureProps), since the hit-test's own copy is cut to its tile.
+        // It used to be whichever line in any collection ran nearest the click, which at a
+        // crossing could be the other line. No match → no row, never a borrowed number.
         let dist: LineCardDistance | null = null;
         const ref = distanceRefRef.current;
-        if (hit && ref) {
-          let clicked: LineString | null = null;
-          let nearestToClick = Infinity;
-          for (const fc of lineGeomRef.current) {
-            for (const f of fc.features) {
-              const d = nearestApproachKm(e.lngLat.lat, e.lngLat.lng, f.geometry);
-              if (d < nearestToClick) {
-                nearestToClick = d;
-                clicked = f.geometry;
-              }
+        const fc = hit ? lineGeomRef.current[hit.source] : undefined;
+        if (hit && ref && fc) {
+          let km = Infinity;
+          for (const f of fc.features) {
+            if (sameFeatureProps(f.properties, hit.props)) {
+              km = Math.min(km, nearestApproachKm(ref.lat, ref.lng, f.geometry));
             }
           }
-          if (clicked) {
-            const km = nearestApproachKm(ref.lat, ref.lng, clicked);
-            if (Number.isFinite(km)) dist = { km, type: ref.type };
-          }
+          if (Number.isFinite(km)) dist = { km, type: ref.type };
         }
-        const html = hit ? lineCardRef.current(hit.layerId, hit.props, dist) : null;
-        if (html) {
-          lineCardPopup.setLngLat(e.lngLat).setHTML(html);
-          if (!lineCardPopup.isOpen()) lineCardPopup.addTo(map);
-          // Remember the line, and take its hover tip down: the tip is already
-          // open on this very coordinate (the click didn't move the cursor), so
-          // it would sit over the card. handleMove keeps it down for this line
-          // while the card stays open — see the guard there.
-          cardLine = hit!.id;
-          clearLine();
+        // A paran's registered annotation, for the CLICKED spot — the same line the hover
+        // tip adds (lib/extensions/paranAnnotation). The tip was its only home, so a finger,
+        // which has no hover, could never read it; and a mouse lost it the moment it clicked,
+        // because the card takes the tip down. The card carries it now.
+        const extra =
+          hit && hit.layerId.startsWith('parans')
+            ? (getParanAnnotation()?.(hit.props as unknown as ParanProps, {
+                lat: e.lngLat.lat,
+                lng: e.lngLat.lng,
+              }) ?? null)
+            : null;
+        const builder = lineCardRef.current;
+        const html = hit ? builder(hit.layerId, hit.props, dist, extra) : null;
+        if (html && hit) {
+          const at = e.lngLat;
+          const open = () => {
+            lineCardPopup.setLngLat(at).setHTML(html);
+            if (!lineCardPopup.isOpen()) lineCardPopup.addTo(map);
+            // Remember the line, and take its hover tip down: the tip is already
+            // open on this very coordinate (the click didn't move the cursor), so
+            // it would sit over the card. handleMove keeps it down for this line
+            // while the card stays open — see the guard there.
+            cardLine = hit.id;
+            clearLine();
+          };
+          if (touch) {
+            // Claim the line now, so the tap's own tip stays down for the wait.
+            cardLine = hit.id;
+            pendingCard = setTimeout(() => {
+              pendingCard = null;
+              // A chart switch or overlay change inside the wait retires the builder
+              // (and closes cards — the [lineCard] effect); don't open a stale reading.
+              if (lineCardRef.current !== builder) {
+                if (!lineCardPopup.isOpen()) cardLine = null;
+                return;
+              }
+              open();
+              tapCardOpenedAt = Date.now();
+            }, TAP_CARD_DELAY_MS);
+          } else {
+            open();
+          }
         } else {
           lineCardPopup.remove();
         }
@@ -5562,11 +6727,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           detail: { lat: e.lngLat.lat, lng: e.lngLat.lng },
         }),
       );
+      // A double-tap is a pin gesture, not a reading: the card its first tap armed
+      // never opens, and one that opened anyway (a slow double-tap outlasting the
+      // wait) is taken back down — a card it was never asked for, over the pin.
+      cancelPendingCard();
+      if (tapCardOpenedAt && Date.now() - tapCardOpenedAt < 2 * TAP_CARD_DELAY_MS) {
+        lineCardPopup.remove();
+      }
+      tapCardOpenedAt = 0;
       // A line spotlight owns the gesture — don't drop / move the pin underneath it.
       if (spotlightActiveRef.current) return;
       // Double-tap drops / moves the pin — but not on a zenith stamp, whose single
-      // clicks already fly there, so the stamp stays a fly-to target.
-      if (zenithAtPoint(map, e.point)) return;
+      // clicks already fly there, so the stamp stays a fly-to target. Measured at the
+      // same reach the click used, or a tap that flew to a stamp could also pin.
+      if (zenithAtPoint(map, e.point, hitReach(isTouchLayout()).zenith)) return;
       onPlacePin?.(e.lngLat.lat, e.lngLat.lng);
     };
     // Touch long-press = the right-click action (remove pin / drop natal). MapLibre
@@ -5632,6 +6806,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     lpCanvas.addEventListener('touchcancel', onLpEnd);
     return () => {
       if (moveRaf) cancelAnimationFrame(moveRaf);
+      // A tap's card still waiting must not open into a map whose handlers are being
+      // rebound for a tool (Measure, Slide) that owns the clicks now.
+      cancelPendingCard();
       clearLp();
       lpCanvas.removeEventListener('touchstart', onLpStart);
       lpCanvas.removeEventListener('touchmove', onLpMove);
@@ -5672,13 +6849,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
   // ── Capture frame ─────────────────────────────────────────────────────
   // When the Capture tool is armed, inset the map view to a centred box of the chosen
-  // aspect ratio (a margin all round leaves the HUD clear), so the framed region is
+  // aspect ratio (a margin all round leaves the HUD clear; a phone held upright lifts the
+  // box to just under the top bars instead — see the placement below), so the framed region is
   // exactly what `captureFrame` exports. The map canvas AND its projected overlays
   // (edge labels, pin, local-horizon wheel) live inside .map-frame, so insetting
   // both confines the lines and keeps the overlays in register with the smaller view.
   // `cap` is the reserved caption-band height (css px); the map/badges are inset by it
   // at the bottom so they don't sit behind the caption.
   const [frameInset, setFrameInset] = useState<CaptureFrameBox | null>(null);
+  // Where the caption breaks onto further lines: the index of the first field on each line
+  // after the first, empty when every field fits on one. Measured from the live band (the
+  // caption-fit effect below) and read here, so the band grows in the same geometry as the
+  // inset and the watermark that follow it. Only the NUMBER of lines reaches this effect —
+  // not the indices, which move nothing here.
+  const [captionBreaks, setCaptionBreaks] = useState<number[]>([]);
+  const captionLineCount = captionBreaks.length + 1;
   useEffect(() => {
     if (!frameActive || !frameAspect) {
       setFrameInset(null);
@@ -5724,8 +6909,37 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Landscape mobile: pin the frame flush to the bottom (no margin — like the full-bleed
       // portrait sides) so it clears the top nav and uses the most space; else centre vertically.
       const bottomAlign = touch && !screenPortrait;
-      const iyb = bottomAlign ? 0 : Math.round((H - boxH) / 2);
-      const iy = bottomAlign ? Math.round(H - boxH - iyb) : Math.round((H - boxH) / 2);
+      let iyb = bottomAlign ? 0 : Math.round((H - boxH) / 2);
+      let iy = bottomAlign ? Math.round(H - boxH - iyb) : Math.round((H - boxH) / 2);
+      // A phone held upright lifts the frame to just under the top bars instead of centring
+      // it, so the room it frees is one piece BELOW the frame — where the Capture window docks
+      // as a full-width sheet (CaptureHud's phoneCeiling) and the frame, its caption and the
+      // controls that change them are all on screen at once. Centred, a 432×768 phone put the
+      // frame at y 263–505 and the window, docked at the bottom, at 198–680: right over the
+      // caption it was there to adjust.
+      //
+      // Only the vertical PLACE moves. The box keeps the size the centred layout gives it, to
+      // the pixel (the frame's height is taken from the centred insets, rounding and all),
+      // because the export is the frame's own size: lifting it changes where the picture is
+      // composed on the screen, never what it is. And the camera's centre stays the canvas
+      // centre through the resize, so whatever sat mid-screen when Capture armed sits
+      // mid-frame — the frame comes to the view, the view isn't left behind under it.
+      //
+      // "The top bars" is the whole nav stack, the tool readout under the bar included (it
+      // carries the compose hint while Capture is armed). Measured, not assumed: its height
+      // follows the chart name, the readout's wrap and a notch's safe area (the stack's own top
+      // is max(edge, safe-area-inset-top)). With no stack to measure, the centred layout stands.
+      if (isPhonePortrait()) {
+        const nav = document.querySelector<HTMLElement>('.topnav-stack')?.getBoundingClientRect();
+        if (nav && nav.height > 0) {
+          const frameH = H - iy - iyb;
+          const below = Math.round(nav.bottom - host.getBoundingClientRect().top) + FRAME_NAV_GAP;
+          // A frame too tall to fit under the bars keeps its foot on the screen's bottom edge
+          // and laps the bars instead — as a centred one already did.
+          iy = Math.max(0, Math.min(below, H - frameH));
+          iyb = H - iy - frameH;
+        }
+      }
       // The band is a fraction of the frame WIDTH; for wide (landscape ~16:9) frames
       // that reads too tall, so halve it there. Floored so it stays legible on small frames.
       const landscape = !!frameAspect && frameAspect >= 1.3;
@@ -5737,24 +6951,230 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // band is shown; `bandH` is published regardless so the Transparent brand mark can size +
       // place itself exactly like the (band-bound) watermark even though no band is reserved there.
       const bandH = Math.max(Math.round(boxW * bandFrac), 22);
-      const cap = noCaption ? 0 : bandH;
+      // A caption too long for one line grows the band to two rather than ellipsizing what
+      // the reader asked for. It was one nowrap line, so on a phone (a 22 px band, 10 px
+      // type, ~326 px of room) turning on Coordinates added "· 48°N…" and the export kept
+      // the same cut — the one field whose whole point is the full figure. The growth is
+      // in HEIGHT only: the type stays sized off the one-line band, and the inset and the
+      // watermark read `cap`, so the map lifts clear of the second line and the mark
+      // re-centres beside both, in this same pass.
+      const capLines = noCaption ? 0 : captionLineCount;
+      const multiH = Math.max(
+        bandH,
+        Math.round(captionFontPx(bandH) * (capLines * CAPTION_LINE_EM + CAPTION_BAND_PAD_EM)),
+      );
+      const cap = capLines === 0 ? 0 : capLines === 1 ? bandH : multiH;
       // The box dimensions are kept so the details panel can size its wheel to the room
       // the frame actually has — in BOTH axes (see fitCaptureWheel).
-      setFrameInset({
+      const next: CaptureFrameBox = {
         l: il,
         t: iy,
         r: ir,
         b: iyb,
         cap,
+        capLines,
         bandH,
         boxW: Math.round(boxW),
         boxH: Math.round(boxH),
-      });
+      };
+      // Equality-guarded: the nav observer below re-runs this on every change of the bars'
+      // size, most of which move nothing here — and a fresh object would resize the GL map
+      // (the layout effect on frameInset) for each of them.
+      setFrameInset((prev) =>
+        prev &&
+        (Object.keys(next) as (keyof CaptureFrameBox)[]).every((k) => prev[k] === next[k])
+          ? prev
+          : next,
+      );
     };
     compute();
     window.addEventListener('resize', compute);
-    return () => window.removeEventListener('resize', compute);
-  }, [frameActive, frameAspect, leftInset, noCaption]);
+    // On a phone the frame's top follows the nav stack (above), which changes height without
+    // the window resizing — the readout swapping in the compose hint as Capture arms, a long
+    // chart name, the hint re-wrapping. Watched only where it's read; a desktop never reads it.
+    const nav = isPhone() ? document.querySelector('.topnav-stack') : null;
+    const navRo = nav ? new ResizeObserver(compute) : null;
+    if (nav) navRo?.observe(nav);
+    return () => {
+      window.removeEventListener('resize', compute);
+      navRo?.disconnect();
+    };
+  }, [frameActive, frameAspect, leftInset, noCaption, captionLineCount]);
+
+  // Caption fit: does the enabled caption fit the band on one line, and if not, where does
+  // it break? Measured on the LIVE band, because the face is not ours to assume — a
+  // downstream build sets its own on .capture-caption-text (and loads it late), so a canvas
+  // measure in the core's system font would break in the wrong place. A throwaway probe
+  // carrying that same class is filled with each candidate first line and measured, then
+  // removed: off-flow and hidden, so measuring never moves the band, and independent of
+  // the split currently drawn, so the answer can't feed back on itself.
+  //
+  // A break is at a FIELD boundary — a field is never cut in half across the lines (a
+  // latitude on one line, its longitude on the next, reads as two places) — and the split is
+  // chosen by chooseCaptionBreaks: one line if everything fits on it, else two, the split
+  // that cuts least; a third only where two can't hold the fields at all (CAPTION_MAX_LINES).
+  // It used to be greedy, line one taking all it could: that is the best split while
+  // everything fits, and not once something has to give — the line it overloads could need
+  // more cut than its fields had, while line one sat half empty.
+  //
+  // Where even two lines can't hold everything, the WIDEST field on the overflowing line
+  // is the one that gives way (`is-shrink`), not whichever came last. A plain line
+  // ellipsis cut from the end, and on a phone the end of line two is usually Coordinates:
+  // "San Francisco, California, United States" pushed "37°46'N 122°25'W" off the band,
+  // the field whose whole point is the full figure. The widest field is nearly always a
+  // place name or the Calculations line — the ones that still read with their tail cut.
+  // It gives down to a floor of a few characters (CAPTION_FIELD_FLOOR_EM), and then the
+  // next widest gives too (`caps`, below): on a narrow frame — up to about 312 px, a 4:5 or
+  // 1:1 on a landscape phone — line two could need more than the widest field had, and the
+  // whole of it went: the time cut to "12:…", then "..", then nothing, with a separator
+  // left standing in front of the coordinates (2026-10-01).
+  //
+  // The room is the band less the watermark's reserve on the right: 22% of the band, or —
+  // where that is less than the mark itself, as on the same narrow frames (a 72 px wordmark
+  // against 63 px of reserve at 288 px) — the mark's measured width, with the half-unit
+  // inset it stands at and as much again clear of the text. Before that the caption's box
+  // ran under the mark there, and its last characters were drawn beneath it.
+  const captionRef = useRef<HTMLDivElement>(null);
+  // Each field's natural width, the separator's and the line's room (px), measured with the
+  // break; they pick the field that shrinks and how far each gives. Null until measured —
+  // the last field shrinks then, as a plain line would.
+  const [captionFit, setCaptionFit] = useState<{
+    widths: number[];
+    sep: number;
+    avail: number;
+  } | null>(null);
+  // Bumped when a web font finishes loading, so a caption measured in the fallback face
+  // is measured again in the real one.
+  const [captionFontEpoch, setCaptionFontEpoch] = useState(0);
+  useEffect(() => {
+    if (!frameActive || typeof document === 'undefined' || !document.fonts) return;
+    const bump = () => setCaptionFontEpoch((n) => n + 1);
+    document.fonts.addEventListener('loadingdone', bump);
+    return () => document.fonts.removeEventListener('loadingdone', bump);
+  }, [frameActive]);
+  const captionKey = frameCaptionLines.join('\u0000');
+  useLayoutEffect(() => {
+    const band = captionRef.current;
+    const fields = frameCaptionLines;
+    if (!band || fields.length === 0 || !frameInset) {
+      setCaptionBreaks((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    // The watermark's reserve (see above), set on the band BEFORE its room is read, so the
+    // read is of the band as it will be drawn. Written straight onto the element — this div
+    // takes no style prop, so React leaves it alone — and on the band rather than the
+    // frame, whose style attribute CaptureHud watches for the frame moving. The export's
+    // clone carries it with the band. The mark is sized off the one-line unit, so it moves
+    // with bandH, and with the brand's face loading (captionFontEpoch).
+    const mark = band.parentElement?.querySelector<HTMLElement>('.capture-watermark');
+    const markW = mark ? mark.getBoundingClientRect().width : 0;
+    const reserve = markW > 0 ? `${Math.ceil(markW + frameInset.bandH)}px` : '';
+    if (band.style.getPropertyValue('--capture-caption-mark') !== reserve) {
+      if (reserve) band.style.setProperty('--capture-caption-mark', reserve);
+      else band.style.removeProperty('--capture-caption-mark');
+    }
+    const cs = getComputedStyle(band);
+    const avail = band.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const probe = document.createElement('span');
+    probe.className = 'capture-caption-text capture-caption-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    band.appendChild(probe);
+    const measure = (text: string): number => {
+      probe.textContent = text;
+      return probe.getBoundingClientRect().width;
+    };
+    // Each field and the separator on their own, as the band lays them out (each its own flex
+    // item); a line is the sum.
+    const widths = fields.map(measure);
+    const sep = measure(CAPTION_FIELD_SEP);
+    probe.remove();
+    const brks = chooseCaptionBreaks(widths, sep, {
+      // A pixel of slack: the export rasteriser measures text a hair wider than the browser.
+      room: avail - 1,
+      floor: CAPTION_FIELD_FLOOR_EM * captionFontPx(frameInset.bandH),
+      keep: frameCaptionKeep,
+    });
+    setCaptionBreaks((prev) =>
+      prev.length === brks.length && prev.every((b, i) => b === brks[i]) ? prev : brks,
+    );
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
+    setCaptionFit((prev) =>
+      prev &&
+      prev.widths.length === widths.length &&
+      prev.widths.every((w, i) => near(w, widths[i])) &&
+      near(prev.sep, sep) &&
+      near(prev.avail, avail)
+        ? prev
+        : { widths, sep, avail },
+    );
+    // captionKey stands in for the fields (a fresh array each App render); frameInset's
+    // width and one-line height are what the room and the type size come from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captionKey, frameInset?.boxW, frameInset?.bandH, noCaption, frameActive, captionFontEpoch]);
+  // The band's fields, line by line, each line naming the field that gives way if it
+  // overflows (`shrink`, an index into that line). More than one line only once the geometry
+  // has sized the band for them (capLines), and only for breaks that still index the
+  // current fields — between a field toggle and its re-measure the old breaks can point
+  // past the end, and the old widths can belong to other fields (then: the last shrinks).
+  //
+  // "Widest" alone isn't enough to keep the figures whole: the coordinates are wider than
+  // a short place, so a long name that pushes the date onto line two can leave
+  // "Jun 5, 1941 · 09:30 UTC+01:00 · Rome, Italy · 41°N53'36" 12°E…" — the latitude kept,
+  // the longitude cut, on the one field whose promise is the full figure. So the field the
+  // host names in `frameCaptionKeep` is passed over while its line has another to give.
+  //
+  // `caps` (per field, px or null) is how far each field gives when the line is measured to
+  // overflow: the shrinking field first, down to the floor, then the next widest that may
+  // give, and so on — so no field is cut to nothing, which is what left a separator dangling.
+  // Only once the band is drawn the way it was measured (one line, or two the geometry has
+  // made room for): in the pass between a break and its taller band, a one-line row would
+  // cut several fields for a frame. Past every floor the line still clips, the last resort.
+  const captionRows: { fields: string[]; shrink: number; caps: (number | null)[] }[] = (() => {
+    const all = frameCaptionLines.length ? [...frameCaptionLines] : frameCaptionText ? [frameCaptionText] : [];
+    const n = all.length;
+    if (n === 0) return [];
+    const fit = captionFit && captionFit.widths.length === n ? captionFit : null;
+    const widths = fit?.widths ?? null;
+    const usable = captionBreaks.every((b, i) => b > (i ? captionBreaks[i - 1] : 0) && b < n);
+    const split = captionBreaks.length > 0 && usable && frameInset?.capLines === captionBreaks.length + 1;
+    const settled = captionBreaks.length === 0 || split;
+    const floor = CAPTION_FIELD_FLOOR_EM * captionFontPx(frameInset?.bandH ?? 0);
+    // The keep index points into frameCaptionLines; the joined fallback has no fields.
+    const keep = frameCaptionLines.length ? frameCaptionKeep : null;
+    const row = (from: number, to: number) => {
+      const mayGive = (i: number) => i !== keep || to - from === 1;
+      // The last field that may give way (a plain line ellipsis cuts from the end), then
+      // the widest of them once measured.
+      let shrink = to - 1;
+      while (shrink > from && !mayGive(shrink)) shrink--;
+      if (widths) {
+        for (let i = from; i < to; i++) if (mayGive(i) && widths[i] > widths[shrink]) shrink = i;
+      }
+      const caps: (number | null)[] = Array.from({ length: to - from }, () => null);
+      if (fit && settled) {
+        // How far the line runs past its room, with the same pixel of slack the break took.
+        let over = (to - from - 1) * fit.sep - (fit.avail - 1);
+        for (let i = from; i < to; i++) over += fit.widths[i];
+        // The shrinking field first, then the rest that may give, widest first.
+        const rest: number[] = [];
+        for (let i = from; i < to; i++) if (i !== shrink && mayGive(i)) rest.push(i);
+        rest.sort((a, b) => fit.widths[b] - fit.widths[a]);
+        for (const i of [shrink, ...rest]) {
+          if (over <= 0) break;
+          const give = Math.min(over, fit.widths[i] - Math.min(fit.widths[i], floor));
+          if (give <= 0) continue;
+          caps[i - from] = Math.floor(fit.widths[i] - give);
+          over -= give;
+        }
+      }
+      return { fields: all.slice(from, to), shrink: shrink - from, caps };
+    };
+    if (split) {
+      const starts = [0, ...captionBreaks];
+      return starts.map((a, i) => row(a, starts[i + 1] ?? n));
+    }
+    return [row(0, n)];
+  })();
 
   // The Capture "Extras" panel (planet/angle positions) docks LEFT for landscape frames
   // and TOP otherwise; it measures its own content and reports the cross-axis px here, and
@@ -6106,7 +7526,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const empty = EMPTY_FC();
       const set = (id: string, fc: FeatureCollection | null | undefined) => {
         const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
-        src?.setData(translateLng((fc ?? empty) as FeatureCollection, -deg));
+        // `deg` arrives wrapped (wrapSpin); `true` also brings each feature back within the tiler's
+        // fold — see translateLng.
+        src?.setData(translateLng((fc ?? empty) as FeatureCollection, -deg, true));
       };
       set('acg-lines', d.lines); // the cage always tracks the spin
       // Parans stay live through the spin too: they're cheap straight parallels,
@@ -6136,7 +7558,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // restored translated when the spin settles.
       sec('minor-zenith', d.minorZenith);
       sec('ecliptic', d.ecliptic);
-      sec('eclipse', d.eclipse);
+      const eclipse = splitEclipse(d.eclipse);
+      sec('eclipse', eclipse.curves);
+      sec('eclipse-fill', eclipse.fills);
       // The overlay (transit/progression) layers are NOT pinned to the natal cage —
       // they belong to a different moment, so they're left untranslated and ride with
       // the basemap as it spins (this feature only fixes the natal linework).
@@ -6179,11 +7603,37 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.touchZoomRotate.disableRotation();
     map.getCanvas().style.cursor = 'grab';
 
-    let spinDeg = 0; // total rotation about the pole (unwrapped: may exceed ±360)
+    // The spin, UNWRAPPED: it is the elapsed time (dtDaysOf), and a slide of several days is a
+    // real reading. Everything the map RENDERS takes it folded to one turn (wrapSpin) — the
+    // camera centre and every rotated source — because the tiler silently drops geometry more
+    // than a world copy out (see translateLng): fed the raw angle, the pinned lines thinned out
+    // after a day or so of slide and were gone by two, over a basemap that kept drawing.
+    // spinDegRef carries the folded angle to everything else that renders at the spin (badges,
+    // flies, the Local Space origin, a style landing mid-slide).
+    let spinDeg = 0;
     let dragStartX: number | null = null;
     let spinAtDragStart = 0;
-    // Grab-and-spin feel: dragging the full canvas width turns the globe a half-turn.
-    let degPerPx = 180 / Math.max(map.getCanvas().clientWidth, 1);
+    // A TRUE GRAB: the ground under the pointer when a drag begins stays under it, at any zoom
+    // on any screen. (It used to be a fixed half-turn per canvas width, which matched the
+    // pointer at one zoom per screen size and otherwise ran ahead of it — 1.3× on a desktop, 4×
+    // on a phone, the grabbed city sliding out from under the finger.) The spin moves only the
+    // camera's longitude, bearing and pitch held at 0, so what a drag needs is how many degrees
+    // east of the camera centre the pointer's column lies:
+    //   flat  — linear: the world is 512·2^zoom px wide (MapLibre's tile size), so a degree is
+    //           1/360 of that at every column;
+    //   globe — not linear, the sphere foreshortening toward its limb, so it's read off the
+    //           projection (globeOffset). Turning the globe about its axis shifts every pixel's
+    //           longitude by the same amount, so that offset doesn't depend on how far the spin
+    //           has got — only on the zoom, which is why a mid-drag zoom re-anchors (grabAt).
+    //           Off the globe's edge there is no ground to hold, and the drag carries on at the
+    //           flat rate — which is the true grab at the globe's centre, MapLibre scaling the
+    //           globe to match the flat map there.
+    // Zoomed in, a stroke therefore covers little time; the readout's minute and hour nudges are
+    // the way to cover more without zooming out.
+    let degPerPx = 0;
+    let grabRow = 0; // globe: the screen row the drag began on
+    let grabOffset: number | null = null; // globe: degrees east of centre at the grab; null = flat rate
+    let lastX = 0;
     let raf = 0;
     let lastReport = 0;
     let settleTimer = 0;
@@ -6201,7 +7651,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!secondaryHiddenRef.current) {
         secondaryHiddenRef.current = true;
         setMapMoving(true);
-        spinPaint(spinDeg, 'empty');
+        spinPaint(spinDegRef.current, 'empty');
       }
       if (settleTimer) clearTimeout(settleTimer);
       settleTimer = window.setTimeout(() => {
@@ -6220,12 +7670,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // barely drifts within a frame).
     const apply = () => {
       raf = 0;
-      spinDegRef.current = spinDeg;
+      // θ modulo a turn: the same picture as the unwrapped spin, inside the range the tiler keeps.
+      const shown = wrapSpin(spinDeg);
+      spinDegRef.current = shown;
       // Layers and camera both shift by −θ: their relative offset is unchanged, so the
       // cage holds its screen position while the basemap (camera-only) rotates by θ.
-      map.setCenter([baseLng - spinDeg, baseLat]);
+      map.setCenter([baseLng - shown, baseLat]);
       // While the secondary layers are hidden (active spin), re-tile only the cage.
-      spinPaint(spinDeg, secondaryHiddenRef.current ? 'skip' : 'translate');
+      spinPaint(shown, secondaryHiddenRef.current ? 'skip' : 'translate');
       const now = performance.now();
       if (now - lastReport > 66) {
         lastReport = now;
@@ -6236,36 +7688,69 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!raf) raf = requestAnimationFrame(apply);
     };
 
-    // Shared mouse/touch drag — `x` is the pointer's screen-x.
-    const beginDrag = (x: number) => {
-      if (dragStartX !== null) return; // already dragging (ignore touch↔synthetic-mouse dup)
+    // Degrees east of the camera centre at screen column `x` on the grab's row, on the globe —
+    // null in flat view, and where that pixel misses the sphere (MapLibre then answers with the
+    // nearest point on the horizon, which no longer moves with the pointer).
+    const globeOffset = (x: number): number | null => {
+      if (projectionRef.current !== '3d') return null;
+      const ll = map.unproject([x, grabRow]);
+      const back = map.project(ll);
+      if (Math.abs(back.x - x) > 1 || Math.abs(back.y - grabRow) > 1) return null;
+      return wrapSpin(ll.lng - map.getCenter().lng);
+    };
+    // (Re-)anchor the grab at the pointer: on drag start, and after a zoom, which changes how many
+    // degrees a pixel holds.
+    const grabAt = (x: number, y: number) => {
       dragStartX = x;
-      slideDraggingRef.current = true;
+      lastX = x;
+      grabRow = y;
       spinAtDragStart = spinDeg;
+      degPerPx = 360 / (512 * 2 ** map.getZoom());
+      grabOffset = globeOffset(x);
+    };
+
+    // Shared mouse/touch drag — `x`, `y` are the pointer's screen position.
+    const beginDrag = (x: number, y: number) => {
+      if (dragStartX !== null) return; // already dragging (ignore touch↔synthetic-mouse dup)
+      slideDraggingRef.current = true;
       // Halt any in-flight camera animation (a badge-click fly, an ease) — otherwise
       // the animation keeps writing the camera every frame while apply() writes it
       // back, and the two fight in visible lurches. Stopping freezes the camera
       // wherever the fly reached; the re-base below continues the spin from there.
       map.stop();
-      // Re-base from the live camera (centre = base − θ), so any camera move since the
-      // last drag — a badge-click fly, a scroll-zoom recentre — is absorbed and this
-      // drag continues smoothly instead of jumping back to the old base.
+      // Re-base from the live camera (centre = base − θ, θ as last RENDERED — spinDegRef — which
+      // is what the camera holds even while an apply is still pending), so any camera move since
+      // the last drag — a badge-click fly, a scroll-zoom recentre — is absorbed and this drag
+      // continues smoothly instead of jumping back to the old base.
       const c = map.getCenter();
-      baseLng = c.lng + spinDeg;
+      baseLng = c.lng + spinDegRef.current;
       baseLat = c.lat;
-      degPerPx = 180 / Math.max(map.getCanvas().clientWidth, 1);
+      grabAt(x, y);
       map.getCanvas().style.cursor = 'grabbing';
     };
     const moveDrag = (x: number) => {
       if (dragStartX === null) return;
       // Drag right ⇒ spin east ⇒ time forward (continents flow rightward).
-      spinDeg = spinAtDragStart + (x - dragStartX) * degPerPx;
+      const off = grabOffset === null ? null : globeOffset(x);
+      if (grabOffset !== null && off !== null) {
+        spinDeg = spinAtDragStart + wrapSpin(off - grabOffset);
+      } else {
+        if (grabOffset !== null) {
+          // Off the globe's edge: nothing left to hold. Carry on from the last pointer
+          // position that had ground under it, at the flat rate.
+          dragStartX = lastX;
+          spinAtDragStart = spinDeg;
+          grabOffset = null;
+        }
+        spinDeg = spinAtDragStart + (x - dragStartX) * degPerPx;
+      }
+      lastX = x;
       schedule();
       markSpinning();
     };
     const onDown = (e: maplibregl.MapMouseEvent) => {
       if (e.originalEvent.button !== 0) return; // left only (right-click cancels)
-      beginDrag(e.point.x);
+      beginDrag(e.point.x, e.point.y);
     };
     const onMove = (e: maplibregl.MapMouseEvent) => moveDrag(e.point.x);
     const onUp = () => {
@@ -6278,7 +7763,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     // Single-finger touch spins; a 2nd finger (pinch-zoom) aborts the spin drag.
     const onTouchStart = (e: maplibregl.MapTouchEvent) => {
-      if (e.points.length === 1) beginDrag(e.point.x);
+      if (e.points.length === 1) beginDrag(e.point.x, e.point.y);
     };
     const onTouchMove = (e: maplibregl.MapTouchEvent) => {
       if (e.points.length !== 1) {
@@ -6291,12 +7776,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // the next apply() would snap the centre straight back to (base − θ) and undo it —
     // a visible jump. Folding the zoom's recentre into the base per zoom frame lets
     // zooming and spinning compose smoothly. (Between drags nothing fights the camera,
-    // and beginDrag re-bases anyway.)
+    // and beginDrag re-bases anyway.) The grab re-anchors too: the zoom changed how many
+    // degrees a pixel holds, so the old anchor would map the pointer to the wrong place —
+    // a jump on the next move instead.
     const onZoomMidDrag = () => {
       if (dragStartX === null) return;
       const c = map.getCenter();
-      baseLng = c.lng + spinDeg;
+      baseLng = c.lng + spinDegRef.current;
       baseLat = c.lat;
+      grabAt(lastX, grabRow);
     };
 
     // Programmatic drive (MapHandle.slideTo/slideBy → readout nudges, keyboard,
@@ -6312,7 +7800,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // last apply into the base — the beginDrag treatment, for the same reasons.
       map.stop();
       const c = map.getCenter();
-      baseLng = c.lng + spinDeg;
+      baseLng = c.lng + spinDegRef.current;
       baseLat = c.lat;
       spinDeg = targetDeg;
       schedule();
@@ -6444,7 +7932,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded() && map.getSource('acg-lines')) {
+    if (map.getSource('acg-lines') && !chartSourcesBusy(map)) {
       if (slideActiveRef.current) {
         // Slide owns the sources (rotated to the current spin) — re-apply at θ rather
         // than push natal positions, which would detach the layers from the spun cage.
@@ -6456,18 +7944,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       }
     } else {
-      // Style not ready — usually a transient: the sources are mid-update (isStyleLoaded() reads
-      // false while a setData settles), NOT the pre-load case. Defer to the next `idle` (fires once
-      // the map settles) rather than `load` — `load` only ever fires on the FIRST style load, so a
-      // deferred push after that would be dropped, stranding whatever data was last set (e.g. the
-      // filtered subset when a line spotlight clears). `dataRef.current` carries the latest props.
-      // The deferred push must respect an active slide exactly like the live branch above: a
-      // spin-drag keeps the style busy per frame, so its bucket resamples all land here — and the
-      // map only goes idle AFTER the user releases, so a raw (untranslated) push would snap the
-      // spun cage back to natal the moment they let go (and stacked defers would repeat it).
+      // Not ready — usually a transient: the chart's sources are mid-update (a setData still
+      // tiling; see chartSourcesBusy), or a style swap hasn't rebuilt them yet. Defer until the
+      // chart's sources settle, with `idle` as the backstop, rather than `load` — `load` only ever
+      // fires on the FIRST style load, so a deferred push after that would be dropped, stranding
+      // whatever data was last set (e.g. the filtered subset when a line spotlight clears).
+      // `dataRef.current` carries the latest props. Not `idle` alone: it also waits for every
+      // basemap tile, which on a slow link held each change of chart back for as long as the
+      // tiles took. The deferred push must respect an active slide exactly like the live branch
+      // above: a spin-drag re-tiles the cage every frame, so its bucket resamples land here, and a
+      // raw (untranslated) push would snap the spun cage back to natal (and stacked defers would
+      // repeat it).
       if (idleDeferRef.current) return;
       idleDeferRef.current = true;
-      map.once('idle', () => {
+      const run = () => {
+        map.off('idle', run);
+        map.off('sourcedata', onSourceData);
         idleDeferRef.current = false;
         if (slideActiveRef.current) {
           spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
@@ -6475,7 +7967,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           pushData(map, dataRef.current, false, lsTransparentRef.current);
           computeBadges();
         }
-      });
+      };
+      const onSourceData = () => {
+        if (map.getSource('acg-lines') && !chartSourcesBusy(map)) run();
+      };
+      map.on('idle', run);
+      map.on('sourcedata', onSourceData);
     }
   }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
 
@@ -6983,6 +8480,27 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     homeMarkerRef.current?.getElement().classList.toggle('is-clickable', !!onHomeClick);
   }, [onHomeClick, home]);
 
+  // The basemap's own place names leave the space under the pin and the home marker
+  // (labelCollider.ts): both are DOM, which MapLibre's label collision can't see, so the pin
+  // sat on the very name it marked. Re-added on every style by the module itself.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) setLabelColliders(map, { pin, home });
+  }, [pin, home]);
+
+  // The placed pin and the home marker are places the labels step off (PIN_HIT), and neither
+  // one appearing, moving or going is a camera move — so re-place the labels when it happens,
+  // or a pin dropped beside an edge sits under the label it should have pushed aside until the
+  // next pan. A downstream marker that hides on the pin's spot and comes back when the pin leaves
+  // it needs nothing more: the deferred pass reads those fresh, and if the layer only re-renders
+  // after it, the host says so (onOverlayPlaced).
+  const pinAt = pin ? `${pin.lat},${pin.lng}` : '';
+  const homeAt = home ? `${home.lat},${home.lng}` : '';
+  useEffect(() => {
+    if (!mapRef.current) return;
+    scheduleBadgesRef.current();
+  }, [pinAt, homeAt]);
+
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
   // precision matters. setState identity is stable, so this only re-runs on a zoom
@@ -7016,6 +8534,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const c = f.geometry.coordinates;
     zenithByOverlayPlanet[f.properties.planet] = [c[0], c[1]];
   }
+  // …and a catalog body's chip flies to its zenith coin, by the body's id — the coin's own
+  // key. Empty when the coins aren't drawn (MC off in the Angles filter, say), and a chip
+  // then stays a plain label, as a planet's does.
+  const zenithByMinor: Record<string, [number, number]> = {};
+  for (const f of minorZenith?.features ?? []) {
+    const c = f.geometry.coordinates;
+    zenithByMinor[f.properties.body] = [c[0], c[1]];
+  }
   return (
     <>
       {/* The Capture frame. Insetting it (when the Capture tool arms a
@@ -7034,6 +8560,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 right: frameInset.r,
                 bottom: frameInset.b,
                 '--capture-caption-h': `${frameInset.cap}px`,
+                // The band's ONE-line height while a band is drawn (0 when not, like the
+                // var above): what its type and the details panel's scale off, so a second
+                // caption line adds height to the band and nothing else.
+                '--capture-caption-unit': `${frameInset.cap ? frameInset.bandH : 0}px`,
                 // The would-be band height, always set — the Transparent brand mark sizes + places
                 // itself off this so it matches the non-transparent watermark exactly.
                 '--capture-brand-h': `${frameInset.bandH}px`,
@@ -7052,76 +8582,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               : undefined
         }
       >
-      <div ref={containerRef} className="map-container" />
-      {glStatus !== 'ok' && (
-        // The map is WebGL-only, so a missing/lost context leaves the container a
-        // blank dark box. Cover it with a plain-DOM notice (no WebGL, so it always
-        // renders) that explains what happened and offers safe, reversible fixes.
-        <div className="map-gl-fallback" role="alert">
-          <div className="map-gl-fallback-card">
-            {glStatus === 'unsupported' ? (
-              <>
-                <h2>{t('map.webgl.unsupportedTitle')}</h2>
-                <p>{t('map.webgl.unsupportedBody')}</p>
-                <p className="map-gl-fallback-heading">{t('map.webgl.tipsHeading')}</p>
-                <ul>
-                  <li>{t('map.webgl.tipAccel')}</li>
-                  <li>{t('map.webgl.tipShield')}</li>
-                  <li>{t('map.webgl.tipBrowser')}</li>
-                </ul>
-              </>
-            ) : (
-              <>
-                <h2>{t('map.webgl.lostTitle')}</h2>
-                <p>{t('map.webgl.lostBody')}</p>
-              </>
-            )}
-            <button type="button" onClick={() => window.location.reload()}>
-              {t('map.webgl.reload')}
-            </button>
-          </div>
-        </div>
-      )}
-      {creditsOpen && (
-        <CreditsModal
-          onClose={() => setCreditsOpen(false)}
-          // The dialog has no extension context of its own; this is the one action its
-          // notice tail may take, lent from the context the map already holds. The
-          // dialog closes first — anything opened this way is a takeover of its own,
-          // and returning to a stale credits dialog behind it would read as a bug.
-          noticeActions={
-            overlayCtx
-              ? {
-                  openExtension: (id) => {
-                    setCreditsOpen(false);
-                    overlayCtx.openExtension(id);
-                  },
-                }
-              : undefined
-          }
-        />
-      )}
-      <HoverTip
-        pos={ctrlTip?.pos ?? null}
-        placement="left"
-        title={ctrlTip?.title ?? ''}
-        hotkey={ctrlTip?.hotkey}
-      />
-      <HoverTip
-        pos={pinTip?.pos ?? null}
-        placement="top"
-        title={pinTip?.title ?? ''}
-      />
-      <HoverTip
-        pos={homeTip?.pos ?? null}
-        placement="top"
-        title={homeTip?.title ?? ''}
-        hint={homeTip?.hint}
-      />
       {/* Every edge badge labels a line on the map, so a chart-subject export drops the lot:
           the card covers the map, and the export re-stamps badge glyphs from the live DOM
           with no z-order to respect — badges left mounted underneath would print on top of
-          the chart. */}
+          the chart.
+
+          FIRST in the frame, before the map container, on purpose: the placed pin (a MapLibre
+          marker inside that container) stands on this layer's rung, z 8, and wins the tie by
+          coming later in the DOM — the one way to put it over the labels without lifting it
+          over Galaxy (8) or the offer banner (9) as well. Map.css `.map-pin` has the ladder. */}
       <div
         className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
         aria-hidden="true"
@@ -7226,6 +8695,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
             </>
           );
+          // The key its measured size is cached under (chipSizesRef); `z` is where it stacks
+          // among all the labels (dodgeBadges), the more important on top where two still meet.
+          // (`data-bkey`, on this and the catalog and paran chips, only names the chip, for
+          // tooling: nothing in the app reads it since the Capture spread stopped measuring chips
+          // by it — computeBadges hands spreadBadges the chips, and their sizes come from the
+          // `data-bface` cache.)
+          const face = edgeChipFace(b);
           // Natal AND overlay labels fly to their body's zenith (a clickable,
           // hover-lifting button); only labels without a zenith (e.g. the nodes, or
           // when MC is hidden) stay plain, non-interactive spans.
@@ -7234,9 +8710,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               type="button"
               key={b.key}
               data-bkey={b.key}
+              data-bface={face}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
-              style={{ ...badgePos(b.x, b.y), background: bg, color: text }}
+              style={{ ...badgePos(b.x, b.y), background: bg, color: text, zIndex: b.z }}
               onClick={() => flyToZenith(flyId, zenithTarget[0], zenithTarget[1])}
               placement="top"
               tip={flyTip}
@@ -7247,21 +8724,83 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <span
               key={b.key}
               data-bkey={b.key}
+              data-bface={face}
               className="acg-badge"
-              style={{ ...badgePos(b.x, b.y), background: bg, color: text }}
+              style={{ ...badgePos(b.x, b.y), background: bg, color: text, zIndex: b.z }}
             >
               {inner}
             </span>
           );
         })}
-        {/* Paran badges label the (non-LS) paran crossings — likewise hidden in the LS-only export. */}
+        {/* The catalog minor bodies' chips (#34; minorChipText says what they print, and why) — in
+            the pill's line colour like a planet's, the mark in its text colour, the number in the
+            smaller type of an overlay tag. A body known by its number only prints that as its
+            name. Clicking flies to its zenith coin and back again, sharing the coin's own toggle.
+            Gone with the other line labels from the LS-only still and a chart-subject export. */}
+        {!chartSubject && !lsTransparent && minorBadges.map((b) => {
+          const text = badgeTextColor(b.color);
+          const mark = minorMarkText(b.n);
+          const zen = zenithByMinor[b.body];
+          const inner = (
+            <>
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              <span className={mark.cls ? `astro-glyph ${mark.cls}` : 'astro-glyph'}>{mark.char}</span>
+              {b.label ? (
+                <>
+                  <span>{b.label}</span>
+                  {b.tail && <span className="acg-badge-num">{b.tail}</span>}
+                </>
+              ) : (
+                <span>{b.tail}</span>
+              )}
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+            </>
+          );
+          const style = { ...badgePos(b.x, b.y), background: b.color, color: text, zIndex: b.z };
+          return zen ? (
+            <TipButton
+              type="button"
+              key={b.key}
+              data-bkey={b.key}
+              data-bface={minorChipFace(b)}
+              tabIndex={-1}
+              className="acg-badge acg-badge-btn minor-badge"
+              style={style}
+              onClick={() => flyToZenith(zenithKey('', b.body), zen[0], zen[1])}
+              placement="top"
+              tip={t('map.flyToZenith', { prefix: '', planet: minorDisplayLabel(b.n, b.name, t) })}
+            >
+              {inner}
+            </TipButton>
+          ) : (
+            <span
+              key={b.key}
+              data-bkey={b.key}
+              data-bface={minorChipFace(b)}
+              className="acg-badge minor-badge"
+              style={style}
+            >
+              {inner}
+            </span>
+          );
+        })}
+        {/* Paran badges label the (non-LS) paran crossings — likewise hidden in the LS-only export.
+            The ranked rows that fit the centre column carry one (paranChips.ts); `z` is where each
+            stacks among all the labels, and its face is the key its measured size is cached under. */}
         {!chartSubject && !lsTransparent && paranBadges.map((b) => (
           <TipButton
             type="button"
             key={b.key}
+            data-bkey={b.key}
+            data-bface={paranChipFace(b)}
             tabIndex={-1}
             className="acg-badge paran-badge acg-badge-btn"
-            style={{ ...badgePos(b.x, b.y), background: zenithFill, color: paranText }}
+            style={{
+              ...badgePos(b.x, b.y),
+              background: zenithFill,
+              color: paranText,
+              zIndex: b.z,
+            }}
             onClick={() => onParanClick(b)}
             placement="top"
             tip={t('map.flyToParan')}
@@ -7293,7 +8832,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               // Transparent export: glyph-only (drop the "LS" prefix), and ~50% larger on the
               // outbound half so the compass rose reads big on a floor-plan overlay.
               className={`acg-badge acg-badge-btn${lgBadge ? ' ls-badge-lg' : ''}`}
-              style={{ ...badgePos(b.x, b.y), background: b.color, color: text }}
+              style={{
+                ...badgePos(b.x, b.y),
+                background: b.color,
+                color: text,
+                zIndex: b.z ?? LS_CHIP_Z,
+              }}
               onClick={() =>
                 localSpaceOrigin &&
                 flyToPoint(localSpaceOrigin.lng, localSpaceOrigin.lat)
@@ -7320,13 +8864,79 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span
                 key={`${b.key}-deg`}
                 className="ls-line-deg"
-                style={{ ...badgePos(b.degX, b.degY), color: b.color }}
+                style={{ ...badgePos(b.degX, b.degY), color: b.color, zIndex: LS_CHIP_Z }}
               >
                 {b.bearing}
               </span>
             ) : null,
           )}
       </div>
+      <div ref={containerRef} className="map-container" />
+      {glStatus !== 'ok' && (
+        // The map is WebGL-only, so a missing/lost context leaves the container a
+        // blank dark box. Cover it with a plain-DOM notice (no WebGL, so it always
+        // renders) that explains what happened and offers safe, reversible fixes.
+        <div className="map-gl-fallback" role="alert">
+          <div className="map-gl-fallback-card">
+            {glStatus === 'unsupported' ? (
+              <>
+                <h2>{t('map.webgl.unsupportedTitle')}</h2>
+                <p>{t('map.webgl.unsupportedBody')}</p>
+                <p className="map-gl-fallback-heading">{t('map.webgl.tipsHeading')}</p>
+                <ul>
+                  <li>{t('map.webgl.tipAccel')}</li>
+                  <li>{t('map.webgl.tipShield')}</li>
+                  <li>{t('map.webgl.tipBrowser')}</li>
+                </ul>
+              </>
+            ) : (
+              <>
+                <h2>{t('map.webgl.lostTitle')}</h2>
+                <p>{t('map.webgl.lostBody')}</p>
+              </>
+            )}
+            <button type="button" onClick={() => window.location.reload()}>
+              {t('map.webgl.reload')}
+            </button>
+          </div>
+        </div>
+      )}
+      {creditsOpen && (
+        <CreditsModal
+          onClose={() => setCreditsOpen(false)}
+          // The dialog has no extension context of its own; this is the one action its
+          // notice tail may take, lent from the context the map already holds. The
+          // dialog closes first — anything opened this way is a takeover of its own,
+          // and returning to a stale credits dialog behind it would read as a bug.
+          noticeActions={
+            overlayCtx
+              ? {
+                  openExtension: (id) => {
+                    setCreditsOpen(false);
+                    overlayCtx.openExtension(id);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
+      <HoverTip
+        pos={ctrlTip?.pos ?? null}
+        placement="left"
+        title={ctrlTip?.title ?? ''}
+        hotkey={ctrlTip?.hotkey}
+      />
+      <HoverTip
+        pos={pinTip?.pos ?? null}
+        placement="top"
+        title={pinTip?.title ?? ''}
+      />
+      <HoverTip
+        pos={homeTip?.pos ?? null}
+        placement="top"
+        title={homeTip?.title ?? ''}
+        hint={homeTip?.hint}
+      />
       {/* Registered map overlays (registerMapOverlay) — positioned DOM drawn inside the
           frame and re-projected on every camera move. Add-ons attach here with no edits to
           this file; rendered only when an overlay context is supplied. */}
@@ -7337,6 +8947,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           moving={mapMoving}
           hiddenIds={hiddenOverlayIds}
           ctx={overlayCtx}
+          onPlaced={onOverlayPlaced}
         />
       )}
       {!hideCompass && !chartSubject && compassP !== null && originScreen && (
@@ -7377,13 +8988,33 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       {/* Capture footer — real DOM inside the frame, so it's captured WYSIWYG and
           the map/edge-labels are inset above the caption band rather than drawn over it.
           The band carries the watermark + optional caption text. `noCaption` (gated
-          Transparent mode) drops it entirely for a clean see-through export. */}
+          Transparent mode) drops it entirely for a clean see-through export.
+          One line, or two (rarely three) where the fields don't fit (the caption-fit
+          effect) — each line its own element, so the export rasteriser can't re-wrap them
+          differently. `is-two-line` means more than one. */}
       {frameActive && !noCaption && (
         <div className="capture-footer" aria-hidden="true">
-          <div className="capture-caption">
-            {frameCaptionText ? (
-              <span className="capture-caption-text">{frameCaptionText}</span>
-            ) : null}
+          <div
+            ref={captionRef}
+            className={`capture-caption${captionRows.length > 1 ? ' is-two-line' : ''}`}
+          >
+            {captionRows.map((row, i) => (
+              <span key={i} className="capture-caption-text">
+                {row.fields.map((field, j) => (
+                  <Fragment key={j}>
+                    {j > 0 && <span className="capture-caption-sep">{CAPTION_FIELD_SEP}</span>}
+                    {/* A field that gives a measured amount is held at that width: flex
+                        shrinking would share the overflow out again, floors and all. */}
+                    <span
+                      className={`capture-caption-field${j === row.shrink || row.caps[j] !== null ? ' is-shrink' : ''}`}
+                      style={row.caps[j] !== null ? { maxWidth: row.caps[j]!, flex: 'none' } : undefined}
+                    >
+                      {field}
+                    </span>
+                  </Fragment>
+                ))}
+              </span>
+            ))}
           </div>
           {/* The export watermark. The open core stamps a plain "astrolina.org" credit;
               a downstream build swaps in its wordmark + font via setCaptureBrand. */}
@@ -7417,7 +9048,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           visible while the zoom guide is open so its click mission stays completable —
           but hidden entirely in the transparent LS export, whose deep zoom is deliberate
           framing, not the user exploring (App suppresses the matching guide too). */}
-      {!lsTransparent && (zoom >= CLOSE_ZOOM || keepZoomOutVisible) && (
+      {zoomOutShown && (
         <button
           type="button"
           className="map-zoom-out"

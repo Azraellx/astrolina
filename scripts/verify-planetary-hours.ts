@@ -69,12 +69,15 @@ const localNoon = (y: number, m: number, d: number, zone: string) =>
   DateTime.fromObject({ year: y, month: m, day: d, hour: 12 }, { zone }).toMillis();
 
 // The band's own shown-day start (SkyBand.tsx `dayStart`), reproduced: the zone's
-// offset at a reference instant, floored to the wall-clock day. Its noon is what
-// the band hands planetaryDaysAround.
+// offset at a reference instant, floored to the wall-clock day, then shifted back
+// by the offset in force AT that midnight (one refine pass — since 2026-09-30, so
+// the day's edges don't depend on what time of day the reference falls at). Its
+// noon is what the band hands planetaryDaysAround.
 function bandNoon(y: number, m: number, d: number, zone: string): number {
   const ref = localNoon(y, m, d, zone);
   const off = offsetHoursAt(zone, ref) * 3_600_000;
-  const dayStart = Math.floor((ref + off) / MS_DAY) * MS_DAY - off;
+  const wallMidnight = Math.floor((ref + off) / MS_DAY) * MS_DAY;
+  const dayStart = wallMidnight - offsetHoursAt(zone, wallMidnight - off) * 3_600_000;
   return dayStart + MS_DAY / 2;
 }
 

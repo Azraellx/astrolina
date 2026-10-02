@@ -488,6 +488,16 @@ body,
   text-size-adjust: 100%;
 }
 
+/* No browser tap-highlight anywhere. Mobile WebKit/Blink paint a translucent box behind any
+   tapped control by default — on this app a teal rectangle flashing behind the Solar returns
+   button or a Galaxy pill, never matching the control's own shape or radius. About 40 controls
+   had opted out one by one and some 200 had not, so it is switched off once, here (inherited:
+   the property cascades to every element). A control whose own press state is its only tap
+   feedback needs an :active tint of its own — see .thud-return-btn and .galaxy-pill. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Fill the whole screen edge-to-edge — including UNDER the iOS home indicator in the installed
    (standalone) PWA. There, in PORTRAIT, height:100dvh / 100% resolve SHORT of the screen by the
    bottom safe-area inset, leaving an unused band along the bottom (the TOP already reaches under the

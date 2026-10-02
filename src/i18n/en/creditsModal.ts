@@ -64,6 +64,8 @@ export const creditsModal = {
     jplSbdb: 'Orbit classes behind the minor-planet tags.',
     noto: 'Astrological glyphs. © 2022 The Noto Project Authors.',
     maplibre: 'Interactive map rendering.',
+    rtlText: 'Right-to-left map labels: Arabic letters joined, Arabic and Hebrew in reading order. © 2017 Mapbox.',
+    icu: 'The shaping and bidirectional-text code inside the right-to-left label plugin. © Unicode, Inc.',
     other: 'Plus other MIT-licensed libraries listed in the project repository.',
   },
   footer:

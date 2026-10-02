@@ -8,6 +8,7 @@ import {
   Fragment,
   type CSSProperties,
   type ReactNode,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -44,6 +45,7 @@ import {
   type DistanceUnit,
 } from '../../lib/overlayPrefs';
 import { setDiscreet, useDiscreet } from '../../lib/discreet';
+import { watchSettled } from '../../lib/hudSettled';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import type { RulershipScheme } from '../../lib/astro/dignities';
 import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
@@ -547,7 +549,9 @@ export function HintMenu<V extends string>({
    *  normal look (plus the badge) but a click routes to the nudge action (the
    *  account/upgrade flow) instead of opening the panel — so the control can't
    *  be opened or changed. Callers decide visibility (tierMet || shouldShowNudge),
-   *  like the nav menus. */
+   *  like the nav menus. A dropdown trigger is a button, and pressing one is an
+   *  explicit ask, so it keeps the upgrade flow; it is the on/off SWITCHES that
+   *  explain in place instead (ui/HoverTip's TipButton `locked`; seam L73). */
   locked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -1147,8 +1151,35 @@ export function Sidebar({
       ? t('settings.inert.fortuneMundo')
       : undefined;
 
+  // TELL THE MAP when this panel arrives, changes size, and leaves. The map keeps its line labels
+  // off every panel's rect (HUD_SELECTORS there lists `.sidebar`), cached until `astro:hud-moved`,
+  // and nothing here said so: opening it left labels under it, and closing it left the ones that
+  // had stepped off it where they had stepped to — a catalog chip 630 px down its own line, beside
+  // the chip for the line's other end — until the next pan (QA, 2026-10-01: 12 chips at 1440×810
+  // on a fresh profile, which opens with the panel up; 34 on a phone opening it). Announced once
+  // the box has come to REST (lib/hudSettled): after the slide-in on touch, which is an animation
+  // rather than a transition, so it is the hold-still rule that waits it out; after a section
+  // opens or closes, which changes its height. And when it goes, from the unmount — on touch that
+  // is after the slide-out, and the panel is out of the DOM by the time the map reads the panels.
+  const asideRef = useRef<HTMLElement>(null);
+  const settledRef = useRef('');
+  useEffect(() => {
+    const el = asideRef.current;
+    if (!el) return;
+    const settled = watchSettled([el], [], settledRef);
+    const ro = new ResizeObserver(() => settled.check());
+    ro.observe(el);
+    settled.check();
+    return () => {
+      ro.disconnect();
+      settled.dispose();
+      window.dispatchEvent(new Event('astro:hud-moved'));
+    };
+  }, []);
+
   return (
     <aside
+      ref={asideRef}
       className={`sidebar${closing ? ' is-closing' : ''}`}
       onAnimationEnd={(e) => {
         // Only the dock's OWN slide-out should trigger the deferred unmount — ignore child
@@ -1395,7 +1426,10 @@ export function Sidebar({
                     greyed, ADV-tagged in its tip, no key chip (the key does nothing
                     until the rung is reached — the app's rule for every locked
                     teaser), and a click runs nudgeAction(), the build's account /
-                    upgrade flow.
+                    upgrade flow. That stays, though locked switches now explain in
+                    place (TipButton's `locked`): this is a bordered button that opens
+                    a window, not an on/off chip like the five beside it, so pressing
+                    it is an explicit ask for the feature.
                   • NOT NUDGED (the open core, where Advanced is a free switch): the
                     standard unavailable state, exactly like Fortune above — visible,
                     ADV-tagged, dead to the click, its tip naming the setting to change
@@ -1868,7 +1902,9 @@ export function Sidebar({
                 (like the star-set row under Fixed Stars). A GATED-rung control
                 (lib/plan): badged, shown once the plan reaches the rung or as a
                 clickable upgrade teaser when the build nudges it, hidden
-                otherwise. */}
+                otherwise. The teaser keeps the upgrade flow — it is a button that
+                opens a window, and pressing it asks for the feature; only on/off
+                switches explain in place (TipButton's `locked`; seam L73). */}
             {showAspectLines && (gatedUnlocked || shouldShowNudge('gated')) && (
               <TipToggle
                 className={`thud-select calc-menu-trigger aspect-hud-open ${gatedUnlocked && aspectHudOpen ? 'open' : ''}`}

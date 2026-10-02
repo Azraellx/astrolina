@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   chartTag,
   displayName,
@@ -20,7 +20,8 @@ import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
-import { useNarrowNav } from '../../lib/touch';
+import { isNarrowNav } from '../../lib/touch';
+import { fitToNavColumn } from '../TopNav/navColumn';
 import './ChartSwitcher.css';
 
 // The dropdown is a quick-switch shortlist (recentShortlist); the full
@@ -77,12 +78,11 @@ export function ChartSwitcher({
   // While discreet mode is on, the switcher shows structure and not identity —
   // it sits in the top bar, permanently visible, so it leaks first otherwise.
   const id = useIdentity();
-  // Portrait top bar (compact + narrow): collapse the label to initials + year only.
-  const narrow = useNarrowNav();
   const [open, setOpen] = useState(false);
   // The row whose delete is mid-confirm (its icons swapped for Delete/Keep).
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // The trigger's hover tip. Suppressed while the menu is open so the rich card
   // never overlays the quick-select dropdown that opens just below it. In the
   // expanded sidebar the trigger hugs the screen's left edge, so the tip is
@@ -126,6 +126,19 @@ export function ChartSwitcher({
   useEffect(() => {
     if (!menuOpen) setConfirmId(null);
   }, [menuOpen]);
+  // The top bar's menu stays inside the map column (TopNav/navColumn.ts): beside a wide dock the
+  // trigger sits a few hundred px from the screen edge, and the menu is up to 360 px wide. The
+  // phone layout pins it in CSS instead; the expanded sidebar's copy has the sidebar to itself.
+  useLayoutEffect(() => {
+    if (compact && menuOpen && menuRef.current && !isNarrowNav()) fitToNavColumn(menuRef.current);
+  }, [compact, menuOpen]);
+
+  const fullMeta = current ? (
+    <>
+      {id.date(fmtBirthDate(current, fmt))} · {id.text(current.birthplace.label.split(',')[0])}
+      {current.tzUncertain && <span className="uncertain">⚠</span>}
+    </>
+  ) : null;
 
   // The trigger tip's Tab line, with the {key} token rendered as the shared
   // yellow key chip so the key name reads like the menu badges. The wrapper
@@ -171,16 +184,26 @@ export function ChartSwitcher({
                   {timeUnknown(current) && (
                     <TagIcon tag="unknown" className="tag-icon" />
                   )}
-                  {/* Portrait top bar (compact + narrow): just the initials — the name + date
-                      don't fit. Compact landscape: hard-cap the name. Expanded sidebar: the full
-                      name, let CSS ellipsis trim it so it reveals more as the sidebar widens. */}
-                  {id.on
-                    ? id.name(current.name)
-                    : compact
-                      ? narrow
-                        ? initials(current.name)
-                        : displayName(current.name)
-                      : current.name}
+                  {/* Top bar: BOTH forms, and CSS shows one (ChartSwitcher.css) — the
+                      hard-capped name normally, just the initials on the phone layout and in
+                      the compact nav, where the name + date don't fit. Both in the DOM so the
+                      nav can measure its full width while showing the short one. Expanded
+                      sidebar: the full name, let CSS ellipsis trim it so it reveals more as
+                      the sidebar widens. */}
+                  {compact ? (
+                    <>
+                      <span className="switcher-full">
+                        {id.on ? id.name(current.name) : displayName(current.name)}
+                      </span>
+                      <span className="switcher-short">
+                        {id.on ? id.name(current.name) : initials(current.name)}
+                      </span>
+                    </>
+                  ) : id.on ? (
+                    id.name(current.name)
+                  ) : (
+                    current.name
+                  )}
                 </>
               ) : (
                 t('chartSwitcher.noChart')
@@ -208,14 +231,15 @@ export function ChartSwitcher({
           </span>
           {current && (
             <span className="meta">
-              {compact && narrow ? (
-                id.on ? id.date(String(current.year)) : current.year
-              ) : (
+              {compact ? (
                 <>
-                  {id.date(fmtBirthDate(current, fmt))} ·{' '}
-                  {id.text(current.birthplace.label.split(',')[0])}
-                  {current.tzUncertain && <span className="uncertain">⚠</span>}
+                  <span className="switcher-full">{fullMeta}</span>
+                  <span className="switcher-short">
+                    {id.on ? id.date(String(current.year)) : current.year}
+                  </span>
                 </>
+              ) : (
+                fullMeta
               )}
             </span>
           )}
@@ -230,7 +254,7 @@ export function ChartSwitcher({
       />
 
       {menuOpen && (
-        <div className="switcher-menu">
+        <div ref={menuRef} className="switcher-menu">
           <ul>
             {charts.length === 0 && (
               <li className="empty">{t('chartSwitcher.empty')}</li>

@@ -10,27 +10,44 @@
    and mirrors the .import-modal panel chrome. */
 .credits-modal {
   width: 100%;
-  max-width: 580px;
-  /* 100% of the safe-area-padded .modal-backdrop content box — equals the old calc(100vh - 40px)
-     when there are no insets (desktop/browser), but on a notched standalone PWA it stays within the
-     safe area so the header + close ✕ never hide under the notch. Content scrolls inside. */
-  max-height: 100%;
+  /* 660, not the old 580: the notes are what make this dialog tall, and at 580 each column
+     was ~260 px wide, so a one-line note took two or three. The extra 80 px removes about a
+     sixth of the wrapped lines. */
+  max-width: 660px;
+  /* Capped short of a tall window — this is a list to scan, not a page to read — and never
+     past 100% of the safe-area-padded .modal-backdrop content box, so on a notched standalone
+     PWA the header + close ✕ never hide under the notch. The BODY scrolls, not the dialog:
+     the title bar stays put (see .credits-body). */
+  max-height: min(760px, 100%);
   background: rgba(var(--bg-menu), 0.98);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 10px;
-  padding: 18px 20px 16px;
   color: var(--text-strong);
   font-family: inherit;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .credits-modal header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex: none;
+  padding: 16px 20px 10px;
+}
+
+/* Everything below the title: the one scroller. min-height: 0 lets it shrink inside the
+   capped flex column instead of pushing the dialog past its cap. The bottom padding lives
+   here so the last line can scroll clear of the rounded corner. */
+.credits-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 20px 16px;
 }
 
 .credits-modal header h2 {
@@ -138,14 +155,20 @@
   text-decoration: underline;
 }
 
+/* Two balanced columns that break BETWEEN ROWS. They used to break only between whole groups
+   (break-inside: avoid on the group), and with a build's registered rows the groups ran
+   2/5/5/5 — so the best split left one column ~250 px short of the other (measured at
+   1440×810), the empty space under "Maps & places". Rows are the unit now: each row stays
+   whole, and a heading stays with the row after it, so a group may continue at the top of the
+   next column under no heading of its own (the column break reads as the continuation).
+   Everything here is BLOCK layout, with margins rather than flex gaps, because block
+   fragmentation across columns is the well-trodden path; flex items splitting between
+   columns is not. Height stays auto: a multicol box given a fixed height overflows SIDEWAYS
+   into extra columns, so the scrolling happens on .credits-body, around it. */
 .credits-groups {
   columns: 2;
-  column-gap: 22px;
-}
-
-.credits-groups .credits-group {
-  break-inside: avoid;
-  margin-bottom: 14px;
+  column-gap: 24px;
+  column-fill: balance;
 }
 
 @media (max-width: 400px) {
@@ -155,33 +178,39 @@
 }
 
 .credits-group {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.credits-group:last-child {
+  margin-bottom: 0;
 }
 
 .credits-group h3 {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
+  break-after: avoid;
 }
 
 .credits-group ul {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
 }
 
 .credits-group li {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  margin-bottom: 7px;
+  break-inside: avoid;
+}
+
+.credits-group li:last-child {
+  margin-bottom: 0;
 }
 
 .credits-line {
@@ -218,11 +247,11 @@
 .credits-note {
   font-size: 11.5px;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .credits-modal footer {
-  margin-top: 2px;
+  margin-top: 0;
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.5;

@@ -24,9 +24,10 @@
   color: rgba(255, 255, 255, 0.96);
   pointer-events: none;
   overflow: hidden;
-  /* Scale with the frame (via the caption band's height var, which tracks frame size)
-     so the readout stays proportional across export resolutions. */
-  font-size: clamp(9px, calc(var(--capture-caption-h, 18px) * 0.36), 13px);
+  /* Scale with the frame (via the caption band's ONE-line height, which tracks frame size —
+     not the band's own height, which grows when the caption takes a second line) so the
+     readout stays proportional across export resolutions. */
+  font-size: clamp(9px, calc(var(--capture-caption-unit, var(--capture-caption-h, 18px)) * 0.36), 13px);
   line-height: 1.45;
 }
 
@@ -95,7 +96,7 @@
   flex-flow: column wrap;
   /* Sized off the card, not the caption band's panel scale — there is far more room, and
      a card read at arm's length wants type nearer the sidebar's than the band's. */
-  font-size: clamp(11px, calc(var(--capture-caption-h, 18px) * 0.5), 18px);
+  font-size: clamp(11px, calc(var(--capture-caption-unit, var(--capture-caption-h, 18px)) * 0.5), 18px);
   column-gap: 26px;
 }
 

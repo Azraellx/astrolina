@@ -32,9 +32,23 @@ interface MapOverlayHostProps {
   hiddenIds?: ReadonlySet<string>;
   /** The read-only snapshot handed to each overlay. */
   ctx: MapExtensionContext;
+  /** Told whenever the overlays' DOM may have moved or changed: after every commit of this host
+   *  (fresh projections — each camera frame, a settle, a ctx change), and whenever nodes are
+   *  added to or removed from the track by an overlay re-rendering on its OWN state (a layer's
+   *  store updating), which this host never renders for. Map.tsx re-places its line labels off
+   *  the markers it finds here. Called often, mid-pan included: the receiver decides, cheaply,
+   *  whether anything it cares about moved. */
+  onPlaced?: () => void;
 }
 
-export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOverlayHostProps) {
+export function MapOverlayHost({
+  mapRef,
+  ready,
+  moving,
+  hiddenIds,
+  ctx,
+  onPlaced,
+}: MapOverlayHostProps) {
   // A frame counter bumped (throttled to one rAF) on every camera move, so the overlays
   // re-render and re-project as the user pans/zooms.
   const [version, setVersion] = useState(0);
@@ -151,6 +165,38 @@ export function MapOverlayHost({ mapRef, ready, moving, hiddenIds, ctx }: MapOve
     const p = map.project(ll);
     anchorRef.current = { ll, x: p.x, y: p.y, zoom: map.getZoom() };
   });
+
+  // onPlaced: after every commit (no deps — the overlays may have just re-projected, or the
+  // track mounted or gone), and on any child-list change inside the track between commits. The
+  // observer follows the track element, which comes and goes with the overlay list (an
+  // entitlement flip). Child lists only: a camera frame rewrites every marker's style, and the
+  // commit after it already reports that.
+  // The latest callback is taken in the commit (this no-deps layout effect), not during
+  // render: every reader — the call below and the observer, which only fires after a commit
+  // — runs after it, so the ref is current wherever it is read.
+  const onPlacedRef = useRef(onPlaced);
+  const observedRef = useRef<{ el: HTMLElement; mo: MutationObserver } | null>(null);
+  useLayoutEffect(() => {
+    onPlacedRef.current = onPlaced;
+    const el = trackRef.current;
+    if (observedRef.current?.el !== el) {
+      observedRef.current?.mo.disconnect();
+      observedRef.current = null;
+      if (el) {
+        const mo = new MutationObserver(() => onPlacedRef.current?.());
+        mo.observe(el, { childList: true, subtree: true });
+        observedRef.current = { el, mo };
+      }
+    }
+    onPlacedRef.current?.();
+  });
+  useEffect(
+    () => () => {
+      observedRef.current?.mo.disconnect();
+      observedRef.current = null;
+    },
+    [],
+  );
 
   const overlays = getMapOverlays()
     .filter(isOverlayEntitled)

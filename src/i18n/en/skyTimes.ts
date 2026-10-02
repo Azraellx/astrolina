@@ -35,6 +35,23 @@ export const skyTimes = {
   // same editor the timeline bar and My Charts use) — no native calendar widget.
   pickDate: 'Pick a date',
   pickDateHint: 'Jump the sky clock to any date — decades past or future.',
+  // While the Slide tool is armed the band shows the SLID day, and the pager's
+  // controls turn the map's sky instead of paging the band — so each one's tip
+  // says what will really move. The reader's own paged day is kept, and comes
+  // back when Slide closes; the hints say that too, since otherwise the pager
+  // looks as if it has lost their place.
+  slide: {
+    prevTip: 'Previous day · moves Slide',
+    nextTip: 'Next day · moves Slide',
+    todayTip: 'Today · moves Slide to now',
+    pickTip: 'Pick a date · moves Slide',
+    stepHint:
+      'Slide is armed, so the band shows the slid day and this turns the map’s sky by a whole day. The day you were reading returns when Slide closes.',
+    todayHint:
+      'Slide is armed, so the band shows the slid day and this turns the map’s sky to the present moment. The day you were reading returns when Slide closes.',
+    pickHint:
+      'Slide is armed: the map’s sky moves to the chosen date at the same local time. The day you were reading returns when Slide closes.',
+  },
   // The live time cursor on a registered band track.
   now: 'Now',
   // Footer: which timezone the clock reads in.

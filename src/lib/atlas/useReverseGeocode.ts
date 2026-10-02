@@ -6,6 +6,9 @@
 
 import { useEffect, useState } from 'react';
 import { reverseGeocode } from './geocode';
+// placeLabel, not cityLookup: this hook is on the main bundle and cityLookup
+// carries the atlas, which loads as its own chunk below.
+import { leadPlaceName } from './placeLabel';
 
 interface Pt {
   lat: number;
@@ -68,7 +71,9 @@ const cache = new Map<string, Cell>();
  *
  * A cell refines at most once, and only a real answer displaces the provisional
  * one — a null from the provider is it disclaiming the point, not evidence
- * against a city the atlas is confident about. Aborted / offline / failed leaves
+ * against a city the atlas is confident about. Nor does an answer that names the
+ * same settlement: that confirms the atlas, so the cell turns precise and keeps
+ * the wording already on screen (see `refine`). Aborted / offline / failed leaves
  * the cell imprecise so a later visit can try again.
  */
 export function useReverseGeocode(
@@ -96,15 +101,26 @@ export function useReverseGeocode(
     // waiting for the offline lookup — and a full settle behind a cache hit, which
     // showed its label at once; without that, dragging a pin across already-known
     // cells would fire a request for every cell crossed.
-    const refine = (delayMs: number) => {
+    //
+    // `provisional` is the atlas label on screen. When the provider names the
+    // SAME settlement, the answer is a confirmation, not a correction: the cell
+    // turns precise and the text stays. The two sources take a city's region from
+    // different lists ("Madrid, Spain" from the atlas, "Madrid, Community of
+    // Madrid, Spain" from the provider), so swapping the wording would rename
+    // the pin on screen a beat after it was named, with nothing about the place
+    // having changed. Only a different settlement replaces the text — the case
+    // this refine exists for.
+    const refine = (delayMs: number, provisional: string) => {
       if (ctrl.signal.aborted) return;
       timers.push(
         setTimeout(() => {
           reverseGeocode(point.lat, point.lng, ctrl.signal)
             .then((name) => {
               if (name == null) return; // see the docstring: a disclaimer, not a correction
-              cache.set(key, { label: name, precise: true });
-              show(name);
+              const label =
+                leadPlaceName(name) === leadPlaceName(provisional) ? provisional : name;
+              cache.set(key, { label, precise: true });
+              show(label);
             })
             .catch(() => {
               /* aborted / offline / failed — the provisional label stands, and the
@@ -120,7 +136,12 @@ export function useReverseGeocode(
         () => {
           if (cached) {
             show(cached.label);
-            if (!cached.precise && allowNetwork) refine(SETTLE_MS);
+            // An imprecise cell always holds an atlas hit (a miss is either
+            // resolved online — precise — or not cached at all), so its label
+            // is never null here; the check is for the type.
+            if (!cached.precise && cached.label != null && allowNetwork) {
+              refine(SETTLE_MS, cached.label);
+            }
             return;
           }
           import('./cityLookup')
@@ -130,7 +151,7 @@ export function useReverseGeocode(
               if (hit) {
                 cache.set(key, { label: hit.label, precise: false });
                 show(hit.label);
-                if (allowNetwork) refine(0);
+                if (allowNetwork) refine(0, hit.label);
                 return;
               }
               if (!allowNetwork) {

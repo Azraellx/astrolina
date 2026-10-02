@@ -10,8 +10,13 @@ import type {
   EclipseContact,
   EclipseDetails,
 } from '../../lib/astro/eclipses';
+import {
+  eclipseLongDate,
+  formatEclipseDuration,
+  formatEclipseMagnitude,
+} from '../../lib/astro/eclipseFormat';
 import type { EclipseIsoStep } from '../../lib/overlayPrefs';
-import { PLANET_COLORS } from '../../lib/ephemeris';
+import { PLANET_COLORS, jdToCivil } from '../../lib/ephemeris';
 import {
   ASPECT_GLYPHS,
   PLANET_GLYPHS,
@@ -29,11 +34,9 @@ import { glyphify } from '../ui/glyphify';
 import { useHoverTip } from '../ui/useHoverTip';
 import './EclipseHud.css';
 
-// "8 April 2024" from a catalog id ("2024-04-08").
-function fmtRowDate(id: string, fmt: Formatters): string {
-  const [y, m, d] = id.split('-').map(Number);
-  return `${d} ${fmt.monthName(m)} ${y}`;
-}
+// "8 April 2024" from a catalog id ("2024-04-08") — the shared long form, so the
+// map's click card titles the same eclipse with the same date (eclipseFormat.ts).
+const fmtRowDate = (id: string, fmt: Formatters): string => eclipseLongDate(id, fmt);
 
 const kindLabel = (t: TFn, kind: EclipseCatalogRow['kind']) =>
   t(`settings.eclipses.kind.${kind}`);
@@ -489,7 +492,20 @@ export function EclipseHud({
               <dl className="eclipse-hud-vitals">
                 <div>
                   <dt>{t('settings.eclipses.details.maximum')}</dt>
-                  <dd>{details.maxUtc}</dd>
+                  {/* The long date, as the trigger above and the click card print
+                      it, then the minute of maximum in UTC. Minutes, not seconds:
+                      this is the eclipse's one instant, read at a glance — the
+                      card carries the seconds for the contacts at a place. */}
+                  <dd>
+                    {(() => {
+                      const c = jdToCivil(details.maxJd);
+                      const p = (n: number) => String(n).padStart(2, '0');
+                      return t('settings.eclipses.details.maximumValue', {
+                        date: `${c.day} ${fmt.monthName(c.month)} ${c.year}`,
+                        time: `${p(c.hour)}:${p(c.minute)}`,
+                      });
+                    })()}
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('settings.eclipses.details.type')}</dt>
@@ -520,17 +536,17 @@ export function EclipseHud({
                 {details.row.body === 'solar' ? (
                   <div>
                     <dt>{t('settings.eclipses.details.magnitude')}</dt>
-                    <dd>{details.row.magnitude.toFixed(4)}</dd>
+                    <dd>{formatEclipseMagnitude(details.row.magnitude)}</dd>
                   </div>
                 ) : (
                   <>
                     <div>
                       <dt>{t('settings.eclipses.details.umbralMag')}</dt>
-                      <dd>{details.row.umbMag.toFixed(4)}</dd>
+                      <dd>{formatEclipseMagnitude(details.row.umbMag)}</dd>
                     </div>
                     <div>
                       <dt>{t('settings.eclipses.details.penumbralMag')}</dt>
-                      <dd>{details.row.penMag.toFixed(4)}</dd>
+                      <dd>{formatEclipseMagnitude(details.row.penMag)}</dd>
                     </div>
                   </>
                 )}
@@ -561,10 +577,7 @@ export function EclipseHud({
                     {details.row.durationSec !== null && (
                       <div>
                         <dt>{t('settings.eclipses.details.duration')}</dt>
-                        <dd>
-                          {Math.floor(details.row.durationSec / 60)}m{' '}
-                          {details.row.durationSec % 60}s
-                        </dd>
+                        <dd>{formatEclipseDuration(details.row.durationSec)}</dd>
                       </div>
                     )}
                     {details.row.widthKm !== null && (
@@ -587,10 +600,11 @@ export function EclipseHud({
                         min !== null && (
                           <div key={key}>
                             <dt>{t(`settings.eclipses.details.${key}`)}</dt>
-                            <dd>
-                              {Math.floor(min / 60)}h{' '}
-                              {String(Math.round(min % 60)).padStart(2, '0')}m
-                            </dd>
+                            {/* The catalog gives phase lengths in decimal
+                                minutes (to a tenth), so they read to the
+                                minute; the shared helper rounds before it
+                                splits (no "2h 60m"). */}
+                            <dd>{formatEclipseDuration(min * 60, { resolution: 'minute' })}</dd>
                           </div>
                         ),
                     )}

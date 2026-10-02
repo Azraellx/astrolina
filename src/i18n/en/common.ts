@@ -25,6 +25,18 @@ export const common = {
   // so the reader can attribute what changed, and says "not saved" plainly —
   // a provisional map that looks like a real one is the failure this prevents.
   provisionalTimeBanner: '⚠ Trying {time} — provisional, not saved',
+  // A tier-locked SWITCH's reason: the second line of its tip (and its accessible
+  // description), shown on hover and held up when it is clicked or tapped. Said where
+  // the reader is, because a switch that won't flip is answered by why, not by a trip
+  // to the plans (ui/HoverTip's TipButton `locked`). {feature} is the name the switch's
+  // own UI gives it, passed by the caller; {tier} is the plan it needs, as the build
+  // names it; the second form is for a build that names none. The same sentence shape
+  // as a build's locked scope chips ("Street-level search is a Pro feature."), so every
+  // locked toggle reads alike — a fact, with no pointer to the plans.
+  locked: {
+    feature: '{feature} is a {tier} feature.',
+    featureAnyTier: "{feature} isn't on your plan.",
+  },
   // Spelled-out cardinal direction words. (The single-letter DMS readout codes in
   // coordFormat.ts stay language-neutral as cartographic convention; these are here
   // for any spelled-out use and for locales where the letters differ.)

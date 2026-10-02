@@ -23,6 +23,9 @@ import {
 import { MINOR_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { MINOR_DIAMOND_IN_COIN, minorDiamondPoints, minorHollowPoints } from '../../lib/minorBodies/mark';
 import { isHypotheticalKey } from '../../lib/minorBodies/ids';
+// The same file index.css's @font-face names (Vite emits it once), so a load that failed can be
+// asked for again — see attemptFont.
+import SYMBOL_FONT_URL from '../../fonts/subset-NotoSansSymbols-Regular.woff2?url';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
 /** The little five-pointed star repeated along the fixed-star lines. */
@@ -70,17 +73,117 @@ const ZENITH_STAMP_GLYPH_PX = 40; // 20px display — same glyph size as the old
 const NADIR_DIAMOND_R = 28; // canvas half-diagonal (≈14px display)
 const NADIR_STAMP_GLYPH_PX = 34; // ≈17px display — smaller than the zenith to fit the diamond
 
-// Load the symbol font once before any rasterization, so fillText() draws the
-// real glyph rather than a fallback box. Memoized.
-let fontReady: Promise<unknown> | null = null;
-function ensureFontLoaded(): Promise<unknown> {
-  if (!fontReady) {
-    const fonts = document.fonts;
-    fontReady = fonts
-      ? fonts.load(`${FONT_PX}px ${FONT_FAMILY}`).then(() => fonts.ready)
-      : Promise.resolve();
+// ── The symbol font ──────────────────────────────────────────────────────────
+// Every sprite below draws its glyph with fillText, so the bundled font has to be loaded first or
+// the canvas bakes whatever the system falls back to. But the font is a NETWORK request, and the
+// chart cannot be made to wait on one: the build awaits these images before it adds a single layer,
+// so a load that never succeeds is a map with no chart on it. That is exactly what the memoized
+// promise this replaces did (until 2026-09-30): one failed load — the network cut while the page
+// was loading — was kept, every later build awaited the same rejection, and the chart was gone until
+// a reload. So: a failed load is never kept (the next build, the browser's `online` event or the
+// retry schedule below asks again); a build waits a bounded time and then bakes with the fallback,
+// because glyphs in a fallback font beat no chart at all; and when the font does arrive, every map
+// that was baked without it is re-baked in place.
+const FONT_FAMILY_NAME = 'Noto Sans Symbols';
+/** How long a build waits for the font before baking without it. Long enough that a slow link
+ *  still bakes the real glyphs first time (the font is ~5 KB, and the page's own glyphs have
+ *  usually requested it well before the map's style lands); short enough that a request hanging on
+ *  a dead network costs the chart a beat, not the tens of seconds a connection attempt into
+ *  nothing takes to give up. A load that FAILS ends the wait at once. */
+const FONT_WAIT_MS = 4000;
+/** After a failed load, ask again at these delays, then leave it to the next build and the
+ *  browser's `online` event: a file that has failed four times over eight minutes is not coming
+ *  back on a timer, and this is the app's own server. */
+const FONT_RETRY_MS = [10_000, 30_000, 120_000, 300_000];
+
+// The load in flight, or the one that succeeded. Never a failed one.
+let fontLoad: Promise<boolean> | null = null;
+let fontOk = false;
+let retryStep = 0;
+let retryTimer = 0;
+let listeningOnline = false;
+
+const symbolFaceLoaded = (fonts: FontFaceSet): boolean => {
+  let ok = false;
+  fonts.forEach((f) => {
+    if (f.status === 'loaded' && f.family.replace(/["']/g, '') === FONT_FAMILY_NAME) ok = true;
+  });
+  return ok;
+};
+
+// One attempt. The stylesheet's face first (its @font-face in index.css); but a FontFace that has
+// failed stays failed for the life of the document — asking it again is answered with the same
+// error and no request — so after a failure the file itself is asked for again as a fresh face under
+// the same family name, which every consumer of the family (these sprites, the DOM glyphs, the
+// capture and wheel rasters) then resolves to.
+async function attemptFont(fonts: FontFaceSet): Promise<void> {
+  try {
+    await fonts.load(`${FONT_PX}px ${FONT_FAMILY}`, PLANET_GLYPHS.Sun);
+    if (symbolFaceLoaded(fonts)) return;
+  } catch {
+    /* the stylesheet's face has failed: ask for the file again, below */
   }
-  return fontReady;
+  const face = new FontFace(FONT_FAMILY_NAME, `url("${SYMBOL_FONT_URL}") format("woff2")`);
+  await face.load();
+  fonts.add(face);
+}
+
+function scheduleFontRetry(): void {
+  if (!listeningOnline) {
+    listeningOnline = true;
+    window.addEventListener('online', () => void loadFont());
+  }
+  window.clearTimeout(retryTimer);
+  if (retryStep >= FONT_RETRY_MS.length) return;
+  retryTimer = window.setTimeout(() => void loadFont(), FONT_RETRY_MS[retryStep++]);
+}
+
+/** Resolves true once the symbol font is usable, false when this attempt failed. Never rejects,
+ *  and never hands a failed attempt to the next caller. */
+function loadFont(): Promise<boolean> {
+  if (fontOk) return Promise.resolve(true);
+  if (fontLoad) return fontLoad;
+  const fonts = document.fonts;
+  if (!fonts) {
+    fontOk = true; // no font API: fillText draws whatever is there, and waiting changes nothing
+    return Promise.resolve(true);
+  }
+  const attempt: Promise<boolean> = attemptFont(fonts).then(
+    () => {
+      fontOk = true;
+      window.clearTimeout(retryTimer);
+      rebakeInFont();
+      return true;
+    },
+    () => {
+      if (fontLoad === attempt) fontLoad = null;
+      scheduleFontRetry();
+      return false;
+    },
+  );
+  fontLoad = attempt;
+  return attempt;
+}
+
+// The maps whose sprites were last baked WITHOUT the font, with what they were baked from. An entry
+// is dropped when a build starts on that map (the build bakes afresh, and an entry still holding the
+// previous theme must not overwrite it), and re-added only when that build, too, bakes without.
+type BakeArgs = { halo: string; zenithHalo: string; theme: Theme };
+const bakedWithoutFont = new Map<MlMap, BakeArgs>();
+const watchedForRemoval = new WeakSet<MlMap>();
+
+function rebakeInFont(): void {
+  for (const [map, args] of [...bakedWithoutFont]) {
+    bakedWithoutFont.delete(map);
+    try {
+      // No sprite on the style: a swap has replaced it, and the build that follows bakes in the font.
+      if (!map.hasImage(`${GLYPH_IMAGE_PREFIX}Sun`)) continue;
+      bakeAll(map, args, true);
+      map.triggerRepaint();
+    } catch {
+      /* the map has gone */
+    }
+  }
 }
 
 function rasterize(
@@ -315,18 +418,26 @@ function rasterizeMinorCoin(
   return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
 }
 
-function bakeMinorImages(map: MlMap, discFill: string, theme: Theme): void {
-  const put = (id: string, data: ImageData | null) => {
+// Put one sprite on the map. A build removes and re-adds (the ids stay the same across themes and
+// the new halo has to be picked up); the re-bake once the font has arrived updates IN PLACE, on a
+// style whose layers already draw these images — the same size and ratio, only the pixels change.
+type Put = (id: string, data: ImageData | null, pixelRatio: number) => void;
+const putter =
+  (map: MlMap, inPlace: boolean): Put =>
+  (id, data, pixelRatio) => {
     if (!data) return;
+    if (inPlace && map.hasImage(id)) return void map.updateImage(id, data);
     if (map.hasImage(id)) map.removeImage(id);
-    map.addImage(id, data, { pixelRatio: RATIO });
+    map.addImage(id, data, { pixelRatio });
   };
+
+function bakeMinorImages(put: Put, discFill: string, theme: Theme): void {
   MINOR_LINE_PALETTE[theme].forEach((color, slot) => {
-    put(`${MINOR_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined));
-    put(`${MINOR_HOLLOW_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined, true));
+    put(`${MINOR_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined), RATIO);
+    put(`${MINOR_HOLLOW_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined, true), RATIO);
   });
   for (const [n, glyph] of MINOR_GLYPHS) {
-    put(`${MINOR_GLYPH_PREFIX}${n}`, rasterizeMinorCoin(minorLineColor(n, theme), discFill, glyph));
+    put(`${MINOR_GLYPH_PREFIX}${n}`, rasterizeMinorCoin(minorLineColor(n, theme), discFill, glyph), RATIO);
   }
 }
 
@@ -335,14 +446,41 @@ function bakeMinorImages(map: MlMap, discFill: string, theme: Theme): void {
 // images: a theme change keeps the same image ids but needs the new halo (none
 // in dark, dark in vintage, white in glass/light), so we remove and re-add to
 // pick it up. Awaited before the custom layers are added so the `['image', …]`
-// references resolve immediately.
+// references resolve immediately — after waiting a bounded time for the symbol
+// font, never on it (see FONT_WAIT_MS).
 export async function ensureGlyphImages(
   map: MlMap,
   halo: string,
   zenithHalo: string,
   theme: Theme,
 ): Promise<void> {
-  await ensureFontLoaded();
+  // This build bakes afresh: a re-bake still holding the previous build's theme must not land
+  // after it.
+  bakedWithoutFont.delete(map);
+  if (!fontOk) {
+    let cut = 0;
+    await Promise.race([
+      loadFont(),
+      new Promise<void>((resolve) => {
+        cut = window.setTimeout(resolve, FONT_WAIT_MS);
+      }),
+    ]);
+    window.clearTimeout(cut);
+  }
+  const args = { halo, zenithHalo, theme };
+  bakeAll(map, args, false);
+  // Read at bake time, not from the wait: the bake is synchronous, so this is what it drew with.
+  if (!fontOk) {
+    if (!watchedForRemoval.has(map)) {
+      watchedForRemoval.add(map);
+      map.once('remove', () => bakedWithoutFont.delete(map));
+    }
+    bakedWithoutFont.set(map, args);
+  }
+}
+
+function bakeAll(map: MlMap, { halo, zenithHalo, theme }: BakeArgs, inPlace: boolean): void {
+  const put = putter(map, inPlace);
   for (const p of PLANET_NAMES) {
     // Bodies whose tint washes out on a light basemap are baked in the shared per-theme
     // override (MAP_LINE_COLOR_OVERRIDES) — the Moon over the pale zenith disc on both
@@ -350,34 +488,15 @@ export async function ensureGlyphImages(
     // lines. Everything else (incl. all bodies on dark) keeps its PLANET_COLORS tint.
     const color = MAP_LINE_COLOR_OVERRIDES[theme][p] ?? PLANET_COLORS[p];
     // Line-label glyph: nudged down to sit on the angle-code baseline.
-    const id = `${GLYPH_IMAGE_PREFIX}${p}`;
-    const data = rasterize(p, color, halo);
-    if (data) {
-      if (map.hasImage(id)) map.removeImage(id);
-      map.addImage(id, data, { pixelRatio: RATIO });
-    }
+    put(`${GLYPH_IMAGE_PREFIX}${p}`, rasterize(p, color, halo), RATIO);
     // Zenith STAMP: the full coin (disc + ring + glyph) baked as one image, so the
     // stamp draws as a single overlap-stacking unit. `zenithHalo` is the disc fill.
-    const zid = `${ZENITH_GLYPH_PREFIX}${p}`;
-    const zdata = rasterizeZenith(p, color, zenithHalo);
-    if (zdata) {
-      if (map.hasImage(zid)) map.removeImage(zid);
-      map.addImage(zid, zdata, { pixelRatio: RATIO });
-    }
+    put(`${ZENITH_GLYPH_PREFIX}${p}`, rasterizeZenith(p, color, zenithHalo), RATIO);
     // Nadir STAMP: the diamond variant, same fill/ring, for the antipodal point.
-    const nid = `${NADIR_GLYPH_PREFIX}${p}`;
-    const ndata = rasterizeNadir(p, color, zenithHalo);
-    if (ndata) {
-      if (map.hasImage(nid)) map.removeImage(nid);
-      map.addImage(nid, ndata, { pixelRatio: RATIO });
-    }
+    put(`${NADIR_GLYPH_PREFIX}${p}`, rasterizeNadir(p, color, zenithHalo), RATIO);
   }
   // The star-line spark, in the theme's star tint (see STAR_LINE_COLORS).
-  const star = rasterizeStarMark(STAR_LINE_COLORS[theme], halo);
-  if (star) {
-    if (map.hasImage(STAR_MARK_IMAGE)) map.removeImage(STAR_MARK_IMAGE);
-    map.addImage(STAR_MARK_IMAGE, star, { pixelRatio: STAR_RATIO });
-  }
+  put(STAR_MARK_IMAGE, rasterizeStarMark(STAR_LINE_COLORS[theme], halo), STAR_RATIO);
   // Catalog minor-body coins, on the same disc fill as the planets' stamps.
-  bakeMinorImages(map, zenithHalo, theme);
+  bakeMinorImages(put, zenithHalo, theme);
 }

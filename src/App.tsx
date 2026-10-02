@@ -58,6 +58,7 @@ import {
 } from './lib/extensions/localSpaceAnchors';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
+import { watchSettled } from './lib/hudSettled';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
@@ -141,7 +142,17 @@ import {
 } from './lib/ephemeris';
 // Eclipse machinery (the NASA catalog JSON + the Besselian-element fitting in
 // eclipsePath) is dynamic-imported when eclipse mode first opens — see the
-// eclipsesMod state below — so none of it weighs on the main bundle.
+// eclipsesMod state below — so none of it weighs on the main bundle. Only the
+// small formatting module is static: the panel shares it, so it must be.
+import {
+  eclipseLongDate,
+  eclipsePlaceClock,
+  eclipseShortDate,
+  formatEclipseDuration,
+  formatEclipseMagnitude,
+  jdToClock,
+  type EclipseClock,
+} from './lib/astro/eclipseFormat';
 import {
   antipodeStamps,
   generateEcliptic,
@@ -2321,10 +2332,19 @@ export default function App() {
   // rect covers both). Written as a CSS var the stylesheet max()es into `top`,
   // so the coarse-pointer bottom-corner rules (top:auto) stay untouched.
   const topLeftStackRef = useRef<HTMLDivElement | null>(null);
+  // Where the stack last came to rest, as announced to the map (watchSettled below).
+  const topLeftSettledRef = useRef('');
   useEffect(() => {
     const stack = topLeftStackRef.current;
     if (!stack) return;
     const nav = document.querySelector<HTMLElement>('.topnav-stack');
+    // The map dodges its edge labels off the profile strip and the coordinates readout
+    // (HUD_SELECTORS), cached until `astro:hud-moved` — and the drop below works through
+    // `--topnav-clear` and a 0.32 s `top` transition, which nobody announced: opening a dock
+    // left labels under the strip until the next pan (video-QA #29). So say so once the stack
+    // has come to rest somewhere new, after the transition and once per place (lib/hudSettled);
+    // a box it grew or shrank to (the readout toggling) counts the same way.
+    const settled = watchSettled([stack], ['top'], topLeftSettledRef);
     let raf = 0;
     const measure = () => {
       raf = 0;
@@ -2343,6 +2363,7 @@ export default function App() {
         if (next) stack.style.setProperty('--topnav-clear', next);
         else stack.style.removeProperty('--topnav-clear');
       }
+      settled.check();
     };
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(measure);
@@ -2364,6 +2385,7 @@ export default function App() {
       nav?.removeEventListener('transitionend', onNavSettled);
       window.removeEventListener('resize', schedule);
       if (raf) cancelAnimationFrame(raf);
+      settled.dispose();
     };
     // reservedLeftInset: a dock opening/closing/resizing moves both boxes.
     // wheelExpanded: the stack unmounts/remounts around the expanded sidebar.
@@ -3236,17 +3258,22 @@ export default function App() {
     () => (eclipseRow && eclipsesMod ? eclipsesMod.resolveEclipse(eclipseRow) : null),
     [eclipseRow, eclipsesMod],
   );
+  // The eclipse's name as every eclipse surface gives it: its long date and kind
+  // ("8 April 2024 · Total") — the curves' hover label and the click card's title
+  // here, the same date the panel's picker shows (lib/astro/eclipseFormat.ts).
+  const eclipseTitle = useMemo(
+    () =>
+      resolvedEclipse
+        ? `${eclipseLongDate(resolvedEclipse.row.id, fmt)} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`
+        : '',
+    [resolvedEclipse, fmt, t],
+  );
   const eclipseMapData = useMemo(
     () =>
       resolvedEclipse && eclipsesMod
-        ? eclipsesMod.buildEclipseMap(
-            resolvedEclipse,
-            eclipseIsoStep,
-            theme,
-            `${resolvedEclipse.row.id} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`,
-          )
+        ? eclipsesMod.buildEclipseMap(resolvedEclipse, eclipseIsoStep, theme, eclipseTitle)
         : null,
-    [resolvedEclipse, eclipsesMod, eclipseIsoStep, theme, t],
+    [resolvedEclipse, eclipsesMod, eclipseIsoStep, theme, eclipseTitle],
   );
   const eclipseDetails = useMemo(
     () =>
@@ -3313,18 +3340,110 @@ export default function App() {
   // The click-card builder for eclipses mode: ready-made .ui-tip HTML with the
   // clicked point's full local circumstances. Its identity doubles as the
   // card's close signal (the Map removes the pinned popup when it changes).
+  //
+  // EVERY TIME IS GIVEN TWICE: on the clicked place's own civil clock, then in
+  // UTC. Until 2026-09-30 the card printed bare UTC times under no label at all,
+  // and a reader at Luxor read "Totality begins 10:03:48" as her own clock, three
+  // hours out — the panel and the hover tip said UTC, the card never did. The
+  // place's clock leads because a contact time at a place is something a person
+  // there plans around; UTC stays beside it because published eclipse tables are
+  // in UT, so it is the column a figure is checked against. The reason is on
+  // docs/calculation-methods.md ("Eclipse times at a place").
+  //
+  // A clock column is read against the eclipse's own date (the title's): the
+  // head adds a short date when the column's maximum falls on another day — an
+  // evening lunar eclipse in the Americas is the day BEFORE its catalog date there
+  // — and a single time that crosses midnight from that carries its own date.
   const eclipseCard = useMemo(() => {
     if (overlayMode !== 'eclipses' || !resolvedEclipse || !eclipsesMod) return null;
-    const title = `${resolvedEclipse.row.id} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`;
-    // All values below are computed numbers/times and localized strings —
-    // nothing user-authored reaches this HTML.
-    const card = (rows: string, sub = '') =>
+    const title = eclipseTitle;
+    const maxJd = resolvedEclipse.event.maximum;
+    const [eclY, eclM, eclD] = resolvedEclipse.row.id.split('-').map(Number);
+    // All values below are computed numbers/times and localized strings (the
+    // zone abbreviations come from the platform's time-zone data) — nothing
+    // user-authored reaches this HTML.
+    const card = (rows: string, twoClocks: boolean, sub = '') =>
       `<div class="ui-tip"><span class="ui-tip-title">${title}</span>` +
-      `<dl class="eclipse-card-rows">${rows}</dl>` +
+      `<dl class="eclipse-card-rows eclipse-card-clock${twoClocks ? '' : ' eclipse-card-one'}">${rows}</dl>` +
       (sub ? `<span class="ui-tip-sub">${sub}</span>` : '') +
       `</div>`;
-    const row = (label: string, value: string, dim = false) =>
-      `<dt>${label}</dt><dd${dim ? ' class="eclipse-card-dim"' : ''}>${value}</dd>`;
+
+    interface ClockColumn {
+      read: (jd: number) => EclipseClock;
+      head: string;
+      utc: boolean;
+      /** The clock's own name at one instant, for a clock whose name can change
+       *  mid-eclipse — the place's, across a daylight-saving change. */
+      zoneAt?: (jd: number) => string;
+    }
+    const sameDay = (a: EclipseClock, b: { year: number; month: number; day: number }) =>
+      a.year === b.year && a.month === b.month && a.day === b.day;
+    // The columns for one click: the place's clock and UTC — or UTC alone where
+    // the place has no zone, or where its clock IS UTC for every time on the
+    // card (a second column would only repeat the first).
+    const columnsFor = (lat: number, lng: number, jds: number[]): ClockColumn[] => {
+      const utc: ClockColumn = {
+        read: (jd) => jdToClock(jd),
+        head: t('map.eclipseCard.utc'),
+        utc: true,
+      };
+      const place = eclipsePlaceClock(lat, lng);
+      if (!place || [maxJd, ...jds].every((jd) => place(jd).offsetHours === 0)) return [utc];
+      const zoneAt = (jd: number) => place(jd).zone ?? t('map.eclipseCard.lmt');
+      return [
+        {
+          read: (jd) => jdToClock(jd, place(jd).offsetHours),
+          head: zoneAt(maxJd),
+          utc: false,
+          zoneAt,
+        },
+        utc,
+      ];
+    };
+    // The head row, a builder for a row's time cells, and one for a value that
+    // is not a time (it spans both clock columns).
+    const clockCells = (cols: ClockColumn[]) => {
+      const refs = cols.map((c) => c.read(maxJd));
+      const two = cols.length > 1;
+      const utcClass = (c: ClockColumn) => (two && c.utc ? 'eclipse-card-utc' : '');
+      const head =
+        `<dt></dt>` +
+        cols
+          .map((c, i) => {
+            const day = sameDay(refs[i], { year: eclY, month: eclM, day: eclD })
+              ? ''
+              : ` · ${eclipseShortDate(refs[i], fmt)}`;
+            return `<dd class="eclipse-card-zone ${utcClass(c)}">${c.head}${day}</dd>`;
+          })
+          .join('');
+      // A time on another day than its column's head carries that day; one read
+      // under another zone name than the head's — a contact past a daylight-saving
+      // change, each read at its own instant's offset — carries its own name, so a
+      // CST time never sits silently under a "CDT" head.
+      const times = (jd: number) =>
+        cols
+          .map((c, i) => {
+            const at = c.read(jd);
+            const zone = c.zoneAt?.(jd);
+            const tags = [
+              sameDay(at, refs[i]) ? '' : eclipseShortDate(at, fmt),
+              zone && zone !== c.head ? zone : '',
+            ].filter(Boolean);
+            const tag = tags.length
+              ? `<span class="eclipse-card-day">${tags.join(' ')}</span>`
+              : '';
+            const cls = utcClass(c);
+            return `<dd${cls ? ` class="${cls}"` : ''}>${at.hms}${tag}</dd>`;
+          })
+          .join('');
+      const value = (text: string, dim = false) => {
+        const cls = [two ? 'eclipse-card-span' : '', dim ? 'eclipse-card-dim' : '']
+          .filter(Boolean)
+          .join(' ');
+        return `<dd${cls ? ` class="${cls}"` : ''}>${text}</dd>`;
+      };
+      return { head, times, value, two };
+    };
 
     if (resolvedEclipse.body === 'lunar') {
       const geo = resolvedEclipse.geometry;
@@ -3334,31 +3453,36 @@ export default function App() {
         // Phase contacts and any mid-eclipse moonrise/set, in time order; the
         // contacts the Moon misses stay listed but dimmed (that is the local
         // story: what this place catches and what it sleeps through).
-        const entries = [
+        const events = [
           ...view.phases.map((p) => ({
             jd: p.jd,
-            html: row(
-              t(`map.eclipseCard.phase.${p.phase}`),
-              p.visible
-                ? eclipsesMod.jdToUtcHms(p.jd)
-                : t('map.eclipseCard.belowHorizon'),
-              !p.visible,
-            ),
+            label: t(`map.eclipseCard.phase.${p.phase}`),
+            visible: p.visible,
           })),
           ...(view.moonrise !== null
-            ? [{
-                jd: view.moonrise,
-                html: row(t('map.eclipseCard.moonrise'), eclipsesMod.jdToUtcHms(view.moonrise)),
-              }]
+            ? [{ jd: view.moonrise, label: t('map.eclipseCard.moonrise'), visible: true }]
             : []),
           ...(view.moonset !== null
-            ? [{
-                jd: view.moonset,
-                html: row(t('map.eclipseCard.moonset'), eclipsesMod.jdToUtcHms(view.moonset)),
-              }]
+            ? [{ jd: view.moonset, label: t('map.eclipseCard.moonset'), visible: true }]
             : []),
         ].sort((a, b) => a.jd - b.jd);
-        return card(entries.map((e) => e.html).join(''));
+        const cells = clockCells(
+          columnsFor(
+            lat,
+            lng,
+            events.filter((e) => e.visible).map((e) => e.jd),
+          ),
+        );
+        const rows = events
+          .map(
+            (e) =>
+              `<dt>${e.label}</dt>` +
+              (e.visible
+                ? cells.times(e.jd)
+                : cells.value(t('map.eclipseCard.belowHorizon'), true)),
+          )
+          .join('');
+        return card(cells.head + rows, cells.two);
       };
     }
 
@@ -3367,34 +3491,50 @@ export default function App() {
       const c = eclipsesMod.localContacts(el, lat, lng);
       if (!c) return null;
       const annular = c.centralKind === 'annular';
-      const time = (lc: { jd: number; atHorizon: boolean }, rise: boolean) =>
-        eclipsesMod.jdToUtcHms(lc.jd) +
-        (lc.atHorizon
-          ? ` · ${t(rise ? 'map.eclipseCard.atSunrise' : 'map.eclipseCard.atSunset')}`
-          : '');
+      const cells = clockCells(
+        columnsFor(
+          lat,
+          lng,
+          [c.c1, c.c2, c.max, c.c3, c.c4].flatMap((lc) => (lc ? [lc.jd] : [])),
+        ),
+      );
+      // A contact the horizon clips says so on its LABEL ("Partial begins · at
+      // sunrise") rather than after its time, which keeps the clock columns tight.
+      const contact = (
+        label: string,
+        lc: { jd: number; atHorizon: boolean } | null | undefined,
+        rise: boolean,
+      ) =>
+        lc
+          ? `<dt>${label}${
+              lc.atHorizon
+                ? ` · ${t(rise ? 'map.eclipseCard.atSunrise' : 'map.eclipseCard.atSunset')}`
+                : ''
+            }</dt>${cells.times(lc.jd)}`
+          : '';
       const rows = [
-        c.c1 && row(t('map.eclipseCard.c1'), time(c.c1, true)),
-        c.c2 && row(t(annular ? 'map.eclipseCard.c2Annular' : 'map.eclipseCard.c2'), time(c.c2, true)),
-        row(t('map.eclipseCard.max'), eclipsesMod.jdToUtcHms(c.max.jd)),
-        c.c3 && row(t(annular ? 'map.eclipseCard.c3Annular' : 'map.eclipseCard.c3'), time(c.c3, false)),
-        c.c4 && row(t('map.eclipseCard.c4'), time(c.c4, false)),
-        c.centralDurationSec !== null &&
-          row(
-            t('map.eclipseCard.duration'),
-            `${Math.floor(c.centralDurationSec / 60)}m${String(Math.round(c.centralDurationSec % 60)).padStart(2, '0')}s`,
-          ),
-      ]
-        .filter(Boolean)
-        .join('');
+        cells.head,
+        contact(t('map.eclipseCard.c1'), c.c1, true),
+        contact(t(annular ? 'map.eclipseCard.c2Annular' : 'map.eclipseCard.c2'), c.c2, true),
+        `<dt>${t('map.eclipseCard.max')}</dt>${cells.times(c.max.jd)}`,
+        contact(t(annular ? 'map.eclipseCard.c3Annular' : 'map.eclipseCard.c3'), c.c3, false),
+        contact(t('map.eclipseCard.c4'), c.c4, false),
+        c.centralDurationSec !== null
+          ? `<dt>${t('map.eclipseCard.duration')}</dt>${cells.value(
+              formatEclipseDuration(c.centralDurationSec),
+            )}`
+          : '',
+      ].join('');
       return card(
         rows,
+        cells.two,
         t('map.eclipseCard.maxValue', {
-          mag: `${Math.round(c.max.magnitude * 100)}%`,
+          mag: formatEclipseMagnitude(c.max.magnitude),
           obsc: `${Math.round(c.max.obscuration * 100)}%`,
         }),
       );
     };
-  }, [overlayMode, resolvedEclipse, eclipsesMod, t]);
+  }, [overlayMode, resolvedEclipse, eclipsesMod, eclipseTitle, fmt, t]);
 
   // Whether the transit moment IS one of the chart's returns. A solar or lunar
   // return chart is transits cast for one particular instant — the same overlay,
@@ -3419,7 +3559,8 @@ export default function App() {
       layerId: string,
       props: Record<string, unknown>,
       dist: LineCardDistance | null,
-    ) => buildLineCard(layerId, props, t, dist);
+      extra: string | null,
+    ) => buildLineCard(layerId, props, t, dist, extra);
     // lineSystem/coordSystem aren't read by the builder — they're deliberate
     // identity-bust deps: those settings move every line wholesale, and a
     // pinned card would float over empty map, so the change closes it (the
@@ -4180,6 +4321,17 @@ export default function App() {
           : captureFields[k],
       );
   }, [captureFields, captureCaptionFields]);
+  // Which of those lines the band keeps whole when a caption still overflows at two lines: the
+  // coordinates, whose promise is the full figure (a longitude cut short reads as another place,
+  // where a place name cut short still names the place). Same key order and filter as above, so
+  // the index points at the same line; null when the field is off.
+  const captureCaptionKeep = useMemo(() => {
+    if (!captureFields) return null;
+    const i = (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
+      .filter((k) => captureCaptionFields[k])
+      .indexOf('coordinates');
+    return i < 0 ? null : i;
+  }, [captureFields, captureCaptionFields]);
   // The footer's single-line form: the enabled fields joined.
   const captureCaptionText = useMemo(
     () => captureCaptionLines.join('  ·  '),
@@ -4303,8 +4455,20 @@ export default function App() {
   // birth moment for progressed) advanced by the arc — directedAngles applies the same
   // arc + frame the map gmst uses (RAMC+arc for the …-in-RA / primary methods). See
   // docs/calculation-methods.md ("Directed-overlay angles").
+  //
+  // A COMPOSITE synastry partner is the exception to "relocate at the active point":
+  // it takes the same midpoint angles it shows as the active chart (birthAngles
+  // above), which don't relocate at all. Until 2026-09-30 it went through the
+  // time-based path — relocate() at its solved frame moment — which agrees with the
+  // midpoint MC only on the parents' midpoint meridian and never gives the midpoint
+  // ASC, so one composite showed two different sets of angles depending on whether
+  // it was the chart or the partner. (Its PLANETS were already its midpoints:
+  // timeline.ts builds the synastry layer from compositeEquatorial.)
   const overlayAngles = useMemo(() => {
     if (!overlayLayer || !current) return null;
+    if (overlayLayer.kind === 'synastry' && partner?.composite) {
+      return compositeAngles(partner.composite, effHouseSystem);
+    }
     const lat = activePoint?.lat ?? current.birthplace.lat;
     const lng = activePoint?.lng ?? current.birthplace.lng;
     const angleJd = overlayLayer.angleJd ?? overlayLayer.jd;
@@ -4318,7 +4482,7 @@ export default function App() {
       overlayLayer.angleArc,
       overlayLayer.angleFrame,
     );
-  }, [overlayLayer, activePoint, current, effHouseSystem]);
+  }, [overlayLayer, activePoint, current, partner, effHouseSystem]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
   // the same observer location as the relocated angles (active point, else natal).
@@ -4881,14 +5045,31 @@ export default function App() {
     mapRef.current?.slideTo(0);
   }, []);
   // Scrub the slid instant to an absolute time (a band track may drive this while
-  // the tool is armed — see SkyBandTrackContext.slideTo).
+  // the tool is armed — see SkyBandTrackContext.slideTo — and so do the band's own
+  // Today and date picker).
+  //
+  // No range bound, deliberately (2026-09-30). The question came from a Paran Clock
+  // press that slid a 1989 chart +13,736 days: the band was showing TODAY while the
+  // tool sat at the natal moment, and the press landed on the shown day. That was
+  // the band's day anchor, and it is fixed there — the band now shows the slid
+  // instant's day, so every target it hands over is on that day, a day either side
+  // of it, the present, or a date inside the picker's own year range. A bound here
+  // would also make this path disagree with a drag on the map, which has never had
+  // one, and a clamp would land the sky somewhere the caller didn't ask for without
+  // saying so. Drawing at a large spin is the Map's job, not this function's. Only a
+  // non-finite target is refused: a NaN would poison the spin for the session.
   const slideToMs = useCallback(
     (ms: number) => {
-      if (!current) return;
+      if (!current || !Number.isFinite(ms)) return;
       mapRef.current?.slideTo((ms - chartUtcMs(current)) / MS_DAY);
     },
     [current],
   );
+  // Turn the slid instant by whole days (the band's ‹ › while the tool is armed),
+  // relative to the LIVE spin like the readout's nudges.
+  const slideByDays = useCallback((deltaDays: number) => {
+    mapRef.current?.slideBy(deltaDays);
+  }, []);
   // Jump to the previous/next ANGULAR EVENT — the nearest rise / culmination / set /
   // anti-culmination of any visible body at the active point (pin, else birthplace),
   // before/after the slid instant. Windows are anchored to the slid instant in
@@ -6088,6 +6269,8 @@ export default function App() {
         frameCaptionText={captureCaptionText}
         // Transparent export: the same fields, unjoined, stacked in the frame's top-left.
         frameCaptionLines={captureCaptionLines}
+        // …and the one of them that stays whole when a line still overflows (the coordinates).
+        frameCaptionKeep={captureCaptionKeep}
         frameExtras={captureFrameExtras}
         // Chart subject: the details fill the frame as a card and the map stands down.
         frameSubject={captureChart ? 'chart' : 'map'}
@@ -6452,12 +6635,15 @@ export default function App() {
           onToggleFollow={() => setSkyFollowOn((v) => !v)}
           planetaryOpen={showPlanetaryHud}
           onTogglePlanetary={togglePlanetaryHud}
-          // While the Slide tool spins the sky, the track's time cursor follows
-          // the slid instant — the clock shifts with the spin. And while the
-          // tool is ARMED, a registered track may scrub that instant back
-          // through slideTo (absent otherwise — the affordance keys off it).
+          // While the Slide tool is armed the band shows the slid instant's day
+          // (derived — its own paged day is kept for when the tool closes), the
+          // track's time cursor follows that instant, and a registered track may
+          // scrub it back through slideTo (absent otherwise — the affordance
+          // keys off it). The band's own ‹ › / Today / date picker drive Slide
+          // through slideBy / slideTo for as long as it is armed.
           slideMs={slide?.ms ?? null}
           slideTo={sliding ? slideToMs : undefined}
+          slideBy={sliding ? slideByDays : undefined}
           onClose={() => setShowSkyTimes(false)}
         />
       )}
@@ -6649,6 +6835,14 @@ export default function App() {
             promoteOverlay || isCyclo ? null : (overlayLayer?.moment ?? null)
           }
           overlayKind={overlayLayer?.kind ?? null}
+          // The synastry partner's own record, so the second wheel's header can
+          // introduce the partner as the panel header introduces the active chart —
+          // their birth date and time and THEIR birthplace — rather than the label
+          // string alone. Only while their wheel rides beside the chart (never
+          // promoted, where the panel header above speaks for the one wheel there is).
+          overlayPartner={
+            overlayLayer?.kind === 'synastry' && !promoteOverlay ? partner : null
+          }
           overlayReturn={promoteOverlay || isCyclo ? null : overlayReturn}
           // When promoted CCG leaves nothing to wheel, render the empty "NO CHART" state.
           noChart={noChart}

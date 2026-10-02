@@ -27,9 +27,11 @@
 // EclipseEphemeris adapter so the same math runs in the browser and in the
 // Node verify script.
 //
-// KNOWN LIMITATION (shared with the solar band): the tile pipeline clamps
-// latitudes to web-mercator's ±85.05°, so the hemisphere polygon is closed
-// along that parallel rather than over the true pole.
+// The visibility hemisphere is closed over the true pole (POLE_LAT below). The map's
+// tile pipeline clamps latitudes to web-mercator's limit (±85.0511°), so a flat map
+// draws it up to that parallel and no further, and the globe — which extends a fill
+// over the polar cap only from an edge lying exactly on the world's top or bottom
+// tile edge, where the clamp puts the pole — shades the cap as well.
 
 import { unwrapLongitudes } from './dateline';
 import type {
@@ -51,7 +53,7 @@ export interface LunarEclipseGeometry {
   /** Sub-lunar point at maximum — where the eclipsed Moon stands at zenith. */
   sublunar: { lat: number; lng: number };
   /** Closed ring of the Moon-above-horizon hemisphere at maximum (longitudes
-   *  unwrapped; closed along ±85.05° on the sub-lunar side of the equator). */
+   *  unwrapped; closed over the pole on the sub-lunar side of the equator). */
   visPolygon: [number, number][];
   /** Moonrise/set boundary circles at the phase contacts worth drawing. */
   contactHorizons: { phase: LunarPhaseTag; jd: number; ring: [number, number][] }[];
@@ -141,15 +143,18 @@ export function horizonRing(s: SunMoonSample): [number, number][] {
   return ring;
 }
 
-/** Web-mercator latitude limit — the parallel pole-enclosing rings close on. */
-const POLE_LAT = 85.05;
+/** The latitude pole-enclosing rings close on: the pole itself. The tiler clamps it onto
+ *  the world's top/bottom tile edge exactly, which is what lets the globe shade the polar
+ *  cap. It used to be 85.05 — short of web-mercator's ±85.0511° limit, so inside the edge
+ *  tiles, and the globe left the cap unshaded (night shade, nightShade.ts, had the same). */
+const POLE_LAT = 90;
 
 /**
  * The Moon-above-horizon hemisphere at one instant, as a renderable closed
  * polygon ring. The hemisphere always contains the pole on the sub-lunar side
  * of the equator, so the unwrapped boundary (net ±360° of longitude) is closed
- * with two corners along that pole's ±85.05° parallel — the standard
- * pole-enclosing ring construction.
+ * with two corners over that pole — the standard pole-enclosing ring
+ * construction.
  */
 export function visibilityRing(s: SunMoonSample): [number, number][] {
   const boundary = horizonCircle(s);

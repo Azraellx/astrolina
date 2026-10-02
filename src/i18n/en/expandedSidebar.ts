@@ -56,6 +56,27 @@ export const expandedSidebar = {
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
 
+  // Dual wheels under Synastry: the partner's wheel is headed by the partner's own
+  // record (name, birth date · time, their birthplace), then one line set apart
+  // for where their wheel is actually cast.
+  partnerHead: {
+    // Precedes the place name, styled apart from it ("Cast for  Vienna, Austria").
+    // The partner's angles and houses are cast at the active point — the pin, else
+    // the hovered point, else the active chart's birthplace — so this names a place
+    // that is usually not their own.
+    castFor: 'Cast for',
+    // The line's tip (hover, focus, or a tap). Names no place, so it is safe under
+    // Discreet mode. The fallback to the active chart's birthplace is deliberate —
+    // both wheels read for one place (calculation-methods.md) — so the tip says how
+    // to move it rather than apologising for it.
+    castForTip: 'Where both wheels are cast',
+    castForHint:
+      'Their angles and houses are read for one place — your pin, the point you hover, or else your birthplace — not the partner’s own. Pin a place on the map to cast both there.',
+    // In place of "Cast for" when the partner is a composite chart, whose angles
+    // are midpoints of its two charts' own angles and so belong to no place.
+    midpointAngles: 'Midpoint angles, not relocated',
+  },
+
   // The chart angles, listed in the planet/angle readout and Advanced table.
   // Vertex/Anti-Vertex appear only with Advanced ▸ Vertex axis switched on.
   angle: {

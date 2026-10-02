@@ -41,7 +41,15 @@ import { PinchIcon } from '../ui/PinchIcon';
 import { ZoomIcon } from '../ui/ZoomIcon';
 import { useT } from '../../i18n';
 import type { TFn } from '../../i18n';
-import { useTouchLayout, useNarrowNav } from '../../lib/touch';
+import { useTouchLayout, useNarrowNav, isNarrowNav } from '../../lib/touch';
+import { useIdentity } from '../../lib/discreet';
+import {
+  getReservedLeftInset,
+  publishMapColumnNeed,
+  subscribeLeftDock,
+} from '../../lib/leftDock';
+import { navColumn, fitToNavColumn, ZOOM_GAP } from './navColumn';
+import { watchSettled } from '../../lib/hudSettled';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -50,6 +58,11 @@ import './TopNav.css';
 // The on-map mapping tool, owned here now that the Tools dropdown lives in the
 // top bar (was MappingToolsHud).
 export type MapTool = 'off' | 'measure' | 'slide' | 'capture';
+
+/** How much spare room the full bar needs before a compact one switches back (px). A dock
+ *  dragged slowly across the exact fit would otherwise flip the bar on every pixel; with this,
+ *  it goes compact at the fit and comes back only once there is clear room again. */
+const NAV_HYSTERESIS = 32;
 
 // ── Tool-readout hint pills ───────────────────────────────────────────────────
 // The secondary bar's usage hints carry {token} placeholders that render as small yellow gesture
@@ -224,8 +237,10 @@ interface TopNavProps {
   showLocalSpace: boolean;
   setShowLocalSpace: (v: boolean) => void;
   /** The user's plan tier (src/lib/plan.ts). Gates the menu items by tier — Slide (Tools),
-   *  Local Space (View), Synastry + Eclipses (Overlay) need 'adv'; downstream items need
-   *  'gated'. Each is hidden until the tier is reached, and tier-badged when shown. */
+   *  Sky Times + Local Space (View) and Synastry (Overlay) need 'adv' (Eclipses and every
+   *  technique overlay are baseline: ADVANCED_OVERLAY_MODES in lib/astro/timeline.ts is the
+   *  source of truth); downstream items need 'gated'. Each is hidden until the tier is
+   *  reached, and tier-badged when shown. */
   planTier: PlanTier;
   /** The guides reference (View ▸ Guides) — revisit the onboarding guides as a glossary.
    *  No hotkey: it's an occasional reference, not a frequently toggled HUD. */
@@ -308,6 +323,7 @@ function NavMenu({
   active,
   className,
   disabledTip,
+  tip,
   children,
 }: {
   /** Trigger content — text (Overlay/View) or an icon (Tools). */
@@ -322,16 +338,31 @@ function NavMenu({
    *  not `disabled` — a disabled button drops the hover events the tip needs)
    *  with this text as its hover tip explaining why. */
   disabledTip?: string;
+  /** A hover tip naming the menu, for a trigger whose label has collapsed to an icon (the
+   *  compact nav). Hidden while the panel is open, so it never sits over the rows. */
+  tip?: string;
   // Plain content, or a render-prop given a `close()` so items can dismiss the
-  // menu on selection (used by Overlay).
+  // menu on selection (Tools and Overlay always; View on narrow/touch layouts).
   children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const {
+    ref: tipRef,
+    pos: tipPos,
+    show: showTip,
+    hide: hideTip,
+  } = useHoverTip<HTMLButtonElement>('bottom');
   // A menu disabled while open snaps shut.
   useEffect(() => {
     if (disabledTip != null) setOpen(false);
   }, [disabledTip]);
+  // Keep the opened panel inside the map column (navColumn.ts) — before paint, so it never
+  // flashes off the edge first. The phone layout anchors its panels in CSS instead.
+  useLayoutEffect(() => {
+    if (open && panelRef.current && !isNarrowNav()) fitToNavColumn(panelRef.current);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -370,17 +401,26 @@ function NavMenu({
   return (
     <div className="navmenu" ref={ref}>
       <button
+        ref={tipRef}
         type="button"
         className={`navmenu-trigger ${className ?? ''} ${active ? 'active' : ''} ${open ? 'open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          hideTip();
+        }}
+        onMouseEnter={tip != null && !open ? showTip : undefined}
+        onMouseLeave={hideTip}
+        onFocus={tip != null && !open ? showTip : undefined}
+        onBlur={hideTip}
         aria-expanded={open}
         aria-label={ariaLabel}
       >
         <span>{label}</span>
         <span className="navmenu-caret">▾</span>
       </button>
+      {tip != null && <HoverTip pos={tipPos} placement="bottom" title={tip} />}
       {open && (
-        <div className="navmenu-panel" role="menu">
+        <div ref={panelRef} className="navmenu-panel" role="menu">
           {typeof children === 'function'
             ? children(() => setOpen(false))
             : children}
@@ -438,8 +478,10 @@ function ToolMenuIcon({ tool }: { tool: MapTool }) {
 }
 
 // Overlay & View triggers show a text label on roomy viewports and collapse to an
-// icon-only button on a narrow (phone-width) screen — both are always in the DOM and CSS
-// swaps which one shows (see the `@media (max-width: 600px)` rules), so there's no JS read.
+// icon-only button on a narrow (phone-width) screen or in the compact nav — both are always
+// in the DOM and CSS swaps which one shows (the `@media (max-width: 600px)` rules and
+// `.topnav-compact`). Keeping both in the DOM is also what lets the layout pass measure the
+// full bar's width while it shows the compact one (see TopNav's layout effect).
 function NavMenuLabel({ text, icon }: { text: string; icon: ReactNode }) {
   return (
     <>
@@ -901,40 +943,261 @@ export function TopNav({
       locationText
     );
 
-  // Keep the centre status pill on the true screen centre even when the left side
-  // (the chart name) is wider than the right. The row hugs its content, so we shift
-  // the whole bar by half the left/right width difference (grid gaps cancel out).
-  // Disabled while the sidebar is expanded — that layout is left-anchored, not centred.
-  // The compact (phone-width) nav spans the full viewport and is centred by CSS, so the JS
-  // pill-recentring shift below is skipped there — it would push the full-width bar off-screen.
+  // The nav's layout pass — four jobs, one measurement, because each feeds the next:
+  //
+  //  1. FULL OR COMPACT. The labelled bar is content-sized (≈577 px with a typical name), and a
+  //     docked panel can leave a map column narrower than that — 420 px beside the Reports dock
+  //     at its default 860 on a 1280 screen. So the bar measures the room it actually has (the
+  //     column between the widest left dock and the zoom control, less its gutters; navColumn.ts)
+  //     against its own NATURAL width, and switches to the compact variant (TopNav.css
+  //     `.topnav-compact`: icon menus, initials over the year) when the full one won't fit. By
+  //     measurement, not a media query: the same window is roomy with the dock closed and cramped
+  //     with it open, and the dock's width is the reader's to drag. The natural width is measured
+  //     even while compact, by lifting the class for one synchronous read — every compact form is
+  //     a CSS twin of its full form (NavMenuLabel, ChartSwitcher), so lifting the class IS the full
+  //     bar, and the browser never paints the in-between. Hysteresis (NAV_HYSTERESIS) so a dock
+  //     dragged across the boundary doesn't flap the bar on every pixel.
+  //  2. PILL RECENTRING. The row hugs its content, so with a wider left side (the chart name) the
+  //     status pill would sit off-centre; the bar shifts by half the left/right difference (grid
+  //     gaps cancel out), as far as the column has room for — never into the zoom corner. Not while the sidebar is expanded (that layout is left-anchored), not on
+  //     the phone layout (it spans the viewport — the shift would push it off-screen), and not
+  //     when compact (its row can wrap, and then there is no left/right to balance).
+  //  3. PLACEMENT. The stylesheet's formula (TopNav.css) centres the stack on the map column; it
+  //     stays in charge wherever the bar fits there, which is every roomy layout. Only when one of
+  //     the bar's ends would cross the column — under the dock or sidebar on the left, into the
+  //     zoom control on the right — does this pass override it (`--topnav-left`), because only
+  //     here are the bar's real width, its pill nudge and the readout under it all known. The
+  //     left bound wins if both bind: the chart name and status pill stay visible, and the zoom
+  //     control drops below the bar instead (Map.css reads `--topnav-right`/`--topnav-bottom`).
+  //  4. PUBLISH what other chrome reads: `--topnav-width` (the bottom overlay bars size to it ×2
+  //     on touch — TimelineHud/EclipseHud CSS), `--topnav-right` and `--topnav-bottom` (the zoom
+  //     control's drop), and, on the stack, `--topnav-room` / `--topnav-col` (how wide the readout
+  //     bar and the dropdowns may grow).
   const narrow = useNarrowNav();
+  const stackRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  // Content that changes the bar's NATURAL width without necessarily resizing anything while the
+  // bar is compact (the full name is display:none then): re-measure when it changes.
+  const discreetOn = useIdentity().on;
+  // Where the nav last came to rest, as announced to the map (watchSettled below). Outlives the
+  // layout effect's re-runs, so a full↔compact flip that leaves the bar where it was says nothing.
+  const navSettledRef = useRef('');
   useLayoutEffect(() => {
+    const stack = stackRef.current;
     const bar = barRef.current;
-    if (!bar) return;
+    if (!stack || !bar) return;
+    const row = bar.querySelector<HTMLElement>('.topnav-row');
     const left = bar.querySelector<HTMLElement>('.topnav-left');
+    const center = bar.querySelector<HTMLElement>('.topnav-center');
     const right = bar.querySelector<HTMLElement>('.topnav-right');
-    if (!left || !right) return;
-    const recenter = () => {
-      // Expose the nav island's rendered width so the bottom overlay bars (timeline / eclipse)
-      // can size themselves to it ×2 on touch, instead of a fixed viewport %. offsetWidth is the
-      // layout width (ignores the centring translateX below). See TimelineHud/EclipseHud CSS.
-      document.documentElement.style.setProperty('--topnav-width', `${bar.offsetWidth}px`);
-      if (chartExpanded || narrow) {
+    if (!row || !left || !center || !right) return;
+    const root = document.documentElement;
+    const setVar = (el: HTMLElement, name: string, value: string | null) => {
+      // Only on change: navWatch (Pro) and others observe these style attributes.
+      if (el.style.getPropertyValue(name) === (value ?? '')) return;
+      if (value == null) el.style.removeProperty(name);
+      else el.style.setProperty(name, value);
+    };
+    const layout = () => {
+      // 1. Natural width — with the compact class lifted for this one read if it's on.
+      const isCompact = stack.classList.contains('topnav-compact');
+      if (isCompact) stack.classList.remove('topnav-compact');
+      const fullW = bar.offsetWidth;
+      if (isCompact) stack.classList.add('topnav-compact');
+
+      if (narrow) {
+        // The phone layout: full width, media-query driven, nothing measured — and no claim on
+        // the docks' width (the bar spans the screen here, not a column).
+        if (isCompact) setCompact(false);
+        publishMapColumnNeed(0);
         bar.style.transform = '';
+        setVar(stack, '--topnav-left', null);
+        setVar(stack, '--topnav-room', null);
+        setVar(stack, '--topnav-col', null);
+        const sr = stack.getBoundingClientRect();
+        setVar(root, '--topnav-width', `${bar.offsetWidth}px`);
+        setVar(root, '--topnav-right', `${Math.round(sr.right)}px`);
+        setVar(root, '--topnav-bottom', `${Math.round(sr.bottom)}px`);
         return;
       }
-      const d =
-        (right.getBoundingClientRect().width - left.getBoundingClientRect().width) /
-        2;
-      bar.style.transform = `translateX(${d}px)`;
+
+      const col = navColumn();
+
+      // 1b. The compact bar's ONE-ROW width, published as the column no dock may take
+      // (leftDock.ts publishMapColumnNeed; the Reports dock and the expanded sidebar cap their
+      // width by it). It is what keeps this bar on one row however far a dock is dragged —
+      // Salvatore, 1 Oct: "it should stay on one row" — and the cap is measured, not a number in
+      // the docks, because this width moves with the chart's initials and year, the language and
+      // the font. Read in whatever form the bar is in now: the class goes on for one synchronous
+      // read if it's off (the step-1 trick in reverse; the browser never paints it), and
+      // `chart-expanded` comes off for the same read if the sidebar has hidden the name. With
+      // the name INCLUDED even then, so the figure doesn't move as the sidebar opens and closes
+      // — a dock changing width because a different panel opened is a move nobody could
+      // attribute. It does still follow the chart itself (and Discreet, and the language): a
+      // dock held at the cap moves when the reader switches to a chart with wider initials —
+      // measured 2 px, EM → WM — on a gesture of their own, against a bar that would otherwise
+      // wrap for that chart. Summed from the row's parts, not read off the bar: the compact bar
+      // is capped at --topnav-room and may be wrapped right now. Fractional widths, rounded up
+      // on publish, so a column that fits exactly never wraps on a sub-pixel.
+      if (bar.offsetWidth > 0) {
+        const hidName = stack.classList.contains('chart-expanded');
+        if (!isCompact) stack.classList.add('topnav-compact');
+        if (hidName) stack.classList.remove('chart-expanded');
+        const rs = getComputedStyle(row);
+        const g = parseFloat(rs.columnGap) || 0;
+        const chrome =
+          parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight) + (bar.offsetWidth - bar.clientWidth);
+        const w = (el: HTMLElement) => el.getBoundingClientRect().width;
+        const oneRowW = w(left) + g + w(center) + g + w(right) + chrome;
+        if (hidName) stack.classList.add('chart-expanded');
+        if (!isCompact) stack.classList.remove('topnav-compact');
+        // In from the screen's right edge: the zoom control and its gutter, the gap the bar
+        // keeps from it, the bar, and the bar's own gutter from the dock.
+        publishMapColumnNeed(col.right - col.zoomLeft + ZOOM_GAP + oneRowW + col.edge);
+      }
+
+      const room = col.zoomLeft - ZOOM_GAP - (col.left + col.edge);
+      const wantCompact = isCompact ? fullW + NAV_HYSTERESIS > room : fullW > room;
+      if (wantCompact !== isCompact) {
+        // The class flips on the re-render; this effect depends on `compact`, so it runs again
+        // then — before paint — and places the bar in its new form.
+        setCompact(wantCompact);
+        return;
+      }
+      // How wide the bar may grow (the compact row wraps at this; the readout bar is capped by it
+      // too): the room beside the zoom control — but never narrower than the compact bar's
+      // TWO-row form, the name and status pill over the three menus. Below that the row would
+      // break into three or four rows to keep clear of a control that can simply step down
+      // instead (Map.css drops it under the nav whenever --topnav-right reaches it). Since the
+      // docks cap themselves by step 1b's figure, the row only wraps where a dock's own minimum
+      // outranks that cap: a window under ~963 px beside the Reports dock (its 560 + ~403 of
+      // nav and zoom corner). Never wider than the column itself, though — off the screen is
+      // worse than tall.
+      const colW = col.right - col.left - 2 * col.edge;
+      let cap = room;
+      if (isCompact) {
+        const rs = getComputedStyle(row);
+        const g = parseFloat(rs.columnGap) || 0;
+        const chrome =
+          parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight) + (bar.offsetWidth - bar.clientWidth);
+        const twoRow =
+          Math.max(left.offsetWidth + g + center.offsetWidth, right.offsetWidth) + chrome;
+        cap = Math.min(colW, Math.max(room, Math.ceil(twoRow)));
+      }
+      setVar(stack, '--topnav-room', `${Math.max(0, Math.floor(cap))}px`);
+      setVar(stack, '--topnav-col', `${Math.max(0, Math.floor(colW))}px`);
+
+      // 2. Pill recentring. Cosmetic, so it takes only the room the bar leaves: the nudge widens
+      // the extent placement has to fit (the stack's width, then |d| beyond it), and step 1
+      // compared the bar's width alone — so a bar that fits with up to |d| to spare (and |d|
+      // runs to ~35 px with a long name) would otherwise be pushed into the zoom corner by its
+      // own centring, dropping the control under a nav that fits. Capped, the pill sits a little
+      // off-centre in a tight column instead. (Offsets don't see the transform, so the widths
+      // read here are the unshifted ones whether or not a nudge is on.)
+      const bW = bar.offsetWidth;
+      const sW = stack.offsetWidth;
+      let d = 0;
+      if (!chartExpanded && !isCompact) {
+        d = (right.getBoundingClientRect().width - left.getBoundingClientRect().width) / 2;
+        // Within the stack's own slack (a wider readout bar) the nudge widens nothing.
+        const spare = Math.max(0, (sW - bW) / 2, room - (sW + bW) / 2);
+        if (Math.abs(d) > spare) d = Math.sign(d) * spare;
+      }
+      bar.style.transform = d ? `translateX(${d}px)` : '';
+
+      // 3. Placement. `left` is the stack's centre (translateX(-50%)), in its containing block's
+      // coordinates; the column bounds are viewport x. The stack is as wide as its widest bar,
+      // the main bar centred in it and then nudged by d, the readout bar centred and not.
+      const cb = (stack.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+      const cbLeft = cb?.left ?? 0;
+      const cbWidth = cb?.width ?? window.innerWidth;
+      const c0 = cbLeft + cbWidth / 2 + col.left / 4 + getReservedLeftInset() / 4;
+      const halfL = Math.max(sW / 2, bW / 2 - d);
+      const halfR = Math.max(sW / 2, bW / 2 + d);
+      const lo = col.left + col.edge + halfL;
+      const hi = col.zoomLeft - ZOOM_GAP - halfR;
+      const cx = Math.max(lo, Math.min(c0, hi));
+      setVar(stack, '--topnav-left', Math.abs(cx - c0) < 0.5 ? null : `${Math.round(cx - cbLeft)}px`);
+
+      // 4. Publish. The target position, not the mid-transition one: the stack eases `left`
+      // over 0.32s and the zoom control eases its drop over the same curve.
+      setVar(root, '--topnav-width', `${bW}px`);
+      setVar(root, '--topnav-right', `${Math.round(cx + halfR)}px`);
+      setVar(root, '--topnav-bottom', `${Math.round(stack.getBoundingClientRect().bottom)}px`);
     };
-    recenter();
-    const ro = new ResizeObserver(recenter);
+    // After every pass: TELL THE MAP once the nav has come to rest somewhere new — a re-centre
+    // (`--topnav-left` or the CSS formula, eased over 0.32 s), the pill nudge (0.2 s), a
+    // full↔compact flip, a readout bar appearing under it. The map dodges its edge labels off
+    // this bar's rect, cached until `astro:hud-moved`, and nothing that moves the bar here
+    // dispatched it, so opening a dock left labels under the compacted bar until the next pan
+    // (video-QA #29). After the transition, not during it; once per resting place
+    // (lib/hudSettled), which is also why a re-dodge can't bring it back round in a loop.
+    //
+    // The readout bar under it is measured too (it carries `.timeline-hud`, so the labels dodge
+    // it), and needs its own observer: it changes width with its text — the place name under the
+    // pointer, a tool's live readout — and while it is narrower than the bar that resizes neither
+    // the bar nor the stack, so nothing above heard of it and labels sat under a widened readout
+    // until the next pan (QA, 2026-10-01: 1–5 MC/IC chips at 10 of 14 spots, no dispatch). Its
+    // resize only asks for a look, not a layout pass: nothing step 1 measures depends on it until
+    // it outgrows the bar, and then the stack's own resize runs one.
+    const readoutOf = () => stack.querySelectorAll<HTMLElement>(':scope > .topnav-toolbar');
+    const settled = watchSettled([stack, bar], ['left', 'transform'], navSettledRef, readoutOf);
+    const readoutRo = new ResizeObserver(() => settled.check());
+    let readout: HTMLElement | null = null;
+    const pass = () => {
+      layout();
+      // It mounts and unmounts with what it shows, and either one resizes the stack (it sits
+      // under the bar), which runs this pass — the moment to follow it to its new element.
+      const now = readoutOf()[0] ?? null;
+      if (now !== readout) {
+        if (readout) readoutRo.unobserve(readout);
+        readout = now;
+        if (now) readoutRo.observe(now);
+      }
+      settled.check();
+    };
+    pass();
+    // What changes the room or the bar: the window, a dock opening/closing/being dragged (either
+    // kind — subscribeLeftDock fires for both), and the bar or the readout under it resizing
+    // (a name change, a tool's readout appearing). A resize the layout itself causes settles on
+    // the next pass: the natural width it measures doesn't change with the mode.
+    //
+    // The window and the dock registry are read once a frame, not per event: a docked panel that
+    // republishes from an effect retires itself in the cleanup first, so a listener called on
+    // every event sees the dock gone for an instant on each step of a drag — which flipped the
+    // bar to full and back at every pixel, hysteresis or not. (ReportsPanel no longer does this;
+    // the expanded sidebar still does, and so may the next panel.) By the frame, the registry
+    // holds what the panel meant. The ResizeObserver already reports once a frame.
+    let raf = 0;
+    const schedule = () => {
+      if (!raf) {
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          pass();
+        });
+      }
+    };
+    const ro = new ResizeObserver(pass);
     ro.observe(left);
     ro.observe(right);
-    return () => ro.disconnect();
-  }, [chartExpanded, narrow]);
+    ro.observe(bar);
+    ro.observe(stack);
+    window.addEventListener('resize', schedule);
+    const unsubDock = subscribeLeftDock(schedule);
+    return () => {
+      ro.disconnect();
+      readoutRo.disconnect();
+      window.removeEventListener('resize', schedule);
+      unsubDock();
+      cancelAnimationFrame(raf);
+      settled.dispose();
+    };
+  }, [chartExpanded, narrow, compact, current, discreetOn, t]);
+  // Withdraw the docks' cap on unmount only — not in the layout effect's cleanup, which runs before
+  // every re-run and would read to a dock as the nav vanishing for an instant (the flap that split
+  // ReportsPanel's publish/retire into two effects; seam L78).
+  useEffect(() => () => publishMapColumnNeed(0), []);
 
   // The single active tool EXTENSION, if any. Tools are mutually exclusive (App enforces it), so at
   // most one is open — it drives the Tools trigger's pulse AND its icon, so a plugin tool shows its
@@ -959,7 +1222,10 @@ export function TopNav({
   }, [pinCelebrations]);
 
   return (
-    <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
+    <div
+      ref={stackRef}
+      className={`topnav-stack${chartExpanded ? ' chart-expanded' : ''}${compact ? ' topnav-compact' : ''}`}
+    >
       <div ref={barRef} className="timeline-hud topnav" data-mapstate={mapState}>
         <div className="topnav-row">
           {/* Left: client name (the chart switcher) then the sidebar toggle, pinned
@@ -1066,6 +1332,9 @@ export function TopNav({
                 )
               }
               ariaLabel={t('topNav.tools.menuLabel')}
+              // Compact: every trigger is an icon, so each names itself on hover. (Tools is an
+              // icon in the full bar too, but there it sits beside two labelled menus.)
+              tip={compact ? t('topNav.tools.menuLabel') : undefined}
               active={tool !== 'off' || !!openToolExt}
               className="topnav-tool navmenu-mapstate"
             >
@@ -1168,6 +1437,7 @@ export function TopNav({
             <NavMenu
               label={<NavMenuLabel text={t('topNav.overlay.menuLabel')} icon={<OverlayIcon />} />}
               ariaLabel={t('topNav.overlay.menuLabel')}
+              tip={compact ? t('topNav.overlay.menuLabel') : undefined}
               active={overlayActive}
               className="navmenu-mapstate"
             >
@@ -1278,6 +1548,7 @@ export function TopNav({
             <NavMenu
               label={<NavMenuLabel text={t('topNav.view.menuLabel')} icon={<ViewIcon />} />}
               ariaLabel={t('topNav.view.menuLabel')}
+              tip={compact ? t('topNav.view.menuLabel') : undefined}
               className="navmenu-steady"
               // While a registered surface owns the viewport its windows are
               // parked — the whole menu disables, with the provider's reason as
@@ -1285,29 +1556,42 @@ export function TopNav({
               disabledTip={viewLock?.reason}
             >
               {/* Built-ins + add-on extensions, hotkey items first then hotkey-less
-                  ones (see orderedViewItems). */}
-              {orderedViewItems.map((it) => (
-                <CheckItem
-                  key={it.id}
-                  label={it.label}
-                  // Unavailable: the reason stands in for the description, the row
-                  // can't read as checked (nothing is running), the shortcut chip
-                  // goes (the key is released), and the click is a no-op — never a
-                  // nudge, which would be selling an unfinished feature.
-                  hint={it.unavailable ?? it.hint}
-                  // A locked teaser opens nothing (its click is the upgrade nudge), so it
-                  // mustn't promise a side effect of opening.
-                  note={
-                    it.unavailable || !tierMet(planTier, it.tier ?? 'new') ? undefined : it.note
-                  }
-                  hotkey={it.unavailable ? undefined : it.hotkey}
-                  checked={it.checked && !it.unavailable}
-                  tier={it.tier}
-                  disabled={!!it.unavailable || !tierMet(planTier, it.tier ?? 'new')}
-                  locked={!it.unavailable && !tierMet(planTier, it.tier ?? 'new')}
-                  onToggle={it.onToggle}
-                />
-              ))}
+                  ones (see orderedViewItems).
+                  On a phone-width or touch layout a row also CLOSES the menu as it
+                  toggles: there the window it opens can land on the still-open panel
+                  (windows layer above the nav — TopNav.css — so the panel's other rows
+                  stuck out around the window's edges), and closing a menu takes a
+                  second tap on the map, not a flick of the pointer away. A desktop keeps
+                  the menu open, so several views can be flipped in one visit. */}
+              {(close) =>
+                orderedViewItems.map((it) => (
+                  <CheckItem
+                    key={it.id}
+                    label={it.label}
+                    // Unavailable: the reason stands in for the description, the row
+                    // can't read as checked (nothing is running), the shortcut chip
+                    // goes (the key is released), and the click is a no-op — never a
+                    // nudge, which would be selling an unfinished feature.
+                    hint={it.unavailable ?? it.hint}
+                    // A locked teaser opens nothing (its click is the upgrade nudge), so it
+                    // mustn't promise a side effect of opening.
+                    note={
+                      it.unavailable || !tierMet(planTier, it.tier ?? 'new')
+                        ? undefined
+                        : it.note
+                    }
+                    hotkey={it.unavailable ? undefined : it.hotkey}
+                    checked={it.checked && !it.unavailable}
+                    tier={it.tier}
+                    disabled={!!it.unavailable || !tierMet(planTier, it.tier ?? 'new')}
+                    locked={!it.unavailable && !tierMet(planTier, it.tier ?? 'new')}
+                    onToggle={() => {
+                      it.onToggle();
+                      if (narrow || touch) close();
+                    }}
+                  />
+                ))
+              }
             </NavMenu>
           </div>
         </div>

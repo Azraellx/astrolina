@@ -66,7 +66,12 @@ import {
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
-import { publishLeftDock, retireLeftDock } from '../../lib/leftDock';
+import {
+  getLeftDockMax,
+  publishLeftDock,
+  retireLeftDock,
+  useLeftDockMax,
+} from '../../lib/leftDock';
 import { HintMenu } from '../Sidebar/Sidebar';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -196,6 +201,15 @@ interface ExpandedChartSidebarProps {
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
   overlayKind?: string | null;
+  /** The synastry partner's own record while their wheel rides beside the chart
+   *  (null otherwise, and null while the overlay is promoted). The Dual layout's
+   *  second header introduces the partner from it the way the panel header
+   *  introduces the active chart: birth date and time, and THEIR birthplace — then,
+   *  apart, the place their wheel is actually cast for, which is the active
+   *  point's, not theirs. Before this the second header borrowed the panel header's
+   *  place lines and, laid out and coloured as a birth record, read as the
+   *  partner's birthplace (2026-09-30). */
+  overlayPartner?: StoredChart | null;
   /** Set when the transit moment IS one of the chart's returns ('solar' | 'lunar').
    *  A return chart is transits cast for one instant — same overlay, same maths —
    *  but it is a named chart in its own right, so the wheel calls it one. */
@@ -363,6 +377,25 @@ const minSidebarWidth = (): number => {
 function maxSidebarWidth(): number {
   return Math.min(window.innerWidth * 0.7, 1200);
 }
+/** The width the panel is DRAWN at: the reader's, inside [floor, cap], where the cap is also
+ *  `navMax` — the window less the column the top nav needs to stay on ONE row beside the panel
+ *  (lib/leftDock `useLeftDockMax`, measured and published by TopNav). Measured: at its 70% the
+ *  panel left the nav's one-row form too little column on a 1100 or 1024 window, and the menus
+ *  wrapped under the toggle. Unlike the 70% cap, this one does NOT outrank the floor: on a
+ *  window too narrow for both the panel keeps its floor and the nav wraps to its two-row form —
+ *  a panel squeezed under its floor loses its own labels, while the two-row nav is a designed
+ *  state with every control whole (TopNav.css). There the range is the floor alone and the
+ *  handle holds still, as it already did wherever the 70% cap had crossed the floor — on a
+ *  portrait tablet now, and a desktop window under ~883 px.
+ *
+ *  Whole pixels: the 70% cap is fractional (1440 × 0.7 = 1007.9999999999999), and a drag that
+ *  ended on it stored that string. */
+function sidebarWidthFor(pref: number, navMax: number): number {
+  return Math.round(Math.max(minSidebarWidth(), Math.min(pref, maxSidebarWidth(), navMax)));
+}
+/** How far the pointer travels from the press before the edge follows it (useMovableHud's
+ *  figure, for its reason: a press jitters, and must not be saved as a width). */
+const DRAG_SLOP = 3;
 
 // Wheel sizing. The diameter fits the panel width, with MIN_WHEEL keeping it
 // legible (never squished) even on narrow panels and MAX_WHEEL stopping it
@@ -926,6 +959,7 @@ export function ExpandedChartSidebar({
   overlayLabel,
   overlayMoment,
   overlayKind,
+  overlayPartner = null,
   overlayReturn,
   promotedLabel,
   noChart = false,
@@ -962,23 +996,25 @@ export function ExpandedChartSidebar({
   // the plain natal state, its birthplace, which is the whole of what the mode
   // exists to blank. The wheel and every position below it stay as they are.
   const id = useIdentity();
-  const [width, setWidth] = useState(() => {
+  // The reader's width and the drawn width are two values (CLAUDE.md rule 2): both caps are
+  // standing states — the window's size and the column the top nav needs — so the drawn width
+  // is derived at render and the stored one is never rewritten to fit them. A width dragged on
+  // a wide monitor comes back there instead of being shaved to what the last small window
+  // allowed. Only the reader's drag writes it (onUp below). `useLeftDockMax` re-renders on a
+  // window resize as well as a change of the nav's claim, which is also what keeps the
+  // innerWidth read inside sidebarWidthFor current.
+  const [widthPref, setWidthPref] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
-    const min = minSidebarWidth();
-    const base = saved && saved >= min ? saved : DEFAULT_WIDTH;
-    // Rein in a width saved under the old (wider) cap, and fit a narrower viewport.
-    return Math.max(min, Math.min(base, maxSidebarWidth()));
+    return saved && saved >= minSidebarWidth() ? saved : DEFAULT_WIDTH;
   });
+  const navMax = useLeftDockMax();
+  const width = sidebarWidthFor(widthPref, navMax);
 
   // A LANDSCAPE phone has the same problem by a different route: the panel stays resizable, but
   // its cap (70% of an already-short viewport) sits under the 640px column cutoff, so dragging can
   // never reveal Azimuth/Altitude either. usePhone() catches a phone in BOTH orientations (and no
   // tablets) — the columns force on and the table scrolls sideways there too (matching CSS).
   const phone = usePhone();
-
-  useEffect(() => {
-    localStorage.setItem(WIDTH_KEY, String(width));
-  }, [width]);
 
   // Publish the live panel width so the map edge-glow insets its left edge to
   // the visible map area (right of this sidebar). Through the left-dock
@@ -1233,19 +1269,35 @@ export function ExpandedChartSidebar({
     onResizingChangeRef.current = onResizingChange;
   });
 
+  // The width the current drag last set (null until it moves past the slop) — what onUp stores;
+  // and what the press started from: where, the reader's width, and the width drawn from it
+  // (they differ whenever a cap is holding the panel in).
+  const draggedRef = useRef<number | null>(null);
+  const dragStartRef = useRef({ x: 0, pref: 0, width: 0 });
+
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       if (!draggingRef.current) return;
-      const maxWidth = maxSidebarWidth();
-      const newWidth = Math.max(
-        minSidebarWidth(),
-        Math.min(maxWidth, e.clientX + dragOffsetRef.current),
-      );
-      setWidth(newWidth);
+      // Inside the slop it is a press, not a drag. Stored, a press's jitter would replace the
+      // reader's width with the CAPPED one (1200 kept, 1008 drawn at 1440).
+      const start = dragStartRef.current;
+      if (draggedRef.current == null && Math.abs(e.clientX - start.x) < DRAG_SLOP) return;
+      // Clamped by the same rule the panel is drawn by, so the handle stops dead at the cap
+      // (no stretch past it that snaps back), and what gets stored is a width the reader saw.
+      const newWidth = sidebarWidthFor(e.clientX + dragOffsetRef.current, getLeftDockMax());
+      draggedRef.current = newWidth;
+      setWidthPref(newWidth);
     };
     const onUp = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
+      // The one place the stored width is written: the reader's own drag — and only one that
+      // changed what is drawn. A drag that ends where it began hands back the width it started
+      // from, which may be wider than the cap and is still the reader's.
+      const start = dragStartRef.current;
+      const dragged = draggedRef.current;
+      if (dragged != null && dragged !== start.width) localStorage.setItem(WIDTH_KEY, String(dragged));
+      else if (dragged != null) setWidthPref(start.pref);
       setDragging(false);
       onResizingChangeRef.current?.(false);
       document.body.style.cursor = '';
@@ -1301,6 +1353,8 @@ export function ExpandedChartSidebar({
   const beginDrag = (e: ReactPointerEvent) => {
     if (e.button !== 0) return; // primary button / single touch contact only
     draggingRef.current = true;
+    draggedRef.current = null;
+    dragStartRef.current = { x: e.clientX, pref: widthPref, width };
     setDragging(true);
     onResizingChange?.(true);
     dragOffsetRef.current = width - e.clientX;
@@ -1801,27 +1855,35 @@ export function ExpandedChartSidebar({
     );
   };
 
+  // The point both wheels are cast for, and how its lines are coloured and
+  // masked — shared by the panel header's place lines and the partner header's
+  // "Cast for" line below, which name the same place and must say it alike.
+  const castPoint =
+    point ?? (chart ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng } : null);
+  const castState = isNatalPin
+    ? 'natal-pinned'
+    : pinned
+      ? 'pinned'
+      : point
+        ? ''
+        : 'natal';
+  // Blanked only while the line is speaking for the BIRTHPLACE — the natal pin, or
+  // the plain natal state that falls back to it. A hovered or custom pin is a
+  // place the user chose to look at, not birth data, so it reads normally: the
+  // mode hides who the chart is, not where you are working.
+  const castBlank = id.on && (isNatalPin || !point);
+
   // The place line and its coordinates — the panel header's, and the overlay
   // wheel's below it, because they are the same fact about both: the angles on
   // either wheel are cast for this point. Rendered from one function so the two
-  // cannot drift into saying it differently.
+  // cannot drift into saying it differently. (A synastry partner's wheel is the
+  // exception: a partner has a birthplace of their own, so theirs is partnerLines.)
   const relocatedLines = (): ReactNode => {
-    const displayPoint =
-      point ?? (chart ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng } : null);
+    const displayPoint = castPoint;
     if (!displayPoint) return null;
-    const stateClass = isNatalPin
-      ? 'natal-pinned'
-      : pinned
-        ? 'pinned'
-        : point
-          ? ''
-          : 'natal';
+    const stateClass = castState;
     const hasPin = isNatalPin || pinned;
-    // Blanked only while this line is speaking for the BIRTHPLACE — the natal
-    // pin, or the plain natal state that falls back to it. A hovered or custom
-    // pin is a place the user chose to look at, not birth data, so it reads
-    // normally: the mode hides who the chart is, not where you are working.
-    const blankPlace = id.on && (isNatalPin || !point);
+    const blankPlace = castBlank;
     // The pin marker, shown whenever a pin is placed. It sits beside the place
     // name when there is one; if the name line is hidden (e.g. the measure tool
     // nulls it) it falls back beside the coordinates, so a placed pin is never
@@ -1881,6 +1943,109 @@ export function ExpandedChartSidebar({
             : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
         </span>
       </div>
+    );
+  };
+
+  // The Dual layout's header over a synastry PARTNER's wheel: under the partner's
+  // name (the line above, from overlaySubject), their own birth record in the panel
+  // header's form — date · time with its UTC offset, then their birthplace and
+  // coordinates in the natal colour — and then, set apart, the place their wheel is
+  // cast for.
+  //
+  // That last line is the honest half. A partner's angles and houses are cast at
+  // the active point — pin, else hover, else the ACTIVE chart's birthplace — not
+  // at their own birthplace (docs/calculation-methods.md), so the header used to
+  // show that point in the birth-record styling, and "Amara / Vienna" read as
+  // Amara's birthplace when Vienna was Elena's (2026-09-30). Now the birth record
+  // is the partner's, and where the wheel is cast gets its own line, coloured like the panel header's place
+  // line — the same place, in the same colour — and shown only when it differs
+  // from the partner's birthplace.
+  //
+  // A COMPOSITE partner has no "cast for": its angles are the midpoints of its two
+  // parents' own angles and don't relocate (App's overlayAngles), so that line says
+  // that instead. Its date line is the composite's stored moment, exactly as the
+  // panel header shows a composite that is the active chart.
+  //
+  // Discreet mode masks every field of the record — it is a second person's birth
+  // data, which is what the mode exists for — with the panel header's own masks
+  // (and the 2026-08-24 lesson above: mask where the value is rendered, all of it).
+  // The "Cast for" place follows the panel header's place-line rule (castBlank).
+  const partnerLines = (p: StoredChart): ReactNode => {
+    const bp = p.birthplace;
+    const wrapLng = (v: number) => ((((v + 180) % 360) + 360) % 360) - 180;
+    const castElsewhere =
+      !p.composite &&
+      !!castPoint &&
+      (Math.abs(castPoint.lat - bp.lat) > 1e-4 ||
+        Math.abs(wrapLng(castPoint.lng - bp.lng)) > 1e-4);
+    const castCoords = castPoint ? `${fmtLat(castPoint.lat)} ${fmtLng(castPoint.lng)}` : '';
+    // pointLabel can be momentarily empty while a hover geocode resolves; the
+    // coordinates stand in, so the line never blinks out (header geometry, as above).
+    const castPlace = castBlank
+      ? id.text(pointLabel || 'birthplace')
+      : pointLabel?.trim() || castCoords;
+    return (
+      <>
+        <div className="es-meta">
+          <span className="es-meta-when">
+            {id.on ? `${MASK_DATE} · ${MASK_TIME}` : fmtChartDate(p, fmt)}
+            {!id.on && <span className="es-meta-tz">{formatUtcOffset(p.tzOffset)}</span>}
+            {p.tzUncertain && (
+              <TipGlyph
+                className="es-meta-warn"
+                title={
+                  <span className="es-tip-title">
+                    <span className="es-meta-warn">⚠</span> {t('expandedSidebar.tzUncertain')}
+                  </span>
+                }
+                hint={t('expandedSidebar.tzUncertainHint')}
+              >
+                ⚠
+              </TipGlyph>
+            )}
+          </span>
+        </div>
+        <div className="es-relocated natal">
+          <span className="es-relocated-place">
+            <span className="es-relocated-name">
+              {id.on ? id.text(bp.label || 'birthplace') : bp.label || ' '}
+            </span>
+          </span>
+          <span className="es-relocated-text">
+            {id.on
+              ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
+              : `${fmtLat(bp.lat)} ${fmtLng(bp.lng)}`}
+          </span>
+        </div>
+        {p.composite ? (
+          <div className="es-cast-for">
+            <span className="es-cast-for-label">
+              {t('expandedSidebar.partnerHead.midpointAngles')}
+            </span>
+          </div>
+        ) : (
+          // The line carries its own explanation: both wheels are cast for this one
+          // place, and choosing a point moves them (Salvatore, 2026-10-02 — the
+          // fallback stays, so long as the reader is told they can cast elsewhere).
+          // It names no place, so Discreet mode has nothing to mask in it. Inert, so a
+          // tap reveals it; tabIndex lets keyboard focus reach it too. Mounted with
+          // the line, so the hint never shows without it.
+          castElsewhere && (
+            <TipSpan
+              className={`es-cast-for es-cast-for-tip ${castState}`}
+              tabIndex={0}
+              tapReveal
+              tip={t('expandedSidebar.partnerHead.castForTip')}
+              hint={t('expandedSidebar.partnerHead.castForHint')}
+            >
+              <span className="es-cast-for-label">
+                {t('expandedSidebar.partnerHead.castFor')}
+              </span>
+              <span className="es-cast-for-place">{castPlace}</span>
+            </TipSpan>
+          )
+        )}
+      </>
     );
   };
 
@@ -2232,7 +2397,10 @@ export function ExpandedChartSidebar({
                           Everything but the name is the SECOND chart's own: its
                           instant rather than the birth moment, and the place both
                           are cast for (which is a fact about this wheel's angles,
-                          not a repetition of the one above). */}
+                          not a repetition of the one above). A synastry partner
+                          is the one second chart with a birth record and a place
+                          of its own, so it is introduced from that record, with
+                          the cast-for place on a line apart (partnerLines). */}
                       <div className="es-overlay-head">
                         {overlayWhen && (
                           <div className="es-meta">
@@ -2259,7 +2427,11 @@ export function ExpandedChartSidebar({
                             </span>
                           </div>
                         )}
-                        {relocatedLines()}
+                        {/* A partner is a person with a birthplace of their own,
+                            so their header is their record (partnerLines); every other
+                            second chart is a moment with no place, cast where the
+                            first one is, and repeats the panel header's lines. */}
+                        {overlayPartner ? partnerLines(overlayPartner) : relocatedLines()}
                       </div>
                       <div className="es-wheel-slot">
                         {overlayName && (

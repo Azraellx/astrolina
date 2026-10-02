@@ -52,6 +52,15 @@ const narrowNav = mediaStore('(max-width: 600px)');
 const phone = mediaStore(
   '(pointer: coarse) and (max-width: 600px), (pointer: coarse) and (max-height: 600px)',
 );
+// A phone held UPRIGHT — `phone` above, narrowed to portrait. Portrait with a width ≤ 600 is the
+// whole of it: a portrait screen no taller than 600 is no wider either. For layouts that only work
+// on the tall narrow screen — the Capture frame lifted under the top bar with its window below it
+// (Map.tsx's frame geometry, CaptureHud) — and must leave a landscape phone exactly as it was.
+// The same query as the CSS that pairs with it, so the two can't disagree about which screen
+// they are on.
+const phonePortrait = mediaStore(
+  '(pointer: coarse) and (max-width: 600px) and (orientation: portrait)',
+);
 
 /** Non-reactive read: is this a coarse-pointer (touch) device? */
 export function isTouchLayout(): boolean {
@@ -65,6 +74,10 @@ export function isNarrowNav(): boolean {
 export function isPhone(): boolean {
   return phone.getSnapshot();
 }
+/** Non-reactive read: is this a phone held upright (portrait)? */
+export function isPhonePortrait(): boolean {
+  return phonePortrait.getSnapshot();
+}
 
 /** Reactive read of whether this is a coarse-pointer (touch) device. */
 export function useTouchLayout(): boolean {
@@ -77,6 +90,10 @@ export function useNarrowNav(): boolean {
 /** Reactive read of whether this is a phone-sized touch device (small in either orientation). */
 export function usePhone(): boolean {
   return useSyncExternalStore(phone.subscribe, phone.getSnapshot, () => false);
+}
+/** Reactive read of whether this is a phone held upright (portrait). */
+export function usePhonePortrait(): boolean {
+  return useSyncExternalStore(phonePortrait.subscribe, phonePortrait.getSnapshot, () => false);
 }
 
 // A physical keyboard can't be detected by any standard web API, so we INFER one: the

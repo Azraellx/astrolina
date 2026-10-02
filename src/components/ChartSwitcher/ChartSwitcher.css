@@ -282,6 +282,36 @@
   background: rgba(var(--accent-brand-rgb), 0.1);
 }
 
+/* The top bar's two forms of the label, both always rendered (ChartSwitcher.tsx): the capped name
+   over "date · place", and the initials over the year. `display: contents` makes the shown twin
+   vanish as a box, so its text and ⚠ lay out exactly as they did before there were twins (the ⚠
+   stays its own flex item in .meta, 4px off the place). The short form shows on the phone layout
+   (the @media block below) and in the compact nav (TopNav.css `.topnav-compact`), which the nav
+   switches to by measuring — so it can lift the class for one read and get the full form's width. */
+.switcher-full {
+  display: contents;
+}
+.switcher-short {
+  display: none;
+}
+.topnav-compact .switcher-full {
+  display: none;
+}
+.topnav-compact .switcher-short {
+  display: contents;
+}
+/* Initials over the year read as one block flush toward the sidebar toggle, as on the phone. */
+.topnav-compact .switcher-trigger .label {
+  align-items: flex-end;
+}
+/* Beside a wide dock the map column can be narrower than this menu's usual 260–360px:
+   --topnav-col (the column less its gutters, published on the nav stack by TopNav.tsx) caps it,
+   and fitToNavColumn slides it into the column. Unset (the phone, the expanded sidebar) → as before. */
+.topnav .switcher-menu {
+  min-width: min(260px, var(--topnav-col, 260px));
+  max-width: min(360px, var(--topnav-col, 360px));
+}
+
 /* Portrait top nav: the trigger is inset within the full-width bar, so the dropdown (anchored to
    the trigger's left) clips against the screen edge. Pin it to the screen's left edge just below
    the nav — like the sidebar's left-docked trigger, which never clips — and clamp it to the
@@ -298,5 +328,12 @@
      TopNav.css, closing the gap to the toggle). */
   .topnav .switcher-trigger .label {
     align-items: flex-end;
+  }
+  /* …and the short form of the label (the twins above). */
+  .topnav .switcher-full {
+    display: none;
+  }
+  .topnav .switcher-short {
+    display: contents;
   }
 }

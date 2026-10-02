@@ -459,6 +459,11 @@ export const settings = {
     },
     details: {
       maximum: 'Maximum',
+      // The Maximum row's value: {date} is the long date ("8 April 2024"), {time}
+      // the minute of greatest eclipse. UTC, because the panel speaks for the
+      // whole eclipse rather than for a place; the map's click card gives a
+      // place's own clock time.
+      maximumValue: '{date} · {time} UTC',
       type: 'Type',
       central: 'central',
       nonCentral: 'non-central',

@@ -196,6 +196,10 @@ export function LocalSpaceWheel({
   useEffect(
     () => () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      // Cleared too: the move handler reads a non-null ref as "a frame is already booked".
+      // StrictMode's remount keeps refs, and Map.tsx's badge scheduler lost every later frame
+      // of a dev session to exactly this shape (its mount cleanup says how).
+      rafRef.current = null;
     },
     [],
   );

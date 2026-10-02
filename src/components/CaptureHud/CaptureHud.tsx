@@ -10,8 +10,9 @@
 // downloaded or copied to the clipboard — entirely client-side via captureFrame. The
 // pin, edge labels and watermark are always included; the caption fields live in App
 // (the Map reserves a footer band for the caption), so this window is a controlled view.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
@@ -20,10 +21,10 @@ import { useDiscreet } from '../../lib/discreet';
 import { downloadBlob } from '../../lib/downloadBlob';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
-import { tierMet, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
-import { useTouchLayout, usePhone } from '../../lib/touch';
+import { tierMet, shouldShowNudge, type PlanTier } from '../../lib/plan';
+import { useTouchLayout, usePhone, usePhonePortrait, isPhonePortrait } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
-import { HoverTip } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { InfoIcon } from '../ui/InfoIcon';
 import { WarningIcon } from '../ui/WarningIcon';
@@ -36,6 +37,25 @@ import './CaptureHud.css';
 
 // Its own saved position, independent of the other floating windows.
 const POS_KEY = 'astro:capture-pos:v1';
+// The least room under the frame (px) that a phone sheet is worth capping to: the title bar
+// (about 42) plus one row of controls with the body's padding round it. Less than that and a
+// capped window would be a title bar over a sliver that scrolls one half-row at a time, so it
+// folds to its title bar instead (see `tight` below).
+const SHEET_MIN_ROOM = 92;
+
+// Where a phone sheet has to stay below: the Capture frame's bottom edge, caption band and
+// attribution included — on a phone held upright, where the frame sits under the top bars and
+// the window docks beneath it (Map.tsx's frame geometry). Null elsewhere, and null until the
+// geometry has placed the frame: before that it still fills the map, and there is no frame edge
+// to stay under — reading the screen's bottom then would fold the window for the one frame it
+// takes the inset to land.
+function frameCeiling(): number | null {
+  if (!isPhonePortrait()) return null;
+  const frame = document.querySelector<HTMLElement>('.map-frame.framed');
+  if (!frame || frame.style.top === '') return null;
+  const r = frame.getBoundingClientRect();
+  return r.height > 0 ? r.bottom : null;
+}
 // '1' once the share-link privacy notice has been acknowledged with "don't
 // remind me again" — the first-use heads-up stands down from then on.
 const LINK_WARN_KEY = 'astro:share-link-notice:v1';
@@ -316,15 +336,112 @@ export function CaptureHud({
 }: CaptureHudProps) {
   const { t } = useT();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
-  // screen clutter — WITHOUT exiting Capture (close it from the top nav / Esc). Local UI state.
-  const [collapsed, setCollapsed] = useState(false);
+  // screen clutter — WITHOUT exiting Capture (close it from the top nav / Esc). Local UI state:
+  // the reader's own choice, or null while they haven't made one (see `collapsed` below).
+  const [collapsedChoice, setCollapsedChoice] = useState<boolean | null>(null);
   const hudRef = useRef<HTMLDivElement>(null);
-  const { pos, dragging, handleProps } = useMovableHud(hudRef, {
+  const { pos, dragging, phoneRoom, draggedOffHome, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
     floating: true,
     initial: () => ({ x: Math.round(effectiveCenterX() - 130), y: 144 }),
+    // On a phone held upright the window is a full-width sheet docked UNDER the frame, so the
+    // frame, its caption and these controls are all on screen at once. The sheet keeps its
+    // bottom edge on the chrome, where the thumb is; the frame bounds its height.
+    phoneCeiling: frameCeiling,
   });
-  const [busy, setBusy] = useState(false);
+  // A phone held upright: the sheet layout (CaptureHud.css `.is-phone-sheet`) — full width,
+  // the short sections side by side, so the window is as short as its content allows.
+  const phoneSheet = usePhonePortrait();
+  // Too little room under the frame to be worth capping the sheet to (SHEET_MIN_ROOM): a 4:5
+  // frame on a short phone leaves a sliver. Shrinking the frame to make room was the other
+  // way out, and it was turned down — the export is the frame's own size, so the picture
+  // would come out smaller and show less map whenever the window happened to need the room.
+  // So the frame keeps its size and the window gives way: it starts folded to its title bar,
+  // under the frame, and the eye opens it — over the frame, at its full height, uncapped,
+  // because the reader asked for it there. A standing condition, so it is DERIVED (CLAUDE.md
+  // rule 2), never written into the choice: switch to a ratio with room and the window is
+  // open again by itself, unless the reader has set it either way since.
+  const tight = phoneRoom !== null && phoneRoom < SHEET_MIN_ROOM;
+  const collapsed = collapsedChoice ?? tight;
+  // Capped only where the cap leaves something usable; folded or opened over the frame, the
+  // window takes its own height (`.is-tight` lifts the cap the hook's room var applies).
+  const capped = phoneRoom !== null && !tight;
+  // A reader who drags the sheet off its home has taken it over, and the room goes with the
+  // home (the hook drops it on release): what the window was showing then is theirs from then
+  // on. Without this, dragging a folded sheet away would lift its "too little room" and open it
+  // the moment the finger came off. Keyed on the room going away rather than on `dragging`,
+  // which is also up for a tap on the title bar — not a choice about anything. And only when
+  // the room went with a DRAG (`draggedOffHome`, set in the same update): turning the phone on
+  // its side drops the room too, because the ceiling only applies upright, and freezing then
+  // would write the derived fold into the choice — rotate a folded 4:5 sheet and back, pick
+  // 1:1, and it would stay folded, as if the reader had folded it. A layout effect, so the
+  // frozen state is in place before the frame that would have shown it open.
+  // `sheetCollapsed` is what the sheet showed the last time it had a room — read before it is
+  // updated, so the pass in which the room goes away still sees the state from before.
+  const sheetCollapsed = useRef(collapsed);
+  const lastRoom = useRef(phoneRoom);
+  useLayoutEffect(() => {
+    if (lastRoom.current !== null && phoneRoom === null && draggedOffHome) {
+      setCollapsedChoice((c) => c ?? sheetCollapsed.current);
+    }
+    lastRoom.current = phoneRoom;
+    if (phoneRoom !== null) sheetCollapsed.current = collapsed;
+  }, [phoneRoom, collapsed, draggedOffHome]);
+  // A capped sheet scrolls, and a phone shows no scrollbar until a scroll has started — so a
+  // window cut off after its first row would read as a window with one row. While there is
+  // more below, the body's foot fades out (CaptureHud.css `.has-more`), the way a list that
+  // runs on looks. Checked on scroll, when the cap moves, and after every render (a notice or
+  // the link heads-up appearing lengthens the content without resizing the capped body).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  const checkMore = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body || !capped) {
+      checkMore.current = () => {};
+      setMoreBelow(false);
+      return;
+    }
+    const check = () =>
+      setMoreBelow(body.scrollTop + body.clientHeight < body.scrollHeight - 2);
+    checkMore.current = check;
+    check();
+    body.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(body);
+    return () => {
+      body.removeEventListener('scroll', check);
+      ro.disconnect();
+    };
+  }, [capped]);
+  useLayoutEffect(() => checkMore.current());
+  // The frame moving or resizing — a ratio picked here, the caption growing a line, the top
+  // bars changing height — moves the ceiling, and nothing the hook watches would notice. Say
+  // so the way every moved surface does (useMovableHud's `phoneCeiling`): `astro:hud-moved`
+  // re-homes the sheet against the frame where it now is. Map.tsx sets the frame's insets
+  // inline, so a change of its style attribute is exactly a change of its box.
+  //
+  // Flushed synchronously: the observer reports in the microtask right after the frame's
+  // commit, before the screen paints, and a re-home left to an ordinary update would land a
+  // frame later — one frame of the sheet still standing where a taller frame now reaches
+  // (measured: picking 1:1 from 16:9 on a 432×768 phone put the sheet over the new caption
+  // for exactly one frame). Safe here because a MutationObserver callback is never inside a
+  // React render or effect.
+  useEffect(() => {
+    if (!phoneSheet) return;
+    const frame = document.querySelector('.map-frame');
+    if (!frame) return;
+    const moved = () => flushSync(() => window.dispatchEvent(new Event('astro:hud-moved')));
+    const mo = new MutationObserver(moved);
+    mo.observe(frame, { attributes: true, attributeFilter: ['style', 'class'] });
+    return () => mo.disconnect();
+  }, [phoneSheet]);
+  // Which export is rendering, or null. The pressed button says "Rendering…" in place of its
+  // label (the way Copy says "Copied") and every action holds off until it's done. It used to
+  // be a boolean behind a status row that mounted only while busy, so the panel grew for the
+  // few frames a render takes and snapped back — the whole window jumping under the finger
+  // that had just pressed it. A failure still gets the row: that message has to stay.
+  const [busy, setBusy] = useState<'download' | 'copy' | 'share' | 'sink' | null>(null);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [sinkDone, setSinkDone] = useState(false);
@@ -365,18 +482,20 @@ export function CaptureHud({
   const discreet = useDiscreet();
 
   // The Transparent (Local Space) toggle belongs to the GATED rung (lib/plan): live for an
-  // entitled user (with the gated tip tag), a click-to-upgrade teaser when the build nudges
-  // that rung, hidden otherwise — the open core never reaches the gated rung, so it ships
-  // hidden there. The eye reads the EFFECTIVE state (App gates the applied value the same
-  // way) so a teased/stale pref never shows it active with nothing applied.
+  // entitled user (with the gated tip tag), a locked teaser when the build nudges that rung,
+  // hidden otherwise — the open core never reaches the gated rung, so it ships hidden there.
+  // The teaser explains in its tip when clicked or tapped and does NOT open the upgrade
+  // flow: it's a switch in the middle of composing an export, and a tap on a switch that
+  // won't flip asks why, not for the plans (TipButton's `locked`; seam L73, 2026-10-01).
+  // The eye reads the EFFECTIVE state (App gates the applied value the same way) so a
+  // teased/stale pref never shows it active with nothing applied.
   const transparentUnlocked = tierMet(planTier, 'gated');
   const transparentNudge = !transparentUnlocked && shouldShowNudge('gated');
   const effTransparent = transparentUnlocked && transparentMode;
   const transparentClick = () => {
-    if (!transparentUnlocked) {
-      nudgeAction(); // teaser → open the upgrade flow instead of toggling
-      return;
-    }
+    // Unreachable while locked (the locked TipButton never calls onClick); kept so a
+    // locked switch can't write the preference even if that wiring changes.
+    if (!transparentUnlocked) return;
     const next = !transparentMode;
     setTransparentMode(next);
     // Turning it on flies to the LS origin (compass full-size) so the always-on circle mask frames
@@ -421,7 +540,7 @@ export function CaptureHud({
   const onDownload = useCallback(async () => {
     if (divertIfLocked()) return;
     if (busy) return;
-    setBusy(true);
+    setBusy('download');
     setFailed(false);
     setCopied(false);
     try {
@@ -436,14 +555,14 @@ export function CaptureHud({
       reportCaptureFailure('download', e);
       markFailed();
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [busy, onCapture, fileName, divertIfLocked, markFailed]);
 
   const onCopy = useCallback(async () => {
     if (divertIfLocked()) return;
     if (busy) return;
-    setBusy(true);
+    setBusy('copy');
     setFailed(false);
     setCopied(false);
     try {
@@ -472,7 +591,7 @@ export function CaptureHud({
       reportCaptureFailure('copy', e);
       markFailed();
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [busy, onCapture, fileName, divertIfLocked, markFailed]);
 
@@ -527,7 +646,7 @@ export function CaptureHud({
   const onShare = useCallback(async () => {
     if (divertIfLocked()) return;
     if (busy) return;
-    setBusy(true);
+    setBusy('share');
     setFailed(false);
     setCopied(false);
     try {
@@ -564,7 +683,7 @@ export function CaptureHud({
         markFailed();
       }
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [busy, onCapture, fileName, divertIfLocked, t, markFailed]);
 
@@ -579,7 +698,7 @@ export function CaptureHud({
   const onSendToSink = useCallback(async () => {
     const s = getCaptureSink();
     if (!s || busy) return;
-    setBusy(true);
+    setBusy('sink');
     setFailed(false);
     setSinkDone(false);
     try {
@@ -599,7 +718,7 @@ export function CaptureHud({
       reportCaptureFailure(`sink:${s.id}`, e);
       markFailed();
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [busy, onCapture, markFailed]);
 
@@ -613,7 +732,7 @@ export function CaptureHud({
   return (
     <div
       ref={hudRef}
-      className={`timeline-hud location-hud capture-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`}
+      className={`timeline-hud location-hud capture-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}${phoneSheet ? ' is-phone-sheet' : ''}${tight ? ' is-tight' : ''}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
@@ -625,74 +744,101 @@ export function CaptureHud({
         handleProps={handleProps}
         dragging={dragging}
         collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((v) => !v)}
+        onToggleCollapse={() => setCollapsedChoice(!collapsed)}
         onClose={onClose}
         closeLabel={t('captureHud.closeAria')}
         closeHint={t('captureHud.closeHint')}
       />
 
-      <div className="location-ls capture-hud-body">
-        {/* What the frame is a picture of. Its own axis rather than a fourth ratio preset:
-            the ratios, the caption and every export action serve both subjects equally. */}
-        <div className="capture-hud-label">{t('captureHud.subject.label')}</div>
-        <div className="location-ls-seg capture-hud-seg" role="group">
-          {(['map', 'chart'] as const).map((s) => (
-            <TipBtn
-              key={s}
-              className={`location-ls-seg-btn ${subject === s ? 'active' : ''}`}
-              onClick={() => setSubject(s)}
-              ariaPressed={subject === s}
-              title={t(`captureHud.subject.${s}`)}
-              hint={t(`captureHud.subject.${s}Hint`)}
-            >
-              {t(`captureHud.subject.${s}`)}
-            </TipBtn>
-          ))}
-        </div>
+      <div ref={bodyRef} className={`location-ls capture-hud-body${moreBelow ? ' has-more' : ''}`}>
+        {/* Subject and Frame as one pair: stacked in the window as always (the wrappers lay
+            out as if absent), side by side on a phone sheet, where the width is there and the
+            height is what the frame above leaves. */}
+        <div className="capture-hud-pair">
+          {/* What the frame is a picture of. Its own axis rather than a fourth ratio preset:
+              the ratios, the caption and every export action serve both subjects equally. */}
+          <div className="capture-hud-group">
+            <div className="capture-hud-label">{t('captureHud.subject.label')}</div>
+            <div className="location-ls-seg capture-hud-seg" role="group">
+              {(['map', 'chart'] as const).map((s) => (
+                <TipBtn
+                  key={s}
+                  className={`location-ls-seg-btn ${subject === s ? 'active' : ''}`}
+                  onClick={() => setSubject(s)}
+                  ariaPressed={subject === s}
+                  title={t(`captureHud.subject.${s}`)}
+                  hint={t(`captureHud.subject.${s}Hint`)}
+                >
+                  {t(`captureHud.subject.${s}`)}
+                </TipBtn>
+              ))}
+            </div>
+          </div>
 
-        <div className="capture-hud-label">{t('captureHud.aspect.label')}</div>
-        <div className="location-ls-seg capture-hud-seg" role="group">
-          {ASPECTS.map((a) => {
-            const active = Math.abs(captureAspect - a.ratio) < 0.001;
-            return (
-              <TipBtn
-                key={a.key}
-                className={`location-ls-seg-btn ${active ? 'active' : ''}`}
-                onClick={() => setCaptureAspect(a.ratio)}
-                ariaPressed={active}
-                title={t(`captureHud.aspect.${a.key}`)}
-                hint={t(`captureHud.aspect.${a.key}Hint`)}
-              >
-                {t(`captureHud.aspect.${a.key}`)}
-              </TipBtn>
-            );
-          })}
+          <div className="capture-hud-group">
+            <div className="capture-hud-label">{t('captureHud.aspect.label')}</div>
+            <div className="location-ls-seg capture-hud-seg" role="group">
+              {ASPECTS.map((a) => {
+                const active = Math.abs(captureAspect - a.ratio) < 0.001;
+                return (
+                  <TipBtn
+                    key={a.key}
+                    className={`location-ls-seg-btn ${active ? 'active' : ''}`}
+                    onClick={() => setCaptureAspect(a.ratio)}
+                    ariaPressed={active}
+                    title={t(`captureHud.aspect.${a.key}`)}
+                    hint={t(`captureHud.aspect.${a.key}Hint`)}
+                  >
+                    {t(`captureHud.aspect.${a.key}`)}
+                  </TipBtn>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Transparent (Local Space): a gated-tier preset for Local-Space captures — hides
             the line arrows, uses standard frame-edge labels and blanks the basemap for a
             see-through export. Its effect only applies with Local Space on, so it's shown
             SOFT-DISABLED (greyed, non-clickable, tip explains) until LS is active; hidden
-            below the gated rung unless the build nudges it. */}
+            below the gated rung unless the build nudges it. The shared TipButton rather
+            than this window's TipBtn, for its `locked` form: the teaser's reason line,
+            accessible description and tap-to-reveal live there, once, for every locked
+            switch. */}
         {!chartSubject && (transparentUnlocked || transparentNudge) && (
-          <TipBtn
+          <TipButton
+            type="button"
+            // `locked` carries the same gated tint as the Activations and Paran Clock eyes
+            // (CaptureHud.css), so the three locked switches look alike.
             className={`location-ls-toggle capture-hud-transparent ${
               effTransparent ? 'on' : 'off'
-            }${localSpaceActive ? '' : ' disabled'}`}
-            onClick={transparentClick}
-            ariaPressed={effTransparent}
-            ariaDisabled={!localSpaceActive}
+            }${localSpaceActive ? '' : ' disabled'}${transparentNudge ? ' locked' : ''}`}
+            placement="top"
+            locked={
+              transparentNudge
+                ? { tier: 'gated', feature: t('captureHud.transparent.title') }
+                : undefined
+            }
+            onClick={localSpaceActive ? transparentClick : undefined}
+            // Locked, it is not a toggle the reader can press (LockedTipButton makes it
+            // aria-disabled with the reason as its description), so it reports no pressed state —
+            // the same as the locked Activations and Paran Clock eyes.
+            aria-pressed={transparentNudge ? undefined : effTransparent}
+            aria-disabled={!localSpaceActive || undefined}
             gated
-            title={t('captureHud.transparent.title')}
+            tip={t('captureHud.transparent.title')}
+            // Locked, the description stands whether Local Space is on or not: "turn on Local
+            // Space first" is an instruction that can't unlock it, sitting over a reason line
+            // that says it stays off. needLs is for a switch the reader CAN flip.
             hint={
-              localSpaceActive
+              localSpaceActive || transparentNudge
                 ? t('captureHud.transparent.hint')
                 : t('captureHud.transparent.needLs')
             }
           >
             <EyeIcon open={effTransparent} className="location-ls-eye" size={14} />
             <span className="location-ls-name">{t('captureHud.transparent.title')}</span>
-          </TipBtn>
+          </TipButton>
         )}
 
         {/* Details heading — shown in every mode. The phone "i" (why no wheel/list) belongs
@@ -886,40 +1032,52 @@ export function CaptureHud({
         )}
 
         <div className="capture-hud-actions" data-actions={actionCount}>
+          {/* Each image action shows "Rendering…" in its own label while it renders (see
+              `busy`), in the button's fixed cell, so nothing around it moves. */}
           <TipBtn
             className="location-ls-fly capture-hud-btn"
             onClick={onDownload}
-            disabled={busy}
+            disabled={busy != null}
             advanced={exportGated}
             title={t('captureHud.download.title')}
             hint={t('captureHud.download.hint')}
           >
             <DownloadIcon />
-            <span>{t('captureHud.download.title')}</span>
+            <span>
+              {busy === 'download' ? t('captureHud.busy') : t('captureHud.download.title')}
+            </span>
           </TipBtn>
           <TipBtn
             className={`location-ls-fly capture-hud-btn${copied ? ' is-copied' : ''}`}
             onClick={onCopy}
-            disabled={busy}
+            disabled={busy != null}
             advanced={exportGated}
             title={t('captureHud.copy.title')}
             hint={t('captureHud.copy.hint')}
           >
             <CopyIcon />
-            <span>{copied ? t('captureHud.copy.done') : t('captureHud.copy.title')}</span>
+            <span>
+              {busy === 'copy'
+                ? t('captureHud.busy')
+                : copied
+                  ? t('captureHud.copy.done')
+                  : t('captureHud.copy.title')}
+            </span>
           </TipBtn>
           {/* Native share — touch devices only (desktop has Download/Copy). */}
           {supportsShare && (
             <TipBtn
               className="location-ls-fly capture-hud-btn"
               onClick={onShare}
-              disabled={busy}
+              disabled={busy != null}
               advanced={exportGated}
               title={t('captureHud.share.title')}
               hint={t('captureHud.share.hint')}
             >
               <ShareIcon />
-              <span>{t('captureHud.share.title')}</span>
+              <span>
+                {busy === 'share' ? t('captureHud.busy') : t('captureHud.share.title')}
+              </span>
             </TipBtn>
           )}
           {/* Copy a shareable #c= URL of this chart + view (no image involved). */}
@@ -927,7 +1085,7 @@ export function CaptureHud({
             <TipBtn
               className={`location-ls-fly capture-hud-btn${linkCopied ? ' is-copied' : ''}`}
               onClick={onCopyLink}
-              disabled={busy}
+              disabled={busy != null}
               advanced={exportGated}
               title={t('captureHud.link.title')}
               hint={t('captureHud.link.hint')}
@@ -942,12 +1100,18 @@ export function CaptureHud({
             <TipBtn
               className={`location-ls-fly capture-hud-btn${sinkDone ? ' is-copied' : ''}`}
               onClick={onSendToSink}
-              disabled={busy}
+              disabled={busy != null}
               title={sink.label}
               hint={sink.hint}
             >
               <FilePlusIcon />
-              <span>{sinkDone ? sink.doneLabel : sink.label}</span>
+              <span>
+                {busy === 'sink'
+                  ? t('captureHud.busy')
+                  : sinkDone
+                    ? sink.doneLabel
+                    : sink.label}
+              </span>
             </TipBtn>
           )}
         </div>
@@ -990,12 +1154,14 @@ export function CaptureHud({
             </div>
           </div>
         )}
-        {(busy || failed) && (
+        {/* Failure only: "Rendering…" lives in the pressed button now (see `busy`). A new
+            attempt clears `failed` as it starts, so the row can't sit beside a busy label. */}
+        {failed && !busy && (
           <div className="capture-hud-status" role="status">
-            {busy ? t('captureHud.busy') : t('captureHud.failed')}
+            {t('captureHud.failed')}
             {/* The reason, when the frame gave one. On its own the banner can only say
                 "try again", which is the wrong advice for every one of these. */}
-            {!busy && failReason && (
+            {failReason && (
               <span className="capture-hud-status-why">
                 {t(`captureHud.failedReason.${failReason}`)}
               </span>

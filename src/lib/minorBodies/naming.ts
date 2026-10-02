@@ -5,8 +5,9 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // How a body on the reader's list is named wherever a reader meets it — the line card
-// and hover tip (lineCard.minorDisplayName), the chart wheel (wheel.ts) and the Minor
-// bodies window. One statement of the rule, so no two surfaces can come to name one
+// and hover tip (lineCard.minorDisplayName), the chart wheel (wheel.ts), the Minor
+// bodies window, and the map's edge chips for its lines (Map.tsx minorChipText, since
+// 2026-10-01). One statement of the rule, so no two surfaces can come to name one
 // body two ways.
 //
 //   catalog body       "Eros (433)", or "(433)" when the catalog knows no name. The
@@ -16,7 +17,9 @@
 //                      and the name alone would read as the asteroid 5731 Zeus.
 //
 // minorDisplayParts is the same label split around the name, for the window's rows,
-// which cut a name too long for its line from the name's end and keep the number.
+// which cut a name too long for its line from the name's end and keep the number —
+// and for the edge chips, which cut it the same way at a fixed length and set the
+// number in smaller type.
 //
 // The map's line labels (minorLines.minorLabelName) restate the hypothetical half,
 // because that module has no t(); the verify suite pins the two together.

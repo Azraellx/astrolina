@@ -133,6 +133,15 @@ export function shouldShowNudge(tier: PlanTier): boolean {
 // Nudge ACTION — what to run when a user clicks a nudge teaser (a tier-locked row that
 // shouldShowNudge kept visible). The downstream build wires this to its account/upgrade flow;
 // the open core leaves it a no-op (it shows no teasers, so it's never reached).
+//
+// Only for teasers that ARE the feature, where pressing one is an explicit ask: the nav menus'
+// rows (TopNav's RadioItem / CheckItem / ToolItem), the Settings dropdowns and window openers
+// (Sidebar's HintMenu triggers, the Minor bodies "More" button, the Aspect Lines opener), and
+// a build's own upsell buttons. A locked on/off SWITCH does not call it — the timeline
+// drawer's extension eyes, the sky band's track eye, Capture's Transparent, the place-search
+// and Minor bodies scope chips (Address, Full catalog). A switch sits inside something the reader is doing, and a tap on one that won't
+// flip asks why; opening the account screen for that loses their place, so those explain in
+// place instead (ui/HoverTip's TipButton `locked`). Salvatore, 2026-10-01.
 let nudgeAct: () => void = () => {};
 
 /** Install the nudge-teaser click action (downstream builds only) — e.g. open the account modal. */

@@ -13,6 +13,7 @@
 //   npx tsx scripts/verify-cities.ts
 import rows from '../src/lib/atlas/data/cities15000.json';
 import { nearestCity, searchCity, searchPlaces } from '../src/lib/atlas/cityLookup';
+import { composePlaceLabel, foldName, leadPlaceName } from '../src/lib/atlas/placeLabel';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -61,5 +62,53 @@ check('nearestCity(open ocean) → null', ocean === null, ocean?.label);
 // ── Place search (Teleport: regions + countries ride the same rows) ───────────
 const nz = searchPlaces('new zealand').find((p) => p.kind === 'country');
 check('searchPlaces("new zealand") has the country', !!nz, nz?.label);
+
+// ── Labels: a part that only repeats the one before it is dropped ────────────
+// The atlas takes a city's region from its own list, and hundreds of cities
+// share a name with theirs ("Lisbon, Lisbon, Portugal"), a couple of hundred
+// regions their country's ("Taipei, Taiwan, Taiwan"). Exact repeats go,
+// compared accent-folded; a region that only CONTAINS the city's name is a
+// different name and stays.
+const at = (lat: number, lng: number) => nearestCity(lat, lng)?.label ?? '(no hit)';
+const labelCases: [string, string, number, number][] = [
+  ['Lisbon', 'Lisbon, Portugal', 38.7223, -9.1393],
+  ['Madrid', 'Madrid, Spain', 40.4168, -3.7038],
+  ['Tokyo', 'Tokyo, Japan', 35.6762, 139.6503],
+  ['Taipei', 'Taipei, Taiwan', 25.033, 121.5654],
+  ['Vienna (near-duplicate kept)', 'Vienna, State of Vienna, Austria', 48.2082, 16.3738],
+  ['New York (near-duplicate kept)', 'New York City, New York, United States', 40.7128, -74.006],
+];
+for (const [name, want, lat, lng] of labelCases) {
+  const got = at(lat, lng);
+  check(`nearestCity(${name}) → "${want}"`, got === want, got);
+}
+check(
+  'composePlaceLabel folds accents when comparing ("Zürich" over "Zurich")',
+  composePlaceLabel(['Zürich', 'Zurich', 'Switzerland']) === 'Zürich, Switzerland',
+  composePlaceLabel(['Zürich', 'Zurich', 'Switzerland']),
+);
+check(
+  'composePlaceLabel skips empty parts and collapses a run of repeats to one',
+  composePlaceLabel(['Panamá', '', null, ' Panama ', 'Panama']) === 'Panamá',
+  composePlaceLabel(['Panamá', '', null, ' Panama ', 'Panama']),
+);
+check(
+  'composePlaceLabel keeps a repeat that is not adjacent',
+  composePlaceLabel(['Alpha', 'Beta', 'Alpha']) === 'Alpha, Beta, Alpha',
+);
+const taiwanRegion = searchPlaces('taiwan').find((p) => p.kind === 'region');
+check('a region named for its country reads once', taiwanRegion?.label === 'Taiwan', taiwanRegion?.label);
+// Through the real lookup, at every atlas city's own spot: no label it hands out
+// still carries a back-to-back repeat.
+const stutter = all.filter((r) => {
+  const parts = (nearestCity(r[2], r[3], 0.01)?.label ?? '').split(', ');
+  return parts.some((p, k) => k > 0 && foldName(p) === foldName(parts[k - 1]));
+}).length;
+check('no label nearestCity gives at an atlas city repeats a part', stutter === 0, `${stutter} found`);
+check(
+  'the settlement test reads the first part only',
+  leadPlaceName('Madrid, Community of Madrid, Spain') === leadPlaceName('Madrid, Spain') &&
+    leadPlaceName('Móstoles, Spain') !== leadPlaceName('Madrid, Spain'),
+);
 
 process.exit(failures ? 1 : 0);

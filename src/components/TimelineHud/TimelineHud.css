@@ -629,6 +629,16 @@
   border-color: rgba(var(--accent-rgb), 0.55);
 }
 
+/* The press itself. The app switches the browser's tap-highlight off (index.css), and on
+   touch there is no hover, so this tint is the only thing that answers a tap before the
+   snap lands. Deeper than the hover wash so it also reads under a mouse — and AFTER the
+   highlighted state above, which has the same specificity: placed before it, pressing a
+   button already on its return showed nothing at all. */
+.thud-return-btn:active {
+  background: rgba(var(--accent-rgb), 0.24);
+  border-color: rgba(var(--accent-rgb), 0.65);
+}
+
 /* The luminary glyph preceding the spelled-out name ("☉ Solar"); a touch larger
    than the 11px label so it reads. */
 .thud-return-btn .astro-glyph {
@@ -1203,7 +1213,8 @@
   opacity: 0.6;
 }
 /* Locked teaser (un-entitled but nudged): a gated tint, at full opacity so the premium cue
-   stays legible (overrides .off's dim), and still clickable (click opens the account flow). */
+   stays legible (overrides .off's dim). A click or tap shows why in its tip and does NOT open
+   the plans — it is a switch, and a switch explains in place (TipButton `locked`; seam L73). */
 .thud-drawer-toggle.locked {
   opacity: 1;
   color: var(--gated-ink);
@@ -1216,7 +1227,7 @@
 }
 /* Registered but not yet usable (MapExtension.unavailable, paired with .ui-inert like
    every other unavailable control). Deliberately the OPPOSITE treatment to .locked
-   above: that one is tinted at full opacity because it is an offer, and this is not
+   above: that one is tinted at full opacity because a plan reaches it, and this is not
    for sale at any tier — so the gated purple is repainted back to the neutral resting
    chrome and the row simply dims. Every hover response is neutralized too, since the
    only thing a click can do here is nothing; the tip still fires (aria-disabled, not

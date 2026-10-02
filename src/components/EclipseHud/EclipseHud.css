@@ -591,6 +591,50 @@
   color: var(--text-strong);
 }
 
+/* ── The map's click card: its two clocks ──────────────────────────────
+   The card's chrome and its label/value grid are Map.css's (.eclipse-popup,
+   .eclipse-card-rows). These rules widen that grid to a label and TWO times —
+   the clicked place's own clock, then UTC — and sit here, with the panel's
+   styles, because they are the eclipse's figures presented one way across
+   both surfaces (lib/astro/eclipseFormat.ts is the code half of the same rule).
+   The markup is built in App.tsx's eclipseCard.
+
+   Left-aligned, unlike the base grid's right-aligned values: every time is the
+   same eight tabular digits, so they line up either way, and the rare cell that
+   crosses midnight carries a trailing "13 Mar" — right alignment would push
+   that one time out of its column. */
+.eclipse-card-rows.eclipse-card-clock {
+  grid-template-columns: auto auto auto;
+}
+/* UTC alone: a point with no time zone, or one whose clock is UTC for every
+   time on the card, where a second column would only repeat the first. */
+.eclipse-card-rows.eclipse-card-clock.eclipse-card-one {
+  grid-template-columns: auto auto;
+}
+.eclipse-card-rows.eclipse-card-clock dd {
+  text-align: left;
+}
+/* The column heads: the zone's short name ("EDT", "GMT+3"), and "UTC". */
+.eclipse-card-rows dd.eclipse-card-zone {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+/* UTC is there to check against published tables, not to read first. */
+.eclipse-card-rows dd.eclipse-card-utc {
+  color: var(--text-muted);
+}
+/* A value that is not a time (a duration, "Moon below horizon") spans both
+   clock columns rather than sitting under one of them. */
+.eclipse-card-rows dd.eclipse-card-span {
+  grid-column: span 2;
+}
+.eclipse-card-day {
+  margin-left: 4px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
 @media (max-width: 1080px) {
   .eclipse-hud {
     max-width: calc(100vw - 32px);

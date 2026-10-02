@@ -7,6 +7,7 @@
 import KDBush from 'kdbush';
 import { around, distance } from 'geokdbush';
 import type { GeocodeResult } from './geocode';
+import { composePlaceLabel, foldName } from './placeLabel';
 import rowsJson from './data/cities15000.json';
 import admin1Json from './data/admin1.json';
 import countriesJson from './data/countries.json';
@@ -40,13 +41,13 @@ export const SAMPLE_ROW: Row = ['Ellinbridge', 0, 52.417, -1.831, 'GB', 'GB.CALD
 
 // Accent-folded, lowercased name per row — drives accent-insensitive forward
 // search ("sao" and "são" both match "São Paulo"). The GeoNames asciiname is
-// already romanised; folding it again is harmless.
-const fold = (s: string): string =>
-  s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+// already romanised; folding it again is harmless. The folding itself lives in
+// placeLabel.ts, beside the label rule that also compares by it.
+const fold = foldName;
 // The same folding, for callers comparing an OUTSIDE name against these rows —
 // merging another source's results without listing one place twice, say. Sharing
 // the function is the point: two foldings that drift apart would miss matches.
-export { fold as foldName };
+export { foldName };
 const folded: string[] = rows.map((r) => fold(r[1] || r[0]));
 // GeoNames sometimes romanises by respelling rather than just dropping accents
 // (Zürich → "Zuerich"), so a user who types the plain accent-stripped form
@@ -72,10 +73,14 @@ function getIndex(): KDBush {
   return index;
 }
 
+// "City, Region, Country", a part dropped where it only repeats the one before
+// ("Lisbon, Portugal", never "Lisbon, Lisbon, Portugal") — see composePlaceLabel.
+// Labels already SAVED with the repeat (a birthplace, a pin) are left as they
+// were written: every reader of one takes only its first part, so nothing breaks.
 function labelFor(r: Row): string {
   const region = admin1[`${r[4]}.${r[5]}`];
   const country = countries[r[4]] ?? r[4];
-  return [r[0], region, country].filter(Boolean).join(', ');
+  return composePlaceLabel([r[0], region, country]);
 }
 
 const toResult = (r: Row): GeocodeResult => ({
@@ -234,7 +239,9 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     const country = countries[cc] ?? cc;
     cands.push({
       kind: 'region',
-      label: `${a.name}, ${country}`,
+      // The same rule as a city's label: a region named for its country
+      // ("Taiwan, Taiwan") is one name, and its kind tag says which it is.
+      label: composePlaceLabel([a.name, country]),
       lat: city[2],
       lng: city[3],
       pop: city[6],

@@ -13,7 +13,10 @@
 //   1. '@swisseph/browser' is aliased to swisseph-browser-shim.ts, which
 //      delegates to @swisseph/node (same Swiss Ephemeris C core, same .se1
 //      files from public/ephe).
-//   2. The Vite-only `swisseph.wasm?url` import is stubbed (no WASM in Node).
+//   2. Vite-only `?url` asset imports are stubbed to an empty URL: the engine's
+//      `swisseph.wasm?url` (no WASM in Node), and any other asset a reached
+//      module names by URL (the map's symbol font in glyphImages.ts, the RTL text
+//      plugin) — Node never fetches them, and esbuild has no loader for them.
 //   3. `import.meta.env.BASE_URL` is defined to '/' (Vite injects it at build
 //      time; esbuild does the same here).
 //   4. A Vite `?raw` import (the hypothetical points' elements file, ephemeris.ts)
@@ -41,11 +44,11 @@ const browserShim = {
     b.onResolve({ filter: /^@swisseph\/browser$/ }, () => ({
       path: resolve(here, 'swisseph-browser-shim.ts'),
     }));
-    b.onResolve({ filter: /swisseph\.wasm\?url$/ }, () => ({
-      path: 'swisseph-wasm-url',
-      namespace: 'wasm-url-stub',
+    b.onResolve({ filter: /\?url$/ }, (args) => ({
+      path: args.path,
+      namespace: 'asset-url-stub',
     }));
-    b.onLoad({ filter: /.*/, namespace: 'wasm-url-stub' }, () => ({
+    b.onLoad({ filter: /.*/, namespace: 'asset-url-stub' }, () => ({
       contents: 'export default "";',
       loader: 'js',
     }));

@@ -16,8 +16,13 @@ import { unwrapLongitudes } from './dateline';
 
 const RAD2DEG = 180 / Math.PI;
 const STEPS = 181;
-// Web-mercator latitude limit — the parallel pole-enclosing rings close on.
-const POLE_LAT = 85.05;
+// The latitude the pole-enclosing ring closes on: the pole itself. The map's tiler clamps
+// any latitude past web-mercator's limit (±85.0511°, atan(sinh π)) onto the world's top or
+// bottom tile edge EXACTLY, and an edge lying exactly there is what MapLibre's globe extends
+// over the polar cap. The ring used to close at 85.05 — not the limit, just short of it —
+// which fell inside the edge tiles' rows at every zoom, so on the globe in polar night the
+// cap above it showed as a flat, unshaded disc. (Flat maps stop at the limit either way.)
+const POLE_LAT = 90;
 
 const normLng = (deg: number) => {
   let v = deg % 360;

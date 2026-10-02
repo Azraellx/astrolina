@@ -72,7 +72,8 @@ const MINOR_MARK = '\u25C6\uFE0E'; // + VS15 "text presentation", as glyphChars 
  *  same font as the ◆ it stands beside rather than in a system fallback face. */
 const MINOR_HOLLOW_MARK = '\u25C7\uFE0E';
 
-const escapeHtml = (s: string): string =>
+/** Escape a plain-text string for splicing into tip/card HTML. */
+export const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) =>
     c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;',
   );
@@ -111,13 +112,23 @@ export function minorNameHtml(props: Record<string, unknown>, t: TFn): string {
  * its outline thin enough that, stepped down, it would read faint.
  */
 export function minorMarkHtml(props: Record<string, unknown>, className: string): string {
-  const n = minorNumberProp(props);
-  const sym = n === null ? undefined : MINOR_GLYPHS.get(n);
+  const { char, cls } = minorMarkText(minorNumberProp(props));
   const color = typeof props.color === 'string' ? props.color : 'inherit';
-  if (sym) return `<span class="astro-glyph ${className}" style="color:${color}">${sym}</span>`;
+  return `<span class="astro-glyph ${className}${cls ? ` ${cls}` : ''}" style="color:${color}">${char}</span>`;
+}
+
+/**
+ * The mark as text — what minorMarkHtml draws, for a surface that builds its own element (the
+ * map's edge chip for a catalog line): the character, and the class that sizes it (`minor-mark`
+ * for the filled diamond, `minor-mark is-hollow` for a hypothetical point's, '' for a body's own
+ * symbol). One choice of mark for every text surface, so no two can come to mark one body two ways.
+ */
+export function minorMarkText(n: number | null): { char: string; cls: string } {
+  const sym = n === null ? undefined : MINOR_GLYPHS.get(n);
+  if (sym) return { char: sym, cls: '' };
   return isHypotheticalKey(n)
-    ? `<span class="astro-glyph ${className} minor-mark is-hollow" style="color:${color}">${MINOR_HOLLOW_MARK}</span>`
-    : `<span class="astro-glyph ${className} minor-mark" style="color:${color}">${MINOR_MARK}</span>`;
+    ? { char: MINOR_HOLLOW_MARK, cls: 'minor-mark is-hollow' }
+    : { char: MINOR_MARK, cls: 'minor-mark' };
 }
 
 // The reading for one catalog line, over an already-resolved display name — shared by
@@ -289,8 +300,9 @@ const PIN_ICON_SVG =
   ' aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
   '<circle cx="12" cy="10" r="3"/></svg>';
 
-// The "Closest distance to … pin / natal: NN km / NN mi" row at the bottom of every card. The
-// reference is the placed pin (shown with the pin glyph) or, by default, the natal location.
+// The "Closest distance to … pin / natal: NN km / NN mi" row at the bottom of every card but a
+// local-space line's (see buildLineCard). The reference is the placed pin (shown with the pin
+// glyph) or, by default, the natal location.
 function distanceLine(dist: LineCardDistance, t: TFn): string {
   const km = Math.round(dist.km);
   const mi = Math.round(dist.km * 0.621371);
@@ -307,12 +319,19 @@ function distanceLine(dist: LineCardDistance, t: TFn): string {
  * feature properties bag from queryRenderedFeatures. The text comes from
  * lineReading() above; this wraps it in the card HTML and decorates the title
  * with the body/star glyphs.
+ *
+ * `extra` is one line of PLAIN TEXT the map computed for the clicked position —
+ * a paran's registered annotation (lib/extensions/paranAnnotation), the line its
+ * hover tip carries — set as a sub-line under the reading. Escaped here: the seam's
+ * contract is plain text, and it is the one string on this card that a downstream
+ * build writes rather than our own catalogs.
  */
 export function buildLineCard(
   layerId: string,
   props: Record<string, unknown>,
   t: TFn,
   dist?: LineCardDistance | null,
+  extra?: string | null,
 ): string | null {
   const reading = lineReading(layerId, props, t);
   if (!reading) return null;
@@ -320,7 +339,15 @@ export function buildLineCard(
   // Pre-render the distance row once (identical for every card type); the local card() below
   // splices it in just above the disclaimer. Closing over it keeps each card() call a plain
   // 3-arg call.
-  const distanceRow = dist ? distanceLine(dist, t) : '';
+  //
+  // Never on a local-space line. Every ray starts at its origin, which by default IS the
+  // reference point (the birthplace, or the pin the lines are cast from), so the row read
+  // "0 km" by construction — and where it didn't (an overlay's rays from another origin)
+  // it measured something with no meaning: a local-space line is a direction, and the
+  // methods page says distance to one carries no interpretive meaning. A number there
+  // invites exactly the reading the page rules out.
+  const distanceRow = dist && !layerId.startsWith('local-space') ? distanceLine(dist, t) : '';
+  const extraRow = extra ? `<span class="ui-tip-sub line-card-extra">${escapeHtml(extra)}</span>` : '';
   const card = (title: string, body: string, notes: string[]): string => {
     // The disclaimer is always the LAST note (every return below appends t('…footer')). Pull
     // it out and render it as a hover-revealed tip (.line-card-disclaimer in Map.css) instead
@@ -331,6 +358,9 @@ export function buildLineCard(
       `<div class="ui-tip line-card">` +
       `<span class="ui-tip-title">${title}</span>` +
       `<p class="line-card-body">${body}</p>` +
+      // The computed line first: it is about this line at this spot, as the reading is;
+      // the overlay notes and the distance row are about the line's provenance and place.
+      extraRow +
       overlayNotes.map((n) => `<span class="ui-tip-sub">${n}</span>`).join('') +
       distanceRow +
       `<span class="line-card-disclaimer ui-tip-box ui-tip" role="tooltip">${disclaimer}</span>` +

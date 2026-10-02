@@ -19,8 +19,24 @@
 //   E. render mechanic: −θ on cage AND −θ on camera leaves each line's screen offset
 //      invariant (pinned) while the basemap shifts by exactly θ;
 //   F. frame gate: celestial MC carries the GMST dependence the spin acts on; the
-//      geodetic MC is GMST-independent — nothing to spin — so Slide is celestial-only.
+//      geodetic MC is GMST-independent — nothing to spin — so Slide is celestial-only;
+//   G. tiling: a spin of ANY size reaches MapLibre's GeoJSON tiler whole — the map's own
+//      rendered rotation (tiling.ts) agrees, tile by tile, with the same picture made by
+//      a small rotation, where the raw unwrapped spin used to lose every line by ~2 days.
 import { createRequire } from 'node:module';
+// G's tiler. A devDependency of its own (package.json) rather than reached through maplibre-gl's
+// tree, where it only resolved because npm happened to hoist it: MapLibre bundles its copy into
+// its own build, so this one stands in for it, and its range must track the one maplibre-gl
+// declares (^6.1.0 for 5.24) — check it on every MapLibre bump.
+import { GeoJSONVT } from '@maplibre/geojson-vt';
+import type { FeatureCollection } from 'geojson';
+import {
+  LINE_SOURCE_OPTS,
+  WASH_SOURCE_OPTS,
+  translateLng,
+  wrapSpin,
+} from '../src/components/Map/tiling';
+import { generateNightShade } from '../src/lib/astro/nightShade';
 import {
   birthDataToJD,
   eclipticLonOfRA,
@@ -213,6 +229,83 @@ for (const b of CHARTS) {
     `Δ ${fmt(Math.abs(wrap180(celB - celA + delta * RAD2DEG)))}°`,
   );
   check('geodetic MC is GMST-independent (nothing to spin → celestial-only gate)', geoA === geoB);
+}
+
+// ── G. Tiling: a spin of any size reaches the tiler whole ────────────────────────
+// The map rotates the pinned linework by the RENDERED spin (wrapSpin) through translateLng
+// with `tiled` set, and hands it to MapLibre's GeoJSON tiler — @maplibre/geojson-vt, the
+// package MapLibre runs in its worker — with each source's own options, all imported from the
+// map's tiling.ts. That tiler folds in only one world copy either side of the main one and
+// drops anything further out, so the raw unwrapped spin, which Slide used to feed it, thinned
+// the lines out after about a day and lost them all by two (bug #3; item #2's runaway track
+// press reached ~4.96 million degrees). The comparison is two parts agreeing rather than a
+// count against a formula: for each spin, every (tile, feature) pair that the SAME picture
+// made by a small plain rotation (θ minus its whole turns) puts in a tile of z0–z2 must be in
+// the app's tiles too, and every feature must reach the world tile. (Not set EQUALITY: the
+// small rotation can itself carry a long line to the fold's edge, where the app's per-feature
+// turn keeps a sliver of tile buffer the reference loses — more, never less.) A control
+// confirms the hazard is real: the unwrapped spin at 800° must lose features, or this
+// section is guarding nothing.
+{
+  // MapLibre's GeoJSONSource hands geojson-vt its pixel options scaled to tile units
+  // (× EXTENT / tileSize = 8192 / 512) with maxZoom 18 — restated from its source, as the
+  // one thing in this section the app doesn't own.
+  const index = (fc: FeatureCollection, o: { buffer: number; tolerance: number }) =>
+    new GeoJSONVT(fc, { buffer: o.buffer * 16, tolerance: o.tolerance * 16, extent: 8192, maxZoom: 18 });
+  const tagKey = (tags: unknown) => {
+    const t = (tags ?? {}) as Record<string, unknown>;
+    return `${t.planet ?? 'night'}|${t.lineType ?? ''}`;
+  };
+  const present = (fc: FeatureCollection, o: { buffer: number; tolerance: number }) => {
+    const vt = index(fc, o);
+    const seen = new Set<string>();
+    for (let z = 0; z <= 2; z++) {
+      for (let x = 0; x < 2 ** z; x++) {
+        for (let y = 0; y < 2 ** z; y++) {
+          for (const f of vt.getTile(z, x, y)?.features ?? []) seen.add(`${z}/${x}/${y}:${tagKey(f.tags)}`);
+        }
+      }
+    }
+    return seen;
+  };
+  const missingFrom = (app: Set<string>, reference: Set<string>) => [...reference].filter((k) => !app.has(k));
+  const worldTileKeys = (s: Set<string>) =>
+    new Set([...s].filter((k) => k.startsWith('0/0/0:')).map((k) => k.slice(6)));
+
+  const jd0 = birthDataToJD(CHARTS[0]);
+  const gmst0 = gmstRadians(jd0);
+  const meridianLng0: MeridianLng = (ra) => ((ra - gmst0) * 180) / Math.PI;
+  const lines = generateLines(getPlanetPositions(jd0, 'mean'), meridianLng0) as FeatureCollection;
+  const night = generateNightShade(jd0, '#000', 0.3) as FeatureCollection;
+  const sets: [string, FeatureCollection, { buffer: number; tolerance: number }][] = [
+    ['natal lines', lines, LINE_SOURCE_OPTS],
+    ['night shade', night, WASH_SOURCE_OPTS],
+  ];
+  // Both directions, across the fold edges (±540°), past a few days, and item #2's runaway.
+  const SPINS = [0.5, 179.5, 180, 359, 540, 600, 800, 1000, 3 * 24 * SIDEREAL_DEG_PER_HOUR, -540, -800, 4_959_993.7];
+  for (const [name, fc, opts] of sets) {
+    const allKeys = new Set(fc.features.map((f) => tagKey(f.properties)));
+    let worst = '';
+    let worstWorld = '';
+    for (const theta of SPINS) {
+      const small = theta - 360 * Math.round(theta / 360);
+      const reference = present(translateLng(fc, -small), opts);
+      const app = present(translateLng(fc, -wrapSpin(theta), true), opts);
+      const missing = missingFrom(app, reference);
+      if (missing.length) worst ||= `${theta}°: ${missing.length} missing, e.g. ${missing[0]}`;
+      const world = worldTileKeys(app);
+      if (world.size !== allKeys.size) worstWorld ||= `${theta}°: ${world.size} of ${allKeys.size}`;
+    }
+    check(`${name}: every spin tiles as much as its small equivalent (z0–z2)`, !worst, worst || `${SPINS.length} spins`);
+    check(`${name}: every feature reaches the world tile at every spin`, !worstWorld, worstWorld || `${allKeys.size} features`);
+  }
+  const reference = present(lines, LINE_SOURCE_OPTS);
+  const unfolded = present(translateLng(lines, -800), LINE_SOURCE_OPTS);
+  check(
+    'control: an UNWRAPPED 800° spin loses lines in the tiler (the hazard G guards)',
+    unfolded.size < reference.size,
+    `${unfolded.size} of ${reference.size} tile-features left`,
+  );
 }
 
 console.log(failures === 0 ? '\nAll slide checks passed.' : `\n${failures} slide check(s) FAILED.`);

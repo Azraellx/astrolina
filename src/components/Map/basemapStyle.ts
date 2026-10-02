@@ -55,12 +55,23 @@ function isLabelLayer(l: LayerSpecification): boolean {
   return l.type === 'symbol' && LABEL_SOURCE_LAYERS.has(sourceLayer(l));
 }
 
+// The offline coastline fallback's source (Map.tsx installWorldFallback): the one
+// GeoJSON source that is basemap ground rather than chart.
+export const WORLD_FALLBACK_SOURCE = 'world-fallback';
+
+/** Whether a source is the CHART's own rather than the basemap's: the chart draws only
+ *  from GeoJSON sources the app adds itself, so "geojson" covers it — less the offline
+ *  coastline, which rides a geojson source but is ground, so it's picked out by name.
+ *  The one split between the two: the basemap toggles below read it through
+ *  isBasemapLayer, and Map.tsx's chartSourcesBusy reads it directly. */
+export function isChartSource(id: string, type: string | undefined): boolean {
+  return type === 'geojson' && id !== WORLD_FALLBACK_SOURCE;
+}
+
 // Whether a layer is part of the basemap GROUND (as opposed to the chart's own
-// linework). The chart layers all draw from GeoJSON sources the app adds itself, so
-// "not geojson" (vector/raster tiles) plus the style's `background` covers the whole
-// served basemap — for any style, without naming its layers. The offline coastline
-// fallback (see Map.tsx installWorldFallback) is ground too, but rides a geojson
-// source, so it's picked out by source name.
+// linework): the style's `background`, and every layer on a source that isn't the
+// chart's — vector/raster tiles and the offline coastline. That covers the whole served
+// basemap for any style, without naming its layers.
 function isBasemapLayer(
   l: LayerSpecification,
   sources: StyleSpecification['sources'],
@@ -68,8 +79,7 @@ function isBasemapLayer(
   if (l.type === 'background') return true;
   const src = (l as { source?: string }).source;
   if (!src) return false;
-  if (src === 'world-fallback') return true;
-  return sources[src]?.type !== 'geojson';
+  return !isChartSource(src, sources[src]?.type);
 }
 
 // The layers blanked by `hideBasemap`, per map instance. Only these are restored

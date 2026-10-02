@@ -53,10 +53,14 @@
 // robust. Not needed for any eclipse checked so far.
 //
 // KNOWN LIMITATION: the map's tile pipeline (geojson-vt) clamps latitudes to
-// the web-mercator limit (±85.05°), so the small deep-polar portion of a path
-// like 2021-06-10's draws flattened along that parallel — the same clamp the
-// ACG lines live with (lines.ts deliberately stops at ±85°). The umbral BAND
-// is protected separately: pole-winding rings are rejected in umbralLimits.
+// the web-mercator limit (±85.0511°, atan(sinh π) — not the rounder 85.05 this
+// note used to give), so the small deep-polar portion of a path like
+// 2021-06-10's draws flattened along that parallel — the same clamp the ACG
+// lines live with (lines.ts deliberately stops at ±85°). The umbral BAND is
+// protected separately: pole-winding rings are rejected in umbralLimits. (The
+// fills that DO enclose a pole — the lunar visibility hemisphere, the night
+// shade — close over the pole itself, which the clamp lands exactly on the
+// tile edge: see POLE_LAT in lunarEclipse.ts.)
 
 import { unwrapLongitudes } from './dateline';
 

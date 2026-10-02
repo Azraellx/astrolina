@@ -32,7 +32,6 @@ import {
 } from 'react';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
 import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
-import { nudgeAction } from '../../lib/plan';
 import {
   getPlaceSearchLibrary,
   getPlaceSearchProviders,
@@ -134,6 +133,15 @@ export interface PlaceSearchFieldProps {
   /** After a pick, re-select the kept label so the next keystroke starts fresh
    *  (for boxes you search from repeatedly rather than fill in once). */
   selectOnPick?: boolean;
+  /** A pick calls `onPick` and changes nothing else: the typed query, the hits,
+   *  the no-match / failed note and the standing groups all stay exactly as they
+   *  were. The picked row becomes the active one and focus stays in the input,
+   *  so the arrows and Enter hop straight on to the next row, and a click on
+   *  another row works the same. For a box you hop BETWEEN places from (the
+   *  teleport window) rather than one that holds a chosen value — there is no
+   *  "current value" here to show, so `keepQueryOnPick` / `selectOnPick` have
+   *  nothing to do and are ignored when this is on. */
+  stayOnPick?: boolean;
   /** Render the precision tag (city / region / country) — pass the labeller. */
   kindLabel?: (kind: PlaceKind) => string;
   limit?: number;
@@ -152,6 +160,7 @@ function makeBuiltinProvider(
   kinds: readonly PlaceKind[] | undefined,
   onlineFallback: boolean,
   label: string,
+  showsKind: boolean,
 ): PlaceSearchProvider {
   return {
     id: BUILTIN_SCOPE_ID,
@@ -166,9 +175,23 @@ function makeBuiltinProvider(
       const { searchPlaces, foldName } = await import('../../lib/atlas/cityLookup');
       if (signal?.aborted) return [];
       // Over-fetch before filtering: searchPlaces caps BEFORE we drop the kinds
-      // this host doesn't accept, so a plain `limit` could come back short.
-      const raw = searchPlaces(query, kinds ? limit * 4 : limit);
-      const hits = (kinds ? raw.filter((r) => kinds.includes(r.kind)) : raw).slice(0, limit);
+      // this host doesn't accept (or the twins below), so a plain `limit` could
+      // come back short — and a short list reaches for the network.
+      const raw = searchPlaces(query, kinds || !showsKind ? limit * 4 : limit);
+      const wanted = kinds ? raw.filter((r) => kinds.includes(r.kind)) : raw;
+      // A region named for the city it flies to reads exactly like that city
+      // ("Lisbon, Portugal" twice, both landing on Lisbon, one framed wider).
+      // A host that shows the kind tag can tell the two apart and keeps both;
+      // to one that doesn't they are the same row twice — same words, same
+      // point — so the first (the city: it ranks ahead on a tie) stands.
+      const distinct = showsKind
+        ? wanted
+        : wanted.filter(
+            (h, i) =>
+              wanted.findIndex((o) => o.label === h.label && o.lat === h.lat && o.lng === h.lng) ===
+              i,
+          );
+      const hits = distinct.slice(0, limit);
       // Offline-first, but a SHORT local answer is not the same as a complete
       // one: the bundled index holds populated places, so anything else with a
       // name — a bay, a park, a peak, a hamlet — leaves the list underfilled
@@ -252,6 +275,7 @@ export function PlaceSearchField({
   library = false,
   keepQueryOnPick = false,
   selectOnPick = false,
+  stayOnPick = false,
   kindLabel,
   limit = 6,
   autoFocus,
@@ -269,7 +293,9 @@ export function PlaceSearchField({
   const [empty, setEmpty] = useState(false);
   // The label just picked — the debounce must not re-search it (a pick that
   // keeps its label in the box would otherwise loop straight back into a query).
-  const pickedRef = useRef<string | null>(keepQueryOnPick ? (initialQuery ?? null) : null);
+  const pickedRef = useRef<string | null>(
+    keepQueryOnPick && !stayOnPick ? (initialQuery ?? null) : null,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   // Whether this mount is too narrow for the full chip row (measured live — a
@@ -296,16 +322,20 @@ export function PlaceSearchField({
   // startup (before first render), so a plain read is stable.
   const builtinLabel = S.scopeLabel;
   const kindKey = kinds ? kinds.join(',') : '';
+  // Whether this host tags each hit with its kind (the labeller is a fresh
+  // function every render, so the memo keys on the fact, not the function).
+  const showsKind = !!kindLabel;
   const registered = useMemo(
     () => [
       makeBuiltinProvider(
         kindKey ? (kindKey.split(',') as PlaceKind[]) : undefined,
         onlineFallback,
         builtinLabel,
+        showsKind,
       ),
       ...getPlaceSearchProviders(),
     ],
-    [kindKey, onlineFallback, builtinLabel],
+    [kindKey, onlineFallback, builtinLabel, showsKind],
   );
   // Gates are read every render — a provider's answer can change under the user
   // (access granted, a session ending). A scope whose gate hides it is dropped
@@ -411,11 +441,14 @@ export function PlaceSearchField({
   const take = useCallback(
     (hit: PlaceSearchHit, fromScope?: string) => {
       onPick(hit, fromScope ?? scope.id);
+      setConfirmRowId(null);
+      // The list the pick came from IS the next thing to pick from — see the
+      // prop. The active row and the focus are `pickRow`'s, which knows the row.
+      if (stayOnPick) return;
       setResults([]);
       setEmpty(false);
       setFailed(null);
       setActiveIdx(-1);
-      setConfirmRowId(null);
       if (keepQueryOnPick) {
         pickedRef.current = hit.label;
         setQuery(hit.label);
@@ -427,8 +460,25 @@ export function PlaceSearchField({
         onQueryChange?.('');
       }
     },
-    [onPick, onQueryChange, keepQueryOnPick, selectOnPick, scope.id],
+    [onPick, onQueryChange, keepQueryOnPick, selectOnPick, stayOnPick, scope.id],
   );
+
+  // Every pick from a row — click, tap or Enter — goes through here. Without
+  // `stayOnPick` it only runs the row: the field resets itself in `take`. With
+  // it, the field is still the list it was, so the row just taken becomes the
+  // active one (the arrows step on from where you are, not from the top), and
+  // focus returns to the input, which a click on the row's button took: the
+  // next keystroke should edit the query, not land on a button.
+  // Host `sections` rows don't pass through `take`, so the confirm is cleared
+  // here as well.
+  const pickRow = (idx: number, run: () => void) => {
+    run();
+    if (!stayOnPick) return;
+    setActiveIdx(idx);
+    setConfirmRowId(null);
+    const input = inputRef.current;
+    if (input && document.activeElement !== input) input.focus({ preventScroll: true });
+  };
 
   // One flat keyboard list over whatever is on screen — the full standing
   // groups while the box is empty, name-matched standing rows above the hits
@@ -503,12 +553,14 @@ export function PlaceSearchField({
   // Standing rows come FIRST in both the DOM and the keyboard order — when a
   // typed query matches one, it is the better answer, so it leads the hits.
   const groupNav = groups.flatMap((g, i) => [
-    ...shownItems[i].map((it) => ({ run: it.onPick })),
+    ...shownItems[i].map((it, ii) => ({
+      run: () => pickRow(groupStart[i] + ii, it.onPick),
+    })),
     ...(hasMore[i] ? [{ run: () => revealMore(g.id) }] : []),
   ]);
   const navItems: { run: () => void }[] = [
     ...groupNav,
-    ...results.map((r) => ({ run: () => take(r) })),
+    ...results.map((r, i) => ({ run: () => pickRow(groupNav.length + i, () => take(r)) })),
   ];
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -643,13 +695,16 @@ export function PlaceSearchField({
                   className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}`}
                   onClick={() => {
                     if (g?.locked) {
-                      // Explain under the input AND run the build's upgrade flow — the same
-                      // nudgeAction() every other tier-locked teaser runs (TopNav, Sidebar,
-                      // TimelineHud), so a locked chip does what a locked row does. A no-op in
-                      // the open core, which installs no action. The reason stays set rather
-                      // than toggling, so it is still there when that flow is closed.
+                      // Explain under the input, and nothing more. A scope chip is a toggle
+                      // inside a search the reader is in the middle of; sending them to the
+                      // build's upgrade screen from here (nudgeAction, as the locked ROWS and
+                      // buttons elsewhere do) took them out of the very thing they were doing,
+                      // for a tap that only asked "what is this?" (Salvatore, 2026-10-01,
+                      // reversing seam L73). The chip's PRO pill and this note carry the tease;
+                      // focus stays in the field. Set rather than toggled, so a second tap
+                      // doesn't make the reason vanish.
                       setTeasedId(p.id);
-                      nudgeAction();
+                      inputRef.current?.focus();
                       return;
                     }
                     setTeasedId(null);
@@ -701,7 +756,7 @@ export function PlaceSearchField({
                         <button
                           type="button"
                           className={`psf-row${idx === activeIdx ? ' is-active' : ''}`}
-                          onClick={it.onPick}
+                          onClick={() => pickRow(idx, it.onPick)}
                           onMouseEnter={() => setActiveIdx(idx)}
                           // The glyph is decorative, so when it stands for
                           // something (a category) the row states that in words
@@ -842,7 +897,7 @@ export function PlaceSearchField({
                 <button
                   type="button"
                   className={`psf-row${navIdx === activeIdx ? ' is-active' : ''}`}
-                  onClick={() => take(r)}
+                  onClick={() => pickRow(navIdx, () => take(r))}
                   onMouseEnter={() => setActiveIdx(navIdx)}
                 >
                   <span className="psf-row-body">

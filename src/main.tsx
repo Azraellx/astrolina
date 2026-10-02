@@ -19,6 +19,11 @@ interface LoadState {
   start: number
   done: boolean
   floor: number
+  /** True while the engine's download is in flight. A host page's boot watchdog reads it (Pro's
+   *  index.html): the engine and its tables are the boot's one long request, and on a slow link
+   *  nothing else visibly lands while they stream, so without this a boot that is working looks
+   *  stalled. */
+  busy?: boolean
 }
 const w = window as unknown as { __load?: LoadState; __loadTaken?: () => void }
 const load: LoadState = w.__load ?? { start: performance.now(), done: false, floor: 0 }
@@ -38,13 +43,54 @@ setStatus('Starting the engine…')
 // with index.html and the import dies on a MIME error. Vite reports exactly
 // this as `vite:preloadError`; one reload lands on the fresh build. The
 // session flag stops a reload loop if the failure is something persistent
-// (offline mid-fetch, a genuinely broken deploy) rather than skew.
-window.addEventListener('vite:preloadError', (event) => {
-  const KEY = 'astro:preload-error-reloaded:v1'
-  if (sessionStorage.getItem(KEY) === '1') return // second failure — let it surface
-  sessionStorage.setItem(KEY, '1')
-  event.preventDefault() // swallow the throw; the reload supersedes it
-  window.location.reload()
+// (a genuinely broken deploy) rather than skew.
+//
+// Only when the app's own server answers, though (2026-09-30). With no service
+// worker in this build, a chunk can't be fetched during an outage either — the
+// world outline a theme change asks for while offline, say — and the reload then
+// lands on the browser's own offline page in place of the app the reader was
+// using. So the failure is no longer swallowed: it surfaces to the code that
+// asked for the chunk, which has its own way to carry on without it (the outline
+// leaves the plain background), and the reload follows only once a request no
+// cache can answer has reached the server — skew, not an outage. Swallowing it
+// while that is decided isn't an option: a swallowed failure resolves the
+// import with nothing, which no caller is written for.
+const PRELOAD_RELOAD_KEY = 'astro:preload-error-reloaded:v1'
+const SERVER_PROBE_MS = 5000
+let preloadProbe: Promise<boolean> | null = null
+async function serverAnswers(): Promise<boolean> {
+  if (navigator.onLine === false) return false
+  const ac = new AbortController()
+  const cut = window.setTimeout(() => ac.abort(), SERVER_PROBE_MS)
+  try {
+    // Any answer at all is the server; only a request that never gets one is an outage.
+    await fetch(import.meta.env.BASE_URL, { method: 'HEAD', cache: 'no-store', signal: ac.signal })
+    return true
+  } catch {
+    return false
+  } finally {
+    window.clearTimeout(cut)
+  }
+}
+window.addEventListener('vite:preloadError', () => {
+  try {
+    if (sessionStorage.getItem(PRELOAD_RELOAD_KEY) === '1') return // second failure — let it surface
+  } catch {
+    return // no storage, no loop guard: surfacing the error beats a possible reload loop
+  }
+  // One chunk's failure usually arrives as several events (each preload, then the import): one probe.
+  if (preloadProbe) return
+  preloadProbe = serverAnswers()
+  void preloadProbe.then((up) => {
+    preloadProbe = null
+    if (!up) return // an outage: the app carries on as it is
+    try {
+      sessionStorage.setItem(PRELOAD_RELOAD_KEY, '1')
+    } catch {
+      return
+    }
+    window.location.reload()
+  })
 })
 
 // If the engine (WASM) download runs long, reassure that it's a one-time fetch.
@@ -53,6 +99,7 @@ const slowTimer = window.setTimeout(() => {
   if (!reachedData) setStatus('Downloading the engine (one-time)…')
 }, 6000)
 
+load.busy = true
 try {
   // Two stages now: the asteroid tables no longer load at startup — they fetch on
   // demand the first time an asteroid body is enabled (see ensureAsteroidEphemeris).
@@ -68,6 +115,7 @@ try {
   })
 } catch (err) {
   window.clearTimeout(slowTimer)
+  load.busy = false
   load.done = true
   if (bar) {
     bar.style.width = '100%'
@@ -78,6 +126,7 @@ try {
 }
 
 window.clearTimeout(slowTimer)
+load.busy = false
 load.done = true
 if (bar) bar.style.width = '100%'
 // Let the bar visibly reach 100%, then fade the screen out before mounting.

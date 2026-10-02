@@ -155,8 +155,12 @@ export function TeleportHud({
       <PlaceSearchField
         className="teleport-search"
         limit={8}
-        keepQueryOnPick
-        selectOnPick
+        // A pick leaves the box exactly as it was — the typed query, its hits,
+        // the picked row highlighted — so one search can visit its hits in turn
+        // without retyping a letter. The map is the answer here, not the box: it
+        // used to fill in the picked label and select it, which made every
+        // second destination a backspace-and-retype.
+        stayOnPick
         autoFocus
         // The standing groups (a build's own saved/visited places) are as
         // jumpable as any search hit — this is the window for going somewhere.

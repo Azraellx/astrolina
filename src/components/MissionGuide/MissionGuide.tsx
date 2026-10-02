@@ -4,8 +4,9 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { MissionGesture, MissionSet } from '../../lib/missions';
+import { holdGuideOpen } from '../../lib/guideOpen';
 import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -186,13 +187,23 @@ export function MissionGuide({
   const { t } = useT();
   const touch = useTouchLayout();
   const ref = useRef<HTMLDivElement>(null);
+  // Tell anyone who asks that a guide is on screen, for as long as this card is (lib/guideOpen).
+  // From the layout phase, so the hold is up before the card's first paint: a passive effect
+  // runs after it, and for a card opened outside a React event (the zoom guide, from a map
+  // callback) a timer could fire in that gap and find no guide open.
+  useLayoutEffect(() => holdGuideOpen(), []);
   // Not persisted: the guide always opens at the top-right home (drag is an in-session
   // convenience only). This keeps its placement consistent — a stale saved position
   // from another viewport would otherwise get clamped to the edge, losing the padding.
+  // It also keeps that home on a phone rather than the windows' shared bottom sheet
+  // (useMovableHud's phoneHome): topRightHome already has its own touch placement, and the
+  // guide talks about the map while the reader works on it, so it stays out of the
+  // thumb's way at the bottom.
   const { pos, dragging, handleProps } = useMovableHud(ref, {
     floating: true,
     initial: topRightHome,
     persist: false,
+    phoneHome: false,
   });
   // Move/recentre hint on the drag handle — same shared .ui-tip as the overlay HUDs
   // (the "Double 🖱" pill), but double-click recentres rather than docks (no dock home).

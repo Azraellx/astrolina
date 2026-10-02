@@ -24,7 +24,6 @@ import rawLunarCatalog from './data/lunarEclipses.json';
 import {
   findLunarEclipse,
   findSolarEclipse,
-  jdToCivil,
   obliquity,
   raDecToEclipticLon,
   sunMoonEquatorial,
@@ -407,8 +406,11 @@ export function zodiacParts(lonRad: number): { text: string; signIndex: number }
  *  catalog metadata plus the Swiss-derived strings. */
 export interface EclipseDetails {
   row: EclipseCatalogRow;
-  /** "2024-04-08 18:17 UTC", from the Swiss-resolved maximum. */
-  maxUtc: string;
+  /** The Swiss-resolved maximum (UT JD). Handed over as an instant rather than
+   *  a finished string so the panel can print it in the long date form the rest
+   *  of the eclipse surfaces use (eclipseFormat.ts) — this module has no locale
+   *  to name a month in. */
+  maxJd: number;
   /** "19°♈24′" — the eclipse degree (render through glyphify): the Sun's
    *  longitude for a solar eclipse, the Moon's for a lunar one (they stand
    *  opposite at a Full Moon, so the two carry distinct degrees). */
@@ -431,8 +433,6 @@ export function buildEclipseDetails(
   ayanRad = 0,
 ): EclipseDetails {
   const jd = resolved.event.maximum;
-  const c = jdToCivil(jd);
-  const p = (n: number) => String(n).padStart(2, '0');
   // The "eclipse degree" astrologers track: where the eclipsed body stands.
   // Lunar reuses the sky sample the geometry already took at maximum; solar
   // samples here (the Moon is conjunct the Sun by definition).
@@ -448,21 +448,16 @@ export function buildEclipseDetails(
   const zodiac = zodiacParts((((lonRad - ayanRad) % TWO_PI) + TWO_PI) % TWO_PI);
   return {
     row: resolved.row,
-    maxUtc: `${c.year}-${p(c.month)}-${p(c.day)} ${p(c.hour)}:${p(c.minute)} UTC`,
+    maxJd: jd,
     zodiac: zodiac.text,
     signIndex: zodiac.signIndex,
     lonRad,
   };
 }
 
-/** "18:42:07" — seconds-precision UT clock time for the click card's contact
- *  rows (totality lasts minutes, so the minute-snapping jdToCivil is too
- *  coarse there). The date context comes from the selection itself. */
-export function jdToUtcHms(jd: number): string {
-  const d = new Date(Math.round(jdToMs(jd) / 1000) * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
-}
+// The clock-time formatter (jdToClock) lives with the other eclipse formatters in
+// eclipseFormat.ts — outside this lazily loaded module, so the panel can use the
+// same helpers without pulling the catalogs into the main bundle.
 
 // ── Eclipse-to-natal contacts ─────────────────────────────────────────────────
 

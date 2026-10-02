@@ -104,9 +104,14 @@ export const captureHud = {
     time: 'Time',
     timeHint: 'Show the birth time in the caption footer.',
     location: 'Location',
-    locationHint: 'Show the birthplace in the caption footer.',
+    // The place fields follow the pin (App.captionPlace): the birthplace until one is placed.
+    locationHint: 'Show the place in the caption footer: the birthplace, or your pin once you place one.',
     coordinates: 'Coordinates',
-    coordinatesHint: 'Show the birthplace’s full latitude and longitude in the caption.',
+    // "Full" is a promise the band keeps: a caption too long for one line wraps to a
+    // second (Map.tsx, caption fit), and where two still overflow another field on the
+    // line gives way before the figures do (App passes them as Map's frameCaptionKeep).
+    coordinatesHint:
+      'Show the place’s full latitude and longitude in the caption: the birthplace, or your pin once you place one.',
     calculations: 'Calculations',
     calculationsHint:
       'Show the active calculation systems (the same line as the Info view) in the caption footer.',

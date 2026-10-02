@@ -53,6 +53,7 @@
     "deploy:preview": "npm run build && wrangler pages deploy dist --project-name astrolina-maps --branch preview"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-rtl-text": "0.3.0",
     "@swisseph/browser": "1.1.0",
     "@turf/turf": "^7.3.5",
     "@types/luxon": "^3.7.1",
@@ -69,6 +70,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@maplibre/geojson-vt": "^6.1.0",
     "@swisseph/node": "^1.2.2",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",

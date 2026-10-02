@@ -16,7 +16,9 @@
 // TRACK for the center (lib/extensions/skyBandTrack.ts) — its eye-toggle shows
 // here only when registered AND entitled (no teaser), tagged with the gated
 // tier in its hover tip. Chart-time-INDEPENDENT: the band reads the sky of the
-// chosen DAY, so it works even for unknown-birth-time charts. On PHONES the
+// chosen DAY, so it works even for unknown-birth-time charts — except while the
+// Slide tool is armed, when the shown day is DERIVED from the slid instant and
+// the pager drives Slide (see dayStart and the pager below). On PHONES the
 // same DOM reflows to stacked rows (track / legend / context — see the CSS)
 // and the band pads itself by the home-indicator inset; the legend's tips are
 // tap-revealed there.
@@ -44,7 +46,7 @@ import {
   isSkyBandTrackEntitled,
   type SkyBandTrackContext,
 } from '../../lib/extensions/skyBandTrack';
-import { shouldShowNudge, nudgeAction } from '../../lib/plan';
+import { shouldShowNudge } from '../../lib/plan';
 import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
 import { usePhone } from '../../lib/touch';
 import { planetRank } from '../../lib/astro/format';
@@ -120,13 +122,20 @@ interface SkyBandProps {
    *  window, so it shows only while the band does. */
   planetaryOpen: boolean;
   onTogglePlanetary: () => void;
-  /** The Slide tool's slid instant (epoch ms UT) while it spins the sky — handed
-   *  to the track so its time cursor can follow the spin. Null = idle. */
+  /** The Slide tool's slid instant (epoch ms UT) while the tool is armed (App
+   *  makes it non-null from the moment of arming: Δt 0 is the chart's own
+   *  moment). The band shows THIS instant's day while it is set, and hands it to
+   *  the track so its time cursor can follow the spin. Null = idle. */
   slideMs?: number | null;
   /** Scrub the Slide tool's slid instant to an absolute time (epoch ms UT) —
-   *  handed to the track so it can drive the spin. Present only while the tool
+   *  handed to the track so it can drive the spin, and used by the band's own
+   *  Today and date picker while the tool is armed. Present only while the tool
    *  is armed; the track keys its scrubbing affordance off it. */
   slideTo?: (ms: number) => void;
+  /** Turn the Slide tool's slid instant by a number of days, against the LIVE
+   *  spin (so fast repeats never race the throttled report back). The band's
+   *  ‹ › use it while the tool is armed. Present only then. */
+  slideBy?: (deltaDays: number) => void;
   onClose: () => void;
 }
 
@@ -145,6 +154,7 @@ export function SkyBand({
   onTogglePlanetary,
   slideMs = null,
   slideTo,
+  slideBy,
   onClose,
 }: SkyBandProps) {
   const { t, fmt } = useT();
@@ -186,17 +196,35 @@ export function SkyBand({
     return getIanaTimezone(point.lat, lng);
   }, [point]);
 
+  // WHICH day the band shows. Normally the reader's: the pager's offset from the
+  // frozen "today". While the Slide tool is armed it is DERIVED from the slid
+  // instant instead — the band reads the day the map's sky has been turned to, so
+  // a track's press (which lands on the shown day) can never land decades from
+  // the slid moment. Derived, never written (CLAUDE.md rule 2): `dayOffset` is
+  // left exactly as the reader paged it, and comes back on its own the moment
+  // Slide closes. Under Slide the pager's controls drive Slide rather than the
+  // offset (below), so nothing here has a second source to drift from.
+  const sliding = slideMs != null;
+  const refMs = slideMs ?? nowMs + dayOffset * MS_DAY;
+
   // Local midnight (start of the shown day) as a UT instant: shift to wall
-  // clock, floor to the wall-clock day, shift back. A DST jump inside the day
-  // moves one edge by an hour — fine for a daily instrument.
+  // clock, floor to the wall-clock day, then shift back by the offset in force
+  // AT that midnight (one refine pass from the reference's own offset). The
+  // refine matters on a DST day: shifting back by the reference's offset put the
+  // edge an hour off whenever the reference fell on the far side of the change,
+  // so the derived day — and the track's x-mapping built on it — would re-map
+  // by an hour as a Slide scrub crossed the change under the pointer. (The paged
+  // day had the same fault whenever "now" was past the change: its window and
+  // every track marker sat an hour out. Measured 2026-09-30 over six DST days at
+  // five-minute references: 1,560 of 2,016 off by an hour before, none after.)
   const dayStart = useMemo(() => {
     if (!point || !zone) return null;
-    const refMs = nowMs + dayOffset * MS_DAY;
     const offH = offsetHoursAt(zone, refMs);
     const wallMs = refMs + offH * 3_600_000;
     const wallMidnight = Math.floor(wallMs / MS_DAY) * MS_DAY;
-    return wallMidnight - offH * 3_600_000;
-  }, [point, zone, nowMs, dayOffset]);
+    const guess = wallMidnight - offH * 3_600_000;
+    return wallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
+  }, [point, zone, refMs]);
 
   const days = useMemo<BodyDayEvents[]>(() => {
     if (!point || dayStart === null) return [];
@@ -463,7 +491,7 @@ export function SkyBand({
 
   // The registered track (a downstream build's expandable center). The track ITSELF is
   // entitled-only; its TOGGLE also shows as a locked teaser for a user the build nudges
-  // (trackNudge) — a click there opens the account flow instead of expanding.
+  // (trackNudge) — a click there explains in its tip instead of expanding.
   const trackExt = getSkyBandTrack();
   const trackAvailable = !!trackExt && isSkyBandTrackEntitled(trackExt);
   const trackNudge =
@@ -562,8 +590,11 @@ export function SkyBand({
 
   // The speculum table: the four angle moments as ROWS — the same order as the
   // hover card — with one column per body. Each body's glyph sits BESIDE its
-  // column, spanning all four rows (no header row, so the band stays low); its
-  // full-height rule ties the glyph to the whole column of times. Rendered
+  // column, spanning all four rows (no header row, so the band stays low); a
+  // full-height rule on the glyph's LEFT opens each body's group, so a glyph and
+  // its own four times read together between one rule and the next (a rule on
+  // its right had cut every glyph off from its times and bound it to the
+  // previous body's instead). Rendered
   // inside the legend element, so the scroll / drag / edge-fade machinery
   // applies unchanged; the grid aligns the times into true columns.
   const tableGrid = (
@@ -713,42 +744,93 @@ export function SkyBand({
                 <span className="sky-band-place">{placeLabel}</span>
               </div>
             )}
+            {/* The day pager. While Slide is armed the shown day is the slid one
+                (see dayStart), so these controls DRIVE Slide instead of paging —
+                ‹ › turn the sky a whole day, Today turns it to the present, the
+                picker to the chosen date — and each says so on its tip, since
+                what moves is the map, not just this band (rule 3: the trigger
+                discloses). The readout wears the accent while it follows Slide:
+                the visible half of the hold, which lifts when Slide closes and
+                hands back the reader's own paged day untouched. */}
             <div className="sky-band-side-row">
-              <button
-                type="button"
-                className="sky-band-day-btn"
-                aria-label={t('skyTimes.prevDay')}
-                onClick={() => setDayOffset((d) => d - 1)}
-              >
-                ‹
-              </button>
+              {sliding && slideBy ? (
+                <TipButton
+                  type="button"
+                  className="sky-band-day-btn"
+                  placement="top"
+                  aria-label={t('skyTimes.slide.prevTip')}
+                  tip={t('skyTimes.slide.prevTip')}
+                  hint={t('skyTimes.slide.stepHint')}
+                  onClick={() => slideBy(-1)}
+                >
+                  ‹
+                </TipButton>
+              ) : (
+                <button
+                  type="button"
+                  className="sky-band-day-btn"
+                  aria-label={t('skyTimes.prevDay')}
+                  onClick={() => setDayOffset((d) => d - 1)}
+                >
+                  ‹
+                </button>
+              )}
               <TipButton
                 type="button"
-                className="sky-band-day-btn sky-band-day"
+                className={`sky-band-day-btn sky-band-day${sliding ? ' is-slid' : ''}`}
                 placement="top"
-                tip={t('skyTimes.pickDate')}
-                hint={t('skyTimes.pickDateHint')}
+                tip={t(sliding ? 'skyTimes.slide.pickTip' : 'skyTimes.pickDate')}
+                hint={t(sliding ? 'skyTimes.slide.pickHint' : 'skyTimes.pickDateHint')}
                 onClick={() => setPickerOpen(true)}
               >
                 {dayLabel}
               </TipButton>
-              <button
-                type="button"
-                className="sky-band-day-btn"
-                aria-label={t('skyTimes.nextDay')}
-                onClick={() => setDayOffset((d) => d + 1)}
-              >
-                ›
-              </button>
-              {/* Today is always offered; it just greys out while already on it. */}
-              <button
-                type="button"
-                className="sky-band-day-btn sky-band-today"
-                disabled={dayOffset === 0}
-                onClick={() => setDayOffset(0)}
-              >
-                {t('skyTimes.today')}
-              </button>
+              {sliding && slideBy ? (
+                <TipButton
+                  type="button"
+                  className="sky-band-day-btn"
+                  placement="top"
+                  aria-label={t('skyTimes.slide.nextTip')}
+                  tip={t('skyTimes.slide.nextTip')}
+                  hint={t('skyTimes.slide.stepHint')}
+                  onClick={() => slideBy(1)}
+                >
+                  ›
+                </TipButton>
+              ) : (
+                <button
+                  type="button"
+                  className="sky-band-day-btn"
+                  aria-label={t('skyTimes.nextDay')}
+                  onClick={() => setDayOffset((d) => d + 1)}
+                >
+                  ›
+                </button>
+              )}
+              {/* Today is always offered; it just greys out while already on it.
+                  Under Slide it turns the sky to the present MOMENT, which the
+                  slid instant is never exactly on — so it stays live there. */}
+              {sliding && slideTo ? (
+                <TipButton
+                  type="button"
+                  className="sky-band-day-btn sky-band-today"
+                  placement="top"
+                  tip={t('skyTimes.slide.todayTip')}
+                  hint={t('skyTimes.slide.todayHint')}
+                  onClick={() => slideTo(Date.now())}
+                >
+                  {t('skyTimes.today')}
+                </TipButton>
+              ) : (
+                <button
+                  type="button"
+                  className="sky-band-day-btn sky-band-today"
+                  disabled={dayOffset === 0}
+                  onClick={() => setDayOffset(0)}
+                >
+                  {t('skyTimes.today')}
+                </button>
+              )}
             </div>
             <div className="sky-band-side-row">
               {/* The zone is information, not an action — a clock icon + plain
@@ -789,8 +871,11 @@ export function SkyBand({
               </TipButton>
               {/* The track's eye-toggle: for an entitled user it expands the track; for a
                   nudged (un-entitled) user it's a locked teaser — shown off, gated-tagged,
-                  a click opens the account flow. A gated track carries the gated-tier tag
-                  in its hover tip either way. */}
+                  and a click or tap shows why in its tip instead of expanding. It does NOT
+                  open the account flow: it's a switch in a band the reader is reading, and
+                  a tap on a switch that won't flip asks why, not for the plans
+                  (TipButton's `locked`; seam L73, 2026-10-01). A gated track carries the
+                  gated-tier tag in its hover tip either way. */}
               {(trackAvailable || trackNudge) && trackExt && (
                 <TipButton
                   type="button"
@@ -802,7 +887,11 @@ export function SkyBand({
                   gated={trackExt.tier === 'gated'}
                   tip={trackExt.label}
                   hint={trackShown ? trackExt.onHint : trackExt.offHint}
-                  onClick={trackNudge ? () => nudgeAction() : onToggleTrack}
+                  // trackNudge already implies the gated rung (see its definition). The
+                  // reason names the track by its own label (e.g. "Paran Clock is a Pro
+                  // feature.").
+                  locked={trackNudge ? { tier: 'gated', feature: trackExt.label } : undefined}
+                  onClick={onToggleTrack}
                 >
                   <EyeIcon open={trackShown} className="sky-band-track-eye" size={13} />
                   <span>{trackExt.label}</span>
@@ -816,7 +905,11 @@ export function SkyBand({
               would only confuse. Seeded to the shown day's local noon; the
               chosen instant maps back to a whole-day pager offset in the
               point's own zone (per-instant offsets, so distant DST states
-              self-correct). */}
+              self-correct). Under Slide the chosen DATE is applied to the slid
+              instant instead: the same local time of day, on that date, in the
+              point's zone — the picker moves the sky by whole days, as ‹ › do,
+              rather than snapping it to the seed's noon. Read at apply time, so
+              a Slide that closed while the picker was open pages as usual. */}
           {pickerOpen && zone && dayStart !== null && (
             <TimelineDateModal
               valueMs={dayStart + MS_DAY / 2}
@@ -825,10 +918,20 @@ export function SkyBand({
               yearMin={BIRTH_YEAR_MIN}
               yearMax={BIRTH_YEAR_MAX}
               dateOnly
-              title={t('skyTimes.pickDate')}
+              title={t(sliding ? 'skyTimes.slide.pickTip' : 'skyTimes.pickDate')}
               onApply={(ms) => {
                 const wallDay = (v: number) =>
                   Math.floor((v + offsetHoursAt(zone, v) * 3_600_000) / MS_DAY);
+                if (slideMs != null && slideTo) {
+                  const slidWall = slideMs + offsetHoursAt(zone, slideMs) * 3_600_000;
+                  const timeOfDay = slidWall - Math.floor(slidWall / MS_DAY) * MS_DAY;
+                  const wall = wallDay(ms) * MS_DAY + timeOfDay;
+                  // Wall → UT by the offset in force on the chosen date (one
+                  // refine pass, as the track's msAtX does).
+                  const guess = wall - offsetHoursAt(zone, slideMs) * 3_600_000;
+                  slideTo(wall - offsetHoursAt(zone, guess) * 3_600_000);
+                  return;
+                }
                 setDayOffset(wallDay(ms) - wallDay(nowMs));
               }}
               onClose={() => setPickerOpen(false)}

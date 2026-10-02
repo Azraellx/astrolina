@@ -16,15 +16,31 @@
   position: absolute;
   top: max(var(--edge, 10px), env(safe-area-inset-top));
   /* Quarter-shift past an overlaying sidebar; a RESERVING dock (--es-reserved)
-     adds the second quarter so the bar centres on the remaining map column. */
-  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
+     adds the second quarter so the bar centres on the remaining map column.
+
+     That formula is the resting place, and it holds wherever the bar fits there — every roomy
+     layout, dock closed or not. Where it doesn't, TopNav.tsx's layout pass overrides it with
+     --topnav-left: the formula only knows the column, not the bar, and a bar centred on a column
+     narrower than itself ends up under the dock on one side and the zoom control on the other.
+     (It did: 577px of bar beside the Reports dock's default 860 put the chart name 27px under the
+     dock at 1440 and 187px under it at 1280; the expanded sidebar alone hid the sidebar toggle at
+     1280.) The pass measures the bar, switches it to the compact variant below when even the whole
+     column is too narrow for it, and clamps the stack between the column's left edge and the zoom
+     control — work this rule can't do, because it needs the bar's natural width, its sideways
+     pill-recentring nudge and the readout bar under it. It replaces a CSS-only right-edge cap
+     (1 Oct) that kept the bar on screen but could only trade one edge for the other. */
+  left: var(--topnav-left, calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4));
   transform: translateX(-50%);
   /* The movable HUD windows + overlay bars deliberately layer ABOVE this nav now (windows at 27,
      overlay bars at 26, plugin HUDs at 40) so one dragged over the bar is never stuck behind it —
      its grip stays on top and grabbable (useMovableHud no longer forces HUDs below the nav). Trade-
      off: a HUD parked over an OPEN nav dropdown (Tools / Overlay / View) covers that menu's rows
-     where they overlap, since the panels are trapped in this stack's context — acceptable, as the
-     windows seldom sit up here and the plugin HUDs already behaved this way. Stays below the
+     where they overlap, since the panels are trapped in this stack's context. On a desktop the
+     windows seldom sit up here and the plugin HUDs already behaved this way. On a PHONE they
+     did — a desktop starting spot is a quarter of a phone screen down, right under the nav —
+     which is why two things now keep a window from opening into an open menu there: windows
+     start docked at the bottom on a phone (useMovableHud's phoneHome), and a View row closes the
+     menu as it opens a window on a narrow or touch layout (TopNav.tsx). Stays below the
      expanded sidebar (30), modals (100), and hover tips (1000). */
   z-index: 25;
   /* The stack is content-sized to the WIDEST bar (the main bar), so the narrower, centred tool
@@ -80,6 +96,13 @@
   align-items: center;
   /* Below the main bar so its open dropdowns overlay this readout, not vice-versa. */
   z-index: 1;
+}
+/* Never wider than the room the main bar measured (TopNav.tsx publishes --topnav-room on the
+   stack: the map column between the left dock and the zoom control). A no-op in a roomy layout;
+   beside a wide dock it makes a long readout wrap inside the column instead of running under the
+   dock. Unset on the phone layout, which caps its hint by the viewport below. */
+.topnav-stack > .topnav-toolbar {
+  max-width: var(--topnav-room, none);
 }
 .topnav-toolbar-hint {
   font-size: 11px;
@@ -680,10 +703,13 @@ button.topnav-status:hover {
 /* Top-nav dropdowns size to their widest row — labels never wrap. The 170px min above is
    kept as a floor; the panel then grows to fit its content up to a cap. Scoped to .topnav
    so the Sidebar's PORTALED HintMenu (which reuses .navmenu-panel/.navmenu-item but renders
-   outside .topnav) is untouched. */
+   outside .topnav) is untouched. The cap also never exceeds the map column (--topnav-col, the
+   column less its gutters, published on the stack by TopNav.tsx; unset → 300px), and the open
+   panel is slid into that column (navColumn.ts fitToNavColumn) — beside a wide dock a menu
+   opening from a right-hand trigger would otherwise run off the screen edge. */
 .topnav .navmenu-panel {
   width: max-content;
-  max-width: 300px;
+  max-width: min(300px, var(--topnav-col, 300px));
 }
 .topnav .navmenu-item {
   white-space: nowrap;
@@ -856,12 +882,93 @@ button.topnav-status:hover {
   color: var(--text-muted);
 }
 
+/* ── Compact nav, beside a dock (measured) ─────────────────────────────────────
+   The island stays an island, centred on the map column, but trades width for the same
+   shorthand the phone layout uses: Overlay/View collapse to their icons (Tools already is one),
+   the chart name to initials over the year (ChartSwitcher.css), with tighter padding and gaps.
+   Nothing is removed — every control is still here, and each icon-only trigger names itself in
+   a hover tip. TopNav.tsx turns `.topnav-compact` on when the map column (left dock → zoom
+   control, less gutters) is narrower than the FULL bar's measured width, with hysteresis, and
+   never on the phone layout; the class sits on the stack, so the readout bar can follow it.
+
+   This form stays on ONE row: TopNav.tsx publishes its one-row width (leftDock.ts
+   publishMapColumnNeed) and the docks cap their own width by it, so dragging a dock wider stops
+   where the row would start to break (Salvatore, 1 Oct: "it should stay on one row"). The wrap
+   below is the fallback for the one case the cap yields — a window too narrow for a dock's own
+   minimum AND the one-row bar (under ~963 px beside the Reports dock), where the dock's minimum
+   wins: the island is capped at the room (--topnav-room) and the menus drop to a second row,
+   centred, under the name and status pill. Taller, but whole and clear of the dock. The cap
+   never goes below that two-row form: where two rows won't fit beside the zoom control either,
+   the zoom control steps down under the nav instead (Map.css) rather than the nav breaking into
+   three or four rows. The pill-recentring nudge is off here (TopNav.tsx), since a wrapped row has
+   no left and right sides to balance. */
+.topnav-stack.topnav-compact > .topnav {
+  max-width: var(--topnav-room, none);
+  /* A shorter sweep than the full bar's 40px: the content now sits 12px from the ends, where a
+     40px curve would start eating into the year under the initials. */
+  border-radius: 14px 14px 28px 28px;
+}
+/* Sized so the one-row form (≈335px measured) fits the narrowest common case: the Reports dock
+   at its default 860px on a 1280 screen leaves 350px of room. Anything that widens this row
+   widens the column every dock has to leave beside it (the figure is measured, not restated),
+   and so takes the same amount off each dock's drag range. */
+.topnav-stack.topnav-compact .topnav-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+}
+.topnav-stack.topnav-compact .topnav-left {
+  gap: 6px;
+}
+.topnav-stack.topnav-compact .topnav-right {
+  gap: 4px;
+}
+.topnav-stack.topnav-compact .navmenu-label-text {
+  display: none;
+}
+.topnav-stack.topnav-compact .navmenu-label-icon {
+  display: inline-flex;
+}
+.topnav-stack.topnav-compact .topnav-right .navmenu-trigger {
+  gap: 3px;
+  padding: 0 6px;
+}
+/* The menus hang from the bar's right-hand end here, so their panels open inward from the
+   trigger's right edge (as on the phone) and fitToNavColumn has less to correct. A panel capped
+   by a narrow column wraps its rows rather than overflowing them. */
+.topnav-stack.topnav-compact .topnav-right .navmenu-panel {
+  left: auto;
+  right: 0;
+}
+.topnav-stack.topnav-compact .navmenu-item {
+  white-space: normal;
+}
+/* The readout bar under it wraps inside the column too (capped by --topnav-room above): the
+   Measure endpoints and the Slide cluster are one unbreakable line in the roomy bar. */
+.topnav-stack.topnav-compact .topnav-measure-endpoints,
+.topnav-stack.topnav-compact .topnav-slide {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 4px;
+}
+.topnav-stack.topnav-compact .topnav-measure {
+  white-space: normal;
+}
+.topnav-stack.topnav-compact .topnav-location {
+  max-width: min(340px, 100%);
+}
+
 /* ── Compact (phone-width) top nav ────────────────────────────────────────────
    At narrow viewports the labelled, content-sized island can't fit, so the bar spans the
    full width as ONE row: the Overlay/View menus collapse to icons (Tools already is), the
    chart name truncates, and the centre status pill stays. The JS pill-recentring shift is
    disabled at this width (useNarrowNav in TopNav.tsx) — the bar is centred by spanning
-   edge-to-edge instead, so the inline transform is cleared. Mirrors the 640px stacking
+   edge-to-edge instead, so the inline transform is cleared — and so is the measured layout
+   (no --topnav-left, never .topnav-compact: this block is the phone's own compact form, and
+   the two never stack). Mirrors the 640px stacking
    convention used elsewhere; 600px keeps landscape phones + portrait tablets on the normal nav. */
 @media (max-width: 600px) {
   /* Stretch the absolutely-positioned stack across the viewport (minus the edge gutters):

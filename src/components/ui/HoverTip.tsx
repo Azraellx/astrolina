@@ -8,6 +8,9 @@ import {
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type ReactNode,
+  useEffect,
+  useId,
+  useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -18,7 +21,10 @@ import {
 } from './useHoverTip';
 import { glyphify } from './glyphify';
 import { tipMaxWidthStyle } from './tipWidth';
-import { tierLabel, shouldShowTierBadge } from '../../lib/plan';
+import { tierLabel, tierName, shouldShowTierBadge, type PlanTier } from '../../lib/plan';
+import { en } from '../../i18n';
+import { useOptionalT } from '../../i18n/I18nProvider';
+import { interpolate } from '../../i18n/t';
 import './HoverTip.css';
 
 // The shared .ui-tip card (chrome from index.css), portaled to <body> so no
@@ -105,22 +111,10 @@ export function HoverTip({
   );
 }
 
-// A button that reveals its description (and optional hotkey) as the shared
-// HoverTip on hover/focus — a drop-in for a native title= tooltip. Defaults to a
-// 'bottom' tip, since these are mostly top-bar controls.
-export function TipButton({
-  tip,
-  hint,
-  note,
-  hotkey,
-  advanced,
-  gated,
-  unavailable,
-  placement = 'bottom',
-  tipClassName,
-  children,
-  ...rest
-}: {
+/** What a locked switch needs to say why: the tier, and the feature's name. */
+export type TipLock = { tier: PlanTier; feature: string };
+
+type TipButtonProps = {
   tip: ReactNode;
   hint?: ReactNode;
   /** The unavailable-state second line — see HoverTip's `note`. */
@@ -135,8 +129,65 @@ export function TipButton({
   placement?: TipPlacement;
   /** Forwarded to the card (HoverTip className) — lets a themed surface skin its tips. */
   tipClassName?: string;
+  /** A tier-locked SWITCH: the plan tier it needs, which the reader hasn't reached, and
+   *  the feature's name as the control's own UI gives it (its label — the caller passes
+   *  it from its own strings). A click, Enter or Space never reaches `onClick` — it shows
+   *  the tip, with the reason ("{feature} is a {tier} feature.") as its last line — and
+   *  on touch a tap reveals the tip instead of acting. For on/off controls only; a button
+   *  or row whose whole job is to open the feature keeps running the build's upgrade flow
+   *  (lib/plan's nudgeAction). Safe in a plugin's own React root: outside the i18n
+   *  provider the reason is written in English. */
+  locked?: TipLock;
   children?: ReactNode;
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
+} & ButtonHTMLAttributes<HTMLButtonElement>;
+
+// A button that reveals its description (and optional hotkey) as the shared
+// HoverTip on hover/focus — a drop-in for a native title= tooltip. Defaults to a
+// 'bottom' tip, since these are mostly top-bar controls.
+//
+// A LOCKED switch renders as its own component rather than as a flag on this one.
+// Its touch behaviour differs (a tap reveals instead of acting), and the touch kernel
+// binds that once, at mount (useHoverTip's tapReveal). Two component types means the
+// lock lifting remounts the button with the binding that matches it, instead of
+// leaving a live switch that swallows its own taps.
+//
+// The split also decides what each form may receive. A locked switch replaces its
+// note (with the reason), its hotkey (with none) and its click (with the explanation),
+// so those four never reach it — they can't leak onto the element or run by accident.
+export function TipButton({
+  locked,
+  note,
+  hotkey,
+  unavailable,
+  onClick,
+  ...shared
+}: TipButtonProps) {
+  return locked ? (
+    <LockedTipButton {...shared} locked={locked} />
+  ) : (
+    <PlainTipButton
+      {...shared}
+      note={note}
+      hotkey={hotkey}
+      unavailable={unavailable}
+      onClick={onClick}
+    />
+  );
+}
+
+function PlainTipButton({
+  tip,
+  hint,
+  note,
+  hotkey,
+  advanced,
+  gated,
+  unavailable,
+  placement = 'bottom',
+  tipClassName,
+  children,
+  ...rest
+}: Omit<TipButtonProps, 'locked'>) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>(placement);
   return (
     <>
@@ -160,6 +211,148 @@ export function TipButton({
         advanced={advanced}
         gated={gated}
         unavailable={unavailable}
+        className={tipClassName}
+      />
+    </>
+  );
+}
+
+// How long a click keeps a locked switch's tip up after the pointer leaves it. Long
+// enough to finish reading the reason line if the hand had already moved on when the
+// switch didn't flip; short enough not to sit over whatever the pointer went to next.
+const LOCKED_HOLD_MS = 2400;
+
+// A tier's name as a word in a sentence. A build installs its plan names in badge
+// capitals because pills draw them, so a name that arrives all-caps is written in
+// sentence case ("PRO" → "Pro"); anything else is used exactly as installed.
+function tierWord(tier: PlanTier): string {
+  const name = tierName(tier) || tierLabel(tier);
+  return name && name === name.toUpperCase()
+    ? name.charAt(0) + name.slice(1).toLowerCase()
+    : name;
+}
+
+// The locked switch's reason line, without requiring the i18n provider. TipButton is shared
+// ui that plugins mount in React roots of their own, outside <I18nProvider>, where useT()
+// throws — and nothing in TipButton needed the provider before `locked` existed, so the first
+// plugin to pass `locked` from its own root would have blanked that root. Inside the provider
+// the line follows the reader's locale; outside it, it is the English base catalog, as
+// PlaceSearchField's own fallbacks are.
+//
+// One sentence shape for every locked switch — "{feature} is a {tier} feature." — the same
+// one a build's locked scope chips use, so a reader meets one wording for one situation
+// (Salvatore, 2026-10-02; seam L73). It states the fact and stops: no pointer to the plans.
+function useLockedReason({ tier, feature }: TipLock): string {
+  const t = useOptionalT()?.t;
+  const word = tierWord(tier);
+  if (t) {
+    return word
+      ? t('common.locked.feature', { feature, tier: word })
+      : t('common.locked.featureAnyTier', { feature });
+  }
+  const lines = en.common.locked;
+  return word
+    ? interpolate(lines.feature, { feature, tier: word })
+    : interpolate(lines.featureAnyTier, { feature });
+}
+
+// The locked form of TipButton (see its `locked`). Why a switch and not the upgrade
+// flow: a switch sits inside something the reader is doing, and a tap on one that won't
+// flip asks "why not?". Taking them to the account screen for that loses their place,
+// for a question the tier tag and one line of tip answer where they are (Salvatore,
+// 2026-10-01 — seam L73). Buttons and menu rows that ARE the feature are an explicit
+// ask, and still open the upgrade flow.
+//
+// It keeps the switch's look entirely (the caller's classes — tier tint, PRO tag — pass
+// through), and adds what a control that answers instead of acting needs:
+//   • aria-disabled, so assistive tech announces it unavailable, and an accessible
+//     DESCRIPTION carrying the reason — the tip card is aria-hidden, and the tier tag on
+//     it is the one thing a screen-reader user would otherwise never hear;
+//   • click / Enter / Space show the tip and hold it briefly (LOCKED_HOLD_MS) against
+//     the pointer leaving — the caller's onClick is never called;
+//   • touch reveals on a single tap (tapReveal, the pattern every inert tip trigger
+//     uses) and dismisses on the next tap anywhere else. The tap's click is swallowed
+//     by the kernel, so nothing toggles there either;
+//   • no hotkey chip: a locked feature's key does nothing below the rung, and a pill
+//     advertising it would be a lie.
+function LockedTipButton({
+  tip,
+  hint,
+  advanced,
+  gated,
+  placement = 'bottom',
+  tipClassName,
+  locked,
+  children,
+  ...rest
+}: Omit<TipButtonProps, 'locked' | 'note' | 'hotkey' | 'unavailable' | 'onClick'> & {
+  locked: TipLock;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>(placement, {
+    tapReveal: true,
+  });
+  const reason = useLockedReason(locked);
+  const reasonId = useId();
+  // The click's hold. A mouseleave during it is remembered rather than obeyed, and
+  // carried out when the hold runs out; coming back cancels it.
+  const holdTimer = useRef<number | null>(null);
+  const leftDuringHold = useRef(false);
+  useEffect(
+    () => () => {
+      if (holdTimer.current != null) window.clearTimeout(holdTimer.current);
+    },
+    [],
+  );
+  const enter = () => {
+    leftDuringHold.current = false;
+    show();
+  };
+  const leave = () => {
+    if (holdTimer.current != null) leftDuringHold.current = true;
+    else hide();
+  };
+  const explain = () => {
+    enter();
+    if (holdTimer.current != null) window.clearTimeout(holdTimer.current);
+    holdTimer.current = window.setTimeout(() => {
+      holdTimer.current = null;
+      if (leftDuringHold.current) {
+        leftDuringHold.current = false;
+        hide();
+      }
+    }, LOCKED_HOLD_MS);
+  };
+  return (
+    <>
+      <button
+        {...rest}
+        ref={ref}
+        aria-disabled="true"
+        aria-describedby={reasonId}
+        onClick={explain}
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onFocus={enter}
+        // Focus moving on is deliberate, unlike a hand drifting off: no hold for it,
+        // or tabbing along a row would stack two cards.
+        onBlur={hide}
+      >
+        {children}
+      </button>
+      {/* The description's source. `hidden` keeps it out of the page and the
+          accessibility tree, and aria-describedby reads a hidden node it points at
+          directly — so it needs no visually-hidden styling. */}
+      <span id={reasonId} hidden>
+        {reason}
+      </span>
+      <HoverTip
+        pos={pos}
+        placement={placement}
+        title={tip}
+        hint={hint}
+        note={reason}
+        advanced={advanced}
+        gated={gated}
         className={tipClassName}
       />
     </>

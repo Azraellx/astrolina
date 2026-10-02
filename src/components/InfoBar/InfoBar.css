@@ -14,7 +14,13 @@
   right: var(--edge, 16px);
   /* + the reserved bottom band (the sky band), when one is up. */
   bottom: calc(44px + var(--sky-band-h, 0px));
-  z-index: 5;
+  /* On the placed pin's rung (8), and after the map frame in #root, so a value tapped here is
+     never taken by a pin under it — the controls-win rule the map's corner controls keep (see
+     .map-pin in Map.css). It was 5, under the pin once that rose to 8 (QA, 2026-10-01). The
+     edge labels already step off it (HUD_SELECTORS in Map.tsx); a paran chip, which doesn't
+     dodge yet, now passes under it instead of over. Galaxy (also 8) comes later and still
+     covers it. */
+  z-index: 8;
   display: flex;
   align-items: center;
   gap: 5px;

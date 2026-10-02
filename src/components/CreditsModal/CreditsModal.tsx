@@ -27,6 +27,8 @@ type NoteKey =
   | 'jplSbdb'
   | 'noto'
   | 'maplibre'
+  | 'rtlText'
+  | 'icu'
   | 'other';
 type GroupKey = 'astrolina' | 'mapsPlaces' | 'astronomy' | 'typeSoftware';
 
@@ -145,6 +147,21 @@ const CREDIT_GROUPS: CreditGroup[] = [
         href: 'https://maplibre.org',
         license: 'BSD-3-Clause',
         noteKey: 'maplibre',
+      },
+      {
+        // MapLibre's right-to-left text plugin (Map/rtlTextPlugin.ts), served as one of the
+        // app's own assets. Its built file carries no notice of its own, so this row and the
+        // ICU one below, with the full texts in NOTICE, are where the credit lives.
+        name: 'mapbox-gl-rtl-text',
+        href: 'https://github.com/mapbox/mapbox-gl-rtl-text',
+        license: 'BSD-2-Clause',
+        noteKey: 'rtlText',
+      },
+      {
+        name: 'ICU',
+        href: 'https://icu.unicode.org',
+        license: 'Unicode',
+        noteKey: 'icu',
       },
       {
         name: 'React, Turf.js, Luxon, and more',
@@ -321,6 +338,10 @@ export function CreditsModal({
           </div>
         </header>
 
+        {/* Everything under the title scrolls; the title and its two marks stay put, so the
+            way out is never scrolled away (the dialog is capped well short of a tall window —
+            a list to scan, not a page to read). */}
+        <div className="credits-body">
         <p className="credits-intro">{t('creditsModal.intro')}</p>
 
         {/* The invitation to report a problem, ending in the one thing to act on — so
@@ -338,6 +359,10 @@ export function CreditsModal({
           )}
         </p>
 
+        {/* Two columns that may break BETWEEN ROWS, not only between groups. Whole groups
+            couldn't balance: with a build's registered rows the four groups ran 2/5/5/5
+            rows, so one column ended a third of the dialog short of the other. A heading
+            stays with its first row (CreditsModal.css). */}
         <div className="credits-groups">
         {CREDIT_GROUPS.map((group) => (
           <section key={group.titleKey} className="credits-group">
@@ -390,6 +415,7 @@ export function CreditsModal({
           {/* Optional downstream footer content (e.g. Privacy / Terms links); empty in core. */}
           {getCreditsFooter().render?.()}
         </footer>
+        </div>
       </div>
     </div>
 

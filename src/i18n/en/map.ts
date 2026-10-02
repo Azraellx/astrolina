@@ -47,7 +47,7 @@ export const map = {
   // rising/setting identity (and so the As/Ds reading) flips across it.
   polarNote: 'Polar zone: past this line’s crest, rising and setting trade places.',
   // Hover labels for the Eclipses overlay's curves. The tip leads with the
-  // eclipse identity ("2024-04-08 · Total"), then one of these; where the
+  // eclipse identity ("8 April 2024 · Total"), then one of these; where the
   // eclipse is visible, a sub-line adds the local circumstances at the cursor.
   eclipse: {
     central: 'Central line',
@@ -65,11 +65,21 @@ export const map = {
     lunarAllVisible: 'The whole eclipse is visible from here',
     lunarPartView: 'Part of the eclipse is visible from here ({n} of {total} contacts)',
   },
-  // The pinned click-card in eclipses mode: local contact times (solar) or
-  // phase visibility (lunar) at the clicked point.
+  // The pinned click-card in eclipses mode: the eclipse as seen from the
+  // clicked point — the solar contacts there, or which lunar phases the Moon is
+  // up for. Every time is given twice, in two columns: the clicked place's own
+  // civil time (its time zone, daylight saving included), then UTC. "Local"
+  // here always means that clock — the place's, not the reader's device's.
   eclipseCard: {
     notVisible: 'Eclipse not visible from here',
-    // Solar contact rows (times are HH:MM:SS UTC).
+    // The second column's head. The first column is headed by the place's own
+    // zone abbreviation ("EDT", "GMT+3"), which comes from the time-zone data,
+    // not from this catalog.
+    utc: 'UTC',
+    // The first column's head for a place and date before standard time was
+    // adopted there, when the clock was the place's own local mean time.
+    lmt: 'LMT',
+    // Solar contact rows; each carries the place's time and the UTC time.
     c1: 'Partial begins',
     c2: 'Totality begins',
     c2Annular: 'Ring begins',
@@ -77,11 +87,16 @@ export const map = {
     c3: 'Totality ends',
     c3Annular: 'Ring ends',
     c4: 'Partial ends',
-    // Suffix for a contact clipped by the horizon ("17:02:11 · at sunrise").
+    // Added to a contact's LABEL when the horizon clips it ("Partial begins ·
+    // at sunrise"): the Sun rises or sets mid-eclipse, so that is when this
+    // place sees the phase begin or end.
     atSunrise: 'at sunrise',
     atSunset: 'at sunset',
-    // "73% magnitude · 64% of the Sun covered" on the Maximum row.
-    maxValue: '{mag} magnitude · {obsc} covered',
+    // The card's foot line at the local maximum. {mag} is the magnitude as a
+    // decimal ("0.730" — the fraction of the Sun's diameter covered, the form
+    // the eclipse panel uses too); {obsc} is the fraction of its AREA covered,
+    // as a percentage ("64%").
+    maxValue: 'Magnitude {mag} · {obsc} covered',
     duration: 'Duration',
     // Lunar rows: each phase contact with its visibility at this place.
     phase: {

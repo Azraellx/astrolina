@@ -96,3 +96,11 @@ export function useT(): I18nValue {
   if (!ctx) throw new Error('useT must be used within <I18nProvider>');
   return ctx;
 }
+
+// useT() for shared ui that can also mount OUTSIDE the provider — a plugin's own React root —
+// where throwing would blank that root: null there, and the caller supplies its own English.
+// (ui/HoverTip's locked switch, whose TipButton plugins mount everywhere.)
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalT(): I18nValue | null {
+  return useContext(I18nContext);
+}

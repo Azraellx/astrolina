@@ -1300,6 +1300,55 @@
   margin-top: 10px;
 }
 
+/* Synastry, Dual wheels: the line under the partner's own birth record that says
+   where their wheel is actually cast (the active point, not their birthplace). Set
+   apart from the record above it on purpose — a faint lead word and a hairline
+   gap — so it can't be read as a third line of their birth data, which is the
+   misreading it exists to end. The place takes the panel header's place-line
+   colour for the same state (the classes below mirror .es-relocated's): the same
+   place, in the same colour, above both wheels. One line, ellipsized like the
+   place name, for the same header-geometry reason (see .es-relocated-name). */
+.es-cast-for {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--cool);
+  letter-spacing: 0.02em;
+}
+.es-cast-for.pinned {
+  color: var(--accent);
+}
+.es-cast-for.natal-pinned {
+  color: var(--success);
+}
+.es-cast-for.natal {
+  color: var(--text);
+}
+/* The line as a tip trigger (the place form, not the composite's "Midpoint
+   angles"): sized to its text so only the words reveal the tip, not the empty
+   width beside them, and still capped at the pane so the place ellipsizes. */
+.es-cast-for.es-cast-for-tip {
+  width: fit-content;
+  max-width: 100%;
+  cursor: help;
+}
+.es-cast-for-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.es-cast-for-place {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 /* The centred title above each of the paired local-space dials (natal /
    relocated). The overlay wheel no longer uses a caption row — it captions
    itself in its own corner — so this is the dials' alone. */

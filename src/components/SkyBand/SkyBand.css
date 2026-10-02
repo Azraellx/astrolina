@@ -413,8 +413,9 @@
   --gated-rgb: 196, 178, 242;
 }
 
-/* Locked teaser (un-entitled but nudged): a gated tint so it reads as a premium feature,
-   while staying clickable (the click opens the account flow). */
+/* Locked teaser (un-entitled but nudged): a gated tint so it reads as a premium feature. A
+   click or tap shows why in its tip and does NOT open the plans — it is a switch, and a
+   switch explains in place (TipButton `locked`; seam L73). */
 .sky-band-track-toggle.locked {
   color: var(--gated-ink);
   border-color: rgba(var(--gated-rgb), 0.4);
@@ -460,6 +461,15 @@
 .sky-band-day-btn.sky-band-day {
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
+}
+
+/* While the Slide tool is armed the shown day is the SLID one, not the reader's
+   paged day: the readout wears the accent for as long as that lasts, so the
+   hold is visible and ends visibly when Slide closes. */
+.sky-band-day-btn.sky-band-day.is-slid {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 /* Empty state (no chart, no pin). */
@@ -605,8 +615,13 @@
 
 /* The moment-label column (the same ASC / MC / DSC / IC codes as the hover
    card), then per body: the glyph cell spanning ALL FOUR rows beside its times
-   column — its right rule runs the column's full height, the cue that the one
-   glyph owns all four times. */
+   column. Its LEFT rule runs the column's full height and opens the body's
+   group, the cue that the one glyph owns the four times after it. (The rule
+   was on the right until 2026-09-30, which put it between a glyph and its own
+   times: each ruled band read as the previous body's times plus the next
+   body's glyph.) The padding is weighted to match — more room before the rule
+   than after it, and the glyph close to its own times — so the spacing groups
+   the same way the rule does. */
 .sky-band-tbl-kind {
   font-size: 9px;
   font-weight: 600;
@@ -622,8 +637,11 @@
   align-self: stretch;
   display: flex;
   align-items: center;
-  padding: 0 7px 0 12px;
-  border-right: 1px solid rgba(var(--tint), 0.18);
+  /* 5px margin + the previous column's 7px cell padding = 12px before the rule;
+     8px from the rule to the glyph; 2px + this column's 7px = 9px to its times. */
+  margin-left: 5px;
+  padding: 0 2px 0 8px;
+  border-left: 1px solid rgba(var(--tint), 0.18);
   line-height: 1;
 }
 .sky-band-tbl-cell {

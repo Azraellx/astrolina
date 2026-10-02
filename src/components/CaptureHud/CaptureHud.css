@@ -28,6 +28,18 @@
 .capture-hud-label:not(:first-child) {
   margin-top: 6px;
 }
+
+/* The Subject + Frame pair (CaptureHud.tsx). In the window they lay out as if the wrappers
+   weren't there — the labels and controls are the body's own flex items, exactly as before
+   the pair existed — so the only rule they need restores the gap above "Frame", which the
+   wrapper made a first child. A phone sheet sets them side by side (below). */
+.capture-hud-pair,
+.capture-hud-group {
+  display: contents;
+}
+.capture-hud-group + .capture-hud-group > .capture-hud-label {
+  margin-top: 6px;
+}
 /* The "Details" heading when it carries the phone-only info "i": lay the label + icon in a row.
    The base label's 0.62 dim is lifted to the text span alone, so the icon (its own group) stays
    legible instead of being doubly dimmed by the parent's opacity. */
@@ -86,6 +98,31 @@
    smaller and must stay that way. */
 .capture-hud-transparent .location-ls-name {
   font-size: 13.5px;
+}
+/* Locked teaser (un-entitled but nudged): the same gated tint as the Activations and Paran
+   Clock eyes (TimelineHud.css / SkyBand.css `.locked`), at full opacity over .off's and
+   .disabled's dims, so the three locked switches look alike. A click or tap shows why in its
+   tip (TipButton `locked`; seam L73). The edge is an inset ring rather than a border, which
+   this borderless row would grow by a pixel. Its eye takes the tint too, as theirs do. */
+.location-ls-toggle.capture-hud-transparent.locked {
+  opacity: 1;
+  color: var(--gated-ink);
+  background: rgba(var(--gated-rgb), 0.07);
+  box-shadow: inset 0 0 0 1px rgba(var(--gated-rgb), 0.4);
+}
+.location-ls-toggle.capture-hud-transparent.locked:hover {
+  color: var(--gated-ink);
+  background: rgba(var(--gated-rgb), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--gated-rgb), 0.6);
+}
+.capture-hud-transparent.locked .location-ls-eye {
+  color: inherit;
+}
+/* Earth (vintage) dark-brown panels: lift --gated to a lighter lavender so the tint stays
+   legible (as the drawer and the sky band do). */
+:root[data-theme='vintage'] .capture-hud-transparent.locked {
+  --gated: #c4b2f2;
+  --gated-rgb: 196, 178, 242;
 }
 
 /* Equal columns, however many segments there are (the shared .location-ls-seg is sized for
@@ -303,4 +340,95 @@
 
 .capture-hud-notice-btn:hover {
   background: rgba(var(--accent-rgb), 0.14);
+}
+
+/* ── A phone held upright: the window as a sheet under the frame ─────────────────────────
+   The frame sits just under the top bars there (Map.tsx's frame geometry) and the window docks
+   below it, full width, so the frame, its caption and these controls are all on screen at
+   once (useMovableHud's phoneCeiling). The width is what the phone has to give, so the layout
+   spends it on height: the short sections side by side, the toggles three across where they
+   fit, the actions in one row — about 330px tall against the window's 480 (measured, 432×768). */
+.capture-hud.is-phone-sheet:not(.is-collapsed) {
+  /* The same gutters as the touch overlay bars (TimelineHud.css). */
+  width: calc(100vw - 2 * var(--edge, 3px));
+  max-width: none;
+}
+/* Capped to the room between the frame and the chrome under it, and the body scrolls inside,
+   the title bar staying put. The hook sets the room on this element (--hud-phone-room) only
+   while the sheet sits at its home under the frame, and sets it BEFORE measuring the sheet —
+   which is why the cap keys off the var being there rather than off a class from a render:
+   the height the hook measures is then already the capped one, and the sheet lands where it
+   stays on the first pass. Not capped to the room when it is too small to be worth it
+   (CaptureHud.tsx's `tight`): the window then folds to its title bar instead, and opens over the
+   frame. Without a room — tight, or dragged off its home (the hook drops the var on release) —
+   it falls back to the viewport cap every window has (TimelineHud.css), not to none: both rules
+   below outrank that one, so a `none` here would leave nothing keeping a sheet that a notice or
+   the link heads-up has lengthened on the screen. */
+.capture-hud.is-phone-sheet {
+  max-height: var(--hud-phone-room, calc(100dvh - 72px));
+}
+.capture-hud.is-phone-sheet.is-tight {
+  max-height: calc(100dvh - 72px);
+}
+.capture-hud.is-phone-sheet > .location-header {
+  flex: none;
+}
+.capture-hud.is-phone-sheet .capture-hud-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* A scroll that runs out must not hand on to the page behind (iOS pulls the whole
+     standalone app with it). */
+  overscroll-behavior: contain;
+}
+/* More below the fold: the foot fades out, which is how a phone says "this runs on" before
+   anything has scrolled (CaptureHud.tsx's moreBelow). A mask on the scroller is fixed to its
+   box, not to the content, so the fade stays at the visible foot as the content moves. */
+.capture-hud.is-phone-sheet .capture-hud-body.has-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+}
+/* Subject (two segments) beside Frame (three), sharing the width in that proportion so each
+   button comes out about the same size. */
+.capture-hud.is-phone-sheet .capture-hud-pair {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  gap: 10px;
+}
+.capture-hud.is-phone-sheet .capture-hud-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px; /* the body's own gap between a label and its control */
+  min-width: 0;
+}
+.capture-hud.is-phone-sheet .capture-hud-group + .capture-hud-group > .capture-hud-label {
+  margin-top: 2px; /* side by side, the two labels sit level */
+}
+/* Toggles three across where three fit at a width that keeps the longest label ("Calculations")
+   whole, two where they don't; the ellipsis above stays the safety net. */
+.capture-hud.is-phone-sheet .capture-hud-toggle-grid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+/* Every action in one row while each keeps room for its label; a sixth wraps rather than
+   squeeze. Outranks the data-actions column counts above, which are sized for 248px. */
+.capture-hud.is-phone-sheet .capture-hud-actions {
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+}
+
+/* While a phone held upright is capturing, the account strip and the systems chip step aside
+   so the sheet can stand on the screen's bottom edge rather than on them (about 80px more for
+   the sheet — on a 432×768 phone, room to show a 4:5 frame's window at all). Neither is part of
+   composing a picture, the attribution they are lifted clear of has gone up the screen with
+   the frame, and both are back the moment Capture closes — the zoom buttons stand down while
+   framing on the same grounds (Map.css). display:none, not visibility, so the hook's floor
+   (it skips zero-size boxes) stops counting them. The query is lib/touch's phonePortrait.
+   The settings tab on the right edge goes too: it is mid-screen, above the windows (z 39), and
+   a full-width sheet runs under it — on a 360×640 phone it sat on the sheet's close button.
+   Settings stay one tap away under View. */
+@media (pointer: coarse) and (max-width: 600px) and (orientation: portrait) {
+  :root[data-capturing] .top-left-stack,
+  :root[data-capturing] .info-bar,
+  :root[data-capturing] .settings-nub {
+    display: none;
+  }
 }

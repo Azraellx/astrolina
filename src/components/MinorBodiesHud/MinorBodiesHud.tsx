@@ -84,7 +84,6 @@ import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { getReservedLeftInset, subscribeReservedLeftInset } from '../../lib/leftDock';
 import { useTouchLayout } from '../../lib/touch';
-import { nudgeAction } from '../../lib/plan';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { MinorMark } from '../MinorMark/MinorMark';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -1106,8 +1105,10 @@ export function MinorBodiesHud({
             <div className="mbh-scoperow">
               {/* Scope chips — only when a downstream build registered a source. A
                   locked scope stays visible and tappable: a tap explains itself under the
-                  input instead of switching, and runs nudgeAction() — the same upgrade flow
-                  every other tier-locked teaser opens (the place search's idiom). */}
+                  input instead of switching, and does nothing more — no upgrade screen. A
+                  chip is a toggle inside a search in progress, and leaving the search for a
+                  tap that asked "what is this?" was the disruption (Salvatore, 2026-10-01,
+                  reversing seam L73; the place search's idiom, which changed with it). */}
               {showChips && (
                 <div className="psf-scopes" role="radiogroup" aria-label={t('minorBodies.hud.scopeAria')}>
                   {scopes.map((s, i) => {
@@ -1124,9 +1125,10 @@ export function MinorBodiesHud({
                         className={`psf-scope${isOn ? ' is-on' : ''}${g?.locked ? ' is-locked' : ''}${showScopeHint && s.id === hintScope?.id ? ' is-hinted' : ''}`}
                         onClick={() => {
                           if (g?.locked) {
-                            // Leave the reason under the input for when the flow is closed.
+                            // The reason under the input is the whole answer; focus stays in
+                            // the search (see the comment above the chips).
                             setTeasedId(s.id);
-                            nudgeAction();
+                            inputRef.current?.focus();
                             return;
                           }
                           // Switching scope is what the hint teaches: done, shown or not.

@@ -133,6 +133,11 @@
   inset: 0;
   pointer-events: none;
 }
+/* The band is --capture-caption-h tall (one caption line, or two when the fields don't fit —
+   Map.tsx's caption-fit effect), but everything that SCALES with it reads
+   --capture-caption-unit, the one-line height: a second line makes the band taller, never
+   its type larger. The unit's fallback is the band height, which is what both were before
+   the band could grow. */
 .capture-caption {
   position: absolute;
   left: 0;
@@ -140,24 +145,65 @@
   bottom: 0;
   height: var(--capture-caption-h, 0px);
   box-sizing: border-box;
+  /* A column of lines (one or two), centred in the band and each as wide as the band's
+     content box, so each ellipsizes against the watermark's reserve on its own. */
   display: flex;
-  align-items: center;
-  /* room on the right for the watermark */
-  padding: 0 22% 0 calc(var(--capture-caption-h, 0px) * 0.5);
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  /* Room on the right for the watermark: 22% of the band, or on a narrow frame, where that is
+     less than the mark, the mark's measured reserve (--capture-caption-mark, set on this
+     element by Map.tsx's caption-fit effect: its width, its half-unit inset, the same clear). */
+  padding: 0 max(22%, var(--capture-caption-mark, 0px)) 0
+    calc(var(--capture-caption-unit, var(--capture-caption-h, 0px)) * 0.5);
   /* Fully opaque so the band reads solidly in the export even over a transparent
      backdrop (flat 2D has no container background behind the reserved strip). */
   background: rgb(8, 10, 18);
   color: rgba(255, 255, 255, 0.96);
   /* Scales with the band but clamped so it stays legible on tiny frames and doesn't
-     get oversized on huge ones. */
+     get oversized on huge ones. Mirrored in Map.tsx (captionFontPx) — change both. */
   font:
-    600 clamp(10px, calc(var(--capture-caption-h, 16px) * 0.42), 19px) / 1 system-ui,
+    600 clamp(10px, calc(var(--capture-caption-unit, var(--capture-caption-h, 16px)) * 0.42), 19px) / 1 system-ui,
     -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
+/* One caption line: its fields in a row, separated by " · ". Every field keeps its natural
+   width except the line's widest (`is-shrink`, chosen in Map.tsx), which is the one that
+   ellipsizes if the line still overflows — so a long place name gives way rather than the
+   coordinates after it. The line itself still clips, as the last resort. */
 .capture-caption-text {
+  display: flex;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.capture-caption-field,
+.capture-caption-sep {
+  flex: none;
+}
+.capture-caption-field.is-shrink {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Two lines (or three) need a line height to sit apart; one line keeps the band's original 1.
+   The band's height for more than one is sized in Map.tsx (CAPTION_LINE_EM) on this 1.25. */
+.capture-caption.is-two-line .capture-caption-text {
+  line-height: 1.25;
+}
+/* The caption-fit effect's throwaway measuring span: same class (so the same face a
+   downstream build sets), but off-flow, unclipped and invisible. Never present at export —
+   it is removed in the same layout pass that adds it. */
+.capture-caption-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  max-width: none;
+  overflow: visible;
+  visibility: hidden;
+  pointer-events: none;
 }
 /* Transparent export: the caption stacked in the frame's TOP-LEFT (no footer band). One enabled
    field per line, over the map, with a halo so it stays legible on any backdrop. Sits above the
@@ -231,14 +277,16 @@
 }
 
 /* With a caption band present, center the watermark inside it on the right and scale
-   its size to the band (clamped) so it never overflows a short band. */
+   its size to the band (clamped) so it never overflows a short band. Centred in the
+   band's full height, sized off its one-line height: a two-line caption leaves the mark
+   the same size, midway beside both lines. */
 .map-frame.has-caption .capture-watermark {
   bottom: 0;
-  right: calc(var(--capture-caption-h, 0px) * 0.5);
+  right: calc(var(--capture-caption-unit, var(--capture-caption-h, 0px)) * 0.5);
   height: var(--capture-caption-h, 0px);
   display: flex;
   align-items: center;
-  font-size: clamp(10px, calc(var(--capture-caption-h, 0px) * 0.36), 15px);
+  font-size: clamp(10px, calc(var(--capture-caption-unit, var(--capture-caption-h, 0px)) * 0.36), 15px);
   text-shadow: none;
 }
 
@@ -315,6 +363,10 @@
    Glyph + angle code in a line-colored pill, anchored where each line exits
    the viewport. Sits above the map + edge glow (z 4) AND the local-horizon compass
    (z 7), and below the HUD (z 12), so the line labels are never hidden by the dial.
+   Shares its rung with the placed pin and the map controls, which come later in the
+   DOM and so draw over it (see .map-pin: this layer is the frame's FIRST child) —
+   the corner controls inside the frame, the zoom-out pill and the active-systems
+   chip after it.
    pointer-events: none so the map stays interactive through them. */
 .acg-edge-badges {
   position: absolute;
@@ -367,7 +419,13 @@
      so it doesn't lift with the frame's inset and needs the var itself. */
   bottom: calc(var(--sky-band-h, 0px) + max(160px, calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance))));
   transform: translateX(-50%);
-  z-index: 7;
+  /* On the placed pin's rung (8), and after the whole map frame in #root, so it wins any
+     overlap with the pin — a control, as the corner ones are (see .map-pin). It was 7, which
+     put the pin over it once the pin rose to 8: with the pin's head on the pill, a tap on
+     "Zoom out" saved the pin instead (QA, 2026-10-01). That put it over the line labels too, so
+     since 2026-10-02 they keep off it as off any panel (HUD_SELECTORS in Map.tsx, re-read when the
+     pill comes or goes). */
+  z-index: 8;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -467,6 +525,29 @@
   letter-spacing: 0.02em;
 }
 
+/* A catalog minor body's chip (Map.tsx minorChipText): the number — "(433)", "(hyp)" — in the
+   smaller, lighter type of an overlay tag, so the name beside it reads first and the chip stays
+   compact; the number is still all there, as the naming rule requires. Proportional digits, not
+   tabular: a chip's number never changes in place, and the export's rasteriser lays the pill out
+   with tabular widths but draws the digits proportionally, which left "(1181 )" in a still. */
+.acg-badge-num {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+/* Its mark at a planet glyph's size (PlanetGlyph's 11px on the other chips) — except the filled
+   diamond, which steps down as it does in the hover tip and the line card (.cross-tip-glyph
+   .minor-mark): a filled shape carries far more ink than a line glyph at the same size. The hollow
+   one, a line glyph, keeps the full size. */
+.minor-badge .astro-glyph {
+  font-size: 11px;
+}
+/* …in the same 11px line box, so every chip is a planet chip's height whichever mark it carries. */
+.minor-badge .astro-glyph.minor-mark:not(.is-hollow) {
+  font-size: 8.5px;
+  line-height: 11px;
+}
+
 /* Empty spacer between the two halves of a merged lunar-node badge (replacing the former
    "/"): widens the gap between the North- and South-node halves — on top of the badge's
    own 3px flex gaps — so they read as two groups and the two-tone colour seam lands in the
@@ -564,8 +645,8 @@
    pointer-events:none so it never steals the hover/click from the stamp.
    Every map popup carries this base class (line cards and eclipse cards add
    their own on top), and all of them must paint ABOVE the line/paran/LS badge
-   overlay (.acg-edge-badges, z 8) — a card you just opened is the foreground —
-   while staying under the HUD bars (z 12). */
+   overlay (.acg-edge-badges, z 8) and the placed pin on the same rung — a card you
+   just opened is the foreground — while staying under the HUD bars (z 12). */
 .zenith-popup {
   pointer-events: none;
   z-index: 9;
@@ -670,9 +751,15 @@
 .line-card {
   position: relative;
 }
-/* "Distance from [pin] pin / natal: NN km / NN mi" — the bottom row of every line card. Reuses
-   the muted .ui-tip-sub text; a little top gap sets it off from the reading/notes above. */
+/* "Distance from [pin] pin / natal: NN km / NN mi" — the bottom row of every line card but a
+   local-space line's (lineCard.ts says why). Reuses the muted .ui-tip-sub text; a little top
+   gap sets it off from the reading/notes above. */
 .line-card-distance {
+  margin-top: 4px;
+}
+/* The line the map computed for the clicked spot (a paran's "Returns to the angles today · …"),
+   right under the reading — set off from it the same way. */
+.line-card-extra {
   margin-top: 4px;
 }
 /* The inline pin glyph inside that row, nudged to sit on the text baseline. */
@@ -776,11 +863,25 @@
   position: relative;
   width: 38px;
   height: 52px;
-  /* Above the map frame's own overlay layers (edge badges, extension-drawn marker
-     layers — those sit at z auto/1): the PLACED pin is the map's most important
-     marker and must never render underneath other positioned DOM. Kept at 2 so the
-     map controls (also 2, later in the DOM) still win a corner overlap. */
-  z-index: 2;
+  /* On the line labels' rung, 8, and OVER them: the frame renders the label layer
+     (.acg-edge-badges) before the map container, so this marker — inside the container —
+     wins the tie by coming later in the DOM. A label drawn over the pin took its tap: on a
+     phone a chip covered the upper head, and a tap there flew the map to the chip's zenith
+     instead of saving the spot, where the Pro hint tells readers to tap. (The labels also
+     step OFF the pin now — Map.tsx PIN_HIT — so the two seldom meet at all.)
+     8 and not 9, because one rung up the pin would draw over Galaxy (8, the full screen) and
+     tie with the offer banner (9). What must stay above it does: the line / zenith / eclipse
+     cards (9); the saved-pin hint's layer (8, appended to the frame after the container); the
+     sidebar and wheel (10), the HUD windows and the nav. The CONTROLS stand on this rung too,
+     after it in the DOM, so a tap meant for one never saves the pin: the corner ones
+     (.maplibregl-ctrl-* below, later in the container) as when both were at 2, and the two
+     drawn after the frame — the zoom-out pill (.map-zoom-out, was 7) and the active-systems
+     chip (InfoBar.css, was 5), raised with it once the pin's rise had put it over them. Like
+     the labels, it draws over the local-horizon dial (7) and the edge glow (4) where it meets
+     them; neither takes a tap. The home marker and extension-drawn markers stay low (z 1, and
+     the overlay track at auto) and are stepped off by the labels instead.
+     Was z 2, recorded as above the edge badges; c3f4047 had already put those at 8. */
+  z-index: 8;
   /* One source for the state color: gold when pinned, green for the natal pin.
      Drives the icon fill and the tip pulse (via currentColor / --pin-rgb), so the
      .natal variant only flips this one custom property. */
@@ -1231,9 +1332,13 @@
      canvas container's flow, offset by every marker appended before it. */
   width: 34px;
   height: 46px;
-  /* Under the placed pin (z-index 2) and above the overlay track's marker layers
-     (z auto/1). The pin is the map's most important marker and must win any
-     overlap; this one is a standing fact, not the reading point. */
+  /* Under the placed pin (z 8) and above the overlay track's marker layers (z auto/1).
+     The pin is the map's most important marker and must win any overlap; this one is a
+     standing fact, not the reading point. Under the line labels (8) as well — it could
+     only rise over them onto the pin's rung, where the two would be ordered by which
+     marker MapLibre happened to append last — so the labels step off it instead
+     (Map.tsx HOME_HIT), as they do off a downstream build's markers in the overlay track,
+     which can't rise over them at all. */
   z-index: 1;
   /* Only the icon takes clicks — the transparent corners of the box stay
      click-through, so the marker never opens a dead zone over the map. */
@@ -1381,14 +1486,53 @@
 
 /* MapLibre default-control restyling */
 
-/* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */
+/* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left.
+
+   It drops below the top bar when the bar would reach it. A docked panel re-centres the bar
+   on the map column it leaves, which walks the bar toward this corner (with the Reports dock
+   open on a 1440px screen the full bar ran x 902–1455, straight over the +/- at 1388–1424).
+   TopNav.tsx's layout pass now keeps the bar out of this corner wherever the column has room
+   for it — clamping its position, trimming the pill's centring nudge to the room left, compacting
+   it when the full bar is too wide (TopNav.css) —
+   and publishes where the nav actually ends: --topnav-right (the right end of the nav stack,
+   main bar or readout bar, its sideways pill nudge included) and --topnav-bottom, both viewport
+   px. So the overlap here is that measured right end + an 8px gap against this control's left
+   edge (100vw − the gutter − its 36px; navColumn.ts's ZOOM_GAP and ZOOM_CTRL_W), rather than a
+   restatement of the bar's placement formula, which can't see the nudge or the clamp.
+   `clamp(0px, overlap × 1000, drop)` makes a step of it: no drop while there is room, the full
+   drop the moment there isn't, landing the control 8px under the nav stack. What's left to
+   reach it is a column too narrow for even the compact bar (a dock dragged nearly across):
+   there the bar keeps its left end clear of the dock and this corner gives way. A desktop
+   window narrow enough for the phone layout spans the bar edge to edge and drops it the same
+   way; the portrait-phone rule below still wins on coarse pointers. */
 .maplibregl-ctrl-top-right {
-  top: max(var(--edge, 16px), env(safe-area-inset-top)) !important;
+  --zoom-nav-overlap: calc(var(--topnav-right, 0px) + 8px + var(--edge, 16px) + 36px - 100vw);
+  top: calc(
+    max(var(--edge, 16px), env(safe-area-inset-top)) +
+      clamp(
+        0px,
+        var(--zoom-nav-overlap) * 1000,
+        var(--topnav-bottom, 63px) + 8px - max(var(--edge, 16px), env(safe-area-inset-top))
+      )
+  ) !important;
   right: var(--edge, 16px) !important;
+  transition: top 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .maplibregl-ctrl-top-right > .maplibregl-ctrl {
   margin: 0 !important;
+}
+
+/* The map controls (zoom/compass, attribution) stand on the placed pin's rung — 8, up from
+   MapLibre's 2 — so they keep winning a corner overlap with it, as they did when both were at
+   2: the control container comes after the canvas container, and the pin in it, in the DOM.
+   That puts them over the line labels too, which keep clear of them — every kind of label,
+   through the shared occupancy (HUD_SELECTORS in Map.tsx; chipOccupancy.ts). See .map-pin. */
+.map-container .maplibregl-ctrl-top-left,
+.map-container .maplibregl-ctrl-top-right,
+.map-container .maplibregl-ctrl-bottom-left,
+.map-container .maplibregl-ctrl-bottom-right {
+  z-index: 8;
 }
 
 /* Portrait phones: the top nav becomes a full-width bar across the top (TopNav.css), so it now

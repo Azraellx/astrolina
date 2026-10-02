@@ -34,7 +34,7 @@ import {
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
-import { shouldShowNudge, nudgeAction, tierOfEntitlement } from '../../lib/plan';
+import { shouldShowNudge, tierOfEntitlement } from '../../lib/plan';
 import { getMapExtensions, isAvailable, isEntitled } from '../../lib/extensions/mapExtensions';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { AnglesIcon } from '../ui/AnglesIcon';
@@ -708,8 +708,12 @@ export function TimelineHud({
       {/* Extensions surfaced in this drawer (surface 'timeline-drawer') — e.g. a
           downstream build's gated add-on. Follows the same nudge policy as the View
           menu: an entitled user gets the real toggle; an un-entitled user whom the
-          build nudges sees it as a CLICKABLE teaser (gated tag in the tip, a click
-          opens the account flow instead of toggling); everyone else sees nothing.
+          build nudges sees it as a LOCKED teaser (gated tag in the tip, eye shut);
+          everyone else sees nothing. A click on the teaser explains in place rather
+          than opening the account flow the View-menu row opens: this is an eye switch
+          beside Natal Chart, in a bar the reader is working in, and a tap on a switch
+          that won't flip asks why, not for the plans (TipButton's `locked`; seam L73,
+          2026-10-01).
           An extension marked unavailable (MapExtension.unavailable) is the third
           case and is NOT teased to anyone who couldn't already use it — upgrading
           wouldn't produce it. It shows to entitled users only, inert, with its
@@ -750,10 +754,15 @@ export function TimelineHud({
               aria-pressed={locked || pending ? undefined : open}
               // aria-disabled rather than natively disabled, so the tip carrying the
               // reason still fires on hover and focus (the .ui-inert convention).
+              // The locked form sets its own, with the reason as its description.
               aria-disabled={pending ? true : undefined}
-              onClick={() =>
-                pending ? undefined : locked ? nudgeAction() : onToggleExtension(ext.id)
+              // Locked: the click never reaches onClick — it holds the tip up with the
+              // tier reason under the description (e.g. "Activations is a Pro feature."),
+              // and a tap on touch reveals it. The feature is named by its own label.
+              locked={
+                locked ? { tier: tierOfEntitlement(ext.tier), feature: ext.label } : undefined
               }
+              onClick={() => (pending ? undefined : onToggleExtension(ext.id))}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <EyeIcon open={shown} />
