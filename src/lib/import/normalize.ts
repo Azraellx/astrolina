@@ -13,6 +13,7 @@
 
 import { newChartId, NOTES_HARD_LIMIT, type StoredChart } from '../chartLibrary';
 import { getIanaTimezone, resolveBirthTimezone } from '../atlas/timezone';
+import { entryFromStatedTerms } from '../atlas/zoneEntry';
 import type { ImportControls, ImportedChart, ImportRow } from './types';
 import { reject, warn } from './types';
 
@@ -129,6 +130,26 @@ export function toStoredChart(c: ImportedChart, index: number): StoredChart {
     tzUncertain: false,
     birthplace: { label, lat: c.latitude, lng: c.longitude },
   };
+
+  // How the source stated the zone, when it split it into a standard offset and
+  // a daylight code — so the chart reopens as "EST + daylight" (or as the mean
+  // time it was) rather than a bare number. Only while the FILE's offset is the
+  // one being kept: switching the batch to our zone data makes those terms untrue
+  // of the chart. entryFromStatedTerms also refuses terms that do not add up to
+  // the offset stored, so the entry can never describe a different number from
+  // tzOffset — which this does not touch. tzManual matches what the chart form
+  // writes for the same entry (2026-10-02).
+  if (c.offsetSource === 'file' && c.offsetTerms) {
+    const entry = entryFromStatedTerms(c.offsetTerms, c.offsetSeconds, {
+      iana: tzIana,
+      year: c.local.year,
+      abbrev: c.zoneAbbrev,
+    });
+    if (entry) {
+      chart.tzEntry = entry;
+      chart.tzManual = true;
+    }
+  }
 
   // Only ever written as false: absent means known, which is what every chart
   // saved before unknown-time existed has always meant.

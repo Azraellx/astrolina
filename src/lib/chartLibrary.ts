@@ -9,6 +9,7 @@ import type { BirthData } from './birthData';
 // which erases at compile time.
 import { normalizeFolderPath } from './chartFolders';
 import type { SourceRating } from './sourceRating';
+import type { TzEntry } from './atlas/zoneEntry';
 import { notifyChartsChanged } from './extensions/chartSync';
 
 /** A chart's organizing tag. 'star' is user-assigned (the only one the UI offers);
@@ -50,6 +51,26 @@ export interface StoredChart extends BirthData {
    *  birthplace (so the editor reopens on that choice rather than re-detecting). */
   tzManual?: boolean;
   tzUncertain?: boolean;
+  /**
+   * HOW tzOffset was arrived at, when it was stated rather than looked up: a
+   * standard zone plus a daylight code ("EST + daylight"), or an exact offset
+   * (typed, the birthplace's local mean time, or UT) — see lib/atlas/zoneEntry.
+   *
+   * Why it exists (2026-10-02): birth sources print zones as "EST + daylight" or
+   * "5hw00", and the editor has to reopen in those terms, not as a bare number
+   * the astrologer then has to translate back. It is a DESCRIPTION, never a
+   * second source: tzOffset stays the one value the chart math reads, a saved
+   * chart is never re-resolved from this, and where the two disagree tzOffset
+   * wins (reopenZoneChoice). Imports from the exchange format fill it from the
+   * record's own terms.
+   *
+   * Absent on every chart saved before it existed, and on Auto / IANA-zone /
+   * UTC-picker charts, which tzIana + tzManual already describe — so an absent
+   * field means exactly what it always meant. Never set on a composite (its
+   * moment is solved in UT). A field the form forgets is a field the next edit
+   * drops, so the form carries it explicitly like the rest.
+   */
+  tzEntry?: TzEntry;
   /** Organizing tag; absent on charts saved before tagging existed. Read via
    *  chartTag() so an absent value reads as 'none'. */
   tag?: ChartTag;

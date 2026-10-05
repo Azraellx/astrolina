@@ -34,6 +34,7 @@
     "verify:overlay-speed": "node scripts/harness/run.mjs scripts/verify-overlay-speed.ts",
     "verify:content": "node scripts/harness/run.mjs scripts/verify-content.ts",
     "verify:import": "node scripts/harness/run.mjs scripts/verify-import.ts",
+    "verify:zone-entry": "node scripts/harness/run.mjs scripts/verify-zone-entry.ts",
     "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",
     "verify:minor-bodies": "node scripts/harness/run.mjs scripts/verify-minor-bodies.ts",
     "build:lmt": "node scripts/build-lmt-table.mjs",

@@ -69,6 +69,18 @@ export interface ImportedChart {
   offsetSeconds: number;
   offsetSource: OffsetSource;
   offsetKind: OffsetKind;
+  /**
+   * The offset in the terms the source SPLIT it into, when it did: the zone's
+   * standard offset (east-positive whole seconds, before any daylight
+   * correction), the source's time-type code, and the offset token verbatim.
+   * Only the exchange format states these separately today (readers/aaf.ts).
+   *
+   * Never used to derive anything — `offsetSeconds` stays the value that counts.
+   * Kept so the saved chart can reopen in the astrologer's terms ("EST +
+   * daylight") instead of a bare number (2026-10-02; normalize.ts, and
+   * StoredChart.tzEntry).
+   */
+  offsetTerms?: { standardSeconds: number; timeType: string; token: string };
   /** e.g. "EDT". Informational only — never used to derive the offset, because
    *  abbreviations are ambiguous across regions. */
   zoneAbbrev?: string;

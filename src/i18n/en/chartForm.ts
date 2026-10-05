@@ -30,12 +30,134 @@ export const chartForm = {
   compositeMoment:
     'Composite chart: the planets are midpoints of its two parents, and the date below is the synthesized map-frame anchor (kept in sync automatically).',
   tz: {
-    selectLabel: 'Choose time zone',
-    utcLabel: 'Choose UTC offset',
-    auto: 'Auto',
-    autoTip: 'Reset to the zone detected from the birthplace ({iana})',
+    // The five ways to give a zone (2026-10-02): the switch's short labels, then
+    // each one's full name (its hover headline AND its screen-reader name, since
+    // "Standard" alone doesn't say what is being chosen) and what it does.
+    modesAria: 'How the time zone is given',
+    mode: {
+      auto: 'Auto',
+      standard: 'Standard',
+      offset: 'Offset',
+      iana: 'IANA',
+      utc: 'UTC',
+    },
+    modeTip: {
+      auto: 'Auto: detected from the birthplace',
+      standard: 'Standard zone + daylight',
+      offset: 'Exact offset',
+      iana: 'IANA time zone',
+      utc: 'Whole-hour UTC offset',
+    },
+    modeHint: {
+      auto: 'The birthplace’s zone and its daylight-saving rules on the birth date, or its local mean time before standard time began there.',
+      standard:
+        'A named standard zone plus the daylight correction your source gives, such as EST + daylight or GMT + double summer time.',
+      offset:
+        'The offset as your source prints it (5hw00, +5:30, 4:56:02 W), this birthplace’s local mean time, or UT.',
+      iana: 'Any zone in the time-zone database, found by name, city or abbreviation. Its rules for the birth date give the offset.',
+      utc: 'A fixed whole-hour offset from UTC, with no daylight saving.',
+    },
+    // The folded field's link (2026-10-05): it names how the zone is set now, as
+    // "Enter manually" sits beside the coordinates, and unfolds the switch. Its
+    // spoken name says what pressing it does, which the one word can't.
+    automatic: 'Automatic',
+    automaticAria: 'Time zone set automatically from the birthplace. Choose another way',
     setPlace: 'Set a birthplace to choose a time zone',
     setDate: 'Add the birth date to set the time zone',
+    // Auto's own line: which zone the birthplace resolved to. {iana} is the
+    // zone's id, not translated.
+    detected: 'Detected from the birthplace: {iana}',
+    // Standard zone + daylight. The zone names themselves are catalogue data
+    // (lib/atlas/zoneEntry.ts), shown with region and offset, never alone.
+    standardLabel: 'Standard zone',
+    standardPick: 'Choose a zone…',
+    // An imported record can state a standard offset no named zone here has.
+    standardUnnamed: 'Standard time, no named zone · {offset}',
+    // Trails a current zone that began within living memory (NZST from 1946),
+    // so it isn't taken for the right name for an earlier birth.
+    standardSince: 'from {year}',
+    // Switching in found nothing to preselect: a mean-time birth, or a
+    // birthplace whose standard time that year no zone in the list gives
+    // (Istanbul in 2000 kept EET, which the list doesn't name for it).
+    standardNone:
+      'No zone in this list was this birthplace’s standard time on this date. Choose one, or give the offset instead.',
+    // A daylight correction that takes the total past ±15 h (Line Islands +
+    // double summer time). {offset} in both notations.
+    offsetRange: 'That comes to {offset}, more than 15 hours from UT. Choose another correction.',
+    daylightLabel: 'Daylight correction',
+    // {amount} is the correction, "+1 h" or "+0:30".
+    daylight: {
+      standard: 'Standard time',
+      daylight: 'Daylight saving {amount}',
+      war: 'War time {amount}',
+      double: 'Double summer time {amount}',
+      half: 'Half-hour daylight {amount}',
+    },
+    // Exact offset: typed as the source prints it.
+    offsetLabel: 'Offset as your source gives it',
+    offsetPlaceholder: 'e.g. 5hw00, +5:30, 4:56:02 W',
+    offsetUnread:
+      'Can’t read that as an offset. Write it as 5hw00, −5:00, 4:56:02 W or UT, without decimals.',
+    directionAria: 'Direction from Greenwich',
+    east: 'E',
+    eastTip: 'East of Greenwich',
+    eastHint: 'Ahead of UT: 5h E is UTC+5.',
+    west: 'W',
+    westTip: 'West of Greenwich',
+    westHint: 'Behind UT: 5h W is UTC−5.',
+    // Why the E/W control is dimmed while the typed text names its own direction.
+    directionStated: 'The offset you typed already says which way. Change it there.',
+    lmtButton: 'Birthplace LMT',
+    lmtTip: 'Local mean time of this birthplace',
+    // {offset} is this birthplace's LMT in both notations.
+    lmtHint:
+      'Its longitude ÷ 15, to the second: {offset}. For a birth before standard time, or a source that gives LMT.',
+    // The same, for a birthplace across the date line from the reckoning its
+    // longitude implies (Alaska before 1867): a whole day added or taken, as
+    // detection does, so the birth date means what it meant there.
+    lmtHintShifted:
+      'Its longitude ÷ 15, to the second, moved a whole day to the calendar kept there then: {offset}.',
+    // Why the LMT button is unavailable: on its calendar of the time the
+    // birthplace's mean time is past ±15 h (Manila before 1845).
+    lmtBeyond: 'On this date that comes to more than 15 hours from UT, past what an offset can state. Auto gives it.',
+    utButton: 'Time is UT',
+    utTip: 'The birth time is in UT',
+    utHint: 'For a time recorded in Universal Time (GMT): the offset is zero.',
+    // The searchable IANA list.
+    ianaLabel: 'Search time zones',
+    ianaPlaceholder: 'Zone, city or abbreviation',
+    ianaNoMatches: 'No time zone matches that.',
+    // Read out to screen readers as the list narrows.
+    ianaCount: '{count, plural, one {# time zone} other {# time zones}}',
+    // Tag on the row for the zone the birthplace resolved to.
+    ianaBirthplace: 'Birthplace',
+    utcLabel: 'Choose UTC offset',
+    utcPick: 'Choose an offset…',
+    // Switching into the whole-hour picker from an offset it can't show.
+    utcNone:
+      'This birth’s offset, {offset}, isn’t a whole hour. Choose one, or give the exact offset instead.',
+    // Switching into Exact offset from an offset past ±15 h (a date-line mean time).
+    offsetNone:
+      'This birth’s offset, {offset}, is more than 15 hours from UT, past what an offset can state. Type one, or switch back to Auto.',
+    // The line under the control: what the entered clock means in UT.
+    // {local} is the clock plus any zone abbreviation ("14:30 EDT"), {offset}
+    // both notations ("UTC−4 · 4h W").
+    confirm: '{local} ({offset}) = {ut} UT',
+    confirmNextDay: '{local} ({offset}) = {ut} UT the next day',
+    confirmPrevDay: '{local} ({offset}) = {ut} UT the day before',
+    confirmNoTime: '{line}, using noon for the unknown time',
+    // A saved chart whose stored offset its own terms no longer give (older zone
+    // data, a file's offset kept on import) reopens on that stored number. The
+    // note names the terms it was saved in: Auto, a picked zone ({zone} is its
+    // id, not translated), the whole-hour picker, or a recorded entry.
+    keptAsSaved: 'Kept as saved. Auto would now give {offset}.',
+    keptAsSavedZone: 'Kept as saved. {zone} would now give {offset}.',
+    keptAsSavedUtc: 'Kept as saved. Its whole-hour offset would now give {offset}.',
+    keptAsSavedTerms: 'Kept as saved. The terms recorded with it would now give {offset}.',
+    keptAsSavedUnread: 'Kept as saved. The terms recorded with it can’t be read.',
+    composite: 'UT, fixed for a composite chart',
+    errorPending: 'Choose a time zone, or switch back to Auto.',
+    errorRange: 'A time zone can’t be more than 15 hours from UT. Choose another correction, or switch back to Auto.',
     verifyDst: 'verify DST',
     // Shown when the birth predates standard time in this region: the offset is
     // the birthplace's own local mean time, derived from its longitude.

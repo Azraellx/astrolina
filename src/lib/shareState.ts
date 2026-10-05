@@ -14,6 +14,13 @@
 // clamped, and ANY irregularity returns null — the app then just boots
 // normally. Nothing here is executed or interpolated as markup.
 import type { BirthData } from './birthData';
+import {
+  entrySeconds,
+  MAX_ZONE_OFFSET_SECONDS,
+  sanitizeTzEntry,
+  type DaylightCode,
+  type TzEntry,
+} from './atlas/zoneEntry';
 
 /** A camera view worth restoring: where and how close. */
 export interface ShareView {
@@ -25,9 +32,11 @@ export interface ShareView {
 /** Everything a share link carries (v1). */
 export interface ShareState {
   /** The chart itself. `tzIana` rides along when known so the restored chart
-   *  keeps DST-aware timeline readouts. Composite charts are NOT shareable —
-   *  their planets are parent midpoints, which a bare moment can't recast. */
-  chart: BirthData & { tzIana?: string };
+   *  keeps DST-aware timeline readouts, and `tzEntry` so it reopens in the
+   *  sender's zone terms ("EST + daylight") rather than as a bare number.
+   *  Composite charts are NOT shareable — their planets are parent midpoints,
+   *  which a bare moment can't recast. */
+  chart: BirthData & { tzIana?: string; tzEntry?: TzEntry };
   /** The camera at share time (absent → the default first-load framing). */
   view?: ShareView | null;
   /** The placed pin (absent → none). */
@@ -50,12 +59,40 @@ interface Wire {
   mi: number;
   tz: number; // tzOffset (hours)
   zi?: string; // tzIana
+  ze?: WireEntry; // tzEntry — how tz was stated (lib/atlas/zoneEntry); never overrides tz
   tk?: 0; // present (0) ⇔ timeKnown === false; absent ⇔ known
   pl: string; // birthplace label
   pa: number; // birthplace lat
   pg: number; // birthplace lng
   vw?: [number, number, number]; // view [lat, lng, zoom]
   pn?: [number, number]; // pin [lat, lng]
+}
+
+// A TzEntry with short keys, in the same spirit as the rest of the wire. Added
+// 2026-10-02 as an OPTIONAL key of v1 rather than a v2: older decoders ignore
+// keys they do not know, so links minted now still open everywhere.
+type WireEntry =
+  | { m: 's'; s: number; d: DaylightCode; z?: string } // standard: std, daylight, zone id
+  | { m: 'o'; s: number; b?: 'lmt' | 'ut'; t?: string }; // offset: seconds, basis, text
+
+function toWireEntry(e: TzEntry): WireEntry {
+  if (e.mode === 'standard') {
+    const w: WireEntry = { m: 's', s: e.std, d: e.daylight };
+    if (e.zone) w.z = e.zone;
+    return w;
+  }
+  const w: WireEntry = { m: 'o', s: e.seconds };
+  if (e.basis) w.b = e.basis;
+  if (e.text) w.t = e.text;
+  return w;
+}
+
+function fromWireEntry(w: unknown): TzEntry | undefined {
+  if (!w || typeof w !== 'object') return undefined;
+  const o = w as Record<string, unknown>;
+  if (o.m === 's') return sanitizeTzEntry({ mode: 'standard', std: o.s, daylight: o.d, zone: o.z });
+  if (o.m === 'o') return sanitizeTzEntry({ mode: 'offset', seconds: o.s, basis: o.b, text: o.t });
+  return undefined;
 }
 
 const round = (n: number, places: number) => {
@@ -92,6 +129,7 @@ export function encodeShareState(state: ShareState): string {
     pg: round(c.birthplace.lng, 4),
   };
   if (c.tzIana) wire.zi = c.tzIana;
+  if (c.tzEntry) wire.ze = toWireEntry(c.tzEntry);
   if (c.timeKnown === false) wire.tk = 0;
   if (state.view) {
     wire.vw = [round(state.view.lat, 3), round(state.view.lng, 3), round(state.view.zoom, 2)];
@@ -132,7 +170,11 @@ export function decodeShareState(raw: string | null | undefined): ShareState | n
     if (typeof w.n !== 'string' || typeof w.pl !== 'string') return null;
     if (!inRange(w.y, 1, 9999) || !inRange(w.mo, 1, 12) || !inRange(w.d, 1, 31)) return null;
     if (!inRange(w.h, 0, 23) || !inRange(w.mi, 0, 59)) return null;
-    if (!inRange(w.tz, -14, 14)) return null;
+    // The importer's and the form's bound (MAX_ZONE_OFFSET_SECONDS), not the
+    // ±14 of today's zones: a stated "Chatham + double summer time" is +14:45,
+    // and at ±14 its link failed to open at all (2026-10-02, found in review).
+    const tzMax = MAX_ZONE_OFFSET_SECONDS / 3600;
+    if (!inRange(w.tz, -tzMax, tzMax)) return null;
     if (!latOk(w.pa) || !lngOk(w.pg)) return null;
     if (w.zi !== undefined && typeof w.zi !== 'string') return null;
 
@@ -147,6 +189,11 @@ export function decodeShareState(raw: string | null | undefined): ShareState | n
       birthplace: { label: w.pl.slice(0, LABEL_MAX), lat: w.pa, lng: w.pg },
     };
     if (w.zi) chart.tzIana = w.zi.slice(0, 60);
+    // The one field that is dropped rather than failing the whole link: it only
+    // describes `tz`, so a link whose entry does not validate — or does not add up
+    // to `tz` exactly — still restores the right chart, just without the terms.
+    const entry = w.ze !== undefined ? fromWireEntry(w.ze) : undefined;
+    if (entry && entrySeconds(entry) === Math.round(w.tz * 3600)) chart.tzEntry = entry;
     if (w.tk === 0) chart.timeKnown = false;
 
     const state: ShareState = { chart };

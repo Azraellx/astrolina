@@ -38,8 +38,11 @@ import { extractRating } from '../../sourceRating';
 import type { ChartKind, ImportedChart, ImportRow, Issue, OffsetKind } from '../types';
 import { reject, warn } from '../types';
 
-/** Whole seconds of daylight correction to ADD to the stated standard offset. */
-const DAYLIGHT_CORRECTION: Record<string, number> = {
+/** Whole seconds of daylight correction to ADD to the stated standard offset.
+ *  Exported because the chart form's "+ daylight" choices are read from this
+ *  table rather than restated (lib/atlas/zoneEntry.ts, 2026-10-02): an imported
+ *  "time type 1" and a hand-picked "+ daylight" must stay the same number. */
+export const DAYLIGHT_CORRECTION: Record<string, number> = {
   '0': 0, // standard time
   m: 0, // special meridian — equivalent to standard
   '1': 3600, // daylight saving
@@ -211,9 +214,13 @@ function buildRow(chunks: Chunk[], raw: string, index: number): ImportRow {
   const rawOffset = b[3].trim();
   const om = rawOffset.match(/^(\d{1,2})h([ew])(\d{0,2})(?::(\d{1,2}))?$/i);
   let offsetSeconds: number;
+  // The standard offset as stated, before the correction below — null when the
+  // token could not be read, since an unread token has no terms worth keeping.
+  let standardSeconds: number | null = null;
   if (om) {
     const magnitude = Number(om[1]) * 3600 + Number(om[3] || 0) * 60 + Number(om[4] || 0);
     offsetSeconds = om[2].toLowerCase() === 'w' ? -magnitude : magnitude;
+    standardSeconds = offsetSeconds;
   } else {
     const generic = parseOffsetToken(rawOffset);
     if (!generic) {
@@ -221,6 +228,7 @@ function buildRow(chunks: Chunk[], raw: string, index: number): ImportRow {
       offsetSeconds = 0;
     } else {
       offsetSeconds = generic.seconds;
+      standardSeconds = offsetSeconds;
     }
   }
 
@@ -255,6 +263,13 @@ function buildRow(chunks: Chunk[], raw: string, index: number): ImportRow {
     offsetSeconds,
     offsetSource: 'file',
     offsetKind: OFFSET_KIND[timeType] ?? OFFSET_KIND[timeType.toLowerCase()] ?? 'unknown',
+    // The two halves the record split the offset into, so the chart can reopen
+    // as "EST + daylight" rather than a bare −4 (normalize.ts decides whether
+    // they still describe the offset being kept).
+    offsetTerms:
+      standardSeconds != null && timeType
+        ? { standardSeconds, timeType, token: rawOffset }
+        : undefined,
     zoneAbbrev: (chunkBody(chunks, 'ZNAM') ?? '').trim() || undefined,
     placeName: placeName || undefined,
     countryState: countryState || undefined,

@@ -632,27 +632,71 @@
   color: var(--danger);
 }
 
-/* Time-zone picker: an IANA-zone dropdown with an "Auto" button that snaps back to
-   the zone detected from the birthplace. Both are disabled until a place is set. */
-.tz-control-row {
+/* ── Time zone (TimeZoneField.tsx, 2026-10-02) ───────────────────────────────
+   A caption, the switch between the five ways of giving a zone, that way's own
+   controls, then the line saying what the entered clock means in UT. A <div>
+   group rather than the <label> the other fields use: it holds several
+   controls, and a label can only name one. */
+.tz-field {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
-/* The quick UTC-offset picker beside the IANA dropdown: a fixed width sized to fit the
-   full "UTC±HH:MM" label (e.g. "UTC+05:30") — acronym included — while the IANA select
-   (flex: 1) fills the rest of the row. The compound selector is needed so this beats
-   the plain `.tz-select { flex: 1 }` rule below regardless of source order (otherwise
-   both selects share the row 50/50). */
-.tz-select.tz-utc-select {
-  flex: 0 0 auto;
-  width: 7.5rem;
+/* Folded Auto (2026-10-05): the coordinates' summary row, whose link brings the
+   auto margin. A long zone id ("America/Argentina/Buenos_Aires") wraps rather
+   than widening a phone-width pane. */
+.tz-summary .coord-summary-item {
+  min-width: 0;
+}
+.tz-summary-zone {
+  overflow-wrap: anywhere;
+}
+
+/* Matches the captions the <label> fields get from `.birth-form label`. */
+.tz-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The mode switch and the E/W control are SplitSelect capsules (ui/
+   SplitSelect.css); these only size them. A touch screen gets the taller
+   segment so five of them stay a comfortable target in a phone-width pane. */
+.tz-modes .split-select-seg {
+  height: 28px;
+  padding: 0 4px;
+  font-size: 11.5px;
+}
+.tz-direction {
+  flex: 0 0 76px;
+  width: 76px;
+}
+.tz-direction .split-select-seg {
+  height: 27px;
+}
+@media (pointer: coarse) {
+  .tz-modes .split-select-seg,
+  .tz-direction .split-select-seg {
+    height: 34px;
+  }
+}
+
+/* One line of a way's controls; wraps rather than squeezes on a narrow pane. */
+.tz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .tz-select {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   background: rgba(var(--tint), 0.04);
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 5px;
@@ -662,6 +706,7 @@
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 
@@ -682,9 +727,35 @@
   color: var(--text-strong);
 }
 
-.tz-auto {
-  flex-shrink: 0;
-  padding: 7px 14px;
+/* Standard zone + daylight: one full-width row each, at every width
+   (2026-10-02). Side by side, a closed select showed about thirty characters —
+   cutting the zone's offset off its label and the amount off "Double summer
+   time +2 h". */
+.tz-standard-select,
+.tz-daylight-select {
+  flex: 1 1 100%;
+}
+.tz-utc-select {
+  flex: 0 1 13rem;
+}
+
+/* Exact offset: the box, the E/W capsule, then the two one-click answers. */
+.birth-form .tz-offset-input {
+  flex: 1 1 8rem;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.birth-form .tz-offset-input[aria-invalid='true'] {
+  border-color: rgba(var(--danger-rgb), 0.7);
+  outline-color: rgba(var(--danger-rgb), 0.5);
+}
+.tz-offset-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.tz-chip {
+  padding: 6px 10px;
   border-radius: 5px;
   background: rgba(var(--tint), 0.06);
   border: 1px solid rgba(var(--tint), 0.14);
@@ -692,22 +763,106 @@
   font: inherit;
   font-size: 12px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-quick), border-color var(--dur-quick), background var(--dur-quick);
 }
-
-.tz-auto:hover:not(:disabled) {
+.tz-chip:hover {
   color: var(--accent);
   border-color: rgba(var(--accent-rgb), 0.6);
 }
+.tz-chip[aria-pressed='true'] {
+  color: var(--text-strong);
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--accent-rgb), 0.16);
+}
+.tz-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .tz-chip {
+    padding: 9px 12px;
+  }
+}
 
-.tz-auto:disabled {
-  opacity: 0.4;
-  cursor: default;
+/* The searchable IANA list: the place search's input row and rows (ui/
+   PlaceSearchField.css), in the form's flow. The input reset beats the form's
+   own `.birth-form input` chrome, which would otherwise draw a box inside the
+   row's box. */
+.tz-search {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.birth-form .tz-search-input,
+.birth-form .tz-search-input:focus {
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+.tz-search-list {
+  max-height: min(232px, 36dvh);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tz-search-row {
+  cursor: pointer;
+}
+/* One highlight only: the active row. A row the list merely scrolled under a
+   resting pointer would otherwise light up beside it (the row activates on
+   pointer MOVE — see ZoneSearchField). */
+.tz-search-row:hover:not(.is-active) {
+  background: transparent;
+}
+.tz-search-row.is-current .psf-row-label {
+  color: var(--accent);
+}
+.tz-search .psf-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Auto's detected zone, the not-ready prompt and the composite's fixed zone:
+   plain statements in the field's place. */
+.tz-detected,
+.tz-prompt,
+.tz-fixed {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* What the entered clock means in UT — the one number the chart is cast from,
+   so it reads at full strength; the reason takes its place when the offset box
+   can't be read. */
+.tz-confirm {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-strong);
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tz-confirm.is-error {
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .tz-note {
   margin: 0;
-  line-height: 1.25;
+  line-height: 1.35;
   font-size: 11px;
   color: var(--text-faint);
   text-transform: none;
@@ -717,6 +872,19 @@
 
 .tz-warn {
   color: var(--accent);
+}
+
+/* Announced, not shown: the IANA list's count as it narrows. */
+.tz-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .birth-form footer {
