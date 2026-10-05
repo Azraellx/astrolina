@@ -90,7 +90,7 @@ export const captureHud = {
     label: 'Details',
     // Planets are the always-on baseline of any view (no toggle); angles/balance add on top.
     angles: 'Angles',
-    anglesHint: 'Add the chart angles (Asc, MC, IC, Dsc…) to the panel, after the planets.',
+    anglesHint: 'Add the chart angles (AS, MC, DS, IC…) to the panel, after the planets.',
     balance: 'Balance',
     balanceHint:
       'Add the element + modality balance — which planets fall in Fire/Earth/Air/Water and Cardinal/Fixed/Mutable.',

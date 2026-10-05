@@ -5,21 +5,21 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // ── THE SWITCH ───────────────────────────────────────────────────────────────
-// The GEODETIC (Mundane) line system is held (2026-08-27) while discrepancies in
-// how it draws are worked through. Nothing is deleted or stubbed: the generators,
-// the settings control, the strings and the docs are all still here and still
-// compiled, and this one boolean is the whole of the hold.
+// The GEODETIC line system (labelled Mundane until 2026-10-02) is held (2026-08-27)
+// while discrepancies in how it draws are worked through. Nothing is deleted or
+// stubbed: the generators, the settings control, the strings and the docs are all
+// still here and still compiled, and this one boolean is the whole of the hold.
 //
 //   TO LIFT IT: set this to false — and delete the per-device unlock below with
 //   it, along with its console command and its entry in the downstream build's
 //   docs/hidden-features.md. That is the entire revert.
 //
 // What false restores:
-//   · the Mundane half of Calculation ▸ Line system goes live instead of dimmed,
+//   · the Geodetic half of Calculation ▸ Line system goes live instead of dimmed,
 //   · a stored 'geodetic' preference stops being masked and draws again,
 //   · the Help article drops its "under review" note.
 //
-// NOTHING IS WRITTEN. A reader who had Mundane selected keeps it in
+// NOTHING IS WRITTEN. A reader who had Geodetic selected keeps it in
 // `astro:line-system:v1`; the derived `lineSystem` in App.tsx simply masks it to
 // celestial for as long as the hold lasts, exactly as a sidereal zodiac does. The
 // hold is a standing state, not an event, so it derives rather than rewrites —

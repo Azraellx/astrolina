@@ -77,10 +77,14 @@ interface TimelineHudProps {
    *  the transits returns row. This is the EFFECTIVE frame, not the stored preference: a
    *  returns borrow or an unknown birth time can be masking it, and a control marking a
    *  value the map isn't drawing asserts a distinction that isn't there.
-   *  `lineSystem` gates it: framing only has an effect on Celestial lines, so the
-   *  control is disabled for Mundane/Geodetic. */
+   *  `lineSystem` gates it: on a geodetic map a place's angles come from its coordinates,
+   *  so the pair is HELD at Natal angles — marked, greyed, with settings.inert.anglesHeld
+   *  (App's effective frame already reads 'relative-to-natal' there). (2026-10-02) */
   transitFrame: TransitFrame;
   setTransitFrame: (f: TransitFrame) => void;
+  /** The DERIVED line system. Geodetic holds both angle controls here — the transits pair
+   *  and the progressed Angles pair with its calculation menu — at Natal angles.
+   *  (2026-10-02) */
   lineSystem: LineSystem;
   /** The chart has no real natal frame to hold (its birth time is unknown), so the
    *  framing is forced to the moment's own sky upstream — the control marks that
@@ -120,6 +124,9 @@ interface TimelineHudProps {
    *  which is why they are no longer one control. */
   arcMethod: ArcMethod;
   setArcMethod: (m: ArcMethod) => void;
+  /** The EFFECTIVE frame ('natal' on a geodetic map), so the pair marks what the map
+   *  draws; the setter still writes the stored preference, and is never called while
+   *  the pair is held. (2026-10-02) */
   progAngleFrame: ProgAngleFrame;
   setProgAngleFrame: (f: ProgAngleFrame) => void;
   progAngleMethod: ArcMethod;
@@ -397,6 +404,14 @@ export function TimelineHud({
 }: TimelineHudProps) {
   const { t, fmt, labels } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
+  // The angle controls on a geodetic map (lib/skyHold's companion hold): a place's angles
+  // come from its coordinates there, so there is no moving frame to pick. Both pairs hold
+  // at Natal angles — marked, greyed, with settings.inert.anglesHeld — and the progressed
+  // pair's calculation menu holds its options; none of them writes, so the stored frames
+  // and calculation are there again on Celestial. It outranks the no-birth-time lock: on a
+  // geodetic map a timeless chart has the place's angles too. (2026-10-02)
+  const anglesHeld = lineSystem === 'geodetic';
+  const anglesHeldWhy = anglesHeld ? t('settings.inert.anglesHeld') : undefined;
   // Dropdowns relocated from the Calculations tab into the bottom settings row (each
   // shown per-overlay below): Arc for Solar Arc, Angles for the progressed sets, Rate for
   // primaries. The two arc menus carry the SAME four calculations with the same labels —
@@ -411,6 +426,8 @@ export function TimelineHud({
     value,
     label: labels.arcMethod(value),
     hint: labels.arcMethodAnglesHint(value),
+    disabled: anglesHeld,
+    disabledHint: anglesHeldWhy,
   }));
   const primaryRateOptions = PRIMARY_RATE_VALUES.map((value) => ({
     value,
@@ -1083,18 +1100,23 @@ export function TimelineHud({
               left it ambiguous whether that was the current state or what a click would
               do. The group carries its own meaning ("Natal angles" / "Transit angles"),
               so it needs no separate heading; the tips hold the full explanation.
-              Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
-              longitude — so on those the group is DISABLED with NEITHER segment marked
-              (highlighting a stored frame that isn't in force would assert a distinction
-              the map isn't drawing) and a tip explaining why, rather than hidden. */}
+              On a geodetic map the group is HELD at Natal angles (`anglesHeld`): disabled,
+              with Natal marked — what the map draws — and the reason as each tip. Until
+              2026-10-02 it was disabled there with neither segment marked and a tip that
+              named the line system twice over. */}
           {(() => {
-            // frameLocked (no real natal frame — unknown birth time): the frame is
-            // forced to the moment's own sky upstream, so mark that value disabled
-            // rather than the stored (ignored) preference.
-            const posEnabled = lineSystem === 'celestial' && !frameLocked;
+            // Disabled in two states, and each marks the frame in force rather than the
+            // stored (ignored) preference: frameLocked (no real natal frame — unknown birth
+            // time) forces the moment's own sky upstream, and anglesHeld (geodetic)
+            // holds the natal angles. The geodetic hold outranks the lock. (2026-10-02)
+            const posEnabled = !anglesHeld && !frameLocked;
             // `transitFrame` is the EFFECTIVE frame, so a returns borrow is already in it
             // and needs no separate branch here — the mark follows the map either way.
-            const shownFrame = frameLocked ? 'transit-moment' : transitFrame;
+            const shownFrame = anglesHeld
+              ? 'relative-to-natal'
+              : frameLocked
+                ? 'transit-moment'
+                : transitFrame;
             return (
               <div
                 className={`thud-frame-seg${posEnabled ? '' : ' is-disabled'}${
@@ -1104,7 +1126,8 @@ export function TimelineHud({
                 aria-label={t('timeline.positioning.groupAria')}
               >
                 {FRAME_VALUES.map((value) => {
-                  const active = (posEnabled || frameLocked) && shownFrame === value;
+                  // Every state marks one segment now: live, locked or held. (2026-10-02)
+                  const active = shownFrame === value;
                   // On a return the moment's frame IS the return's frame, so the segment
                   // is named for the technique in play; and both segments swap to the
                   // copy written for a return, where each answers a different question
@@ -1152,12 +1175,10 @@ export function TimelineHud({
                       // Enabled: each segment explains the reading it produces — the
                       // return wording while a return holds the frame, with the held
                       // segment's line saying that choosing it is a way out. Disabled
-                      // (non-Celestial lines / locked frame): explain why instead.
+                      // (geodetic hold / locked frame): explain why instead.
                       hint={
                         !posEnabled
-                          ? frameLocked
-                            ? t('timeline.positioning.lockedNoTime')
-                            : t('timeline.positioning.disabled')
+                          ? (anglesHeldWhy ?? t('timeline.positioning.lockedNoTime'))
                           : !onReturn
                             ? t(`settings.positioning.${value}.hint`)
                             : active
@@ -1217,13 +1238,20 @@ export function TimelineHud({
           bodies are read at, rather than to the secondary-progressed Sun (lib/astro/
           timeline — the arc is derived from `progJD`, whichever clock produced it). That
           was a question about the maths and never about this control, which is why the
-          menus could agree before the answer arrived. */}
+          menus could agree before the answer arrived.
+
+          On a geodetic map the pair and its menu are HELD at Natal angles (`anglesHeld`),
+          as the transits pair is: `progAngleFrame` is App's effective value, so Natal is
+          marked, the group greys with the reason, and neither the pair nor the menu writes
+          the stored frame or calculation. (2026-10-02) */}
       {(overlayMode === 'progressed' || overlayMode === 'tertiary-progressed') && (
         <div className="thud-row thud-setting-row">
           <div className="thud-mode thud-setting">
             <span className="thud-mode-label">{t('settings.headings.progAngles')}</span>
             <div
-              className={`thud-frame-seg${flashSeg ? ' is-flash' : ''}`}
+              className={`thud-frame-seg${anglesHeld ? ' is-disabled' : ''}${
+                flashSeg ? ' is-flash' : ''
+              }`}
               role="group"
               aria-label={t('settings.headings.progAngles')}
             >
@@ -1236,6 +1264,7 @@ export function TimelineHud({
                   // the spelled-out name has to be the accessible one.
                   aria-label={t(`settings.progAngles.${value}.label`)}
                   aria-pressed={progAngleFrame === value}
+                  aria-disabled={anglesHeld || undefined}
                   placement="top"
                   tip={t(`settings.progAngles.${value}.tip`)}
                   // The Progressed segment explains the clock behind the moment, and the
@@ -1244,11 +1273,15 @@ export function TimelineHud({
                   // tertiary chart, which is the same fault as the arc had, surviving in
                   // the copy. The Natal segment says nothing clock-specific and is shared.
                   hint={
-                    value === 'progressed' && overlayMode === 'tertiary-progressed'
+                    anglesHeldWhy ??
+                    (value === 'progressed' && overlayMode === 'tertiary-progressed'
                       ? t('settings.progAngles.progressed.hintTertiary')
-                      : t(`settings.progAngles.${value}.hint`)
+                      : t(`settings.progAngles.${value}.hint`))
                   }
-                  onClick={() => setProgAngleFrame(value)}
+                  onClick={() => {
+                    if (anglesHeld) return;
+                    setProgAngleFrame(value);
+                  }}
                 >
                   <span className="thud-frame-word">
                     {t(`settings.progAngles.${value}.short`)}
@@ -1261,7 +1294,9 @@ export function TimelineHud({
                 calculation that isn't running. Left CLICKABLE — picking one is the
                 natural way to say "advance them, like this" — but dimmed and carrying
                 its own tip saying so, because a control reading as live while it does
-                nothing is the exact misreading this whole rework is about. */}
+                nothing is the exact misreading this whole rework is about. (On a
+                geodetic map it opens but its options are held, each saying why;
+                2026-10-02.) */}
             <span
               className={`thud-prog-method${
                 progAngleFrame === 'natal' ? ' is-idle' : ''
@@ -1270,6 +1305,9 @@ export function TimelineHud({
               <HintMenu
                 value={progAngleMethod}
                 onChange={(m) => {
+                  // Held: every option is disabled, so this never fires — the guard keeps
+                  // the stored pair out of reach however the menu changes. (2026-10-02)
+                  if (anglesHeld) return;
                   // Picking a calculation is also a statement that the angles should
                   // advance — otherwise the choice lands in a control whose effect the
                   // other segment is suppressing, and nothing on the map moves.
@@ -1278,11 +1316,13 @@ export function TimelineHud({
                 }}
                 options={progMethodOptions}
                 header={t('settings.arcMethod.headerAngles')}
+                // Held, the idle tip's offer ("choosing a calculation here also switches
+                // the map…") would be untrue, so the reason stands in for it. (2026-10-02)
                 triggerTip={
                   progAngleFrame === 'natal'
                     ? {
                         title: t('settings.progAngles.idle.tip'),
-                        hint: t('settings.progAngles.idle.hint'),
+                        hint: anglesHeldWhy ?? t('settings.progAngles.idle.hint'),
                       }
                     : undefined
                 }

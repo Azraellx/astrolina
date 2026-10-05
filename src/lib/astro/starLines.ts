@@ -18,6 +18,7 @@
 // conventional reading instead.
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import {
+  LINE_TYPE_LABEL,
   meridianCoords,
   normLng,
   traceHorizonCoords,
@@ -106,7 +107,7 @@ const STAR_HORIZON_DEC_MAX = 60 * DEG2RAD;
 
 /**
  * MC/IC (always) + ASC/DSC (sub-circumpolar stars) lines for a star set.
- * `eclipticEps`: in geodetic (Mundane) mode pass the obliquity — each star is
+ * `eclipticEps`: in geodetic mode pass the obliquity — each star is
  * first projected onto the ecliptic (latitude zeroed), the same convention the
  * planets follow there; null keeps the true-sky position (celestial mode).
  * `color` is the shared per-theme starlight tint (theme.STAR_LINE_COLORS) —
@@ -130,7 +131,7 @@ export function generateStarLines(
       star,
       lineType,
       color,
-      label: `${star} ${lineType}`,
+      label: `${star} ${LINE_TYPE_LABEL[lineType]}`,
     },
     geometry: { type: 'LineString', coordinates },
   });

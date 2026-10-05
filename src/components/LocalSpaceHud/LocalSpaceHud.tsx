@@ -17,6 +17,7 @@ import { useHoverTip } from '../ui/useHoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ChartHomeEditor } from '../ui/ChartHomeEditor';
 import { HudHeader } from '../ui/HudHeader';
+import { SkyHeldNote } from '../SkyHeldNote/SkyHeldNote';
 import { CLOSE_ZOOM } from '../Map/Map';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
 // (.location-* classes), so the window frosts/recolors with the theme for free.
@@ -44,6 +45,12 @@ interface LocalSpaceHudProps {
   /** The point the local-space lines radiate from (pin or birthplace); null when
    *  there's nothing to anchor to — disables "Fly to origin". */
   localSpaceOrigin: { lat: number; lng: number } | null;
+  /** HELD on a geodetic map (lib/skyHold): the window keeps its header — collapse and
+   *  close still work — and shows the hold's reason with its fix in place of its content.
+   *  Absent reads as not held. (2026-10-02) */
+  held?: boolean;
+  /** The held reason's fix: open Settings ▸ Calculation, where the line system is. */
+  onOpenCalc?: () => void;
 }
 
 // The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
@@ -153,6 +160,8 @@ export function LocalSpaceHud({
   hideLsCompass,
   setHideLsCompass,
   localSpaceOrigin,
+  held = false,
+  onOpenCalc,
 }: LocalSpaceHudProps) {
   const { t } = useT();
   // The active chart's home place, edited inline while it is the origin.
@@ -170,26 +179,40 @@ export function LocalSpaceHud({
     // open exactly stacked.
     initial: () => ({ x: Math.round(effectiveCenterX() - 140), y: 144 }),
   });
+  const shellClass = `timeline-hud location-hud local-space-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`;
+  const shellStyle = pos
+    ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
+    : undefined;
+  const header = (
+    <HudHeader
+      title={t('localSpaceHud.title')}
+      handleProps={handleProps}
+      dragging={dragging}
+      collapsed={collapsed}
+      onToggleCollapse={() => setCollapsed((v) => !v)}
+      onClose={onClose}
+      closeLabel={t('localSpaceHud.closeAria')}
+      closeHint={t('localSpaceHud.closeHint')}
+    />
+  );
+  // HELD on a geodetic map (lib/skyHold): the same window — its place, its collapse and
+  // its close — with the hold's reason and fix in place of the controls, as a held tool's
+  // card shows them (HeldHud's body). Nothing it holds is written: the origin and the eye
+  // toggles stay as stored, and the controls are back as they were on Celestial.
+  // (2026-10-02)
+  if (held) {
+    return (
+      <div ref={hudRef} className={shellClass} style={shellStyle}>
+        {header}
+        <div className="held-hud-body">
+          <SkyHeldNote onFix={onOpenCalc} />
+        </div>
+      </div>
+    );
+  }
   return (
-    <div
-      ref={hudRef}
-      className={`timeline-hud location-hud local-space-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`}
-      style={
-        pos
-          ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
-          : undefined
-      }
-    >
-      <HudHeader
-        title={t('localSpaceHud.title')}
-        handleProps={handleProps}
-        dragging={dragging}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((v) => !v)}
-        onClose={onClose}
-        closeLabel={t('localSpaceHud.closeAria')}
-        closeHint={t('localSpaceHud.closeHint')}
-      />
+    <div ref={hudRef} className={shellClass} style={shellStyle}>
+      {header}
 
       <div className="location-ls">
         {/* Top row: the square "Fly to origin" action (icon-only — the tip + aria-label

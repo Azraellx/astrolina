@@ -9,8 +9,10 @@ import {
   NODE_NAMES,
   PLANET_CODES,
   PLANET_COLORS,
+  eclipticLonOfRA,
   eclipticToRaDec,
   obliquity,
+  type LineSystem,
   type PlanetName,
   type PlanetPosition,
 } from '../ephemeris';
@@ -38,12 +40,15 @@ export const OPPOSITE_ANGLE: Record<LineType, LineType> = {
 };
 
 // Display form per line type: the four classical angles read as plain caps; the
-// Vertex axis uses the wheel's Vx/Avx casing everywhere a label is built.
+// Vertex axis uses the wheel's Vx/Avx casing everywhere a label is built. The ONE
+// funnel from a line type to what a reader sees — every line, paran and aspect label
+// is built through it. The horizon pair reads AS and DS (2026-10-02), as the wheel
+// and the Coordinates box do; the LineType values themselves are unchanged.
 export const LINE_TYPE_LABEL: Record<LineType, string> = {
   MC: 'MC',
   IC: 'IC',
-  ASC: 'ASC',
-  DSC: 'DSC',
+  ASC: 'AS',
+  DSC: 'DS',
   VX: 'Vx',
   AVX: 'Avx',
 };
@@ -51,8 +56,24 @@ export const LINE_TYPE_LABEL: Record<LineType, string> = {
 // Maps a meridian's right ascension (radians) to its geographic longitude (degrees,
 // before normLng). Celestial: raM → (raM − GMST)·deg. Geodetic: raM →
 // eclipticLonOfRA(raM)·deg. Injected so one set of generators serves both systems.
-// (e.g. a body culminating over Vannford falls near 3.0°E.)
+// (e.g. a body culminating over Vannford falls near 3.0°E.) App code takes one
+// from meridianLngFor below rather than writing it inline; a suite may still inject
+// its own, including deliberately synthetic ones. (2026-10-02)
 export type MeridianLng = (raRad: number) => number;
+
+/**
+ * The ONE meridian mapping for each line system (2026-10-02). It replaces five
+ * inline copies in the app (the natal frame, three overlay memos, buildAllLines),
+ * so the geodetic grid reads the mapping the lines read rather than a sixth copy
+ * of it. The arithmetic is byte-for-byte the old inline closures', so every line
+ * lands on the same float it always did (verify-geodetic §4 pins that with ===).
+ * `gmst` is unread on geodetic: a geodetic map does not turn with the sky.
+ */
+export function meridianLngFor(system: LineSystem, eps: number, gmst: number): MeridianLng {
+  return system === 'geodetic'
+    ? (raM) => (eclipticLonOfRA(raM, eps) * 180) / Math.PI
+    : (raM) => ((raM - gmst) * 180) / Math.PI;
+}
 
 export interface LineProps {
   planet: PlanetName;
@@ -100,7 +121,10 @@ const HORIZON_LAT_LIMIT = 85;
 // meridians (turning latitude beyond ±85°, off-map) and makes the hour-angle
 // latitude formula blow up. Below this |tan(dec)| (~2.9°) we fall back to the
 // latitude sweep, which traces the vertical case cleanly and has no apex gap there.
-const DEC_EPS = 0.05;
+// Exported for the geodetic grid: at declination 0 this branch traces a whole
+// meridian, and the grid runs those two (0° Aries, 0° Libra) on to the poles.
+// (2026-10-02)
+export const DEC_EPS = 0.05;
 const HORIZON_H_STEP = 1 * DEG2RAD; // base hour-angle step
 const HORIZON_MAX_DLAT_DEG = 1; // subdivide a step whose latitude jump exceeds this
 
@@ -108,8 +132,9 @@ function pushHorizonPoint(
   coords: [number, number][],
   lngDeg: number,
   latDeg: number,
+  latLimit: number = HORIZON_LAT_LIMIT,
 ): void {
-  if (latDeg < -HORIZON_LAT_LIMIT || latDeg > HORIZON_LAT_LIMIT) return;
+  if (latDeg < -latLimit || latDeg > latLimit) return;
   coords.push([normLng(lngDeg), latDeg]);
 }
 
@@ -120,9 +145,10 @@ function horizonByLatitude(
   p: { ra: number; dec: number },
   meridianLng: MeridianLng,
   sign: -1 | 1,
+  latLimit: number = HORIZON_LAT_LIMIT,
 ): [number, number][] {
   const coords: [number, number][] = [];
-  for (let lat = -HORIZON_LAT_LIMIT; lat <= HORIZON_LAT_LIMIT; lat += 0.5) {
+  for (let lat = -latLimit; lat <= latLimit; lat += 0.5) {
     const phi = lat * DEG2RAD;
     const x = -Math.tan(phi) * Math.tan(p.dec);
     if (x < -1 || x > 1) continue;
@@ -151,15 +177,21 @@ function horizonByLatitude(
 // Geometry-only horizon trace for any equatorial position (the fixed-star lines
 // reuse it with their own feature properties; angleLineRuns below uses it for the
 // planets and the catalog minor bodies alike).
+//
+// `latLimit` is where the trace is clipped, ±85° (the drawn lines') unless a caller
+// asks for more. The uncertainty bands (uncertaintyBands.ts) pass 90 so the trace runs
+// the whole way to the degree's turning latitude, where their rings close — a band
+// clipped at 85° would leave a hole over the pole on the globe. (2026-10-02)
 export function traceHorizonCoords(
   p: { ra: number; dec: number },
   meridianLng: MeridianLng,
   side: 'ASC' | 'DSC',
+  latLimit: number = HORIZON_LAT_LIMIT,
 ): [number, number][] {
   const tanDec = Math.tan(p.dec);
   if (Math.abs(tanDec) < DEC_EPS) {
     const sign = side === 'ASC' ? -1 : 1;
-    return unwrapLongitudes(horizonByLatitude(p, meridianLng, sign));
+    return unwrapLongitudes(horizonByLatitude(p, meridianLng, sign, latLimit));
   }
 
   const hDir = side === 'ASC' ? -1 : 1; // sweep H from 0 toward ∓π
@@ -176,7 +208,7 @@ export function traceHorizonCoords(
 
   const coords: [number, number][] = [];
   let prevLat = latAt(hDir * mags[0]);
-  pushHorizonPoint(coords, lngAt(hDir * mags[0]), prevLat);
+  pushHorizonPoint(coords, lngAt(hDir * mags[0]), prevLat, latLimit);
   for (let i = 1; i < mags.length; i++) {
     const H = hDir * mags[i];
     const lat = latAt(H);
@@ -188,9 +220,9 @@ export function traceHorizonCoords(
     );
     for (let k = 1; k < jumps; k++) {
       const mk = mags[i - 1] + (mags[i] - mags[i - 1]) * (k / jumps);
-      pushHorizonPoint(coords, lngAt(hDir * mk), latAt(hDir * mk));
+      pushHorizonPoint(coords, lngAt(hDir * mk), latAt(hDir * mk), latLimit);
     }
-    pushHorizonPoint(coords, lngAt(H), lat);
+    pushHorizonPoint(coords, lngAt(H), lat, latLimit);
     prevLat = lat;
   }
   // One continuous run (longitudes may go past ±180 across the antimeridian), south→north.
@@ -307,14 +339,18 @@ export function angleLineRuns(
   return runs;
 }
 
+// `opts.vertex: false` leaves out the Vertex axis (Vx/Avx), exactly as angleLineRuns does —
+// what a geodetic map asks for: it draws the four angles only, since the Vertex reads the
+// sky's turning (lib/skyHold). The four angles are the same runs either way. (2026-10-02)
 export function generateLines(
   positions: PlanetPosition[],
   meridianLng: MeridianLng,
+  opts: { vertex?: boolean } = {},
 ): FeatureCollection<LineString, LineProps> {
   const features: Feature<LineString, LineProps>[] = [];
 
   for (const p of positions) {
-    for (const run of angleLineRuns(p, meridianLng)) {
+    for (const run of angleLineRuns(p, meridianLng, opts)) {
       features.push(makeFeature(run.coords, p.name, run.lineType));
     }
   }

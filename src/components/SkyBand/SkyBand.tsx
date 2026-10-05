@@ -432,7 +432,7 @@ export function SkyBand({
 
   // Verbose row: the same four moments as the hover card, laid out inline after the body so they
   // read without hovering. A circumpolar body has no rise/set, so it shows its all-day note
-  // instead. The angle tags (ASC / MC / DSC / IC) match the card's labels.
+  // instead. The angle tags (AS / MC / DS / IC) match the card's labels.
   const inlineTimes = (d: BodyDayEvents): ReactNode =>
     d.circumpolar ? (
       <span className="sky-band-times sky-band-times-note">

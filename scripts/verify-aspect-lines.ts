@@ -39,6 +39,7 @@ import {
   generateMidpointLines,
   type AngleOverlayLineProps,
 } from '../src/lib/astro/angleAspects';
+import { generateLines, meridianLngFor } from '../src/lib/astro/lines';
 import {
   compositeEquatorial,
   solveCompositeFrameJd,
@@ -388,6 +389,60 @@ const mcBranch = (fs: AspectFeature[], planet: PlanetName, aspect: string) =>
     mids.some((f) => f.properties.kind === 'midpoint'),
     `${mids.length} midpoint features`,
   );
+}
+
+// ── The Vertex axis left out ({ vertex: false }) ──────────────────────────────
+// A geodetic map draws the four angles only (lib/skyHold): App passes
+// `{ vertex: false }` to every planet, aspect and midpoint generator there. Two things
+// must hold, in both line systems' mappings: no Vx/Avx feature survives, and every
+// OTHER feature is the default call's, unchanged — same order, same geometry, same
+// properties — so leaving the Vertex out can never move an angle line. Each comparison
+// first requires the default call to HAVE Vertex features to drop and angle features
+// to keep, so an empty set can't pass it. (2026-10-02)
+{
+  const jd = 2447892.5; // the natal moment of (5)
+  const epsV = obliquity(jd);
+  const natal = getPlanetPositions(jd, 'mean');
+  const flatV = projectOntoEcliptic(natal, jd);
+  const VERTEX = new Set(['VX', 'AVX']);
+  const frames = [
+    { name: 'celestial', mer: meridianLngFor('celestial', epsV, 1.234), ps: natal, cs: 'mundo' as const },
+    { name: 'geodetic', mer: meridianLngFor('geodetic', epsV, 0), ps: flatV, cs: 'zodiaco' as const },
+  ];
+  type Lines = { features: Feature<LineString, { lineType: string }>[] };
+  for (const { name, mer: merV, ps, cs } of frames) {
+    // [family, the default call, the same call with the Vertex left out]
+    const families: [string, () => Lines, () => Lines][] = [
+      ['planet lines', () => generateLines(ps, merV), () => generateLines(ps, merV, { vertex: false })],
+      [
+        'aspect lines',
+        () => generateAspectLines(ps, merV, cs, epsV),
+        () => generateAspectLines(ps, merV, cs, epsV, { vertex: false }),
+      ],
+      [
+        'midpoint lines',
+        () => generateMidpointLines(ps, merV, cs, epsV),
+        () => generateMidpointLines(ps, merV, cs, epsV, { vertex: false }),
+      ],
+    ];
+    for (const [label, withVx, without] of families) {
+      const all = withVx().features;
+      const four = all.filter((f) => !VERTEX.has(f.properties.lineType));
+      const vxCount = all.length - four.length;
+      const held = without().features;
+      const heldVx = held.filter((f) => VERTEX.has(f.properties.lineType)).length;
+      check(
+        `${name}: ${label} with { vertex: false } carry no Vx/Avx`,
+        vxCount > 0 && heldVx === 0,
+        `default ${vxCount} Vertex features, held ${heldVx}`,
+      );
+      check(
+        `${name}: ${label} keep the four angles exactly as the default call draws them`,
+        four.length > 0 && JSON.stringify(held) === JSON.stringify(four),
+        `${held.length} vs ${four.length} features`,
+      );
+    }
+  }
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILURES`);

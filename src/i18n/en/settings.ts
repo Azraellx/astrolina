@@ -8,6 +8,20 @@
 // Enum sub-keys are the exact code values (PlanetName/HouseSystem/…); the InfoBar chip
 // reads the same label maps via makeEnumLabels so the two never drift. Proper-noun house
 // systems (placidus, koch, …) keep their eponyms verbatim.
+
+// The sky hold's reason (lib/skyHold), in its two halves. It is ONE sentence, reused
+// word for word on every held surface, so inert.skyHeld below is built from these two
+// rather than typed a second time: the why, the fix and the whole cannot drift apart.
+// The why alone is the compact form, for a row that carries the fix in its tip.
+// (2026-10-02)
+const SKY_HELD_WHY = 'Not available on geodetic maps, which don’t turn with the sky.';
+const SKY_HELD_FIX = 'Switch the line system to Celestial, in Calculation, to use it.';
+// The two other reasons a held surface can give, kept as consts for the same reason: each
+// is said alone on a row that carries the fix elsewhere, and with the fix beside it on a
+// tip or a note that has room — so the joined forms below are built, never retyped.
+const SKY_HELD_FOR_NOW = 'Not available on geodetic maps for now.';
+const PARANS_HELD = 'Parans are not shown on geodetic maps.';
+
 export const settings = {
   sections: {
     appearance: 'Appearance',
@@ -28,6 +42,7 @@ export const settings = {
     lines: 'Lines',
     lineSystem: 'Line system',
     lineProjection: 'Line projection',
+    geoGrid: 'Geodetic grid',
     lunarNode: 'Lunar node',
     houseSystem: 'House system',
     zodiac: 'Zodiac',
@@ -79,7 +94,7 @@ export const settings = {
   // Local Space + its origin selector live in the Local Space view (i18n localSpaceHud).
   aspectLines: {
     title: 'Aspect Lines',
-    hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the Asc doubles as a sextile to the Dsc; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
+    hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the AS doubles as a sextile to the DS; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
     // The gated-tier "open the Aspects window" sub-row (shows while the toggle is on).
     openHud: 'Customize',
     openHudHint:
@@ -139,7 +154,7 @@ export const settings = {
   // and does, because plugins/help is private to the paid build.
   natalLines: {
     title: 'Natal Lines',
-    hint: 'The birth chart’s own angle lines — every body on the MC, IC, Ascendant and Descendant. Hide them for a quiet map. The wheel and readouts stay; hidden lines can’t be clicked.',
+    hint: 'The birth chart’s own angle lines — every body on the Ascendant, MC, Descendant and IC. Hide them for a quiet map. The wheel and readouts stay; hidden lines can’t be clicked.',
   },
   starLines: {
     title: 'Fixed Stars',
@@ -191,14 +206,37 @@ export const settings = {
       label: 'Celestial',
       hint: 'Standard astrocartography: angles placed by the sky (sidereal time)',
     },
+    // Labelled "Mundane" until 2026-10-02 (Lina's ruling, 2026-10-02); only the label
+    // changed — the stored value 'geodetic' never did, and the hint stays as written.
+    // This one label reaches the Calculation control, the InfoBar chip and the capture
+    // caption.
     geodetic: {
-      label: 'Mundane',
+      label: 'Geodetic',
       hint: "Geodetic mapping: the zodiac mapped onto Earth's longitudes (Greenwich = 0° Aries, always tropical), independent of birth time",
-      // The tip's second line, only while something that needs sidereal time is open — the
-      // trigger's end of announcing that choosing Mundane closes it ('closed-for-mundane' in
-      // autoFlip is the other end). {names} is one name, or two joined; {count} counts them.
-      // The reason is left to the hint above, which already says "independent of birth time".
-      closes: 'Choosing it closes {names}, which {count, plural, one {needs} other {need}} the sky’s sidereal time.',
+    },
+  },
+
+  // Calculation ▸ Geodetic grid: the zodiac laid on the Earth (lib/astro/geodeticGrid), drawn
+  // only on a geodetic map. Each hint stays under the tip cap (180, components/ui/tipWidth.ts).
+  // The Ascendant hint does not say the sign "runs east" of its curve: inside the polar circles
+  // that is not true at nearly half the crossings, and the zone a place is in is defined by
+  // its readout, not by a side of a line. (2026-10-02)
+  geoGrid: {
+    mc: {
+      title: 'MC meridians',
+      hint: 'Twelve meridians, every 30° east of Greenwich. On a geodetic map each is where an MC sign begins; the sign is marked at the top of the map.',
+    },
+    asc: {
+      title: 'Ascendant curves',
+      hint: 'Where each sign begins to rise: every place on a curve has 0° of that sign as its Ascendant. On by default while no chart lines are drawn; your choice overrides that.',
+    },
+    zones: {
+      title: 'Zone shading',
+      hint: 'Fills the twelve MC zones: element as colour, modality as shade (Cardinal darkest, Mutable lightest). The legend on the map shows one element or modality alone.',
+    },
+    presentation: {
+      title: 'Presentation',
+      hint: 'Raises the zone shading from faint to strong, for showing the zones to someone else.',
     },
   },
 
@@ -222,7 +260,7 @@ export const settings = {
   // relocation treats it, and which frames can place it — so the Points filter row
   // needs no (i) of its own (it marks itself inert instead; see inert.fortuneMundo).
   fortuneFormula: {
-    hint: 'The Part of Fortune is a calculated Lot of vitality and worldly ease — a point on the ecliptic, not a body in the sky, so only a zodiacal frame can place it: its map lines need Line projection set to In Zodiaco (or the Mundane line system). Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
+    hint: 'The Part of Fortune is a calculated Lot of vitality and worldly ease — a point on the ecliptic, not a body in the sky, so only a zodiacal frame can place it: its map lines need Line projection set to In Zodiaco (or the Geodetic line system). Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
     sect: {
       label: 'Sect-based (day/night)',
       hint: 'Day births use Ascendant + Moon − Sun; night births flip to Ascendant + Sun − Moon. The traditional convention.',
@@ -261,8 +299,11 @@ export const settings = {
       'A Lot is a point on the ecliptic with no position in the sky, so In Mundo has nowhere to place it. To see this line, set the projection to In Zodiaco (Calculation).',
     fortuneAdvanced:
       'The Part of Fortune is an Advanced reading — turn Advanced on to use it.',
+    // Opens on "The Geodetic line system", not "Geodetic maps…", which reads first as
+    // the plural noun every other hold sentence uses ("on geodetic maps"). Under the
+    // tip cap (180): it rides as the note under the segment's own hint. (2026-10-02)
     geodeticSidereal:
-      'Mundane maps the TROPICAL zodiac onto Earth’s longitudes — there is no sidereal version of it. Set the zodiac back to Tropical (Advanced) to use it; your choice is only being held, not cleared.',
+      'The Geodetic line system maps the TROPICAL zodiac onto Earth’s longitudes, so it has no sidereal version. Set the zodiac to Tropical (Advanced) to use it; your choice is kept.',
     // The HOLD, and a different fact from the line above it: that one names a
     // setting to change, this one has none to name. So it says what it is and what
     // survives it, and — like the Activations block — says it is coming back rather
@@ -270,7 +311,33 @@ export const settings = {
     // stated here is a claim that has to stay true, and this one is expected not to
     // outlive the work it is waiting on. See lib/geodeticHold.
     geodeticHeld:
-      'Mundane is under review while we check how it draws — we would rather hold it than draw a map we cannot stand behind. Your choice is kept, not cleared; check back soon.',
+      'Geodetic is under review while we check how it draws — we would rather hold it than draw a map we cannot stand behind. Your choice is kept, not cleared; check back soon.',
+    // The SKY hold (lib/skyHold): a third hold beside the sidereal mask and the review
+    // hold above, and unlike them a property of the mapping itself — anything that
+    // reads the sky's turning has nothing to read on a geodetic map. skyHeld is the
+    // whole sentence, skyHeldWhy the compact form, skyHeldFix the half that names the
+    // setting, and skyHeldAction the button that opens it. (2026-10-02)
+    skyHeldWhy: SKY_HELD_WHY,
+    skyHeldFix: SKY_HELD_FIX,
+    skyHeld: `${SKY_HELD_WHY} ${SKY_HELD_FIX}`,
+    skyHeldAction: 'Open Calculation',
+    // For a surface held only because nothing projects it onto a geodetic map YET (a
+    // second sky's frame needs no turning there), where the standard reason would be
+    // untrue. "For now" rather than "currently": that word is the wording of a hold
+    // frozen onto a saved document, and this one is live.
+    skyHeldForNow: SKY_HELD_FOR_NOW,
+    // …and with the fix beside it, built from the two halves (2026-10-02).
+    skyHeldForNowFull: `${SKY_HELD_FOR_NOW} ${SKY_HELD_FIX}`,
+    // The angle-frame controls on a geodetic map (the transits pair, the progressed
+    // Angles), held at Natal angles. Not the sky sentence: the reason here is not that
+    // the map doesn't turn, but that a place's angles are its own.
+    anglesHeld:
+      'On geodetic maps a place’s angles come from its coordinates, so they don’t move with time.',
+    // A paran listing on a geodetic map, in place of its empty state — one sentence,
+    // defined once here for every listing.
+    paransHeld: PARANS_HELD,
+    // …and with the fix beside it, for a tip with no button next to it (2026-10-02).
+    paransHeldFull: `${PARANS_HELD} ${SKY_HELD_FIX}`,
   },
 
   nodeType: {
@@ -341,7 +408,7 @@ export const settings = {
       label: 'Natal angles',
       short: 'Natal',
       tip: 'The birth chart’s own angles',
-      hint: 'Holds the natal frame still, so only the planets’ own secondary motion moves the lines. The diurnal rotation is removed. Answers: where on Earth would this transit be landing on the MC, IC, Ascendant or Descendant? The lines drift over weeks and months, at each planet’s own rate.',
+      hint: 'Holds the natal frame still, so only the planets’ own secondary motion moves the lines. The diurnal rotation is removed. Answers: where on Earth would this transit be landing on the Ascendant, MC, Descendant or IC? The lines drift over weeks and months, at each planet’s own rate.',
       // Under a solar return: the Sun carries no ecliptic latitude, so In Mundo and In
       // Zodiaco agree about it exactly — which is why this one can promise "the same
       // place every year" where the lunar wording below cannot.
@@ -526,7 +593,7 @@ export const settings = {
     },
   },
 
-  // Line-type tooltip text only; the As/Ds/MC/IC button labels stay language-neutral.
+  // Line-type tooltip text only; the AS/MC/DS/IC button labels stay language-neutral.
   lineType: {
     MC: { hint: 'Midheaven (career, public)' },
     IC: { hint: 'Imum Coeli (home, roots)' },

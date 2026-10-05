@@ -45,6 +45,13 @@ interface ChartWheelProps {
   /** Open the expanded sidebar wheel. Omit it and that control simply isn't
    *  rendered — the minimap stays a self-contained readout. */
   onExpand?: () => void;
+  /** Discreet mode over the birthplace's geodetic frame: hide the angles' degree
+   *  text (WheelSvg's maskAngleText, which says why). (2026-10-02) */
+  maskAngleText?: boolean;
+  /** Bodies known only to a span on a chart with no birth time (WheelSvg's ranges): the
+   *  enlarged minimap offers the readout ring, which must not print them to the minute.
+   *  (2026-10-02) */
+  ranges?: ReadonlyMap<PlanetName, number> | null;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
@@ -73,6 +80,8 @@ export function ChartWheel({
   noChart = false,
   planetsOnly = false,
   onExpand,
+  maskAngleText = false,
+  ranges = null,
 }: ChartWheelProps) {
   const { t } = useT();
   const [enlarged, setEnlarged] = useState(false);
@@ -169,6 +178,8 @@ export function ChartWheel({
             detailed={enlarged}
             visibleAspects={NO_ASPECTS}
             planetsOnly={planetsOnly && !angles}
+            maskAngleText={maskAngleText}
+            ranges={ranges}
           />
         </div>
       ) : noChart ? (

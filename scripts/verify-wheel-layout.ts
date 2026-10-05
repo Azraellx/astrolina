@@ -5,7 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Ring layout: nothing on a chart wheel's glyph ring may overlap anything else,
-// and the angle codes (As/Ds/Mc/Ic/Vx/Avx) must keep the exact spot where their
+// and the angle codes (AS/MC/DS/IC/Vx/Avx) must keep the exact spot where their
 // axis crosses the ring.
 //
 // Those two pull against each other, which is why this is worth asserting rather
@@ -55,8 +55,10 @@ import { WALL_HALF_PX, layoutMinorRing, minorRingWalls } from '../src/lib/wheelR
 const geom = (size: number, advanced: boolean): WheelGeometry =>
   wheelGeometry({ size, detailed: true, advanced });
 
+// The codes as the wheel DRAWS them (format.ts ANGLE_LABEL), since their widths are
+// what is being reserved: AS, MC, DS, IC since 2026-10-02.
 const angles4 = (asc: number, mc: number): [string, number][] => [
-  ['As', asc], ['Ds', (asc + 180) % 360], ['Mc', mc], ['Ic', (mc + 180) % 360],
+  ['AS', asc], ['MC', mc], ['DS', (asc + 180) % 360], ['IC', (mc + 180) % 360],
 ];
 const angles6 = (asc: number, mc: number, vx: number): [string, number][] => [
   ...angles4(asc, mc), ['Vx', vx], ['Avx', (vx + 180) % 360],
@@ -193,25 +195,25 @@ const at = (names: string[], lons: number[]): [string, number][] =>
 
 console.log('the codes hold their axis, and nothing overlaps');
 check('bodies well spread', 560, angles4(0, 272), at(TEN, [12, 40, 66, 95, 130, 165, 200, 232, 300, 335]));
-check('bodies exactly ON the As and the Mc', 560, angles4(0, 272), at(TEN, [0, 1, 272, 273, 130, 165, 200, 232, 300, 335]));
-check('stellium straddling the Mc', 800, angles4(0, 272), at(TEN, [268, 270, 271, 272, 274, 276, 165, 200, 300, 335]));
+check('bodies exactly ON the AS and the MC', 560, angles4(0, 272), at(TEN, [0, 1, 272, 273, 130, 165, 200, 232, 300, 335]));
+check('stellium straddling the MC', 800, angles4(0, 272), at(TEN, [268, 270, 271, 272, 274, 276, 165, 200, 300, 335]));
 check('Vertex axis on, narrowest sidebar', 320, angles6(0, 272, 47), at(TEN, [5, 44, 50, 95, 130, 165, 200, 232, 300, 335]));
 // The reported configuration: a portrait phone gives the wheel ~380px, and these
 // users had Advanced on. Neither the size nor the flag was covered before.
 check('phone wheel, Advanced on', 380, angles4(0, 272), at(TEN, [12, 40, 66, 95, 130, 165, 200, 232, 300, 335]), true, true);
-check('phone wheel, Advanced, stellium on the Mc', 380, angles4(0, 272), at(TEN, [268, 270, 271, 272, 274, 276, 165, 200, 300, 335]), true, true);
+check('phone wheel, Advanced, stellium on the MC', 380, angles4(0, 272), at(TEN, [268, 270, 271, 272, 274, 276, 165, 200, 300, 335]), true, true);
 // Over-subscribed on purpose: five of the nineteen fall in the 47° arc between the
-// As and the Vx, which needs 61°. The codes cannot all hold, and the suite says so
+// AS and the Vx, which needs 61°. The codes cannot all hold, and the suite says so
 // rather than pretending otherwise — what is still asserted is that nothing overlaps.
 check('phone wheel, Advanced, all 19 bodies', 380, angles6(0, 272, 47), at(ALL19, [12, 20, 28, 36, 44, 95, 130, 165, 200, 232, 250, 268, 285, 300, 315, 330, 340, 350, 5]), false, true);
 check('smallest sidebar, Advanced on', 280, angles4(0, 272), at(TEN, [12, 40, 66, 95, 130, 165, 200, 232, 300, 335]), true, true);
 check('every body conjunct some angle', 700, angles4(0, 90), at(TEN, [0, 0.4, 0.8, 1.2, 90, 90.4, 180, 180.4, 270, 270.4]));
 check('no angle marks at all', 560, [], at(TEN, [10, 11, 12, 13, 14, 120, 121, 240, 241, 242]));
-check('one body, one angle', 560, [['Mc', 100]], at(['Sun'], [100]));
+check('one body, one angle', 560, [['MC', 100]], at(['Sun'], [100]));
 
-console.log('\npolar chart: the Mc is 3° from the As, so the codes CANNOT all hold');
-check('Mc 3° from As', 560, angles4(0, 3), at(TEN, [90, 120, 150, 180, 210, 240, 270, 300, 330, 45]), false);
-check('Mc 1° from As, a body in the sliver', 560, angles4(0, 1), at(TEN, [0.5, 120, 150, 180.5, 210, 240, 270, 300, 330, 45]), false);
+console.log('\npolar chart: the MC is 3° from the AS, so the codes CANNOT all hold');
+check('MC 3° from AS', 560, angles4(0, 3), at(TEN, [90, 120, 150, 180, 210, 240, 270, 300, 330, 45]), false);
+check('MC 1° from AS, a body in the sliver', 560, angles4(0, 1), at(TEN, [0.5, 120, 150, 180.5, 210, 240, 270, 300, 330, 45]), false);
 
 // ── Generated charts ──────────────────────────────────────────────────────
 // Deterministic (fixed seed) so a failure is reproducible.
@@ -286,7 +288,7 @@ sweep('adversarial (angles anywhere, bodies bunched)', 5000, () => {
     ]),
   };
 });
-sweep('realistic (Mc 55–125° from As, inner bodies near the Sun)', 5000, () => {
+sweep('realistic (MC 55–125° from AS, inner bodies near the Sun)', 5000, () => {
   const size = [340, 380, 440, 500, 560, 700, 800][Math.floor(rnd() * 7)];
   const advanced = rnd() < 0.5;
   const asc = rnd() * 360;
@@ -474,7 +476,7 @@ function findingVerdict(ok: boolean): string {
   return 'meas';
 }
 
-/** The realistic generator above (Mc 55–125° from the As, inner bodies near the Sun, a
+/** The realistic generator above (MC 55–125° from the AS, inner bodies near the Sun, a
  *  third of charts with all nineteen bodies), on a caller's own seed. */
 function realisticChart(r: () => number, count = r() < 0.35 ? 19 : 10) {
   const advanced = r() < 0.5;

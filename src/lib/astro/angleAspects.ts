@@ -42,7 +42,9 @@
 //    matching how reference software places mundane midpoint lines.
 //
 // Celestial vs geodetic needs no handling here: the injected `meridianLng`
-// already maps RA to geographic longitude for either system.
+// already maps RA to geographic longitude for either system. The one difference is
+// handed in, not decided here: `opts.vertex: false` (a geodetic map, lib/skyHold)
+// leaves out each virtual point's Vertex-axis runs, as generateLines does. (2026-10-02)
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import {
   PLANET_CODES,
@@ -56,7 +58,13 @@ import {
   type PlanetPosition,
 } from '../ephemeris';
 import { ASPECT_GLYPHS } from './glyphChars';
-import { generateLines, type LineProps, type LineType, type MeridianLng } from './lines';
+import {
+  generateLines,
+  LINE_TYPE_LABEL,
+  type LineProps,
+  type LineType,
+  type MeridianLng,
+} from './lines';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -167,13 +175,14 @@ function virtualPointLines(
   ra: number,
   dec: number,
   meridianLng: MeridianLng,
+  opts: { vertex?: boolean } = {},
 ): {
   features: Feature<LineString, LineProps>[];
   subLng: number;
   subLat: number;
 } {
   return {
-    features: generateLines([{ name, ra, dec }], meridianLng).features,
+    features: generateLines([{ name, ra, dec }], meridianLng, opts).features,
     subLng: normLng(meridianLng(ra)),
     subLat: dec * RAD2DEG,
   };
@@ -203,6 +212,7 @@ export function generateAspectLines(
   meridianLng: MeridianLng,
   coordSystem: CoordSystem,
   eps: number,
+  opts: { vertex?: boolean } = {},
 ): FeatureCollection<LineString, AspectLineProps> {
   const src = positions.some((p) => p.name === 'NorthNode')
     ? positions.filter((p) => p.name !== 'SouthNode')
@@ -225,7 +235,7 @@ export function generateAspectLines(
               return { ra: vp.ra, dec: vp.dec };
             });
       for (const { ra, dec } of points) {
-        const v = virtualPointLines(p.name, ra, dec, meridianLng);
+        const v = virtualPointLines(p.name, ra, dec, meridianLng, opts);
         for (const f of v.features) {
           const own = f.properties.lineType;
           // Relabel the far-side lines to the MC/ASC reading: the +a point's IC
@@ -242,7 +252,7 @@ export function generateAspectLines(
               kind: 'aspect',
               aspect: shown,
               ...lineTarget(own, v.subLng, v.subLat),
-              label: `${PLANET_CODES[p.name]} ${ASPECT_GLYPHS[shown]} ${angle}`,
+              label: `${PLANET_CODES[p.name]} ${ASPECT_GLYPHS[shown]} ${LINE_TYPE_LABEL[angle]}`,
             },
           });
         }
@@ -262,6 +272,7 @@ export function generateMidpointLines(
   meridianLng: MeridianLng,
   coordSystem: CoordSystem,
   eps: number,
+  opts: { vertex?: boolean } = {},
 ): FeatureCollection<LineString, MidpointLineProps> {
   // Canonical pair order (Sun first … Lilith last) keeps labels and the
   // pair's color (= first body's) stable however the filter set changes.
@@ -283,7 +294,7 @@ export function generateMidpointLines(
         coordSystem === 'zodiaco'
           ? eclipticToRaDec(shortArcMid(bodyLon(A, eps), bodyLon(B, eps)), 0, eps)
           : { ra: shortArcMid(A.ra, B.ra), dec: (A.dec + B.dec) / 2 };
-      const v = virtualPointLines(A.name, ra, dec, meridianLng);
+      const v = virtualPointLines(A.name, ra, dec, meridianLng, opts);
       for (const f of v.features) {
         features.push({
           ...f,
@@ -293,7 +304,7 @@ export function generateMidpointLines(
             planetB: B.name,
             colorB: PLANET_COLORS[B.name],
             ...lineTarget(f.properties.lineType, v.subLng, v.subLat),
-            label: `${PLANET_CODES[A.name]}/${PLANET_CODES[B.name]} ${f.properties.lineType}`,
+            label: `${PLANET_CODES[A.name]}/${PLANET_CODES[B.name]} ${LINE_TYPE_LABEL[f.properties.lineType]}`,
           },
         });
       }

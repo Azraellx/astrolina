@@ -118,6 +118,23 @@ export const map = {
   // Nadir (antipodal underfoot) stamp hover popup.
   nadirTitle: '{planet} nadir',
   nadirSub: 'where {planet} is directly underfoot',
+  // The geodetic grid's hover readout: the place (or, over open ground or water, its
+  // coordinates) tagged GE, then its geodetic angles to the minute. {place} is the nearest
+  // city's own name; {lat} and {lng} are degrees and minutes ("43°N39'"). Only AS and MC:
+  // DS and IC are their opposites, so they would add a line and no information.
+  geoReadout: {
+    place: '{place} GE',
+    coords: '{lat} {lng} GE',
+    as: 'AS',
+    mc: 'MC',
+  },
+  // The zone-shading legend's heads: a row head isolates an element, a column head a
+  // modality, and the same head again shows every zone. {group} is "Fire", "Cardinal", …
+  geoLegend: {
+    aria: 'Zone shading legend',
+    isolate: 'Show only {group} zones',
+    clear: 'Show every zone',
+  },
   // Deep-zoom escape pill (appears once zoomed past the detail threshold).
   zoomOutToWide: 'Zoom out to a wide view',
   zoomOut: 'Zoom Out',

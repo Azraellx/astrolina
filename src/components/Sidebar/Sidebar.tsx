@@ -26,13 +26,14 @@ import {
   type NodeType,
   type PlanetName,
 } from '../../lib/ephemeris';
-import type { LineType } from '../../lib/astro/lines';
+import { LINE_TYPE_LABEL, type LineType } from '../../lib/astro/lines';
 import { overlayAuxBlocked } from '../../lib/astro/timeline';
 import type { OverlayMode } from '../../lib/astro/timeline';
 import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { GEODETIC_HELD } from '../../lib/geodeticHold';
+import { skyHeldFor } from '../../lib/skyHold';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
@@ -88,6 +89,9 @@ interface SidebarProps {
    *  while Advanced is off); `shown` / `held` are catalog bodies drawn / held by a
    *  closed source right now (derived, for the button's badges). */
   minorMore: { open: boolean; onToggle: () => void; shown: number; held: number };
+  /** The PREFERENCE, not the drawn set: on a geodetic map the Vx/Avx buttons keep
+   *  showing the reader's choice, greyed, while App masks the axis out of what is
+   *  drawn (2026-10-02). */
   visibleLineTypes: Set<LineType>;
   toggleLineType: (t: LineType) => void;
   setAllLineTypes: (visible: boolean) => void;
@@ -127,15 +131,27 @@ interface SidebarProps {
   setShowNightShade: (v: boolean) => void;
   showZenith: boolean;
   setShowZenith: (v: boolean) => void;
+  /** The DERIVED line system. It also decides the sky hold (lib/skyHold): on a
+   *  geodetic map the controls for what reads the sky's turning grey with
+   *  settings.inert.skyHeld, each still showing its stored choice (2026-10-02). */
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
-  /** The names of what is open right now that needs the sky's sidereal time (Local Space,
-   *  Slide, a registered tool that declares it) — what choosing Mundane would close. Empty
-   *  when nothing would, and then the Mundane half's tip says nothing about it. */
-  mundaneCloses: readonly string[];
-  /** Sidereal zodiac active (Advanced ▸ Zodiac ≠ tropical) — hides Geodetic,
+  /** Sidereal zodiac active (Advanced ▸ Zodiac ≠ tropical) — greys Geodetic,
    *  which is tropical-only by definition. */
   siderealActive: boolean;
+  /** Calculation ▸ Geodetic grid (lib/astro/geodeticGrid). Each value is what its eye shows:
+   *  the stored choice — except `asc`, which is the DERIVED state (the auto default resolved),
+   *  while `setAsc` stores the reader's choice from then on. Absent: the block isn't drawn. */
+  geoGrid?: {
+    mc: boolean;
+    setMc: (v: boolean) => void;
+    asc: boolean;
+    setAsc: (v: boolean) => void;
+    zones: boolean;
+    setZones: (v: boolean) => void;
+    presentation: boolean;
+    setPresentation: (v: boolean) => void;
+  };
   coordSystem: CoordSystem;
   setCoordSystem: (c: CoordSystem) => void;
   fortuneFormula: FortuneFormula;
@@ -168,17 +184,15 @@ interface SidebarProps {
   setOpenSection: (s: SidebarSection | null) => void;
 }
 
-// Angle codes (As/Ds/MC/IC/Vx/Avx) are language-neutral button labels; the
+// Angle codes (AS/MC/DS/IC/Vx/Avx) are language-neutral button labels; the
 // spelled-out tooltip resolves from the catalog (settings.lineType.*.hint via
-// labels.lineTypeHint). The Vertex axis rows sit below As/Ds and default OFF.
-const LINE_TYPES: { type: LineType; label: string }[] = [
-  { type: 'MC', label: 'MC' },
-  { type: 'IC', label: 'IC' },
-  { type: 'ASC', label: 'As' },
-  { type: 'DSC', label: 'Ds' },
-  { type: 'VX', label: 'Vx' },
-  { type: 'AVX', label: 'Avx' },
-];
+// labels.lineTypeHint). In the display order AS, MC, DS, IC (2026-10-02), which the
+// two-column grid lays out as the horizon pair on the left and the meridian pair on
+// the right. The Vertex axis rows sit below them and default OFF. The labels are the
+// lines' own (LINE_TYPE_LABEL), so a button and the line it filters say the same code.
+const LINE_TYPES: { type: LineType; label: string }[] = (
+  ['ASC', 'MC', 'DSC', 'IC', 'VX', 'AVX'] as const
+).map((type) => ({ type, label: LINE_TYPE_LABEL[type] }));
 
 // The Shift+click affordance shown as the hotkey tag on each planet / line filter
 // tip: "Shift" + a cursor/tap glyph. Shift+click toggles every item in the group at
@@ -529,6 +543,10 @@ export function HintMenu<V extends string>({
     /** Optional leading symbol (rendered in the bundled glyph font). */
     glyph?: string;
     disabled?: boolean;
+    /** Why a disabled option can't be picked — the tip's second line, with the grey
+     *  N/A badge (the .ui-inert treatment), as on the other settings controls.
+     *  (2026-10-02) */
+    disabledHint?: string;
   }[];
   /** A line above the options naming the question they answer. Static text, not a
    *  selectable row — use it where the option labels alone don't say what is being
@@ -741,6 +759,7 @@ export function HintMenu<V extends string>({
                 hint={o.hint}
                 glyph={o.glyph}
                 disabled={o.disabled}
+                disabledHint={o.disabledHint}
                 selected={o.value === value}
                 onSelect={() => {
                   if (o.disabled) return;
@@ -765,6 +784,7 @@ function HintMenuItem({
   selected,
   onSelect,
   disabled = false,
+  disabledHint,
 }: {
   label: string;
   hint: string;
@@ -775,6 +795,9 @@ function HintMenuItem({
    *  on hover (so we use aria-disabled, not the native `disabled` attribute, which
    *  would suppress the pointer events the tip needs). */
   disabled?: boolean;
+  /** The reason, shown under the hint with the N/A badge. Without one the tip is the
+   *  hint alone, as it always was. */
+  disabledHint?: string;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   return (
@@ -798,7 +821,15 @@ function HintMenuItem({
         </span>
       )}
       <span>{label}</span>
-      {hint && <ChoiceTip pos={pos} title={label} hint={hint} />}
+      {hint && (
+        <ChoiceTip
+          pos={pos}
+          title={label}
+          hint={hint}
+          note={disabled ? disabledHint : undefined}
+          unavailable={disabled && !!disabledHint}
+        />
+      )}
     </button>
   );
 }
@@ -1010,6 +1041,40 @@ function PlanetToggle({
   );
 }
 
+// Calculation ▸ Geodetic grid: the four switches, shown only while the DERIVED line system is
+// Geodetic (see the comment where it is placed, under Line system).
+function GeoGridControls({ grid }: { grid: NonNullable<SidebarProps['geoGrid']> }) {
+  const { t } = useT();
+  const row = (
+    key: 'mc' | 'asc' | 'zones' | 'presentation',
+    on: boolean,
+    set: (v: boolean) => void,
+    extra = '',
+  ) => (
+    <TipToggle
+      className={`tech-toggle ${on ? 'on' : 'off'}${extra}`}
+      onClick={() => set(!on)}
+      ariaPressed={on}
+      title={t(`settings.geoGrid.${key}.title`)}
+      hint={t(`settings.geoGrid.${key}.hint`)}
+    >
+      <EyeIcon open={on} />
+      <span className="name">{t(`settings.geoGrid.${key}.title`)}</span>
+    </TipToggle>
+  );
+  return (
+    <>
+      <h2>{t('settings.headings.geoGrid')}</h2>
+      <ul className="technique-list">
+        {row('mc', grid.mc, grid.setMc)}
+        {row('asc', grid.asc, grid.setAsc)}
+        {row('zones', grid.zones, grid.setZones)}
+        {row('presentation', grid.presentation, grid.setPresentation, ' geo-grid-sub')}
+      </ul>
+    </>
+  );
+}
+
 // Eye (shown) / eye-off (hidden) marker for the "Hide details" toggles.
 export function Sidebar({
   visiblePlanets,
@@ -1050,8 +1115,8 @@ export function Sidebar({
   setShowZenith,
   lineSystem,
   setLineSystem,
-  mundaneCloses,
   siderealActive,
+  geoGrid,
   coordSystem,
   setCoordSystem,
   fortuneFormula,
@@ -1081,7 +1146,7 @@ export function Sidebar({
   closing,
   onSlideOutEnd,
 }: SidebarProps) {
-  const { t, labels, fmt, locale, setLocale } = useT();
+  const { t, labels, locale, setLocale } = useT();
   const discreet = useDiscreet();
   const touch = useTouchLayout();
   // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
@@ -1150,6 +1215,16 @@ export function Sidebar({
     : lineSystem !== 'geodetic' && coordSystem !== 'zodiaco'
       ? t('settings.inert.fortuneMundo')
       : undefined;
+
+  // The sky hold (lib/skyHold), on the DERIVED line system: on a geodetic map nothing
+  // turns, so the switches for what reads the turning — night shade, the Vertex axis,
+  // zenith points, parans, fixed stars, the line projection — grey with the one
+  // sentence and its fix. Each keeps showing the STORED choice, which App masks only
+  // out of what is drawn, so Celestial brings every one back as it was; the hotkeys
+  // are refused in App while held, so nothing here can move a choice unseen.
+  // (2026-10-02)
+  const skyHeld = skyHeldFor(lineSystem);
+  const skyHeldWhy = skyHeld ? t('settings.inert.skyHeld') : undefined;
 
   // TELL THE MAP when this panel arrives, changes size, and leaves. The map keeps its line labels
   // off every panel's rect (HUD_SELECTORS there lists `.sidebar`), cached until `astro:hud-moved`,
@@ -1261,11 +1336,14 @@ export function Sidebar({
               <EyeIcon open={showLabels} />
               <span className="name">{t('settings.details.placeNames')}</span>
             </TipToggle>
-            {/* Night Shade — shades the night half of Earth. */}
+            {/* Night Shade — shades the night half of Earth. Held on a geodetic map:
+                day and night are the sky's turning. (2026-10-02) */}
             <TipToggle
               className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
               onClick={() => setShowNightShade(!showNightShade)}
               ariaPressed={showNightShade}
+              disabled={skyHeld}
+              disabledHint={skyHeldWhy}
               title={t('settings.nightShade.title')}
               hotkey="Shift D"
               hint={t('settings.nightShade.hint')}
@@ -1506,12 +1584,19 @@ export function Sidebar({
           <ul className="line-type-grid">
             {LINE_TYPES.map(({ type, label }) => {
               const on = visibleLineTypes.has(type);
+              // A geodetic map draws the four angles only, so the Vertex axis is held
+              // (the stored choice shows, greyed). The other four stay live, and their
+              // Shift+click leaves the held pair as stored (App's setAllLineTypes).
+              // (2026-10-02)
+              const held = skyHeld && (type === 'VX' || type === 'AVX');
               return (
                 <TipToggle
                   key={type}
                   className={`line-toggle ${type.toLowerCase()} ${on ? 'on' : 'off'}`}
                   onClick={() => toggleLineType(type)}
                   onShiftClick={() => setAllLineTypes(!on)}
+                  disabled={held}
+                  disabledHint={skyHeldWhy}
                   title={label}
                   hint={labels.lineTypeHint(type)}
                   hotkey={<ShiftTapTag />}
@@ -1543,42 +1628,38 @@ export function Sidebar({
 
       {openSection === 'calc' && (
         <div className="sidebar-section">
-          {/* Primary paradigm: Celestial (standard ACG, by the sky) vs Mundane
-              (geodetic, by Earth longitude). The In-Mundo/In-Zodiaco
-              "Line projection" below is a Celestial-only refinement, so it shows
-              ONLY in Celestial — which also keeps "In Mundo" from ever appearing
-              next to "Mundane". */}
+          {/* Primary paradigm: Celestial (standard ACG, by the sky) vs Geodetic
+              (the zodiac by Earth longitude). The In-Mundo/In-Zodiaco "Line
+              projection" below is a Celestial-only refinement: on a geodetic map it
+              is greyed with In Zodiaco marked, which is what that map draws.
+              (2026-10-02) */}
           <h2>{t('settings.headings.lineSystem')}</h2>
-          {/* Named so the auto-flip notice can point here when it reports a line-system
-              change and this panel happens to be open (lib/autoFlipNotice). A styling
-              hook would be wrong — this is an identity, and it must survive a reskin. */}
-          {/* Geodetic (Mundane) can be unavailable for TWO reasons, and they get
+          {/* Named so the auto-flip notice can point here when it reports the line
+              system held by a sidereal zodiac and this panel happens to be open
+              (lib/autoFlipNotice). A styling hook would be wrong — this is an
+              identity, and it must survive a reskin. */}
+          {/* Geodetic can be unavailable for TWO reasons, and they get
               different words because they are different facts.
 
               • It is tropical-only, so a sidereal zodiac makes it unavailable — that
-                one names the setting to change, and changing it brings Mundane back.
+                one names the setting to change, and changing it brings Geodetic back.
               • It is HELD while the mapping is under review (lib/geodeticHold) — that
                 one has no setting to name, so it says what it is and that the choice
                 is kept.
 
               The HOLD OUTRANKS the sidereal reason where both apply: telling someone
-              to set the zodiac back to Tropical when that will not re-enable Mundane
+              to set the zodiac back to Tropical when that will not re-enable Geodetic
               is worse than saying nothing.
 
               Shown INERT rather than filtered out, in both cases. Removing it left a
-              user who had Mundane selected watching it vanish with nothing to read
+              user who had Geodetic selected watching it vanish with nothing to read
               and no way back; the dimmed half explains itself, and the stored choice
               is only masked, so it returns with nothing to redo.
               (The half never reads as SELECTED while blocked: `lineSystem` here is
-              the derived value, which is already 'celestial' under either.)
-
-              While it IS available, its tip also says what choosing it will close —
-              Local Space, Slide, a tool that needs sidereal time — but only when one
-              of them is open, since a warning about a no-op is dismissed unread. The
-              notice card is the other end of the same announcement. */}
+              the derived value, which is already 'celestial' under either.) */}
           <SplitSelect
-            // Named so the auto-flip notice can point here when it reports a
-            // line-system change and this panel happens to be open (lib/autoFlipNotice).
+            // Named so the auto-flip notice can point here when it reports the
+            // line system held and this panel happens to be open (lib/autoFlipNotice).
             data-autoflip="line-system"
             ariaLabel={t('settings.headings.lineSystem')}
             value={lineSystem}
@@ -1597,36 +1678,45 @@ export function Sidebar({
                   : sidereal
                     ? t('settings.inert.geodeticSidereal')
                     : undefined,
-                note:
-                  value === 'geodetic' && lineSystem !== 'geodetic' && mundaneCloses.length > 0
-                    ? t('settings.lineSystem.geodetic.closes', {
-                        names: fmt.list(mundaneCloses),
-                        count: mundaneCloses.length,
-                      })
-                    : undefined,
               };
             })}
           />
 
-          {lineSystem === 'celestial' && (
-            <>
-              <h2>{t('settings.headings.lineProjection')}</h2>
-              {/* Named so the first-open notice can point here (lib/autoFlipNotice) —
-                  this app's In Mundo default is the one that routinely reads as a bug
-                  to someone cross-checking against another program. */}
-              <ul className="theme-list" data-autoflip="line-projection">
-                {COORD_SYSTEM_VALUES.map((value) => (
-                  <HintOption
-                    key={value}
-                    selected={coordSystem === value}
-                    onSelect={() => setCoordSystem(value)}
-                    label={labels.coordSystem(value)}
-                    hint={labels.coordSystemHint(value)}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
+          {/* The geodetic grid: the zodiac laid on the Earth (lib/astro/geodeticGrid), drawn only
+              on a geodetic map — so its four switches sit under the control that makes one, and
+              appear only while the DERIVED line system is Geodetic (so not while the review hold
+              or a sidereal zodiac masks a Geodetic choice). This is the deliberate exception to
+              "grey, never hide" (Salvatore, 2026-10-05): that rule is for a feature the reader
+              chose and can't use on this map, which needs its reason in view. These are options
+              OF the Geodetic choice — with Celestial chosen there is nothing for them to apply
+              to, as Line projection once showed only under Celestial. Hiding writes nothing: the
+              four prefs keep their values and return with Geodetic. Presentation is indented
+              under Zone shading, which it strengthens, and is live with the others (it can be set
+              before the shading is turned on). (2026-10-02; shown-only-on-Geodetic 2026-10-05) */}
+          {geoGrid && lineSystem === 'geodetic' && <GeoGridControls grid={geoGrid} />}
+
+          {/* ALWAYS rendered. It used to show only in Celestial; on a geodetic map it
+              now stays, greyed with the sky sentence, because a control that vanishes
+              takes its explanation with it. The mark follows the EFFECTIVE value —
+              In Zodiaco, which is how a geodetic map places every body — while the
+              stored choice is kept and comes back marked on Celestial. (2026-10-02) */}
+          <h2>{t('settings.headings.lineProjection')}</h2>
+          {/* Named so the first-open notice can point here (lib/autoFlipNotice) —
+              this app's In Mundo default is the one that routinely reads as a bug
+              to someone cross-checking against another program. */}
+          <ul className="theme-list" data-autoflip="line-projection">
+            {COORD_SYSTEM_VALUES.map((value) => (
+              <HintOption
+                key={value}
+                selected={(skyHeld ? 'zodiaco' : coordSystem) === value}
+                onSelect={() => setCoordSystem(value)}
+                label={labels.coordSystem(value)}
+                hint={labels.coordSystemHint(value)}
+                disabled={skyHeld}
+                disabledHint={skyHeldWhy}
+              />
+            ))}
+          </ul>
 
           <h2>{t('settings.headings.lunarNode')}</h2>
           <ul className="theme-list">
@@ -1748,11 +1838,14 @@ export function Sidebar({
           <h2>{t('settings.headings.display')}</h2>
           <ul className="technique-list">
             {/* Zenith stamps (overhead, circle) + antipodal nadir stamps
-                (underfoot, diamond) and the ecliptic reference curve. */}
+                (underfoot, diamond) and the ecliptic reference curve. Held on a
+                geodetic map: "overhead" is a moment of the turning sky. (2026-10-02) */}
             <TipToggle
               className={`tech-toggle ${showZenith ? 'on' : 'off'}`}
               onClick={() => setShowZenith(!showZenith)}
               ariaPressed={showZenith}
+              disabled={skyHeld}
+              disabledHint={skyHeldWhy}
               title={t('settings.zenithNadir.title')}
               hotkey="Shift Z"
               hint={t('settings.zenithNadir.hint')}
@@ -1830,12 +1923,16 @@ export function Sidebar({
               <EyeIcon open={showNatalLines} />
               <span className="name">{t('settings.natalLines.title')}</span>
             </TipToggle>
+            {/* Parans and fixed stars are held on a geodetic map (lib/skyHold). The
+                hold's reason outranks Cyclocartography's for parans: switching the
+                overlay would not bring them back there, the line system would.
+                (2026-10-02) */}
             <TipToggle
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
-              disabled={overlayAuxBlocked(overlayMode, 'paran')}
-              disabledHint={t('settings.parans.blockedCyclo')}
+              disabled={skyHeld || overlayAuxBlocked(overlayMode, 'paran')}
+              disabledHint={skyHeldWhy ?? t('settings.parans.blockedCyclo')}
               title={t('settings.parans.title')}
               hotkey="Shift P"
               hint={t('settings.parans.hint')}
@@ -1847,6 +1944,8 @@ export function Sidebar({
               className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
               onClick={() => setShowStarLines(!showStarLines)}
               ariaPressed={showStarLines}
+              disabled={skyHeld}
+              disabledHint={skyHeldWhy}
               title={t('settings.starLines.title')}
               hotkey="Shift S"
               hint={t('settings.starLines.hint')}
@@ -1856,6 +1955,9 @@ export function Sidebar({
             </TipToggle>
             {showStarLines && (
               <li className="orb-zone-row">
+                {/* The set follows its switch: held options can't be picked, so the
+                    stored set can't move while nothing star-shaped is drawn.
+                    (2026-10-02) */}
                 <HintMenu
                   value={starSet}
                   onChange={setStarSet}
@@ -1864,11 +1966,15 @@ export function Sidebar({
                       value: 'bright',
                       label: t('settings.starLines.bright'),
                       hint: t('settings.starLines.brightHint'),
+                      disabled: skyHeld,
+                      disabledHint: skyHeldWhy,
                     },
                     {
                       value: 'all',
                       label: t('settings.starLines.all'),
                       hint: t('settings.starLines.allHint'),
+                      disabled: skyHeld,
+                      disabledHint: skyHeldWhy,
                     },
                   ]}
                 />

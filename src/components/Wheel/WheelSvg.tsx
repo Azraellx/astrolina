@@ -19,7 +19,7 @@ import {
 } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels, MsgKey, TFn } from '../../i18n';
-import { fmtDM, lonToZodiac } from '../../lib/astro/format';
+import { ANGLE_LABEL, fmtDM, lonRange, lonToZodiac, truncZodiac } from '../../lib/astro/format';
 import { placeOnRing, type RingMark } from '../../lib/ringLayout';
 import { angleLabelHalfPx, wheelGeometry } from '../../lib/wheelGeometry';
 import { layoutMinorRing, minorRingWalls } from '../../lib/wheelRingLayout';
@@ -33,6 +33,7 @@ import {
 } from '../../lib/aspectPrefs';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { ZodiacRange } from '../ZodiacGlyph/ZodiacRange';
 import { MinorMark, MinorMarkSvg } from '../MinorMark/MinorMark';
 import './WheelSvg.css';
 
@@ -91,59 +92,103 @@ export const planetMeaning = (t: TFn, p: PlanetName) =>
 // Takes anything with a longitude, so the chart ANGLES read the same way as the
 // bodies do — they simply have no motion and no latitude to report (an angle is a
 // point ON the ecliptic), and those lines fall away on their own.
+//
+// Two options, both for a geodetic frame's ANGLES (2026-10-02): `trunc` reads the
+// degree through format.ts truncZodiac, as every readout of a place's angles does, so
+// the tip names the place's zone and never rounds into the next sign; `hideLon` drops
+// the figure where Discreet masks it (see maskAngleText) — and with it the whole
+// description, which for an angle is that one line.
+//
+// `note` is a last line saying where the figure comes from (bodyNotes). It survives
+// `hideLon`: it names a source, not a degree, and a masked Lot still being labelled is
+// what tells the reader its figure was hidden rather than never there. (2026-10-02)
+//
+// `range` is a body known only to a span — a chart with no birth time (lib/astro/timeless):
+// its half-width in degrees. The longitude line becomes the span (2°♉–18°♉, each end in its
+// own sign) with a line saying why, and the title names a sign only when the whole span is
+// in one. `hideLon` hides the span and its line as it hides a degree. (2026-10-02)
 function bodyTip(
   t: TFn,
   labels: EnumLabels,
   p: { lon: number; lat?: number; retrograde?: boolean; stationary?: boolean },
+  opts: { trunc?: boolean; hideLon?: boolean; note?: string | null; range?: number | null } = {},
 ): { suffix: ReactNode; sub: ReactNode } {
-  const { signIdx, degMin } = lonToZodiac(p.lon);
+  const z = opts.trunc ? truncZodiac(p.lon, 'min') : null;
+  const { signIdx, degMin } = z ? { signIdx: z.signIdx, degMin: z.text } : lonToZodiac(p.lon);
+  const half = opts.range ?? null;
+  const span = half !== null ? lonRange(p.lon, half) : null;
+  const titleSign = !span ? signIdx : span.lo.signIdx === span.hi.signIdx ? span.lo.signIdx : null;
   const tag = motionTag(p);
+  const figure = opts.hideLon ? null : (
+    <>
+      {/* Retrograde / stationary leads, in the ℞ / S mark and colour the
+          readout ring and the sidebar's table both use, so one body reads the
+          same however you meet it. */}
+      {tag && (
+        <>
+          <span className="wheel-tip-status" style={{ color: MOTION_MARK[tag].color }}>
+            {MOTION_MARK[tag].char} {motionWord(t, tag)}
+          </span>
+          <br />
+        </>
+      )}
+      {half !== null ? (
+        <>
+          <ZodiacRange lon={p.lon} halfDeg={half} size={12} />
+          <br />
+          {t('wheel.tip.rangeNote')}
+        </>
+      ) : (
+        t('wheel.tip.longitude', { lon: degMin })
+      )}
+      {p.lat !== undefined && (
+        <>
+          <br />
+          {t('wheel.tip.latitude', { lat: fmtDM((p.lat * 180) / Math.PI, true) })}
+        </>
+      )}
+    </>
+  );
   return {
     // The separator rides inside the sign's group, so a title long enough to wrap
     // carries "| ♐ Sagittarius" to the next line together instead of leaving the bar
     // dangling at the end of the first.
-    suffix: (
-      <span className="wheel-tip-sign">
-        <span className="wheel-tip-sep" aria-hidden="true">
-          |
+    suffix:
+      titleSign === null ? null : (
+        <span className="wheel-tip-sign">
+          <span className="wheel-tip-sep" aria-hidden="true">
+            |
+          </span>
+          <ZodiacGlyph sign={titleSign} size={13} />
+          {labels.sign(titleSign)}
         </span>
-        <ZodiacGlyph sign={signIdx} size={13} />
-        {labels.sign(signIdx)}
-      </span>
-    ),
-    sub: (
+      ),
+    sub: opts.note ? (
       <>
-        {/* Retrograde / stationary leads, in the ℞ / S mark and colour the
-            readout ring and the sidebar's table both use, so one body reads the
-            same however you meet it. */}
-        {tag && (
+        {figure && (
           <>
-            <span className="wheel-tip-status" style={{ color: MOTION_MARK[tag].color }}>
-              {MOTION_MARK[tag].char} {motionWord(t, tag)}
-            </span>
+            {figure}
             <br />
           </>
         )}
-        {t('wheel.tip.longitude', { lon: degMin })}
-        {p.lat !== undefined && (
-          <>
-            <br />
-            {t('wheel.tip.latitude', { lat: fmtDM((p.lat * 180) / Math.PI, true) })}
-          </>
-        )}
+        {opts.note}
       </>
+    ) : (
+      figure
     ),
   };
 }
 
-// The chart angles, keyed by the label drawn on the wheel. The title + sub
-// hint text is resolved via wheel.angles.<key> at render time. Vx/Avx (the
-// Vertex axis) are opt-in via the Advanced ▸ Vertex axis setting.
+// The chart angles, keyed by their angle code (format.ts AngleCode). The title +
+// sub hint text is resolved via wheel.angles.<key> at render time; the mark itself
+// prints ANGLE_LABEL[key] (AS, MC, DS, IC — the codes were drawn as they stand until
+// 2026-10-02). Vx/Avx (the Vertex axis) are opt-in via the Advanced ▸ Vertex axis
+// setting.
 type AngleKey = 'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx';
 const ANGLE_HINTS: { key: AngleKey }[] = [
   { key: 'As' },
-  { key: 'Ds' },
   { key: 'Mc' },
+  { key: 'Ds' },
   { key: 'Ic' },
   { key: 'Vx' },
   { key: 'Avx' },
@@ -530,14 +575,14 @@ interface WheelSvgProps {
    *  defaults, the original behaviour. */
   aspectOrbs?: AspectOrbs;
   /**
-   * Which angle labels (As/Ds/Mc/Ic and the Vx/Avx Vertex axis) to draw,
+   * Which angle marks (by code: As/Ds/Mc/Ic and the Vx/Avx Vertex axis) to draw,
    * mirroring the Map Filter's line-type toggles. Omitted → all (the minimap
    * draws no angle marks, so it never reaches this).
    */
   visibleAngles?: Set<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>;
   /**
    * Enable novice hover hints: a responsive scale on the planet discs + rim
-   * signs, the four angle labels (As/Ds/Mc/Ic), and a floating tag naming each
+   * signs, the four angle labels (AS/MC/DS/IC), and a floating tag naming each
    * one. Opt-in so the minimap stays static — only the expanded sidebar sets it.
    */
   interactive?: boolean;
@@ -579,6 +624,38 @@ interface WheelSvgProps {
    *  ring switched off (MINOR_RING_ENABLED) it is never granted, so this changes
    *  nothing drawn. */
   minorReserve?: boolean;
+  /**
+   * Discreet mode over a birthplace's GEODETIC frame (2026-10-02): those angles are a
+   * function of the place alone — the MC is its longitude — so their figures are birth
+   * data. Hides every degree the wheel prints for the frame: both angle readout trios
+   * (natal and overlay ring, which on a geodetic map is the same place's frame), the
+   * angle tips' longitude line and the cusp rim's degree and minutes. The marks, axes
+   * and houses still draw where they fall. The caller decides when — Discreet on, the
+   * frame geodetic, and its place the birthplace — so the wheel never reads the mode.
+   *
+   * A Lot among the planets (POINTS: the Part of Fortune) loses its readout trio and
+   * its tip's longitude too: it is built from this frame's Ascendant, so its degree
+   * beside the Sun's and Moon's would give the masked Ascendant back exactly. Its
+   * glyph stays where it falls, as the angle marks do.
+   */
+  maskAngleText?: boolean;
+  /**
+   * A line per body saying where its figure comes from, printed last in that body's
+   * hover tip — even where maskAngleText hides the figure itself. The NATAL ring only:
+   * an overlay's bodies are another chart's. Today it carries one entry, the Part of
+   * Fortune on a geodetic map, which the caller builds from the place's geodetic
+   * Ascendant rather than the chart's own (2026-10-02).
+   */
+  bodyNotes?: ReadonlyMap<PlanetName, string> | null;
+  /**
+   * Bodies known only to a span, with its half-width in degrees: a chart with no birth
+   * time, cast for its 12:00 placeholder (lib/astro/timeless) — the Moon, and on a geodetic
+   * map the Part of Fortune. Such a body's tip prints the span instead of a degree to the
+   * minute, it gets no degree·sign·minute trio in the readout ring, and a detailed wheel
+   * draws the span as an arc of the tick strip in its colour. The NATAL ring only, like
+   * bodyNotes. (2026-10-02)
+   */
+  ranges?: ReadonlyMap<PlanetName, number> | null;
 }
 
 /** No catalog bodies: one stable reference, so the ring layout's memo holds still. */
@@ -628,6 +705,9 @@ export function WheelSvg({
   planetsOnly = false,
   minorBodies,
   minorReserve = false,
+  maskAngleText = false,
+  bodyNotes = null,
+  ranges = null,
 }: WheelSvgProps) {
   const { t, labels } = useT();
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
@@ -776,9 +856,9 @@ export function WheelSvg({
   // section beside the wheel. A per-ring toggle for the chords is a separate
   // question and deliberately not answered here.
 
-  // The four chart angles (As/Ds/Mc/Ic), drawn as ring marks alongside the
+  // The four chart angles (AS/MC/DS/IC), drawn as ring marks alongside the
   // planets so they read in the chart itself rather than in a separate list.
-  // Each keeps its axis colour — As/Ds gold, Mc/Ic cool — and joins the planet
+  // Each keeps its axis colour — AS/DS gold, MC/IC cool — and joins the planet
   // spread below so an angle is never stacked on top of a planet it's conjunct.
   //
   // Gated on the DETAILED wheel, not on `interactive`. The two were one flag
@@ -787,6 +867,8 @@ export function WheelSvg({
   // such a chart exists to show. Interactivity now decides only the hover
   // affordances (ANGLE_HINTS, the hit targets), not whether the marks exist.
   const showAngleMarks = detailed && !planetsOnly;
+  // A Lot whose figure goes with the masked angles' (maskAngleText says why). (2026-10-02)
+  const maskLot = (name: PlanetName) => maskAngleText && POINTS.includes(name);
   const angleLonByKey: Record<AngleKey, number> = {
     As: angles.asc,
     Ds: angles.dsc,
@@ -905,7 +987,7 @@ export function WheelSvg({
       angleMarks.map((a) => ({
         name: a.key as string,
         off: off(a.lon),
-        half: angleLabelHalfPx(a.key, angleCodePx, g.angleCodeHalo),
+        half: angleLabelHalfPx(ANGLE_LABEL[a.key], angleCodePx, g.angleCodeHalo),
       })),
       planets.map((p) => ({
         name: p.name as string,
@@ -934,15 +1016,14 @@ export function WheelSvg({
   const rBandMid = (rZodiacInner + rOuter) / 2;
   // Tabular digits run ~0.55em; the degree and minute marks are narrower, so this
   // is a slight over-estimate and errs toward keeping the glyph clear.
+  //
+  // The cusp figure truncates through format.ts truncZodiac (2026-10-02): the floor it
+  // always took, plus that rule's float snap, so a cusp lying exactly on a minute (a
+  // geodetic cusp 10 IS the MC, a whole minute of longitude) prints that minute, as
+  // the MC's own readout does, rather than the one below it.
   const cuspText = (lon: number) => {
-    const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
-    const inSign = lonDeg % 30;
-    const deg = Math.floor(inSign);
-    return {
-      deg,
-      min: Math.floor((inSign - deg) * 60),
-      signIdx: Math.floor(lonDeg / 30),
-    };
+    const z = truncZodiac(lon, 'min');
+    return { deg: z.deg, min: z.min, signIdx: z.signIdx };
   };
   // A cusp reads as ONE unit — degree, sign glyph, minutes, laid along the band the
   // way a printed chart annotates a cusp. Its glyph size, its internal step and its
@@ -1021,7 +1102,7 @@ export function WheelSvg({
         overlayAngleMarks.map((a) => ({
           name: a.key as string,
           off: off(a.lon),
-          half: angleLabelHalfPx(a.key, angleCodePx, g.angleCodeHalo),
+          half: angleLabelHalfPx(ANGLE_LABEL[a.key], angleCodePx, g.angleCodeHalo),
         })),
         overlayPlanets!.map((p) => ({
           name: p.name as string,
@@ -1352,17 +1433,21 @@ export function WheelSvg({
             x: signPos.x + ux * cuspUnitStepPx,
             y: signPos.y + uy * cuspUnitStepPx,
           };
+          // Masked (maskAngleText): the sign glyph stays — it says no more than the
+          // cusp line drawn through the band does — and the figures go. (2026-10-02)
           return (
             <g key={`cuspdeg-${idx}`}>
-              <text
-                x={degPos.x}
-                y={degPos.y + 3}
-                textAnchor="middle"
-                className="cusp-rim-deg"
-                fontSize={cuspRimPx}
-              >
-                {deg}°
-              </text>
+              {!maskAngleText && (
+                <text
+                  x={degPos.x}
+                  y={degPos.y + 3}
+                  textAnchor="middle"
+                  className="cusp-rim-deg"
+                  fontSize={cuspRimPx}
+                >
+                  {deg}°
+                </text>
+              )}
               <ZodiacGlyph
                 sign={signIdx}
                 x={signPos.x}
@@ -1370,15 +1455,17 @@ export function WheelSvg({
                 size={cuspSignPx}
                 className="cusp-rim-sign"
               />
-              <text
-                x={minPos.x}
-                y={minPos.y + 3}
-                textAnchor="middle"
-                className="cusp-rim-deg"
-                fontSize={cuspRimPx}
-              >
-                {String(min).padStart(2, '0')}&#39;
-              </text>
+              {!maskAngleText && (
+                <text
+                  x={minPos.x}
+                  y={minPos.y + 3}
+                  textAnchor="middle"
+                  className="cusp-rim-deg"
+                  fontSize={cuspRimPx}
+                >
+                  {String(min).padStart(2, '0')}&#39;
+                </text>
+              )}
             </g>
           );
         })}
@@ -1529,6 +1616,30 @@ export function WheelSvg({
               stroke={a.color}
               strokeWidth={1}
               opacity={opacity}
+            />
+          );
+        })}
+
+      {/* A body known only to a span (ranges: a timeless chart's Moon, and its Part of
+          Fortune on a geodetic map) has its span drawn as an arc of the tick strip in its
+          own colour, centred on the tick at its placeholder degree — what the readout
+          ring's trio would otherwise say to the minute. First in the strip, so the catalog
+          diamonds and every tick draw over it, and deaf to the pointer, so it never takes a
+          hover from them. Detailed wheels only, like the ticks. (2026-10-02) */}
+      {detailed &&
+        ranges &&
+        planets.map((p) => {
+          const half = ranges.get(p.name);
+          if (half === undefined) return null;
+          const h = (half * Math.PI) / 180;
+          return (
+            <path
+              key={`range-${p.name}`}
+              className="wheel-range-arc"
+              d={annularSectorPath(p.lon - h, p.lon + h, rPip - pipR, rZodiacInner, frameAnchor, cx, cy)}
+              fill={PLANET_COLORS[p.name]}
+              opacity={0.22}
+              pointerEvents="none"
             />
           );
         })}
@@ -1752,7 +1863,11 @@ export function WheelSvg({
                   y: pos.y,
                   r,
                   title: labels.planet(p.name),
-                  ...bodyTip(t, labels, p),
+                  ...bodyTip(t, labels, p, {
+                    hideLon: maskLot(p.name),
+                    note: bodyNotes?.get(p.name),
+                    range: ranges?.get(p.name),
+                  }),
                   color: PLANET_COLORS[p.name],
                   marker: (
                     <PlanetGlyph
@@ -1794,7 +1909,7 @@ export function WheelSvg({
         );
       })}
 
-      {/* Angle marks: the two-letter code (As/Ds/Mc/Ic) as bare text on the
+      {/* Angle marks: the two-letter code (AS/MC/DS/IC) as bare text on the
           glyph ring — no disc, so they're not mistaken for the circled planets.
           A panel-coloured halo (wheel-angle-label) keeps the code legible over
           the spokes/lines, and the planet hover (lift + named tag) is reused via
@@ -1816,7 +1931,10 @@ export function WheelSvg({
                     // What it MEANS is the same sentence in every chart, and has
                     // moved to its row in the readout below the wheel — see
                     // AngleTipGlyph in ExpandedChartSidebar.
-                    ...bodyTip(t, labels, { lon: a.lon }),
+                    ...bodyTip(t, labels, { lon: a.lon }, {
+                      trunc: !!angles.geodetic,
+                      hideLon: maskAngleText,
+                    }),
                     titleColor: a.color,
                   }),
                 onMouseLeave: clearTip,
@@ -1835,7 +1953,7 @@ export function WheelSvg({
                   fontSize={angleCodePx}
                   style={{ fill: a.color } as CSSProperties}
                 >
-                  {a.key}
+                  {ANGLE_LABEL[a.key]}
                 </text>
               </g>
             </g>
@@ -1962,7 +2080,10 @@ export function WheelSvg({
                     title: a.title,
                     // As the natal angle marks above: position here, meaning in
                     // the readout below the wheel.
-                    ...bodyTip(t, labels, { lon: a.lon }),
+                    ...bodyTip(t, labels, { lon: a.lon }, {
+                      trunc: !!overlayAngles?.geodetic,
+                      hideLon: maskAngleText,
+                    }),
                     titleColor: a.color,
                   }),
                 onMouseLeave: clearTip,
@@ -2006,7 +2127,7 @@ export function WheelSvg({
                   fontSize={angleCodePx}
                   style={{ fill: a.color } as CSSProperties}
                 >
-                  {a.key}
+                  {ANGLE_LABEL[a.key]}
                 </text>
               </g>
             </g>
@@ -2017,18 +2138,18 @@ export function WheelSvg({
           in the OUTER ring, so the bi-wheel's overlay angles read exactly like the natal
           ones (this is what was missing for transits/progressed; solar-arc now has angles
           to show too). Same fanned trio + formatter, positioned on the overlay readout
-          radii. */}
+          radii. Not drawn at all under maskAngleText. */}
       {showOverlayReadouts &&
         showAngleMarks &&
+        !maskAngleText &&
         overlayAngleMarks.map((a) => {
           const degPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout + OV_FAN, cx, cy);
           const signPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout, cx, cy);
           const minPos = svgPos(overlayAngleLonFor(a), frameAnchor, rOverlayReadout - OV_FAN, cx, cy);
-          const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
-          const signIdx = Math.floor(lonDeg / 30);
-          const inSign = lonDeg % 30;
-          const deg = Math.floor(inSign);
-          const min = Math.floor((inSign - deg) * 60);
+          // The one truncation rule (format.ts truncZodiac), in both line systems: the
+          // floor this always took, plus the float snap that keeps an exact minute — a
+          // geodetic MC is one — from printing as the minute below. (2026-10-02)
+          const { signIdx, deg, min } = truncZodiac(a.lon, 'min');
           return (
             <g key={`ov-angle-rdo-${a.key}`} className="planet-readout overlay-readout">
               <text
@@ -2106,6 +2227,11 @@ export function WheelSvg({
           stationary → yellow. */}
       {showReadouts &&
         planets.map((p) => {
+          // No trio for a masked Lot, as for the masked angles below — nor for a body known
+          // only to a span (ranges), whose arc in the tick strip stands in for it: a span
+          // squeezed into the degree and minute slots reads as a degree and minutes.
+          // (2026-10-02)
+          if (maskLot(p.name) || ranges?.has(p.name)) return null;
           const degPos = svgPos(lonFor(p), frameAnchor, g.rReadoutDeg, cx, cy);
           const signPos = svgPos(lonFor(p), frameAnchor, g.rReadoutSign, cx, cy);
           const minPos = svgPos(lonFor(p), frameAnchor, g.rReadoutMin, cx, cy);
@@ -2151,18 +2277,17 @@ export function WheelSvg({
 
       {/* Angle degree·sign·minute readout, fanned inward along the spoke exactly
           like the planet readout (degree nearest the disc, then sign glyph, then
-          minutes) — so each angle reads e.g. 23° ♑ 17' right in the wheel. */}
+          minutes) — so each angle reads e.g. 23° ♑ 17' right in the wheel. Not
+          drawn at all under maskAngleText. */}
       {showReadouts &&
         showAngleMarks &&
+        !maskAngleText &&
         angleMarks.map((a) => {
           const degPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutDeg, cx, cy);
           const signPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutSign, cx, cy);
           const minPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutMin, cx, cy);
-          const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
-          const signIdx = Math.floor(lonDeg / 30);
-          const inSign = lonDeg % 30;
-          const deg = Math.floor(inSign);
-          const min = Math.floor((inSign - deg) * 60);
+          // Truncated as the overlay ring's above (format.ts truncZodiac). (2026-10-02)
+          const { signIdx, deg, min } = truncZodiac(a.lon, 'min');
           return (
             <g key={`angle-rdo-${a.key}`} className="planet-readout">
               <text

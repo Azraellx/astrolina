@@ -38,8 +38,22 @@ import {
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
-import { generateLines, generateZenithStamps, normLng, traceHorizonCoords, type MeridianLng } from '../src/lib/astro/lines';
+import {
+  generateLines,
+  generateZenithStamps,
+  LINE_TYPE_LABEL,
+  meridianLngFor,
+  normLng,
+  traceHorizonCoords,
+  type LineType,
+  type MeridianLng,
+} from '../src/lib/astro/lines';
 import type { BirthData } from '../src/lib/birthData';
+import { ANGLE_SPECS } from '../src/lib/astro/format';
+import { lineReading } from '../src/lib/lineCard';
+import { en } from '../src/i18n/en';
+import { interpolate, resolvePath } from '../src/i18n/t';
+import type { Messages, TFn } from '../src/i18n';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const node: any = createRequire(import.meta.url)('@swisseph/node');
@@ -164,7 +178,7 @@ const SWISS_ID: Partial<Record<PlanetName, number>> = {
 for (const b of CHARTS) {
   const jd = birthDataToJD(b);
   const gmst = gmstRadians(jd);
-  const meridianLng: MeridianLng = (raM) => ((raM - gmst) * 180) / Math.PI; // App.tsx celestial recipe
+  const meridianLng = meridianLngFor('celestial', obliquity(jd), gmst); // the app's own factory
   const all = getPlanetPositions(jd, 'mean');
   const positions = all.filter((p) => BODY_SET.includes(p.name));
   const lines = generateLines(positions, meridianLng);
@@ -414,8 +428,10 @@ for (const b of CHARTS) {
   check('geodetic: raDecToEclipticLon(ra,0,ε) is a different function (NOTE holds)', counterDiffers);
 
   // Full path: in geodetic mode the Sun's MC line longitude IS its zodiacal
-  // longitude (Greenwich = 0° Aries, Sepharial's geodetic equivalents).
-  const geodeticLng: MeridianLng = (raM) => (eclipticLonOfRA(raM, eps) * 180) / Math.PI;
+  // longitude (Greenwich = 0° Aries, Sepharial's geodetic equivalents). Through the
+  // app's own meridian factory, so this is the mapping the map draws with.
+  // (2026-10-02)
+  const geodeticLng = meridianLngFor('geodetic', eps, gmstRadians(jd));
   const proj = projectOntoEcliptic(getPlanetPositions(jd, 'mean'), jd);
   const sun = proj.find((p) => p.name === 'Sun')!;
   const lines = generateLines([sun], geodeticLng);
@@ -433,29 +449,55 @@ for (const b of CHARTS) {
 //   MC  = atan2(sin RAMC, cos RAMC · cos ε)
 //   Asc = atan2(cos RAMC, −(sin RAMC · cos ε + tan φ · sin ε))
 // both quadrant-correct, with RAMC = GAST + geographic longitude.
+//
+// Inside the polar circles the Asc formula can return the WESTERN intersection of
+// ecliptic and horizon; the Ascendant is the eastern one, so the oracle picks that
+// branch from the point's own azimuth — never from the acmc rule under test. Until
+// 2026-10-02 this section stopped at ±60°, where the branch never comes up, so it
+// could not see the case; it now runs to ±85° (Placidus falls back to Porphyry
+// there, which leaves the MC where it is, so the MC check still means something).
 {
   const jd = birthDataToJD(CHARTS[0]);
   const eps = obliquity(jd);
   const gmst = gmstRadians(jd);
   let worstMc = 0;
   let worstAsc = 0;
-  for (const lat of [-60, -45, -23.5, 0, 23.5, 45, 60]) {
+  let n = 0;
+  let swaps = 0;
+  let notEast = 0;
+  for (const lat of [-85, -80, -75, -70, -60, -45, -23.5, 0, 23.5, 45, 60, 70, 75, 80, 85]) {
+    const phi = lat * DEG2RAD;
     for (const lng of [-150, -75, 0, 75, 150]) {
       const ramc = gmst + lng * DEG2RAD;
+      // Azimuth (from north, clockwise) of an ecliptic point for this observer; east
+      // is sin az > 0.
+      const azOf = (lon: number) => {
+        const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+        const H = ramc - ra;
+        return Math.atan2(-Math.sin(H), Math.tan(dec) * Math.cos(phi) - Math.cos(H) * Math.sin(phi));
+      };
       const mcHand = Math.atan2(Math.sin(ramc), Math.cos(ramc) * Math.cos(eps));
-      const ascHand = Math.atan2(
+      let ascHand = Math.atan2(
         Math.cos(ramc),
-        -(Math.sin(ramc) * Math.cos(eps) + Math.tan(lat * DEG2RAD) * Math.sin(eps)),
+        -(Math.sin(ramc) * Math.cos(eps) + Math.tan(phi) * Math.sin(eps)),
       );
+      if (Math.sin(azOf(ascHand)) < 0) {
+        ascHand += Math.PI;
+        swaps += 1;
+      }
       const h = relocate(jd, lat, lng, 'placidus');
+      n += 1;
+      if (!(Math.sin(azOf(h.asc)) > 0)) notEast += 1;
       const dMc = Math.abs(Math.atan2(Math.sin(h.mc - mcHand), Math.cos(h.mc - mcHand)));
       const dAsc = Math.abs(Math.atan2(Math.sin(h.asc - ascHand), Math.cos(h.asc - ascHand)));
       if (dMc > worstMc) worstMc = dMc;
       if (dAsc > worstAsc) worstAsc = dAsc;
     }
   }
-  check('relocate MC matches Hand closed form', worstMc < 1e-6, `max Δ ${fmt(worstMc)} rad`);
-  check('relocate ASC matches Hand closed form', worstAsc < 1e-6, `max Δ ${fmt(worstAsc)} rad`);
+  check('relocate MC matches Hand closed form', n === 75 && worstMc < 1e-6, `max Δ ${fmt(worstMc)} rad`);
+  check('relocate ASC matches Hand closed form (eastern branch)', n === 75 && worstAsc < 1e-6, `max Δ ${fmt(worstAsc)} rad`);
+  check('relocate ASC is the eastern point', n === 75 && notEast === 0, `${notEast}/${n} not in the east`);
+  check('the polar branch was exercised (the bare formula gave the western point)', swaps > 0, `${swaps}/${n}`);
 
   // The Vertex against Hand's closed form (Essays on Astrology §I.4):
   //   Vx = arctan(cos RAMC / (cot φ·sin ε − sin RAMC·cos ε))
@@ -609,6 +651,72 @@ for (const b of CHARTS) {
     'horizon lines run south→north for every declination (the ASC/DSC arrows point up/down)',
     bad === 0,
     bad ? detail.join('; ') : `${decs.length * 4 * 2} runs`,
+  );
+}
+
+// ── The angle codes a reader sees: one funnel, every surface ──────────────────────
+// Lina's instruction of 2 Oct 2026, §1: on screen the four angles read AS, MC, DS, IC, in
+// that order wherever all four appear. LINE_TYPE_LABEL is the one place a line type
+// becomes that text; the tables that key the same codes another way (the angle specs, the
+// Sky Times headers) and the plain readings behind the line cards, Radar's Line Notes and
+// a report's Influences must say what it says. Two parts asked the same question, so a
+// table that drifts — or a reading that prints the raw ASC/DSC again, as the paran and
+// aspect readings did until 2026-10-05 — fails here rather than in front of a client.
+console.log('\n── Angle codes: one funnel, every surface ──');
+{
+  check(
+    'LINE_TYPE_LABEL gives the instruction’s codes, AS, MC, DS, IC (Vx/Avx for the Vertex axis)',
+    JSON.stringify(['ASC', 'MC', 'DSC', 'IC', 'VX', 'AVX'].map((k) => LINE_TYPE_LABEL[k as LineType])) ===
+      JSON.stringify(['AS', 'MC', 'DS', 'IC', 'Vx', 'Avx']),
+  );
+  const specBad = ANGLE_SPECS.filter((s) => s.label !== LINE_TYPE_LABEL[s.lineType]);
+  check(
+    `each angle spec's label is its line type's label (${ANGLE_SPECS.length} specs)`,
+    ANGLE_SPECS.length === 6 && specBad.length === 0,
+    specBad.map((s) => `${s.code}: ${s.label} vs ${LINE_TYPE_LABEL[s.lineType]}`).join(', '),
+  );
+  check(
+    'the angle specs run AS, MC, DS, IC, then the Vertex axis',
+    ANGLE_SPECS.map((s) => s.label).join(' ') === 'AS MC DS IC Vx Avx',
+    ANGLE_SPECS.map((s) => s.label).join(' '),
+  );
+  const col = en.skyTimes.col;
+  check(
+    'the Sky Times headers are the lines’ own codes',
+    col.rise === LINE_TYPE_LABEL.ASC &&
+      col.culminate === LINE_TYPE_LABEL.MC &&
+      col.set === LINE_TYPE_LABEL.DSC &&
+      col.anticulminate === LINE_TYPE_LABEL.IC,
+    `${col.rise} ${col.culminate} ${col.set} ${col.anticulminate}`,
+  );
+
+  // The readings, through the real English catalog, for every kind that prints an angle.
+  const t = ((key: string, vars?: Record<string, string | number>) =>
+    interpolate(resolvePath(en as unknown as Messages, key) ?? key, vars)) as unknown as TFn;
+  const cases: [string, string, Record<string, unknown>, string[]][] = [
+    ['paran', 'parans-layer', { planetA: 'Venus', planetB: 'Mercury', angleA: 'IC', angleB: 'DSC' }, ['IC', 'DS']],
+    ['paran (horizon pair)', 'parans-layer', { planetA: 'Sun', planetB: 'Mars', angleA: 'ASC', angleB: 'MC' }, ['AS', 'MC']],
+    ['aspect line', 'angle-lines-layer', { kind: 'aspect', planet: 'Venus', aspect: 'trine', branch: 'DSC', lineType: 'ASC' }, ['DS']],
+    ['midpoint line', 'angle-lines-layer', { kind: 'midpoint', planet: 'Sun', planetB: 'Moon', lineType: 'DSC' }, ['DS']],
+    ['star line', 'star-lines-layer', { star: 'Regulus', lineType: 'ASC' }, ['AS']],
+  ];
+  const bad: string[] = [];
+  let read = 0;
+  for (const [what, layer, props, want] of cases) {
+    const r = lineReading(layer, props, t);
+    if (!r) {
+      bad.push(`${what}: no reading`);
+      continue;
+    }
+    read++;
+    const text = `${r.title} | ${r.body}`;
+    if (/\b(ASC|DSC)\b/.test(text)) bad.push(`${what} prints a raw code: ${text}`);
+    for (const code of want) if (!new RegExp(`\\b${code}\\b`).test(text)) bad.push(`${what} lacks ${code}: ${text}`);
+  }
+  check(
+    `the plain readings print the funnel's codes, never the raw ASC/DSC (${read} of ${cases.length} kinds read)`,
+    read === cases.length && bad.length === 0,
+    bad.join(' || '),
   );
 }
 

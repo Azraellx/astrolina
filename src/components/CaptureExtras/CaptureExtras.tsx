@@ -32,13 +32,23 @@ import { useLayoutEffect, useRef } from 'react';
 import { useT } from '../../i18n';
 import {
   PLANET_COLORS,
+  POINTS,
   type PlanetName,
   type EclipticPosition,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import { PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
-import { lonToZodiac, type BalanceSeg, type BalanceGrid } from '../../lib/astro/format';
+import {
+  ANGLE_LABEL,
+  lonRange,
+  lonToZodiac,
+  truncZodiac,
+  type AngleCode,
+  type BalanceSeg,
+  type BalanceGrid,
+} from '../../lib/astro/format';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
+import { maskText } from '../../lib/discreet';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { MinorMark } from '../MinorMark/MinorMark';
@@ -50,10 +60,15 @@ export interface CaptureExtraPlanet {
   lon: number;
 }
 export interface CaptureExtraAngle {
-  code: string;
+  /** The angle's identity; the row prints ANGLE_LABEL[code] (AS, MC, DS, IC). */
+  code: AngleCode;
   name: string;
   lon: number;
   color: string;
+  /** A geodetic frame's angle: read through format.ts truncZodiac, as every readout
+   *  of a place's angles is, so it names the place's zone and never rounds into the
+   *  next sign — the sidebar's row for the same angle reads the same. (2026-10-02) */
+  trunc?: boolean;
 }
 
 // The wheel's angle-mark keys (mirrors WheelSvg's internal AngleKey + AngleSpec.code).
@@ -70,6 +85,20 @@ export type CaptureFrameExtras =
       minors?: readonly WheelMinorBody[];
       angles: CaptureExtraAngle[];
       balance: BalanceSeg[];
+      /** Discreet over the birthplace's geodetic frame: the angle rows' figures are
+       *  blanked (see the wheel variant's), and a Lot's with them — it is built from
+       *  that frame's Ascendant and would give it back (WheelSvg's maskAngleText).
+       *  (2026-10-02) */
+      maskAngleText?: boolean;
+      /** Bodies known only to a span, half-width in degrees — a chart with no birth time
+       *  (lib/astro/timeless): their rows print the span (2°♉–18°♉), as the sidebar's do.
+       *  (2026-10-02) */
+      ranges?: ReadonlyMap<PlanetName, number> | null;
+      /** The natal wheel's source notes (WheelSvg bodyNotes): the Part of Fortune on a
+       *  geodetic map, built from the place's Ascendant while the captured map's Fortune line
+       *  keeps the chart's own. A picture has no tips, so the row carries the sidebar's GE
+       *  mark alone, kept where Discreet blanks the figure. (2026-10-02) */
+      bodyNotes?: ReadonlyMap<PlanetName, string> | null;
     }
   | {
       view: 'wheel';
@@ -98,6 +127,17 @@ export type CaptureFrameExtras =
       advanced?: boolean;
       /** No houses/angles — a chart cast without a known birth time. */
       planetsOnly?: boolean;
+      /** Discreet over the birthplace's geodetic frame (WheelSvg's maskAngleText, which
+       *  says why). The export is the preview's own DOM, so a figure left here would
+       *  leave the device in a picture whose caption had blanked the place it names.
+       *  (2026-10-02) */
+      maskAngleText?: boolean;
+      /** The natal wheel's spans and source notes (WheelSvg ranges and bodyNotes): a
+       *  timeless chart's Moon drawn as its span, and the Part of Fortune on a geodetic map
+       *  labelled with the Ascendant it was built from — as the sidebar's wheel draws them.
+       *  (2026-10-02) */
+      ranges?: ReadonlyMap<PlanetName, number> | null;
+      bodyNotes?: ReadonlyMap<PlanetName, string> | null;
     };
 
 interface CaptureExtrasProps {
@@ -127,7 +167,7 @@ export function CaptureExtras({
   wheelSize,
   onMeasure,
 }: CaptureExtrasProps) {
-  const { labels } = useT();
+  const { t, labels } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Report the panel's measured size so the Map can inset the framed view to match.
@@ -153,12 +193,30 @@ export function CaptureExtras({
     return () => ro.disconnect();
   }, [orientation, onMeasure, wheelSize, data.view]);
 
-  const sign = (lon: number) => {
-    const { signIdx, degMin } = lonToZodiac(lon);
+  // `trunc`: a geodetic angle (CaptureExtraAngle.trunc). (2026-10-02)
+  const sign = (lon: number, trunc = false) => {
+    const z = trunc ? truncZodiac(lon, 'min') : null;
+    const { signIdx, degMin } = z ? { signIdx: z.signIdx, degMin: z.text } : lonToZodiac(lon);
     return (
       <span className="cx-lon">
         {degMin} <span className="astro-glyph cx-sign">{SIGN_GLYPHS[signIdx]}</span>{' '}
         {labels.sign(signIdx)}
+      </span>
+    );
+  };
+  // A body known only to a span (the list's `ranges`): the span in place of the degree, as
+  // the sidebar prints it (ZodiacRange), each end's sign as its own .astro-glyph span so the
+  // export's glyph pass restamps both. (2026-10-02)
+  const listRanges = data.view === 'list' ? data.ranges : null;
+  const span = (p: CaptureExtraPlanet) => {
+    const half = listRanges?.get(p.name);
+    if (half === undefined) return null;
+    const { lo, hi } = lonRange(p.lon, half);
+    return (
+      <span className="cx-lon">
+        {lo.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[lo.signIdx]}</span>
+        {'–'}
+        {hi.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[hi.signIdx]}</span>
       </span>
     );
   };
@@ -193,18 +251,32 @@ export function CaptureExtras({
             aspectOrbs={data.aspectOrbs}
             visibleAspects={data.visibleAspects ?? NO_ASPECTS}
             visibleAngles={data.visibleAngles}
+            maskAngleText={data.maskAngleText ?? false}
+            ranges={data.ranges ?? null}
+            bodyNotes={data.bodyNotes ?? null}
           />
           {data.balanceGrid && <CaptureBalanceGrid grid={data.balanceGrid} />}
         </div>
       ) : (
         <>
+          {/* A Lot is masked with the angles below (the list's maskAngleText says why).
+              (2026-10-02) */}
           {data.planets.map((p) => (
             <div className="cx-row" key={`p-${p.name}`}>
               <span className="cx-glyph astro-glyph" style={{ color: PLANET_COLORS[p.name] }}>
                 {PLANET_GLYPHS[p.name]}
               </span>
-              <span className="cx-name">{labels.planet(p.name)}</span>
-              {sign(p.lon)}
+              <span className="cx-name">
+                {labels.planet(p.name)}
+                {data.bodyNotes?.has(p.name) && (
+                  <span className="cx-ge-tag">{t('expandedSidebar.geodetic.ge')}</span>
+                )}
+              </span>
+              {data.maskAngleText && POINTS.includes(p.name) ? (
+                <span className="cx-lon">{maskText('00°00\'')}</span>
+              ) : (
+                (span(p) ?? sign(p.lon))
+              )}
             </div>
           ))}
           {/* The catalog minor bodies: the shared mark (its own symbol, else the diamond,
@@ -221,13 +293,20 @@ export function CaptureExtras({
               {sign(m.lon)}
             </div>
           ))}
+          {/* Masked (Discreet over the birthplace's geodetic frame): the figure and its
+              sign both go, as in the Coordinates box — the row keeps only its name.
+              (2026-10-02) */}
           {data.angles.map((a) => (
             <div className="cx-row" key={`a-${a.code}`}>
               <span className="cx-glyph cx-code" style={{ color: a.color }}>
-                {a.code}
+                {ANGLE_LABEL[a.code]}
               </span>
               <span className="cx-name">{a.name}</span>
-              {sign(a.lon)}
+              {data.maskAngleText ? (
+                <span className="cx-lon">{maskText('00°00\'')}</span>
+              ) : (
+                sign(a.lon, a.trunc)
+              )}
             </div>
           ))}
           {data.balance.map((seg) => (

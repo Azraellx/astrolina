@@ -66,6 +66,25 @@ export const wheel = {
     minorCluster: '{n, plural, one {# minor body} other {# minor bodies}}',
     minorLine: '{name} {lon}',
     minorMore: '+{n} more',
+    // A line under the Part of Fortune's figure on a geodetic map, where the wheel builds
+    // it from the place's geodetic Ascendant rather than the chart's own (the map's
+    // Fortune line keeps the chart's). The positions list marks the same row GE with
+    // this as its tip. (2026-10-02)
+    fortuneGeodetic: 'From the geodetic Ascendant',
+    // The same, on a chart with no birth time under the sect formula: the unknown hour
+    // leaves the sect unknown, and a night birth's Fortune is the day one reflected across
+    // the Ascendant, so its span holds only for the sect taken at the 12:00 placeholder.
+    // Says which, and where the other sect would put it; worded to stand without the
+    // figure, which Discreet can hide. (2026-10-02)
+    fortuneGeodeticDay:
+      'From the geodetic Ascendant, as a day birth. Born at night, it would mirror across the Ascendant',
+    fortuneGeodeticNight:
+      'From the geodetic Ascendant, as a night birth. Born by day, it would mirror across the Ascendant',
+    // Under a body's SPAN in place of its degree, on a chart with no birth time: the chart
+    // is cast for 12:00, and the body could be anywhere in the span printed above this
+    // line at the real, unknown hour of that day (the Moon; the Part of Fortune on a
+    // geodetic map, for the sect its own note names). (2026-10-02)
+    rangeNote: 'Birth time unknown: anywhere in this span on the birth date',
   },
   // Short keyword gloss per body, keyed by PlanetName. It used to be what the
   // wheel's own discs said on hover, which is where the position belongs — a

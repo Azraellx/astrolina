@@ -16,7 +16,7 @@
 **A modern, web-based astrocartography tool for curious minds.** Plot a natal
 chart's planetary lines on an interactive world map and drag to relocate with the
 chart wheel updating live. It features planet-to-planet parans and local space,
-ten house systems, geodetic (Mundane) lines, time overlays (transits, secondary
+ten house systems, geodetic lines, time overlays (transits, secondary
 progressions, solar-arc and primary directions) with an animated timeline, and
 synastry. Every position is computed client-side with the Swiss Ephemeris. Runs
 on any device, in the browser.
@@ -35,7 +35,7 @@ geocoding.
 ## Features
 
 - **Astrocartography lines** for the ten classical planets plus the lunar nodes,
-  Black Moon Lilith, Chiron, and the four main asteroids: MC / IC / ASC / DSC,
+  Black Moon Lilith, Chiron, and the four main asteroids: AS / MC / DS / IC,
   color-coded per body and dashed per angle, each with its zenith point.
 - **Parans** (planet-to-planet, meridian and horizon) and **local-space** lines,
   toggleable.
@@ -52,8 +52,8 @@ geocoding.
   detailed view with an Advanced mode (degree · sign · minute readouts and the
   aspect grid). Ten house systems: Placidus (default), Koch, Regiomontanus,
   Campanus, Porphyry, Alcabitus, Meridian, Morinus, Whole Sign, Equal.
-- **Calculation conventions** as live toggles: Celestial vs geodetic (Mundane)
-  line placement, In Mundo vs In Zodiaco, house system, tropical vs sidereal
+- **Calculation conventions** as live toggles: Celestial vs Geodetic line
+  placement, In Mundo vs In Zodiaco, house system, tropical vs sidereal
   zodiac (Lahiri / Fagan-Bradley), lunar-node type (mean/true), and the
   progression/direction method.
 - **Chart library**: store multiple charts (localStorage), switch between them,

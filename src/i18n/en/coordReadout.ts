@@ -7,4 +7,8 @@
 export const coordReadout = {
   // Label for the collapsible toggle that reveals the relocated chart angles.
   angles: 'Angles',
+  // The same toggle on a geodetic map, where the four angles are the PLACE's own
+  // geodetic angles rather than the chart's — GE, for geodetic equivalents.
+  // (2026-10-02)
+  geodetic: 'GE',
 } as const;

@@ -66,6 +66,14 @@ export interface AllLines {
    *  when absent: a consumer that builds its own AllLines without it (for a spotlight,
    *  say) reveals no catalog lines rather than falling back to the drawn ones. */
   minorLines?: FeatureCollection;
+  /** {@link MapExtensionContext.skyHeld} as it was when this set was built: true when it
+   *  was built for a geodetic map, so its local-space, paran (star parans included) and
+   *  fixed-star families are EMPTY and its angle lines carry no Vx/Avx — because those
+   *  are held there, not because nothing is near. A listing reading this set prints the
+   *  held line rather than its empty state. Derived from the line system only. OPTIONAL,
+   *  and read as false when absent: a consumer that builds its own AllLines (for a
+   *  spotlight, say) holds nothing it didn't leave out itself. (2026-10-02) */
+  skyHeld?: boolean;
 }
 
 /** A point-and-radius "spotlight" on the linework — a neutral view treatment, not tied to any
@@ -146,12 +154,28 @@ export interface MapExtensionContext {
    *  here whatever the stored preference says — exactly as the line generators see it.
    *  The preference itself is only masked, never rewritten. */
   lineSystem: LineSystem;
+  /** Whether the map HOLDS what reads the sky's turning (lib/skyHold): true exactly when
+   *  {@link lineSystem} is 'geodetic', derived from it alone and never stored —
+   *  `skyHeldFor(ctx.lineSystem)` is the same value. A geodetic map lays the zodiac on
+   *  Earth's longitudes and doesn't turn, so while this is true the held families are
+   *  ABSENT from {@link lines}, {@link angleLines} and {@link minorLines} (no Vx/Avx),
+   *  {@link localSpace}, {@link overlayLocalSpace}, {@link parans}, {@link overlayParans},
+   *  {@link starParans}, {@link starLines} and {@link collectAllLines} — absent BECAUSE
+   *  held, not because nothing is near.
+   *
+   *  So a surface that lists those families says so instead of printing its empty state:
+   *  the core's SkyHeldNote (components/SkyHeldNote) carries the one sentence,
+   *  settings.inert.skyHeld — settings.inert.paransHeld on a paran listing — with
+   *  `openSettings('calc')` as its fix. Optional: read absent as false. (2026-10-02) */
+  skyHeld?: boolean;
   /** Which sidereal time a DATED overlay's lines are framed by: the natal chart's
    *  ('relative-to-natal') or the overlay moment's own ('transit-moment'). EFFECTIVE
    *  — a chart with no birth time has no natal frame to hold, and a return BORROWS the
    *  moment's own frame for as long as the map is on it, so either can report
-   *  'transit-moment' whatever the stored preference says. Inert under the geodetic
-   *  mapping, which keys off zodiacal longitude and has no sidereal frame to choose.
+   *  'transit-moment' whatever the stored preference says. On a geodetic map
+   *  ({@link skyHeld}) it reads 'relative-to-natal' outright: that mapping keys off
+   *  zodiacal longitude, a place's angles there come from its coordinates, and the
+   *  control is held at Natal angles (2026-10-02).
    *
    *  This is the companion to {@link coordSystem} for anything that answers a
    *  question about an overlay line's TIMING. A consumer that resolves instants
@@ -178,7 +202,9 @@ export interface MapExtensionContext {
    *  different question from the map, exactly as under 'transit-moment'. The difference
    *  worth knowing: this offset is FIXED, where the transit one sweeps ~15° an hour.
    *
-   *  Raw, not effective, and deliberately so: the two conditions that mask
+   *  EFFECTIVE since 2026-10-02, on one condition: on a geodetic map ({@link skyHeld}) it
+   *  reads 'natal', the control held at Natal angles as {@link transitFrame}'s is, while
+   *  the stored preference waits for Celestial. The two other conditions that mask
    *  {@link transitFrame} cannot arise here, because a chart with no birth time has
    *  `overlayMode` masked away from the progressed techniques altogether (App.tsx's
    *  `overlayBlockedFor`) and there is no borrow on this control. A guard should still
@@ -199,7 +225,9 @@ export interface MapExtensionContext {
    *  correct, and is why their lists never part company with the map. */
   frameOffsetDeg: number;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
-   *  extension drawing its own day/night treatment can follow the same switch. */
+   *  extension drawing its own day/night treatment can follow the same switch. EFFECTIVE:
+   *  false on a geodetic map ({@link skyHeld}), where the shade is held — the reader's
+   *  switch is untouched underneath (2026-10-02). */
   nightShadeOn: boolean;
   overlayMode: OverlayMode;
   /** The Progressions/Directions settings the directed overlays advance by
@@ -281,8 +309,10 @@ export interface MapExtensionContext {
   /** Force-open a registered Tools-menu extension by id (single-select — closes any other open
    *  tool and disarms any built-in; no-op if it's already the only open tool). The Tools twin of
    *  {@link openExtension}: lets one HUD launch a companion tool — e.g. a HUD opening a map tool
-   *  already positioned at a chosen point. A tool that declares `needsSiderealTime` leaves the
-   *  geodetic line system as it opens, exactly as from its menu row. */
+   *  already positioned at a chosen point. A tool that declares `needsSiderealTime` is REFUSED
+   *  while {@link skyHeld}, exactly as its greyed menu row is: the call does nothing and writes
+   *  nothing. Closing ({@link closeTool}) is never refused. (Until 2026-10-02 the call switched
+   *  the line system to Celestial instead; nothing switches it on the reader's behalf now.) */
   openTool: (id: string) => void;
   /** Arm the built-in frame-capture tool (the same action as its Tools-menu entry / hotkey);
    *  idempotent while already armed. Lets a HUD offer "grab the current map view" — pair with a
@@ -291,8 +321,9 @@ export interface MapExtensionContext {
   /** Arm one of the other built-in map tools by id (the same action as its Tools-menu entry /
    *  hotkey); idempotent while already armed. Capture keeps its dedicated opener above — it
    *  predates this and pairs with the capture-sink seam. For Slide that includes its gates:
-   *  a no-op while the natal lines aren't drawn, and it leaves the geodetic line system (with
-   *  its notice) as it arms. */
+   *  a no-op while the natal lines aren't drawn, and while {@link skyHeld} — Slide turns the
+   *  sky by its sidereal time, which a geodetic map doesn't have. It no longer switches the
+   *  line system to arm (2026-10-02). */
   openBuiltinTool: (tool: 'measure' | 'slide') => void;
   /** Focus the linework to a radius around a point: dims the basemap and reveals only the lines
    *  passing within `radiusKm` of the spotlight's `center` (a null center dims + hides all lines;
@@ -320,10 +351,13 @@ export interface MapExtensionContext {
   /** Force a BUILT-IN view window open by id — the built-ins' twin of
    *  {@link openExtension} ('charts' is the chart browser). Idempotent. 'skyTimes' and
    *  'localSpace' open regardless of the Advanced switch — flip {@link setAdvancedMode}
-   *  first so the menus agree. 'minorBodies' REQUIRES Advanced: its window renders only
-   *  with Advanced on, so call {@link setAdvancedMode}(true) first (earlier in the same
-   *  handler is enough); with Advanced off the call does nothing and writes nothing. A
-   *  view lock doesn't block the state flip: the window appears once the lock clears. */
+   *  first so the menus agree — and both are REFUSED while {@link skyHeld}: the call does
+   *  nothing and writes nothing, as their greyed View-menu rows do. One already open stays
+   *  open and shows the reason in place; closing is never refused (2026-10-02).
+   *  'minorBodies' REQUIRES Advanced: its window renders only with Advanced on, so call
+   *  {@link setAdvancedMode}(true) first (earlier in the same handler is enough); with
+   *  Advanced off the call does nothing and writes nothing. A view lock doesn't block
+   *  the state flip: the window appears once the lock clears. */
   openView: (
     id:
       | 'coordinates'

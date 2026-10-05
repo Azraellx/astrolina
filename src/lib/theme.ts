@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import type { PlanetName } from './ephemeris';
+import type { Element } from './astro/dignities';
 import { hypotheticalPoint } from './minorBodies/hypothetical';
 
 export type Theme = 'glass' | 'dark' | 'vintage';
@@ -177,4 +178,48 @@ export const NIGHT_SHADE_STYLE: Record<Theme, { color: string; opacity: number }
   dark: { color: '#01040f', opacity: 0.38 },
   glass: { color: '#1b2a4a', opacity: 0.18 },
   vintage: { color: '#23204a', opacity: 0.16 },
+};
+
+// The geodetic grid's linework and sign labels (lib/astro/geodeticGrid): ONE neutral colour
+// per theme, the basemap's own ink at low contrast, so the grid reads as a reference beneath
+// the chart rather than as another family of lines. 0.6 px is under every line the map draws
+// for a body (the thinnest, the parans, are 0.7; an overlay's IC 0.8), so where the grid and
+// a body line coincide, the body's shows. Map.tsx also stacks the grid under all of them.
+// `label` colours the sign glyphs at the band tops and on the curves. `hover` is the opacity
+// of the Ascendant zone under the cursor, filled in the same ink: a soft neutral lift that
+// reads over the zone shading in any element's colour, Presentation's included, without
+// taking a colour of its own. (2026-10-02)
+export const GEO_GRID_STYLE: Record<
+  Theme,
+  { line: string; opacity: number; width: number; label: string; hover: number }
+> = {
+  glass: { line: '#2b3445', opacity: 0.38, width: 0.6, label: '#2b3445', hover: 0.1 },
+  dark: { line: '#d6dbe6', opacity: 0.3, width: 0.6, label: '#d6dbe6', hover: 0.12 },
+  vintage: { line: '#4a3a24', opacity: 0.4, width: 0.6, label: '#4a3a24', hover: 0.1 },
+};
+
+// The MC zone shading: element as hue (Fire vermillion, Earth blue-green, Air gold, Water
+// blue), modality as lightness, ordered [cardinal, fixed, mutable] — cardinal darkest. Per
+// theme, like the star tint: the dark basemap takes brighter versions of the same hues. Drawn
+// at about 12% (Presentation: about 50%), so these are the colours at full strength.
+// A proposal for Lina's eye on all three themes. (2026-10-02)
+export const GEO_ZONE_COLORS: Record<Theme, Record<Element, readonly [string, string, string]>> = {
+  glass: {
+    fire: ['#b3261e', '#e0452b', '#f08a6c'],
+    earth: ['#0b6e63', '#16998a', '#5cc4b5'],
+    air: ['#a87b00', '#d4a514', '#ecc95a'],
+    water: ['#1c4aa6', '#3a6fd4', '#7aa2eb'],
+  },
+  vintage: {
+    fire: ['#a3301f', '#cc4f30', '#e08767'],
+    earth: ['#11665c', '#1f8c7e', '#5fb3a6'],
+    air: ['#94700a', '#bf961c', '#dbbb5c'],
+    water: ['#23458f', '#3d66bd', '#7896d6'],
+  },
+  dark: {
+    fire: ['#d9452b', '#f2694a', '#ff9f85'],
+    earth: ['#1a9484', '#2bbfab', '#7ae0d0'],
+    air: ['#c99a12', '#ebc23a', '#ffe08a'],
+    water: ['#2f62c9', '#5288ee', '#94b8ff'],
+  },
 };

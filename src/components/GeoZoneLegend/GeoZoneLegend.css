@@ -1,0 +1,88 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* The geodetic zone-shading legend (GeoZoneLegend.tsx): a 4×3 element × modality grid in the
+   map's bottom-right corner, stacked one chip-height above the active-systems chip (.info-bar)
+   and so above the attribution. On the same rung (8) as the chip and the placed pin, for the
+   chip's reason: a head tapped here is never taken by a pin under it. The map's labels step off
+   it (HUD_SELECTORS in Map.tsx). On a desktop the settings window (rung 10) can reach down over
+   this corner, so the legend steps left of it while the two would meet: --geo-legend-dodge,
+   written by the component (useClearOfSettings), never by a stylesheet (2026-10-05). */
+.geo-zone-legend {
+  position: fixed;
+  right: calc(var(--edge, 16px) + var(--geo-legend-dodge, 0px));
+  /* The chip's own offset, plus its height and a gap; + the reserved bottom band (the sky band). */
+  bottom: calc(44px + 32px + var(--sky-band-h, 0px));
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  grid-auto-rows: 22px;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.geo-legend-corner {
+  display: block;
+}
+
+/* Row heads (elements) and column heads (modalities): glyph-only buttons whose tip names the
+   group. Pressed = that group alone is shown. */
+.geo-legend-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.geo-legend-head:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.08);
+}
+.geo-legend-head.is-on {
+  color: var(--text-strong);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.geo-legend-head:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.7);
+}
+
+/* One zone: its sign on its colour at full strength, so the swatch reads even though the map
+   draws it at about 12%. Dimmed while another group is isolated, as its zone is on the map. */
+.geo-legend-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+.geo-legend-cell.is-dim {
+  opacity: 0.25;
+}
+
+/* Touch: track the chip down to the footer as InfoBar.css does, keeping the same 32px step. */
+@media (pointer: coarse) {
+  .geo-zone-legend {
+    bottom: calc(var(--edge, 3px) + 28px + 32px + max(env(safe-area-inset-bottom, 0px), var(--sky-band-h, 0px)));
+  }
+}

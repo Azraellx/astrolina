@@ -14,15 +14,20 @@ import {
 } from 'react';
 import {
   PLANET_COLORS,
+  POINTS,
   birthDataToJD,
   obliquity,
   type AngleCoords,
   type EclipticPosition,
   type HorizontalCoords,
+  type HouseSystem,
+  type LineSystem,
   type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
-import type { StoredChart } from '../../lib/chartLibrary';
+import { displayName, type StoredChart } from '../../lib/chartLibrary';
+import { timeUnknown } from '../../lib/birthData';
+import { skyHeldFor } from '../../lib/skyHold';
 import { isPhone, isTouchLayout, usePhone } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
@@ -34,6 +39,7 @@ import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { ZodiacRange } from '../ZodiacGlyph/ZodiacRange';
 import { MinorMark } from '../MinorMark/MinorMark';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import {
@@ -54,6 +60,7 @@ import {
   useLocalSpaceHover,
 } from '../LocalSpaceWheel/LocalSpaceWheel';
 import { LocalSpaceCompass } from '../LocalSpaceWheel/LocalSpaceCompass';
+import { SkyHeldNote } from '../SkyHeldNote/SkyHeldNote';
 import { renderLocalSpaceGatedSlot } from '../../lib/extensions/localSpaceSlot';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import {
@@ -65,7 +72,14 @@ import {
   type RulershipScheme,
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
-import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
+import {
+  ANGLE_LABEL,
+  lonToZodiac,
+  planetRank,
+  truncZodiac,
+  visibleAngleSpecs,
+  type AngleCode,
+} from '../../lib/astro/format';
 import {
   getLeftDockMax,
   publishLeftDock,
@@ -110,14 +124,31 @@ function fmtDM(deg: number, signed = false): string {
 
 // Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
-function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
+//
+// `trunc` is a geodetic frame's angle: a place's degree is quoted truncated and its
+// sign is the place's zone, so it reads through format.ts truncZodiac — the same rule
+// the capture list and the wheel use for it — and never rounds into the next sign.
+// (2026-10-02)
+function Longitude({
+  lon,
+  advanced,
+  trunc = false,
+}: {
+  lon: number;
+  advanced: boolean;
+  trunc?: boolean;
+}) {
   const { labels } = useT();
   // Compact form (minute precision) is shared with the Capture extras panel via
   // lonToZodiac, so the two readouts can't disagree at this column's width cutoff.
   const compact = lonToZodiac(lon);
   let signIdx = compact.signIdx;
   let dms = compact.degMin;
-  if (advanced) {
+  if (trunc) {
+    const z = truncZodiac(lon, advanced ? 'sec' : 'min');
+    signIdx = z.signIdx;
+    dms = z.text;
+  } else if (advanced) {
     const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
     signIdx = Math.floor(lonDeg / 30);
     const inSign = lonDeg % 30;
@@ -147,7 +178,8 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
 
 // Compact zodiacal longitude for the Advanced table's narrow column: degree,
 // sign glyph, arcminute — e.g. 23°♑17' (the conventional "23 Cap 17" notation).
-function SignLon({ lon }: { lon: number }) {
+// `trunc` as for Longitude above: a geodetic angle truncates. (2026-10-02)
+function SignLon({ lon, trunc = false }: { lon: number; trunc?: boolean }) {
   const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
   let signIdx = Math.floor(lonDeg / 30);
   const inSign = lonDeg % 30;
@@ -155,6 +187,12 @@ function SignLon({ lon }: { lon: number }) {
   let m = Math.round((inSign - d) * 60);
   if (m === 60) { m = 0; d += 1; }
   if (d === 30) { d = 0; signIdx = (signIdx + 1) % 12; }
+  if (trunc) {
+    const z = truncZodiac(lon, 'min');
+    signIdx = z.signIdx;
+    d = z.deg;
+    m = z.min;
+  }
   return (
     <>
       {d}°<ZodiacGlyph sign={signIdx} size={11} />{pad2(m)}&#39;
@@ -178,6 +216,25 @@ interface ExpandedChartSidebarProps {
   pinned: boolean;
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
+  /** The map's EFFECTIVE line system. Whether a frame is geodetic is read off the
+   *  frame itself (`angles.geodetic`); this is for what the panel says about the map
+   *  around it. (2026-10-02) */
+  lineSystem?: LineSystem;
+  /** The house system the frame's cusps were computed in — the EFFECTIVE one (Placidus
+   *  whenever Advanced is off), so the geodetic header's "houses:" line names what the
+   *  wheel draws, not a setting it is not reading. Read only by that line, which is
+   *  left out without it. (2026-10-02) */
+  houseSystem?: HouseSystem;
+  /** A line per natal body saying where its figure comes from — today only the Part of
+   *  Fortune on a geodetic map, "From the geodetic Ascendant". The natal wheels print
+   *  it in the body's tip (WheelSvg bodyNotes), and the positions list tags the row GE
+   *  with it as the tag's tip. (2026-10-02) */
+  bodyNotes?: ReadonlyMap<PlanetName, string> | null;
+  /** Natal bodies known only to a span, with its half-width in degrees — a chart with no
+   *  birth time (lib/astro/timeless): the Moon, and on a geodetic map the Part of Fortune.
+   *  The natal wheels draw the span (WheelSvg ranges), and the positions list and table
+   *  print it (2°♉–18°♉) where they would print the degree to the minute. (2026-10-02) */
+  ranges?: ReadonlyMap<PlanetName, number> | null;
   planets: EclipticPosition[];
   /** The natal chart's catalog minor bodies (lib/minorBodies/wheel): placed on the
    *  natal wheel, and listed in the positions table after the built-in bodies in the
@@ -226,7 +283,9 @@ interface ExpandedChartSidebarProps {
   noChart?: boolean;
   /** Birth time unknown: `angles` is null (there are none), but the planets still read
    *  by sign — the wheel renders planets-only on the neutral Aries frame, the angle
-   *  list rows stay away, and a note in the wheel corner says why. */
+   *  list rows stay away, and a note in the wheel corner says why. On a geodetic map
+   *  `angles` is the place's frame, which needs no birth minute, so only the note is
+   *  left to say it (timeUnknownShown). (2026-10-02) */
   planetsOnly?: boolean;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
@@ -264,8 +323,16 @@ interface ExpandedChartSidebarProps {
    *  tier gate, so the real dials won't draw. When set, the sidebar renders whatever a
    *  downstream build has installed in the gated local-space slot (lib/extensions/
    *  localSpaceSlot) in the dials' place — the open core installs nothing, so nothing
-   *  shows. Mutually exclusive with the coord props being populated. */
+   *  shows. Mutually exclusive with the coord props being populated. Still set while
+   *  the view is held on a geodetic map (`localSpaceHeld`, which outranks it in the
+   *  slot), so a control the tier withholds is not shown held either. (2026-10-05) */
   localSpaceGated?: boolean;
+  /** The Local Space view is on but HELD on a geodetic map (lib/skyHold): the coord props
+   *  above arrive null, and the slot the dials would take shows the hold's reason with its
+   *  fix (`onOpenCalc`) instead. Absent reads as not held. (2026-10-02) */
+  localSpaceHeld?: boolean;
+  /** The held reason's fix: open Settings ▸ Calculation, where the line system is. */
+  onOpenCalc?: () => void;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
   /** Which rulership table the essential-dignity list reads (Settings ▸ Calculation
@@ -610,11 +677,13 @@ function AngleTipGlyph({
   name,
   color,
 }: {
-  code: string;
+  code: AngleCode;
   name: string;
   color: string;
 }) {
   const { t } = useT();
+  // The code keys the catalog; the reader sees its label (AS, MC, DS, IC). (2026-10-02)
+  const label = ANGLE_LABEL[code];
   return (
     <TipGlyph
       className="es-glyph es-angle-code"
@@ -622,14 +691,14 @@ function AngleTipGlyph({
       title={
         <span className="es-tip-title">
           <span className="es-angle-code" style={{ color }}>
-            {code}
+            {label}
           </span>
           {name}
         </span>
       }
       hint={t(`wheel.angles.${code}.sub` as 'wheel.angles.As.sub')}
     >
-      {code}
+      {label}
     </TipGlyph>
   );
 }
@@ -777,6 +846,12 @@ function sortAspects<T extends Aspect>(rows: T[], sort: SortState<AspectSortKey>
 // column" and the table could not be sorted by finger at all. A header holds an
 // action, so it takes the same bargain every other button in the app takes: a tap
 // acts, a hold explains.
+//
+// `held` is the reason a column has nothing to show (the sky hold: azimuth and altitude
+// on a geodetic map). The header stays, dimmed, with the reason as its tip in place of
+// the explanation and the grey N/A badge; its label stops being a sort control, since
+// every cell under it is an em-dash and sorting by it would only seem to do something.
+// (2026-10-02)
 function AdvHeader({
   label,
   title,
@@ -785,6 +860,7 @@ function AdvHeader({
   sort,
   onSort,
   cellClass = 'es-adv-num',
+  held,
 }: {
   label: string;
   title?: string;
@@ -793,24 +869,36 @@ function AdvHeader({
   sort: SortState<PosSortKey>;
   onSort: (key: PosSortKey) => void;
   cellClass?: string;
+  held?: string;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLTableCellElement>('right');
   return (
     <th
       ref={ref}
-      className={cellClass}
-      aria-sort={ariaSort(sort, sortKey)}
+      className={held ? `${cellClass} is-held` : cellClass}
+      aria-sort={held ? undefined : ariaSort(sort, sortKey)}
+      aria-disabled={held ? true : undefined}
       onMouseEnter={show}
       onMouseLeave={hide}
     >
-      <SortLabel
-        label={label}
-        sortKey={sortKey}
-        sort={sort}
-        onSort={onSort}
-        className="es-adv-sort"
+      {held ? (
+        <span className="es-adv-sort">{label}</span>
+      ) : (
+        <SortLabel
+          label={label}
+          sortKey={sortKey}
+          sort={sort}
+          onSort={onSort}
+          className="es-adv-sort"
+        />
+      )}
+      <HoverTip
+        pos={pos}
+        placement="right"
+        title={title ?? label}
+        hint={held ?? hint}
+        unavailable={!!held}
       />
-      <HoverTip pos={pos} placement="right" title={title ?? label} hint={hint} />
     </th>
   );
 }
@@ -950,6 +1038,10 @@ export function ExpandedChartSidebar({
   pinned,
   isNatalPin,
   angles,
+  lineSystem = 'celestial',
+  houseSystem,
+  bodyNotes = null,
+  ranges = null,
   planets,
   minorBodies = NO_MINOR,
   minorReserve = false,
@@ -974,6 +1066,8 @@ export function ExpandedChartSidebar({
   natalLocalSpaceCoords,
   relocatedLocalSpaceCoords,
   localSpaceGated = false,
+  localSpaceHeld = false,
+  onOpenCalc,
   localSpaceRelocated,
   aspectOrbs,
   rulershipScheme,
@@ -1097,6 +1191,35 @@ export function ExpandedChartSidebar({
   // unknown and there are none — the neutral Aries frame (planets-only wheel).
   // Everything that shows angle VALUES keeps reading `angles` (null → hidden).
   const frame = angles ?? (planetsOnly ? ARIES_FRAME : null);
+  // The corner's "Birth time unknown" note speaks for the NATAL wheel of a chart with no
+  // birth time. On a celestial map that is the wheel with no angles (a promoted overlay
+  // brings its own). On a geodetic map the angles come from the place, so the natal
+  // wheel has a full frame whatever the birth time — there it is the unpromoted wheel,
+  // and the note stays, or a noon placeholder would read as a timed chart. (2026-10-02)
+  //
+  // The geodetic header's first line says it too ("birth time unknown, noon used"), and
+  // the note is kept anyway: it belongs to the WHEEL, and goes where the wheel goes — a
+  // header scrolled out of view, the Dual layout's second wheel under it — and the same
+  // chart's wheel then says the same thing in both line systems. The celestial header
+  // still prints 12:00, so there the note is the only place it is said. (2026-10-02)
+  const timeUnknownShown =
+    planetsOnly && (!angles || (!!angles.geodetic && !promotedLabel));
+  // The panel header's geodetic data block (see geoLines). Its first line follows the
+  // DERIVED line system; the lines about the frame follow the frame itself
+  // (`angles.geodetic`), so a state with no frame (NO CHART) never names a place it
+  // is cast for. (2026-10-02)
+  const geoMap = lineSystem === 'geodetic';
+  const geoFrame = !!angles?.geodetic;
+  // `chart` is the derived chart, so a time being tried on (lib/birthData) lifts it.
+  const timeless = !!chart && timeUnknown(chart);
+  // The sky hold (lib/skyHold), derived here from the one line-system prop rather than
+  // passed as a second boolean that could disagree with it. In this panel it holds the
+  // Advanced table's azimuth and altitude — where a body stands in a place's sky is the
+  // sky's turning — for every row, bodies and angles alike; RA and Dec stay, being the
+  // body's own. (Local space, the other held thing here, arrives as `localSpaceHeld`.)
+  // (2026-10-02)
+  const skyHeld = skyHeldFor(lineSystem);
+  const skyHeldWhy = skyHeld ? t('settings.inert.skyHeld') : undefined;
 
   // Horizon-frame (local-space) data, shared by the dial below the wheel stack
   // and the aspect list's frame statuses. Null while the view is off (or the
@@ -1134,7 +1257,7 @@ export function ExpandedChartSidebar({
     : null;
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
-  // which angle marks (As/Ds/Mc/Ic) the wheel draws.
+  // which angle marks (AS/MC/DS/IC) the wheel draws.
   const visibleAngles = new Set<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>();
   if (visibleLineTypes.has('ASC')) visibleAngles.add('As');
   if (visibleLineTypes.has('DSC')) visibleAngles.add('Ds');
@@ -1145,33 +1268,33 @@ export function ExpandedChartSidebar({
   if (visibleLineTypes.has('VX')) visibleAngles.add('Vx');
   if (visibleLineTypes.has('AVX')) visibleAngles.add('Avx');
 
-  // The same visible angles as list rows, in the conventional Mc, Ic, As, Ds
-  // order (the Vertex axis after them). They tack onto the end of the planet
+  // The same visible angles as list rows, in the display order AS, MC, DS, IC
+  // (the Vertex axis after them). They tack onto the end of the planet
   // list below (no separate heading), so the readout still lists them even
   // though they now also live in the wheel — every row gated by the same
   // line-type toggles as its map line.
-  const shownAngleRows = angles
-    ? visibleAngleSpecs(visibleLineTypes).map((s) => ({
+  //
+  // A geodetic frame's rows carry `geodetic`: they truncate (Longitude's `trunc`), and
+  // Discreet masks them while they are the birthplace's (castBlank, below). Rows are
+  // finite values only, because a geodetic frame has no Vertex (NaN) and a NaN row
+  // would print "NaN°" whatever the Vx toggle says. (2026-10-02)
+  const angleRowsOf = (set: RelocatedAngles) =>
+    visibleAngleSpecs(visibleLineTypes)
+      .map((s) => ({
         code: s.code,
         key: s.key,
         name: t(s.nameKey),
-        lon: angles[s.key],
+        lon: set[s.key],
         color: s.color,
+        geodetic: !!set.geodetic,
       }))
-    : [];
+      .filter((r) => Number.isFinite(r.lon));
+  const shownAngleRows = angles ? angleRowsOf(angles) : [];
 
   // The overlay's angles as the same row shape, gated by the same line-type
-  // toggles — so the overlay's table lists Mc/Ic/As/Ds for ITS frame exactly as
+  // toggles — so the overlay's table lists AS/MC/DS/IC for ITS frame exactly as
   // the chart's does for the natal one.
-  const shownOverlayAngleRows = overlayAngles
-    ? visibleAngleSpecs(visibleLineTypes).map((s) => ({
-        code: s.code,
-        key: s.key,
-        name: t(s.nameKey),
-        lon: overlayAngles[s.key],
-        color: s.color,
-      }))
-    : [];
+  const shownOverlayAngleRows = overlayAngles ? angleRowsOf(overlayAngles) : [];
 
   // The out-of-bounds limit IS the Sun's maximum declination — the true
   // obliquity at the chart's moment (~23°26'; drifts ~47" per century). Epoch
@@ -1392,6 +1515,8 @@ export function ExpandedChartSidebar({
   // so ordering the overlay by declination does not disturb the chart above it).
   // The catalog minor bodies and their horizon figures come last and default to
   // none: only the natal chart has them (there is no sample at an overlay's instant).
+  // So do the source notes (bodyNotes) and the spans (ranges), which are the natal
+  // wheel's too.
   const positionsBlock = (
     bodies: EclipticPosition[],
     coords: Map<PlanetName, HorizontalCoords>,
@@ -1401,7 +1526,21 @@ export function ExpandedChartSidebar({
     onSortCol: (key: PosSortKey) => void,
     minors: readonly WheelMinorBody[] = NO_MINOR,
     mCoords: ReadonlyMap<number, { az: number; alt: number }> | null = null,
+    notes: ReadonlyMap<PlanetName, string> | null = null,
+    spans: ReadonlyMap<PlanetName, number> | null = null,
   ): ReactNode => {
+    // A body with a source note — the Part of Fortune on a geodetic map, built from the
+    // place's Ascendant — is tagged GE beside its name, with the note as the tag's tip,
+    // in the list and the table alike. The tag names a source, not a degree, so it stays
+    // where Discreet blanks the figure (maskPoint). (2026-10-02)
+    const noteTag = (name: PlanetName) => {
+      const note = notes?.get(name);
+      return note ? (
+        <TipGlyph className="es-ge-tag" title={<span className="es-tip-title">{note}</span>}>
+          {t('expandedSidebar.geodetic.ge')}
+        </TipGlyph>
+      ) : null;
+    };
     // Simple view: planets, then the catalog bodies, then angles in one row-by-row
     // two-column grid (even index → left, odd → right), so each group flows straight
     // on from the last. (Catalog bodies are an Advanced reading, so in practice they
@@ -1413,14 +1552,27 @@ export function ExpandedChartSidebar({
     const rows = [...planetItems, ...minorItems, ...angleItems];
     const leftCol = rows.filter((_, i) => i % 2 === 0);
     const rightCol = rows.filter((_, i) => i % 2 === 1);
+    // A body known only to a span — a chart with no birth time — prints the span where
+    // its degree would print to the minute (or the second), in the list and the table
+    // alike. A masked Lot stays masked: its span would give the masked Ascendant back to
+    // within a few degrees. (2026-10-02)
+    const spanText = (p: EclipticPosition, size: number) => {
+      const half = spans?.get(p.name);
+      return half === undefined ? null : <ZodiacRange lon={p.lon} halfDeg={half} size={size} />;
+    };
     const renderRow = (row: (typeof rows)[number]) =>
       row.kind === 'planet' ? (
         <li key={`p-${row.p.name}`}>
           <div className="es-row-main">
             <PlanetTipGlyph planet={row.p.name} size={13} />
-            <span className="es-name">{labels.planet(row.p.name)}</span>
+            <span className="es-name">
+              {labels.planet(row.p.name)}
+              {noteTag(row.p.name)}
+            </span>
             <span className="es-lon">
-              <Longitude lon={row.p.lon} advanced={advanced} />
+              {maskPoint(row.p.name)
+                ? id.text(advanced ? '00°00\'00"' : '00°00\'')
+                : (spanText(row.p, 12) ?? <Longitude lon={row.p.lon} advanced={advanced} />)}
             </span>
           </div>
         </li>
@@ -1440,7 +1592,11 @@ export function ExpandedChartSidebar({
             <AngleTipGlyph code={row.code} name={row.name} color={row.color} />
             <span className="es-name">{row.name}</span>
             <span className="es-lon">
-              <Longitude lon={row.lon} advanced={advanced} />
+              {maskAngle(row) ? (
+                id.text(advanced ? '00°00\'00"' : '00°00\'')
+              ) : (
+                <Longitude lon={row.lon} advanced={advanced} trunc={row.geodetic} />
+              )}
             </span>
           </div>
         </li>
@@ -1520,13 +1676,15 @@ export function ExpandedChartSidebar({
             <PlanetTipGlyph planet={p.name} size={13} />
             <span className="es-name">{labels.planet(p.name)}</span>
             {motionBadge(p)}
+            {noteTag(p.name)}
           </td>
           <td className="es-adv-num es-adv-lon">
-            {advFullSign ? (
-              <Longitude lon={p.lon} advanced={false} />
-            ) : (
-              <SignLon lon={p.lon} />
-            )}
+            {/* A masked Lot (maskPoint) loses only this cell: it has no equatorial or
+                horizon figures to hide — App keeps it out of the coordinate tables. */}
+            {maskPoint(p.name)
+              ? id.text('00°00\'')
+              : (spanText(p, 11) ??
+                (advFullSign ? <Longitude lon={p.lon} advanced={false} /> : <SignLon lon={p.lon} />))}
           </td>
           <td className="es-adv-num">
             {p.speed !== undefined ? fmtDM(p.speed, true) : '—'}
@@ -1538,9 +1696,9 @@ export function ExpandedChartSidebar({
           {decCell(p.dec)}
           {advExtraCols && (
             <>
-              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">{hc && !skyHeld ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
               <td className="es-adv-num">
-                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+                {hc && !skyHeld ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
               </td>
             </>
           )}
@@ -1574,9 +1732,9 @@ export function ExpandedChartSidebar({
           {decCell(m.dec)}
           {advExtraCols && (
             <>
-              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">{hc && !skyHeld ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
               <td className="es-adv-num">
-                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+                {hc && !skyHeld ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
               </td>
             </>
           )}
@@ -1589,6 +1747,12 @@ export function ExpandedChartSidebar({
     // Speed has no meaning for an angle, so that cell stays an em-dash.
     const renderAdvAngleRow = (a: (typeof angleRows)[number]) => {
       const ac = aCoords?.[a.key];
+      // Masked (Discreet, a birthplace's geodetic angles): the longitude and every
+      // figure computed from it — the two equatorial and the two horizon ones — each
+      // blanked to a fixed width so not even a figure's length is left to read.
+      // Azimuth and altitude are read at the birthplace from the very angle the row
+      // hides, so leaving them would leave the row half-readable. (2026-10-02)
+      const masked = maskAngle(a);
       return (
         <tr key={`a-${a.code}`}>
           <td className="es-adv-point">
@@ -1596,20 +1760,37 @@ export function ExpandedChartSidebar({
             <span className="es-name">{a.name}</span>
           </td>
           <td className="es-adv-num es-adv-lon">
-            {advFullSign ? (
-              <Longitude lon={a.lon} advanced={false} />
+            {masked ? (
+              id.text('00°00\'')
+            ) : advFullSign ? (
+              <Longitude lon={a.lon} advanced={false} trunc={a.geodetic} />
             ) : (
-              <SignLon lon={a.lon} />
+              <SignLon lon={a.lon} trunc={a.geodetic} />
             )}
           </td>
           <td className="es-adv-num">—</td>
           <td className="es-adv-num">{ac ? fmtDM(ac.lat * RAD2DEG, true) : '—'}</td>
-          <td className="es-adv-num">{ac ? fmtDM(ac.ra * RAD2DEG) : '—'}</td>
-          <td className="es-adv-num">{ac ? fmtDM(ac.dec * RAD2DEG, true) : '—'}</td>
+          <td className="es-adv-num">
+            {ac ? (masked ? id.text('000°00\'') : fmtDM(ac.ra * RAD2DEG)) : '—'}
+          </td>
+          <td className="es-adv-num">
+            {ac ? (masked ? id.text('+00°00\'') : fmtDM(ac.dec * RAD2DEG, true)) : '—'}
+          </td>
+          {/* The sky hold outranks the Discreet mask: on a geodetic map these two are
+              '—' for every row, so a masked row's placeholder never shows there.
+              (2026-10-02) */}
           {advExtraCols && (
             <>
-              <td className="es-adv-num">{ac ? fmtDM(ac.az * RAD2DEG) : '—'}</td>
-              <td className="es-adv-num">{ac ? fmtDM(ac.alt * RAD2DEG, true) : '—'}</td>
+              <td className="es-adv-num">
+                {ac && !skyHeld ? (masked ? id.text('000°00\'') : fmtDM(ac.az * RAD2DEG)) : '—'}
+              </td>
+              <td className="es-adv-num">
+                {ac && !skyHeld
+                  ? masked
+                    ? id.text('+00°00\'')
+                    : fmtDM(ac.alt * RAD2DEG, true)
+                  : '—'}
+              </td>
             </>
           )}
         </tr>
@@ -1638,6 +1819,9 @@ export function ExpandedChartSidebar({
     // radians (both sides of each column share one unit, which is all a
     // comparison needs).
     const posVal = (r: PosRow, key: PosSortKey): number | null => {
+      // Held columns (the sky hold) sort as empty cells for every row, as they print.
+      // (2026-10-02)
+      if (skyHeld && (key === 'az' || key === 'alt')) return null;
       if (r.kind === 'minor') {
         const mc = mCoords?.get(r.m.n);
         switch (key) {
@@ -1656,25 +1840,30 @@ export function ExpandedChartSidebar({
       }
       if (r.kind === 'angle') {
         const ac = aCoords?.[r.a.key];
+        // A masked angle sorts as an empty cell in the columns it hides: ranked among
+        // the planets, its place in the order would say roughly what the mask hides.
+        // (2026-10-02)
+        const hidden = maskAngle(r.a);
         switch (key) {
-          // The angles keep their canonical Mc, Ic, As, Ds, Vx, Avx order and
+          // The angles keep their display order (AS, MC, DS, IC, Vx, Avx) and
           // sit after every body, so a Point sort ascending reproduces the
           // table's own natural order exactly.
           case 'point': return 1000 + angleRows.indexOf(r.a);
-          case 'lon': return r.a.lon;
+          case 'lon': return hidden ? null : r.a.lon;
           case 'speed': return null;
           case 'lat': return ac?.lat ?? null;
-          case 'ra': return ac?.ra ?? null;
-          case 'dec': return ac?.dec ?? null;
-          case 'az': return ac?.az ?? null;
-          case 'alt': return ac?.alt ?? null;
+          case 'ra': return hidden ? null : (ac?.ra ?? null);
+          case 'dec': return hidden ? null : (ac?.dec ?? null);
+          case 'az': return hidden ? null : (ac?.az ?? null);
+          case 'alt': return hidden ? null : (ac?.alt ?? null);
         }
       }
       const p = r.p;
       const hc = coords.get(p.name);
       switch (key) {
         case 'point': return planetRank(p.name);
-        case 'lon': return p.lon;
+        // A masked Lot, likewise (maskPoint). (2026-10-02)
+        case 'lon': return maskPoint(p.name) ? null : p.lon;
         case 'speed': return p.speed ?? null;
         case 'lat': return p.lat ?? null;
         case 'ra': return hc?.ra ?? null;
@@ -1711,8 +1900,8 @@ export function ExpandedChartSidebar({
                     <AdvHeader sortKey="dec" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.decLabel')} title={t('expandedSidebar.table.decTitle')} hint={t('expandedSidebar.table.decHint')} />
                     {advExtraCols && (
                       <>
-                        <AdvHeader sortKey="az" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} />
-                        <AdvHeader sortKey="alt" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} />
+                        <AdvHeader sortKey="az" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.aziLabel')} title={t('expandedSidebar.table.aziTitle')} hint={t('expandedSidebar.table.aziHint')} held={skyHeldWhy} />
+                        <AdvHeader sortKey="alt" sort={sort} onSort={onSortCol} label={t('expandedSidebar.table.altLabel')} title={t('expandedSidebar.table.altTitle')} hint={t('expandedSidebar.table.altHint')} held={skyHeldWhy} />
                       </>
                     )}
                   </tr>
@@ -1872,6 +2061,21 @@ export function ExpandedChartSidebar({
   // place the user chose to look at, not birth data, so it reads normally: the
   // mode hides who the chart is, not where you are working.
   const castBlank = id.on && (isNatalPin || !point);
+  // The same line, drawn through the ANGLES on a geodetic map: there they are a
+  // function of the place alone (the MC is its longitude), so while the place is the
+  // birthplace they are birth data too — masked in the rows (longitude and every
+  // coordinate computed from it: RA, declination, azimuth, altitude) and in the wheels'
+  // degree text. A chart's own celestial angles are the work, and stay. Per row,
+  // because the overlay's table on a geodetic map lists the same place's frame.
+  // (2026-10-02)
+  const maskAngle = (row: { geodetic: boolean }) => castBlank && row.geodetic;
+  const maskGeAngles = castBlank && !!angles?.geodetic;
+  // A Lot on that wheel is built from the same frame's Ascendant — the Part of Fortune
+  // is AS + Moon − Sun, or the reverse — so printed beside the Sun and Moon it hands the
+  // masked Ascendant back to the arc-minute. Its figure goes with the angles'. Only the
+  // natal chart's bodies carry a Lot (App's fortuneWheelPos), so the chart-level test is
+  // exact for the one table that can hold one. (2026-10-02)
+  const maskPoint = (name: PlanetName) => maskGeAngles && POINTS.includes(name);
 
   // The place line and its coordinates — the panel header's, and the overlay
   // wheel's below it, because they are the same fact about both: the angles on
@@ -1905,6 +2109,35 @@ export function ExpandedChartSidebar({
         <circle cx="12" cy="10" r="3" />
       </svg>
     );
+    // On a geodetic map the same two facts are ONE line of the header's data block,
+    // "Cast for [place] · [coordinates]": there the wheel's angles and houses are the
+    // place's own, so the place is what the frame is cast for, not just where the map
+    // is pointing. One row that never wraps — the name ellipsizes, and its box is always
+    // rendered — so a hover swapping the name still cannot move the header (the nbsp
+    // note below). State colour and Discreet's blanking are the two-line form's. The
+    // FRAME decides, as in partnerLines: no frame, no "cast for". (2026-10-02)
+    if (geoFrame) {
+      const named = blankPlace || !!pointLabel?.trim();
+      return (
+        <div className={`es-relocated es-geo-cast ${stateClass}`}>
+          {hasPin && pinIcon}
+          <span className="es-cast-for-label">{t('expandedSidebar.partnerHead.castFor')}</span>
+          <span className="es-relocated-name">
+            {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || ' '}
+          </span>
+          {named && (
+            <span className="es-geo-sep" aria-hidden="true">
+              ·
+            </span>
+          )}
+          <span className="es-relocated-text">
+            {blankPlace
+              ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
+              : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
+          </span>
+        </div>
+      );
+    }
     // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
     // the wheel's top-left corner, so here we show the place name (marked with a
     // pin when one's placed) above its coordinates.
@@ -1946,6 +2179,54 @@ export function ExpandedChartSidebar({
     );
   };
 
+  // The rest of the geodetic data block, under "Cast for" (relocatedLines): the place's
+  // AS and MC, to the minute by the one truncation rule (truncZodiac) — the Coordinates
+  // box's figures, sign glyph between degrees and minutes as there, labelled as the
+  // grid's hover readout labels them (map.geoReadout) — and then where the wheel's
+  // planets and houses come from. The house system named is the one the cusps
+  // were computed in: Porphyry wherever the frame fell back to it (the corner's
+  // houseFallback says why). Discreet blanks the two figures, sign and all, exactly
+  // where it blanks the angle rows (maskGeAngles); the planets line names no place.
+  // Panel header only — the Dual layout's second header repeats the place line, but
+  // this describes the chart the panel is open on. (2026-10-02)
+  const geoLines = (): ReactNode => {
+    if (!geoFrame || !angles) return null;
+    const ge = (lon: number): ReactNode => {
+      if (maskGeAngles) return id.text('00°00\'');
+      const z = truncZodiac(lon, 'min');
+      return (
+        <>
+          {pad2(z.deg)}°<ZodiacGlyph sign={z.signIdx} size={11} />
+          {pad2(z.min)}&#39;
+        </>
+      );
+    };
+    const system = houseSystem
+      ? labels.houseSystem(angles.fallback ? 'porphyry' : houseSystem)
+      : null;
+    // Whose planets: a promoted overlay's bodies are another instant's, a composite's
+    // are the composite's own; otherwise they are the chart's natal positions.
+    const planetsLine = !system
+      ? null
+      : promotedLabel
+        ? t('expandedSidebar.geodetic.planetsPromoted', { overlay: promotedLabel, system })
+        : chart?.composite
+          ? t('expandedSidebar.geodetic.planetsComposite', { system })
+          : t('expandedSidebar.geodetic.planets', { system });
+    return (
+      <div className="es-geo-lines">
+        <span className="es-geo-ge">
+          <span className="es-geo-ge-tag">{t('expandedSidebar.geodetic.ge')}</span>
+          {' · '}
+          {t('map.geoReadout.as')} <span className="es-geo-val">{ge(angles.asc)}</span>
+          {' · '}
+          {t('map.geoReadout.mc')} <span className="es-geo-val">{ge(angles.mc)}</span>
+        </span>
+        {planetsLine && <span className="es-geo-planets">{planetsLine}</span>}
+      </div>
+    );
+  };
+
   // The Dual layout's header over a synastry PARTNER's wheel: under the partner's
   // name (the line above, from overlaySubject), their own birth record in the panel
   // header's form — date · time with its UTC offset, then their birthplace and
@@ -1966,6 +2247,12 @@ export function ExpandedChartSidebar({
   // that instead. Its date line is the composite's stored moment, exactly as the
   // panel header shows a composite that is the active chart.
   //
+  // Except on a geodetic map (2026-10-02). There every wheel is cast in the place's
+  // own geodetic frame — App hands a composite partner `angles` like any other — so
+  // the midpoint line would be false of the wheel drawn under it. The FRAME decides,
+  // not the chart kind: a geodetic overlay frame takes the "Cast for" line, composite
+  // or not.
+  //
   // Discreet mode masks every field of the record — it is a second person's birth
   // data, which is what the mode exists for — with the panel header's own masks
   // (and the 2026-08-24 lesson above: mask where the value is rendered, all of it).
@@ -1973,8 +2260,9 @@ export function ExpandedChartSidebar({
   const partnerLines = (p: StoredChart): ReactNode => {
     const bp = p.birthplace;
     const wrapLng = (v: number) => ((((v + 180) % 360) + 360) % 360) - 180;
+    const midpointFrame = !!p.composite && !overlayAngles?.geodetic;
     const castElsewhere =
-      !p.composite &&
+      !midpointFrame &&
       !!castPoint &&
       (Math.abs(castPoint.lat - bp.lat) > 1e-4 ||
         Math.abs(wrapLng(castPoint.lng - bp.lng)) > 1e-4);
@@ -2017,7 +2305,7 @@ export function ExpandedChartSidebar({
               : `${fmtLat(bp.lat)} ${fmtLng(bp.lng)}`}
           </span>
         </div>
-        {p.composite ? (
+        {midpointFrame ? (
           <div className="es-cast-for">
             <span className="es-cast-for-label">
               {t('expandedSidebar.partnerHead.midpointAngles')}
@@ -2149,16 +2437,38 @@ export function ExpandedChartSidebar({
           </div>
         </div>
         {chart && (
-          <div className="es-meta">
+          // On a geodetic map this is the first line of the data block (the rest is
+          // relocatedLines and geoLines): GEODETIC · name · date · time. The name is here
+          // as well as in the switcher above because the block is a record of what the
+          // wheel is, read as one. A chart with no birth time says so in the time's place
+          // — its planets are read at 12:00, and "12:00" would read as a recorded time —
+          // and drops the UTC offset with it; a recorded time keeps its offset, as it is
+          // the time's own qualifier and the ⚠ below is about it. The celestial header is
+          // unchanged. (2026-10-02)
+          <div className={`es-meta${geoMap ? ' es-geo-head' : ''}`}>
             <span className="es-meta-when">
+              {geoMap && (
+                <>
+                  <b className="es-geo-title">{t('expandedSidebar.geodetic.title')}</b>
+                  {' · '}
+                  {id.on ? id.name(chart.name) : displayName(chart.name)}
+                  {' · '}
+                </>
+              )}
               {/* Masked as date · time rather than through id.date() alone: this one
                   string carries both, and keeping the shape says "two things hidden
                   here" where a lone date mask would read as the time being absent. */}
-              {id.on ? `${MASK_DATE} · ${MASK_TIME}` : fmtChartDate(chart, fmt)}
+              {id.on
+                ? `${MASK_DATE} · ${MASK_TIME}`
+                : geoMap && timeless
+                  ? `${chart.day} ${fmt.monthName(chart.month)} ${chart.year} · ${t(
+                      'expandedSidebar.timeUnknownNoon',
+                    )}`
+                  : fmtChartDate(chart, fmt)}
               {/* The offset drops out entirely while masked instead of trailing a
                   second run of dots — one mask per fact reads as hidden, two reads
                   as broken. */}
-              {!id.on && (
+              {!id.on && !(geoMap && timeless) && (
                 <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
               )}
               {chart.tzUncertain && (
@@ -2178,6 +2488,7 @@ export function ExpandedChartSidebar({
           </div>
         )}
         {relocatedLines()}
+        {geoLines()}
 
       </section>
 
@@ -2293,6 +2604,22 @@ export function ExpandedChartSidebar({
           // downstream build put in the local-space slot in their place — nothing in the
           // open core; a placeholder in a gated build (lib/extensions/localSpaceSlot).
           const lsTease = localSpaceGated ? renderLocalSpaceGatedSlot(lsSize) : null;
+          // HELD on a geodetic map (lib/skyHold; the coord props then arrive null, so
+          // lsPair is too): the slot keeps its caption, so the reason has a subject, and
+          // says it with its fix in place of the dials. It outranks the tease, since no
+          // upgrade would draw a dial on a geodetic map. The dials come back on Celestial
+          // with nothing to redo. (2026-10-02)
+          const lsHeld = localSpaceHeld ? (
+            <>
+              <div className="es-ls-head">
+                <span className="es-overlay-caption">
+                  {t('expandedSidebar.localSpace.caption')}
+                </span>
+              </div>
+              <SkyHeldNote className="es-ls-held" onFix={onOpenCalc} />
+            </>
+          ) : null;
+          const lsSlot = lsPair || lsHeld || lsTease;
           return (
             <>
               {/* Use the wheel's empty top corners: the chart-state title (left,
@@ -2328,7 +2655,7 @@ export function ExpandedChartSidebar({
                       </svg>
                     </TipSpan>
                   )}
-                  {planetsOnly && !angles && (
+                  {timeUnknownShown && (
                     <span className="es-house-fallback">
                       {t('expandedSidebar.timeUnknownNote')}
                     </span>
@@ -2366,7 +2693,7 @@ export function ExpandedChartSidebar({
                 // dial (or its locked teaser) lands BELOW the wheel(s) rather
                 // than beside them.
                 className={`es-wheel-pane${
-                  showDual || lsPair || lsTease ? ' es-wheel-pane-dual' : ''
+                  showDual || lsSlot ? ' es-wheel-pane-dual' : ''
                 }`}
                 ref={wheelPaneRef}
               >
@@ -2387,6 +2714,9 @@ export function ExpandedChartSidebar({
                         visibleAngles={visibleAngles}
                         interactive
                         planetsOnly={planetsOnly && !angles}
+                        maskAngleText={maskGeAngles}
+                        bodyNotes={bodyNotes}
+                        ranges={ranges}
                       />
                       {/* The overlay wheel is introduced the way the natal one is:
                           the same three header lines — instant, place, coordinates
@@ -2456,9 +2786,10 @@ export function ExpandedChartSidebar({
                           visibleAspects={visibleAspects}
                           visibleAngles={visibleAngles}
                           interactive
+                          maskAngleText={castBlank && !!overlayAngles?.geodetic}
                         />
                       </div>
-                      {lsPair || lsTease}
+                      {lsSlot}
                     </>
                   ) : (
                     <>
@@ -2478,8 +2809,11 @@ export function ExpandedChartSidebar({
                         visibleAngles={visibleAngles}
                         interactive
                         planetsOnly={planetsOnly && !angles}
+                        maskAngleText={maskGeAngles}
+                        bodyNotes={bodyNotes}
+                        ranges={ranges}
                       />
-                      {lsPair || lsTease}
+                      {lsSlot}
                     </>
                   )
                 ) : noChart ? (
@@ -2536,6 +2870,8 @@ export function ExpandedChartSidebar({
             (key) => setPosSort((s) => nextSort(s, key)),
             minorBodies,
             minorCoords,
+            bodyNotes,
+            ranges,
           )}
           {/* The overlay's own positions, one press away. Same block, same
               columns, same sort gesture — the overlay is a chart too, and the
@@ -3129,17 +3465,26 @@ export function ExpandedChartSidebar({
                 >
                   {t('expandedSidebar.aspectsCount', { count })}
                 </TipHeading>
-                {azByKey && (
+                {/* Held with Local Space on a geodetic map (lib/skyHold): the frames
+                    arrive empty, so the switch would otherwise vanish with them. It
+                    stays, greyed with the reason and showing the stored choice, and
+                    a click does nothing; the table is back on Celestial. Not where the
+                    tier withholds it (localSpaceGated): Celestial wouldn't show it
+                    either. (2026-10-05) */}
+                {(azByKey || (localSpaceHeld && !localSpaceGated)) && (
                   <TipButton
                     type="button"
-                    className={`es-advanced-toggle es-frames-toggle ${splitFrames ? 'on' : 'off'}`}
-                    onClick={() => setSplitFrames(!splitFrames)}
+                    className={`es-advanced-toggle es-frames-toggle ${splitFrames ? 'on' : 'off'}${localSpaceHeld ? ' is-held' : ''}`}
+                    onClick={localSpaceHeld ? undefined : () => setSplitFrames(!splitFrames)}
                     role="switch"
                     aria-checked={splitFrames}
+                    aria-disabled={localSpaceHeld || undefined}
                     placement="bottom"
                     gated
                     tip={t('expandedSidebar.localSpace.compareTip')}
                     hint={t('expandedSidebar.localSpace.compareHint')}
+                    note={localSpaceHeld ? t('settings.inert.skyHeld') : undefined}
+                    unavailable={localSpaceHeld}
                   >
                     <span className="es-toggle-label">
                       {t('expandedSidebar.localSpace.compare')}

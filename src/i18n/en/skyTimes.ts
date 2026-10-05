@@ -12,18 +12,20 @@ export const skyTimes = {
   closeHint: 'Close the sky-times window.',
   noPlace: 'Pick a chart or drop a pin to read the sky clock somewhere.',
   // Column headers use the map's own angle names, so the clock reads as the
-  // time-domain twin of the lines: rising = ASC, culminating = MC, …
+  // time-domain twin of the lines: rising = AS, culminating = MC, … (AS and DS
+  // since 2026-10-02, as on the map and the wheel.) The Paran Clock's lane gutter
+  // reads these same four.
   col: {
     body: 'Body',
-    rise: 'ASC',
+    rise: 'AS',
     culminate: 'MC',
-    set: 'DSC',
+    set: 'DS',
     anticulminate: 'IC',
   },
   colHint: {
-    rise: 'Rises (crosses the eastern horizon — its ASC moment)',
+    rise: 'Rises (crosses the eastern horizon — its AS moment)',
     culminate: 'Culminates (crosses the upper meridian — its MC moment)',
-    set: 'Sets (crosses the western horizon — its DSC moment)',
+    set: 'Sets (crosses the western horizon — its DS moment)',
     anticulminate: 'Anti-culminates (crosses the lower meridian — its IC moment)',
   },
   circumpolarUp: 'Above the horizon all day at this latitude',

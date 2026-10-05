@@ -47,7 +47,10 @@ export interface ChipPt {
 //  - then the lunar nodes, natal or overlay — points, not bodies;
 //  - then parans, which are also reachable by hover and the tap card;
 //  - then the aspect / midpoint lines, which come by the hundred;
-//  - and the catalog asteroids last.
+//  - then the catalog asteroids;
+//  - and the geodetic grid's sign glyphs last of all (2026-10-02): a reference the map is read
+//    against, not a reading, so they take only the room every label above has left, and a
+//    glyph with no clear spot is simply not drawn (geoGridLabels.ts).
 export const CHIP_RANK = {
   natal: 0,
   overlay: 1,
@@ -56,8 +59,11 @@ export const CHIP_RANK = {
   paran: 4,
   aspect: 5,
   catalog: 6,
+  grid: 7,
 } as const;
-const RANK_COUNT = 7;
+// One more than the last rank. Raising it moves every chip's stacking value up by RANK_SPAN,
+// uniformly — harmless, since they only ever compare inside the label layer's own context.
+const RANK_COUNT = 8;
 // Room for this many chips in one rank before stacking values would run into the next rank's.
 const RANK_SPAN = 1000;
 

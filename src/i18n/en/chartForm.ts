@@ -168,7 +168,7 @@ export const chartForm = {
   // what saving will do, in plain words: the grey "?" mark, planets still shown,
   // the time-dependent lines hidden.
   timeUnknown: {
-    hint: 'No birth time will be saved as Unknown. You’ll still see the planets in their signs, but map lines and houses need an exact time, so they’ll stay hidden.',
+    hint: 'No birth time will be saved as Unknown. You’ll still see the planets in their signs; on celestial maps, lines and houses need an exact time, so they’ll stay hidden there.',
   },
   // The tag toggle beside the time inputs: a "Tag" caption over a button whose label
   // is the tag name; its .ui-tip explains what it does. Normally the Star toggle; a

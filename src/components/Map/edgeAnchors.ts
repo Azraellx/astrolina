@@ -144,8 +144,9 @@ function clipSeg(a: Pt, b: Pt, r: Rect): { t0: number; t1: number } | null {
 // projects them into whatever copy they were authored in — off-screen when the camera
 // sits in a different copy. Re-wrapping first lands every vertex on the copy MapLibre
 // actually draws. On the globe the projection is periodic in longitude, so this is a
-// no-op there.
-function lngToVisibleCopy(lng: number, centerLng: number): number {
+// no-op there. Exported for the geodetic grid's labels (geoGridLabels.ts), which project a
+// point of their own (a curve's equator crossing) onto the copy the lines are drawn on.
+export function lngToVisibleCopy(lng: number, centerLng: number): number {
   return lng - 360 * Math.round((lng - centerLng) / 360);
 }
 
@@ -187,8 +188,8 @@ interface LineMeta {
 }
 
 // One logical line's labelled ends: `meta` is what its chips display (LineMeta for a planet's
-// line, the body for a catalog line), the same for both ends.
-interface LineGroup<M> {
+// line, the body for a catalog line, the sign for a geodetic grid line), the same for both ends.
+export interface LineGroup<M> {
   meta: M;
   // The two ends (or single end) of the LONGEST on-screen run seen so far, plus that
   // run's squared end-to-end pixel extent and its full projected polyline. We label the
@@ -361,8 +362,9 @@ function mercatorY(lat: number): number {
 }
 
 // Each logical line's ends on screen (`keyMeta` names the line, and says what its chips carry):
-// the projection both kinds of edge chip share.
-function lineEndGroups<P, M>(
+// the projection both kinds of edge chip share — and, exported since 2026-10-02, the geodetic
+// grid's sign glyphs (geoGridLabels.ts), so they find a line's visible run the same way.
+export function lineEndGroups<P, M>(
   map: MlMap,
   features: Feature<LineString, P>[],
   inset: number,

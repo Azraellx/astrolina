@@ -238,6 +238,14 @@ export interface RelocatedAngles {
    * than the one selected. The angles themselves are system-independent.
    */
   fallback?: boolean;
+  /**
+   * Marks a geodetic frame (geodeticFrame sets it, shiftAngles carries it): these
+   * angles belong to a PLACE, not to a moment — everyone born there has the same
+   * ones — so readouts truncate them rather than round (format.ts truncZodiac,
+   * which says why). vertex/antivertex are NaN on such a frame, because geodetic
+   * maps draw the four angles only. (2026-10-02)
+   */
+  geodetic?: true;
 }
 
 // ── Swiss Ephemeris init (one-time, async) ────────────────────────────────────
@@ -543,6 +551,70 @@ export function eclipticToRaDec(
   return { ra, dec };
 }
 
+// Geodetic angles: a place's own angles, read from its coordinates with no chart.
+
+// Mean obliquity at J2000.0 (23°26′21.448″), radians. Everything that reads a place's
+// geodetic angles with NO chart behind it — the grid, its hover readout and zone
+// membership — uses this. A surface fed by a chart uses that chart's obliquity(jd)
+// instead, so its seconds differ from the grid's: a 1941 chart moves Toronto's
+// Ascendant 18″ (verify-geodetic §6). (2026-10-02)
+export const EPS_J2000 = 23.4392911 * DEG2RAD;
+
+// Which zodiac-to-Earth convention maps a longitude to its Midheaven. Only the
+// zodiacal one exists (MC = geographic longitude, Greenwich = 0° Aries). The
+// right-ascension convention (RAMC = longitude) would be a second member; the
+// parameter is built now so adding it changes no call site, but it is not exposed.
+// (2026-10-02)
+export type GeodeticBranch = 'zodiacal';
+
+/** A place's geodetic angles, all in radians. `ramc` is the right ascension that
+ *  culminates the MC — what a table of houses is entered with. */
+export interface GeodeticAngles {
+  asc: number;
+  mc: number;
+  dsc: number;
+  ic: number;
+  ramc: number;
+}
+
+/**
+ * The geodetic angles of a place — pure: no chart, no ephemeris, no house system.
+ * Mind the order: (longitude, latitude) — longitude first, because a place's
+ * geodetic MC IS its longitude — while geodeticFrame below takes relocate()'s
+ * (latitude, longitude).
+ * verify-geodetic §6 runs geodeticFrame at an off-diagonal place (Toronto), so a
+ * swap between the two orders fails there.
+ *
+ * The Ascendant is the standard closed form, then the EASTERN point. Inside the
+ * polar circles the closed form can return the western intersection of ecliptic and
+ * horizon (the bare formula gives 9°47′ Libra at Resolute, where the eastern point is
+ * 9°47′ Aries); the rule below keeps the Ascendant within 180° ahead of the MC, which
+ * is the Swiss Ephemeris' own acmc rule, so it agrees with every other Ascendant in
+ * AstroLina (verify-geodetic §2–§3 check it against the horizon and against Swiss).
+ * (2026-10-02)
+ */
+export function geodeticAngles(
+  lngDeg: number,
+  latDeg: number,
+  eps: number,
+  branch: GeodeticBranch = 'zodiacal',
+): GeodeticAngles {
+  // One convention today. A caller outside the type system naming another must
+  // fail here rather than be read as zodiacal without a word.
+  if (branch !== 'zodiacal') throw new Error(`geodeticAngles: unknown branch ${String(branch)}`);
+  const mc = norm2pi(lngDeg * DEG2RAD);
+  const ramc = eclipticToRaDec(mc, 0, eps).ra;
+  const phi = latDeg * DEG2RAD;
+  let asc = norm2pi(
+    Math.atan2(
+      Math.cos(ramc),
+      -(Math.sin(ramc) * Math.cos(eps) + Math.tan(phi) * Math.sin(eps)),
+    ),
+  );
+  if (norm2pi(asc - mc) >= Math.PI) asc = norm2pi(asc + Math.PI);
+  return { asc, mc, dsc: norm2pi(asc + Math.PI), ic: norm2pi(mc + Math.PI), ramc };
+}
+
 // Shift a body's ECLIPTIC longitude by deltaLonRad (keeping its ecliptic
 // latitude), then convert back to RA/dec. Used for solar-arc directions, where
 // every natal body is advanced by the solar arc. NOTE: the arc must be applied
@@ -611,6 +683,10 @@ export type CoordSystem = 'mundo' | 'zodiaco';
 // Celestial = standard ACG (lines placed by sidereal time, RA − GMST). Geodetic =
 // Sepharial "geodetic equivalents": each angle is anchored to geographic longitude
 // via the zodiac (Greenwich = 0° Aries), independent of sidereal time.
+//
+// ALIAS, noted once here: 'geodetic' is shown to readers as "Geodetic", and was
+// labelled "Mundane" until 2026-10. Only the label changed — the stored value
+// 'geodetic' never did, so nothing stored needed migrating. (2026-10-02)
 export type LineSystem = 'celestial' | 'geodetic';
 
 // Project bodies onto the ecliptic (set ecliptic latitude to 0) and convert back
@@ -1457,5 +1533,58 @@ export function directedAngles(
     antivertex: d.antivertex,
     cusps: d.cusps,
     fallback: d.fallback,
+  };
+}
+
+/**
+ * A chart's frame on a geodetic map: the place's own geodetic angles, and the
+ * house cusps of the reader's system computed FROM them — the way a table of houses
+ * is read: enter it with the RAMC that culminates the geodetic MC and the place's
+ * latitude. The system is a method; only its two inputs are geodetic. Argument
+ * order follows relocate() (latitude, then longitude), unlike geodeticAngles.
+ *
+ * - Angles come from geodeticAngles at the chart's obliquity of date, so they agree
+ *   with the Swiss cusps below to ~1e-12 (verify-geodetic §3, §6).
+ * - Cusps: the same RAMC inversion directedAngles' 'long' frame uses — relocate()
+ *   at the fictitious longitude whose sidereal time is that RAMC.
+ * - Regiomontanus and Campanus inside the polar circles: where the closed-form
+ *   Ascendant lands on the western horizon, Swiss turns its MC (and every cusp) by
+ *   180° and numbers the twelve house circles CLOCKWISE from it, so its cusp 10
+ *   lands on the geodetic IC. The geodetic MC is the longitude by definition, so the
+ *   same twelve points are read COUNTER-clockwise instead (cusp 1 = AS, cusp 10 = MC,
+ *   every house positive). Porphyry with the fallback caution is the alternative
+ *   put to review; the mirror is the default until that is ruled on. No other
+ *   system turns. (2026-10-02)
+ * - The Vertex is NaN: geodetic maps draw the four angles only.
+ * - `fallback` is relocate()'s, unchanged: Placidus/Koch inside the circles are
+ *   Porphyry cusps here too, and the wheel's caution must still say so.
+ * - Two places have no Ascendant: where the ecliptic lies IN the horizon (latitude
+ *   90° − ε on 90°W, and its antipode). There the closed form and the Ascendant
+ *   Swiss builds its cusps from can be tens of degrees apart, so cusp 1 = AS fails;
+ *   the gap passes 1″ only within ~1e-7° (about a centimetre of ground) of either
+ *   point, so it is recorded here rather than guarded. (2026-10-02)
+ */
+export function geodeticFrame(
+  jd: number,
+  latDeg: number,
+  lngDeg: number,
+  system: HouseSystem,
+): RelocatedAngles {
+  // obliquity(jd) is taken here, not passed in, so the angles and Swiss's cusps
+  // are computed against the same ε.
+  const g = geodeticAngles(lngDeg, latDeg, obliquity(jd));
+  const d = relocate(jd, latDeg, ((g.ramc - gmstRadians(jd)) * 180) / Math.PI, system);
+  const turned = Math.abs(Math.atan2(Math.sin(d.mc - g.mc), Math.cos(d.mc - g.mc))) > Math.PI / 2;
+  const cusps = turned ? d.cusps.map((_, k) => d.cusps[(12 - k) % 12]) : d.cusps;
+  return {
+    asc: g.asc,
+    mc: g.mc,
+    dsc: g.dsc,
+    ic: g.ic,
+    cusps,
+    vertex: NaN,
+    antivertex: NaN,
+    geodetic: true,
+    ...(d.fallback ? { fallback: true } : {}),
   };
 }

@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import type { RelocatedAngles } from '../../lib/ephemeris';
+import { truncZodiac } from '../../lib/astro/format';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { HoverTip } from '../ui/HoverTip';
@@ -14,9 +15,14 @@ import { useIdentity } from '../../lib/discreet';
 import { useT } from '../../i18n';
 import './CoordReadout.css';
 
+/** The four angles the box lists, and whether they are a place's geodetic ones — the
+ *  only fields it reads, so a geodetic set built with no chart (no cusps, no Vertex)
+ *  fits as well as a full frame. */
+type ReadoutAngles = Pick<RelocatedAngles, 'asc' | 'mc' | 'dsc' | 'ic' | 'geodetic'>;
+
 interface CoordReadoutProps {
   point: { lat: number; lng: number } | null;
-  angles: RelocatedAngles | null;
+  angles: ReadoutAngles | null;
   source: 'natal' | 'hover' | 'pinned' | 'natal-pinned';
   /** Active point's place name. While the Coordinates view is on it lives here
    *  (the top readout hides it); null when there's nothing to name. */
@@ -31,35 +37,52 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+// Truncated to the second through the app's one truncation rule (format.ts
+// truncZodiac), in both line systems. It used to round the seconds and carry only into
+// the minute, so 29°59'59.6" printed as 29°60'00"; truncating cannot carry at all, and
+// a geodetic angle is quoted truncated anyway — the sign printed is the place's zone.
+// (2026-10-02)
 function fmtAngle(lonRad: number): { deg: string; signIdx: number; ms: string } {
-  const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
-  const signIdx = Math.floor(lonDeg / 30);
-  const inSign = lonDeg % 30;
-  const d = Math.floor(inSign);
-  const minFull = (inSign - d) * 60;
-  let m = Math.floor(minFull);
-  let s = Math.round((minFull - m) * 60);
-  if (s === 60) {
-    s = 0;
-    m += 1;
-  }
-  return { deg: pad2(d), signIdx, ms: `${pad2(m)}'${pad2(s)}"` };
+  const z = truncZodiac(lonRad, 'sec');
+  return { deg: pad2(z.deg), signIdx: z.signIdx, ms: `${pad2(z.min)}'${pad2(z.sec)}"` };
 }
 
-const ANGLE_ROWS: { key: string; label: string; pick: (a: RelocatedAngles) => number }[] = [
-  { key: 'mc', label: 'Mc', pick: (a) => a.mc },
-  { key: 'ic', label: 'Ic', pick: (a) => a.ic },
-  { key: 'asc', label: 'As', pick: (a) => a.asc },
-  { key: 'dsc', label: 'Ds', pick: (a) => a.dsc },
+// AS, MC, DS, IC — the order the four are listed in wherever all four appear, in both
+// line systems. (2026-10-02)
+const ANGLE_ROWS: { key: 'asc' | 'mc' | 'dsc' | 'ic'; label: string }[] = [
+  { key: 'asc', label: 'AS' },
+  { key: 'mc', label: 'MC' },
+  { key: 'dsc', label: 'DS' },
+  { key: 'ic', label: 'IC' },
 ];
 
 // One angle row. Hovering it reveals a .ui-tip naming the sign (glyph + name) — the
 // same shared hover-tip plumbing the rest of the app uses — keeping the row itself
-// compact (just degrees · glyph · arcmin/sec).
-function AngleRow({ label, lonRad }: { label: string; lonRad: number }) {
+// compact (just degrees · glyph · arcmin/sec). `masked` (Discreet, see below) blanks
+// the figure AND the sign, and drops the tip that would name the sign.
+function AngleRow({
+  label,
+  lonRad,
+  masked = false,
+}: {
+  label: string;
+  lonRad: number;
+  masked?: boolean;
+}) {
   const { labels } = useT();
+  const id = useIdentity();
   const f = fmtAngle(lonRad);
   const { ref, pos, show, hide } = useHoverTip<HTMLLIElement>('right');
+  if (masked) {
+    return (
+      <li>
+        <span className="angle-label">{label}</span>
+        <span className="angle-deg">{id.text('00°')}</span>
+        <span className="angle-sign" />
+        <span className="angle-ms">{id.text('00\'00"')}</span>
+      </li>
+    );
+  }
   return (
     <li ref={ref} onMouseEnter={show} onMouseLeave={hide}>
       <span className="angle-label">{label}</span>
@@ -108,8 +131,13 @@ export function CoordReadout({
   // same line the map's own linework is held to.
   const natalPoint = source === 'natal' || source === 'natal-pinned';
   const blankPlace = id.on && natalPoint;
-  // The angles stay readable even blanked: they are the work, not the identity —
-  // and they are already drawn across the map as the lines this readout describes.
+  // A chart's own angles stay readable even blanked: they are the work, not the
+  // identity. A place's GEODETIC angles are not the work — they are a function of its
+  // coordinates and nothing else (the MC is the longitude, read as a zodiac degree), so
+  // while they are the birthplace's they say exactly what the blanked coordinates
+  // above would, and are blanked with them. The same predicate masks them on the
+  // wheels, the sidebar and the capture card. (2026-10-02)
+  const blankAngles = blankPlace && !!angles?.geodetic;
 
   return (
     <div className={`coord-readout source-${source}`}>
@@ -145,14 +173,21 @@ export function CoordReadout({
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
           >
-            <span>{t('coordReadout.angles')}</span>
+            {/* GE on a geodetic map: these are the place's angles, not the chart's.
+                (2026-10-02) */}
+            <span>{angles.geodetic ? t('coordReadout.geodetic') : t('coordReadout.angles')}</span>
             <span className="show-more-chevron">{open ? '▾' : '▸'}</span>
           </button>
 
           {open && (
             <ul className="angle-list">
               {ANGLE_ROWS.map((r) => (
-                <AngleRow key={r.key} label={r.label} lonRad={r.pick(angles)} />
+                <AngleRow
+                  key={r.key}
+                  label={r.label}
+                  lonRad={angles[r.key]}
+                  masked={blankAngles}
+                />
               ))}
             </ul>
           )}

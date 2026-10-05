@@ -285,6 +285,11 @@ interface CaptureHudProps {
    *  Frame section is scoped to it (its export treatment only applies while LS is on), so it
    *  appears only then. */
   localSpaceActive: boolean;
+  /** The Local Space view is open but HELD on a geodetic map (lib/skyHold), so it draws
+   *  nothing to export: the Transparent (Local Space) preset shows the hold's reason
+   *  (settings.inert.skyHeld) instead, its stored state kept. Absent reads as not held.
+   *  (2026-10-02) */
+  localSpaceHeld?: boolean;
   /** The "Transparent (Local Space)" preset (gated tier): hides the LS line arrows, switches
    *  them to standard frame-edge labels, and blanks the basemap for a transparent export.
    *  App applies it only with LS on + Capture armed + the plan reaching the gated rung. */
@@ -325,6 +330,7 @@ export function CaptureHud({
   onCapture,
   shareLink,
   localSpaceActive,
+  localSpaceHeld = false,
   transparentMode,
   setTransparentMode,
   onFlyToOrigin,
@@ -829,11 +835,17 @@ export function CaptureHud({
             tip={t('captureHud.transparent.title')}
             // Locked, the description stands whether Local Space is on or not: "turn on Local
             // Space first" is an instruction that can't unlock it, sitting over a reason line
-            // that says it stays off. needLs is for a switch the reader CAN flip.
+            // that says it stays off. needLs is for a switch the reader CAN flip — and not
+            // for one whose Local Space is already open but HELD on a geodetic map (App's
+            // localSpaceActive is false then): there "turn it on" would be untrue, so the
+            // hold's own sentence says why instead. The stored preset is kept either way.
+            // (2026-10-02)
             hint={
               localSpaceActive || transparentNudge
                 ? t('captureHud.transparent.hint')
-                : t('captureHud.transparent.needLs')
+                : localSpaceHeld
+                  ? t('settings.inert.skyHeld')
+                  : t('captureHud.transparent.needLs')
             }
           >
             <EyeIcon open={effTransparent} className="location-ls-eye" size={14} />

@@ -12,15 +12,26 @@
 // in silence is not. A user who watches the map change and can't connect it to
 // anything they did concludes the map is wrong, not that a setting moved.
 //
-// Two kinds of forcing, and only one of them belongs here:
+// Two kinds of forcing:
 //   - A combination that is VOID (a frame that needs a birth time on a chart with
 //     none; a mapping that has no sidereal variant) is never written at all. The
 //     stored choice is masked by a derived value and the control shows it
-//     unavailable with the reason — there is nothing to announce, because nothing
-//     was taken away and it comes back on its own.
-//   - A setting genuinely REWRITTEN because an action required it is what this
-//     announces. It is one-way on purpose: silently undoing it later would move the
-//     map again, out of nowhere, which is the same failure one step removed.
+//     unavailable with the reason. Where that mask moves the map in answer to a
+//     gesture about something else — a return borrowing the moment's frame, a
+//     sidereal zodiac holding a geodetic choice — it is said here, as a HOLD:
+//     nothing was taken away, and it comes back on its own.
+//   - A setting genuinely REWRITTEN because an action required it would be
+//     announced here too, one-way on purpose: silently undoing it later would move
+//     the map again, out of nowhere, which is the same failure one step removed.
+//
+// No kind reports a rewrite now. The last two — 'line-system' (the line system set
+// to Celestial to open Local Space, Slide or a tool needing sidereal time) and
+// 'closed-for-mundane' (those closed when Geodetic arrived) — were retired on
+// 2026-10-02 with that switch: a geodetic map HOLDS what reads the sky's turning
+// (lib/skyHold), greyed with its reason, and never moves the line system itself.
+// Their ids are retired, not free — a kind that reused one would inherit a dismissal
+// given to another sentence ('overlay-frame-held' says why that matters) — and the
+// keys they leave in the suppression store below are harmless: nothing reads them.
 //
 // Suppression is per KIND rather than per trigger: several unrelated actions can
 // force the same setting, and a reader who has understood the rule once should not
@@ -37,29 +48,15 @@ export type AutoFlipKind =
    *  understood that their frame was gone — is told the new one once. Nobody should
    *  inherit a silence they agreed to about something else. */
   | 'overlay-frame-held'
-  /** The line system was REWRITTEN to celestial, because the view or tool asked for
-   *  has no meaning under a time-independent mapping. One-way: the stored choice is
-   *  gone and has to be picked again. Carries `{name}` — the view or tool it was
-   *  rewritten for — so the reader can tell which of several openers did it. */
-  | 'line-system'
   /** The geodetic mapping is merely HELD — a sidereal zodiac has no geodetic variant,
-   *  so the map falls back to celestial for as long as that lasts. Deliberately a
-   *  separate kind from the rewrite above, not just a separate trigger: the map
-   *  changes the same way, but nothing was taken. Telling someone their setting is
-   *  gone when it is only waiting is a different (and worse) sentence, and someone
-   *  who has understood one of these has not thereby understood the other — so it
-   *  carries its own dismissal. */
+   *  so the map falls back to celestial for as long as that lasts. It was made a kind
+   *  of its own beside a rewrite of the same visible change ('line-system', retired
+   *  2026-10-02 — see the header), and the reason still stands for any rewrite that
+   *  comes: the map changes the same way, but nothing was taken. Telling someone their
+   *  setting is gone when it is only waiting is a different (and worse) sentence, and
+   *  someone who has understood one of these has not thereby understood the other — so
+   *  it carries its own dismissal. */
   | 'line-system-held'
-  /** Whatever needed the sky's sidereal time was CLOSED, because Mundane just became
-   *  the line system on screen — chosen outright, or handed back by the zodiac
-   *  returning to Tropical. Local Space, Slide, and any tool extension that declares
-   *  `needsSiderealTime`; `{names}` lists what closed, since one change can close two.
-   *
-   *  This replaced 'local-space-off', which reported the same fact for Local Space
-   *  alone. The id changed with the scope rather than being reused, for the reason
-   *  'overlay-frame-held' gives above: someone who silenced a sentence about Local
-   *  Space agreed to nothing about Slide, or a registered tool. */
-  | 'closed-for-mundane'
   /** Not a flip — the one DEFAULT here that routinely reads as a bug. This app draws
    *  In Mundo where most others draw In Zodiaco, so a reader cross-checking against
    *  the program they came from finds lines that don't agree and reasonably concludes
@@ -126,20 +123,13 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     tone: 'warn',
     once: false,
   },
-  // Both line-system kinds point at the same list in the Calculation panel, when the
-  // sidebar happens to be open on it.
-  'line-system': {
-    targets: ['[data-autoflip="line-system"]'],
-    tone: 'warn',
-    once: false,
-  },
+  // Points at the Line system control in the Calculation panel, when the sidebar
+  // happens to be open on it.
   'line-system-held': {
     targets: ['[data-autoflip="line-system"]'],
     tone: 'warn',
     once: false,
   },
-  // Reopened from a menu, so there is nothing persistent to point at.
-  'closed-for-mundane': { targets: [], tone: 'warn', once: false },
   // Fired by opening the panel this control lives in, so it is guaranteed on screen.
   'line-projection': {
     targets: ['[data-autoflip="line-projection"]'],

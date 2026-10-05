@@ -21,6 +21,8 @@
     "preview": "vite preview",
     "verify:harness": "node scripts/harness/run.mjs scripts/harness/smoke.ts",
     "verify:lines": "node scripts/harness/run.mjs scripts/verify-lines.ts",
+    "verify:geodetic": "node scripts/harness/run.mjs scripts/verify-geodetic.ts",
+    "verify:geodetic-chart": "node scripts/harness/run.mjs scripts/verify-geodetic-chart.ts",
     "verify:parans": "node scripts/harness/run.mjs scripts/verify-parans.ts",
     "verify:localspace": "node scripts/harness/run.mjs scripts/verify-localspace.ts",
     "verify:crossings": "node scripts/harness/run.mjs scripts/verify-crossings.ts",

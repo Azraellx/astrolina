@@ -40,7 +40,6 @@ import { resolve } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 import {
   birthDataToJD,
-  eclipticLonOfRA,
   eclipticToRaDec,
   ensureAsteroidEphemeris,
   getEclipticPositions,
@@ -139,6 +138,7 @@ import {
   generateLines,
   generateZenithStamps,
   LINE_TYPE_LABEL,
+  meridianLngFor,
   normLng,
   type MeridianLng,
 } from '../src/lib/astro/lines';
@@ -618,7 +618,7 @@ if (!pairPresent) {
   // 588 Achilles, as the loader mounted it from MINOR_CATALOG_DIR.
   const jd = J(2012, 1, 31); // Eros two days from a close approach (0.18 au)
   const gmst = gmstRadians(jd);
-  const meridianLng: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI; // App.tsx celestial recipe
+  const meridianLng = meridianLngFor('celestial', obliquity(jd), gmst); // the app's own factory
   const decor = (n: number): MinorDecor => ({
     name: bundledMinorBody(n)?.name ?? CATALOG_NAMES.get(n) ?? '',
     color: minorLineColor(n, 'dark'),
@@ -1103,7 +1103,7 @@ if (!hasFile(5) || !hasFile(10)) {
   const named = generateMinorLines([p], meridianLng, () => ({ name: 'Eros', color: '#e98aa0', icon: 'minor-coin-0' }));
   const byType = (fc: typeof named, lt: string) => fc.features.find((f) => f.properties.lineType === lt)?.properties.label;
   check('labels: unnamed body reads "(433) MC"', byType(unnamed, 'MC') === '(433) MC', String(byType(unnamed, 'MC')));
-  check('labels: named body reads "Eros ASC"', byType(named, 'ASC') === 'Eros ASC', String(byType(named, 'ASC')));
+  check('labels: named body reads "Eros AS"', byType(named, 'ASC') === 'Eros AS', String(byType(named, 'ASC')));
   check('labels: minorLabelName falls back to the number', minorLabelName(433, '') === '(433)' && minorLabelName(433, 'Eros') === 'Eros');
   check('labels: every angle labelled like the planets\' (LINE_TYPE_LABEL)',
     named.features.every((f) => f.properties.label === `Eros ${LINE_TYPE_LABEL[f.properties.lineType]}`));
@@ -1249,8 +1249,10 @@ if (presentBodies.length === 0) {
     if (wheel.length !== samples.length) note('a', `${when}: ${samples.length} sampled, ${wheel.length} on the wheel`);
 
     // (a) In Zodiaco, the lines are drawn from the ecliptic projection of the sample.
-    const celestial: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI; // App.tsx celestial recipe
-    const geodetic: MeridianLng = (ra) => eclipticLonOfRA(ra, eps) * RAD2DEG; // App.tsx geodetic recipe
+    // The app's own meridian factory, both systems — the mapping the map draws with.
+    // (2026-10-02)
+    const celestial = meridianLngFor('celestial', eps, gmst);
+    const geodetic = meridianLngFor('geodetic', eps, gmst);
     const zod = projectMinorOntoEcliptic(positions, jd);
     const zc = generateMinorLines(zod, celestial, decor);
     const zg = generateMinorLines(zod, geodetic, decor);

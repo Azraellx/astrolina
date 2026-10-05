@@ -23,7 +23,6 @@
 import { createRequire } from 'node:module';
 import {
   birthDataToJD,
-  eclipticLonOfRA,
   gmstRadians,
   getPlanetPositions,
   initEphemeris,
@@ -33,7 +32,7 @@ import {
   type PlanetPosition,
 } from '../src/lib/ephemeris';
 import { generateParans, generateStarParans, type ParanProps } from '../src/lib/astro/parans';
-import { generateLines, normLng, type MeridianLng } from '../src/lib/astro/lines';
+import { generateLines, meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
 import { starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
 
@@ -403,10 +402,12 @@ for (const chart of CHARTS) {
   const jd = birthDataToJD(chart);
   const gmst = gmstRadians(jd);
   const positions = getPlanetPositions(jd, 'mean').filter((p) => TEN.includes(p.name));
-  const celestialLng: MeridianLng = (ra) => ((ra - gmst) * 180) / Math.PI;
   const tag = chart.name;
   const eps = obliquity(jd);
-  const geodeticLng: MeridianLng = (ra) => (eclipticLonOfRA(ra, eps) * 180) / Math.PI;
+  // Both frames from the app's meridian factory, so the pair is one mapping, not a
+  // factory beside a copy. (2026-10-02)
+  const celestialLng = meridianLngFor('celestial', eps, gmst);
+  const geodeticLng = meridianLngFor('geodetic', eps, gmst);
   const frames: Array<[string, PlanetPosition[], MeridianLng]> = [
     ['celestial', positions, celestialLng],
     ['geodetic', projectOntoEcliptic(positions, jd).filter((p) => TEN.includes(p.name)), geodeticLng],

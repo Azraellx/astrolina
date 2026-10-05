@@ -152,8 +152,15 @@ export const BODY_OVERLAP_SHARE = 1 / 4;
  *  16° the resize check at the foot of verify-wheel-layout starts FAILING — 8.9° of
  *  movement for one pixel at 297→298px, where a ten-body chart cannot be seated at
  *  all and squeezing harder only changes which arrangement it settles into. A
- *  tighter ceiling is not simply a better one. */
+ *  tighter ceiling is not simply a better one.
+ *
+ *  Since 2026-10-02 the scan in placeOnRing meets this ceiling through a ramp of
+ *  CEILING_SOFT_DEG either side rather than at a wall — that seam is what the resize
+ *  check was finding — so a push can sit up to that far past it on an arc caught
+ *  between two arrangements. */
 export const MAX_PUSH_DEG = 16;
+/** The width of that ramp (see the pressure scan in placeOnRing). */
+const CEILING_SOFT_DEG = 0.25;
 
 /** Marks carry this internally so `need` can tell a code from a body. Callers
  *  supply plain RingMarks; placeOnRing tags its two input sets. */
@@ -512,8 +519,9 @@ export function placeOnRing(
     // a plain ten-body chart re-laid its ring at 336px and did not at 337px, moving
     // Venus 56° for one pixel of window, because the search stopped at a pressure
     // where one arc was still over-full and the push it measured there looked fine.
-    const acceptable = (r: { pos: number[]; fits: boolean }) =>
-      r.fits && worstPush(r.pos) <= MAX_PUSH_DEG;
+    // So a rung that does not seat the arc reads as an infinite push.
+    const seatedPush = (r: { pos: number[]; fits: boolean }) =>
+      r.fits ? worstPush(r.pos) : Infinity;
 
     // And it is SCANNED, not bisected. Bisection needs the thing it is bisecting on
     // to be monotone, and the worst push is not: as an almost-full arc gains room the
@@ -542,17 +550,36 @@ export function placeOnRing(
     // jumped between them. Measured at 398→399px on a six-body arc: 8°. One rule for
     // the whole range costs sixty-odd solves of a ten-element array per arc and is
     // the difference between a wheel that resizes and a wheel that flickers.
+    //
+    // And the walk counts SOFTLY (2026-10-02). Stopping at the first rung past the
+    // ceiling was still a seam wherever the worst push lies FLAT across a stretch of
+    // rungs — a body held against an angle code's wall is pushed the same however
+    // hard the bodies behind it are squeezed. With that stretch a hair under the
+    // ceiling the walk ran through it; a hair over, it stopped above it; and a pixel
+    // of wheel moved the answer the width of the stretch. Measured on a six-body arc:
+    // 8.2° at 283→284px and 9.6° at 284→285px, both surfaced when the angle codes
+    // became the wider capitals AS, MC, DS, IC and moved the walls; the same seam was
+    // already there under the old codes, at 298→299px (7.5°), on a sample five times
+    // the size of the resize check's. So each rung counts toward the answer by how far
+    // the walk's worst push so far (its own or any rung above it) sits past the
+    // ceiling, ramped over ±CEILING_SOFT_DEG rather than switched: well under counts
+    // nothing, well over counts a whole rung, and the pressure is the count. Where the
+    // push crosses the ceiling steeply that is the rung the walk used to stop at;
+    // where it lies flat along the ceiling, the answer slides across the stretch as
+    // the stretch rises, instead of jumping it.
     const PRESSURE_STEPS = 64;
-    // Ends on solve(1) when even full pressure cannot both seat the arc and keep it
-    // inside the ceiling — a genuinely packed arc, and the best on offer.
-    let solved = solve(1);
-    if (acceptable(solved)) {
-      for (let k = PRESSURE_STEPS - 1; k >= 0; k--) {
-        const cand = solve(k / PRESSURE_STEPS);
-        if (!acceptable(cand)) break;
-        solved = cand;
-      }
+    let worstSoFar = -Infinity;
+    let pressure = 0;
+    for (let k = PRESSURE_STEPS; k >= 0; k--) {
+      worstSoFar = Math.max(worstSoFar, seatedPush(solve(k / PRESSURE_STEPS)));
+      if (k === PRESSURE_STEPS) continue;
+      const over = (worstSoFar - MAX_PUSH_DEG) / CEILING_SOFT_DEG;
+      pressure += Math.min(Math.max((over + 1) / 2, 0), 1) / PRESSURE_STEPS;
     }
+    // Ends on solve(1) when even full pressure cannot both seat the arc and keep it
+    // inside the ceiling — a genuinely packed arc, and the best on offer: every rung
+    // below it then counts whole.
+    const solved = solve(pressure);
     const pos = solved.pos;
     // More fell into this arc than it can hold even at the floor, AND the
     // proportional shrink took a gap below the ink two marks need to read as two

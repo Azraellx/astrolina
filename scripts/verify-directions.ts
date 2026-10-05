@@ -27,7 +27,16 @@ import {
   relocate,
 } from '../src/lib/ephemeris';
 import type { HouseSystem } from '../src/lib/ephemeris';
-import { buildOverlay, epochMsToJD, jdToEpochMs, normalizeAngle } from '../src/lib/astro/timeline';
+import {
+  buildOverlay,
+  epochMsToJD,
+  jdToEpochMs,
+  normalizeAngle,
+  OVERLAY_MODES,
+  overlayBlockFor,
+  overlayBlockedFor,
+  SKY_HELD_OVERLAYS,
+} from '../src/lib/astro/timeline';
 import type { AngleProgression } from '../src/lib/astro/timeline';
 import { buildDavison } from '../src/lib/astro/relationship';
 import { generateLines, type MeridianLng } from '../src/lib/astro/lines';
@@ -511,6 +520,48 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   }
   check('longitude and RA arcs never separate by more than ~4.9°',
     worst < 4.95, `max ${worst.toFixed(2)}° (${worstAt}) over 48 chart/age combinations`);
+}
+
+// ── 10. Primary directions held on a geodetic map ─────────────────────────────
+// An internal rule, like §§1–7 (2026-10-02). Primary directions move the map by
+// advancing the RAMC, the sky turning over the place, and a geodetic map doesn't turn
+// (lib/skyHold), so the Overlay menu greys the mode there with the sky sentence and the
+// effective overlay reads it as off. Pinned: (a) it is the ONLY mode the map holds —
+// every other technique moves the planets by degree; (b) the chart's own blocks outrank
+// the map's, because the geodetic reason names a fix ("switch to Celestial") that would
+// be false on a chart that bars the mode anyway.
+//
+// Deliberately NOT here: "overlayBlockedFor agrees with overlayBlockFor". The one is
+// defined as the other `!== null`, so that check could not fail and only restated the
+// code. The agreement worth having is between two consumers — the effective overlay mode
+// App derives and the Overlay menu's greyed row, read under the same line system — and
+// it belongs with the App wiring that passes them the line system.
+{
+  const TIMELESS = { ...CHART, timeKnown: false };
+  const COMPOSITE = { ...CHART, composite: {} };
+  const DAVISON = { ...CHART, tag: 'space' };
+  const PD = 'primary-directions' as const;
+  check('geodetic: primary directions read as held (\'geodetic\')',
+    overlayBlockFor(CHART, 'geodetic')(PD) === 'geodetic');
+  check('celestial: primary directions not held',
+    overlayBlockFor(CHART, 'celestial')(PD) === null);
+  check('no line system given: reads as celestial, holds nothing',
+    overlayBlockFor(CHART)(PD) === null && !overlayBlockedFor(CHART)(PD));
+  check('the held set is primary directions alone',
+    SKY_HELD_OVERLAYS.size === 1 && SKY_HELD_OVERLAYS.has(PD));
+  const heldOnGeo = OVERLAY_MODES.filter((m) => overlayBlockFor(CHART, 'geodetic')(m) !== null);
+  check('geodetic, timed natal chart: every other overlay stays available',
+    OVERLAY_MODES.length > 1 && heldOnGeo.length === 1 && heldOnGeo[0] === PD,
+    `held: ${heldOnGeo.join(', ') || 'none'} of ${OVERLAY_MODES.length}`);
+  check('geodetic + composite: the composite reason outranks the map\'s',
+    overlayBlockFor(COMPOSITE, 'geodetic')(PD) === 'composite');
+  check('geodetic + unknown birth time: the no-time reason outranks the map\'s',
+    overlayBlockFor(TIMELESS, 'geodetic')(PD) === 'no-time');
+  check('geodetic + Davison: synastry keeps its own reason, primary directions the map\'s',
+    overlayBlockFor(DAVISON, 'geodetic')('synastry') === 'davison' &&
+      overlayBlockFor(DAVISON, 'geodetic')(PD) === 'geodetic');
+  check('no chart: the map\'s hold still answers',
+    overlayBlockFor(null, 'geodetic')(PD) === 'geodetic' && overlayBlockFor(null, 'celestial')(PD) === null);
 }
 
 console.log(failures === 0 ? '\nverify-directions: ALL PASS' : `\nverify-directions: ${failures} FAILURE(S)`);

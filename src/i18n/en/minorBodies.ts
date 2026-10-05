@@ -165,8 +165,8 @@ export const minorBodies = {
       // a line gate: while an overlay chart takes the wheel, no catalog body is on it.
       undrawn: {
         noChart: 'Drawn once a chart is open.',
-        noTime: 'No lines on a chart without a birth time — for this body or any other.',
-        angles: 'No lines while Map filters ▸ Angles shows none of ASC, DSC, MC or IC.',
+        noTime: 'No lines on a celestial map without a birth time — for this body or any other.',
+        angles: 'No lines while Map filters ▸ Angles shows none of AS, MC, DS or IC.',
         natalOff: 'No lines while the natal lines are off the map — its lines return with them.',
       },
     },

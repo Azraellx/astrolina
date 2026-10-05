@@ -135,6 +135,14 @@
 .cx-name {
   font-weight: 600;
 }
+/* The GE mark on a row whose figure comes from the place's frame (bodyNotes): the sidebar's
+   muted tag, scaled with the row since the panel's type tracks the frame. (2026-10-02) */
+.cx-ge-tag {
+  margin-left: 0.35em;
+  font-size: 0.72em;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
 .cx-lon {
   /* Reserve the widest "DD°MM' ♐ Sagittarius" (with a little margin) so the live
      (hover-relocated) sign/degree can never change a row's width — that per-row resizing is

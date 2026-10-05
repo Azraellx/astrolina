@@ -17,7 +17,11 @@
 // of scraping this card's HTML.
 import type { TFn } from '../i18n';
 import type { PlanetName } from './ephemeris';
-import type { LineType } from './astro/lines';
+// Every angle a reading PRINTS goes through LINE_TYPE_LABEL (AS, MC, DS, IC; 2026-10-02),
+// the funnel the map's labels and badges use, so a card or report never spells the same
+// line two ways. The raw LineType still picks the catalog keys (title, angleEssence).
+// (No new coupling: angleAspects below already brings lines.ts with it.)
+import { LINE_TYPE_LABEL, type LineType } from './astro/lines';
 import { aspectBranchReading, type AspectKind } from './astro/angleAspects';
 import { ASPECT_GLYPHS, MINOR_GLYPHS, PLANET_GLYPHS } from './astro/glyphChars';
 import { isHypotheticalKey, isMinorNumber, minorKeyOf } from './minorBodies/ids';
@@ -27,6 +31,10 @@ const OVERLAY_NOTE_TAGS = ['Tr', 'Sp', 'Tp', 'Sa', 'Pd', 'Cy', 'Sy'] as const;
 type NoteTag = (typeof OVERLAY_NOTE_TAGS)[number];
 const isNoteTag = (tag: unknown): tag is NoteTag =>
   typeof tag === 'string' && (OVERLAY_NOTE_TAGS as readonly string[]).includes(tag);
+// An angle as a reading prints it (see the import above); anything that isn't a line
+// type passes through as it was.
+const angleLabel = (angle: unknown): string =>
+  LINE_TYPE_LABEL[angle as LineType] ?? String(angle);
 
 // Every computed body now carries bespoke per-angle texts in the catalog; the
 // generic theme + essence card stays as the fallback for anything outside this
@@ -195,18 +203,15 @@ export function lineReading(
     const planetB = props.planetB as PlanetName;
     const a = t(`planets.${planetA}.name`);
     const b = t(`planets.${planetB}.name`);
+    const angleA = angleLabel(props.angleA);
+    const angleB = angleLabel(props.angleB);
     return {
-      title: t('lineMeanings.paranTitle', {
-        a,
-        b,
-        angleA: String(props.angleA),
-        angleB: String(props.angleB),
-      }),
+      title: t('lineMeanings.paranTitle', { a, b, angleA, angleB }),
       body: t('lineMeanings.paran', {
         a,
         b,
-        angleA: String(props.angleA),
-        angleB: String(props.angleB),
+        angleA,
+        angleB,
         themeA: t(`planets.${planetA}.theme`),
         themeB: t(`planets.${planetB}.theme`),
       }),
@@ -227,22 +232,24 @@ export function lineReading(
       const name = t(`planets.${planet}.name`);
       const aspectName = t(`expandedSidebar.aspect.${aspect}.name`);
       const aspectWord = aspectName.toLowerCase();
+      const shown = angleLabel(aspAngle);
       return {
         // Plain-text title ("Venus Trine MC"); the card re-composes its own with
         // the glyph-font aspect symbol spliced in.
-        title: t('lineMeanings.aspectTitle', { planet: name, aspect: aspectName, angle: aspAngle }),
+        title: t('lineMeanings.aspectTitle', { planet: name, aspect: aspectName, angle: shown }),
         body:
-          `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: aspAngle })} ` +
+          `${t('lineMeanings.aspect.frame', { planet: name, aspect: aspectWord, angle: shown })} ` +
           `${t(`lineMeanings.aspect.kind.${aspect}`)} ` +
-          t('lineMeanings.aspect.pointer', { planet: name, angle: aspAngle }),
+          t('lineMeanings.aspect.pointer', { planet: name, angle: shown }),
       };
     }
     if (props.kind === 'midpoint') {
       const a = t(`planets.${props.planet as PlanetName}.name`);
       const b = t(`planets.${props.planetB as PlanetName}.name`);
+      const shown = angleLabel(angle);
       return {
-        title: t('lineMeanings.midpointTitle', { a, b, angle }),
-        body: t('lineMeanings.midpoint', { a, b, angle, essence }),
+        title: t('lineMeanings.midpointTitle', { a, b, angle: shown }),
+        body: t('lineMeanings.midpoint', { a, b, angle: shown, essence }),
       };
     }
     return null;
@@ -252,7 +259,7 @@ export function lineReading(
     const star = String(props.star);
     const angle = props.lineType as LineType;
     return {
-      title: t('lineMeanings.starTitle', { star, angle }),
+      title: t('lineMeanings.starTitle', { star, angle: angleLabel(angle) }),
       body: t('lineMeanings.star', {
         star,
         // Every catalog star has a one-line signature; the template weaves it
@@ -415,7 +422,7 @@ export function buildLineCard(
             // Glyph + spelled-out word ("✶ Sextile"), matching the map hover tip —
             // the bare glyph alone read cryptically in the card heading.
             aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span> ${aspectName}`,
-            angle: aspAngle,
+            angle: angleLabel(aspAngle),
           }),
         reading.body,
         [...notes, footer],

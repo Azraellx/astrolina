@@ -48,6 +48,30 @@ export const expandedSidebar = {
   // Shown under the wheel-state title on a planets-only wheel. Kept terse — the
   // chart form's note carries the full explanation of the degrade.
   timeUnknownNote: 'Birth time unknown',
+  // In place of the birth time in the geodetic header (geodetic.title below), for a
+  // chart with none: the planets are read at 12:00 on the birth date, and "12:00"
+  // alone would read as a time somebody recorded. Lower case: it follows the date in
+  // the middle of a line. (2026-10-02)
+  timeUnknownNoon: 'birth time unknown, noon used',
+
+  // The panel header's data block on a geodetic map, which says what the wheel is: the
+  // chart's own planets inside a PLACE's geodetic angles and houses. Four lines — title,
+  // name, date and time; "Cast for" (partnerHead.castFor) and the place; the place's
+  // AS and MC; and these planets lines, which say where the planets and the houses come
+  // from. {system} is the house system's own name, Porphyry wherever the chosen one is
+  // undefined at the place's latitude (houseFallback says why). (2026-10-02)
+  geodetic: {
+    title: 'GEODETIC',
+    // Geodetic equivalents: the place's own angles. The Coordinates box heads its
+    // angles with the same two letters (coordReadout.geodetic).
+    ge: 'GE',
+    planets: 'Planets at natal positions · houses: {system}, from the geodetic angles',
+    planetsComposite:
+      'Planets at the composite’s positions · houses: {system}, from the geodetic angles',
+    // A time overlay promoted to stand in for the chart (Natal off): its bodies are
+    // another instant's. {overlay} is its name as the wheel title shows it.
+    planetsPromoted: 'Planets from {overlay} · houses: {system}, from the geodetic angles',
+  },
 
   // Pre-1970 timezone DST caution glyph in the meta row.
   // Where the birth chart's header carries a UTC offset, an overlay's carries
@@ -74,6 +98,8 @@ export const expandedSidebar = {
       'Their angles and houses are read for one place — your pin, the point you hover, or else your birthplace — not the partner’s own. Pin a place on the map to cast both there.',
     // In place of "Cast for" when the partner is a composite chart, whose angles
     // are midpoints of its two charts' own angles and so belong to no place.
+    // Celestial maps only: on a geodetic map a composite's wheel is the place's
+    // frame like any other, and takes "Cast for". (2026-10-02)
     midpointAngles: 'Midpoint angles, not relocated',
   },
 

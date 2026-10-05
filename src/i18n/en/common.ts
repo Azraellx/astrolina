@@ -56,5 +56,9 @@ export const common = {
     expand: 'Expand panel',
     // Hover-tip hint under the collapse/expand eye (shared by both states).
     collapseHint: 'Show or hide the controls.',
+    // The close X of a window that takes its name from its caller — the held card a
+    // tool is replaced by on a geodetic map (SkyHeldNote/HeldHud). {name} is the
+    // tool's own label. (2026-10-02)
+    closeNamed: 'Close {name}',
   },
 } as const;

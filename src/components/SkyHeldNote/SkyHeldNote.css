@@ -1,0 +1,70 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ *
+ * The sky hold's reason in place (SkyHeldNote), and the two hosts the core gives it:
+ * the card a held tool is replaced by (HeldHud) and the held Sky Times band
+ * (SkyBandHeld). The sentence takes its host's note class; only the fix is styled
+ * here — a small bordered inline action, inline rather than flex so it wraps with the
+ * sentence on a narrow panel instead of squeezing it. (2026-10-02)
+ */
+
+.sky-held-fix {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--tint), 0.2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.sky-held-fix:hover,
+.sky-held-fix:focus-visible {
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  color: var(--accent-brand);
+}
+
+/* The compact form's short text reveals the whole sentence on hover, tap or focus. */
+.sky-held-compact .sky-held-text {
+  cursor: help;
+}
+
+/* HeldHud: the floating-window chrome, narrower than the shared 320px base (it carries
+   one sentence and one button). Compound selectors so they outweigh .location-hud's
+   own width and collapse rules whatever order the stylesheets land in. */
+.location-hud.held-hud {
+  width: 260px;
+  max-width: 260px;
+}
+.held-hud-body {
+  padding: 9px 12px 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.location-hud.is-collapsed .held-hud-body {
+  display: none;
+}
+
+/* SkyBandHeld: the reason centred in the band's empty-state slot. The band reserves a
+   taller strip while held on a desktop (App's band height), so a sentence that wraps
+   on a narrow window still fits; muted rather than the empty state's faint, because
+   this is a reason to read, not a placeholder. */
+.sky-band-held .sky-band-empty {
+  padding: 0 12px;
+}
+.sky-band-held .sky-held {
+  text-align: center;
+  line-height: 1.5;
+  color: var(--text-muted);
+}

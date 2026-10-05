@@ -64,20 +64,28 @@ export interface ToolExtension extends GatedExtension {
    *  resolver in ./entitlement. */
   tier?: GatedExtension['tier'];
   /** The tool draws or reads the REAL sky at the chart's moment — bodies over the Earth
-   *  at the chart's sidereal time — so it has no meaning beside the geodetic (Mundane)
-   *  line system, which is time-independent and carries no sidereal time. Declaring it
-   *  gets the tool the handling the host's own Local Space and Slide get, in both
-   *  directions:
+   *  at the chart's sidereal time — so it has no meaning on a geodetic map, which lays
+   *  the zodiac on Earth's longitudes and doesn't turn. Declaring it is the tool's HOLD
+   *  declaration (lib/skyHold): while the map is geodetic (`ctx.skyHeld`), the host holds
+   *  it as it holds its own Local Space window —
    *
-   *  - opening it while Mundane is on screen REWRITES the line system to Celestial and
-   *    announces it by the tool's `label`;
-   *  - Mundane becoming the line system while it is open — chosen, or handed back by the
-   *    zodiac returning to Tropical — CLOSES it and announces that.
+   *  - its Tools-menu row is greyed with the reason, and opening it is REFUSED from every
+   *    route (the row, its hotkey, `ctx.openTool`) — the call does nothing and writes
+   *    nothing. Closing is never refused;
+   *  - one already open STAYS open, its stored flag untouched, and the host draws a small
+   *    held card in its place (components/SkyHeldNote/HeldHud): the tool's `label`, the
+   *    reason and its fix, and a close that really closes the tool. Its `render` is NEVER
+   *    CALLED while held, so it takes no view lock and parks nothing, and its `readout`
+   *    is not shown;
+   *  - Celestial puts the tool itself back where the card was.
    *
-   *  The tool never has to check `ctx.lineSystem` for this itself: while it is open, the
-   *  line system it reads is Celestial. */
+   *  The tool never has to check `ctx.lineSystem` for this itself: whenever its `render`
+   *  runs, the map is Celestial. Nothing changes the line system on the reader's behalf.
+   *  (2026-10-02; from 17 September it switched the line system to Celestial instead —
+   *  opening one rewrote it, and Geodetic arriving closed the tool.) */
   needsSiderealTime?: boolean;
-  /** The HUD, rendered when the tool is open AND entitled. */
+  /** The HUD, rendered when the tool is open AND entitled — and not held
+   *  ({@link needsSiderealTime} on a geodetic map, 2026-10-02). */
   render: (ctx: MapExtensionContext, onClose: () => void) => ReactNode;
 }
 

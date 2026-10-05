@@ -39,14 +39,13 @@ import {
 import { generateNightShade } from '../src/lib/astro/nightShade';
 import {
   birthDataToJD,
-  eclipticLonOfRA,
   gmstRadians,
   getPlanetPositions,
   initEphemeris,
   obliquity,
   type PlanetName,
 } from '../src/lib/ephemeris';
-import { generateLines, normLng, type MeridianLng } from '../src/lib/astro/lines';
+import { generateLines, meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
 import type { BirthData } from '../src/lib/birthData';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,16 +212,19 @@ for (const b of CHARTS) {
 // (it lives in the rotating sidereal frame the Slide tool spins), while the geodetic
 // MC = eclipticLonOfRA(RA) is GMST-free — nothing for the spin to act on. Hence Slide
 // is gated to the celestial frame; in geodetic the cancellation has no signal to cancel.
+// Both frames go through the app's meridian factory, each handed BOTH GMSTs. Until
+// 2026-10-02 the geodetic pair was one expression written twice with no GMST in it, so
+// it could not have failed; now a factory that read GMST on geodetic would.
 {
   const jd0 = birthDataToJD(CHARTS[0]);
   const eps = obliquity(jd0);
   const sat = getPlanetPositions(jd0, 'mean').find((p) => p.name === 'Saturn')!;
   const gmstA = gmstRadians(jd0);
   const delta = 1.234; // radians of extra sidereal rotation
-  const celA = normLng((sat.ra - gmstA) * RAD2DEG);
-  const celB = normLng((sat.ra - (gmstA + delta)) * RAD2DEG);
-  const geoA = normLng(eclipticLonOfRA(sat.ra, eps) * RAD2DEG);
-  const geoB = normLng(eclipticLonOfRA(sat.ra, eps) * RAD2DEG); // GMST plays no part
+  const celA = normLng(meridianLngFor('celestial', eps, gmstA)(sat.ra));
+  const celB = normLng(meridianLngFor('celestial', eps, gmstA + delta)(sat.ra));
+  const geoA = normLng(meridianLngFor('geodetic', eps, gmstA)(sat.ra));
+  const geoB = normLng(meridianLngFor('geodetic', eps, gmstA + delta)(sat.ra));
   check(
     'celestial MC shifts by −δ under a GMST change (spinnable frame)',
     Math.abs(wrap180(celB - celA - -delta * RAD2DEG)) < 1e-6,

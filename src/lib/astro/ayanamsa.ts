@@ -115,5 +115,8 @@ export function shiftAngles(
     antivertex: shift(a.antivertex),
     cusps,
     ...(a.fallback ? { fallback: a.fallback } : {}),
+    // A place's geodetic frame stays one in the sidereal zodiac: its readouts
+    // still truncate, and its NaN Vertex still means "not drawn". (2026-10-02)
+    ...(a.geodetic ? { geodetic: a.geodetic } : {}),
   };
 }

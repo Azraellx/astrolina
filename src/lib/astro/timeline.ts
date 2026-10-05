@@ -23,11 +23,13 @@ import {
   shiftRightAscension,
   solarDailyMotionLong,
   solarDailyMotionRA,
+  type LineSystem,
   type NodeType,
   type PlanetName,
   type PlanetPosition,
 } from '../ephemeris';
 import type { StoredChart } from '../chartLibrary';
+import { skyHeldFor } from '../skyHold';
 import { compositeEquatorial, solveCompositeFrameJd } from './composite';
 import type { TFn } from '../../i18n';
 
@@ -81,8 +83,10 @@ export const TIME_OVERLAY_MODES = new Set<OverlayMode>([
 // (lib/extensions/viewLock): eclipses are pure map-ground geometry (track,
 // limits, visibility hemisphere) and synastry is a two-chart comparison of the
 // map itself — neither carries onto an owning surface. Their Overlay-menu rows
-// HIDE and the 'o' cycle skips them while the lock holds; an owner drops an
-// active one to 'off' on open, so neither can be reached until the lock clears.
+// HIDE and the 'o' cycle skips them while the lock holds, and the host's EFFECTIVE
+// overlay reads an active one as 'off' meanwhile — masked, not written, so the
+// reader's choice is back when the lock clears. (Until 2026-10-05 the owner wrote
+// 'off' on mount; see App's overlayMode.)
 export const VIEW_LOCK_PARKED_OVERLAYS = new Set<OverlayMode>([
   'eclipses',
   'synastry',
@@ -117,15 +121,28 @@ export const TIME_UNKNOWN_BLOCKED_OVERLAYS = new Set<OverlayMode>([
   'cyclo',
 ]);
 
-/** WHICH of the three blocks bars a mode on a given chart, or null if none does.
- *  A menu that greys a row out owes the reader the reason — and the three reasons
- *  are different things about the chart, not one blanket "unavailable". */
-export type OverlayBlock = 'composite' | 'no-time' | 'davison';
+// Overlay modes HELD on a geodetic map (lib/skyHold, 2026-10-02). Primary Directions
+// move the map by advancing the RAMC — the sky turning over the place — and a geodetic
+// map has no turning to advance. Every other overlay moves the PLANETS by degree and
+// works there unchanged (lib/skyHold's clock test). Held like the chart blocks above:
+// the row greys with the sky sentence, an active one reads 'off' while the map is
+// geodetic, and the stored choice is kept for Celestial.
+export const SKY_HELD_OVERLAYS = new Set<OverlayMode>(['primary-directions']);
 
+/** WHICH block bars a mode, or null if none does. A menu that greys a row out owes the
+ *  reader the reason — and the reasons are different things, not one blanket
+ *  "unavailable": the first three are facts about the CHART, 'geodetic' is the MAP's
+ *  line system (SKY_HELD_OVERLAYS). */
+export type OverlayBlock = 'composite' | 'no-time' | 'davison' | 'geodetic';
+
+/** Pass the EFFECTIVE line system (App.tsx's derived `lineSystem`, `ctx.lineSystem`);
+ *  omitted, it reads as Celestial and holds nothing on the map's account. */
 export function overlayBlockFor(
   chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
+  lineSystem: LineSystem = 'celestial',
 ): (mode: OverlayMode) => OverlayBlock | null {
-  if (!chart) return () => null;
+  const held = skyHeldFor(lineSystem);
+  if (!chart) return (mode) => (held && SKY_HELD_OVERLAYS.has(mode) ? 'geodetic' : null);
   const composite = !!chart.composite;
   const noTime = chart.timeKnown === false;
   // A Davison is a locally-generated relationship chart: real natal math (so no
@@ -137,17 +154,22 @@ export function overlayBlockFor(
     if (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) return 'composite';
     if (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode)) return 'no-time';
     if (davison && mode === 'synastry') return 'davison';
+    // The chart's own blocks outrank the map's: the geodetic reason names a setting
+    // to change, and on a chart that bars the mode anyway that fix would be false.
+    if (held && SKY_HELD_OVERLAYS.has(mode)) return 'geodetic';
     return null;
   };
 }
 
-/** The overlay modes a given chart cannot carry. The one predicate behind the
- *  Overlay menu, the 'o' cycle, and the effective overlay mode, so they can never
- *  disagree. Callers that want to SAY why should use `overlayBlockFor` instead. */
+/** The overlay modes a given chart cannot carry on the given map. The one predicate
+ *  behind the Overlay menu, the 'o' cycle, and the effective overlay mode, so they can
+ *  never disagree — which holds only while every caller passes the same EFFECTIVE line
+ *  system. Callers that want to SAY why should use `overlayBlockFor` instead. */
 export function overlayBlockedFor(
   chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
+  lineSystem: LineSystem = 'celestial',
 ): (mode: OverlayMode) => boolean {
-  const reason = overlayBlockFor(chart);
+  const reason = overlayBlockFor(chart, lineSystem);
   return (mode) => reason(mode) !== null;
 }
 

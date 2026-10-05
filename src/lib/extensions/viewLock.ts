@@ -10,8 +10,10 @@
 // reason as its tip), the plain-letter view hotkeys and open windows stand
 // down, and the Settings sidebar hides its map-surface-only rows — Settings
 // itself stays available, so users can still tune what the owning surface
-// shows. The open core sets no lock; a downstream tool installs one for its
-// lifetime and MUST clear it on teardown.
+// shows. The overlays that are the map itself (VIEW_LOCK_PARKED_OVERLAYS) read
+// as none meanwhile, masked rather than written, so an owner never touches the
+// reader's overlay (2026-10-05). The open core sets no lock; a downstream tool
+// installs one for its lifetime and MUST clear it on teardown.
 
 import { useSyncExternalStore } from 'react';
 

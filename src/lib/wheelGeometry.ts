@@ -286,11 +286,19 @@ export interface WheelGeometry {
 // silent overlap, and a second copy in a test is a test that agrees with itself.
 // Per-character advances (in em, at weight 700) for the nine characters the six
 // codes are built from. Deliberately a table rather than one average figure: an
-// average generous enough for "Mc" reserves half again too much for "Ic", and the
+// average generous enough for "MC" reserves half again too much for "IC", and the
 // wasted arc is arc some body is being pushed out of for no reason.
+//
+// The codes became AS, MC, DS, IC on 2026-10-02 (they were As, Mc, Ds, Ic), so S and
+// C replaced s and c. Both were measured that day in Chrome on Windows with canvas
+// measureText at the wheel's font and weight (system-ui, 700), plus the label's
+// 0.02em letter spacing, which is how the other entries read. M and D were
+// re-measured with them: their old figures sat low, and only the over-generous c and
+// s beside them had kept "Mc" and "Ds" whole. Each code's sum is now within 0.02em of
+// its drawn SVG width there.
 const ANGLE_LABEL_EM: Record<string, number> = {
-  A: 0.72, D: 0.72, I: 0.34, M: 0.92, V: 0.68,
-  c: 0.56, s: 0.52, v: 0.56, x: 0.56,
+  A: 0.72, C: 0.64, D: 0.76, I: 0.34, M: 0.98, S: 0.58, V: 0.68,
+  v: 0.56, x: 0.56,
 };
 // .wheel-angle-label: 700 weight with a paint-order stroke halo (half of it each
 // side, and the halo is part of what must not be overlapped — it is the panel

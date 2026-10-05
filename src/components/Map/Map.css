@@ -631,6 +631,24 @@
     0 0 2px rgba(0, 0, 0, 0.55);
 }
 
+/* The geodetic grid's sign glyphs (geoGridLabels.ts): placed like a badge (absolute, moved by
+   the same --bx / --by transform, for the same capture reasons .acg-badge gives) but with no
+   pill — a reference label in the grid's one neutral ink (inline colour), haloed in --geo-halo
+   so it reads over any basemap tone. Never a target: the glyph names the band or curve, and a
+   click there belongs to the map. */
+.geo-grid-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(var(--bx, 0px), var(--by, 0px));
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 2px var(--geo-halo, rgba(0, 0, 0, 0.6)),
+    0 0 1px var(--geo-halo, rgba(0, 0, 0, 0.6));
+}
+
 /* The bundled symbol font sits a touch low; nudge badge glyphs up to optically centre
    them (matching the SVG-mode glyph in the chart wheel). Use a fixed px, not a %: badge
    glyphs are a fixed 11px, and a percentage is resolved against the glyph's (very tall)
@@ -666,6 +684,26 @@
    popup-content wrapper above. */
 .zenith-popup .ui-tip {
   text-align: center;
+}
+
+/* The geodetic grid's hover readout: the place, then AS and MC to the minute with the sign
+   glyph between degree and minute (as in the Coordinates box), then — past the polar circle —
+   the map's polar caution, smaller and muted. Tabular figures so the angles don't shimmer as
+   the cursor moves across a band. */
+.geo-readout-angles {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.geo-readout-angle .astro-glyph {
+  margin: 0 1px;
+}
+.geo-readout-caution {
+  max-width: 220px;
+  margin: 2px auto 0;
+  font-size: 9.5px;
 }
 
 /* ── Eclipse local-circumstances card ────────────────────────────────

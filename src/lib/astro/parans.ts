@@ -6,7 +6,7 @@
 
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
-import type { MeridianLng } from './lines';
+import { LINE_TYPE_LABEL, type MeridianLng } from './lines';
 
 const RAD2DEG = 180 / Math.PI;
 const TWO_PI = 2 * Math.PI;
@@ -178,7 +178,7 @@ export function generateParans(
             // A culminates when the local sidereal time equals its (IC-shifted) RA.
             theta: norm2pi(aRA),
             color: PLANET_COLORS[a.name],
-            label: `${PLANET_CODES[a.name]} ${angleA} × ${PLANET_CODES[b.name]} ${angleB}`,
+            label: `${PLANET_CODES[a.name]} ${LINE_TYPE_LABEL[angleA]} × ${PLANET_CODES[b.name]} ${LINE_TYPE_LABEL[angleB]}`,
           },
           geometry: {
             type: 'LineString',
@@ -209,7 +209,7 @@ export function generateParans(
             intersectionLng,
             theta: norm2pi(sol.theta),
             color: PLANET_COLORS[a.name],
-            label: `${PLANET_CODES[a.name]} ${sol.angleA} × ${PLANET_CODES[b.name]} ${sol.angleB}`,
+            label: `${PLANET_CODES[a.name]} ${LINE_TYPE_LABEL[sol.angleA]} × ${PLANET_CODES[b.name]} ${LINE_TYPE_LABEL[sol.angleB]}`,
           },
           geometry: {
             type: 'LineString',
@@ -233,7 +233,7 @@ export function generateParans(
  * latitude-crossing listings) is a per-location list anyway. Star-to-star
  * parans are not computed.
  *
- * `stars` should already reflect the active star set (and, in Mundane mode,
+ * `stars` should already reflect the active star set (and, in geodetic mode,
  * the ecliptic projection — match the star LINES' positions); `positions` the
  * visibility-filtered planet set. `color` is the shared starlight tint.
  */
@@ -283,7 +283,7 @@ export function generateStarParans(
         const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
         push(
           p.name, s.name, angleA, angleB,
-          `★ ${s.name} ${angleA} × ${PLANET_CODES[p.name]} ${angleB}`,
+          `★ ${s.name} ${LINE_TYPE_LABEL[angleA]} × ${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[angleB]}`,
           lat, normLng(meridianLng(aRA)), aRA,
         );
       }
@@ -297,7 +297,7 @@ export function generateStarParans(
         const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
         push(
           p.name, s.name, angleA, angleB,
-          `${PLANET_CODES[p.name]} ${angleA} × ★ ${s.name} ${angleB}`,
+          `${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[angleA]} × ★ ${s.name} ${LINE_TYPE_LABEL[angleB]}`,
           lat, normLng(meridianLng(aRA)), aRA,
         );
       }
@@ -305,7 +305,7 @@ export function generateStarParans(
       for (const sol of horizonParans(s, p)) {
         push(
           p.name, s.name, sol.angleA, sol.angleB,
-          `★ ${s.name} ${sol.angleA} × ${PLANET_CODES[p.name]} ${sol.angleB}`,
+          `★ ${s.name} ${LINE_TYPE_LABEL[sol.angleA]} × ${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[sol.angleB]}`,
           sol.lat, normLng(meridianLng(sol.theta)), sol.theta,
         );
       }

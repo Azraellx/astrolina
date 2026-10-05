@@ -50,14 +50,15 @@ export const timeline = {
       'Everything from Jupiter outward — plus the nodes, Lilith, Chiron and the asteroids — reads at its real transiting position. Their lines carry the Tr tag.',
   },
 
-  // The frame segmented control in the transits returns row. When the line system
-  // isn't Celestial the control is disabled — this tip explains why framing is moot.
+  // The frame segmented control in the transits returns row.
   // lockedNoTime: disabled because the chart's birth time is unknown, so the frame
   // is forced to the moment's own sky (there is no natal frame to hold).
+  // On a geodetic map the control is held at Natal angles with settings.inert.anglesHeld,
+  // the sentence the progressed Angles pair shares. That replaced `disabled`, which named
+  // the one line system twice over, by its old label and its new, as if they were two.
+  // (2026-10-02)
   positioning: {
     groupAria: 'Overlay frame',
-    disabled:
-      'Only Celestial lines have a sidereal-time frame to switch — Mundane and Geodetic lines key off zodiacal longitude, so framing has no effect.',
     lockedNoTime:
       'Birth time unknown — there is no natal frame to hold, so the map can only show the sky of the moment.',
     // The un-chosen segment while a return holds the frame. Unlike lockedNoTime the

@@ -25,6 +25,8 @@ import { canonicalLng } from '../../lib/coordFormat';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
+import type { LineSystem } from '../../lib/ephemeris';
+import { skyHeldFor } from '../../lib/skyHold';
 import { usePinCelebrations } from '../../lib/extensions/pinAdornment';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { isViewRowClaimed } from '../../lib/extensions/viewRowClaims';
@@ -199,7 +201,9 @@ interface TopNavProps {
   /** Slide-tool readout (elapsed time, wall clock + date, rotation angle);
    *  non-null whenever the tool is armed with a chart (Δt 0 = natal). */
   slide: SlideInfo | null;
-  /** Toggle the Slide tool — switches the geodetic line frame to celestial first if needed. */
+  /** Toggle the Slide tool. Arming is refused on a geodetic map, which has no sidereal
+   *  time to turn (lib/skyHold); disarming never is. (Until 2026-10-02 arming switched the
+   *  line system to Celestial first.) */
   onToggleSlide: () => void;
   /** False when Slide can't run (natal linework hidden / overlay promoted) — greys the item. */
   slideEnabled: boolean;
@@ -253,10 +257,14 @@ interface TopNavProps {
    *  toggled HUD surfaced beneath the built-in tools. */
   openTools: ReadonlySet<string>;
   onToggleTool: (id: string) => void;
-  /** Mundane (geodetic) is the line system on screen. Opening anything that needs the sky's
-   *  sidereal time — Local Space, Slide, a tool extension that declares `needsSiderealTime` —
-   *  then switches it to Celestial, so those rows say so on their tips, and only then. */
-  mundaneOnScreen: boolean;
+  /** The EFFECTIVE line system (App's derived `lineSystem`), for what a geodetic map holds
+   *  (lib/skyHold). Held rows grey with settings.inert.skyHeld and stay in the menu: the
+   *  Overlay menu's Primary Directions row; the Sky Times and Local Space view rows and
+   *  Slide; and any tool that declares `needsSiderealTime`, which also loses its readout
+   *  while held. A held view or tool that is OPEN stays clickable, to close it. Absent
+   *  reads as Celestial, which holds nothing. (Replaced `mundaneOnScreen` with the switch
+   *  it warned of, 2026-10-02.) */
+  lineSystem?: LineSystem;
   /** The active Overlay-menu extension id (registerOverlayExtension), or null. Mutually
    *  exclusive with the core overlayMode — selecting one clears the other. */
   activeOverlayExt: string | null;
@@ -624,6 +632,7 @@ function CheckItem({
   locked,
   hint,
   note,
+  unavailable,
 }: {
   label: string;
   checked: boolean;
@@ -640,9 +649,14 @@ function CheckItem({
   /** Optional explainer. View rows normally have none, so they show NO tip; but if a row IS
    *  given a hint it surfaces on hover/focus like the other menus (with the ADV marker). */
   hint?: string;
-  /** A second line under the hint: what toggling this row will change besides itself, given
-   *  only while it would (HoverTip's `note`). */
+  /** A second line under the hint (HoverTip's `note`): why the row can't be used right now,
+   *  where that isn't its tier — a hold's reason (lib/skyHold). Until 2026-10-02 it carried
+   *  the retired line-system switch's warning. */
   note?: string;
+  /** The row can't be used right now (pair it with `disabled` and a `note`): the inline
+   *  shortcut badge goes and the tip shows the grey N/A badge in place of the key, since
+   *  the key is refused too. (2026-10-02) */
+  unavailable?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   const hasTip = !!hint || !!note;
@@ -670,7 +684,7 @@ function CheckItem({
         <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
         <span>{label}</span>
         <TierBadge tier={tier} />
-        {hotkey && !locked && <span className="navmenu-key">{hotkey}</span>}
+        {hotkey && !locked && !unavailable && <span className="navmenu-key">{hotkey}</span>}
       </button>
       {hasTip && (
         <HoverTip
@@ -684,6 +698,7 @@ function CheckItem({
           hotkey={locked ? undefined : hotkey}
           advanced={tier === 'adv'}
           gated={tier === 'gated'}
+          unavailable={unavailable}
         />
       )}
     </>
@@ -702,6 +717,7 @@ function ToolItem({
   locked,
   hint,
   note,
+  unavailable,
   onToggle,
   tier,
 }: {
@@ -719,9 +735,13 @@ function ToolItem({
    *  (e.g. Slide with no natal linework) — its key still applies and its click stays a no-op. */
   locked?: boolean;
   hint?: string;
-  /** A second line under the hint: what arming this tool will change besides itself, given
-   *  only while it would (HoverTip's `note`). */
+  /** A second line under the hint (HoverTip's `note`): why the tool can't be armed right
+   *  now, where that isn't its tier — a hold's reason (lib/skyHold). Until 2026-10-02 it
+   *  carried the retired line-system switch's warning. */
   note?: string;
+  /** Held, not merely disabled: its key is refused too, so the inline shortcut badge goes
+   *  and the tip shows the grey N/A badge in its place (as CheckItem). (2026-10-02) */
+  unavailable?: boolean;
   onToggle: () => void;
   /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
   tier?: PlanTier;
@@ -761,7 +781,7 @@ function ToolItem({
         )}
         <span>{label}</span>
         <TierBadge tier={tier} />
-        {hotkey && !locked && <span className="navmenu-key">{hotkey}</span>}
+        {hotkey && !locked && !unavailable && <span className="navmenu-key">{hotkey}</span>}
       </button>
       <HoverTip
         pos={pos}
@@ -783,6 +803,7 @@ function ToolItem({
         hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
         gated={tier === 'gated'}
+        unavailable={unavailable}
       />
     </>
   );
@@ -839,7 +860,7 @@ export function TopNav({
   onToggleExtension,
   openTools,
   onToggleTool,
-  mundaneOnScreen,
+  lineSystem = 'celestial',
   activeOverlayExt,
   onSelectOverlayExt,
 }: TopNavProps) {
@@ -856,6 +877,11 @@ export function TopNav({
   // A registered surface owning the viewport parks the View menu (see
   // lib/extensions/viewLock) — the trigger disables with the provider's reason.
   const viewLock = useViewLock();
+  // The sky hold (lib/skyHold), on the EFFECTIVE line system: the rows below that read the
+  // sky's turning grey with its one sentence on a geodetic map — never leave the menu — and
+  // App's openers refuse them there, closing excepted. (2026-10-02)
+  const skyHeld = skyHeldFor(lineSystem);
+  const skyHeldWhy = t('settings.inert.skyHeld');
   const viewItems: {
     id: string;
     label: string;
@@ -868,9 +894,11 @@ export function TopNav({
     /** Registered but not yet usable (MapExtension.unavailable): the row stays, inert,
      *  with this reason in place of its hint. Only extensions can be in this state. */
     unavailable?: string;
-    /** The tip's second line — what opening this row changes besides itself, only while
-     *  it would (Local Space under Mundane). */
-    note?: string;
+    /** Held by the sky hold (lib/skyHold): the reason is the tip's second line, and the
+     *  row is greyed — N/A, no key — while the view is SHUT. An open held view stays a
+     *  live row, so it can still be closed from here. (Replaced a free-text `note`, which
+     *  carried the retired line-system switch's warning, 2026-10-02.) */
+    held?: boolean;
   }[] = [
     // Built-in windows, on the digit row (1-3) and on mnemonic letters
     // (T = Teleport, S = Sky Times, L = Local Space). Badges mirror App's
@@ -882,8 +910,8 @@ export function TopNav({
     // a product call to keep this menu short. It opens from Map filters ▸ Minor bodies ▸
     // More, which carries the key pill, and from the key itself; see App's showMinorHud.)
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
-    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
-    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), note: mundaneOnScreen && !showLocalSpace ? t('topNav.setsCelestial') : undefined, hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
+    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes), held: skyHeld },
+    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace), held: skyHeld },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions()
@@ -928,6 +956,9 @@ export function TopNav({
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
+  // Slide held (reached tier only — a locked teaser says nothing about opening): greyed
+  // while shut; armed, it would still disarm from its row. (2026-10-02)
+  const slideHeld = skyHeld && tierMet(planTier, 'adv') && !sliding;
   const framing = tool === 'capture';
   const locationText = locationLabel ?? undefined;
   // Fade only while a non-natal pin upgrades to a NEW, more accurate address (App
@@ -1205,7 +1236,13 @@ export function TopNav({
   const openToolExt = getToolExtensions().find((ext) => openTools.has(ext.id));
   // A tool extension can also fill the secondary readout bar (below) with a usage hint / live
   // readout — the same slot the built-in tools use. Null when none is open or it provides none.
-  const extReadout = openToolExt?.readout ?? null;
+  // Null too while the open tool is HELD (it declares `needsSiderealTime` and the map is
+  // geodetic): App draws a held card in its place and never renders the tool, so its readout
+  // would be coaching for a view that isn't there (lib/skyHold, 2026-10-02).
+  const extReadout =
+    openToolExt && !(openToolExt.needsSiderealTime && skyHeld)
+      ? (openToolExt.readout ?? null)
+      : null;
 
   // One-shot flourish on the centre status pill when a downstream action completes on
   // the placed pin (lib/extensions/pinAdornment celebratePin) — diffed against the
@@ -1366,7 +1403,10 @@ export function TopNav({
                   />
                   {/* Slide needs the 'adv' tier: hidden below it (or a disabled teaser if the
                       build nudges), tier-badged at/above it. When un-reached it's greyed; once
-                      reached it disables only when Slide can't run (no natal linework). */}
+                      reached it disables when Slide can't run (no natal linework), and is HELD
+                      on a geodetic map, which has no sidereal time to turn: greyed with the sky
+                      sentence, its key refused (App's armSlide). Disarming is never held, and
+                      App disarms it as the map turns geodetic anyway. (2026-10-02) */}
                   {(tierMet(planTier, 'adv') || shouldShowNudge('adv')) && (
                     <ToolItem
                       label={t('topNav.tools.slideItem')}
@@ -1376,15 +1416,12 @@ export function TopNav({
                           ? t('topNav.tools.slideHint')
                           : t('topNav.tools.slideUnavailable')
                       }
-                      note={
-                        mundaneOnScreen && slideEnabled && !sliding && tierMet(planTier, 'adv')
-                          ? t('topNav.setsCelestial')
-                          : undefined
-                      }
+                      note={slideHeld ? skyHeldWhy : undefined}
+                      unavailable={slideHeld}
                       hotkey="E"
                       tier="adv"
                       checked={sliding}
-                      disabled={!tierMet(planTier, 'adv') || !slideEnabled}
+                      disabled={!tierMet(planTier, 'adv') || !slideEnabled || slideHeld}
                       locked={!tierMet(planTier, 'adv')}
                       onToggle={() => {
                         onToggleSlide();
@@ -1396,7 +1433,10 @@ export function TopNav({
                       tools attach here with no edits to this file. The checkmark mirrors
                       their open state. Tier-filtered like the View menu (and the core
                       tools above): a gated tool stays hidden until the user reaches its
-                      tier — no teaser. */}
+                      tier — no teaser. A tool that declares `needsSiderealTime` is held on
+                      a geodetic map like Slide: greyed with the sky sentence while shut,
+                      a live row while open so it can be closed (App draws a held card in
+                      its place meanwhile). (2026-10-02) */}
                   {getToolExtensions()
                     .filter((ext) => {
                       const req = tierOfEntitlement(ext.tier);
@@ -1404,25 +1444,22 @@ export function TopNav({
                     })
                     .map((ext) => {
                       const req = tierOfEntitlement(ext.tier);
+                      const reached = tierMet(planTier, req);
+                      const open = openTools.has(ext.id);
+                      const held = reached && !!ext.needsSiderealTime && skyHeld;
                       return (
                         <ToolItem
                           key={ext.id}
                           label={ext.label}
                           icon={ext.icon}
                           hint={ext.hint}
-                          note={
-                            mundaneOnScreen &&
-                            ext.needsSiderealTime &&
-                            tierMet(planTier, req) &&
-                            !openTools.has(ext.id)
-                              ? t('topNav.setsCelestial')
-                              : undefined
-                          }
+                          note={held ? skyHeldWhy : undefined}
+                          unavailable={held && !open}
                           hotkey={ext.hotkey}
                           tier={req}
-                          disabled={!tierMet(planTier, req)}
-                          locked={!tierMet(planTier, req)}
-                          checked={openTools.has(ext.id)}
+                          disabled={!reached || (held && !open)}
+                          locked={!reached}
+                          checked={open}
                           onToggle={() => {
                             onToggleTool(ext.id);
                             close();
@@ -1477,7 +1514,7 @@ export function TopNav({
                     // technique that vanishes from the menu takes its explanation with
                     // it, and the reader is left wondering what they did. Same predicate
                     // as the 'o' cycle and the effective overlay mode, so all three agree.
-                    const block = overlayBlockFor(current)(mode);
+                    const block = overlayBlockFor(current, lineSystem)(mode);
                     const tierLocked = advMode && !tierMet(planTier, 'adv');
                     return (
                       <RadioItem
@@ -1492,10 +1529,14 @@ export function TopNav({
                                 ? t('topNav.overlay.modes.cyclo.tipTitle')
                                 : undefined
                         }
+                        // A geodetic hold says the one sky sentence every held control
+                        // says (lib/skyHold), not a technique-specific line. (2026-10-02)
                         hint={
-                          block
-                            ? t(`topNav.overlay.blocked.${block}`)
-                            : t(`topNav.overlay.modes.${mode}.desc`)
+                          block === 'geodetic'
+                            ? t('settings.inert.skyHeld')
+                            : block
+                              ? t(`topNav.overlay.blocked.${block}`)
+                              : t(`topNav.overlay.modes.${mode}.desc`)
                         }
                         hotkey={<CycleHotkey label="O" />}
                         tier={advMode ? 'adv' : undefined}
@@ -1564,33 +1605,38 @@ export function TopNav({
                   second tap on the map, not a flick of the pointer away. A desktop keeps
                   the menu open, so several views can be flipped in one visit. */}
               {(close) =>
-                orderedViewItems.map((it) => (
-                  <CheckItem
-                    key={it.id}
-                    label={it.label}
-                    // Unavailable: the reason stands in for the description, the row
-                    // can't read as checked (nothing is running), the shortcut chip
-                    // goes (the key is released), and the click is a no-op — never a
-                    // nudge, which would be selling an unfinished feature.
-                    hint={it.unavailable ?? it.hint}
-                    // A locked teaser opens nothing (its click is the upgrade nudge), so it
-                    // mustn't promise a side effect of opening.
-                    note={
-                      it.unavailable || !tierMet(planTier, it.tier ?? 'new')
-                        ? undefined
-                        : it.note
-                    }
-                    hotkey={it.unavailable ? undefined : it.hotkey}
-                    checked={it.checked && !it.unavailable}
-                    tier={it.tier}
-                    disabled={!!it.unavailable || !tierMet(planTier, it.tier ?? 'new')}
-                    locked={!it.unavailable && !tierMet(planTier, it.tier ?? 'new')}
-                    onToggle={() => {
-                      it.onToggle();
-                      if (narrow || touch) close();
-                    }}
-                  />
-                ))
+                orderedViewItems.map((it) => {
+                  const reached = tierMet(planTier, it.tier ?? 'new');
+                  // Held (lib/skyHold): the reason rides as the note whether the view is
+                  // open or shut — an open one shows the reason in place of its content,
+                  // and the row says why. Greyed only while SHUT: the key is refused
+                  // then, but closing never is. A locked teaser opens nothing (its click
+                  // is the upgrade nudge), so it says nothing about being held. (2026-10-02)
+                  const held = !!it.held && reached && !it.unavailable;
+                  const heldShut = held && !it.checked;
+                  return (
+                    <CheckItem
+                      key={it.id}
+                      label={it.label}
+                      // Unavailable: the reason stands in for the description, the row
+                      // can't read as checked (nothing is running), the shortcut chip
+                      // goes (the key is released), and the click is a no-op — never a
+                      // nudge, which would be selling an unfinished feature.
+                      hint={it.unavailable ?? it.hint}
+                      note={held ? skyHeldWhy : undefined}
+                      hotkey={it.unavailable ? undefined : it.hotkey}
+                      unavailable={heldShut}
+                      checked={it.checked && !it.unavailable}
+                      tier={it.tier}
+                      disabled={!!it.unavailable || !reached || heldShut}
+                      locked={!it.unavailable && !reached}
+                      onToggle={() => {
+                        it.onToggle();
+                        if (narrow || touch) close();
+                      }}
+                    />
+                  );
+                })
               }
             </NavMenu>
           </div>

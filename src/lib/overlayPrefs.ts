@@ -405,6 +405,58 @@ export function saveShowNightShade(show: boolean) {
   localStorage.setItem(NIGHT_SHADE_KEY, show ? '1' : '0');
 }
 
+// The geodetic grid's four switches (Calculation ▸ Geodetic grid). Each is written ONLY by
+// its own control's handler, inside the reader's gesture — never by a mount or persistence
+// effect. CLAUDE.md rule 6 is the reason for the habit: a value written on mount lands in
+// every install's storage, and a later change of default can then never reach anyone. And the
+// grid is drawn only on a geodetic map, so all four are read through the DERIVED line system
+// (rule 2): under Celestial, sidereal or the hold they are masked, never rewritten, and the
+// reader's choices are all still here when Geodetic comes back. (2026-10-02)
+const GEO_GRID_MC_KEY = 'astro:geo-grid-mc:v1';
+const GEO_GRID_ASC_KEY = 'astro:geo-grid-asc:v1';
+const GEO_ZONES_KEY = 'astro:geo-zones:v1';
+const GEO_ZONES_PRESENTATION_KEY = 'astro:geo-zones-presentation:v1';
+
+/** MC meridians: on unless switched off. */
+export function loadGeoGridMc(): boolean {
+  return localStorage.getItem(GEO_GRID_MC_KEY) !== '0';
+}
+export function saveGeoGridMc(show: boolean) {
+  localStorage.setItem(GEO_GRID_MC_KEY, show ? '1' : '0');
+}
+
+/**
+ * Ascendant curves: TRI-STATE. Null (no key) is "auto" — on while no body lines are drawn,
+ * off but available when any are — and the app DERIVES that each render (rule 2: the line
+ * count is a standing state, so it masks rather than writes). Only the toggle's own click
+ * stores a boolean, and from then on the reader's choice overrides the auto rule. Nothing
+ * else may write this key: an auto value written down would freeze one moment's line count
+ * into a preference the reader never made.
+ */
+export function loadGeoGridAscPref(): boolean | null {
+  const v = localStorage.getItem(GEO_GRID_ASC_KEY);
+  return v === '1' ? true : v === '0' ? false : null;
+}
+export function saveGeoGridAscPref(show: boolean) {
+  localStorage.setItem(GEO_GRID_ASC_KEY, show ? '1' : '0');
+}
+
+/** Zone shading: off unless switched on. */
+export function loadGeoZones(): boolean {
+  return localStorage.getItem(GEO_ZONES_KEY) === '1';
+}
+export function saveGeoZones(show: boolean) {
+  localStorage.setItem(GEO_ZONES_KEY, show ? '1' : '0');
+}
+
+/** Presentation (zone shading at about 50% rather than 12%): off unless switched on. */
+export function loadGeoZonesPresentation(): boolean {
+  return localStorage.getItem(GEO_ZONES_PRESENTATION_KEY) === '1';
+}
+export function saveGeoZonesPresentation(on: boolean) {
+  localStorage.setItem(GEO_ZONES_PRESENTATION_KEY, on ? '1' : '0');
+}
+
 // Zodiac reading frame: tropical (default) or sidereal by ayanamsa. Display
 // layer only — the map lines mark zodiac-independent angular events.
 const ZODIAC_MODE_KEY = 'astro:zodiac-mode:v1';
