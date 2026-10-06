@@ -66,6 +66,25 @@ export interface AllLines {
    *  when absent: a consumer that builds its own AllLines without it (for a spotlight,
    *  say) reveals no catalog lines rather than falling back to the drawn ones. */
   minorLines?: FeatureCollection;
+  /** The active overlay's catalog-body lines, every line type, tagged with the overlay's
+   *  prefix (`tag`; Cyclo's are 'Tr' — catalog bodies ride its transiting side) and placed
+   *  by the overlay's own rule: sampled at its instant, directed by its arc, or a composite
+   *  partner's midpoints. Null with no overlay, exactly when {@link overlayLines} is.
+   *  OPTIONAL, and treated as EMPTY when absent, for the reason {@link minorLines} is. */
+  overlayMinorLines?: FeatureCollection | null;
+  /** Catalog minor body × built-in body parans (lib/astro/parans.ts MinorParanProps:
+   *  `kind: 'minor'`, the built-in side in `partner`, no `planet`/`planetA`/`planetB`),
+   *  for the bodies in {@link minorLines}, paired with every built-in body, as {@link parans}
+   *  pairs them. Generated only while the reader's "Parans with the planets" switch is in
+   *  effect (MapExtensionContext.minorParansOn — so EMPTY on a geodetic map, where parans
+   *  are held) and the chart has a birth time; under the one-frame rule {@link parans}
+   *  follows, EMPTY while an overlay is active (its rows are {@link overlayMinorParans}).
+   *  OPTIONAL, and treated as EMPTY when absent, for the reason {@link minorLines} is. */
+  minorParans?: FeatureCollection;
+  /** {@link minorParans}' overlay twin, tagged with the overlay's prefix, wherever the
+   *  overlay's planet parans ({@link overlayParans}) are. OPTIONAL, and treated as EMPTY
+   *  when absent. */
+  overlayMinorParans?: FeatureCollection | null;
   /** {@link MapExtensionContext.skyHeld} as it was when this set was built: true when it
    *  was built for a geodetic map, so its local-space, paran (star parans included) and
    *  fixed-star families are EMPTY and its angle lines carry no Vx/Avx — because those
@@ -248,19 +267,41 @@ export interface MapExtensionContext {
    *  {@link minorBodies} has any shown (CLAUDE.md rule 5). */
   lines: FeatureCollection;
   /** Effective drawn catalog minor-body lines (`kind: 'minor'`, keyed by `number`, no
-   *  `planet` key) — drawn exactly when the natal planet lines are. Absent in builds
-   *  that predate catalog bodies; treat absent as empty. */
+   *  `planet` key) — drawn exactly when the natal planet lines are. While an overlay is
+   *  promoted these are ITS catalog lines, tagged (`tag`), as {@link lines} then carries
+   *  its planet lines. Absent in builds that predate catalog bodies; treat absent as
+   *  empty. */
   minorLines?: FeatureCollection;
+  /** Effective drawn catalog minor-body lines of an overlay drawn BESIDE the chart —
+   *  {@link overlayLines}' catalog twin: the same `kind: 'minor'` features, tagged with the
+   *  overlay's prefix (`tag`; Cyclo's are 'Tr'), placed by the overlay's own rule in its
+   *  own frame. Null exactly when {@link overlayLines} is (no overlay on the map, or one
+   *  promoted — its catalog lines are then {@link minorLines}); empty while it places none.
+   *  Absent in builds that predate it; treat absent as null. */
+  overlayMinorLines?: FeatureCollection | null;
   /** The reader's catalog minor bodies and what each is doing right now (shown, held,
    *  loading, outside its file's dates, …) — derived, never stored. At the same level
    *  as {@link minorLines}: a body whose lines that set doesn't carry (no chart, no birth
-   *  time, an Angles filter showing none of the four angles, the eclipse clean-up, a
-   *  promoted overlay) reads
+   *  time, an Angles filter showing none of the four angles, the eclipse clean-up) reads
    *  'undrawn', never 'shown'; the draw-only Natal Lines hide leaves it 'shown', as it
-   *  leaves {@link lines} populated. A surface that doesn't include catalog bodies
-   *  checks this for any `status.kind === 'shown'` and, if so, says it isn't counting
-   *  them. */
+   *  leaves {@link lines} populated. While an overlay is promoted, `status` describes ITS
+   *  catalog lines, which stand in for the chart's.
+   *
+   *  A row's `overlay` side ({@link MinorRow.overlay}) describes {@link overlayMinorLines}:
+   *  present only while an overlay's catalog lines are drawn beside the chart's ('shown'
+   *  where it placed the body, 'noData' where the body's file doesn't reach its instant),
+   *  absent otherwise — never a statement about lines that aren't drawn either way. A body
+   *  has lines on the map when either side reads 'shown' (minorRowHasLines in
+   *  lib/minorBodies/status). A surface that doesn't include catalog bodies checks that
+   *  and, if any has, says it isn't counting them. */
   minorBodies?: readonly MinorRow[];
+  /** Whether the reader's "Parans with the planets" switch (the Minor bodies window) is in
+   *  effect: switched on, and not held — it is held while the map's parans are (Parans off,
+   *  the sky hold on a geodetic map, Cyclocartography). DERIVED, never the stored switch. A
+   *  surface that builds a frame of its own (not from {@link collectAllLines}, whose
+   *  AllLines.minorParans already follows it) reads this to pair the reader's catalog bodies
+   *  with that frame's planets. Absent in builds that predate it; treat absent as false. */
+  minorParansOn?: boolean;
   angleLines: FeatureCollection;
   parans: FeatureCollection;
   /** Fixed-star × planet parans (the Brady-school list). Computed but never drawn

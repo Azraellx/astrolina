@@ -539,11 +539,14 @@
    diamond, which steps down as it does in the hover tip and the line card (.cross-tip-glyph
    .minor-mark): a filled shape carries far more ink than a line glyph at the same size. The hollow
    one, a line glyph, keeps the full size. */
-.minor-badge .astro-glyph {
+.minor-badge .astro-glyph,
+.paran-badge .astro-glyph {
   font-size: 11px;
 }
-/* …in the same 11px line box, so every chip is a planet chip's height whichever mark it carries. */
-.minor-badge .astro-glyph.minor-mark:not(.is-hollow) {
+/* …in the same 11px line box, so every chip is a planet chip's height whichever mark it carries.
+   A catalog paran's chip (paranChips.ts minorN) carries the same mark on its catalog side. */
+.minor-badge .astro-glyph.minor-mark:not(.is-hollow),
+.paran-badge .astro-glyph.minor-mark:not(.is-hollow) {
   font-size: 8.5px;
   line-height: 11px;
 }

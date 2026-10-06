@@ -236,19 +236,26 @@ interface ExpandedChartSidebarProps {
    *  print it (2°♉–18°♉) where they would print the degree to the minute. (2026-10-02) */
   ranges?: ReadonlyMap<PlanetName, number> | null;
   planets: EclipticPosition[];
-  /** The natal chart's catalog minor bodies (lib/minorBodies/wheel): placed on the
-   *  natal wheel, and listed in the positions table after the built-in bodies in the
-   *  reader's own list order. Never on the overlay's wheel, and never in an aspect
-   *  list, the balance or the local-space dials — placed, not aspected or counted.
-   *  Empty (or absent) whenever the wheel is not the natal chart. */
+  /** The wheel's own chart's catalog minor bodies (lib/minorBodies/wheel): placed on
+   *  that wheel, and listed in the positions table after the built-in bodies in the
+   *  reader's own list order. Never in an aspect list, the balance or the local-space
+   *  dials — placed, not aspected or counted. The natal chart's, or a promoted overlay's
+   *  while it stands in for the chart; empty in the NO CHART state. */
   minorBodies?: readonly WheelMinorBody[];
-  /** Hold the natal wheel's catalog ring while their files load (see WheelSvg) — no
-   *  effect while the ring is switched off (MINOR_RING_ENABLED). */
+  /** Hold the natal wheel's catalog ring while their files load (see WheelSvg) — a
+   *  request the wheel takes only where it draws the ring (a single wheel from 600px). */
   minorReserve?: boolean;
   /** Azimuth + altitude for the table's catalog rows, by MPC number — the same observer
    *  and instant as `advancedCoords`. */
   minorCoords?: ReadonlyMap<number, { az: number; alt: number }> | null;
   overlayPlanets?: EclipticPosition[] | null;
+  /** The overlay chart's catalog minor bodies, placed by its own rule (lib/astro/timeline
+   *  overlayMinorSamples) — marked on the bi-wheel between the two charts, placed on the
+   *  Dual layout's second wheel, and listed in the overlay's positions table. Empty (or
+   *  absent) whenever its planets are (promoted, Cyclo). */
+  overlayMinorBodies?: readonly WheelMinorBody[];
+  /** Their horizon figures, at the overlay's own instant (overlayAdvancedCoords'). */
+  overlayMinorCoords?: ReadonlyMap<number, { az: number; alt: number }> | null;
   overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
   /** The overlay's instant "YYYY-MM-DD HH:MM" (UTC) — shown with the overlay name over the
@@ -1046,6 +1053,8 @@ export function ExpandedChartSidebar({
   minorBodies = NO_MINOR,
   minorReserve = false,
   minorCoords = null,
+  overlayMinorBodies = NO_MINOR,
+  overlayMinorCoords = null,
   overlayPlanets,
   overlayAngles,
   overlayLabel,
@@ -1514,9 +1523,9 @@ export function ExpandedChartSidebar({
   // the angle rows and theirs, and the sort state (each table sorts on its own,
   // so ordering the overlay by declination does not disturb the chart above it).
   // The catalog minor bodies and their horizon figures come last and default to
-  // none: only the natal chart has them (there is no sample at an overlay's instant).
-  // So do the source notes (bodyNotes) and the spans (ranges), which are the natal
-  // wheel's too.
+  // none: each chart passes its own (the overlay's are placed by its rule, at its
+  // instant). The source notes (bodyNotes) and the spans (ranges) come after them, and
+  // are the natal wheel's only.
   const positionsBlock = (
     bodies: EclipticPosition[],
     coords: Map<PlanetName, HorizontalCoords>,
@@ -1726,7 +1735,8 @@ export function ExpandedChartSidebar({
               <SignLon lon={m.lon} />
             )}
           </td>
-          <td className="es-adv-num">{fmtDM(m.speed, true)}</td>
+          {/* No speed on a directed or midpoint position — the planets' em-dash. */}
+          <td className="es-adv-num">{m.speed !== undefined ? fmtDM(m.speed, true) : '—'}</td>
           <td className="es-adv-num">{fmtDM(m.lat * RAD2DEG, true)}</td>
           <td className="es-adv-num">{fmtDM(m.ra * RAD2DEG)}</td>
           {decCell(m.dec)}
@@ -1830,7 +1840,7 @@ export function ExpandedChartSidebar({
           // table's natural order here too.
           case 'point': return 500 + r.m.rank;
           case 'lon': return r.m.lon;
-          case 'speed': return r.m.speed;
+          case 'speed': return r.m.speed ?? null;
           case 'lat': return r.m.lat;
           case 'ra': return r.m.ra;
           case 'dec': return r.m.dec;
@@ -2774,12 +2784,13 @@ export function ExpandedChartSidebar({
                             </span>
                           </div>
                         )}
-                        {/* No catalog bodies on this wheel: theirs were sampled at the
-                            birth moment, and this chart is another instant's. */}
+                        {/* The overlay chart's own catalog bodies, placed by its rule —
+                            never the natal ones, which were sampled at the birth moment. */}
                         <WheelSvg
                           size={wheelSize}
                           angles={overlayAngles!}
                           planets={shownOverlay!}
+                          minorBodies={overlayMinorBodies}
                           detailed={true}
                           advanced={advanced}
                           aspectOrbs={aspectOrbs}
@@ -2804,6 +2815,8 @@ export function ExpandedChartSidebar({
                         advanced={advanced}
                         aspectOrbs={aspectOrbs}
                         overlayPlanets={shownOverlay}
+                        overlayMinorBodies={overlayMinorBodies}
+                        overlayName={overlayName}
                         overlayAngles={overlayAngles}
                         visibleAspects={visibleAspects}
                         visibleAngles={visibleAngles}
@@ -2901,6 +2914,8 @@ export function ExpandedChartSidebar({
                   overlayAngleCoords,
                   ovPosSort,
                   (key) => setOvPosSort((s) => nextSort(s, key)),
+                  overlayMinorBodies,
+                  overlayMinorCoords,
                 )}
             </div>
           )}

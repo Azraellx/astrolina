@@ -19,8 +19,8 @@ import './MinorMark.css';
 //   • MinorMark — HTML, for rows and tips: the Minor bodies window, the chart wheel's
 //     hover tip, the positions table, the Capture list. The diamond is a CSS shape
 //     sized in em, so it follows the font size of whatever row it sits in.
-//   • MinorMarkSvg — SVG, inside a chart-wheel coin (not rendered while the ring is
-//     switched off: wheelGeometry MINOR_RING_ENABLED). The symbol is a
+//   • MinorMarkSvg — SVG, inside a chart-wheel coin (the ring a single wheel draws from
+//     600px: wheelGeometry MINOR_RING_MIN). The symbol is a
 //     <text class="astro-glyph">, which is what lets the wheel export strip it and
 //     re-stamp it in the page's own font (lib/wheelRaster); the diamond is a <path> in
 //     the proportions the map coin is baked with (lib/minorBodies/mark), so the coin on

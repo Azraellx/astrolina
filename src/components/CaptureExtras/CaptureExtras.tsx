@@ -117,6 +117,11 @@ export type CaptureFrameExtras =
          aspect web and a second ring would crowd it into illegibility. */
       /** Bi-wheel: a second chart's bodies in an outer ring (a running time overlay). */
       overlayPlanets?: EclipticPosition[] | null;
+      /** That chart's catalog minor bodies, marked as the sidebar's bi-wheel marks them
+       *  (WheelSvg overlayMinorBodies), and its name, which their tips are titled with.
+       *  Omitted → none. */
+      overlayMinorBodies?: readonly WheelMinorBody[] | null;
+      overlayName?: string | null;
       /** The overlay chart's own angles, marked in that outer ring. */
       overlayAngles?: RelocatedAngles | null;
       /** Aspect categories to draw. Omitted → none, the small-wheel default. */
@@ -247,6 +252,8 @@ export function CaptureExtras({
             advanced={data.advanced ?? false}
             planetsOnly={data.planetsOnly ?? false}
             overlayPlanets={data.overlayPlanets ?? null}
+            overlayMinorBodies={data.overlayMinorBodies ?? null}
+            overlayName={data.overlayName ?? null}
             overlayAngles={data.overlayAngles ?? null}
             aspectOrbs={data.aspectOrbs}
             visibleAspects={data.visibleAspects ?? NO_ASPECTS}

@@ -154,6 +154,31 @@ function minorReading(angle: LineType, name: string, props: Record<string, unkno
   };
 }
 
+// The reading for a catalog body × built-in body paran (parans.ts MinorParanProps: the
+// built-in side in `partner`, `side` 'A' when the catalog body holds angleA), over an
+// already-resolved catalog name — shared by lineReading (plain) and buildLineCard (escaped),
+// as minorReading is. Titled in side order, as the planets' parans are; the PARTNER's theme
+// carries the reading and the catalog body narrows it, as a star's signature does.
+function minorParanReading(props: Record<string, unknown>, minor: string, t: TFn): LineReading | null {
+  const partner = props.partner as PlanetName | undefined;
+  if (!partner || !minor || (props.side !== 'A' && props.side !== 'B')) return null;
+  const other = t(`planets.${partner}.name`);
+  const [a, b] = props.side === 'A' ? [minor, other] : [other, minor];
+  const angleA = angleLabel(props.angleA);
+  const angleB = angleLabel(props.angleB);
+  return {
+    title: t('lineMeanings.paranTitle', { a, b, angleA, angleB }),
+    body: t('lineMeanings.minorParan', {
+      a,
+      b,
+      angleA,
+      angleB,
+      theme: t(`planets.${partner}.theme`),
+      minor,
+    }),
+  };
+}
+
 /** Closest-approach row data: km from the reference point (a placed pin, or the natal location
  *  by default) to the line's NEAREST point. Computed in Map.tsx, which owns the geometry. */
 export interface LineCardDistance {
@@ -171,7 +196,8 @@ export interface LineReading {
  * The plain-text interpretation behind a line feature — the {title, body} the
  * HTML card decorates. `layerId` follows the map's layer-id conventions
  * ('acg-lines…', 'angle-lines-layer', 'parans…', 'local-space…',
- * 'star-lines-layer', 'minor-lines-layer', 'ecliptic…'); `props` is the
+ * 'star-lines-layer', 'minor-lines-layer' / 'minor-lines-ov-…', 'minor-parans-layer' /
+ * 'minor-parans-ov-layer', 'ecliptic…'); `props` is the
  * feature's properties bag.
  * Null where a line has no reading (eclipse curves keep their own click card).
  */
@@ -270,13 +296,20 @@ export function lineReading(
     };
   }
 
-  // Catalog minor body (lib/astro/minorLines) — checked by its own layer, and never by
+  // Catalog minor body (lib/astro/minorLines) — checked by its own layers (the chart's,
+  // and an overlay's two dash layers, all named 'minor-lines…'), and never by
   // props.planet, which these features deliberately do not carry.
-  if (layerId === 'minor-lines-layer') {
+  if (layerId.startsWith('minor-lines')) {
     const angle = props.lineType as LineType;
     const name = minorDisplayName(props, t);
     if (!angle || !name) return null;
     return minorReading(angle, name, props, t);
+  }
+
+  // A catalog body's paran with a built-in body ('minor-parans-layer' and its overlay twin —
+  // named so that no 'parans' branch above can take it for a planet pair).
+  if (layerId.startsWith('minor-parans')) {
+    return minorParanReading(props, minorDisplayName(props, t), t);
   }
 
   if (layerId.startsWith('acg-lines')) {
@@ -389,12 +422,20 @@ export function buildLineCard(
     return card(title, reading.body, [footer]);
   }
 
-  if (layerId === 'minor-lines-layer') {
+  if (layerId.startsWith('minor-lines')) {
     // Re-composed over the ESCAPED name (see the note on catalog names above) rather
     // than splicing reading.title/body, which lineReading keeps as plain text. Same
     // templates via minorReading, so the card and the plain reading cannot disagree.
+    // An overlay's line carries its tag, so the overlay's source note (`notes`) leads.
     const html = minorReading(props.lineType as LineType, minorNameHtml(props, t), props, t);
     return card(minorMarkHtml(props, 'line-card-glyph') + html.title, html.body, [...notes, footer]);
+  }
+
+  if (layerId.startsWith('minor-parans')) {
+    // Over the ESCAPED name, as a catalog line's card is; a plain title, as a planet paran's.
+    const html = minorParanReading(props, minorNameHtml(props, t), t);
+    if (!html) return null;
+    return card(html.title, html.body, [...notes, footer]);
   }
 
   if (layerId.startsWith('local-space')) {

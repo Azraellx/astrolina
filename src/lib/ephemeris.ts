@@ -523,7 +523,7 @@ export function eclipticLonOfRA(ra: number, eps: number): number {
   return norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * Math.cos(eps)));
 }
 
-function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
+export function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
   return Math.asin(
     Math.sin(dec) * Math.cos(eps) - Math.cos(dec) * Math.sin(eps) * Math.sin(ra),
   );
@@ -615,6 +615,17 @@ export function geodeticAngles(
   return { asc, mc, dsc: norm2pi(asc + Math.PI), ic: norm2pi(mc + Math.PI), ramc };
 }
 
+/** What a direction moves: a body's equatorial coordinates, plus its ecliptic ones
+ *  only where they are OF RECORD (midpoint charts — see PlanetPosition.lon). The shape
+ *  both families share, so the two directions below are written once for planets and
+ *  catalog bodies alike. Never a speed: a directed body has no motion of its own. */
+export interface DirectedCoords {
+  ra: number;
+  dec: number;
+  lon?: number;
+  lat?: number;
+}
+
 // Shift a body's ECLIPTIC longitude by deltaLonRad (keeping its ecliptic
 // latitude), then convert back to RA/dec. Used for solar-arc directions, where
 // every natal body is advanced by the solar arc. NOTE: the arc must be applied
@@ -624,31 +635,59 @@ export function geodeticAngles(
 // round-trip and carried forward shifted, so a directed midpoint stays anchored
 // to its true longitude of record; direct-sample inputs stay bare, keeping
 // "carried ⇔ synthetic" true along the whole chain.
+//
+// The ONE implementation of the longitude direction: shiftEclipticLongitude (the
+// planets) and shiftMinorEclipticLongitude (catalog bodies) only re-key it, so a
+// catalog body is directed by the planets' own arithmetic, never a copy of it.
+export function shiftLonCoords(p: DirectedCoords, deltaLonRad: number, eps: number): DirectedCoords {
+  const lon = norm2pi((p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps)) + deltaLonRad);
+  const lat = p.lat ?? raDecToEclipticLat(p.ra, p.dec, eps);
+  const { ra, dec } = eclipticToRaDec(lon, lat, eps);
+  return p.lon !== undefined ? { ra, dec, lon, lat } : { ra, dec };
+}
+
+// Shift a body's RIGHT ASCENSION directly (declination unchanged) — the defining
+// operation of the "in RA" directions (solar arc / Naibod in RA) and of primary
+// directions advancing the RAMC frame. Unlike shiftLonCoords (which round-trips
+// through the ecliptic), this is a pure RA increment, which is exactly what those
+// methods call for. Intentionally returns bare {ra, dec}: an RA shift invalidates
+// any carried ecliptic coordinates of record, so downstream re-derives them from the
+// shifted ra/dec (the defining "in RA" reading). The ONE implementation, as above.
+export function shiftRaCoords(p: DirectedCoords, deltaRaRad: number): DirectedCoords {
+  return { ra: norm2pi(p.ra + deltaRaRad), dec: p.dec };
+}
+
 export function shiftEclipticLongitude(
   p: PlanetPosition,
   deltaLonRad: number,
   eps: number,
 ): PlanetPosition {
-  const lon = norm2pi((p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps)) + deltaLonRad);
-  const lat = p.lat ?? raDecToEclipticLat(p.ra, p.dec, eps);
-  const { ra, dec } = eclipticToRaDec(lon, lat, eps);
-  return p.lon !== undefined
-    ? { name: p.name, ra, dec, lon, lat }
-    : { name: p.name, ra, dec };
+  return { name: p.name, ...shiftLonCoords(p, deltaLonRad, eps) };
 }
 
-// Shift a body's RIGHT ASCENSION directly (declination unchanged) — the defining
-// operation of the "in RA" directions (solar arc / Naibod in RA) and of primary
-// directions advancing the RAMC frame. Unlike shiftEclipticLongitude (which
-// round-trips through the ecliptic), this is a pure RA increment, which is exactly
-// what those methods call for. Intentionally returns a bare {name, ra, dec}: an
-// RA shift invalidates any carried ecliptic coordinates of record, so downstream
-// re-derives them from the shifted ra/dec (the defining "in RA" reading).
 export function shiftRightAscension(
   p: PlanetPosition,
   deltaRaRad: number,
 ): PlanetPosition {
-  return { name: p.name, ra: norm2pi(p.ra + deltaRaRad), dec: p.dec };
+  return { name: p.name, ...shiftRaCoords(p, deltaRaRad) };
+}
+
+/** A catalog body as a direction takes it: its number and the coordinates above. A
+ *  MinorPosition is one; so is a midpoint sample carrying its lon/lat of record. */
+export type DirectedMinor = DirectedCoords & { n: number };
+
+/** shiftEclipticLongitude's twin for a catalog body — the same shiftLonCoords. */
+export function shiftMinorEclipticLongitude(
+  p: DirectedMinor,
+  deltaLonRad: number,
+  eps: number,
+): DirectedMinor {
+  return { n: p.n, ...shiftLonCoords(p, deltaLonRad, eps) };
+}
+
+/** shiftRightAscension's twin for a catalog body — the same shiftRaCoords. */
+export function shiftMinorRightAscension(p: DirectedMinor, deltaRaRad: number): DirectedMinor {
+  return { n: p.n, ...shiftRaCoords(p, deltaRaRad) };
 }
 
 // The Sun's instantaneous daily motion in ECLIPTIC LONGITUDE (degrees/day) straight
@@ -813,7 +852,8 @@ export interface MinorPosition {
   n: number;
   ra: number;
   dec: number;
-  /** Ecliptic longitude of record — set by the In-Zodiaco projection. */
+  /** Ecliptic longitude of record — set by the In-Zodiaco projection, and carried by a
+   *  midpoint (composite) position, whose ra/dec are means (minorLinePositionOf). */
   lon?: number;
   /** Ecliptic longitude motion, degrees/day. */
   speed?: number;
@@ -891,6 +931,36 @@ export function getMinorSamples(
  */
 export function minorPositionOf(s: MinorSample): MinorPosition {
   return { n: s.n, ra: s.ra, dec: s.dec, speed: s.speed };
+}
+
+/** Any catalog sample a line can be drawn from: a direct one (MinorSample), or an
+ *  overlay's (timeline.ts OverlayMinorSample) — directed, with no speed, or a midpoint,
+ *  whose lon/lat are OF RECORD and say so with `ofRecord`. */
+export interface MinorLineSample {
+  n: number;
+  ra: number;
+  dec: number;
+  lon: number;
+  speed?: number;
+  ofRecord?: boolean;
+}
+
+/**
+ * minorPositionOf for every kind of catalog sample — the stripping the lines of a chart
+ * that may be a composite, and of every overlay, go through.
+ *
+ * Carries `lon` ONLY when the sample says it is of record (a midpoint: its ra/dec are
+ * per-coordinate means, so the In-Zodiaco projection must read the longitude the chart
+ * is defined by, exactly as projectOntoEcliptic does for the planets' midpoints). A
+ * direct or directed sample's longitude is derived, and passing it through would move
+ * the In-Zodiaco lines (L72's check 5, minorPositionOf above). Speed rides only where
+ * the sample has one; a directed or midpoint position has none, as for the planets.
+ */
+export function minorLinePositionOf(s: MinorLineSample): MinorPosition {
+  const p: MinorPosition = { n: s.n, ra: s.ra, dec: s.dec };
+  if (s.ofRecord) p.lon = s.lon;
+  if (s.speed !== undefined) p.speed = s.speed;
+  return p;
 }
 
 /**

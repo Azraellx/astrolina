@@ -5,8 +5,16 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import type { Feature, FeatureCollection, LineString } from 'geojson';
-import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
+import {
+  PLANET_CODES,
+  PLANET_COLORS,
+  type MinorPosition,
+  type PlanetName,
+  type PlanetPosition,
+} from '../ephemeris';
+import { minorId, type MinorBodyId } from '../minorBodies/ids';
 import { LINE_TYPE_LABEL, type MeridianLng } from './lines';
+import { minorLabelName, type MinorDecor } from './minorLines';
 
 const RAD2DEG = 180 / Math.PI;
 const TWO_PI = 2 * Math.PI;
@@ -46,6 +54,47 @@ export interface ParanProps {
    *  both hold the PLANET side so the planet-visibility filter keeps working. */
   star?: string;
 }
+
+/**
+ * A paran between a CATALOG minor body (lib/minorBodies/) and one built-in body.
+ *
+ * Deliberately not a ParanProps, and carrying NO `planet`/`planetA`/`planetB` key —
+ * the minorLines.ts rule: everything written for the built-in parans reads those
+ * keys and decorates them through PlanetName-keyed tables, and a catalog body would
+ * reach those tables with an id they can't decorate. A consumer that handles one does
+ * so on purpose, on `kind`. The built-in side is `partner`; `side` says which of the
+ * two angles is the catalog body's.
+ */
+export interface MinorParanProps {
+  /** The catalog marker. A gate that tests for it fails closed on a planet paran. */
+  kind: 'minor';
+  body: MinorBodyId;
+  number: number;
+  /** Display name ('' when unknown — the label then falls back to the number). */
+  name: string;
+  /** Map sprite of the catalog body (its line's own bead). */
+  icon: string;
+  /** Which angle the catalog body holds: 'A' → angleA, 'B' → angleB. */
+  side: 'A' | 'B';
+  /** The built-in body on the other angle. */
+  partner: PlanetName;
+  angleA: 'MC' | 'IC' | 'ASC' | 'DSC';
+  angleB: 'ASC' | 'DSC';
+  latitude: number;
+  intersectionLng: number;
+  /** The pairing's shared local sidereal time, as ParanProps.theta. */
+  theta: number;
+  /** The catalog body's themed colour (its lines' own), never a PLANET_COLORS entry. */
+  color: string;
+  /** "Eros MC × Sa AS", in side order; a hypothetical point reads "Zeus (hyp)". */
+  label: string;
+  /** Overlay/promoted tag, set by timeline.tagMinor (which leaves `label` alone). */
+  tag?: string;
+}
+
+/** A catalog row, told apart from a planet (or star) row by its marker alone. */
+export const isMinorParan = (p: ParanProps | MinorParanProps): p is MinorParanProps =>
+  (p as Partial<MinorParanProps>).kind === 'minor';
 
 function normalizeDelta(rad: number): number {
   let x = rad;
@@ -223,6 +272,48 @@ export function generateParans(
   return { type: 'FeatureCollection', features };
 }
 
+// The parans between one OUTSIDE body (a fixed star, a catalog minor body) and one
+// planet — the same closed forms as the planet parans, in the three configurations:
+// the outside body culminating (MC/IC) while the planet rises or sets; the planet
+// culminating while the outside body rises or sets; both on the horizon together,
+// the outside body listed first. Pairs among outside bodies are never asked for.
+// `outsideFirst` says which body holds angle A; `theta` is unwrapped, as the
+// meridian mapping takes it. At most six per pair: two, two and two.
+interface CrossParan {
+  outsideFirst: boolean;
+  angleA: ParanProps['angleA'];
+  angleB: ParanProps['angleB'];
+  lat: number;
+  theta: number;
+}
+
+function crossParans(
+  x: { ra: number; dec: number },
+  p: { ra: number; dec: number },
+): CrossParan[] {
+  const out: CrossParan[] = [];
+  const meridian = (m: typeof x, h: typeof x, outsideFirst: boolean) => {
+    for (const aOnIc of [false, true]) {
+      const lat = paranLat(m.ra, h.ra, h.dec, aOnIc);
+      if (lat === null) continue;
+      const aRA = m.ra + (aOnIc ? Math.PI : 0);
+      out.push({
+        outsideFirst,
+        angleA: aOnIc ? 'IC' : 'MC',
+        angleB: normalizeDelta(aRA - h.ra) < 0 ? 'ASC' : 'DSC',
+        lat,
+        theta: aRA,
+      });
+    }
+  };
+  meridian(x, p, true);
+  meridian(p, x, false);
+  for (const sol of horizonParans(x, p)) {
+    out.push({ outsideFirst: true, angleA: sol.angleA, angleB: sol.angleB, lat: sol.lat, theta: sol.theta });
+  }
+  return out;
+}
+
 /**
  * Fixed-star × planet parans — the Bernadette Brady school's signature
  * technique (a star rising as a planet culminates, and every other mundane
@@ -244,73 +335,84 @@ export function generateStarParans(
   color: string,
 ): FeatureCollection<LineString, ParanProps> {
   const features: Feature<LineString, ParanProps>[] = [];
-  const push = (
-    p: PlanetName,
-    star: string,
-    angleA: ParanProps['angleA'],
-    angleB: ParanProps['angleB'],
-    label: string,
-    lat: number,
-    intersectionLng: number,
-    theta: number,
-  ) =>
-    features.push({
-      type: 'Feature',
-      properties: {
-        planetA: p,
-        angleA,
-        planetB: p,
-        angleB,
-        latitude: lat,
-        intersectionLng,
-        theta: norm2pi(theta),
-        color,
-        label,
-        star,
-      },
-      geometry: { type: 'LineString', coordinates: parallelCoords(lat) },
-    });
-
   for (const s of stars) {
     for (const p of positions) {
-      // Star culminating (MC/IC) while the planet rises or sets.
-      for (const aOnIc of [false, true]) {
-        const lat = paranLat(s.ra, p.ra, p.dec, aOnIc);
-        if (lat === null) continue;
-        const aRA = s.ra + (aOnIc ? Math.PI : 0);
-        const hB = normalizeDelta(aRA - p.ra);
-        const angleA = aOnIc ? ('IC' as const) : ('MC' as const);
-        const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
-        push(
-          p.name, s.name, angleA, angleB,
-          `★ ${s.name} ${LINE_TYPE_LABEL[angleA]} × ${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[angleB]}`,
-          lat, normLng(meridianLng(aRA)), aRA,
-        );
-      }
-      // Planet culminating while the star rises or sets.
-      for (const aOnIc of [false, true]) {
-        const lat = paranLat(p.ra, s.ra, s.dec, aOnIc);
-        if (lat === null) continue;
-        const aRA = p.ra + (aOnIc ? Math.PI : 0);
-        const hB = normalizeDelta(aRA - s.ra);
-        const angleA = aOnIc ? ('IC' as const) : ('MC' as const);
-        const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
-        push(
-          p.name, s.name, angleA, angleB,
-          `${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[angleA]} × ★ ${s.name} ${LINE_TYPE_LABEL[angleB]}`,
-          lat, normLng(meridianLng(aRA)), aRA,
-        );
-      }
-      // Both on the horizon together (the star listed first).
-      for (const sol of horizonParans(s, p)) {
-        push(
-          p.name, s.name, sol.angleA, sol.angleB,
-          `★ ${s.name} ${LINE_TYPE_LABEL[sol.angleA]} × ${PLANET_CODES[p.name]} ${LINE_TYPE_LABEL[sol.angleB]}`,
-          sol.lat, normLng(meridianLng(sol.theta)), sol.theta,
-        );
+      for (const c of crossParans(s, p)) {
+        const star = `★ ${s.name}`;
+        const planet = PLANET_CODES[p.name];
+        const [first, second] = c.outsideFirst ? [star, planet] : [planet, star];
+        features.push({
+          type: 'Feature',
+          properties: {
+            planetA: p.name,
+            angleA: c.angleA,
+            planetB: p.name,
+            angleB: c.angleB,
+            latitude: c.lat,
+            intersectionLng: normLng(meridianLng(c.theta)),
+            theta: norm2pi(c.theta),
+            color,
+            label: `${first} ${LINE_TYPE_LABEL[c.angleA]} × ${second} ${LINE_TYPE_LABEL[c.angleB]}`,
+            star: s.name,
+          },
+          geometry: { type: 'LineString', coordinates: parallelCoords(c.lat) },
+        });
       }
     }
   }
   return { type: 'FeatureCollection', features };
 }
 
+/**
+ * Catalog minor body × built-in body parans: the reader's list, each body paired
+ * with every partner, never with each other — the fixed stars' rule, for the same
+ * reason. Twenty bodies among themselves would be 190 pairs; with a partner it is
+ * at most six rows each, and the partner is what gives the row its theme.
+ *
+ * `minors` and `partners` must be the positions the two families' LINES were drawn
+ * from, and `meridianLng` their shared mapping, so each row crosses the drawn lines
+ * where it says it does (slid, projected and framed identically). `partners` is the
+ * caller's choice of built-in bodies (the visible set); it must hold no catalog body.
+ * `decor` is the catalog lines' own decoration — the row is coloured as its catalog
+ * body is drawn.
+ */
+export function generateMinorParans(
+  minors: readonly MinorPosition[],
+  partners: readonly PlanetPosition[],
+  meridianLng: MeridianLng,
+  decor: (n: number) => MinorDecor,
+): FeatureCollection<LineString, MinorParanProps> {
+  const features: Feature<LineString, MinorParanProps>[] = [];
+  for (const m of minors) {
+    const d = decor(m.n);
+    const body = minorId(m.n);
+    const own = minorLabelName(m.n, d.name);
+    for (const p of partners) {
+      for (const c of crossParans(m, p)) {
+        const planet = PLANET_CODES[p.name];
+        const [first, second] = c.outsideFirst ? [own, planet] : [planet, own];
+        features.push({
+          type: 'Feature',
+          properties: {
+            kind: 'minor',
+            body,
+            number: m.n,
+            name: d.name,
+            icon: d.icon,
+            side: c.outsideFirst ? 'A' : 'B',
+            partner: p.name,
+            angleA: c.angleA,
+            angleB: c.angleB,
+            latitude: c.lat,
+            intersectionLng: normLng(meridianLng(c.theta)),
+            theta: norm2pi(c.theta),
+            color: d.color,
+            label: `${first} ${LINE_TYPE_LABEL[c.angleA]} × ${second} ${LINE_TYPE_LABEL[c.angleB]}`,
+          },
+          geometry: { type: 'LineString', coordinates: parallelCoords(c.lat) },
+        });
+      }
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}

@@ -47,22 +47,42 @@ import {
   getMinorHorizontalCoords,
   getMinorPositions,
   getMinorSamples,
+  getPlanetPositions,
   gmstRadians,
   initEphemeris,
+  minorLinePositionOf,
   minorPositionOf,
   mountEphemerisFiles,
   obliquity,
   projectMinorOntoEcliptic,
   projectOntoEcliptic,
+  raDecToEclipticLat,
+  raDecToEclipticLon,
   sampleBody,
   sampleMinorBody,
+  toEclipticPositions,
+  type CoordSystem,
   type EclipticPosition,
+  type LineSystem,
   type MinorPosition,
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
 import { ayanamsaRad, shiftEclipticPositions, type ZodiacMode } from '../src/lib/astro/ayanamsa';
-import { SEED_BIRTHS } from '../src/lib/birthData';
+import { SEED_BIRTHS, type BirthData } from '../src/lib/birthData';
+import type { CompositeParents, StoredChart } from '../src/lib/chartLibrary';
+import { compositeEquatorial, compositeMinorSamples } from '../src/lib/astro/composite';
+import {
+  buildOverlay,
+  buildOverlayMinorLines,
+  OVERLAY_LABEL_PREFIX,
+  overlayMinorLines,
+  overlayMinorSamples,
+  type AngleProgression,
+  type OverlayKind,
+  type PrimaryRate,
+  type TransitFrame,
+} from '../src/lib/astro/timeline';
 import { buildWheelMinor } from '../src/lib/minorBodies/wheel';
 import {
   builtinClassTag,
@@ -74,8 +94,10 @@ import {
 import { minorDiamondPoints, minorHollowPoints } from '../src/lib/minorBodies/mark';
 import {
   deriveMinorRows,
+  minorChartContext,
   minorLoadRequests,
   minorReadyNumbers,
+  minorRowHasLines,
   resolveMinorSource,
   withMinorDrawGate,
 } from '../src/lib/minorBodies/status';
@@ -140,9 +162,11 @@ import {
   LINE_TYPE_LABEL,
   meridianLngFor,
   normLng,
+  type LineType,
   type MeridianLng,
 } from '../src/lib/astro/lines';
 import { buildLineCard, lineReading, minorDisplayName, minorMarkHtml, minorNameHtml } from '../src/lib/lineCard';
+import { generateMinorParans } from '../src/lib/astro/parans';
 import { minorLineColor, minorPaletteSlot, THEMES, type Theme } from '../src/lib/theme';
 import {
   ASPECT_GLYPHS,
@@ -1137,6 +1161,43 @@ if (!hasFile(5) || !hasFile(10)) {
   check('cards: every catalog line (all four angles, named and unnamed) reads cleanly', !badReading, badReading);
   check('cards: a catalog line is never read through the planet branch',
     lineReading('acg-lines', named.features[0].properties as unknown as Record<string, unknown>, t) === null);
+
+  // The catalog parans' reading and card ('minor-parans-layer' and its overlay twin): every
+  // row of a body with Saturn — named and unnamed, an asteroid and a hypothetical point, the
+  // overlay's tagged — reads cleanly, in side order, escapes the catalog name, and marks a
+  // point "(hyp)". Required non-empty: a reading check over no rows passes vacuously.
+  const saturn: PlanetPosition = { name: 'Saturn', ra: 2.2, dec: -0.15 };
+  const paransOf = (n: number, name: string) =>
+    generateMinorParans([{ n, ra: 1.1, dec: 0.3 }], [saturn], meridianLng, () => ({
+      name,
+      color: '#e98aa0',
+      icon: 'minor-coin-0',
+    })).features;
+  const paranRows = [
+    ...paransOf(433, 'Eros'),
+    ...paransOf(433, ''),
+    ...paransOf(-42, 'Zeus'),
+    ...paransOf(433, '<b>Eros</b>').map((f) => ({ ...f, properties: { ...f.properties, tag: 'Tr' } })),
+  ];
+  let badParan = '';
+  for (const f of paranRows) {
+    const props = f.properties as unknown as Record<string, unknown>;
+    for (const layer of ['minor-parans-layer', 'minor-parans-ov-layer']) {
+      const r = lineReading(layer, props, t);
+      const card = buildLineCard(layer, props, t, { km: 12, type: 'pin' }) ?? '';
+      const own = minorDisplayName(props, t);
+      const first = r?.title.split(' × ')[0] ?? '';
+      const sideOk = f.properties.side === 'A' ? first.startsWith(own) : first.startsWith('Saturn');
+      const text = `${r?.title ?? ''} ${r?.body ?? ''} ${card}`;
+      if (!r || !card || leaks(text) || !sideOk || !r.body.includes(own) || card.includes('<b>Eros'))
+        badParan ||= `${layer} ${f.properties.label}: ${text.slice(0, 140)}`;
+    }
+  }
+  check('cards: every catalog paran (named, unnamed, a point, an overlay\'s) reads cleanly, in side order, its name escaped',
+    paranRows.length >= 8 && !badParan, badParan || `${paranRows.length} rows`);
+  const zeusParan = paransOf(-42, 'Zeus')[0];
+  check('cards: a point\'s paran names it "Zeus (hyp)", never by number',
+    !!zeusParan && (lineReading('minor-parans-layer', zeusParan.properties as unknown as Record<string, unknown>, t)?.title ?? '').includes('Zeus (hyp)'));
 }
 
 // ── 6. Same frame as the planets (TWO PARTS) ──────────────────────────────────
@@ -1196,6 +1257,8 @@ if (!hasFile(5) || !hasFile(10)) {
 //                  equator, are the RA the MC line and the declination the zenith sit at.
 //   (c) IDENTITY   the lines' positions are the sample stripped, exactly, and never carry
 //                  a `lon` — projectMinorOntoEcliptic prefers one, so it would move them.
+//                  The App strips through minorLinePositionOf (a composite's midpoints DO
+//                  carry theirs, §12d); on a direct sample it must be minorPositionOf.
 //   (d) TWO PARTS  a sidereal zodiac moves a catalog body exactly as it moves a planet at
 //                  the same tropical longitude, and leaves its RA and dec alone.
 //   (e) TWO PARTS  a catalog body and a planet at one RA/dec read one azimuth and
@@ -1243,7 +1306,8 @@ if (presentBodies.length === 0) {
     const decor = decorFor('dark');
     const samples = getMinorSamples(jd, chartNumbers, true);
     const wheel = buildWheelMinor(samples, { ayan: 0, decor, t, list: listOf(chartNumbers) });
-    const positions = samples.map(minorPositionOf);
+    // The App's own stripping (App.tsx minorPositions).
+    const positions = samples.map(minorLinePositionOf);
     const byN = new Map(wheel.map((w) => [w.n, w]));
     placed += wheel.length;
     if (wheel.length !== samples.length) note('a', `${when}: ${samples.length} sampled, ${wheel.length} on the wheel`);
@@ -1291,6 +1355,9 @@ if (presentBodies.length === 0) {
     }
     if (positions.length !== plain.length || !positions.every((p, i) => sameShape(p, plain[i]))) {
       note('c', `${when}: the App's path (the full sample, stripped) differs from getMinorPositions`);
+    }
+    if (samples.some((s, i) => JSON.stringify(minorPositionOf(s)) !== JSON.stringify(positions[i]))) {
+      note('c', `${when}: minorLinePositionOf is not minorPositionOf on a direct sample`);
     }
     if ([...plain, ...positions].some((p) => Object.prototype.hasOwnProperty.call(p, 'lon'))) {
       note('c', `${when}: a line position carries a lon`);
@@ -1371,7 +1438,7 @@ if (presentBodies.length === 0) {
     !first.ag, first.ag ?? `worst ${worst.g.toExponential(2)}″, ${tol}`);
   check('7b In Mundo: the wheel\'s longitude and latitude are the RA and dec the MC line and zenith were drawn from',
     !first.b, first.b ?? `worst RA ${worst.bRa.toExponential(2)}″, dec ${worst.bDec.toExponential(2)}″, ${tol}`);
-  check('7c the lines\' positions are the sample stripped to {n, ra, dec, speed} — no lon, the App\'s path included',
+  check('7c the lines\' positions are the sample stripped to {n, ra, dec, speed} — no lon, the App\'s path (minorLinePositionOf) included',
     !first.c, first.c ?? '');
   check('7d Lahiri and Fagan/Bradley shift a catalog body exactly as a planet at its longitude, and nothing else',
     !first.d && ayanSeen > 0.25, first.d ?? `least ayanamsa ${(ayanSeen * RAD2DEG).toFixed(2)}°`);
@@ -1442,28 +1509,51 @@ if (presentBodies.length === 0) {
 // 'undrawn' for a reason that belongs to the LINES — no birth time, the Angles filter,
 // the natal lines off the map — which take a body's lines away and leave the body where
 // it is. A hold that belongs to the BODY (switched off, Advanced off, a held or missing
-// source, the family hidden, a composite, a file loading or failed, a date outside its
-// file) keeps it off both.
+// source, the family hidden, a file loading or failed, a date outside its file — on a
+// composite, either parent's date) keeps it off both.
 //
-// Composed the way App composes them — minorNumbers → minorSamples → minorRows →
-// minorRowsEff → minorRowsDrawn beside wheelIsNatal → wheelMinor — from the same
-// exported pieces, so what is under test is the agreement of the two routes, not a
-// copy of either. Two states are the rule's declared exceptions and are asserted as
-// such: no chart open (rows read 'undrawn — noChart', and there is no wheel to be on),
-// and a promoted overlay (the wheel stands in for another chart, so it carries no natal
-// catalog body while the rows read 'undrawn — natalOff').
+// Composed the way App composes them — minorNumbers → minorSamples → minorRows (through
+// minorChartContext) → minorRowsEff → minorRowsDrawn beside wheelIsNatal → wheelMinor —
+// from the same exported pieces, so what is under test is the agreement of the two
+// routes, not a copy of either. One state is the rule's declared exception and is
+// asserted as such: no chart open (rows read 'undrawn — noChart', and there is no wheel
+// to be on). A promoted overlay is not an exception since 2026-10-05: it stands in for
+// the chart catalog bodies and all, so its rows and the wheel both read ITS set, and
+// agree by the same rule (checked at an instant where that set differs from the chart's).
+//
+// A composite is no longer a hold (2026-10-05): its catalog bodies are the parents'
+// midpoints (compositeMinorSamples), sampled as App samples them.
 //
 // Then the files' span edges: every wanted, loaded body missing from the wheel has a
 // row that says why — 'noData' — and no body on the wheel has one.
+
+// Composite parents for §8, §9f and §12. COMPOSITE: both inside every short file (about
+// 1500–2100) and the main-asteroid file (1800–2399). COMPOSITE_1750: one parent before
+// the main-asteroid file and inside the short files, so Pholus and Ceres drop out and the
+// short-file bodies stay. COMPOSITE_1450: one parent before every file.
+const parentAt = (name: string, year: number, month: number, day: number, hour: number, lat: number, lng: number): BirthData => ({
+  name, year, month, day, hour, minute: 0, tzOffset: 0, birthplace: { label: name, lat, lng },
+});
+const COMPOSITE: CompositeParents = {
+  a: parentAt('verify A', 1984, 3, 10, 12, 40.7128, -74.006),
+  b: parentAt('verify B', 1991, 8, 20, 6, 48.8566, 2.3522),
+};
+const COMPOSITE_1750: CompositeParents = { a: parentAt('verify 1750', 1750, 5, 1, 9, 51.5074, -0.1278), b: COMPOSITE.b };
+const COMPOSITE_1450: CompositeParents = { a: parentAt('verify 1450', 1450, 5, 1, 9, 51.5074, -0.1278), b: COMPOSITE.b };
+
 interface PipelineState {
   jd: number;
   advanced: boolean;
   none: boolean;
-  composite: boolean;
+  /** A composite chart's parents, or null for a chart cast for its own moment. */
+  composite: CompositeParents | null;
   noTime: boolean;
   anglesOff: boolean;
   eclipseSolo: boolean;
   hideNatal: boolean;
+  /** A transits overlay at this instant, or none. */
+  overlayJd?: number | null;
+  /** That overlay stands in for the chart (Natal off). */
   promoted: boolean;
   shown: boolean;
 }
@@ -1473,20 +1563,34 @@ function rowsAndWheel(
   s: PipelineState,
 ) {
   const p = { ...pref, shown: s.shown };
-  const minorNumbers = !s.none && !s.composite ? minorReadyNumbers(p, s.advanced, loadState) : [];
-  const samples = minorNumbers.length ? getMinorSamples(s.jd, minorNumbers, true) : [];
-  const rows = deriveMinorRows(p, loadState, {
+  const minorNumbers = !s.none ? minorReadyNumbers(p, s.advanced, loadState) : [];
+  const samples = minorNumbers.length === 0
+    ? []
+    : s.composite
+      ? compositeMinorSamples(s.composite, minorNumbers)
+      : getMinorSamples(s.jd, minorNumbers, true);
+  // App's composition: the overlay's set by its rule, then the rows' context folded by
+  // minorChartContext — the one App calls — and the natal gates after it.
+  const overlayJd = s.overlayJd ?? null;
+  const ovSamples = overlayJd !== null && minorNumbers.length
+    ? overlayMinorSamples({ by: 'sample', jd: overlayJd }, minorNumbers, null)
+    : [];
+  const promoted = s.promoted && overlayJd !== null;
+  const rows = deriveMinorRows(p, loadState, minorChartContext({
     advanced: s.advanced,
     none: s.none,
-    composite: s.composite,
-    sampled: new Set(samples.map(minorPositionOf).map((x) => x.n)),
-    undrawn: s.noTime ? 'noTime' : s.anglesOff ? 'angles' : null,
-  });
-  const rowsEff = withMinorDrawGate(rows, s.eclipseSolo || s.promoted ? 'natalOff' : null);
-  const rowsDrawn = withMinorDrawGate(rowsEff, s.hideNatal && s.advanced && !s.promoted ? 'natalOff' : null);
-  const wheelIsNatal = !s.promoted;
-  const wheel = wheelIsNatal && samples.length
-    ? buildWheelMinor(samples, { ayan: 0, decor: decorFor('dark'), t, list: p.list })
+    chartSampled: new Set(samples.map(minorLinePositionOf).map((x) => x.n)),
+    overlay: overlayJd !== null ? { sampled: new Set(ovSamples.map((x) => x.n)), mode: 'transits' } : null,
+    promoted,
+    overlayOnMap: overlayJd !== null,
+    noTime: s.noTime,
+    anglesOff: s.anglesOff,
+  }));
+  const rowsEff = withMinorDrawGate(rows, s.eclipseSolo ? 'natalOff' : null);
+  const rowsDrawn = withMinorDrawGate(rowsEff, s.hideNatal && s.advanced && !promoted ? 'natalOff' : null);
+  const wheelSet = promoted ? ovSamples : samples;
+  const wheel = wheelSet.length
+    ? buildWheelMinor(wheelSet, { ayan: 0, decor: decorFor('dark'), t, list: p.list })
     : [];
   return { rows: rowsDrawn, wheel };
 }
@@ -1524,7 +1628,7 @@ if (presentBodies.length < 9) {
         ? { status: 'failed', reason: 'missing' }
         : undefined;
   const base: PipelineState = {
-    jd: J(2012, 1, 31), advanced: true, none: false, composite: false, noTime: false,
+    jd: J(2012, 1, 31), advanced: true, none: false, composite: null, noTime: false,
     anglesOff: false, eclipseSolo: false, hideNatal: false, promoted: false, shown: true,
   };
   const STATES: Array<[string, Partial<PipelineState>]> = [
@@ -1533,7 +1637,8 @@ if (presentBodies.length < 9) {
     ['the Angles filter shows none of the four', { anglesOff: true }],
     ['natal lines off: the eclipse clean-up', { eclipseSolo: true }],
     ['natal lines off: hidden', { hideNatal: true }],
-    ['a composite chart', { composite: true }],
+    ['a composite chart', { composite: COMPOSITE }],
+    ['a composite with a parent before every file (1450)', { composite: COMPOSITE_1450 }],
     ['Advanced off', { advanced: false }],
     ['the family hidden', { shown: false }],
     ['outside every file (1499)', { jd: J(1499, 6, 1) }],
@@ -1559,12 +1664,44 @@ if (presentBodies.length < 9) {
     }
   }
   {
-    const { rows, wheel } = rowsAndWheel(pref, loadState, { ...base, promoted: true });
+    // Not vacuous either way: a composite both parents' dates reach has every ready body
+    // shown and on the wheel — placed, with no speed, no ℞ and no station, since a
+    // midpoint has no motion — and one a parent's date is outside has none, each saying so.
+    const both = rowsAndWheel(pref, loadState, { ...base, composite: COMPOSITE });
+    const kb = kinds(both.rows);
+    check('8 a composite chart: every ready body reads shown and is on the wheel, with no speed, ℞ or station',
+      setOf(both.wheel.map((w) => w.n)) === setOf(ready) && ready.every((n) => kb.get(n) === 'shown') &&
+        both.wheel.every((w) => w.speed === undefined && w.retrograde === undefined && w.stationary === false),
+      `wheel [${setOf(both.wheel.map((w) => w.n))}], rows ${[...new Set(kb.values())].sort().join('/')}`);
+    const early = rowsAndWheel(pref, loadState, { ...base, composite: COMPOSITE_1450 });
+    const ke = kinds(early.rows);
+    check('8 a composite with a parent in 1450: every ready body reads noData, and none is on the wheel',
+      early.wheel.length === 0 && ready.every((n) => ke.get(n) === 'noData'),
+      `wheel ${early.wheel.length}, rows ${[...new Set(ke.values())].sort().join('/')}`);
+  }
+  {
+    // A promoted overlay stands in for the chart, its catalog set included: the wheel and
+    // the rows follow ITS instant. At 2300 (a transits overlay on a 2012 chart) every
+    // short file is out and Pholus's file still in — so the chart's own set, all shown at
+    // 2012, is not what either reads.
+    const FAR = J(2300, 1, 1);
+    const { rows, wheel } = rowsAndWheel(pref, loadState, { ...base, overlayJd: FAR, promoted: true });
     const k = kinds(rows);
-    check('8 promoted overlay (declared exception): no natal catalog body on the wheel, and no row reads shown',
-      wheel.length === 0 && ![...k.values()].includes('shown') &&
-        ready.every((n) => rows.find((r) => r.entry.n === n)?.status.kind === 'undrawn'),
-      `wheel ${wheel.length}, rows ${[...new Set(k.values())].sort().join('/')}`);
+    const shown = ready.filter((n) => k.get(n) === 'shown');
+    check('8 promoted overlay at 2300: the wheel and the rows read the overlay\'s instant — Pholus shown and on the wheel, the short-file bodies noData and off it',
+      setOf(wheel.map((w) => w.n)) === setOf([5145]) && setOf(shown) === setOf([5145]) &&
+        ready.filter((n) => n !== 5145).every((n) => k.get(n) === 'noData') &&
+        rows.every((r) => !('overlay' in r)),
+      `wheel [${setOf(wheel.map((w) => w.n))}], shown [${setOf(shown)}], rows ${[...new Set(k.values())].sort().join('/')}`);
+    // And beside the chart instead: the chart's set on the wheel, every row shown by the
+    // chart, and the overlay's side saying which the overlay's date reaches.
+    const beside = rowsAndWheel(pref, loadState, { ...base, overlayJd: FAR, promoted: false });
+    const bk = kinds(beside.rows);
+    const side = new Map(beside.rows.map((r) => [r.entry.n, r.overlay?.kind ?? '-']));
+    check('8 the same overlay beside the chart: the chart\'s set on the wheel and shown, the overlay side shown for Pholus and noData for the rest',
+      setOf(beside.wheel.map((w) => w.n)) === setOf(ready) && ready.every((n) => bk.get(n) === 'shown') &&
+        side.get(5145) === 'shown' && ready.filter((n) => n !== 5145).every((n) => side.get(n) === 'noData'),
+      `wheel [${setOf(beside.wheel.map((w) => w.n))}], overlay side ${[...side].map(([n, v]) => `${n}:${v}`).join(' ')}`);
   }
   {
     const { rows, wheel } = rowsAndWheel(pref, loadState, { ...base, none: true });
@@ -1626,7 +1763,7 @@ if (presentBodies.length === 0) {
   const pref: MinorBodiesPref = { shown: true, list: all.map(entry), visible: [...all] };
   const ready = (n: number): MinorLoadState => ({ status: 'ready', name: bundledMinorBody(n)?.name ?? null });
   const { rows, wheel } = rowsAndWheel(pref, ready, {
-    jd: FAR, advanced: true, none: false, composite: false, noTime: false,
+    jd: FAR, advanced: true, none: false, composite: null, noTime: false,
     anglesOff: false, eclipseSolo: false, hideNatal: false, promoted: false, shown: true,
   });
   const kind = (n: number) => rows.find((r) => r.entry.n === n)?.status.kind;
@@ -1810,7 +1947,7 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
     check('9a a stored list keeps its points — a newer build\'s (−49) included — and drops a non-key (−39)',
       pref.list.map((e) => e.n).join() === '433,-42,-49' && pref.visible.join() === '-42,-49,433',
       `list [${pref.list.map((e) => e.n)}], visible [${pref.visible}]`);
-    const rows = deriveMinorRows(pref, () => undefined, { advanced: true, none: false, composite: false, sampled: new Set() });
+    const rows = deriveMinorRows(pref, () => undefined, { advanced: true, none: false, sampled: new Set() });
     const kind = (n: number) => rows.find((r) => r.entry.n === n)?.status.kind;
     const requested = minorLoadRequests(pref, true);
     check('9a a point this build doesn\'t know (−49) derives "unavailable" and is never requested; a known one is requested from the bundled source',
@@ -2128,7 +2265,7 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
   };
   const ready = (): MinorLoadState => ({ status: 'ready', name: null });
   const base: PipelineState = {
-    jd: J(2012, 1, 31), advanced: true, none: false, composite: false, noTime: false,
+    jd: J(2012, 1, 31), advanced: true, none: false, composite: null, noTime: false,
     anglesOff: false, eclipseSolo: false, hideNatal: false, promoted: false, shown: true,
   };
   const kinds = (rows: readonly { entry: { n: number }; status: { kind: string } }[]) =>
@@ -2143,13 +2280,19 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
         setOf(wheel.map((x) => x.n)) === setOf(HYP_KEYS) && wheel.every((x) => x.label === `${hypotheticalPoint(x.n)?.name} (hyp)`),
       `${[...new Set(k)].join('/')}; wheel ${wheel.length}`);
   }
-  for (const [label, over, want] of [
-    ['Advanced off', { advanced: false }, 'advanced'],
-    ['a composite chart', { composite: true }, 'composite'],
-  ] as Array<[string, Partial<PipelineState>, string]>) {
-    const { rows, wheel } = rowsAndWheel(pref, ready, { ...base, ...over });
+  {
+    const { rows, wheel } = rowsAndWheel(pref, ready, { ...base, advanced: false });
     const k = kinds(rows);
-    check(`9f ${label}: every point reads ${want}, and none is on the wheel`, all(k, want) && wheel.length === 0,
+    check('9f Advanced off: every point reads advanced, and none is on the wheel', all(k, 'advanced') && wheel.length === 0,
+      `${[...new Set(k)].join('/')}; wheel ${wheel.length}`);
+  }
+  // A composite: the points are midpointed like any catalog body — and with the planets'
+  // span, a parent in 1450 (before every asteroid file) still has them.
+  for (const [label, parents] of [['a composite chart', COMPOSITE], ['a composite with a parent in 1450', COMPOSITE_1450]] as Array<[string, CompositeParents]>) {
+    const { rows, wheel } = rowsAndWheel(pref, ready, { ...base, composite: parents });
+    const k = kinds(rows);
+    check(`9f ${label}: every point reads shown and is on the wheel as its midpoint, with no speed`,
+      all(k, 'shown') && setOf(wheel.map((x) => x.n)) === setOf(HYP_KEYS) && wheel.every((x) => x.speed === undefined),
       `${[...new Set(k)].join('/')}; wheel ${wheel.length}`);
   }
   {
@@ -2566,6 +2709,509 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
   check('11c … and so are the tip\'s two marks as minorMarkHtml writes them: U+25C7 for a point, U+25C6 for a plain body',
     marks[0].join() === String(0x25c7) && marks[1].join() === String(0x25c6) && marks.flat().every(has),
     marks.map((m) => m.map(U).join(' ')).join(' / '));
+}
+
+// ── 12. Beside an overlay, and on a composite (TWO PARTS, then IDENTITY) ──────
+// The reader's list placed by an overlay's own rule (timeline.ts overlayMinorSamples,
+// overlayMinorLines, buildOverlayMinorLines) and as a composite's midpoints (composite.ts
+// compositeMinorSamples): the planets' pipeline, followed by a second family of bodies.
+//   12a TWO PARTS  MPC 1 through the catalog path against Ceres through the planets' —
+//                  the engine answers body 10001 with Ceres itself, bit for bit (checked
+//                  first) — for every overlay mode and method, In Mundo, In Zodiaco and on
+//                  a geodetic map: the sample against the layer's Ceres (ra, dec, speed),
+//                  the line position against the overlay's (ra, dec, lon of record), and
+//                  the drawn MC/IC/ASC/DSC and zenith against generateLines and
+//                  generateZenithStamps in the layer's own frame, built as App's overlay
+//                  memo builds it (meridianLngFor at obliquity(layer.jd), layer.gmst).
+//                  Exact: one engine, one arithmetic. With IDENTITY pins on the features:
+//                  the overlay's tag, and the body's own label (tagMinor, never tagLabels,
+//                  whose label-for-tag swap would give every catalog line one hover id).
+//   12b TWO PARTS  against the engine: an overlay's catalog MC is the engine's RA at the
+//                  layer's body instant less the ARMC at its frame instant, the zenith at
+//                  the engine's declination, ASC/DSC on the horizon (§3d's pattern).
+//   12c TWO PARTS  a directed catalog body moves by the directed Sun's own Δλ (in
+//                  longitude) or ΔRA (in RA), read off the planets' layer, and keeps its
+//                  ecliptic latitude or its declination; no directed body has a speed.
+//   12d TWO PARTS  compositeMinorSamples([1]) is compositeEquatorial's Ceres row in all
+//                  four coordinates; a body one parent's date is outside drops out of both.
+//   12e IDENTITY   the rows' overlay side, on fixtures (status.ts): present only while an
+//                  overlay's lines are passed, only on the statuses that leave it open,
+//                  kept through the natal draw gate, counted by minorRowHasLines — and
+//                  when App passes them, through minorChartContext, the one fold App calls:
+//                  not when promoted (the overlay's set is then the chart's), not with the
+//                  overlay's lines off the map (eclipse map lines), not under the Angles
+//                  filter; no birth time gates nothing a promoted overlay draws.
+//   12f TWO PARTS  the overlay's wheel set (buildWheelMinor over its own samples) against
+//                  its planets' ring (toEclipticPositions, as App's displayOverlayEcliptic):
+//                  MPC 1 on Ceres's degree under every overlay and zodiac, shifted by the
+//                  overlay's own ayanamsa, with a speed exactly when the planet has one.
+//   12g MEASURED   the catalog set's share of a playback tick (sample + geometry), at the
+//                  20-body cap and with the ten hypothetical points — the figures App's
+//                  decision not to defer the catalog set during playback rests on.
+// Every check counts what it compared and fails on none.
+{
+  const FOUR: readonly LineType[] = ['MC', 'IC', 'ASC', 'DSC'];
+  const ALL_FOUR = new Set<LineType>(FOUR);
+  const chartAt = (name: string, year: number, month: number, day: number, hour: number, minute: number, lat: number, lng: number): StoredChart => ({
+    id: `verify-${name}`, createdAt: 0, name, year, month, day, hour, minute, tzOffset: 0, birthplace: { label: name, lat, lng },
+  });
+  const NATAL = chartAt('natal', 1975, 4, 12, 14, 20, 40.7128, -74.006);
+  const PARTNER = chartAt('partner', 1978, 11, 3, 6, 45, 48.8566, 2.3522);
+  // A composite partner's own moment is solved from its parents (solveCompositeFrameJd);
+  // the stored fields are never read for its bodies.
+  const COMPOSITE_PARTNER: StoredChart = { ...chartAt('composite partner', 1988, 1, 1, 12, 0, 44.6, -36), composite: COMPOSITE };
+  const TARGET = Date.UTC(2026, 9, 5, 12, 0);
+  const natalJd = birthDataToJD(NATAL);
+  interface OverlayCase { label: string; mode: OverlayKind; partner?: StoredChart; ap?: AngleProgression; rate?: PrimaryRate; tf?: TransitFrame }
+  const CASES: OverlayCase[] = [
+    { label: 'transits, natal frame', mode: 'transits' },
+    { label: 'transits, the moment\'s frame', mode: 'transits', tf: 'transit-moment' },
+    { label: 'eclipses', mode: 'eclipses' },
+    { label: 'secondary progressed, natal angles', mode: 'progressed' },
+    { label: 'secondary progressed, SA in longitude', mode: 'progressed', ap: 'sa-long' },
+    { label: 'tertiary progressed, Naibod in RA', mode: 'tertiary-progressed', ap: 'naibod-ra' },
+    { label: 'solar arc in longitude', mode: 'solar-arc', ap: 'sa-long' },
+    { label: 'solar arc in RA', mode: 'solar-arc', ap: 'sa-ra' },
+    { label: 'Naibod in longitude', mode: 'solar-arc', ap: 'naibod-long' },
+    { label: 'Naibod in RA', mode: 'solar-arc', ap: 'naibod-ra' },
+    { label: 'primary directions, Ptolemy', mode: 'primary-directions' },
+    { label: 'primary directions, true arc in RA', mode: 'primary-directions', rate: 'placidus-ra' },
+    { label: 'Cyclo', mode: 'cyclo' },
+    { label: 'synastry', mode: 'synastry', partner: PARTNER },
+    { label: 'synastry, a composite partner', mode: 'synastry', partner: COMPOSITE_PARTNER },
+  ];
+  const FRAMES: Array<[string, LineSystem, CoordSystem]> = [
+    ['In Mundo', 'celestial', 'mundo'],
+    ['In Zodiaco', 'celestial', 'zodiaco'],
+    ['geodetic', 'geodetic', 'mundo'],
+  ];
+  const layerOf = (c: OverlayCase) =>
+    buildOverlay(NATAL, c.mode, TARGET, c.partner ?? null, 'mean', c.ap ?? 'mean-quotidian', c.rate ?? 'ptolemy', 1,
+      c.tf ?? 'relative-to-natal', 'secondary', t);
+  const natalOf = (ns: readonly number[]) => ({ jd: natalJd, samples: getMinorSamples(natalJd, ns, true) });
+  const decor = decorFor('dark');
+  const mundo = { lineSystem: 'celestial' as const, coordSystem: 'mundo' as const, visibleLineTypes: ALL_FOUR, zenith: true, decor };
+  const wrapPi = (a: number) => {
+    let x = a % (2 * Math.PI);
+    if (x > Math.PI) x -= 2 * Math.PI;
+    if (x <= -Math.PI) x += 2 * Math.PI;
+    return x;
+  };
+  const engineId = (n: number) => SEAS_MINOR_ID.get(n) ?? MINOR_ID_OFFSET + n;
+
+  // 12a — the premise: wherever a layer reads its bodies, MPC 1 is Ceres to the last bit.
+  const layers = CASES.map((c) => [c, layerOf(c)] as const);
+  const premiseJds = new Set<number>([natalJd, birthDataToJD(COMPOSITE.a), birthDataToJD(COMPOSITE.b)]);
+  for (const [, layer] of layers) if (layer?.bodyRule.by === 'sample') premiseJds.add(layer.bodyRule.jd);
+  const premiseOff = [...premiseJds].filter((jd) => {
+    const m = sampleMinorBody(jd, 1);
+    const c = sampleBody(jd, 'Ceres', 'mean');
+    return !m || !c || m.ra !== c.ra || m.dec !== c.dec || m.lon !== c.lon || m.lat !== c.lat || m.speed !== c.speed;
+  });
+  check(`12a premise: the engine's body 10001 is Ceres, bit for bit, at all ${premiseJds.size} instants the layers read`,
+    premiseJds.size > 0 && premiseOff.length === 0, premiseOff.map((jd) => `JD ${jd}`).join(', '));
+
+  {
+    let compared = 0;
+    let pinned = 0;
+    let firstBad = '';
+    let firstPin = '';
+    for (const [c, layer] of layers) {
+      if (!layer) {
+        firstBad ||= `${c.label}: no layer`;
+        continue;
+      }
+      const natal = natalOf([1]);
+      const ceresLayer = layer.positions.find((p) => p.name === 'Ceres');
+      const tag = c.mode === 'cyclo' ? 'Tr' : OVERLAY_LABEL_PREFIX[c.mode];
+      for (const [fname, lineSystem, coordSystem] of FRAMES) {
+        const where = `${c.label}, ${fname}`;
+        const got = buildOverlayMinorLines(layer, [1], natal, { lineSystem, coordSystem, visibleLineTypes: ALL_FOUR, zenith: true, decor });
+        // The planets' path, exactly as App's overlay memo runs it.
+        const ovPositions = lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+          ? projectOntoEcliptic(layer.positions, layer.jd)
+          : layer.positions;
+        const ovMeridianLng = meridianLngFor(lineSystem, obliquity(layer.jd), layer.gmst);
+        const ceresLine = ovPositions.find((p) => p.name === 'Ceres');
+        const pLines = generateLines(ovPositions, ovMeridianLng).features
+          .filter((f) => f.properties.planet === 'Ceres' && ALL_FOUR.has(f.properties.lineType));
+        const pZen = generateZenithStamps(ovPositions, ovMeridianLng).features.filter((f) => f.properties.planet === 'Ceres');
+        const s = got.samples.find((x) => x.n === 1);
+        const pos = got.positions.find((x) => x.n === 1);
+        const mLines = got.lines.features.filter((f) => f.properties.number === 1);
+        const mZen = got.zenith.features.filter((f) => f.properties.number === 1);
+        if (!s || !ceresLayer || !pos || !ceresLine) {
+          firstBad ||= `${where}: catalog sample ${!!s}, layer's Ceres ${!!ceresLayer}, line positions ${!!pos}/${!!ceresLine}`;
+          continue;
+        }
+        const coords = (fs: Array<{ geometry: { coordinates: unknown } }>) => fs.map((f) => JSON.stringify(f.geometry.coordinates)).join('|');
+        const why = [
+          s.ra !== ceresLayer.ra || s.dec !== ceresLayer.dec ? 'sample ra/dec' : '',
+          s.speed !== ceresLayer.speed ? `speed ${s.speed} vs ${ceresLayer.speed}` : '',
+          pos.ra !== ceresLine.ra || pos.dec !== ceresLine.dec || pos.lon !== ceresLine.lon
+            ? `line position (lon ${pos.lon} vs ${ceresLine.lon})` : '',
+          mLines.length === 0 || mLines.length !== pLines.length ||
+            mLines.some((f, i) => f.properties.lineType !== pLines[i].properties.lineType)
+            ? `lines ${mLines.map((f) => f.properties.lineType).join('/')} vs ${pLines.map((f) => f.properties.lineType).join('/')}` : '',
+          coords(mLines) !== coords(pLines) ? 'line geometry' : '',
+          mZen.length !== 1 || pZen.length !== 1 || coords(mZen) !== coords(pZen) ? 'zenith' : '',
+        ].filter(Boolean);
+        if (why.length) firstBad ||= `${where}: ${why.join(', ')}`;
+        else compared += 1;
+        for (const f of [...mLines, ...mZen]) {
+          const lt = 'lineType' in f.properties ? f.properties.lineType : null;
+          const label = 'label' in f.properties ? f.properties.label : null;
+          const ownLabel = lt ? `${minorLabelName(1, decor(1).name)} ${LINE_TYPE_LABEL[lt]}` : null;
+          if (f.properties.tag !== tag || label !== ownLabel) {
+            firstPin ||= `${where}: tag ${f.properties.tag} (want ${tag}), label "${label}" (want "${ownLabel}")`;
+          } else pinned += 1;
+        }
+      }
+    }
+    const want = CASES.length * FRAMES.length;
+    check(`12a MPC 1 through the catalog path = Ceres through the planets': ${CASES.length} overlay modes and methods × ${FRAMES.length} frames — sample, line position, MC/IC/ASC/DSC and zenith identical`,
+      !firstBad && compared === want, firstBad || `${compared} of ${want}`);
+    check('12a the catalog features carry the overlay\'s tag (Cyclo: the transits\' Tr) and keep the body\'s own label',
+      !firstPin && pinned >= want * 5, firstPin || `${pinned} features`);
+  }
+
+  // 12b — against the engine, at the frame instants the overlays name. Only the layers
+  // whose gmst IS some instant's sidereal time (an advanced RAMC is no instant's): the
+  // frame instant is checked to be that before anything is read off it.
+  {
+    const ns = [1, 5145, ...(pairPresent ? [A, B] : [])];
+    const FRAME_AT: Array<[string, (jd: number) => number]> = [
+      ['transits, natal frame', () => natalJd],
+      ['transits, the moment\'s frame', (jd) => jd],
+      ['eclipses', (jd) => jd],
+      ['secondary progressed, natal angles', () => natalJd],
+      ['Cyclo', () => natalJd],
+      ['synastry', (jd) => jd],
+    ];
+    let compared = 0;
+    let firstBad = '';
+    const worst = { mc: 0, zen: 0, alt: 0 };
+    for (const [label, frameAt] of FRAME_AT) {
+      const layer = layers.find(([c]) => c.label === label)?.[1];
+      if (!layer || layer.bodyRule.by !== 'sample') {
+        firstBad ||= `${label}: no sampled layer`;
+        continue;
+      }
+      const bodyJd = layer.bodyRule.jd;
+      const frameJd = frameAt(layer.jd);
+      if (gmstRadians(frameJd) !== layer.gmst) {
+        firstBad ||= `${label}: the layer's gmst is not the sidereal time of JD ${frameJd}`;
+        continue;
+      }
+      const armc = node.calculateHouses(frameJd, 0, 0, node.HouseSystem.WholeSign).armc as number;
+      const got = buildOverlayMinorLines(layer, ns, null, mundo);
+      for (const n of ns) {
+        const eng = node.calculatePosition(bodyJd, engineId(n), FLAG_EQ);
+        const mc = got.lines.features.find((f) => f.properties.number === n && f.properties.lineType === 'MC');
+        const ic = got.lines.features.find((f) => f.properties.number === n && f.properties.lineType === 'IC');
+        const z = got.zenith.features.find((f) => f.properties.number === n);
+        if (!mc || !ic || !z) {
+          firstBad ||= `${label} ${n}: MC ${!!mc}, IC ${!!ic}, zenith ${!!z}`;
+          continue;
+        }
+        const mcLng = mc.geometry.coordinates[0][0];
+        const [zLng, zLat] = z.geometry.coordinates;
+        const dMc = Math.abs(normLng(mcLng - normLng(eng.longitude - armc)));
+        const dIc = Math.abs(normLng(ic.geometry.coordinates[0][0] - (mcLng + 180)));
+        const dZen = Math.max(Math.abs(zLat - eng.latitude), Math.abs(normLng(zLng - mcLng)));
+        const raE = eng.longitude * DEG2RAD;
+        const decE = eng.latitude * DEG2RAD;
+        let alt = 0;
+        for (const f of got.lines.features) {
+          if (f.properties.number !== n || (f.properties.lineType !== 'ASC' && f.properties.lineType !== 'DSC')) continue;
+          for (const [lng, lat] of f.geometry.coordinates) {
+            const theta = (armc + lng) * DEG2RAD;
+            const phi = lat * DEG2RAD;
+            const dot =
+              Math.cos(phi) * Math.cos(theta) * Math.cos(decE) * Math.cos(raE) +
+              Math.cos(phi) * Math.sin(theta) * Math.cos(decE) * Math.sin(raE) +
+              Math.sin(phi) * Math.sin(decE);
+            alt = Math.max(alt, Math.abs(Math.asin(Math.max(-1, Math.min(1, dot)))));
+          }
+        }
+        worst.mc = Math.max(worst.mc, dMc, dIc);
+        worst.zen = Math.max(worst.zen, dZen);
+        worst.alt = Math.max(worst.alt, alt);
+        if (!(dMc < 1e-9 && dIc < 1e-9 && dZen < 1e-9 && alt < 1e-9)) {
+          firstBad ||= `${label} ${n}: MC ${dMc.toExponential(2)}°, IC ${dIc.toExponential(2)}°, zenith ${dZen.toExponential(2)}°, |alt| ${alt.toExponential(2)} rad`;
+        } else compared += 1;
+      }
+    }
+    const want = FRAME_AT.length * ns.length;
+    check(`12b ${FRAME_AT.length} overlays × ${ns.length} bodies (${ns.join(', ')}): the MC is the engine's RA at the body instant less the ARMC at the frame instant, the IC its antipode, the zenith on it at the engine's declination, ASC/DSC on the horizon`,
+      !firstBad && compared === want,
+      firstBad || `${compared} of ${want}; worst MC ${worst.mc.toExponential(2)}°, zenith ${worst.zen.toExponential(2)}°, |alt| ${worst.alt.toExponential(2)} rad`);
+  }
+
+  // 12c — the directed bodies against the directed Sun.
+  {
+    const ns = [5145, ...presentBodies.slice(0, 4).map((b) => b.n)];
+    const natal = natalOf(ns);
+    const eps = obliquity(natalJd);
+    const sunNatal = getPlanetPositions(natalJd, 'mean').find((p) => p.name === 'Sun');
+    const DIRECTED = CASES.filter((c) => c.mode === 'solar-arc' || c.mode === 'primary-directions');
+    let compared = 0;
+    let firstBad = '';
+    let worst = 0;
+    for (const c of DIRECTED) {
+      const layer = layers.find(([x]) => x === c)?.[1];
+      const sunDir = layer?.positions.find((p) => p.name === 'Sun');
+      const rule = layer?.bodyRule;
+      if (!layer || !sunDir || !sunNatal || !rule || (rule.by !== 'shift-long' && rule.by !== 'shift-ra')) {
+        firstBad ||= `${c.label}: no directed layer (rule ${rule?.by})`;
+        continue;
+      }
+      const inLon = rule.by === 'shift-long';
+      const dSun = inLon
+        ? wrapPi(raDecToEclipticLon(sunDir.ra, sunDir.dec, eps) - raDecToEclipticLon(sunNatal.ra, sunNatal.dec, eps))
+        : wrapPi(sunDir.ra - sunNatal.ra);
+      const dir = overlayMinorSamples(rule, ns, natal);
+      // The fallback: no natal samples in hand, the same answer from a fresh sample.
+      const fresh = overlayMinorSamples(rule, ns, null);
+      if (JSON.stringify(fresh) !== JSON.stringify(dir)) firstBad ||= `${c.label}: resampled at the base instant ≠ the natal samples directed`;
+      if (Math.abs(dSun) < 1e-3) firstBad ||= `${c.label}: the Sun moved only ${dSun} rad — nothing was directed`;
+      if (dir.length !== natal.samples.length) firstBad ||= `${c.label}: ${dir.length} directed of ${natal.samples.length}`;
+      for (const d of dir) {
+        const s = natal.samples.find((x) => x.n === d.n)!;
+        const dBody = inLon
+          ? wrapPi(raDecToEclipticLon(d.ra, d.dec, eps) - raDecToEclipticLon(s.ra, s.dec, eps))
+          : wrapPi(d.ra - s.ra);
+        const kept = inLon
+          ? Math.abs(raDecToEclipticLat(d.ra, d.dec, eps) - raDecToEclipticLat(s.ra, s.dec, eps))
+          : Math.abs(d.dec - s.dec);
+        worst = Math.max(worst, Math.abs(dBody - dSun), kept);
+        if (!(Math.abs(dBody - dSun) < 1e-11 && kept < 1e-11 && d.speed === undefined && !('speed' in d) && d.ofRecord === false)) {
+          firstBad ||= `${c.label} ${d.n}: Δ ${dBody} vs the Sun's ${dSun}, ${inLon ? 'latitude' : 'declination'} moved ${kept}, speed ${d.speed}, ofRecord ${d.ofRecord}`;
+        } else compared += 1;
+      }
+    }
+    const want = DIRECTED.length * ns.length;
+    check(`12c ${DIRECTED.length} directed overlays × ${ns.length} bodies: each moves by the directed Sun's own Δλ (in longitude) or ΔRA (in RA, primaries' −arc included), keeps its latitude or declination, and has no speed`,
+      !firstBad && compared === want && DIRECTED.length === 6, firstBad || `${compared} of ${want}; worst ${worst.toExponential(2)} rad`);
+  }
+
+  // 12d — a composite's catalog bodies against its planets.
+  {
+    const [cm] = compositeMinorSamples(COMPOSITE, [1]);
+    const ce = compositeEquatorial(COMPOSITE, 'mean').find((p) => p.name === 'Ceres');
+    check('12d compositeMinorSamples([1]) is compositeEquatorial\'s Ceres in all four coordinates — of record, and with no speed',
+      !!cm && !!ce && cm.ra === ce.ra && cm.dec === ce.dec && cm.lon === ce.lon && cm.lat === ce.lat &&
+        cm.ofRecord === true && !('speed' in cm),
+      cm && ce ? `RA ${cm.ra} / ${ce.ra}, lon ${cm.lon} / ${ce.lon}` : `catalog ${!!cm}, planets' Ceres ${!!ce}`);
+    // The line position carries the longitude of record, so In Zodiaco reads the midpoint.
+    const pos = cm ? minorLinePositionOf(cm) : null;
+    const zodC = pos ? projectMinorOntoEcliptic([pos], natalJd)[0] : null;
+    const zodP = ce ? projectOntoEcliptic([ce], natalJd)[0] : null;
+    check('12d … and its line position carries that longitude, so In Zodiaco projects it exactly as the planets\' midpoint',
+      !!pos && pos.lon === cm?.lon && !!zodC && !!zodP && zodC.ra === zodP.ra && zodC.dec === zodP.dec);
+
+    // A parent in 1750: before the main-asteroid file (Ceres, Pholus), inside the short
+    // files — the catalog drops exactly the bodies a parent's date is outside, and the
+    // planets drop Ceres for the same reason.
+    const stayers = [-40, ...presentBodies.slice(0, 3).map((b) => b.n)];
+    const asked = [1, 5145, ...stayers];
+    const early = compositeMinorSamples(COMPOSITE_1750, asked);
+    const jdA = birthDataToJD(COMPOSITE_1750.a);
+    const jdB = birthDataToJD(COMPOSITE_1750.b);
+    const reachesBoth = asked.filter((n) => sampleMinorBody(jdA, n) !== null && sampleMinorBody(jdB, n) !== null);
+    const planets = compositeEquatorial(COMPOSITE_1750, 'mean');
+    check(`12d a parent in 1750: the catalog keeps exactly the ${reachesBoth.length} bodies both parents' dates reach (Ceres and Pholus out), and the planets' composite drops Ceres too`,
+      setOf(early.map((s) => s.n)) === setOf(reachesBoth) && !reachesBoth.includes(1) && !reachesBoth.includes(5145) &&
+        stayers.every((n) => reachesBoth.includes(n)) && !planets.some((p) => p.name === 'Ceres') && planets.some((p) => p.name === 'Sun'),
+      `kept [${setOf(early.map((s) => s.n))}], both reach [${setOf(reachesBoth)}]`);
+  }
+
+  // 12e — the rows' overlay side.
+  {
+    const entry = (n: number) => ({ n, name: '', source: BUNDLED_SOURCE_ID });
+    const ns = [5145, -40, -41, -42];
+    const pref: MinorBodiesPref = { shown: true, list: [...ns, -43].map(entry), visible: [...ns] };
+    const ready = (): MinorLoadState => ({ status: 'ready', name: null });
+    const ctx = { advanced: true, none: false, sampled: new Set([5145, -40]) };
+    const over = { overlaySampled: new Set([-40, -41]), overlayMode: 'transits' as const };
+    const side = (rows: readonly ReturnType<typeof deriveMinorRows>[number][]) =>
+      Object.fromEntries(rows.map((r) => [r.entry.n, `${r.status.kind}${r.status.kind === 'undrawn' ? `:${r.status.reason}` : ''}/${r.overlay ? `${r.overlay.kind}:${r.overlay.mode}` : '-'}`]));
+    const rows = deriveMinorRows(pref, ready, { ...ctx, ...over });
+    const got = side(rows);
+    const want = {
+      5145: 'shown/noData:transits', [-40]: 'shown/shown:transits', [-41]: 'noData/shown:transits',
+      [-42]: 'noData/noData:transits', [-43]: 'off/-',
+    };
+    check('12e chart in, overlay out; both in; chart out, overlay in; both out — and a switched-off body has no overlay side',
+      JSON.stringify(got) === JSON.stringify(Object.fromEntries(Object.entries(want))), JSON.stringify(got));
+    const none = deriveMinorRows(pref, ready, ctx);
+    check('12e with no overlay passed, no row has an overlay side (not even an empty one)',
+      none.length === 5 && none.every((r) => !('overlay' in r)));
+    const noTime = side(deriveMinorRows(pref, ready, { ...ctx, ...over, undrawn: 'noTime' }));
+    const angles = deriveMinorRows(pref, ready, { ...ctx, ...over, undrawn: 'angles' });
+    check('12e no birth time keeps the overlay side (an overlay\'s instant has its own); the Angles filter, which takes its lines too, drops it',
+      noTime[-40] === 'undrawn:noTime/shown:transits' && noTime[-41] === 'noData/shown:transits' &&
+        angles.filter((r) => r.status.kind === 'undrawn').length === 2 && angles.filter((r) => r.status.kind === 'undrawn').every((r) => !('overlay' in r)),
+      `${noTime[-40]}, ${noTime[-41]}`);
+    const gated = withMinorDrawGate(rows, 'natalOff');
+    const g = side(gated);
+    const has = (rs: readonly (typeof rows)[number][]) => rs.filter(minorRowHasLines).map((r) => r.entry.n);
+    check('12e the natal draw gate leaves the overlay side as it was; minorRowHasLines counts either side',
+      g[5145] === 'undrawn:natalOff/noData:transits' && g[-40] === 'undrawn:natalOff/shown:transits' &&
+        setOf(has(rows)) === setOf([5145, -40, -41]) && setOf(has(gated)) === setOf([-40, -41]) && has(none).length === 2,
+      `${g[5145]}, ${g[-40]}; with lines [${setOf(has(rows))}] → [${setOf(has(gated))}]`);
+
+    // When App passes the overlay side at all — minorChartContext, the one fold App
+    // calls: promoted, the eclipse map lines off, the Angles filter, no birth time.
+    const frame = {
+      advanced: true, none: false, chartSampled: ctx.sampled,
+      overlay: { sampled: over.overlaySampled, mode: over.overlayMode },
+      promoted: false, overlayOnMap: true, noTime: false, anglesOff: false,
+    };
+    const via = (f: Partial<typeof frame>) => side(deriveMinorRows(pref, ready, minorChartContext({ ...frame, ...f })));
+    const besideRows = via({});
+    check('12e minorChartContext beside the chart is exactly the context 12e\'s first case passed by hand',
+      JSON.stringify(besideRows) === JSON.stringify(got), JSON.stringify(besideRows));
+    const promotedRows = via({ promoted: true });
+    check('12e promoted: the rows read the overlay\'s set as the chart\'s, with no overlay side',
+      JSON.stringify(promotedRows) === JSON.stringify({ 5145: 'noData/-', [-40]: 'shown/-', [-41]: 'shown/-', [-42]: 'noData/-', [-43]: 'off/-' }),
+      JSON.stringify(promotedRows));
+    const promotedNoTime = via({ promoted: true, noTime: true });
+    check('12e promoted on a chart with no birth time: the overlay\'s moment draws, so no row reads noTime',
+      JSON.stringify(promotedNoTime) === JSON.stringify(promotedRows), JSON.stringify(promotedNoTime));
+    const offMap = via({ overlayOnMap: false });
+    const plain = side(deriveMinorRows(pref, ready, ctx));
+    check('12e an overlay whose lines are off the map (eclipse map lines off): no overlay side — the rows the chart alone gives',
+      JSON.stringify(offMap) === JSON.stringify(plain), JSON.stringify(offMap));
+    const anglesOff = via({ anglesOff: true });
+    check('12e the Angles filter showing none of the four: no overlay side, the chart\'s rows undrawn for it',
+      anglesOff[5145] === 'undrawn:angles/-' && anglesOff[-40] === 'undrawn:angles/-' && anglesOff[-41] === 'noData/-' &&
+        Object.values(anglesOff).every((v) => v.endsWith('/-')),
+      JSON.stringify(anglesOff));
+    const noOverlay = via({ overlay: null as unknown as typeof frame.overlay });
+    check('12e no overlay layer at all: the rows the chart alone gives',
+      JSON.stringify(noOverlay) === JSON.stringify(plain), JSON.stringify(noOverlay));
+  }
+
+  // 12f — the overlay's wheel set against its planets' ring. App places the overlay's catalog
+  // bodies on the bi-wheel (and a promoted overlay's on the wheel) with buildWheelMinor over
+  // the overlay's own samples, shifted by the overlay ring's ayanamsa; the planets' ring is
+  // toEclipticPositions over the layer, shifted the same way (displayOverlayEcliptic). MPC 1
+  // and Ceres must land on one degree in every mode and zodiac — and carry a speed exactly
+  // when the planet does: sampled, yes; directed or a midpoint, no (an em-dash, not a rate).
+  // To rounding where the two take different roads to the same figure: a sampled catalog
+  // body carries the engine's own longitude and latitude, where the ring re-derives the
+  // planet's from its ra/dec (toEclipticPositions); directed and midpoint figures are
+  // derived alike on both sides, and those agree exactly.
+  {
+    const MODES: ZodiacMode[] = ['tropical', 'lahiri', 'fagan-bradley'];
+    const TOL = 1e-12; // radians
+    let worst = 0;
+    let compared = 0;
+    let withSpeed = 0;
+    let withoutSpeed = 0;
+    let firstBad = '';
+    for (const [c, layer] of layers) {
+      // Cyclo is never wheeled (App's isCyclo: no coherent chart to ring).
+      if (!layer || c.mode === 'cyclo') continue;
+      const samples = overlayMinorSamples(layer.bodyRule, [1], natalOf([1]));
+      for (const mode of MODES) {
+        const ayan = ayanamsaRad(layer.jd, mode);
+        const [w] = buildWheelMinor(samples, { ayan, decor, t, list: [] });
+        const ceres = shiftEclipticPositions(toEclipticPositions(layer.positions, layer.jd), ayan)
+          .find((p) => p.name === 'Ceres');
+        const where = `${c.label}, ${mode}`;
+        if (!w || !ceres) {
+          firstBad ||= `${where}: wheel body ${!!w}, ring's Ceres ${!!ceres}`;
+          continue;
+        }
+        const dLon = Math.abs(wrapPi(w.lon - ceres.lon));
+        const dLat = Math.abs(w.lat - (ceres.lat ?? NaN));
+        const exact = layer.bodyRule.by !== 'sample';
+        worst = Math.max(worst, dLon, dLat);
+        const why = [
+          !(exact ? dLon === 0 : dLon < TOL) ? `lon ${w.lon} vs ${ceres.lon}` : '',
+          !(exact ? dLat === 0 : dLat < TOL) ? `lat ${w.lat} vs ${ceres.lat}` : '',
+          w.ra !== ceres.ra || w.dec !== ceres.dec ? 'ra/dec' : '',
+          w.speed !== ceres.speed ? `speed ${w.speed} vs ${ceres.speed}` : '',
+          w.retrograde !== ceres.retrograde ? `retrograde ${w.retrograde} vs ${ceres.retrograde}` : '',
+          w.stationary !== false ? 'stationary' : '',
+          (layer.bodyRule.by === 'sample') !== (w.speed !== undefined) ? `speed present ${w.speed !== undefined} under ${layer.bodyRule.by}` : '',
+        ].filter(Boolean);
+        if (why.length) firstBad ||= `${where}: ${why.join(', ')}`;
+        else {
+          compared += 1;
+          if (w.speed === undefined) withoutSpeed += 1;
+          else withSpeed += 1;
+        }
+      }
+    }
+    const want = (CASES.length - 1) * MODES.length;
+    check(`12f the overlay wheel set: MPC 1 on Ceres's degree in the overlay ring — ${CASES.length - 1} overlays × ${MODES.length} zodiacs, each shifted by the overlay's own ayanamsa — with a speed exactly when the planet has one`,
+      !firstBad && compared === want && withSpeed > 0 && withoutSpeed > 0,
+      firstBad || `${compared} of ${want}; ${withSpeed} with a speed, ${withoutSpeed} without (directed and midpoint); worst ${worst.toExponential(2)} rad`);
+  }
+
+  // 12g — MEASURED: what the catalog set adds to one playback tick. The timeline plays by
+  // moving the target one notch every 120 ms (App's playback interval), and each notch
+  // rebuilds the overlay; the catalog set beside it then takes one sample per body at the
+  // new instant (bodies outermost — the engine holds one asteroid file open at a time, so
+  // every body is a file switch) and one pass of line geometry. Timed against the planets'
+  // own share of the same tick (buildOverlay, then the lines and zenith stamps App's
+  // overlay memo draws), at the cap of 20 bundled bodies and with the ten hypothetical
+  // points, which the engine computes from elements rather than reading off a file.
+  // Printed, never asserted on time — a machine's speed is not a property of the code —
+  // except that it measured something. The deferral (App.tsx, minorLayer) reads these.
+  {
+    const TICKS = 48;
+    const STEP_MS = 86_400_000; // a day a notch, the transits default
+    const bundled20 = presentBodies.slice(0, 20).map((b) => b.n);
+    const hyp10 = HYPOTHETICAL_POINTS.map((p) => p.n);
+    const now = () => performance.now();
+    const median = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b);
+      return s.length ? s[Math.floor(s.length / 2)] : NaN;
+    };
+    const timeSet = (label: string, ns: readonly number[]) => {
+      const planets: number[] = [];
+      const sample: number[] = [];
+      const geom: number[] = [];
+      let drawn = 0;
+      // One untimed pass first: the first touch of each file mounts it.
+      for (let i = -2; i < TICKS; i++) {
+        const t0 = now();
+        const layer = buildOverlay(NATAL, 'transits', TARGET + i * STEP_MS, null, 'mean', 'mean-quotidian', 'ptolemy', 1,
+          'relative-to-natal', 'secondary', t);
+        if (!layer) continue;
+        const ovMeridianLng = meridianLngFor('celestial', obliquity(layer.jd), layer.gmst);
+        generateLines(layer.positions, ovMeridianLng);
+        generateZenithStamps(layer.positions, ovMeridianLng);
+        const t1 = now();
+        const samples = overlayMinorSamples(layer.bodyRule, ns, null);
+        const t2 = now();
+        const g = buildOverlayMinorLinesFrom(layer, samples);
+        const t3 = now();
+        if (i < 0) continue;
+        planets.push(t1 - t0);
+        sample.push(t2 - t1);
+        geom.push(t3 - t2);
+        drawn += g.lines.features.length;
+      }
+      const added = median(sample) + median(geom);
+      console.log(`meas  12g ${label}: per tick (median of ${planets.length}) — planets ${median(planets).toFixed(2)} ms; ` +
+        `catalog sample ${median(sample).toFixed(2)} ms + geometry ${median(geom).toFixed(2)} ms = ${added.toFixed(2)} ms ` +
+        `(${((added / 120) * 100).toFixed(1)}% of the 120 ms playback interval; ${(drawn / Math.max(planets.length, 1)).toFixed(0)} lines a tick)`);
+      return { ticks: planets.length, drawn, added };
+    };
+    const buildOverlayMinorLinesFrom = (layer: NonNullable<ReturnType<typeof layerOf>>, samples: ReturnType<typeof overlayMinorSamples>) =>
+      overlayMinorLines(layer, samples, mundo);
+    const a = bundled20.length > 0 ? timeSet(`${bundled20.length} bundled bodies`, bundled20) : null;
+    const h = timeSet(`${hyp10.length} hypothetical points`, hyp10);
+    if (!a) skip('12g bundled bodies', 'no bundled per-asteroid file is present');
+    check('12g measured the catalog set\'s share of a playback tick (figures above, as meas lines)',
+      h.ticks > 0 && h.drawn > 0 && (!a || (a.ticks > 0 && a.drawn > 0)),
+      `${a ? `${a.ticks} ticks × ${bundled20.length} bodies` : 'no bundled bodies'}; ${h.ticks} ticks × ${hyp10.length} points`);
+  }
 }
 
 console.log(

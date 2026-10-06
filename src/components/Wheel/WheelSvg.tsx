@@ -607,22 +607,32 @@ interface WheelSvgProps {
    * Catalog minor bodies (lib/minorBodies/wheel), placed on the NATAL chart only —
    * never on the overlay ring. Plotted and never aspected: they are not handed to the
    * aspect pass, so no chord or conjunction dot can reach them. On every wheel each
-   * one gets a diamond in the tick strip at its true degree, and that is all that is
-   * drawn today. The ring of coins just inside the zodiac band, at or above
-   * MINOR_RING_MIN (MINOR_RING_MIN_BI on a bi-wheel), is switched off with
-   * MINOR_RING_ENABLED (lib/wheelGeometry, where the reason is): its code below is
-   * kept, and unreachable while the geometry never grants it.
+   * one gets a diamond in the tick strip at its true degree. A single wheel at or above
+   * MINOR_RING_MIN (600px) also draws each as a coin in a ring just inside the zodiac
+   * band, the planet ring stepped inward to make room; a bi-wheel never does
+   * (lib/wheelGeometry says why, with the measurements).
    *
    * Absent or empty means none. Nothing in this component reads the minor-body
    * preference or its loader — whatever is passed is what is drawn — which is what
    * keeps a stored document's wheel exactly as it was when it was made.
    */
   minorBodies?: readonly WheelMinorBody[] | null;
+  /**
+   * The OVERLAY chart's catalog minor bodies (lib/minorBodies/wheel, from an overlay's
+   * own samples), drawn only on a bi-wheel — with an overlay ring to belong to. Each is a
+   * mark at its true degree in the tick strip beside the chart's own (lib/wheelGeometry
+   * rOverlayPip says why there and not on the divider), smaller and softened as the
+   * overlay ring is, and named with the overlay in its tip. Never aspected. Absent or
+   * empty: none, and the wheel's geometry exactly as without it — every Reports wheel.
+   */
+  overlayMinorBodies?: readonly WheelMinorBody[] | null;
+  /** The overlay chart's short name ("Transits", "Solar Return"), which its catalog
+   *  marks' tips are titled with. Read only beside overlayMinorBodies. */
+  overlayName?: string | null;
   /** Hold the catalog ring with no bodies in it yet, because their files are still on
    *  their way — so the planet ring does not step inward a moment after the first
-   *  paint. A request like the bodies themselves: the size still decides. With the
-   *  ring switched off (MINOR_RING_ENABLED) it is never granted, so this changes
-   *  nothing drawn. */
+   *  paint. A request like the bodies themselves: the size still decides, and a
+   *  bi-wheel never takes it. */
   minorReserve?: boolean;
   /**
    * Discreet mode over a birthplace's GEODETIC frame (2026-10-02): those angles are a
@@ -660,6 +670,12 @@ interface WheelSvgProps {
 
 /** No catalog bodies: one stable reference, so the ring layout's memo holds still. */
 const NO_MINOR: readonly WheelMinorBody[] = [];
+/** A rim mark in the tick strip, and which chart it belongs to — the chart's own, or an
+ *  overlay's beside it on a bi-wheel. */
+interface PipMember {
+  m: WheelMinorBody;
+  overlay: boolean;
+}
 
 // Below the ring size, a catalog body's only mark is its rim diamond — a few px across,
 // too small to aim a pointer at on its own. Each is given this much ring either side
@@ -704,6 +720,8 @@ export function WheelSvg({
   readouts = false,
   planetsOnly = false,
   minorBodies,
+  overlayMinorBodies,
+  overlayName = null,
   minorReserve = false,
   maskAngleText = false,
   bodyNotes = null,
@@ -741,14 +759,17 @@ export function WheelSvg({
   // the house ring, the cusp lines and all twelve numbers with nothing said.
   //
   // The catalog ring is the other data-driven input, and like the overlay it is only
-  // asked for: the geometry grants it by size alone (see MINOR_RING_MIN there) — and
-  // today not at all, while MINOR_RING_ENABLED is off, so every wheel takes the
-  // rim-diamond path and `minorRingOn` below is false.
+  // asked for: the geometry grants it by size alone (see MINOR_RING_MIN there), and on a
+  // single wheel only — a bi-wheel takes the rim-diamond path at every size, and
+  // `minorRingOn` below is false there.
   //
   // Memoised because the catalog ring's layout below is, and a memo can only hold
   // still on inputs that do: the geometry is a pure function of these seven values.
   const minorList = minorBodies ?? NO_MINOR;
   const wantMinorRing = minorList.length > 0 || minorReserve;
+  // An overlay's catalog bodies belong to its ring, so they are drawn only with one.
+  const overlayMinorList = hasOverlay ? (overlayMinorBodies ?? NO_MINOR) : NO_MINOR;
+  const wantOverlayMinor = overlayMinorList.length > 0;
   const g = useMemo(
     () =>
       wheelGeometry({
@@ -759,8 +780,9 @@ export function WheelSvg({
         planetsOnly,
         readouts,
         minorRing: wantMinorRing,
+        overlayMinor: wantOverlayMinor,
       }),
-    [size, detailed, advanced, hasOverlay, planetsOnly, readouts, wantMinorRing],
+    [size, detailed, advanced, hasOverlay, planetsOnly, readouts, wantMinorRing, wantOverlayMinor],
   );
   const {
     cx, cy,
@@ -771,6 +793,7 @@ export function WheelSvg({
     readoutFont, discR, discHalf, glyphPx, signGlyphPx,
     houseNumPx, cuspRimPx, cuspSignPx, cuspUnitStepPx, cuspUnitHalfPx, angleCodePx,
     rPip, pipR, rMinor, minorR, minorDiscHalf, minorGlyphPx, bodyOverlap,
+    rOverlayPip, overlayPipR,
   } = g;
   const showReadouts = g.detail.readout;
   const showOverlayReadouts = g.detail.overlayReadout;
@@ -781,9 +804,9 @@ export function WheelSvg({
   // Laid out by the one function the verify suite asserts about (lib/wheelRingLayout),
   // between the four axes — the walls that cap how far a crowded coin may be pushed —
   // and in its own pass, so no catalog body can move a planet off its notch. Empty below
-  // the ring size, where there is nothing to lay out — which, with the ring switched off,
-  // is every wheel. Memoised on exactly what it reads: a hover re-renders the wheel, and
-  // the answer cannot have changed.
+  // the ring size and on a bi-wheel, where there is nothing to lay out. Memoised on
+  // exactly what it reads: a hover re-renders the wheel, and the answer cannot have
+  // changed.
   const { asc: axAsc, dsc: axDsc, mc: axMc, ic: axIc } = angles;
   const minorDisplay = useMemo(
     () =>
@@ -1135,17 +1158,31 @@ export function WheelSvg({
     color: m.color,
     marker: <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} size={14} />,
   });
+  // An overlay's catalog body: the same tip, titled with the overlay chart's name beside
+  // its own, since its mark shares the strip with the chart's.
+  const overlayMinorTip = (m: WheelMinorBody, x: number, y: number, r: number): HoverTip => ({
+    ...minorTip(m, x, y, r),
+    title: overlayName ? t('wheel.tip.overlayMinor', { name: m.label, chart: overlayName }) : m.label,
+  });
   // Several bodies under one target: how many, then each by mark, name and degree —
   // the colour is what ties a line to its diamond on the rim — as many as the copy
-  // budget holds, and a count of the rest.
-  const minorClusterTip = (members: WheelMinorBody[], x: number, y: number): HoverTip => {
-    const title = t('wheel.tip.minorCluster', { n: members.length });
+  // budget holds, and a count of the rest. On a bi-wheel the target can hold both charts'
+  // marks: a cluster of the overlay's alone is titled with its name, and in a mixed one
+  // each of its lines says whose it is.
+  const minorClusterTip = (members: PipMember[], x: number, y: number): HoverTip => {
+    const allOverlay = !!overlayName && members.every((e) => e.overlay);
+    const title = allOverlay
+      ? t('wheel.tip.overlayMinorCluster', { n: members.length, chart: overlayName })
+      : t('wheel.tip.minorCluster', { n: members.length });
     let budget = TIP_COPY_MAX - title.length;
     const lines: { m: WheelMinorBody; text: string; signIdx: number }[] = [];
-    for (const m of members) {
+    for (const { m, overlay } of members) {
       if (lines.length === MINOR_CLUSTER_LINES) break;
       const { signIdx, degMin } = lonToZodiac(m.lon);
-      const text = t('wheel.tip.minorLine', { name: m.label, lon: degMin });
+      const text =
+        overlay && overlayName && !allOverlay
+          ? t('wheel.tip.minorLineOverlay', { name: m.label, lon: degMin, chart: overlayName })
+          : t('wheel.tip.minorLine', { name: m.label, lon: degMin });
       const left = members.length - lines.length - 1;
       const moreLen = left > 0 ? t('wheel.tip.minorMore', { n: left }).length : 0;
       // The mark and the sign glyph around the text read as a character each.
@@ -1162,7 +1199,7 @@ export function WheelSvg({
       sub: (
         <>
           {lines.map((l, i) => (
-            <Fragment key={l.m.id}>
+            <Fragment key={`${i}-${l.m.id}`}>
               {i > 0 && <br />}
               <span className="wheel-tip-minor-line">
                 <MinorMark color={l.m.color} glyph={l.m.glyph} hollow={l.m.hypothetical} size={10} />
@@ -1188,14 +1225,25 @@ export function WheelSvg({
   // so no cluster is cut in two where the circle closes; with no such gap anywhere,
   // every body is one cluster. None on the ring, where the coins carry the tips, and
   // none on a static wheel.
-  const minorClusters: WheelMinorBody[][] = [];
+  //
+  // An overlay's marks share the strip (rOverlayPip), so they are walked WITH the chart's:
+  // two zones over one strip would leave whichever was drawn first unreachable where they
+  // overlap. A cluster's tip says whose each body is (minorClusterTip).
+  const pipMarks: PipMember[] = useMemo(
+    () => [
+      ...(minorRingOn ? [] : minorList.map((m) => ({ m, overlay: false }))),
+      ...overlayMinorList.map((m) => ({ m, overlay: true })),
+    ],
+    [minorRingOn, minorList, overlayMinorList],
+  );
+  const minorClusters: PipMember[][] = [];
   const TWO_PI = 2 * Math.PI;
   const normLon = (a: number) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
-  if (interactive && !minorRingOn && minorList.length > 0 && rPip > 0) {
+  if (interactive && pipMarks.length > 0 && rPip > 0) {
     const reach = (2 * MINOR_PIP_HIT_PX) / rPip;
-    const byLon = [...minorList].sort((a, b) => normLon(a.lon) - normLon(b.lon));
+    const byLon = [...pipMarks].sort((a, b) => normLon(a.m.lon) - normLon(b.m.lon));
     const gapBefore = (i: number) =>
-      normLon(byLon[i].lon - byLon[(i + byLon.length - 1) % byLon.length].lon);
+      normLon(byLon[i].m.lon - byLon[(i + byLon.length - 1) % byLon.length].m.lon);
     let start = 0;
     for (let i = 0; i < byLon.length && byLon.length > 1; i++) {
       if (gapBefore(i) >= reach) {
@@ -1203,7 +1251,7 @@ export function WheelSvg({
         break;
       }
     }
-    let cur: WheelMinorBody[] = [];
+    let cur: PipMember[] = [];
     for (let k = 0; k < byLon.length; k++) {
       const i = (start + k) % byLon.length;
       if (cur.length > 0 && gapBefore(i) >= reach) {
@@ -1651,13 +1699,14 @@ export function WheelSvg({
           behind them; the diamonds are pointer-transparent (.minor-pip), so the whole
           zone stays hot. A lone body's zone gives that body's own tip. */}
       {minorClusters.map((members) => {
-        const first = normLon(members[0].lon);
-        const span = normLon(members[members.length - 1].lon - first);
+        const first = normLon(members[0].m.lon);
+        const span = normLon(members[members.length - 1].m.lon - first);
         const pad = MINOR_PIP_HIT_PX / rPip;
         const anchor = svgPos(first + span / 2, frameAnchor, rPip, cx, cy);
+        const lone = members.length === 1 ? members[0] : null;
         return (
           <path
-            key={`minor-hit-${members[0].id}`}
+            key={`minor-hit-${members[0].overlay ? 'ov-' : ''}${members[0].m.id}`}
             className="minor-pip-hit"
             d={annularSectorPath(
               first - pad,
@@ -1671,13 +1720,17 @@ export function WheelSvg({
             )}
             onMouseEnter={() =>
               setTip(
-                members.length === 1
-                  ? minorTip(members[0], anchor.x, anchor.y, pipR + 2)
+                lone
+                  ? (lone.overlay ? overlayMinorTip : minorTip)(lone.m, anchor.x, anchor.y, pipR + 2)
                   : minorClusterTip(members, anchor.x, anchor.y),
               )
             }
             onMouseLeave={clearTip}
-            aria-label={members.map((m) => m.label).join(', ')}
+            aria-label={members
+              .map(({ m, overlay }) =>
+                overlay && overlayName ? t('wheel.tip.overlayMinor', { name: m.label, chart: overlayName }) : m.label,
+              )
+              .join(', ')}
           />
         );
       })}
@@ -1685,10 +1738,10 @@ export function WheelSvg({
       {/* Catalog minor bodies' rim diamonds: each at its TRUE degree in the tick strip,
           its long axis along the radius — it is the body's tick, and points at its
           degree the way a planet's tick does. On every wheel, the minimap included: it
-          costs no radius and needs no layout pass. With the catalog ring drawn (never,
-          while it is switched off), a single wheel adds the faint leader in to the
-          coin, on the planets' own rule (never on a bi-wheel, where it would cross the
-          overlay ring). Drawn before the planet ticks, so a planet's tick at the same
+          costs no radius and needs no layout pass. With the catalog ring drawn (a single
+          wheel from 600px; never a bi-wheel, where a leader would cross the overlay
+          ring), each diamond adds the faint leader in to its coin, on the planets' own
+          rule. Drawn before the planet ticks, so a planet's tick at the same
           degree stays on top. A hypothetical point's diamond is HOLLOW: still a fill,
           the solid outline with the hole cut out (lib/minorBodies/mark), so it keeps
           the solid mark's footprint in the strip and takes Earth's halo the same way. */}
@@ -1717,6 +1770,31 @@ export function WheelSvg({
           </g>
         );
       })}
+
+      {/* An overlay's catalog bodies on a bi-wheel: the same mark at its true degree in the
+          same strip (lib/wheelGeometry rOverlayPip: the divider between the charts has no
+          room for one), told from the chart's by being smaller — clear of the overlay discs
+          — and softened to the overlay readout's 0.8, and by a tip that names the overlay.
+          Filled or hollow as the chart's are, so a hypothetical point still reads as one.
+          After the chart's own, so where two coincide the overlay's lesser mark shows on
+          top of the larger rather than vanishing under it. An attribute, not a class, so
+          the export (lib/wheelRaster) carries the softening. */}
+      {overlayMinorList.length > 0 && rOverlayPip > 0 && (
+        <g className="wheel-overlay-pips" opacity={0.8}>
+          {overlayMinorList.map((m) => {
+            const at = svgPos(m.lon, frameAnchor, rOverlayPip, cx, cy);
+            const out = svgPos(m.lon, frameAnchor, 1, 0, 0);
+            return (
+              <g key={`minor-pip-ov-${m.id}`} className="minor-pip">
+                <path
+                  d={(m.hypothetical ? minorHollowPath : minorDiamondPath)(at.x, at.y, overlayPipR, out.x, out.y)}
+                  fill={m.color}
+                />
+              </g>
+            );
+          })}
+        </g>
+      )}
 
       {/* Connector from the true zodiac position to the (possibly spread)
           glyph, plus a tick on the zodiac band marking the exact longitude.
@@ -1799,10 +1877,9 @@ export function WheelSvg({
           );
         })}
 
-      {/* The catalog ring — SWITCHED OFF with MINOR_RING_ENABLED (lib/wheelGeometry),
-          so minorRingOn is false and this draws nothing today; kept whole for the
-          tuning pass that would bring it back. At or above the ring size, each body's
-          coin — 0.64 of a planet disc, a SOLID outline in its line colour (dashed is
+      {/* The catalog ring — a single wheel at or above MINOR_RING_MIN (600px; never a
+          bi-wheel — lib/wheelGeometry says why). Each body's
+          coin — half a planet disc, a SOLID outline in its line colour (dashed is
           the overlay's convention), its own symbol or the shared diamond inside. After
           every tick and leader, so a coin sits over them; before the planet discs,
           whose wider hit disc wins where it reaches a coin's inner edge. No readout

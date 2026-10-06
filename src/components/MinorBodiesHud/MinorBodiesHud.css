@@ -140,6 +140,17 @@
   padding: 2px 3px 2px 5px;
   border-radius: 999px;
 }
+/* "Parans with the planets", under Your list's heading: the same switch on a row of its own.
+   Held, .ui-inert dims it and its track stops answering a hover it won't act on. */
+.mbh-paransrow {
+  margin-bottom: 2px;
+}
+.mbh-parans.ui-inert:hover .es-toggle-track {
+  background: rgba(var(--tint), 0.18);
+}
+.mbh-parans.ui-inert.on:hover .es-toggle-track {
+  background: rgba(var(--accent-rgb), 0.55);
+}
 
 /* The one-time scope hint: a small bubble under the chip row whose caret points up
    at the chip it names (--mbh-hint-caret, measured by the component), and a ring on

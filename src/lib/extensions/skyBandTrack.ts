@@ -52,6 +52,13 @@ export interface SkyBandTrackContext {
    *  of its own (an overlay can still draw its own), which a track pairing events
    *  may want to say. */
   chartHasTime: boolean;
+  /** How many of the reader's catalog minor bodies have parans drawn on the map right
+   *  now (their own switch, the chart's and an overlay's beside it). The band reads only
+   *  the built-in bodies, so a track that rings for "the parans on the map" can say it
+   *  leaves these out. Absent or 0: none. */
+  minorParanBodies?: number;
+  /** Opens the Minor bodies window, where those bodies and their parans are switched. */
+  openMinorBodies?: () => void;
 }
 
 export interface SkyBandTrack {

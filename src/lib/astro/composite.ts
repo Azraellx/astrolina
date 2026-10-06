@@ -14,7 +14,8 @@
 // gmst-driven consumers (the map lines, parans, local space, the timeline) run
 // the ordinary natal pipeline untouched; the PLANET POSITIONS and the WHEEL
 // ANGLES branch to the midpoint math here (App's position memos +
-// compositeAngles, the directed overlays' natal base, the Returns snap).
+// compositeAngles, the directed overlays' natal base, the Returns snap), and so
+// do the catalog minor bodies (compositeMinorSamples), by the planets' own rule.
 //
 // Conventions (see docs/calculation-methods.md):
 //  - per body: zodiacal longitude = shorter-arc midpoint (an exactly-opposed
@@ -56,6 +57,7 @@ import {
   PLANET_NAMES,
   relocate,
   sampleBody,
+  sampleMinorBody,
   type BodySample,
   type EclipticPosition,
   type HouseSystem,
@@ -65,6 +67,7 @@ import {
   type RelocatedAngles,
 } from '../ephemeris';
 import type { CompositeParents } from '../chartLibrary';
+import type { OverlayMinorSample } from './timeline';
 
 const TWO_PI = 2 * Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -108,6 +111,65 @@ interface CompositeSample {
   dec: number; // plain mean of the parents' native declinations
 }
 
+/** One body's four coordinates at one parent's moment — a planet's sample or a
+ *  catalog body's, which is what lets both families midpoint through one function. */
+interface ParentCoords {
+  lon: number;
+  lat: number;
+  ra: number;
+  dec: number;
+}
+
+/** The composite Sun's two midpoints, which arbitrate every exactly-opposed pair in
+ *  their own frame, plus the parents' moments every other body is sampled at. */
+export interface CompositeSunRefs {
+  jdA: number;
+  jdB: number;
+  sunA: BodySample;
+  sunB: BodySample;
+  sunMidLon: number;
+  sunMidRa: number;
+}
+
+/** The Sun is settled first, for every body that follows — the planets here, the
+ *  catalog bodies in compositeMinorSamples. Null when either parent's Sun can't be
+ *  sampled, in which case no body can be midpointed at all. (The Sun's sample doesn't
+ *  depend on the node type, so none is asked for.) */
+export function compositeSunRefs(parents: CompositeParents): CompositeSunRefs | null {
+  const jdA = birthDataToJD(parents.a);
+  const jdB = birthDataToJD(parents.b);
+  const sunA = sampleBody(jdA, 'Sun', 'mean');
+  const sunB = sampleBody(jdB, 'Sun', 'mean');
+  if (!sunA || !sunB) return null;
+  return {
+    jdA,
+    jdB,
+    sunA,
+    sunB,
+    sunMidLon: shortArcMidLon(sunA.lon, sunB.lon),
+    sunMidRa: shortArcMidLon(sunA.ra, sunB.ra),
+  };
+}
+
+/** One body's coordinate-wise midpoint — the ONE statement of the convention in this
+ *  file's header, for planets and catalog bodies alike. */
+export function compositeMidpoint(
+  a: ParentCoords,
+  b: ParentCoords,
+  refs: Pick<CompositeSunRefs, 'sunMidLon' | 'sunMidRa'>,
+): ParentCoords {
+  const lon = shortArcMidLon(a.lon, b.lon, refs.sunMidLon);
+  let ra = shortArcMidLon(a.ra, b.ra, refs.sunMidRa);
+  // A pair a hair short of opposition can straddle it differently per frame:
+  // RA−λ skews each separation independently (same-sign latitudes stretch
+  // the RA arc past 180° while the longitude arc stays under), so the two
+  // shorter-arc midpoints land on OPPOSITE sides of the sky. The row is one
+  // body — keep its RA on the side of its longitude of record. RA−λ never
+  // legitimately approaches a quarter turn, so the test is unambiguous.
+  if (Math.abs(wrapPi(ra - lon)) > Math.PI / 2) ra = wrap2pi(ra + Math.PI);
+  return { lon, lat: (a.lat + b.lat) / 2, ra, dec: (a.dec + b.dec) / 2 };
+}
+
 /**
  * Coordinate-wise midpoints for every body BOTH parents resolve (an asteroid
  * outside its ephemeris range in either chart drops out, like a normal chart
@@ -120,25 +182,10 @@ function compositeSamples(
   parents: CompositeParents,
   nodeType: NodeType,
 ): CompositeSample[] {
-  const jdA = birthDataToJD(parents.a);
-  const jdB = birthDataToJD(parents.b);
-  const sunA = sampleBody(jdA, 'Sun', nodeType);
-  const sunB = sampleBody(jdB, 'Sun', nodeType);
-  if (!sunA || !sunB) return [];
-  const sunMidLon = shortArcMidLon(sunA.lon, sunB.lon);
-  const sunMidRa = shortArcMidLon(sunA.ra, sunB.ra);
-  const midpoint = (a: BodySample, b: BodySample) => {
-    const lon = shortArcMidLon(a.lon, b.lon, sunMidLon);
-    let ra = shortArcMidLon(a.ra, b.ra, sunMidRa);
-    // A pair a hair short of opposition can straddle it differently per frame:
-    // RA−λ skews each separation independently (same-sign latitudes stretch
-    // the RA arc past 180° while the longitude arc stays under), so the two
-    // shorter-arc midpoints land on OPPOSITE sides of the sky. The row is one
-    // body — keep its RA on the side of its longitude of record. RA−λ never
-    // legitimately approaches a quarter turn, so the test is unambiguous.
-    if (Math.abs(wrapPi(ra - lon)) > Math.PI / 2) ra = wrap2pi(ra + Math.PI);
-    return { lon, lat: (a.lat + b.lat) / 2, ra, dec: (a.dec + b.dec) / 2 };
-  };
+  const refs = compositeSunRefs(parents);
+  if (!refs) return [];
+  const { jdA, jdB, sunA, sunB } = refs;
+  const midpoint = (a: BodySample, b: BodySample) => compositeMidpoint(a, b, refs);
   const out: CompositeSample[] = [];
   for (const name of PLANET_NAMES) {
     if (name === 'Sun') {
@@ -214,6 +261,37 @@ export function compositeEcliptic(
   return compositeSamples(parents, nodeType).map(
     ({ name, lon, lat, ra, dec }) => ({ name, lon, lat, dec, ra }),
   );
+}
+
+/**
+ * Catalog minor bodies on a composite: each one the coordinate-wise midpoint of its two
+ * parents' samples, by the planets' own rule (compositeMidpoint, arbitrated by the same
+ * composite Sun) — so a catalog body on a composite is placed exactly as a planet at the
+ * same coordinates would be.
+ *
+ * Bodies outermost, the two parents inside: the engine keeps one numbered-asteroid file
+ * open, and both parents' samples of one body come from that body's file. A body either
+ * parent can't sample — its file doesn't reach that parent's date — drops out, as an
+ * asteroid does from compositeSamples. The output carries its lon/lat OF RECORD
+ * (`ofRecord`), so the In-Zodiaco projection reads the longitude midpoint rather than
+ * inverting the mean ra/dec, and no speed: a midpoint has no motion of its own.
+ */
+export function compositeMinorSamples(
+  parents: CompositeParents,
+  numbers: readonly number[],
+): OverlayMinorSample[] {
+  if (numbers.length === 0) return [];
+  const refs = compositeSunRefs(parents);
+  if (!refs) return [];
+  const out: OverlayMinorSample[] = [];
+  for (const n of numbers) {
+    const a = sampleMinorBody(refs.jdA, n);
+    const b = a && sampleMinorBody(refs.jdB, n);
+    if (!a || !b) continue;
+    const m = compositeMidpoint(a, b, refs);
+    out.push({ n, ra: m.ra, dec: m.dec, lon: m.lon, lat: m.lat, ofRecord: true });
+  }
+  return out;
 }
 
 /** One body's composite longitude (radians) — the Returns snap's natal

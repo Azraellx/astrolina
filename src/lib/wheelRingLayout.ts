@@ -18,10 +18,11 @@
 // about the layout the wheel draws rather than about its own restatement of the
 // walls and the arguments. Pure: no React, no DOM, no ephemeris.
 //
-// The ring is SWITCHED OFF (MINOR_RING_ENABLED in ./wheelGeometry, with the measured
-// reason), so in the app `rMinor` is always 0 and this returns an empty map. It is kept
-// whole for the tuning pass: the verify suites still lay the ring out through it, via
-// `measureMinorRing`, and print what it would cost.
+// The ring is drawn on a single wheel from 600px and never on a bi-wheel
+// (MINOR_RING_ENABLED and MINOR_RING_MIN in ./wheelGeometry, with the measurements); where
+// it is not, `rMinor` is 0 and this returns an empty map. The verify suites also lay the
+// bi-wheel's would-be ring out through it, via `measureMinorRing`, and print what it would
+// cost.
 import { placeOnRing, type RingMark } from './ringLayout';
 import type { WheelGeometry } from './wheelGeometry';
 

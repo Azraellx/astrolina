@@ -48,6 +48,7 @@ import { MINOR_BODIES, PLANET_COLORS, type PlanetName } from '../../lib/ephemeri
 import { minorLineColor, type Theme } from '../../lib/theme';
 import { MINOR_GLYPHS } from '../../lib/astro/glyphChars';
 import type { MinorBodiesApi } from '../../lib/minorBodies/useMinorBodies';
+import type { OverlayKind } from '../../lib/astro/timeline';
 import {
   resolveMinorSource,
   type MinorRow,
@@ -160,6 +161,14 @@ export interface MinorBodiesHudProps {
   api: MinorBodiesApi;
   /** Every body on the reader's list, with what it's doing right now (derived). */
   rows: readonly MinorRow[];
+  /** Whose dates a body's file has to reach, for the "no data" tips: the chart is a
+   *  composite (both parents' dates), and the overlay beside it a composite partner. */
+  composite?: { chart: boolean; overlay: boolean };
+  /** "Parans with the planets": the STORED switch (`on`, never the derived value), its only
+   *  writer, and — while the map's parans aren't drawn — the sentence saying what holds it
+   *  and where to change it (null when it isn't held). Held, the switch shows `on` greyed and
+   *  does nothing (CLAUDE.md row A; the host's writer refuses too). Absent: no switch. */
+  parans?: { on: boolean; heldNote: string | null; onChange: (on: boolean) => void };
   /** Forget a failed load so it's tried again. */
   onRetry: (n: number) => void;
 }
@@ -340,6 +349,8 @@ export function MinorBodiesHud({
   api,
   rows,
   onRetry,
+  composite,
+  parans,
 }: MinorBodiesHudProps) {
   const { t, labels } = useT();
   // The header eye collapses the window to its title bar WITHOUT closing it (the
@@ -755,10 +766,53 @@ export function MinorBodiesHud({
 
   // The second line under a list row: why a switched-on body isn't drawn. 'shown'
   // and 'off' need nothing. `hint`: a longer why, for the row's tip.
+  // Why a body's file has no data where a set of lines is drawn — its own date, or a
+  // composite's parents' (either can be outside), or for a hypothetical point the planets'
+  // span, which it shares.
+  const noDataHint = (n: number, ofComposite: boolean) =>
+    isHypotheticalKey(n)
+      ? t('minorBodies.hud.status.noDataHintHyp')
+      : ofComposite
+        ? t('minorBodies.hud.status.noDataHintComposite')
+        : t('minorBodies.hud.status.noDataHint');
+  const overlayModeName = (mode: OverlayKind) => t(`topNav.overlay.modes.${mode}.label`);
+  // The row's two sides, the chart's lines (`s`) and an overlay's drawn beside them
+  // (`ov`, present only while they are — MinorRow.overlay), said as one line. The window
+  // describes LINES only (the wheel carries every body regardless; L72). A side that
+  // draws needs no word; one that doesn't is named only where the other one does, so a
+  // row never reads "no lines" while some of its lines are on the map:
+  //  - chart shown, overlay out of its file → "No Transits lines at this date";
+  //  - chart without lines (out of its file, no birth time, natal lines off), overlay
+  //    drawn → "Transits lines only", the tip saying why the chart's aren't;
+  //  - neither (the chart out of its file or without lines, the overlay out of its file)
+  //    → the chart's reason plainly, as without an overlay: "No Transits lines at this
+  //    date" there would imply the chart's lines were drawn, and lose the no-time or
+  //    natal-lines-off reason that is the one a reader can act on.
   const statusLine = (
     s: MinorRowStatus,
+    ov: MinorRow['overlay'],
     n: number,
   ): { text: string; failed?: boolean; hint?: string } | null => {
+    if (ov) {
+      const mode = overlayModeName(ov.mode);
+      if (ov.kind === 'noData' && s.kind === 'shown') {
+        return {
+          text: t('minorBodies.hud.status.overlayNoData', { mode }),
+          hint: noDataHint(n, !!composite?.overlay),
+        };
+      }
+      if (ov.kind === 'shown' && s.kind !== 'shown') {
+        return {
+          text: t('minorBodies.hud.status.overlayOnly', { mode }),
+          hint:
+            s.kind === 'noData'
+              ? noDataHint(n, !!composite?.chart)
+              : s.kind === 'undrawn' && (s.reason === 'noTime' || s.reason === 'natalOff')
+                ? t(`minorBodies.hud.status.overlayOnlyHint.${s.reason}`)
+                : undefined,
+        };
+      }
+    }
     switch (s.kind) {
       case 'off':
       case 'shown':
@@ -778,12 +832,8 @@ export function MinorBodiesHud({
         // standing state that ends by itself); the span it fell outside is the tip's.
         return {
           text: t('minorBodies.hud.status.noData'),
-          hint: isHypotheticalKey(n)
-            ? t('minorBodies.hud.status.noDataHintHyp')
-            : t('minorBodies.hud.status.noDataHint'),
+          hint: noDataHint(n, !!composite?.chart),
         };
-      case 'composite':
-        return { text: t('minorBodies.hud.status.composite') };
       // The source's note alone, no tier pill beside the name: the note already says
       // which plan it takes, and the pill cost a long name its line (2026-09-29).
       case 'held':
@@ -810,6 +860,8 @@ export function MinorBodiesHud({
     opts: {
       sub?: string;
       status?: MinorRowStatus;
+      /** The row's overlay side (MinorRow.overlay), read with `status`. */
+      overlay?: MinorRow['overlay'];
       removable?: boolean;
       /** A search result — marked so a reveal can put focus on it. */
       hit?: boolean;
@@ -821,7 +873,7 @@ export function MinorBodiesHud({
     const name = displayName(entry.n, entry.name);
     // The same name in parts, so a row too narrow for it cuts the name and keeps its number.
     const parts = minorDisplayParts(entry.n, entry.name, t);
-    const status = opts.status ? statusLine(opts.status, entry.n) : null;
+    const status = opts.status ? statusLine(opts.status, opts.overlay, entry.n) : null;
     const sub = status?.text ?? opts.sub;
     const inList = listByN.has(entry.n);
     // A list icon on a browsing/search row whose body is on the list but switched
@@ -831,8 +883,9 @@ export function MinorBodiesHud({
     const refusal = refusalFor(entry.n);
     const failed = opts.status?.kind === 'failed';
     // Switched on, but no data at the instant the lines are drawn: greyed rather than
-    // hidden — it is still on the list, and draws again on a date its data covers.
-    const noData = opts.status?.kind === 'noData';
+    // hidden — it is still on the list, and draws again on a date its data covers. Not
+    // while an overlay beside the chart draws it: the row has lines then.
+    const noData = opts.status?.kind === 'noData' && opts.overlay?.kind !== 'shown';
     const confirming = opts.removable && confirmN === entry.n;
     // After a Remove, focus moves to the row that takes this one's place (the next,
     // else the one above); with the list emptied, to the search box.
@@ -974,6 +1027,37 @@ export function MinorBodiesHud({
     </p>
   );
 
+  // "Parans with the planets" — the sidebar's switch, as Hide all is. A held switch is
+  // aria-disabled rather than disabled, so its tip (with the reason as its note) still opens
+  // on hover and focus; the click does nothing.
+  const paransLabel = t('minorBodies.hud.parans.label');
+  const paransHeld = !!parans?.heldNote;
+  const paransSwitch = parans && (
+    <div className="mbh-scoperow mbh-paransrow">
+      <TipButton
+        type="button"
+        role="switch"
+        aria-checked={parans.on}
+        aria-disabled={paransHeld || undefined}
+        aria-label={t('minorBodies.hud.parans.aria')}
+        className={`es-advanced-toggle mbh-hideall mbh-parans ${parans.on ? 'on' : 'off'}${paransHeld ? ' ui-inert' : ''}`}
+        onClick={() => {
+          if (!paransHeld) parans.onChange(!parans.on);
+        }}
+        placement="top"
+        tip={paransLabel}
+        hint={t('minorBodies.hud.parans.hint')}
+        note={parans.heldNote ?? undefined}
+        unavailable={paransHeld}
+      >
+        <span className="es-toggle-label">{paransLabel}</span>
+        <span className="es-toggle-track" aria-hidden="true">
+          <span className="es-toggle-thumb" />
+        </span>
+      </TipButton>
+    </div>
+  );
+
   // ── Your list ─────────────────────────────────────────────────────────────
   // Every body the reader added, in the order added, each saying what it is doing
   // right now. While Hide all is on, the list says so at its top — in its own column
@@ -985,6 +1069,7 @@ export function MinorBodiesHud({
         {rows.map((row) =>
           catalogRow(`row-${row.entry.n}`, { ...row.entry, name: row.name }, row.on, {
             status: row.status,
+            overlay: row.overlay,
             removable: true,
             cls: classLabel(row.entry),
           }),
@@ -1045,6 +1130,12 @@ export function MinorBodiesHud({
         {hideAll && (
           <p className="location-ls-note mbh-note">{t('minorBodies.hud.hideAll.hiddenNote')}</p>
         )}
+        {/* "Parans with the planets" — the list's bodies paired with the built-in ones, a
+            switch of its own (off by default) because it acts on this list alone. Above the
+            rows so it stays in reach however long the list is. Held (the map's parans off,
+            the sky hold, Cyclocartography), it keeps the stored position, greyed and inert,
+            and its tip's note names what to change (the .ui-inert convention). */}
+        {paransSwitch}
         {column && capNote?.inList && capNoteEl}
         {column ? <div className="mbh-scroll">{list}</div> : list}
       </>

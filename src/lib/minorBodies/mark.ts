@@ -6,8 +6,8 @@
 
 // The shape every glyph-less catalog body shares: a solid diamond, a little taller
 // than it is wide. It is drawn in three places — baked into the map coin
-// (glyphImages.rasterizeMinorCoin), inside the chart wheel's coin (while that ring is
-// switched on: see wheelGeometry MINOR_RING_ENABLED), and as the rim mark at a body's
+// (glyphImages.rasterizeMinorCoin), inside the chart wheel's coin (on a single wheel
+// from 600px: see wheelGeometry MINOR_RING_MIN), and as the rim mark at a body's
 // true degree on every wheel — and its proportions live HERE so the three cannot drift
 // into three slightly different diamonds.
 //

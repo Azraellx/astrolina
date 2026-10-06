@@ -66,6 +66,14 @@ export const wheel = {
     minorCluster: '{n, plural, one {# minor body} other {# minor bodies}}',
     minorLine: '{name} {lon}',
     minorMore: '+{n} more',
+    // On a bi-wheel an overlay's catalog bodies are marked in the same strip as the
+    // chart's, so their tips say whose they are, by the overlay chart's short name
+    // ({chart}: "Transits", "Sec. Progressed", "Solar Return", a partner's chart): a lone
+    // body's title, a cluster of the overlay's alone, and its lines in a cluster shared
+    // with the chart's own bodies.
+    overlayMinor: '{name} · {chart}',
+    overlayMinorCluster: '{chart}: {n, plural, one {# minor body} other {# minor bodies}}',
+    minorLineOverlay: '{name} {lon} · {chart}',
     // A line under the Part of Fortune's figure on a geodetic map, where the wheel builds
     // it from the place's geodetic Ascendant rather than the chart's own (the map's
     // Fortune line keeps the chart's). The positions list marks the same row GE with

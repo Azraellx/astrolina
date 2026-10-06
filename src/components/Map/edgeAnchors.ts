@@ -86,7 +86,7 @@ export interface MinorBadge {
   /** Its display name as the line carries it ('' when the catalog knows none). */
   name: string;
   lineType: LineType;
-  /** Overlay/promoted tag, as on the planets' chips (unused while catalog bodies are natal-only). */
+  /** Overlay/promoted tag, as on the planets' chips ('' on the chart's own lines). */
   prefix: string;
   /** Its line in screen space (the longest visible run), which the chip slides along. */
   line?: { x: number; y: number }[];

@@ -45,8 +45,8 @@ export interface MinorLineProps {
   label: string;
   /** Map sprite for the bead along the line and the zenith stamp. */
   icon: string;
-  /** Overlay/promoted tag, as on the other families (unused while catalog bodies
-   *  are natal-only; kept so the shared tag helpers apply unchanged). */
+  /** Overlay/promoted tag ("Tr", "Sa", …), as on the other families — set by
+   *  timeline.tagMinor, which leaves `label` alone; absent on the chart's own lines. */
   tag?: string;
 }
 

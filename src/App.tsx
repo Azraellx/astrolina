@@ -133,7 +133,7 @@ import {
   gmstRadians,
   isDayBirth,
   jdToCivil,
-  minorPositionOf,
+  minorLinePositionOf,
   needsAsteroidEphemeris,
   obliquity,
   partOfFortuneLon,
@@ -151,6 +151,7 @@ import {
   type LineSystem,
   type NodeType,
   type PlanetName,
+  type PlanetPosition,
 } from './lib/ephemeris';
 // Eclipse machinery (the NASA catalog JSON + the Besselian-element fitting in
 // eclipsePath) is dynamic-imported when eclipse mode first opens — see the
@@ -182,7 +183,13 @@ import {
   generateMidpointLines,
   type AngleOverlayLineProps,
 } from './lib/astro/angleAspects';
-import { generateParans, generateStarParans, type ParanProps } from './lib/astro/parans';
+import {
+  generateMinorParans,
+  generateParans,
+  generateStarParans,
+  type MinorParanProps,
+  type ParanProps,
+} from './lib/astro/parans';
 import { nextSkyEvent } from './lib/astro/riseSet';
 import {
   generateLocalSpace,
@@ -204,10 +211,14 @@ import {
   VIEW_LOCK_PARKED_OVERLAYS,
   overlayBlockedFor,
   overlayAuxBlocked,
+  overlayMinorLines,
+  overlayMinorSamples,
+  tagMinor,
   normalizeAngle,
   type AngleProgression,
   type ArcMethod,
   type ProgAngleFrame,
+  type OverlayMinorSample,
   type OverlayMode,
   type PrimaryRate,
   type RelationshipMethod,
@@ -219,6 +230,7 @@ import {
   compositeAngles,
   compositeEcliptic,
   compositeEquatorial,
+  compositeMinorSamples,
   solveCompositeFrameJd,
 } from './lib/astro/composite';
 import {
@@ -242,11 +254,15 @@ import { useMinorBodies } from './lib/minorBodies/useMinorBodies';
 import { ensureMinorBodies, minorLoadState, retryMinorBody } from './lib/minorBodies/loader';
 import {
   deriveMinorRows,
+  minorChartContext,
   minorLoadRequests,
   minorReadyNumbers,
+  minorRowHasLines,
+  minorRowName,
   withMinorDrawGate,
 } from './lib/minorBodies/status';
 import { bundledMinorBody } from './lib/minorBodies/bundled';
+import { loadMinorParansPref, saveMinorParansPref } from './lib/minorBodies/prefs';
 import { buildWheelMinor, type WheelMinorBody } from './lib/minorBodies/wheel';
 import { minorIconId } from './components/Map/glyphImages';
 import { MinorBodiesHud } from './components/MinorBodiesHud/MinorBodiesHud';
@@ -398,6 +414,24 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 // The wheel's catalog set when it has none — one stable reference, so a wheel with no
 // catalog bodies never re-runs its ring layout on a fresh empty array.
 const NO_WHEEL_MINOR: readonly WheelMinorBody[] = [];
+const NO_OVERLAY_MINOR: readonly OverlayMinorSample[] = [];
+// Every angle a catalog body draws: the unfiltered complete set (collectAllLines).
+const ALL_MINOR_ANGLES: ReadonlySet<LineType> = new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']);
+// The catalog parans' "none" — one stable reference, so an empty set never re-pushes its source.
+const NO_MINOR_PARANS: FeatureCollection<LineString, MinorParanProps> = {
+  type: 'FeatureCollection',
+  features: [],
+};
+// The built-in bodies a catalog body pairs with on the map: the visible ones, with the South
+// Node left out while the North Node is shown too — its rows coincide with the North's (the
+// nodes are antipodes), which is mergeNodeParans' rule for the planets' own parans.
+function minorParanPartners(
+  positions: readonly PlanetPosition[],
+  visible: ReadonlySet<PlanetName>,
+): PlanetPosition[] {
+  const bothNodes = visible.has('NorthNode') && visible.has('SouthNode');
+  return positions.filter((p) => visible.has(p.name) && !(bothNodes && p.name === 'SouthNode'));
+}
 
 // Persists the active Overlay-menu extension id (registerOverlayExtension). A single
 // key (not per-extension) since the Overlay menu is single-select; the core ships no
@@ -1636,6 +1670,29 @@ export default function App() {
   const effShowStarLines = advancedWheel && showStarLines && !skyHeld;
   const effShowZenith = advancedWheel && showZenith && !skyHeld;
   const effShowOrbZones = advancedWheel && showOrbZones;
+  // Minor bodies ▸ "Parans with the planets" (lib/minorBodies/prefs): the catalog bodies'
+  // parans with the built-in bodies, OFF by default. `minorParansPref` is the stored choice,
+  // written only by its own switch (setMinorParansPref, below) and never on mount; nothing
+  // but that switch and the derivation reads it. The catalog rows are drawn wherever the
+  // planets' parans are, so whatever holds THOSE holds these: map Parans off (or Advanced
+  // off), the sky hold on a geodetic map, and Cyclocartography, whose two epochs share no
+  // sky-moment. A standing state, so it derives rather than writes (CLAUDE.md rule 2): the
+  // switch shows the stored value greyed, and the reader's choice is still there when the
+  // hold ends. Guards and generators read the DERIVED `minorParansOn`.
+  const [minorParansPref, setMinorParansPrefState] = useState(loadMinorParansPref);
+  const minorParansHeld = !effShowParans || overlayAuxBlocked(overlayMode, 'paran');
+  const minorParansOn = minorParansPref && !minorParansHeld;
+  // The switch's own writer. Refuses while held, so the greyed switch is inert in fact and
+  // can't store a choice the reader can't see take effect (CLAUDE.md, "a control that shows a
+  // derived value must refuse writes while the mask is up").
+  const setMinorParansPref = useCallback(
+    (on: boolean) => {
+      if (minorParansHeld) return;
+      setMinorParansPrefState(on);
+      saveMinorParansPref(on);
+    },
+    [minorParansHeld],
+  );
   // Transits-bar positioning frame (the Relative/Absolute switch in the returns row): a free
   // display choice, shown and honored in every reading mode. Only celestial lines show its
   // effect (others ignore sidereal time; see TimelineHud posEnabled). Was gated to Advanced,
@@ -3015,9 +3072,9 @@ export default function App() {
   // ── Catalog minor bodies (lib/minorBodies/) ──────────────────────────────────
   // The reader's list is a PREFERENCE (minorApi.pref). Whether each body on it draws is
   // DERIVED here from standing states — Advanced off, its source closed to this reader,
-  // the family switch, a composite chart, a file still loading or failed, a date outside
-  // its file — so none of them ever rewrites the list: each clears by itself and the
-  // reader's choice is still there (CLAUDE.md rule 2).
+  // the family switch, a file still loading or failed, a date outside its file — so none
+  // of them ever rewrites the list: each clears by itself and the reader's choice is
+  // still there (CLAUDE.md rule 2).
   const { pref: minorPref, loadVersion: minorLoadVer } = minorApi;
   // What should be fetched: switched on, family shown, source open, Advanced on. Built
   // per render because a source's gate() is per render by contract; the effect below
@@ -3025,9 +3082,9 @@ export default function App() {
   const minorRequests = minorLoadRequests(minorPref, advancedWheel);
   const minorRequestKey = minorRequests.map((r) => `${r.n}@${r.source.id}`).join(',');
   useEffect(() => {
-    // A composite has no instant of its own to sample a catalog body at (its planets
-    // are the parents' midpoints), so nothing is fetched for one.
-    if (!current || current.composite || minorRequests.length === 0) return;
+    // A composite fetches like any chart: its catalog bodies are the parents' midpoints,
+    // sampled from the same files at the parents' moments (compositeMinorSamples).
+    if (!current || minorRequests.length === 0) return;
     void ensureMinorBodies(minorRequests);
     // Keyed on the request set; minorLoadVer re-runs it after a retry clears a failure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3035,10 +3092,7 @@ export default function App() {
   // Loaded AND wanted: the only bodies ever sampled (a failed file is never sampled —
   // the engine's failure path is expensive, see lib/minorBodies/se1Header.ts).
   const minorNumbers = useMemo(
-    () =>
-      current && !current.composite
-        ? minorReadyNumbers(minorPref, advancedWheel, minorLoadState)
-        : [],
+    () => (current ? minorReadyNumbers(minorPref, advancedWheel, minorLoadState) : []),
     // minorLoadVer: a file landing or failing changes the ready set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [current, minorPref, advancedWheel, minorLoadVer],
@@ -3054,15 +3108,26 @@ export default function App() {
   // wheelMinor below). The lines get it stripped to their own shape, so the wheel and
   // the map read one instant from one engine call per body rather than two samplings
   // that could only agree by coincidence.
+  //
+  // A composite's are the parents' midpoints instead, by the planets' own rule — no
+  // speed, no station, and lon/lat of record, which minorLinePositionOf hands the lines
+  // (the In-Zodiaco projection reads the longitude midpoint, as it does for the planets).
   const minorSamples = useMemo(
-    () => (minorNumbers.length ? getMinorSamples(jd, minorNumbers, true) : []),
-    [jd, minorNumbers],
+    () =>
+      minorNumbers.length === 0
+        ? []
+        : current?.composite
+          ? compositeMinorSamples(current.composite, minorNumbers)
+          : getMinorSamples(jd, minorNumbers, true),
+    [jd, minorNumbers, current],
   );
-  const minorPositions = useMemo(() => minorSamples.map(minorPositionOf), [minorSamples]);
+  const minorPositions = useMemo(() => minorSamples.map(minorLinePositionOf), [minorSamples]);
   const minorSlidPositions = useMemo(() => {
     if (!sliding || minorNumbers.length === 0) return minorPositions;
+    // Midpoints are time-independent: the same reuse slidPositions makes.
+    if (current?.composite) return minorPositions;
     return getMinorPositions(jd + slideBucket * SLIDE_BUCKET_DAYS, minorNumbers);
-  }, [minorPositions, sliding, slideBucket, jd, minorNumbers]);
+  }, [minorPositions, sliding, slideBucket, jd, minorNumbers, current]);
   // The planets' own frame rule (linePositions above): In-Zodiaco and geodetic project
   // onto the ecliptic, In-Mundo keeps the true sky; no birth time, no lines — but on a
   // geodetic map, where the placeholder's degrees are all a line reads. (No catalog body
@@ -3074,37 +3139,25 @@ export default function App() {
       ? projectMinorOntoEcliptic(minorSlidPositions, jdEff)
       : minorSlidPositions;
   }, [noTime, timelessGeodetic, lineSystem, coordSystem, minorSlidPositions, jd, sliding, slideBucket, current]);
-  // Per-row status — the BASE rows, with the draw gates known here (no birth time, an
-  // Angles filter showing none of the four angles catalog bodies draw). The natal-lines
-  // gates are resolved further down the pipeline and applied there (minorRowsEff /
-  // minorRowsDrawn), so a row never reads 'shown' over a map with none of its lines.
+  // Whether the Angles filter shows any of the four angles catalog bodies draw — a draw
+  // gate on every catalog line, the chart's and an overlay's (the rows, below the overlay
+  // memos, read it through minorChartContext).
   const minorAnglesOff = !(['MC', 'IC', 'ASC', 'DSC'] as const).some((a) => visibleLineTypes.has(a));
-  const minorRows = useMemo(
-    () =>
-      deriveMinorRows(minorPref, minorLoadState, {
-        advanced: advancedWheel,
-        none: !current,
-        composite: !!current?.composite,
-        // Whatever sampled where the lines are drawn — minorPositions itself when not
-        // sliding (the same array), the slid instant's sample while sliding.
-        sampled: new Set(minorSlidPositions.map((p) => p.n)),
-        // The same no-birth-time rule as the lines (minorLinePositions): a geodetic map
-        // draws them, so a row there says what the lines say. (2026-10-02)
-        undrawn: noTime && !timelessGeodetic ? 'noTime' : minorAnglesOff ? 'angles' : null,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [minorPref, advancedWheel, current, minorSlidPositions, minorLoadVer, noTime, timelessGeodetic, minorAnglesOff],
-  );
+  // Each body's name, colour and sprite — named exactly as its row is (minorRowName), and
+  // read off the list and the load state rather than the rows, which are derived further
+  // down once the overlay beside the chart is known.
   const minorDecor = useMemo(() => {
     // A plain record: `Map` in this module is the map component.
     const names: Record<number, string> = {};
-    for (const r of minorRows) names[r.entry.n] = r.name;
+    for (const e of minorPref.list) names[e.n] = minorRowName(e, minorLoadState(e.n));
     return (n: number): MinorDecor => ({
       name: names[n] || bundledMinorBody(n)?.name || '',
       color: minorLineColor(n, theme),
       icon: minorIconId(n),
     });
-  }, [minorRows, theme]);
+    // minorLoadVer: a file landing can bring a name with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minorPref, minorLoadVer, theme]);
   const allMinorLines = useMemo(
     () => generateMinorLines(minorLinePositions, meridianLng, minorDecor),
     [minorLinePositions, meridianLng, minorDecor],
@@ -3244,6 +3297,25 @@ export default function App() {
         ? mergeNodeParans(filterParans(allParans, visiblePlanets), visiblePlanets)
         : EMPTY_FC,
     [allParans, visiblePlanets, effShowParans],
+  );
+  // The catalog bodies' parans with the planets (Minor bodies ▸ "Parans with the planets"):
+  // each body on the reader's list paired with the visible built-in bodies, never with
+  // another catalog body (parans.ts says why). From EXACTLY what the two families' lines are
+  // drawn from — minorLinePositions and linePositions, slid and projected alike, through the
+  // one meridianLng, with the catalog lines' own decoration — so every row crosses the drawn
+  // lines where it says it does (CLAUDE.md rule 5; verify-parans §7). No birth time, none, as
+  // for the planets' (allParans: skyFamiliesOff).
+  const minorParans = useMemo(
+    () =>
+      !minorParansOn || skyFamiliesOff || minorLinePositions.length === 0
+        ? NO_MINOR_PARANS
+        : generateMinorParans(
+            minorLinePositions,
+            minorParanPartners(linePositions, visiblePlanets),
+            meridianLng,
+            minorDecor,
+          ),
+    [minorParansOn, skyFamiliesOff, minorLinePositions, linePositions, visiblePlanets, meridianLng, minorDecor],
   );
 
   // Local Space is its own View now: the window being open IS the on switch, so the
@@ -3829,6 +3901,73 @@ export default function App() {
     };
   }, [overlayLayer, coordSystem, lineSystem]);
 
+  // ── Catalog minor bodies beside the overlay (lib/astro/timeline overlayMinorSamples) ──
+  // The reader's catalog set placed by the overlay's own rule — sampled at its instant,
+  // directed by its arc, or a composite partner's midpoints — in a memo of its own rather
+  // than on the layer: a file landing re-runs this and never the planets' buildOverlay.
+  // The directed rules shift the chart's own sample (minorSamples, taken at `jd`, which is
+  // the layer's base instant), so they cost no engine call.
+  //
+  // Not deferred during playback. Measured (verify:minor-bodies §12g, 2026-10-05, Node): at
+  // the cap of 20 bundled bodies a tick adds ~4 ms of sampling and ~1 ms of geometry, the
+  // planets' share of the same tick being ~2 ms — about 4% of the 120 ms playback interval,
+  // and ~2 ms for the ten hypothetical points. A useDeferredValue on the layer would buy
+  // nothing at that size, and lines, rows and wheel marks stay on one instant without it.
+  const overlayMinorSampled = useMemo<readonly OverlayMinorSample[]>(
+    () =>
+      overlayLayer && minorNumbers.length > 0
+        ? overlayMinorSamples(overlayLayer.bodyRule, minorNumbers, { jd, samples: minorSamples })
+        : NO_OVERLAY_MINOR,
+    [overlayLayer, minorNumbers, jd, minorSamples],
+  );
+  // Their lines and zenith coins in the overlay's frame — the SAME derived line system,
+  // projection, Angles filter and zenith gate the overlay's planet lines read (the overlay
+  // memo below; CLAUDE.md rule 5), with the meridian and projection taken from the layer
+  // inside overlayMinorLines exactly as that memo takes them. Tagged with the overlay's
+  // prefix (Cyclo: Tr — catalog bodies ride its transiting side), never relabelled. Its
+  // `positions` and `meridianLng` are what an overlay paran set pairs. Null with none
+  // placed, so an empty set is one stable value rather than a fresh one every tick.
+  const overlayMinor = useMemo(
+    () =>
+      overlayLayer && overlayMinorSampled.length > 0
+        ? overlayMinorLines(overlayLayer, overlayMinorSampled, {
+            lineSystem,
+            coordSystem,
+            visibleLineTypes,
+            zenith: effShowZenith,
+            decor: minorDecor,
+          })
+        : null,
+    [overlayLayer, overlayMinorSampled, lineSystem, coordSystem, visibleLineTypes, effShowZenith, minorDecor],
+  );
+  // The overlay's catalog parans: its catalog bodies (overlayMinor's frame-projected positions
+  // and meridian) paired with its visible planets as its own parans read them (overlayFrame's
+  // ovPositions — the overlay memo's) — so they cross the overlay's drawn lines, as the
+  // chart's cross the chart's (rule 5). Wherever the overlay's planet parans are drawn: held
+  // with them by minorParansOn, and blocked on Cyclocartography as theirs are. Tagged as the
+  // overlay's catalog lines are (tagMinor: tagLabels would overwrite the label the map's hover
+  // keys on). Null with none.
+  const overlayMinorParans = useMemo(
+    () =>
+      minorParansOn &&
+      overlayLayer &&
+      overlayMinor &&
+      overlayFrame &&
+      overlayMinor.positions.length > 0 &&
+      !overlayAuxBlocked(overlayLayer.kind, 'paran')
+        ? tagMinor(
+            generateMinorParans(
+              overlayMinor.positions,
+              minorParanPartners(overlayFrame.ovPositions, visiblePlanets),
+              overlayMinor.meridianLng,
+              minorDecor,
+            ),
+            OVERLAY_LABEL_PREFIX[overlayLayer.kind],
+          )
+        : null,
+    [minorParansOn, overlayLayer, overlayMinor, overlayFrame, visiblePlanets, minorDecor],
+  );
+
   // One-frame rule: when an overlay is active the auxiliary families (aspect,
   // midpoint, paran, star) render from the OVERLAY's frame and the natal set is
   // hidden — never both. Independent of the Natal display toggle, which keeps
@@ -4015,8 +4154,25 @@ export default function App() {
   // overlay ring is unaffected — it reads overlayLayer directly — so the eclipse chart
   // still shows in the wheel, just never on the map. Withheld from the plugin context
   // too, so a plugin can't act on lines no one can see.
+  //
+  // The catalog bodies' lines and coins ride in the same bundle, so every gate on it —
+  // the eclipse opt-in here, the promoted swap (effMapOverlay), the spotlight
+  // (spotMapOverlay) — takes them with the planets'. Joined here rather than built in the
+  // memo above, so a catalog file landing doesn't regenerate the planets' lines.
+  const overlayWithMinor = useMemo<OverlayData | null>(
+    () =>
+      overlay && overlayMinor
+        ? {
+            ...overlay,
+            minorLines: overlayMinor.lines,
+            minorZenith: overlayMinor.zenith,
+            minorParans: overlayMinorParans,
+          }
+        : overlay,
+    [overlay, overlayMinor, overlayMinorParans],
+  );
   const mapOverlay =
-    overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlay;
+    overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlayWithMinor;
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -4060,6 +4216,64 @@ export default function App() {
   // exactly this condition — because this has to be readable up here, where orbBands
   // already reaches it.
   const hideNatalAngles = advancedWheel && !showNatalLines && !promoteOverlay;
+
+  // Per-row status of the reader's catalog bodies — derived here, once the overlay is
+  // known, with the draw gates known at this point folded in by minorChartContext: no
+  // birth time and the Angles filter for the chart's lines; for an overlay, whether its
+  // lines reach the map beside the chart's (the row's `overlay` side, present only then),
+  // or whether it stands in for the chart (promoted: the overlay's set IS the chart's).
+  // The natal-lines gates are resolved further down the pipeline and applied there
+  // (minorRowsEff / minorRowsDrawn), so a row never reads 'shown' over a map with none of
+  // its lines.
+  //
+  // Keyed on the overlay's placed SET and its mode, not on the layer: during playback the
+  // layer is new every tick while the set almost never changes, and the window's rows
+  // (and every panel reading them) then hold still.
+  const overlayMinorKind = overlayLayer?.kind ?? null;
+  const overlayMinorSet = overlayMinorSampled.map((s) => s.n).join(',');
+  const overlayOnMap = mapOverlay !== null;
+  const minorRows = useMemo(
+    () =>
+      deriveMinorRows(
+        minorPref,
+        minorLoadState,
+        minorChartContext({
+          advanced: advancedWheel,
+          none: !current,
+          // Whatever sampled where the lines are drawn — minorPositions itself when not
+          // sliding (the same array), the slid instant's sample while sliding.
+          chartSampled: new Set(minorSlidPositions.map((p) => p.n)),
+          overlay: overlayMinorKind
+            ? {
+                sampled: new Set(overlayMinorSet ? overlayMinorSet.split(',').map(Number) : []),
+                mode: overlayMinorKind,
+              }
+            : null,
+          promoted: promoteOverlay,
+          overlayOnMap,
+          // The same no-birth-time rule as the lines (minorLinePositions): a geodetic map
+          // draws them, so a row there says what the lines say. (2026-10-02)
+          noTime: noTime && !timelessGeodetic,
+          anglesOff: minorAnglesOff,
+        }),
+      ),
+    // minorLoadVer: a file landing or failing changes a row (minorLoadState is a reader).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      minorPref,
+      advancedWheel,
+      current,
+      minorSlidPositions,
+      minorLoadVer,
+      overlayMinorKind,
+      overlayMinorSet,
+      promoteOverlay,
+      overlayOnMap,
+      noTime,
+      timelessGeodetic,
+      minorAnglesOff,
+    ],
+  );
 
   // Orb-of-influence zones (Filters ▸ Orb Zones): bands around whatever line set
   // the map is actually drawing (natal, or the promoted overlay standing in for
@@ -4770,8 +4984,8 @@ export default function App() {
   // planets and the catalog bodies below, so nothing natal can ride onto a wheel that
   // is standing in for another chart. False for the NO CHART state and for a promoted
   // overlay, whose bodies are another instant's: a catalog body sampled at the birth
-  // moment has no place on a transit chart, and there is no sample at the overlay's own
-  // instant to put there instead (see wheelMinor).
+  // moment has no place on a transit chart — the overlay's own catalog set goes there
+  // instead (see wheelMinor).
   const wheelIsNatal = !noChart && !(promoteOverlay && displayOverlayEcliptic);
   // On a geodetic map the wheel's Fortune is built from the place's geodetic Ascendant
   // (fortuneWheelPos reads `angles`, which is the place's frame there), while the map's
@@ -4850,20 +5064,26 @@ export default function App() {
   // the Sun and Moon it would give the Ascendant back exactly. (2026-10-02)
   const maskGeAngleText =
     identity.on && lineSystem === 'geodetic' && (isNatalPin || !activePoint);
-  // The catalog minor bodies the NATAL wheel places — every one that is wanted, loaded
-  // and sampled at the chart's own moment, moved into the reader's zodiac by the natal
-  // ring's own ayanamsa.
+  // The catalog minor bodies the wheel's single chart places — every one that is wanted,
+  // loaded and sampled at the chart's own moment (a composite's: its midpoints), moved into
+  // the reader's zodiac by the natal ring's own ayanamsa. While a promoted overlay stands in
+  // for the chart, ITS set instead — placed by the overlay's rule, moved by the overlay
+  // ring's ayanamsa, as its planets are (displayOverlayEcliptic) — so the wheel and the
+  // lines it now stands for read one instant. None in the NO CHART state.
   //
   // Deliberately NOT the map's drawn set. The holds that belong to a BODY apply here as
-  // they do everywhere (its switch, Hide all, Advanced, a held source, a composite, a
-  // date outside its file) — minorNumbers and the sample already carry them. The gates
+  // they do everywhere (its switch, Hide all, Advanced, a held source, a date outside its
+  // file) — minorNumbers and the sample already carry them. The gates
   // that belong to the LINES do not: no birth time, the Angles filter, the natal lines
   // hidden, the eclipse clean-up. Each of those takes a body's lines off the map while
   // the body itself is still where it is, exactly as it does for the planets, whose
   // wheel set has never read a line switch either. So this must never read
   // drawMinorLines, effMinorLines, minorRowsEff, minorRowsDrawn or minorAnglesOff — a
   // wheel that followed them would lose a body every time a reader tidied the map.
-  const wheelMinor = useMemo<readonly WheelMinorBody[]>(
+  //
+  // Two memos and a pick, so the natal set holds still through a playback tick that moves
+  // only the overlay's.
+  const natalWheelMinor = useMemo<readonly WheelMinorBody[]>(
     () =>
       wheelIsNatal && minorSamples.length > 0
         ? buildWheelMinor(minorSamples, {
@@ -4875,27 +5095,61 @@ export default function App() {
         : NO_WHEEL_MINOR,
     [wheelIsNatal, minorSamples, natalAyan, minorDecor, t, minorPref.list],
   );
+  // Not natal and not NO CHART: the promoted overlay, the only other way here.
+  const promotedWheelMinor = useMemo<readonly WheelMinorBody[]>(
+    () =>
+      !wheelIsNatal && !noChart && overlayMinorSampled.length > 0
+        ? buildWheelMinor(overlayMinorSampled, {
+            ayan: overlayAyan,
+            decor: minorDecor,
+            t,
+            list: minorPref.list,
+          })
+        : NO_WHEEL_MINOR,
+    [wheelIsNatal, noChart, overlayMinorSampled, overlayAyan, minorDecor, t, minorPref.list],
+  );
+  const wheelMinor = wheelIsNatal ? natalWheelMinor : promotedWheelMinor;
   // Hold the catalog ring while a wanted body's file is still on its way. A body with no
   // load state yet already reads 'loading', so the ring is held from the first paint —
   // without this the planet ring would draw, then step inward a moment later when the
-  // files land. Only a REQUEST: the wheel takes the ring only where its size allows.
-  //
-  // TODAY THIS HAS NO EFFECT ANYWHERE. The catalog ring is switched off
-  // (MINOR_RING_ENABLED in lib/wheelGeometry, with the reason), so no wheel is granted it,
-  // and WheelSvg reads this only as part of that request. Kept rather than deleted: it is
-  // the part of the ring that has to be right the day the ring comes back, and nothing
-  // would flag its absence then — the planets would just step inward after first paint.
+  // files land. Only a REQUEST: the wheel takes the ring only where it draws one — a
+  // single wheel from 600px (MINOR_RING_MIN in lib/wheelGeometry), never a bi-wheel — so
+  // anywhere else this changes nothing.
   const wheelMinorReserve = wheelIsNatal && minorRows.some((r) => r.status.kind === 'loading');
   // Azimuth and altitude for the positions table's catalog rows, at the very observer
-  // and sidereal time the planets' rows use (advancedCoords). From the TROPICAL ra/dec
-  // each body was sampled with — horizon coordinates are frame-independent physics, and
-  // a zodiac-shifted input would corrupt them. Null when the wheel is not the natal
-  // chart, since then there are no catalog rows to fill.
+  // and sidereal time the planets' rows use (advancedCoords) — the overlay's own while a
+  // promoted overlay is the chart. From the TROPICAL ra/dec each body was placed with —
+  // horizon coordinates are frame-independent physics, and a zodiac-shifted input would
+  // corrupt them. Null when the wheel has no catalog bodies.
   const minorCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
     if (!obs || wheelMinor.length === 0) return null;
-    return getMinorHorizontalCoords(wheelMinor, gmst, obs.lat, obs.lng);
-  }, [activePoint, current, wheelMinor, gmst]);
+    const st = promoteOverlay && overlayLayer ? overlayLayer.gmst : gmst;
+    return getMinorHorizontalCoords(wheelMinor, st, obs.lat, obs.lng);
+  }, [activePoint, current, wheelMinor, gmst, promoteOverlay, overlayLayer]);
+  // The same for the OVERLAY's ring, while it rides beside the chart: its catalog set,
+  // placed by its rule and moved by its own ayanamsa — exactly as its planets are — for the
+  // bi-wheel's overlay marks, the Dual layout's second wheel and the overlay's positions
+  // table, with horizon figures at the overlay's own sidereal time (overlayAdvancedCoords'
+  // observer and instant). The overlay ring's own gates and no others: none when promoted
+  // (wheelMinor carries it then) and none for Cyclo, which is never wheeled.
+  const overlayMinorWheel = useMemo<readonly WheelMinorBody[]>(
+    () =>
+      !promoteOverlay && !isCyclo && overlayMinorSampled.length > 0
+        ? buildWheelMinor(overlayMinorSampled, {
+            ayan: overlayAyan,
+            decor: minorDecor,
+            t,
+            list: minorPref.list,
+          })
+        : NO_WHEEL_MINOR,
+    [promoteOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecor, t, minorPref.list],
+  );
+  const overlayMinorCoords = useMemo(() => {
+    const obs = activePoint ?? current?.birthplace;
+    if (!obs || !overlayLayer || overlayMinorWheel.length === 0) return null;
+    return getMinorHorizontalCoords(overlayMinorWheel, overlayLayer.gmst, obs.lat, obs.lng);
+  }, [activePoint, current, overlayLayer, overlayMinorWheel]);
   // Capture "Extras" rows: the SAME planet/angle readout the wheel sidebar shows, filtered
   // by the on-map planet + line-type toggles so the panel matches what's drawn. lonToZodiac
   // (in the panel) formats each from these longitudes, so the two readouts can't diverge.
@@ -5004,6 +5258,16 @@ export default function App() {
   // own filters, and the outer ring of a running time overlay. The docked panel leaves both
   // out: at rail/band size they crowd the wheel past reading. Same gate the sidebar uses —
   // a promoted overlay or CCG has no coherent second chart to ring.
+  // The overlay chart's short name, as the sidebar's second wheel is titled with it
+  // (ExpandedChartSidebar's overlayName, by the same rule) — what a card wheel's catalog
+  // marks of that chart name themselves by.
+  const overlayWheelName = overlayLayer
+    ? overlayReturn
+      ? t(`timeline.returns.${overlayReturn}.chartName` as 'timeline.returns.solar.chartName')
+      : overlayLayer.kind === 'cyclo'
+        ? 'CCG'
+        : overlayLayer.labelFull.split('·')[0].trim()
+    : null;
   const captureCardOverlay =
     captureChart && !promoteOverlay && !isCyclo && displayOverlayEcliptic
       ? displayOverlayEcliptic.filter((p) => visiblePlanets.has(p.name))
@@ -5020,8 +5284,8 @@ export default function App() {
   // much as the planets are, and the list is promised to match the sidebar's readout. Top
   // level on the wheel payload rather than among the card's extras, because they are not a
   // crowding detail a rail wheel has to give up: they are rim marks at their degree, which
-  // cost no room. (With the catalog ring switched back on, each wheel's own size would
-  // decide between the two; see MINOR_RING_ENABLED in lib/wheelGeometry.)
+  // cost no room. (A wheel of 600px or more also seats them as coins in a ring of their
+  // own, its size deciding as the sidebar's does; see MINOR_RING_MIN in lib/wheelGeometry.)
   const captureFrameExtras: CaptureFrameExtras | null =
     mapTool !== 'capture' || captureViewEff === 'none'
       ? null
@@ -5036,6 +5300,10 @@ export default function App() {
                 visibleAngles: captureExtras.angles ? captureWheelAngles : emptyWheelAngles,
                 balanceGrid: captureExtras.balance ? captureBalanceGrid : null,
                 overlayPlanets: captureCardOverlay,
+                // The overlay ring's catalog bodies beside its planets, under the same
+                // gate (no ring, none of them).
+                overlayMinorBodies: captureCardOverlay ? overlayMinorWheel : null,
+                overlayName: captureCardOverlay ? overlayWheelName : null,
                 overlayAngles:
                   promoteOverlay || isCyclo ? null : (displayOverlayAngles ?? null),
                 visibleAspects,
@@ -5880,6 +6148,9 @@ export default function App() {
         natalParans: EMPTY_FC,
         natalStarLines: EMPTY_FC,
         minorLines: EMPTY_FC,
+        overlayMinorLines: null,
+        minorParans: EMPTY_FC,
+        overlayMinorParans: null,
         skyHeld,
       };
     }
@@ -5921,11 +6192,23 @@ export default function App() {
     let overlayLines: FeatureCollection | null = null;
     let overlayParans: FeatureCollection | null = null;
     let overlayLocalSpace: FeatureCollection | null = null;
+    let overlayMinorAll: FeatureCollection | null = null;
+    let overlayMinorParansAll: FeatureCollection | null = null;
+    // The catalog bodies' parans with the planets, the chart's: only while the reader's
+    // switch is in effect (minorParansOn — held with the map's parans, so a set that lists
+    // them never lists rows the reader can't switch on), and, as allParans, none without a
+    // birth time. Every built-in body for a partner — unfiltered, as allParans pairs every
+    // body — from the lines' own positions, meridian and decoration.
+    const natalMinorParans: FeatureCollection =
+      minorParansOn && !skyFamiliesOff && minorLinePositions.length > 0
+        ? generateMinorParans(minorLinePositions, linePositions, meridianLng, minorDecor)
+        : EMPTY_FC;
     // One-frame rule: when an overlay is active its auxiliary families REPLACE the
     // natal ones in the complete set, so a reveal/report reads the active frame.
     let angleLinesOut: FeatureCollection = natalAngleLines;
     let starLinesOut: FeatureCollection = natalStarLines;
     let paransOut: FeatureCollection = allParans;
+    let minorParansOut: FeatureCollection = natalMinorParans;
     if (overlayLayer) {
       const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
       const isCyclo = overlayLayer.kind === 'cyclo';
@@ -5949,6 +6232,25 @@ export default function App() {
         skyHeld || overlayAuxBlocked(overlayLayer.kind, 'paran')
           ? null
           : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix);
+      // The catalog bodies beside it: the drawn set's samples and frame (overlayMinor),
+      // every angle and no filter — what the natal minorLines below is for the chart.
+      const ovMinor = overlayMinorLines(overlayLayer, overlayMinorSampled, {
+        lineSystem,
+        coordSystem,
+        visibleLineTypes: ALL_MINOR_ANGLES,
+        zenith: false,
+        decor: minorDecor,
+      });
+      overlayMinorAll = ovMinor.lines;
+      // …and their parans with the overlay's bodies, wherever its planet parans are in this
+      // set (overlayParans), the switch in effect — tagged as its catalog lines are.
+      overlayMinorParansAll =
+        overlayParans && minorParansOn && ovMinor.positions.length > 0
+          ? tagMinor(
+              generateMinorParans(ovMinor.positions, ovPositions, ovMinor.meridianLng, minorDecor),
+              prefix,
+            )
+          : null;
       overlayLocalSpace = skyHeld
         ? null
         : withThemeLineColors(
@@ -5992,7 +6294,9 @@ export default function App() {
               isCyclo ? 'Tr' : prefix,
             );
         // Natal parans hidden while an overlay is active; the overlay's live in overlayParans.
+        // The catalog rows follow them, as they do on the map.
         paransOut = EMPTY_FC;
+        minorParansOut = EMPTY_FC;
       }
     }
     return {
@@ -6011,9 +6315,15 @@ export default function App() {
       natalAngleLines,
       natalParans: allParans,
       natalStarLines,
-      // Catalog bodies are natal-only for now (no overlay carries them), so there is
-      // no active-frame twin to choose between: every line type of the ones in play.
+      // Catalog bodies: the chart's own, every line type of the ones in play — and an
+      // overlay's beside them, tagged, as the overlay's planet lines are. No one-frame rule
+      // to choose between: catalog lines are angle lines, which an overlay draws beside
+      // the chart's rather than in place of them.
       minorLines: allMinorLines,
+      overlayMinorLines: overlayMinorAll,
+      // Their parans with the planets, under the parans' one-frame rule (paransOut above).
+      minorParans: minorParansOut,
+      overlayMinorParans: overlayMinorParansAll,
       skyHeld,
     };
   }, [
@@ -6022,6 +6332,10 @@ export default function App() {
     coordSystem,
     allLines,
     allMinorLines,
+    overlayMinorSampled,
+    minorDecor,
+    minorParansOn,
+    minorLinePositions,
     theme,
     linePositions,
     meridianLng,
@@ -6080,6 +6394,8 @@ export default function App() {
         // The catalog bodies in play (switched on AND loaded): one landing or leaving
         // changes the complete set.
         minorNumbers.join(','),
+        // …and whether their parans with the planets are in it (the switch, as derived).
+        minorParansOn ? 'mp' : '',
       ].join('|'),
     [
       current,
@@ -6087,6 +6403,7 @@ export default function App() {
       nodeType,
       ephemerisEpoch,
       minorNumbers,
+      minorParansOn,
       lineSystem,
       coordSystem,
       starSet,
@@ -6175,18 +6492,23 @@ export default function App() {
       ? overlayStarLines
       : starLines;
   // Catalog minor-body lines ride WITH the natal planet lines: gone under the eclipse
-  // clean-up and while an overlay is promoted (no overlay carries catalog bodies yet, so
-  // the promoted frame has none), and — for DRAWING only — under Natal Lines, exactly as
-  // effLines/drawLines above split it.
-  const effMinorLines = eclipseSolo || promoted ? EMPTY_FC : minorLines;
+  // clean-up, swapped for the overlay's own catalog lines while it is promoted (tagged, in
+  // the natal source, exactly as the promoted planet lines are), and — for DRAWING only —
+  // under Natal Lines, exactly as effLines/drawLines above split it.
+  const effMinorLines = eclipseSolo
+    ? EMPTY_FC
+    : promoted
+      ? (overlayMinor?.lines ?? EMPTY_FC)
+      : minorLines;
   const drawMinorLines = hideNatalAngles ? EMPTY_FC : effMinorLines;
   // The rows follow the same split, so a row reads 'shown' only while its lines are
   // there: the EFF rows (the extension context, beside effMinorLines — a panel that keeps
   // reading the natal lines under the Natal Lines hide keeps seeing these as shown) and
   // the DRAWN rows (the window and the More button's count, which describe the screen).
+  // A promoted overlay is not a gate here: the rows already read its set (minorRows).
   const minorRowsEff = useMemo(
-    () => withMinorDrawGate(minorRows, eclipseSolo || promoted ? 'natalOff' : null),
-    [minorRows, eclipseSolo, promoted],
+    () => withMinorDrawGate(minorRows, eclipseSolo ? 'natalOff' : null),
+    [minorRows, eclipseSolo],
   );
   const minorRowsDrawn = useMemo(
     () => withMinorDrawGate(minorRowsEff, hideNatalAngles ? 'natalOff' : null),
@@ -6194,9 +6516,13 @@ export default function App() {
   );
   // Their zenith coins follow the planets' stamps' gates (the MC filter, applied where
   // they're generated; Zeniths/Nadirs, Natal Lines, eclipse clean-up) and, like the
-  // lines, leave with a promoted overlay.
+  // lines, are the overlay's while it is promoted.
   const effMinorZenith =
-    eclipseSolo || hideNatalAngles || !effShowZenith || promoted ? EMPTY_FC : minorZenith;
+    eclipseSolo || hideNatalAngles || !effShowZenith
+      ? EMPTY_FC
+      : promoted
+        ? (overlayMinor?.zenith ?? EMPTY_FC)
+        : minorZenith;
   const effParans = eclipseSolo
     ? EMPTY_FC
     : promoted
@@ -6204,6 +6530,17 @@ export default function App() {
       : overlayAux
         ? EMPTY_FC
         : parans;
+  // The catalog parans take the planets' parans' exact path: gone under the eclipse clean-up,
+  // the overlay's own while it is promoted (tagged, in the chart's source, as the promoted
+  // planet parans are), and the chart's hidden while an overlay is active (one-frame rule —
+  // the overlay's ride in its bundle, effMapOverlay.minorParans).
+  const effMinorParans: FeatureCollection<LineString, MinorParanProps> = eclipseSolo
+    ? NO_MINOR_PARANS
+    : promoted
+      ? (overlayMinorParans ?? NO_MINOR_PARANS)
+      : overlayAux
+        ? NO_MINOR_PARANS
+        : minorParans;
   const effLocalSpace = eclipseSolo ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
   // The three below are map-only — nothing on the extension context carries them — so
   // they take the Natal Lines hide in place rather than needing a draw* twin. Each is a
@@ -6234,6 +6571,10 @@ export default function App() {
   const effOverlayLines = promoted ? null : (mapOverlay?.lines ?? null);
   const effOverlayParans = promoted ? null : (mapOverlay?.parans ?? null);
   const effOverlayLocalSpace = promoted ? null : (mapOverlay?.localSpace ?? null);
+  // An overlay's catalog lines beside the chart's, as the extension context hands them:
+  // null exactly when effOverlayLines is (no overlay on the map, or promoted — its catalog
+  // lines are then effMinorLines), and empty while it places none.
+  const effOverlayMinorLines = promoted || !mapOverlay ? null : (mapOverlay.minorLines ?? EMPTY_FC);
   const effMapOverlay = promoted ? null : mapOverlay;
 
   // ── The geodetic grid (lib/astro/geodeticGrid) ──────────────────────────────────────────
@@ -6254,10 +6595,24 @@ export default function App() {
     drawLines.features.length > 0 ||
     (effOverlayLines?.features.length ?? 0) > 0 ||
     drawMinorLines.features.length > 0 ||
+    (effMapOverlay?.minorLines?.features.length ?? 0) > 0 ||
     effAngleLines.features.length > 0 ||
     effStarLines.features.length > 0 ||
     effParans.features.length > 0 ||
-    (effOverlayParans?.features.length ?? 0) > 0;
+    (effOverlayParans?.features.length ?? 0) > 0 ||
+    effMinorParans.features.length > 0 ||
+    (effMapOverlay?.minorParans?.features.length ?? 0) > 0;
+  // How many of the reader's catalog bodies have parans drawn on the map now, the chart's and
+  // an overlay's beside it — handed to the sky band's track (SkyBandTrackContext), which reads
+  // only the built-in bodies and says so while any catalog body has some (rule 5).
+  const minorParanBodies = useMemo(() => {
+    const drawn = new Set<number>();
+    for (const fc of [effMinorParans, effMapOverlay?.minorParans]) {
+      for (const f of fc?.features ?? []) drawn.add(f.properties.number);
+    }
+    return drawn.size;
+  }, [effMinorParans, effMapOverlay]);
+  const openMinorBodiesView = useCallback(() => openViewById('minorBodies'), [openViewById]);
   // The Ascendant curves: the reader's choice once they have made one, else on while no body
   // lines are drawn and off (but one click away) while any are. Derived every render, never
   // written: the line count is a standing state, not an event. (2026-10-02)
@@ -6321,6 +6676,12 @@ export default function App() {
     () => applySpot(drawMinorLines, fullSet ? (fullSet.minorLines ?? EMPTY_FC) : undefined),
     [applySpot, drawMinorLines, fullSet],
   );
+  // The catalog parans on the same terms as their lines: a spotlight with its own set reveals
+  // only the catalog parans that set carries.
+  const spotMinorParans = useMemo(
+    () => applySpot(effMinorParans, fullSet ? (fullSet.minorParans ?? EMPTY_FC) : undefined),
+    [applySpot, effMinorParans, fullSet],
+  );
   const spotLocalSpace = useMemo(() => applySpot(effLocalSpace, fullSet?.localSpace), [applySpot, effLocalSpace, fullSet]);
   // The overlay bundle for the <Map>: off → the effective overlay; aiming → hidden; reveal → the
   // overlay's FULL lines within the radius (or the effective overlay as a fallback), non-line
@@ -6336,6 +6697,17 @@ export default function App() {
         effMapOverlay?.localSpace ?? (EMPTY_FC as OverlayData['localSpace']),
         fullSet?.overlayLocalSpace,
       ),
+      // As spotMinorLines: a spotlight carrying its own set reveals only the catalog lines
+      // that set carries — none when it was built without them.
+      minorLines: applySpot(
+        effMapOverlay?.minorLines ?? (EMPTY_FC as NonNullable<OverlayData['minorLines']>),
+        fullSet ? (fullSet.overlayMinorLines ?? EMPTY_FC) : undefined,
+      ),
+      minorParans: applySpot(
+        effMapOverlay?.minorParans ?? NO_MINOR_PARANS,
+        fullSet ? (fullSet.overlayMinorParans ?? EMPTY_FC) : undefined,
+      ),
+      minorZenith: EMPTY_FC as NonNullable<OverlayData['minorZenith']>,
       zenith: EMPTY_FC as OverlayData['zenith'],
       nadir: EMPTY_FC as OverlayData['nadir'],
       ecliptic: EMPTY_FC as OverlayData['ecliptic'],
@@ -6403,7 +6775,10 @@ export default function App() {
       starLines: effStarLines,
       overlayLocalSpace: effOverlayLocalSpace,
       minorLines: effMinorLines,
+      overlayMinorLines: effOverlayMinorLines,
       minorBodies: minorRowsEff,
+      // DERIVED: the stored switch, held while the map's parans are (CLAUDE.md rule 2).
+      minorParansOn,
       flyTo: extFlyTo,
       markArrival,
       // The borrow-ending setter, so a panel's "jump to this date" leaves the return
@@ -6468,7 +6843,9 @@ export default function App() {
       promoted,
       eclipseSolo,
       minorLines,
+      overlayMinor,
       minorRowsEff,
+      minorParansOn,
       extFlyTo,
       selectOverlay,
       openExtensions,
@@ -6537,6 +6914,7 @@ export default function App() {
         parans={spotParans}
         starLines={spotStarLines}
         minorLines={spotMinorLines}
+        minorParans={spotMinorParans}
         localSpace={spotLocalSpace}
         overlay={spotMapOverlay}
         // While a spotlight is active the reveal is lines-only on a dimmed map, so the non-line
@@ -6708,8 +7086,9 @@ export default function App() {
           minorMore={{
             open: showMinorHud,
             onToggle: () => setShowMinorHud((v) => !v),
-            // Counted on the DRAWN rows: '+N' is bodies with lines on screen.
-            shown: minorRowsDrawn.filter((r) => r.status.kind === 'shown').length,
+            // Counted on the DRAWN rows: '+N' is bodies with lines on screen — the chart's
+            // or an overlay's beside it (minorRowHasLines, the rows' own test).
+            shown: minorRowsDrawn.filter(minorRowHasLines).length,
             held: minorRowsDrawn.filter((r) => r.status.kind === 'held').length,
           }}
           // The PREFERENCE, as the planets above: a Vertex button masked on a geodetic map
@@ -7026,6 +7405,11 @@ export default function App() {
           // but without a birth time the chart has no parans of its own (allParans is
           // empty in either line system; an overlay can still draw its own).
           chartHasTime={!noTime}
+          // For a registered track too: how many catalog bodies have parans on the map, and
+          // the window that switches them — a track that rings only the built-in bodies'
+          // parans says so while there are any.
+          minorParanBodies={minorParanBodies}
+          openMinorBodies={openMinorBodiesView}
           // The band's Fortune entry shows only while the map draws the Lot — the
           // same gate as its lines: in the visible set (a zodiacal frame), and
           // fortuneMapPos (Advanced on, a birth time, not a composite). Rule 5.
@@ -7077,6 +7461,27 @@ export default function App() {
           api={minorApi}
           rows={minorRowsDrawn}
           onRetry={retryMinorBody}
+          // Whose dates a "no data" tip has to name: a composite's two parents, for the
+          // chart's lines or a composite partner's beside them.
+          composite={{
+            chart: !!current?.composite,
+            overlay: overlayLayer?.bodyRule.by === 'composite',
+          }}
+          // "Parans with the planets": the STORED choice, greyed while held, with the reason
+          // that holds it and where to change it (CLAUDE.md row A) — the sky hold first, as on
+          // the map's own Parans toggle, whose reason outranks Cyclocartography's. The window
+          // only renders with Advanced on, so the held map toggle is always reachable.
+          parans={{
+            on: minorParansPref,
+            heldNote: !minorParansHeld
+              ? null
+              : skyHeld
+                ? t('settings.inert.paransHeldFull')
+                : overlayAuxBlocked(overlayMode, 'paran')
+                  ? t('settings.parans.blockedCyclo')
+                  : t('minorBodies.hud.parans.held'),
+            onChange: setMinorParansPref,
+          }}
         />
       )}
       {effShowAspectLines && gatedTierMet && showAspectLinesHud && !viewParked && (
@@ -7244,6 +7649,10 @@ export default function App() {
           // CCG never rides as an overlay ring/caption either (no coherent chart to
           // show alongside the natal) — isCyclo drops it whether or not it's promoted.
           overlayPlanets={promoteOverlay || isCyclo ? null : displayOverlayEcliptic}
+          // The overlay ring's catalog bodies and their horizon figures — empty under the
+          // same two exclusions (overlayMinorWheel).
+          overlayMinorBodies={overlayMinorWheel}
+          overlayMinorCoords={overlayMinorCoords}
           overlayAngles={promoteOverlay || isCyclo ? null : displayOverlayAngles}
           overlayLabel={
             promoteOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)

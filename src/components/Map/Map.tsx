@@ -37,7 +37,7 @@ import type { StarLineProps } from '../../lib/astro/starLines';
 import type { MinorLineProps, MinorZenithProps } from '../../lib/astro/minorLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
 import { aspectBranchReading, type AngleOverlayLineProps, type AspectKind } from '../../lib/astro/angleAspects';
-import type { ParanProps } from '../../lib/astro/parans';
+import type { MinorParanProps, ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
 import type { EclipseMapData } from '../../lib/astro/eclipses';
@@ -403,6 +403,10 @@ function estimateEdgeChip(b: LineBadge): BadgeSize {
 //    name or point reaches the cut (the longest, Persephone and Proserpina, are 10); it bounds a
 //    catalog body's chip at about the width of an aspect line's.
 interface MinorChip extends MinorBadge {
+  /** On an overlay's catalog line (the 'minor-lines-ov' source): its fly-to reads the
+   *  overlay's coins and keys by its tag, as an overlay planet's chip does. A promoted
+   *  line's chip carries the tag too (`prefix`) but is the chart's source, so not this. */
+  overlay?: boolean;
   /** The name as the chip prints it, cut to MINOR_CHIP_NAME_MAX ('' for a body known by number only). */
   label: string;
   /** What the label adds to the name: "(433)", "(hyp)" — or, with no name, the whole label. */
@@ -790,6 +794,17 @@ export interface OverlayData {
    *  only while the overlay zeniths are (the App gates it the same way; empty
    *  otherwise). */
   ecliptic: FeatureCollection<LineString>;
+  /** The catalog minor bodies' angle lines beside the overlay's planets — placed by the
+   *  overlay's rule, tagged with its prefix — on a source of their own ('minor-lines-ov'),
+   *  so a playback tick re-tiles them without touching the chart's catalog lines. Riding
+   *  in this bundle, they take every gate the overlay's planet lines take. Absent = none. */
+  minorLines?: FeatureCollection<LineString, MinorLineProps> | null;
+  /** Their zenith coins, under the overlay's own Zeniths gate (empty otherwise). */
+  minorZenith?: FeatureCollection<Point, MinorZenithProps> | null;
+  /** Their parans with the overlay's planets (parans.ts MinorParanProps), wherever the
+   *  overlay's own parans are drawn and the reader's switch is on; tagged. A source of their
+   *  own ('minor-parans-ov'), dashed as the overlay's parans are. Absent = none. */
+  minorParans?: FeatureCollection<LineString, MinorParanProps> | null;
 }
 
 // Live result of the on-map measurement tool: great-circle separation between
@@ -875,10 +890,16 @@ const SNAP_LINE_LAYERS = [
   // with LINE_HIT_LAYERS (hover tips), which already lists it.
   'star-lines-layer',
   // Catalog minor-body lines, on the same terms: the line layer is the geometry, the
-  // coin beads along it are not snapped to. Empty source when none are drawn.
+  // coin beads along it are not snapped to. Empty source when none are drawn. An
+  // overlay's catalog lines are two layers (one per dash pattern), both snapped to.
   'minor-lines-layer',
+  'minor-lines-ov-meridian',
+  'minor-lines-ov-horizon',
   'parans-layer',
   'parans-ov-layer',
+  // The catalog bodies' parans, with the planets' (empty unless their switch is on).
+  'minor-parans-layer',
+  'minor-parans-ov-layer',
   'local-space-layer-out',
   'local-space-layer-in',
   'local-space-ov-layer',
@@ -1027,7 +1048,9 @@ function constrainToHoveredLine(
 // below): they hover, name themselves and fly on click like a planet's stamp, but reach
 // that path as their own `kind` of hit, never as a PlanetName.
 const MINOR_ZENITH_LAYER = 'minor-zenith-layer';
-const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer', 'acg-nadir-ov-layer', MINOR_ZENITH_LAYER] as const;
+// …and an overlay's catalog coins, the overlay twin, on a source of their own.
+const MINOR_ZENITH_OV_LAYER = 'minor-zenith-ov-layer';
+const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer', 'acg-nadir-ov-layer', MINOR_ZENITH_LAYER, MINOR_ZENITH_OV_LAYER] as const;
 
 // Each hit-testable stamp layer → the GeoJSON source its features live in (so a
 // hover/click feature-state targets the right source; ids collide across sources).
@@ -1037,6 +1060,7 @@ const ZENITH_SOURCE_BY_LAYER: Record<string, string> = {
   'acg-nadir-layer': 'acg-nadir',
   'acg-nadir-ov-layer': 'acg-nadir-ov',
   [MINOR_ZENITH_LAYER]: 'minor-zenith',
+  [MINOR_ZENITH_OV_LAYER]: 'minor-zenith-ov',
 };
 const ZENITH_HIT_TOLERANCE_PX = 4;
 
@@ -1155,16 +1179,19 @@ function zenithAtPoint(
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
-  if (f.layer.id === MINOR_ZENITH_LAYER) {
+  if (f.layer.id === MINOR_ZENITH_LAYER || f.layer.id === MINOR_ZENITH_OV_LAYER) {
     // The source promotes `body` to the feature id (see 'minor-zenith' in
-    // setupCustomLayers), so f.id IS the `mp:<n>` string the hover state keys on.
+    // setupCustomLayers), so f.id IS the `mp:<n>` string the hover state keys on. An
+    // overlay's coin (or a promoted one, in the chart's source) carries the overlay's tag,
+    // which the tip leads with; an overlay coin's fly-to toggle keys by it too.
     const [mlng, mlat] = f.geometry.coordinates as [number, number];
     return {
       kind: 'minor',
       id: String(f.id),
-      source: ZENITH_SOURCE_BY_LAYER[MINOR_ZENITH_LAYER],
-      overlay: false,
+      source: ZENITH_SOURCE_BY_LAYER[f.layer.id],
+      overlay: f.layer.id === MINOR_ZENITH_OV_LAYER,
       nadir: false,
+      tag: typeof f.properties.tag === 'string' ? f.properties.tag : undefined,
       body: String(f.id),
       props: f.properties,
       lng: mlng,
@@ -1253,8 +1280,11 @@ function crossAtPoint(
 // the lineCard builder), so a layer listed here is clickable too.
 const LINE_HIT_LAYERS = [
   'star-lines-layer',
-  // Catalog minor bodies: named "Eros (433) MC" on hover, and carded on click.
+  // Catalog minor bodies: named "Eros (433) MC" on hover, and carded on click — an
+  // overlay's ("Tr Eros (433) MC") too, by its two dash layers.
   'minor-lines-layer',
+  'minor-lines-ov-meridian',
+  'minor-lines-ov-horizon',
   'acg-lines-meridian',
   'acg-lines-horizon',
   'acg-lines-meridian-pair',
@@ -1266,6 +1296,11 @@ const LINE_HIT_LAYERS = [
   'angle-lines-layer',
   'parans-layer',
   'parans-ov-layer',
+  // A catalog body × planet paran: "Eros (433) MC × Saturn AS" on hover, carded on click —
+  // never through the 'parans' branches, which read planetA/planetB (its layer name is
+  // chosen not to start with 'parans' for exactly that).
+  'minor-parans-layer',
+  'minor-parans-ov-layer',
   'local-space-layer-out',
   'local-space-layer-in',
   'local-space-ov-layer',
@@ -1315,7 +1350,7 @@ const POLAR_LAT = 66.5;
 // Whether this hovered line is a rising/setting-type curve, whose reading is
 // ambiguous around a polar crest (meridians are immune).
 function isHorizonLine(layerId: string, props: Record<string, unknown>): boolean {
-  if (layerId.startsWith('acg-lines') || layerId === 'minor-lines-layer') {
+  if (layerId.startsWith('acg-lines') || layerId.startsWith('minor-lines')) {
     return props.lineType === 'ASC' || props.lineType === 'DSC';
   }
   if (layerId === 'angle-lines-layer') {
@@ -1401,14 +1436,28 @@ function lineLabelHtml(
       pre +
       `<span class="cross-tip-glyph" style="color:${props.color}">★</span>` +
       `${props.star} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
-  } else if (layerId === 'minor-lines-layer') {
+  } else if (layerId.startsWith('minor-lines')) {
     // Catalog minor body: its mark (own symbol, else the shared diamond — as its map
     // coin draws it) in the line colour, then "Eros (433)" and the angle, like the
     // planet rows. Named by number + name, never through props.planet (it has none).
+    // An overlay's (or a promoted) line leads with its tag, as the planets' do.
     row =
       pre +
       minorMarkHtml(props, 'cross-tip-glyph') +
       `${minorNameHtml(props, t)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+  } else if (layerId.startsWith('minor-parans')) {
+    // A catalog body × built-in body paran, in side order (`side` 'A': the catalog body holds
+    // angleA): the body's mark and name on its angle, the partner's glyph and name on the
+    // other — the planet paran row's shape, with the catalog side named as its lines are.
+    const partner = props.partner as PlanetName;
+    const own = minorMarkHtml(props, 'cross-tip-glyph') + minorNameHtml(props, t);
+    const other = glyphHtml(partner, PLANET_COLORS[partner]) + labels.planet(partner);
+    const [first, second] = props.side === 'A' ? [own, other] : [other, own];
+    row =
+      pre +
+      `${first} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
+      `<span class="cross-tip-x">×</span>` +
+      `${second} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
     row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
@@ -1604,11 +1653,28 @@ function lineAtPoint(
   // The polar-zone flag joins it so the caveat appears/disappears as the hover
   // crosses the polar circle along one line.
   const polarKey = Math.abs(hoverLat) > POLAR_LAT ? 'p' : '';
+  const pr = f.properties;
   return {
     // targetLng joins the id so the popup re-renders when the hover moves between
     // an aspect's two same-label branches (e.g. the two square-MC meridians an
     // in-mundo aspect draws), which share label/planet but sit at different points.
-    id: `${f.layer.id}|${f.properties.label ?? f.properties.planet ?? ''}|${f.properties.targetLng ?? ''}|${polarKey}`,
+    // The bodies and angles join it because a label does not always name the line: an
+    // overlay's planet and paran lines carry the overlay's tag AS their label (tagLabels),
+    // so every one in a layer had one id — a tip moved straight from one to the next kept
+    // the first's text, and a card open on one silenced the tips of all the others.
+    id: [
+      f.layer.id,
+      pr.label ?? '',
+      // A catalog feature names its body here (and a catalog paran its partner): two
+      // catalog bodies can share a name.
+      pr.body ?? '',
+      pr.planet ?? pr.planetA ?? pr.partner ?? '',
+      pr.planetB ?? '',
+      pr.lineType ?? pr.angleA ?? '',
+      pr.angleB ?? '',
+      pr.targetLng ?? '',
+      polarKey,
+    ].join('|'),
     html,
     layerId: f.layer.id,
     // The GeoJSON source the line was drawn from — what the click's distance row looks the
@@ -1678,6 +1744,12 @@ interface MapProps {
   /** Their zenith coins, on each body's MC line at latitude = declination. The host
    *  passes them under the same gates as `zenith` (empty otherwise). */
   minorZenith?: FeatureCollection<Point, MinorZenithProps> | null;
+  /** Their parans with the built-in bodies (parans.ts MinorParanProps) — the reader's own
+   *  switch, off by default — on a source of their own ('minor-parans'), drawn just beneath
+   *  the planets' parans. Never mixed into `parans`: a row carries no planetA/planetB, and
+   *  everything that reads those (the paran hover tip, card and annotation, all keyed on a
+   *  layer id starting 'parans') would misread one. Empty/absent when none. */
+  minorParans?: FeatureCollection<LineString, MinorParanProps> | null;
   /** Night-side wash (Filters ▸ Night Shading); empty when off. */
   nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   /** The geodetic grid (lib/astro/geodeticGrid): the twelve MC meridians and the twelve
@@ -1966,6 +2038,7 @@ interface MapData {
   starLines?: FeatureCollection<LineString, StarLineProps> | null;
   minorLines?: FeatureCollection<LineString, MinorLineProps> | null;
   minorZenith?: FeatureCollection<Point, MinorZenithProps> | null;
+  minorParans?: FeatureCollection<LineString, MinorParanProps> | null;
   nightShade?: FeatureCollection<Polygon, NightShadeProps> | null;
   geoGridMc?: FeatureCollection<LineString, GeoGridLineProps> | null;
   geoGridAsc?: FeatureCollection<LineString, GeoGridLineProps> | null;
@@ -2083,6 +2156,7 @@ function addArrowLayer(
   filter: ExpressionSpecification,
   glyph: string,
   textSize = 15,
+  opacity = 1,
 ) {
   map.addLayer({
     id,
@@ -2106,6 +2180,9 @@ function addArrowLayer(
     },
     paint: {
       'text-color': ['get', 'color'],
+      // Only an overlay's catalog arrows are softened (see 'minor-lines-ov'); every other
+      // arrow layer keeps the paint it always had.
+      ...(opacity !== 1 ? { 'text-opacity': opacity } : {}),
     },
   });
 }
@@ -2462,6 +2539,22 @@ function setupCustomLayers(
     },
   });
 
+  // The catalog bodies' parans with the planets (their own switch in the Minor bodies window):
+  // just BENEATH the planets' parans, a step thinner, in the catalog body's own colour — the
+  // same subordination their angle lines take beside the planets'. Their own source, because
+  // a row carries no planetA/planetB; the layer name must not start with 'parans' (every
+  // paran branch here keys on that prefix and reads those props).
+  map.addSource('minor-parans', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
+  map.addLayer({
+    id: 'minor-parans-layer',
+    source: 'minor-parans',
+    type: 'line',
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.6,
+      'line-opacity': 1,
+    },
+  });
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-layer',
@@ -2792,6 +2885,20 @@ function setupCustomLayers(
   addArrowLayer(map, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
   addArrowLayer(map, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
 
+  // An overlay's catalog parans, beneath its planets' as the chart's are, on the overlay
+  // parans' own dash so a dash pattern keeps meaning one thing on this map.
+  map.addSource('minor-parans-ov', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
+  map.addLayer({
+    id: 'minor-parans-ov-layer',
+    source: 'minor-parans-ov',
+    type: 'line',
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.6,
+      'line-opacity': 1,
+      'line-dasharray': [2, 3],
+    },
+  });
   map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-ov-layer',
@@ -2805,6 +2912,61 @@ function setupCustomLayers(
     },
   });
   // Overlay paran labels are the same DOM chips (paranChips.ts), not drawn along the line.
+
+  // ── An overlay's catalog minor bodies: the reader's catalog set placed by the overlay's
+  // rule (transits at the target, a direction by its arc, a partner at their moment), on a
+  // source of its own so a playback tick never re-tiles the chart's catalog lines. Just
+  // under the overlay's planet lines, which keep priority as the chart's planets do over
+  // its catalog lines. Told apart from the chart's catalog lines the way every overlay line
+  // is told apart from the chart's: dashed, on the overlay planets' own patterns ([3,3] on
+  // the meridians, [2,3] on the horizon lines) so a dash pattern means one thing on this
+  // map, at the catalog lines' own lighter weights, with their arrows and coin beads
+  // softened to the overlay stamps' 0.85.
+  map.addSource('minor-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'minor-lines-ov-meridian',
+    source: 'minor-lines-ov',
+    type: 'line',
+    filter: ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.4, 0.9],
+      'line-opacity': 1,
+      'line-dasharray': [3, 3],
+    },
+  });
+  map.addLayer({
+    id: 'minor-lines-ov-horizon',
+    source: 'minor-lines-ov',
+    type: 'line',
+    filter: ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1.1,
+      'line-opacity': 1,
+      'line-dasharray': [2, 3],
+    },
+  });
+  addArrowLayer(map, 'minor-lines-ov-arrows-asc', 'minor-lines-ov', lineTypeIs('ASC'), '→', 12, 0.85);
+  addArrowLayer(map, 'minor-lines-ov-arrows-dsc', 'minor-lines-ov', lineTypeIs('DSC'), '←', 12, 0.85);
+  map.addLayer({
+    id: 'minor-lines-ov-marks',
+    source: 'minor-lines-ov',
+    type: 'symbol',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': 0.4,
+      'symbol-placement': 'line',
+      'symbol-spacing': 220,
+      'icon-rotation-alignment': 'viewport',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-padding': 0,
+    },
+    paint: {
+      'icon-opacity': 0.85,
+    },
+  });
 
   map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
@@ -2981,6 +3143,52 @@ function setupCustomLayers(
       'icon-ignore-placement': true,
     },
   });
+  // An overlay's catalog coins: the same coin, a touch softer as the overlay planets'
+  // stamps are (0.85), and like them beneath every planet stamp. Interactive on the same
+  // terms (zenithAtPoint's `kind: 'minor'` hit, overlay true), promoting `body` for the
+  // same reason. Beneath the chart's own coins, so the chart's wins where two coincide.
+  map.addSource('minor-zenith-ov', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    promoteId: 'body',
+  });
+  map.addLayer(
+    {
+      id: 'minor-zenith-ov-disc',
+      source: 'minor-zenith-ov',
+      type: 'circle',
+      paint: {
+        'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
+        'circle-radius-transition': { duration: 150, delay: 0 },
+        'circle-color': zenithFill,
+        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
+        'circle-opacity-transition': { duration: 150, delay: 0 },
+        'circle-stroke-color': ['get', 'color'],
+        'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
+        'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
+        'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
+      },
+    },
+    'minor-zenith-disc',
+  );
+  map.addLayer(
+    {
+      id: MINOR_ZENITH_OV_LAYER,
+      source: 'minor-zenith-ov',
+      type: 'symbol',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': 1,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        'icon-opacity': 0.85,
+      },
+    },
+    'minor-zenith-disc',
+  );
 
   // ── Overlay zenith stamps: the same glyph discs as the natal zeniths below, but
   // for the active overlay's bodies. The App feeds this source points only while
@@ -3383,6 +3591,7 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOn
   // Catalog minor bodies: natal-frame linework, so the LS-only export empties them too.
   pushGated('minor-lines', data.minorLines ?? EMPTY_DATA);
   pushGated('minor-zenith', data.minorZenith ?? EMPTY_DATA);
+  pushGated('minor-parans', data.minorParans ?? EMPTY_DATA);
   pushGated('night-shade', data.nightShade ?? EMPTY_DATA);
   // The geodetic grid and the uncertainty bands, gated like every other family so the LS-only
   // export drops them. Deliberately NOT in spinPaint: Slide is held on a geodetic map, and the
@@ -3412,6 +3621,12 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOn
   pushGated('acg-zenith-ov', ov ? ov.zenith : EMPTY_DATA);
   pushGated('acg-nadir-ov', ov ? ov.nadir : EMPTY_DATA);
   pushGated('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
+  // The overlay's catalog lines and coins: overlay linework like the rest, so the LS-only
+  // export empties them too. Identity-skipped on their own source, so a change to the
+  // chart's catalog lines never re-tiles these, nor a tick these the chart's.
+  pushGated('minor-lines-ov', ov?.minorLines ?? EMPTY_DATA);
+  pushGated('minor-zenith-ov', ov?.minorZenith ?? EMPTY_DATA);
+  pushGated('minor-parans-ov', ov?.minorParans ?? EMPTY_DATA);
 }
 
 // Whether this browser will give us a WebGL context at all. MapLibre renders the
@@ -3777,6 +3992,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   starLines,
   minorLines,
   minorZenith,
+  minorParans,
   nightShade,
   geoGridMc,
   geoGridAsc,
@@ -4890,7 +5106,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // through a ref (refreshed in the post-commit effect below, beside onRightClick).
   const onArrivalClickRef = useRef(onArrivalClick);
   const onHomeClickRef = useRef(onHomeClick);
-  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // The translator, for computeBadges (bound once, refs only): a catalog chip's words decide its
   // size, so they are resolved where it is placed (minorChipText).
   const tRef = useRef(t);
@@ -4988,7 +5204,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onRightClickRef.current = onRightClick;
     onArrivalClickRef.current = onArrivalClick;
     onHomeClickRef.current = onHomeClick;
-    dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
+    dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     tRef.current = t;
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
@@ -5013,9 +5229,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       'local-space': localSpace,
       'star-lines': starLines,
       'minor-lines': minorLines,
+      'minor-parans': minorParans,
       ecliptic,
       'acg-lines-ov': overlay?.lines,
+      'minor-lines-ov': overlay?.minorLines,
       'parans-ov': overlay?.parans,
+      'minor-parans-ov': overlay?.minorParans,
       'local-space-ov': overlay?.localSpace,
       'ecliptic-ov': overlay?.ecliptic,
     };
@@ -5082,7 +5301,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     (b: ParanBadge) => {
       const map = mapRef.current;
       if (!map) return;
-      const id = `${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}`;
+      // A catalog row's body and side join the id: Sun × Eros and Sun × Zeus are otherwise one
+      // id, and a click on the second would fly back instead of to it.
+      const id = `${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}|${b.minorN ?? ''}|${b.minorSide ?? ''}`;
       const saved = paranReturnRef.current;
       if (saved && saved.id === id) {
         // Second click on the same paran — fly back to the saved view.
@@ -5771,12 +5992,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ? []
         : placeParanChips(
             map,
-            data.overlay?.parans
-              ? [
-                  { fc: data.parans, overlay: false },
-                  { fc: data.overlay.parans, overlay: true },
-                ]
-              : [{ fc: data.parans, overlay: false }],
+            // Each set's catalog rows (the reader's "Parans with the planets") come after its
+            // own planet rows, and PARAN_RANK.pair labels them only once every built-in row of
+            // their set has its chance.
+            [
+              { fc: data.parans, overlay: false },
+              ...(data.minorParans?.features.length ? [{ fc: data.minorParans, overlay: false }] : []),
+              ...(data.overlay?.parans ? [{ fc: data.overlay.parans, overlay: true }] : []),
+              ...(data.overlay?.minorParans?.features.length
+                ? [{ fc: data.overlay.minorParans, overlay: true }]
+                : []),
+            ],
             occupancy,
             paranSizeOf,
             inset,
@@ -5799,15 +6025,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // The pinned set, shifted by the Slide's −θ like the chart's own lines: catalog lines are
       // natal linework (spinPaint holds them screen-fixed through a drag). Not in the LS-only
       // still, which empties their lines at the source.
+      //
+      // An overlay's catalog lines get theirs here too, placed with the chart's in one pass —
+      // NOT shifted (overlay linework rides with the basemap through a Slide, as the overlay
+      // planets' chips do) and keyed apart, so a body's chart chip and its overlay chip are
+      // two chips, as a planet's are.
       const minorFeats = lsTransparentRef.current ? [] : (data.minorLines?.features ?? []);
+      const minorOvFeats = lsTransparentRef.current ? [] : (data.overlay?.minorLines?.features ?? []);
       let minorPlaced: MinorChip[] = [];
-      if (minorFeats.length) {
+      if (minorFeats.length || minorOvFeats.length) {
         const tr = tRef.current;
+        const chips = (feats: typeof minorFeats, overlay: boolean): MinorChip[] =>
+          feats.length === 0
+            ? []
+            : computeMinorBadges(map, overlay ? feats : pinShift(feats), inset).map((b) => ({
+                ...b,
+                ...(overlay ? { key: `ov-${b.key}`, overlay: true } : {}),
+                ...minorChipText(b, tr),
+              }));
         minorPlaced = placeMinorChips(
-          computeMinorBadges(map, pinShift(minorFeats), inset).map((b) => ({
-            ...b,
-            ...minorChipText(b, tr),
-          })),
+          [...chips(minorFeats, false), ...chips(minorOvFeats, true)],
           occupancy(),
           minorSizeOf,
           inset,
@@ -6937,10 +7174,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const zen = zenithAtPoint(map, e.point, reach.zenith);
       if (zen) {
         if (zen.kind === 'minor') {
-          // A catalog coin keys by its `mp:<n>` id — natal-only, and an id no PlanetName
-          // can collide with. Its edge chips use the same key (since 2026-10-01), so the
-          // chip and the coin share one fly-out / fly-back toggle, as a planet's do.
-          flyToZenith(zenithKey('', zen.body), zen.lng, zen.lat);
+          // A catalog coin keys by its `mp:<n>` id — an id no PlanetName can collide with —
+          // behind the routing prefix a planet's stamp keys by: '' on the chart's source
+          // (natal or promoted), the overlay's tag on an overlay's coin. Its edge chips use
+          // the same key (since 2026-10-01), so the chip and the coin share one fly-out /
+          // fly-back toggle, as a planet's do.
+          flyToZenith(zenithKey(zen.overlay ? (zen.tag ?? '') : '', zen.body), zen.lng, zen.lat);
           return;
         }
         // Key by the routing prefix (the tag for overlay-path stamps, '' otherwise) so
@@ -7883,6 +8122,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // secondary layers. Capped at 20 bodies, their per-frame re-tile is of the order
       // of the planets' own; empty (the common case) costs nothing.
       set('minor-lines', d.minorLines);
+      // Their parans with the planets stay live with the planets' parans, for the same
+      // reason the parans do (above).
+      set('minor-parans', d.minorParans);
       if (mode === 'skip') return;
       // 'empty' → undefined, which `set` resolves to the empty collection (hides it).
       const sec = (id: string, fc: FeatureCollection | null | undefined) =>
@@ -8281,7 +8523,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // re-tile just those.
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
-        pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
+        pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
         computeBadges();
       }
     } else {
@@ -8315,7 +8557,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.on('idle', run);
       map.on('sourcedata', onSourceData);
     }
-  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
+  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
 
   // New Ascendant-zone data (the readout coming or going, the zones finishing their build)
   // drops the highlight: feature-state outlives setData, so a zone lit when the collection
@@ -8895,6 +9137,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const c = f.geometry.coordinates;
     zenithByMinor[f.properties.body] = [c[0], c[1]];
   }
+  // An overlay's catalog chips read the overlay's own coins, as its planets' read its stamps.
+  const zenithByOverlayMinor: Record<string, [number, number]> = {};
+  for (const f of overlay?.minorZenith?.features ?? []) {
+    const c = f.geometry.coordinates;
+    zenithByOverlayMinor[f.properties.body] = [c[0], c[1]];
+  }
   return (
     <>
       {/* The Capture frame. Insetting it (when the Capture tool arms a
@@ -9095,7 +9343,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {!chartSubject && !lsTransparent && minorBadges.map((b) => {
           const text = badgeTextColor(b.color);
           const mark = minorMarkText(b.n);
-          const zen = zenithByMinor[b.body];
+          const zen = b.overlay ? zenithByOverlayMinor[b.body] : zenithByMinor[b.body];
           const inner = (
             <>
               {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
@@ -9121,9 +9369,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               tabIndex={-1}
               className="acg-badge acg-badge-btn minor-badge"
               style={style}
-              onClick={() => flyToZenith(zenithKey('', b.body), zen[0], zen[1])}
+              // Keyed by the routing prefix, as the coin's own click is: the overlay's tag on an
+              // overlay chip, '' on the chart's source (a promoted chip shows its tag but keys '').
+              onClick={() => flyToZenith(zenithKey(b.overlay ? b.prefix : '', b.body), zen[0], zen[1])}
               placement="top"
-              tip={t('map.flyToZenith', { prefix: '', planet: minorDisplayLabel(b.n, b.name, t) })}
+              tip={t('map.flyToZenith', {
+                prefix: b.prefix ? `${b.prefix} ` : '',
+                planet: minorDisplayLabel(b.n, b.name, t),
+              })}
             >
               {inner}
             </TipButton>
@@ -9142,32 +9395,49 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {/* Paran badges label the (non-LS) paran crossings — likewise hidden in the LS-only export.
             The ranked rows that fit the centre column carry one (paranChips.ts); `z` is where each
             stacks among all the labels, and its face is the key its measured size is cached under. */}
-        {!chartSubject && !lsTransparent && paranBadges.map((b) => (
-          <TipButton
-            type="button"
-            key={b.key}
-            data-bkey={b.key}
-            data-bface={paranChipFace(b)}
-            tabIndex={-1}
-            className="acg-badge paran-badge acg-badge-btn"
-            style={{
-              ...badgePos(b.x, b.y),
-              background: zenithFill,
-              color: paranText,
-              zIndex: b.z,
-            }}
-            onClick={() => onParanClick(b)}
-            placement="top"
-            tip={t('map.flyToParan')}
-          >
-            {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
-            <PlanetGlyph planet={b.planetA} size={11} color={paranText} />
-            <span className="acg-badge-code">{ANGLE_CODE[b.angleA]}</span>
-            <span className="paran-badge-x">×</span>
-            <PlanetGlyph planet={b.planetB} size={11} color={paranText} />
-            <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
-          </TipButton>
-        ))}
+        {!chartSubject && !lsTransparent && paranBadges.map((b) => {
+          // A catalog row's chip draws the body's mark (its own symbol, or the diamond — hollow
+          // for a hypothetical point) in its line colour on the side it holds; the partner's
+          // glyph on the other, as a planet row draws both.
+          const mark = b.minorN !== undefined ? minorMarkText(b.minorN) : null;
+          const side = (s: 'A' | 'B', planet: PlanetName) =>
+            mark && b.minorSide === s ? (
+              <span
+                className={mark.cls ? `astro-glyph ${mark.cls}` : 'astro-glyph'}
+                style={{ color: b.minorColor }}
+              >
+                {mark.char}
+              </span>
+            ) : (
+              <PlanetGlyph planet={planet} size={11} color={paranText} />
+            );
+          return (
+            <TipButton
+              type="button"
+              key={b.key}
+              data-bkey={b.key}
+              data-bface={paranChipFace(b)}
+              tabIndex={-1}
+              className="acg-badge paran-badge acg-badge-btn"
+              style={{
+                ...badgePos(b.x, b.y),
+                background: zenithFill,
+                color: paranText,
+                zIndex: b.z,
+              }}
+              onClick={() => onParanClick(b)}
+              placement="top"
+              tip={t('map.flyToParan')}
+            >
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              {side('A', b.planetA)}
+              <span className="acg-badge-code">{ANGLE_CODE[b.angleA]}</span>
+              <span className="paran-badge-x">×</span>
+              {side('B', b.planetB)}
+              <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
+            </TipButton>
+          );
+        })}
         {/* The geodetic grid's sign glyphs (geoGridLabels.ts) — the Coordinates box's own glyphs,
             in the grid's one neutral colour, with no pill: they label a reference, not a reading,
             and take no clicks. The halo is the eclipse digits' (ECLIPSE_LABEL_HALO), whose Earth

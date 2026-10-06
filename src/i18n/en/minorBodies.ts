@@ -68,6 +68,20 @@ export const minorBodies = {
       // the list may sit in its own column away from it.
       hiddenNote: 'Every body on your list is hidden, and your selection is kept. Turn off Hide all to show them again.',
     },
+    // The list bodies' parans with the built-in bodies (lib/astro/parans generateMinorParans):
+    // a switch of their own under Your list, OFF by default (lib/minorBodies/prefs). One
+    // constant label plus aria-checked, as Hide all. While the map's parans aren't drawn it
+    // keeps its stored position, greyed, and its tip's note says what to change: `held` when
+    // the map's Parans toggle is off — named where that toggle is — or the sky hold's and
+    // Cyclocartography's own sentences (settings.inert.paransHeldFull,
+    // settings.parans.blockedCyclo). Every run stays under the 180-character tip cap. Draft
+    // wording: Lina defers on asteroid wording, and an expert may revisit.
+    parans: {
+      label: 'Parans with the planets',
+      aria: 'Parans of the bodies on your list with the planets',
+      hint: 'Draw the latitudes where a body on your list is angular at the same moment as a planet or point: up to six per pair, and never two list bodies together.',
+      held: 'Needs the map’s parans: turn on Settings ▸ Advanced ▸ Lines ▸ Parans.',
+    },
     sections: {
       // Chiron and Ceres–Vesta: the built-in bodies, a group by convention rather than
       // by orbit (its info line is groupInfo.builtin).
@@ -151,7 +165,27 @@ export const minorBodies = {
       // A hypothetical point has no file: it is seen from the Earth the planets are
       // computed for, so it has their span and no other.
       noDataHintHyp: 'This date falls outside the years the planets can be computed for, which a hypothetical point shares. It is drawn again by itself on a date inside them.',
-      composite: 'Not yet available for composite charts.',
+      // A composite's catalog bodies are its parents' midpoints, so BOTH parents' dates
+      // have to be inside the body's file — and so does a composite partner's beside the
+      // chart.
+      noDataHintComposite: 'A composite is drawn from both parents’ dates, and one falls outside the years this body’s file covers — about 1500 to 2100 for most.',
+      // An overlay drawn beside the chart places the reader's bodies by its own rule — at
+      // its own date, by its own arc, from its own parents — so a row can have lines from
+      // one side and not the other. {mode} is the overlay's name as the Overlay menu has
+      // it. Draft wording: Lina defers on asteroid wording, and an expert may revisit.
+      //
+      // The chart's lines drawn, the overlay's date outside the body's file; the tip is
+      // noDataHint (or its composite form).
+      overlayNoData: 'No {mode} lines at this date',
+      // The overlay's lines drawn, the chart's not; the tip says why the chart's aren't.
+      overlayOnly: '{mode} lines only',
+      // Under overlayOnly, when the chart's lines are missing for a reason of the MAP's —
+      // undrawn.noTime and undrawn.natalOff, worded so neither claims there are no lines
+      // at all (the overlay's are on the map). The chart out of its file uses noDataHint.
+      overlayOnlyHint: {
+        noTime: 'The chart has no birth time, so its own lines aren’t drawn on a celestial map. The overlay has a moment of its own, and its lines are.',
+        natalOff: 'The natal lines are off the map, and this body’s go with them. The overlay’s lines are drawn beside them as usual.',
+      },
       unavailable: 'Added in another version of the app; not available here.',
       familyHidden: 'Hidden with the rest of your list.',
       advanced: 'An Advanced reading — kept on your list, drawn again once Advanced is on.',
@@ -159,10 +193,10 @@ export const minorBodies = {
       // so the row says why rather than reading "drawn" over an empty map. Each
       // names a state of the map, not a fault in the body.
       //
-      // "No lines", not "Not drawn": the body is still placed in the natal chart wheel
-      // in every one of these states (a line gate takes lines away, never the body), so
-      // "not drawn" would be false of the wheel beside the map. The one exception is not
-      // a line gate: while an overlay chart takes the wheel, no catalog body is on it.
+      // "No lines", not "Not drawn": the body is still placed in the chart wheel in every
+      // one of these states (a line gate takes lines away, never the body), so "not
+      // drawn" would be false of the wheel beside the map. (While an overlay takes the
+      // wheel, its own catalog bodies are on it, as its lines are on the map.)
       undrawn: {
         noChart: 'Drawn once a chart is open.',
         noTime: 'No lines on a celestial map without a birth time — for this body or any other.',

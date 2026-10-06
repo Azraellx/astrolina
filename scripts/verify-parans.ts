@@ -19,22 +19,57 @@
 // Plus the mirrored-solution symmetry of horizon×horizon pairs, and numeric
 // notes on the two guards in paranLat (the |tanφ|>6 cap and the ±72° clip).
 // The geometry sections run on five charts (1941–2008, both hemispheres, the
-// equator to 51°) with the Sun through Pluto.
+// equator to 51°) with the Sun through Pluto. Section 7 pairs catalog minor bodies
+// with the planets (generateMinorParans) on the same charts, and checks their chips'
+// rank and the switch that turns them on.
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import type { Feature, LineString } from 'geojson';
+import type maplibregl from 'maplibre-gl';
 import {
   birthDataToJD,
   gmstRadians,
+  getMinorPositions,
   getPlanetPositions,
   initEphemeris,
   obliquity,
+  PLANET_CODES,
+  PLANET_COLORS,
+  projectMinorOntoEcliptic,
   projectOntoEcliptic,
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
-import { generateParans, generateStarParans, type ParanProps } from '../src/lib/astro/parans';
+import {
+  generateMinorParans,
+  generateParans,
+  generateStarParans,
+  isMinorParan,
+  type MinorParanProps,
+  type ParanProps,
+} from '../src/lib/astro/parans';
 import { generateLines, meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
+import { generateMinorLines, minorLabelName, type MinorDecor } from '../src/lib/astro/minorLines';
 import { starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
+import { HYPOTHETICAL_POINTS, hypotheticalPoint } from '../src/lib/minorBodies/hypothetical';
+import { fileNameFor, isHypotheticalKey, minorId } from '../src/lib/minorBodies/ids';
+import { ensureMinorBodies, minorLoadState } from '../src/lib/minorBodies/loader';
+import { bundledSource, needsMinorFile } from '../src/lib/minorBodies/bundled';
+import {
+  loadMinorParansPref,
+  MINOR_PARANS_PREF_KEY,
+  saveMinorParansPref,
+} from '../src/lib/minorBodies/prefs';
+import type { MinorBodySource } from '../src/lib/extensions/minorBodySources';
+import {
+  estimateParanChip,
+  PARAN_RANK,
+  paranChipFace,
+  placeParanChips,
+} from '../src/components/Map/paranChips';
+import { ChipOccupancy } from '../src/components/Map/chipOccupancy';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const node: any = createRequire(import.meta.url)('@swisseph/node');
@@ -611,6 +646,370 @@ for (const chart of CHARTS) {
   check('overlay frame: every paran pairs two bodies of the single overlay set', single);
   check('overlay frame: horizon body altitude 0 at intersection (transit set)', worstHorizon < 1e-9, `max ${worstHorizon.toExponential(2)} rad`);
   check('overlay frame: meridian body on MC/IC at intersection (transit set)', worstMeridian < 1e-9, `max ${worstMeridian.toExponential(2)} rad`);
+}
+
+// ── 7. Catalog minor body × planet parans ─────────────────────────────────────
+// generateMinorParans (parans.ts): each of the reader's catalog bodies paired with
+// the built-in bodies, never with each other. Run on the ten hypothetical points —
+// their elements ship in src/, so this section never skips — plus Eros and Eris
+// where their files are in public/ephe, and Pholus (the main-asteroid file).
+//   7a TWO PARTS  the row against the two families' DRAWN lines: the meridian body's
+//                 MC/IC line (generateMinorLines for a catalog body, generateLines for
+//                 a partner) sits at the row's intersection longitude, and the horizon
+//                 body's drawn curve passes through the intersection point. Both
+//                 directions, and horizon × horizon, celestial and geodetic, every chart.
+//   7b TWO PARTS  simultaneity (§1's test): at the intersection, at the chart instant,
+//                 both bodies stand on their named angles, rising/setting labels included.
+//   7c IDENTITY   a PlanetName partner from the set on every row (no catalog × catalog),
+//                 no planet/planetA/planetB key, ≤6 rows per pair, within ±72°, the
+//                 catalog body's own colour, its name on its own side, "(hyp)" on a point.
+//   7d TWO PARTS  completeness: §6's brute-force scan of every angle pairing, every
+//                 catalog body × partner on the battery chart, against the generated set.
+//   7e            the chips: a catalog row is labelled only after every built-in row of
+//                 its set (PARAN_RANK.pair), and carries its body and side.
+//   7f            the switch's preference: off unless explicitly on; reading writes nothing.
+{
+  const HYP_KEYS = HYPOTHETICAL_POINTS.map((p) => p.n);
+  const EPHE_DIR = resolve(process.cwd(), 'public/ephe');
+  const disk: MinorBodySource = {
+    id: 'verify-disk',
+    label: 'disk',
+    minQueryLen: 1,
+    debounceMs: 0,
+    search: async () => [],
+    fetchFile: async (n) => {
+      const b = readFileSync(resolve(EPHE_DIR, fileNameFor(n, 'short')));
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+    },
+  };
+  await ensureMinorBodies(HYP_KEYS.map((n) => ({ n, source: bundledSource })));
+  const FILED = [433, 136_199, 5145].filter(
+    (n) => !needsMinorFile(n) || existsSync(resolve(EPHE_DIR, fileNameFor(n, 'short'))),
+  );
+  await ensureMinorBodies(FILED.map((n) => ({ n, source: disk })));
+  const ready = (n: number) => minorLoadState(n)?.status === 'ready';
+  const CATALOG = [...HYP_KEYS, ...FILED].filter(ready);
+  check(
+    `7 the ten hypothetical points load ready, so the section runs (${CATALOG.length} catalog bodies: ${CATALOG.join(', ')})`,
+    HYP_KEYS.every(ready),
+    HYP_KEYS.filter((n) => !ready(n)).join(', '),
+  );
+
+  // The decoration the App hands both families: a name, and a colour no planet has, so a
+  // row coloured from a PLANET_COLORS lookup could not pass 7c.
+  const nameOf = (n: number) => {
+    const s = minorLoadState(n);
+    return hypotheticalPoint(n)?.name ?? (s?.status === 'ready' ? s.name ?? '' : '');
+  };
+  const colourOf = (n: number) => `#0a${(Math.abs(n) % 256).toString(16).padStart(2, '0')}0c`;
+  const decor = (n: number): MinorDecor => ({ name: nameOf(n), color: colourOf(n), icon: `minor-verify-${n}` });
+  const planetColours = new Set(Object.values(PLANET_COLORS).map((c) => c.toLowerCase()));
+  const PARTNERS: PlanetName[] = [...TEN, 'NorthNode', 'Chiron'];
+
+  const isMer = (a: string) => a === 'MC' || a === 'IC';
+  const runsOf = <P,>(
+    fc: { features: { properties: P; geometry: { coordinates: number[][] } }[] },
+    key: (p: P) => string,
+  ) => {
+    const m = new Map<string, [number, number][]>();
+    for (const f of fc.features) {
+      const k = key(f.properties);
+      m.set(k, [...(m.get(k) ?? []), ...(f.geometry.coordinates as [number, number][])]);
+    }
+    return m;
+  };
+  const missBy = (curve: [number, number][] | undefined, lng: number, lat: number) => {
+    let best = Infinity;
+    for (const [x, y] of curve ?? []) best = Math.min(best, Math.hypot(normLng(x - lng), y - lat));
+    return best;
+  };
+
+  // 7a + 7b + 7c, every chart, both frames.
+  for (const frame of ['celestial', 'geodetic'] as const) {
+    let rows = 0;
+    let catMer = 0; // catalog body on MC/IC, partner on the horizon
+    let planetMer = 0; // partner on MC/IC, catalog body on the horizon
+    let both = 0; // both on the horizon
+    let worstMer = 0;
+    let worstHorizon = 0;
+    let worstAlt = 0;
+    let worstH = 0;
+    let labelErrors = 0;
+    const identity: string[] = [];
+    let perPairMax = 0;
+    for (const chart of CHARTS) {
+      const jd = birthDataToJD(chart);
+      const ml = meridianLngFor(frame, obliquity(jd), gmstRadians(jd));
+      const rawPlanets = getPlanetPositions(jd, 'mean').filter((p) => PARTNERS.includes(p.name));
+      const rawMinors = getMinorPositions(jd, CATALOG);
+      const planets = frame === 'geodetic' ? projectOntoEcliptic(rawPlanets, jd) : rawPlanets;
+      const minors = frame === 'geodetic' ? projectMinorOntoEcliptic(rawMinors, jd) : rawMinors;
+      if (minors.length !== CATALOG.length) identity.push(`${chart.name}: ${minors.length}/${CATALOG.length} catalog positions`);
+      const ps = generateMinorParans(minors, planets, ml, decor);
+      const minorDrawn = runsOf(generateMinorLines(minors, ml, decor), (p) => `${p.number}|${p.lineType}`);
+      const planetDrawn = runsOf(generateLines(planets, ml), (p) => `${p.planet}|${p.lineType}`);
+      const minorBy = new Map(rawMinors.map((m) => [m.n, m]));
+      const planetBy = new Map(rawPlanets.map((p) => [p.name, p]));
+      const perPair = new Map<string, number>();
+      for (const f of ps.features) {
+        const p = f.properties;
+        rows += 1;
+        const catAngle = p.side === 'A' ? p.angleA : p.angleB;
+        const partnerAngle = p.side === 'A' ? p.angleB : p.angleA;
+        const catLine = (a: string) => minorDrawn.get(`${p.number}|${a}`);
+        const partnerLine = (a: string) => planetDrawn.get(`${p.partner}|${a}`);
+
+        // 7a — the drawn lines cross where the row says.
+        if (isMer(p.angleA)) {
+          const meridian = p.side === 'A' ? catLine(p.angleA) : partnerLine(p.angleA);
+          const horizon = p.side === 'A' ? partnerLine(p.angleB) : catLine(p.angleB);
+          if (p.side === 'A') catMer += 1;
+          else planetMer += 1;
+          worstMer = Math.max(worstMer, meridian ? Math.abs(normLng(p.intersectionLng - meridian[0][0])) : Infinity);
+          worstHorizon = Math.max(worstHorizon, missBy(horizon, p.intersectionLng, p.latitude));
+        } else {
+          both += 1;
+          worstHorizon = Math.max(
+            worstHorizon,
+            missBy(catLine(catAngle), p.intersectionLng, p.latitude),
+            missBy(partnerLine(partnerAngle), p.intersectionLng, p.latitude),
+          );
+        }
+
+        // 7b — simultaneity, in the frame that is the sky's own (celestial).
+        if (frame === 'celestial') {
+          const cat = minorBy.get(p.number)!;
+          const partner = planetBy.get(p.partner)!;
+          for (const [body, angle] of [[cat, catAngle], [partner, partnerAngle]] as const) {
+            if (isMer(angle)) {
+              const H = normDelta(gastRad(jd) + p.intersectionLng * DEG2RAD - body.ra);
+              worstH = Math.max(worstH, angle === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI));
+            } else {
+              worstAlt = Math.max(worstAlt, Math.abs(altitudeOf(jd, body.ra, body.dec, p.latitude, p.intersectionLng)));
+              const rising = altSlope(jd, body.ra, body.dec, p.latitude, p.intersectionLng) > 0;
+              if ((angle === 'ASC') !== rising) labelErrors += 1;
+            }
+          }
+        }
+
+        // 7c — identity.
+        const own = minorLabelName(p.number, nameOf(p.number));
+        const [first, second] = p.label.split(' × ');
+        const bad = [
+          !isMinorParan(p) && 'not kind minor',
+          !(p.partner in PLANET_CODES && PARTNERS.includes(p.partner)) && `partner ${p.partner}`,
+          !CATALOG.includes(p.number) && `number ${p.number}`,
+          p.body !== minorId(p.number) && `body ${p.body}`,
+          ('planet' in p || 'planetA' in p || 'planetB' in p) && 'a planet key',
+          Math.abs(p.latitude) > 72 && `lat ${p.latitude.toFixed(2)}`,
+          (p.color !== colourOf(p.number) || planetColours.has(p.color.toLowerCase())) && `colour ${p.color}`,
+          !(own && (p.side === 'A' ? first : second)?.startsWith(`${own} `)) && `label "${p.label}"`,
+          isHypotheticalKey(p.number) && !p.label.includes(' (hyp) ') && `no (hyp) in "${p.label}"`,
+          p.icon !== `minor-verify-${p.number}` && 'icon',
+        ].filter(Boolean) as string[];
+        if (bad.length) identity.push(`${chart.name} ${p.label}: ${bad.join(', ')}`);
+        const k = `${p.number}|${p.partner}`;
+        perPair.set(k, (perPair.get(k) ?? 0) + 1);
+      }
+      for (const v of perPair.values()) perPairMax = Math.max(perPairMax, v);
+    }
+    // Every count must be non-empty: a direction that generated nothing compared nothing.
+    check(
+      `7a ${frame}: the drawn MC/IC line sits at the row's longitude — catalog body (${catMer}) and partner (${planetMer}) on the meridian`,
+      catMer > 0 && planetMer > 0 && worstMer < 1e-9,
+      `max Δlng ${worstMer.toExponential(2)}°`,
+    );
+    check(
+      `7a ${frame}: the drawn horizon curve passes through the intersection — ${rows} rows, ${both} horizon × horizon`,
+      rows > 0 && both > 0 && worstHorizon < 1.2,
+      `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`,
+    );
+    if (frame === 'celestial') {
+      check(`7b ${frame}: horizon bodies at altitude 0 at the intersection (${rows} rows)`, rows > 0 && worstAlt < 1e-9, `max ${worstAlt.toExponential(2)} rad`);
+      check(`7b ${frame}: meridian bodies on the MC/IC at the intersection`, rows > 0 && worstH < 1e-9, `max ${worstH.toExponential(2)} rad`);
+      check(`7b ${frame}: ASC/DSC labels match actual rising/setting`, rows > 0 && labelErrors === 0, `${labelErrors} mislabeled`);
+    }
+    check(
+      `7c ${frame}: every row pairs one catalog body with a built-in partner, keyed and decorated as its own (no planet keys, ±72°, its colour, "(hyp)" on a point)`,
+      rows > 0 && identity.length === 0,
+      identity.slice(0, 4).join('; '),
+    );
+    check(`7c ${frame}: at most six rows per catalog body × partner`, perPairMax > 0 && perPairMax <= 6, `max ${perPairMax}`);
+  }
+
+  const jd0 = birthDataToJD(CHART);
+  const ml0 = meridianLngFor('celestial', obliquity(jd0), gmstRadians(jd0));
+  {
+    const someMinors = getMinorPositions(jd0, CATALOG);
+    const somePlanets = getPlanetPositions(jd0, 'mean').filter((p) => TEN.includes(p.name));
+    const planetRow = generateParans(somePlanets, ml0).features[0]?.properties;
+    check(
+      '7c no partners or no catalog bodies → no rows; a planet row is never read as a catalog one',
+      generateMinorParans(someMinors, [], ml0, decor).features.length === 0 &&
+        generateMinorParans([], somePlanets, ml0, decor).features.length === 0 &&
+        !!planetRow && !isMinorParan(planetRow),
+    );
+  }
+
+  // 7d — completeness against an independent scan (battery chart, celestial).
+  {
+    const minors = getMinorPositions(jd0, CATALOG);
+    const planets = getPlanetPositions(jd0, 'mean').filter((p) => PARTNERS.includes(p.name));
+    const rows = generateMinorParans(minors, planets, ml0, decor).features.map((f) => f.properties);
+    const eventTheta = (b: { ra: number; dec: number }, which: string, latDeg: number): number | null => {
+      if (which === 'MC') return b.ra;
+      if (which === 'IC') return b.ra + Math.PI;
+      const x = -Math.tan(latDeg * DEG2RAD) * Math.tan(b.dec);
+      if (x < -1 || x > 1) return null;
+      return b.ra + (which === 'ASC' ? -Math.acos(x) : Math.acos(x));
+    };
+    const ANGLES = ['MC', 'IC', 'ASC', 'DSC'];
+    let scanned = 0;
+    const missing: string[] = [];
+    for (const m of minors) {
+      for (const pl of planets) {
+        for (const ca of ANGLES) {
+          for (const pa of ANGLES) {
+            if (isMer(ca) && isMer(pa)) continue;
+            const g = (latDeg: number): number | null => {
+              const tc = eventTheta(m, ca, latDeg);
+              const tp = eventTheta(pl, pa, latDeg);
+              return tc === null || tp === null ? null : normDelta(tc - tp);
+            };
+            for (let lat = -72; lat < 72; lat += 0.1) {
+              const cell = definedCell(g, lat, lat + 0.1);
+              if (!cell) continue;
+              const y0 = g(cell[0]) as number;
+              const y1 = g(cell[1]) as number;
+              if ((y0 <= 0) === (y1 <= 0)) continue;
+              if (Math.abs(y0) > 1 || Math.abs(y1) > 1) continue; // ±π wrap, not a root
+              let lo = cell[0];
+              let hi = cell[1];
+              for (let i = 0; i < 50; i++) {
+                const mid = (lo + hi) / 2;
+                if (((g(lo) ?? NaN) <= 0) === ((g(mid) ?? NaN) <= 0)) lo = mid;
+                else hi = mid;
+              }
+              const root = (lo + hi) / 2;
+              scanned += 1;
+              const hit = rows.some(
+                (p) =>
+                  p.number === m.n &&
+                  p.partner === pl.name &&
+                  Math.abs(p.latitude - root) < 0.02 &&
+                  (p.side === 'A' ? p.angleA : p.angleB) === ca &&
+                  (p.side === 'A' ? p.angleB : p.angleA) === pa,
+              );
+              if (!hit) missing.push(`${m.n} ${ca} × ${pl.name} ${pa} @ ${root.toFixed(2)}°`);
+            }
+          }
+        }
+      }
+    }
+    check(
+      `7d completeness (${minors.length} catalog bodies × ${planets.length} partners): scan ↔ generated (${scanned} scanned, ${rows.length} generated)`,
+      rows.length > 0 && missing.length === 0 && scanned === rows.length,
+      missing.slice(0, 4).join('; '),
+    );
+  }
+
+  // 7e — the chips. A flat test map, the camera on (0, 0), every row at one latitude: the centre
+  // spot and one chip's width either side hold three chips, so of four rows one goes unlabelled.
+  {
+    const fakeMap = {
+      getCenter: () => ({ lng: 0, lat: 0 }),
+      getProjection: () => ({ type: 'mercator' }),
+      project: ([lng, lat]: [number, number]) => ({ x: 400 + lng * 4, y: 300 - lat * 4 }),
+    } as unknown as maplibregl.Map;
+    type Row = Feature<LineString, ParanProps | MinorParanProps>;
+    const row = (p: Partial<ParanProps & MinorParanProps>): Row =>
+      ({
+        type: 'Feature',
+        properties: { latitude: 10, intersectionLng: 0, theta: 0, color: '#000', label: '', ...p },
+        geometry: { type: 'LineString', coordinates: [] },
+      }) as Row;
+    const builtIn = (a: PlanetName, b: PlanetName) => row({ planetA: a, angleA: 'MC', planetB: b, angleB: 'ASC' });
+    const catalog = row({ kind: 'minor', body: minorId(-42), number: -42, name: 'Zeus', icon: '', side: 'A', partner: 'Sun', angleA: 'MC', angleB: 'ASC' });
+    const place = (features: Row[]) =>
+      placeParanChips(
+        fakeMap,
+        [{ fc: { type: 'FeatureCollection', features }, overlay: false }],
+        () => new ChipOccupancy(800, 600, []),
+        estimateParanChip,
+        0,
+        800,
+        600,
+      );
+    // The catalog row first in, and paired with the Sun: by the pair's stronger body alone it
+    // would take the column from Saturn × Uranus.
+    const crowded = place([catalog, builtIn('Saturn', 'Uranus'), builtIn('Neptune', 'Pluto'), builtIn('Uranus', 'Pluto')]);
+    check(
+      '7e a catalog row is labelled after every built-in row of its set: Sun × Zeus loses the crowded column to Saturn × Uranus and the outer pairs',
+      PARAN_RANK.pair.catalog > PARAN_RANK.pair.builtIn && crowded.length === 3 && crowded.every((b) => b.minorN === undefined),
+      crowded.map((b) => `${b.planetA}×${b.planetB}${b.minorN !== undefined ? ` (${b.minorN})` : ''}`).join(', '),
+    );
+    const [alone] = place([catalog]);
+    const [twin] = place([builtIn('Sun', 'Sun')]);
+    check(
+      '7e … and alone it is labelled: its body, side and colour on the chip, both planet keys the partner, a key and a face of its own',
+      !!alone && 'planetA' in alone && alone.minorN === -42 && alone.minorSide === 'A' &&
+        alone.minorColor === '#000' && alone.planetA === 'Sun' && alone.planetB === 'Sun' &&
+        alone.key.startsWith('pnm-') && !!twin && paranChipFace(alone) !== paranChipFace(twin) &&
+        alone.key !== twin.key,
+      alone ? `${alone.key} ${paranChipFace(alone)}` : 'none placed',
+    );
+  }
+
+  // 7f — the switch's preference, through a stand-in storage that counts writes.
+  {
+    const store = new Map<string, string>();
+    let writes = 0;
+    let blocked = false;
+    const prior = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (k: string) => {
+          if (blocked) throw new Error('verify: storage blocked');
+          return store.get(k) ?? null;
+        },
+        setItem: (k: string, v: string) => {
+          if (blocked) throw new Error('verify: storage blocked');
+          writes += 1;
+          store.set(k, String(v));
+        },
+        removeItem: (k: string) => void store.delete(k),
+      },
+    });
+    try {
+      const untouched = loadMinorParansPref();
+      store.set(MINOR_PARANS_PREF_KEY, 'true');
+      const malformed = loadMinorParansPref();
+      store.delete(MINOR_PARANS_PREF_KEY);
+      check(
+        `7f the switch (${MINOR_PARANS_PREF_KEY}) is off untouched and on for nothing but its own '1'; reading writes nothing`,
+        MINOR_PARANS_PREF_KEY === 'astro:minor-parans:v1' && untouched === false && malformed === false &&
+          writes === 0 && !store.has(MINOR_PARANS_PREF_KEY),
+        `untouched ${untouched}, 'true' ${malformed}, ${writes} writes`,
+      );
+      saveMinorParansPref(true);
+      const on = loadMinorParansPref();
+      saveMinorParansPref(false);
+      const off = loadMinorParansPref();
+      blocked = true;
+      const whileBlocked = loadMinorParansPref();
+      saveMinorParansPref(true); // must not throw
+      check(
+        '7f its own setter stores it both ways, and blocked storage reads as off without throwing',
+        on === true && off === false && store.get(MINOR_PARANS_PREF_KEY) === '0' && whileBlocked === false && writes === 2,
+        `on ${on}, off ${off}, stored ${store.get(MINOR_PARANS_PREF_KEY)}, blocked ${whileBlocked}, ${writes} writes`,
+      );
+    } finally {
+      if (prior) Object.defineProperty(globalThis, 'localStorage', prior);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  }
 }
 
 console.log(failures === 0 ? '\nverify-parans: ALL PASS' : `\nverify-parans: ${failures} FAILURE(S)`);

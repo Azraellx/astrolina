@@ -186,6 +186,11 @@ export const lineMeanings = {
   // blend, in the same high-level style as the planet cards.
   paran:
     '{a} and {b} are both exactly angular at this latitude, {a} on the {angleA} while {b} is on the {angleB}. {themeA} {themeB} Here the two work as one pair, within a band of a degree or two of this latitude.',
+  // A catalog minor body paired with a built-in one (its title is paranTitle). The partner's
+  // theme ({theme}) carries the reading and the catalog body ({minor}, its display name)
+  // narrows it, as a star's signature does on a star line. {a} and {b} are in angle order.
+  minorParan:
+    '{a} and {b} are both exactly angular at this latitude, {a} on the {angleA} while {b} is on the {angleB}. {theme} Here {minor} colours it narrowly, within a band of a degree or two of this latitude.',
 
   // Local space lines: a compass bearing from the origin, not a world line.
   localSpace:

@@ -10,27 +10,45 @@
 // abstraction behind transits, secondary progressions, solar-arc directions,
 // and relationship (synastry) overlays — each is just "derive a different
 // positions+gmst and overlay it."
-import type { FeatureCollection, LineString } from 'geojson';
+import type { FeatureCollection, Geometry, LineString, Point } from 'geojson';
 import {
   birthDataToJD,
   eclipticLonOfRA,
   eclipticToRaDec,
+  getMinorSamples,
   getPlanetPositions,
   gmstRadians,
+  minorLinePositionOf,
   obliquity,
+  projectMinorOntoEcliptic,
+  raDecToEclipticLat,
   raDecToEclipticLon,
   shiftEclipticLongitude,
+  shiftMinorEclipticLongitude,
+  shiftMinorRightAscension,
   shiftRightAscension,
   solarDailyMotionLong,
   solarDailyMotionRA,
+  type CoordSystem,
+  type DirectedMinor,
   type LineSystem,
+  type MinorPosition,
+  type MinorSample,
   type NodeType,
   type PlanetName,
   type PlanetPosition,
 } from '../ephemeris';
-import type { StoredChart } from '../chartLibrary';
+import type { CompositeParents, StoredChart } from '../chartLibrary';
 import { skyHeldFor } from '../skyHold';
-import { compositeEquatorial, solveCompositeFrameJd } from './composite';
+import { compositeEquatorial, compositeMinorSamples, solveCompositeFrameJd } from './composite';
+import { meridianLngFor, type LineType, type MeridianLng } from './lines';
+import {
+  generateMinorLines,
+  generateMinorZenith,
+  type MinorDecor,
+  type MinorLineProps,
+  type MinorZenithProps,
+} from './minorLines';
 import type { TFn } from '../../i18n';
 
 export type OverlayMode =
@@ -369,7 +387,30 @@ export interface OverlayLayer {
    *  while `jd` stays the progressed instant for the planets' positions. Without this the
    *  wheel showed the true-quotidian angles regardless of the chosen method. */
   angleJd?: number;
+  /** HOW this layer placed its bodies — recorded so the catalog minor bodies can be
+   *  placed by the same rule beside it (overlayMinorSamples), switching on the rule
+   *  rather than restating each mode's logic. Every case of buildOverlay sets it. */
+  bodyRule: OverlayBodyRule;
 }
+
+/**
+ * How an overlay layer's bodies were placed, as a rule another family of bodies can
+ * follow. Four, because every overlay mode reduces to one of them:
+ *  - `sample`: the sky at one instant — transits and eclipses (the target), the
+ *    progressed overlays (their progressed instant), synastry (the partner's moment),
+ *    and Cyclo's transiting side (the target);
+ *  - `shift-long`: the birth sky directed by one arc in ecliptic longitude, at `eps`
+ *    (solar arc and Naibod in longitude);
+ *  - `shift-ra`: the birth sky directed by one arc in right ascension (solar arc and
+ *    Naibod in RA; primary directions, whose bodies move by −arc — see buildOverlay);
+ *  - `composite`: a composite partner's midpoints.
+ * `baseJd` is the birth moment the directed rules shift FROM.
+ */
+export type OverlayBodyRule =
+  | { by: 'sample'; jd: number }
+  | { by: 'shift-long'; baseJd: number; arc: number; eps: number }
+  | { by: 'shift-ra'; baseJd: number; arc: number }
+  | { by: 'composite'; parents: CompositeParents };
 
 const TROPICAL_YEAR_DAYS = 365.2422;
 const UNIX_EPOCH_JD = 2440587.5;
@@ -645,6 +686,7 @@ export function buildOverlay(
         gmst,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        bodyRule: { by: 'sample', jd },
       };
     }
     case 'progressed':
@@ -736,6 +778,7 @@ export function buildOverlay(
         angleJd: c.birthJD,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        bodyRule: { by: 'sample', jd: progJD },
       };
     }
     case 'solar-arc': {
@@ -770,6 +813,10 @@ export function buildOverlay(
         angleFrame: frame === 'ra' ? 'ramc' : 'long',
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        bodyRule:
+          frame === 'ra'
+            ? { by: 'shift-ra', baseJd: c.birthJD, arc }
+            : { by: 'shift-long', baseJd: c.birthJD, arc, eps: c.eps },
       };
     }
     case 'primary-directions': {
@@ -802,6 +849,8 @@ export function buildOverlay(
         angleFrame: 'ramc',
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        // The bodies' own direction, −arc — not the angles' +arc above.
+        bodyRule: { by: 'shift-ra', baseJd: c.birthJD, arc: -arc },
       };
     }
     case 'cyclo': {
@@ -837,6 +886,9 @@ export function buildOverlay(
         bodyJd,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        // Catalog bodies ride on the TRANSITING side: CYCLO_PROGRESSED is the five
+        // personal planets, and everything else is read at the target.
+        bodyRule: { by: 'sample', jd },
       };
     }
     case 'synastry': {
@@ -860,6 +912,9 @@ export function buildOverlay(
         gmst: gmstRadians(pjd),
         originLat: partner.birthplace.lat,
         originLng: partner.birthplace.lng,
+        bodyRule: partner.composite
+          ? { by: 'composite', parents: partner.composite }
+          : { by: 'sample', jd: pjd },
       };
     }
     case 'eclipses': {
@@ -882,6 +937,7 @@ export function buildOverlay(
         gmst: gmstRadians(jd),
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
+        bodyRule: { by: 'sample', jd },
       };
     }
   }
@@ -934,4 +990,215 @@ export function tagLabelsBy<P extends { label: string; tag?: string }>(
       return { ...f, properties: { ...f.properties, tag, label: tag } };
     }),
   };
+}
+
+/** The overlay tag for catalog features — `tag` ONLY. Not tagLabels: that overwrites
+ *  `label` with the tag, and the map keys a line's hover tip on `label`, so every
+ *  overlay catalog line would share one popup id and a tip moved from one to the next
+ *  would keep the first body's name. A catalog label already names its body
+ *  ("Eros MC"); the tag rides beside it, as the edge chips read it. */
+export function tagMinor<G extends Geometry, P extends { tag?: string }>(
+  fc: FeatureCollection<G, P>,
+  tag: string,
+): FeatureCollection<G, P> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f) => ({ ...f, properties: { ...f.properties, tag } })),
+  };
+}
+
+// ── Catalog minor bodies beside an overlay ────────────────────────────────────
+// The reader's list placed at the overlay's own instant (or by its own direction, or
+// as a composite partner's midpoints), BESIDE buildOverlay rather than inside it. The
+// layer records how it placed its bodies (bodyRule); the catalog set follows that rule,
+// switching on the rule and never on the mode, so each mode's logic is written once.
+//
+// Kept off OverlayLayer on purpose. A file landing then never resamples the planets or
+// rebuilds their lines; playback can defer the catalog set alone; and the callers that
+// build an overlay for a FINISHED document (a report's bi-wheel, Discovery's frames)
+// cannot pick up the reader's live list through it — a record must not read a live
+// preference (L72's ruling).
+
+/** A catalog body as an overlay places it — MinorSample's shape, with the two things a
+ *  derived position changes: whether its ecliptic coordinates are of record, and
+ *  whether it has a motion at all. */
+export interface OverlayMinorSample {
+  n: number;
+  ra: number;
+  dec: number;
+  /** Tropical ecliptic longitude and latitude, radians — what the wheel places it by.
+   *  Sampled: the engine's. Directed: derived from the directed ra/dec at the rule's
+   *  obliquity, as toEclipticPositions derives the directed planets'. Midpoint: of
+   *  record. */
+  lon: number;
+  lat: number;
+  /** lon/lat are coordinates OF RECORD (a midpoint, or a midpoint directed in
+   *  longitude): only then may a line position carry `lon` (minorLinePositionOf) — a
+   *  derived one would move the In-Zodiaco lines (L72 check 5). */
+  ofRecord: boolean;
+  /** Ecliptic longitude motion, degrees/day. Present only on a sample of the sky;
+   *  absent when directed or a midpoint, which have no motion of their own — the
+   *  planets' overlay positions draw the same line (PlanetPosition.speed). */
+  speed?: number;
+}
+
+/** The chart's own catalog samples and the instant they were taken at — what a
+ *  directed rule shifts from. Direct samples, or a composite's midpoints. */
+export interface NatalMinorSamples {
+  jd: number;
+  samples: readonly (MinorSample | OverlayMinorSample)[];
+}
+
+/**
+ * The catalog bodies `numbers` placed by an overlay's rule. Pure apart from the engine
+ * reads; bodies outermost wherever the engine is asked (the one numbered-asteroid file
+ * slot — getMinorSamples, compositeMinorSamples).
+ *
+ * - `sample`: one sample per body at the rule's instant, without the station bracket —
+ *   the overlay ring shows no station for the planets either (toEclipticPositions).
+ * - `shift-long` / `shift-ra`: the natal sample directed by the planets' own helpers
+ *   (shiftMinorEclipticLongitude / shiftMinorRightAscension). Only coordinates of record
+ *   go in — a direct sample's lon/lat are derived and stay behind, exactly as the
+ *   planets' natal positions carry none — so a catalog body and a planet at one ra/dec
+ *   are directed to one place. `natal` is reused only when it was taken at the rule's
+ *   base instant; otherwise (or with none) the bodies are sampled there, so a caller
+ *   holding the wrong instant gets the right answer at the cost of the engine calls. A
+ *   composite never carries a directed rule (COMPOSITE_BLOCKED_OVERLAYS); were one
+ *   unblocked, its midpoint samples passed as `natal` are what keep it right.
+ * - `composite`: compositeMinorSamples of the partner's parents.
+ *
+ * A body the rule can't place (its file doesn't reach the instant) drops out, as the
+ * planets do.
+ */
+export function overlayMinorSamples(
+  rule: OverlayBodyRule,
+  numbers: readonly number[],
+  natal: NatalMinorSamples | null,
+): OverlayMinorSample[] {
+  if (numbers.length === 0) return [];
+  switch (rule.by) {
+    case 'sample':
+      return getMinorSamples(rule.jd, numbers).map((s) => ({ ...s, ofRecord: false }));
+    case 'composite':
+      return compositeMinorSamples(rule.parents, numbers);
+    case 'shift-long':
+    case 'shift-ra': {
+      const base = natal && natal.jd === rule.baseJd ? natal.samples : getMinorSamples(rule.baseJd, numbers);
+      const want = new Set(numbers);
+      // The obliquity the planets' directed ring is read back at: toEclipticPositions at
+      // the layer's jd, which for every directed mode is the birth moment.
+      const eps = rule.by === 'shift-long' ? rule.eps : obliquity(rule.baseJd);
+      const out: OverlayMinorSample[] = [];
+      for (const s of base) {
+        if (!want.has(s.n)) continue;
+        const from: DirectedMinor =
+          'ofRecord' in s && s.ofRecord
+            ? { n: s.n, ra: s.ra, dec: s.dec, lon: s.lon, lat: s.lat }
+            : { n: s.n, ra: s.ra, dec: s.dec };
+        const d =
+          rule.by === 'shift-long'
+            ? shiftMinorEclipticLongitude(from, rule.arc, rule.eps)
+            : shiftMinorRightAscension(from, rule.arc);
+        out.push({
+          n: s.n,
+          ra: d.ra,
+          dec: d.dec,
+          lon: d.lon ?? raDecToEclipticLon(d.ra, d.dec, eps),
+          lat: d.lat ?? raDecToEclipticLat(d.ra, d.dec, eps),
+          ofRecord: d.lon !== undefined,
+        });
+      }
+      return out;
+    }
+  }
+}
+
+/** What an overlay's catalog lines are drawn in — the SAME values the overlay's planet
+ *  lines read (CLAUDE.md rule 5), so a caller passes App's derived settings, never the
+ *  stored preferences. The meridian itself is not passed: it is the layer's own,
+ *  derived below exactly as the overlay memos derive the planets'. */
+export interface OverlayMinorFrame {
+  /** The EFFECTIVE line system (App's derived `lineSystem`). */
+  lineSystem: LineSystem;
+  /** In Mundo or In Zodiaco; a geodetic map projects whatever this says, as the
+   *  planets' overlay lines do. */
+  coordSystem: CoordSystem;
+  /** The Angles filter as drawn (App's derived `visibleLineTypes`). */
+  visibleLineTypes: ReadonlySet<LineType>;
+  /** Whether the overlay's zenith points are drawn at all — App's `effShowZenith`, the
+   *  gate the overlay planets' stamps read. The MC filter is applied here, as
+   *  filterZenith applies it to theirs. */
+  zenith: boolean;
+  /** Name, themed colour and sprite per body — the natal lines' own decoration. */
+  decor: (n: number) => MinorDecor;
+}
+
+export interface OverlayMinorGeometry {
+  /** The positions the lines were drawn from, in the overlay's frame — projected onto
+   *  the ecliptic In Zodiaco and on a geodetic map. What an overlay paran set pairs. */
+  positions: MinorPosition[];
+  /** The overlay's meridian mapping: meridianLngFor(lineSystem, obliquity(layer.jd),
+   *  layer.gmst), the overlay planets' own. */
+  meridianLng: MeridianLng;
+  /** Angle lines, Angles-filtered and tagged (tagMinor). */
+  lines: FeatureCollection<LineString, MinorLineProps>;
+  /** Zenith points, tagged; empty with zeniths off or the MC filtered out. */
+  zenith: FeatureCollection<Point, MinorZenithProps>;
+}
+
+/**
+ * An overlay's catalog lines from samples already taken — the geometry half of
+ * buildOverlayMinorLines, for a caller that has to keep the sampling apart (App: the
+ * window's rows read the samples, and the decoration reads the rows).
+ *
+ * Frame, projection and meridian are the overlay planets' own (App's overlay memo):
+ * projected at the layer's jd, mapped through the layer's gmst at its obliquity. The
+ * tag is the overlay's prefix — on Cyclo the transits' 'Tr', since catalog bodies ride
+ * its transiting side (see the cyclo case of buildOverlay).
+ */
+export function overlayMinorLines(
+  layer: OverlayLayer,
+  samples: readonly OverlayMinorSample[],
+  frame: OverlayMinorFrame,
+): OverlayMinorGeometry {
+  const meridianLng = meridianLngFor(frame.lineSystem, obliquity(layer.jd), layer.gmst);
+  const raw = samples.map(minorLinePositionOf);
+  const positions =
+    frame.lineSystem === 'geodetic' || frame.coordSystem === 'zodiaco'
+      ? projectMinorOntoEcliptic(raw, layer.jd)
+      : raw;
+  const tag = layer.kind === 'cyclo' ? OVERLAY_LABEL_PREFIX.transits : OVERLAY_LABEL_PREFIX[layer.kind];
+  const all = generateMinorLines(positions, meridianLng, frame.decor);
+  const lines = tagMinor(
+    { ...all, features: all.features.filter((f) => frame.visibleLineTypes.has(f.properties.lineType)) },
+    tag,
+  );
+  const zenith = tagMinor(
+    generateMinorZenith(
+      frame.zenith && frame.visibleLineTypes.has('MC') ? positions : [],
+      meridianLng,
+      frame.decor,
+    ),
+    tag,
+  );
+  return { positions, meridianLng, lines, zenith };
+}
+
+/**
+ * The reader's catalog bodies beside an overlay, from the layer alone: samples by the
+ * layer's rule (overlayMinorSamples), then lines in the overlay's frame
+ * (overlayMinorLines). The ONE implementation every caller drawing them uses — the
+ * app's map, and any surface that rebuilds an overlay frame of its own — so no two
+ * surfaces can place a catalog body differently beside one overlay.
+ *
+ * `natal` is the chart's own sample (for the directed rules; null samples afresh).
+ */
+export function buildOverlayMinorLines(
+  layer: OverlayLayer,
+  numbers: readonly number[],
+  natal: NatalMinorSamples | null,
+  frame: OverlayMinorFrame,
+): OverlayMinorGeometry & { samples: OverlayMinorSample[] } {
+  const samples = overlayMinorSamples(layer.bodyRule, numbers, natal);
+  return { samples, ...overlayMinorLines(layer, samples, frame) };
 }

@@ -18,13 +18,20 @@
 
 import {
   initEphemeris,
+  getMinorSamples,
   getPlanetPositions,
   getEclipticPositions,
+  minorPositionOf,
   toEclipticPositions,
+  shiftMinorEclipticLongitude,
+  shiftMinorRightAscension,
   shiftRightAscension,
   shiftEclipticLongitude,
   obliquity,
 } from '../src/lib/ephemeris';
+import { overlayMinorSamples } from '../src/lib/astro/timeline';
+import { buildWheelMinor } from '../src/lib/minorBodies/wheel';
+import type { TFn } from '../src/i18n';
 
 await initEphemeris();
 
@@ -70,6 +77,41 @@ check('…and so their table cells stay empty',
 // would pass just as well against an empty array.
 check('the directed shift still moved every body',
   inRa.every((p, i) => Math.abs(p.ra - sampled[i].ra) > 1e-9));
+
+// The catalog bodies' twins. Ceres by its number (the engine's own alias of body 10001)
+// and Pholus (5145, the main-asteroid file's body 16): both read from files every
+// checkout has. A catalog sample has a rate; a directed one — through the twin helpers,
+// or through the overlay sampler that uses them — must not, and the wheel then prints
+// none; a sampled overlay keeps the planets' own rate for the same body.
+const minors = getMinorSamples(JD, [1, 5145]);
+check('the catalog sample carries a speed for both bodies',
+  minors.length === 2 && minors.every((s) => typeof s.speed === 'number'), `${minors.length} sampled`);
+const asLines = minors.map(minorPositionOf);
+const mRa = asLines.map((p) => shiftMinorRightAscension(p, arc));
+const mLon = asLines.map((p) => shiftMinorEclipticLongitude(p, arc, eps));
+check('catalog twins (in RA and in longitude) carry no speed, though their input did',
+  asLines.every((p) => p.speed != null) && [...mRa, ...mLon].every((p) => !('speed' in p)));
+check('…and still moved every body',
+  mRa.every((p, i) => Math.abs(p.ra - asLines[i].ra) > 1e-9) &&
+    mLon.every((p, i) => Math.abs(p.ra - asLines[i].ra) > 1e-9));
+const natalMinor = { jd: JD, samples: minors };
+const directed = [
+  ...overlayMinorSamples({ by: 'shift-ra', baseJd: JD, arc }, [1, 5145], natalMinor),
+  ...overlayMinorSamples({ by: 'shift-long', baseJd: JD, arc, eps }, [1, 5145], natalMinor),
+];
+const t = ((key: string) => key) as unknown as TFn;
+const wheel = buildWheelMinor(directed, {
+  ayan: 0, decor: () => ({ name: '', color: '#000', icon: 'i' }), t, list: [{ n: 1 }, { n: 5145 }],
+});
+check('directed overlay samples carry no speed, and the wheel built from them prints none (no ℞ either)',
+  directed.length === 4 && directed.every((s) => !('speed' in s)) &&
+    wheel.length === 4 && wheel.every((w) => w.speed === undefined && w.retrograde === undefined),
+  `${directed.length} directed, ${wheel.length} on the wheel`);
+const [ovCeres] = overlayMinorSamples({ by: 'sample', jd: JD }, [1], null);
+const ceres = sampled.find((p) => p.name === 'Ceres');
+check('a sampled overlay keeps its rate — the planets\' own Ceres rate, exactly',
+  !!ovCeres && !!ceres && ceres.speed != null && ovCeres.speed === ceres.speed,
+  `${ovCeres?.speed} vs ${ceres?.speed}`);
 
 console.log(failures ? `\n${failures} FAILING CHECK(S)` : '\nall checks pass');
 process.exit(failures ? 1 : 0);

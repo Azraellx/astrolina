@@ -24,6 +24,7 @@
 import type { TFn } from '../../i18n';
 import type { MinorSample } from '../ephemeris';
 import type { MinorDecor } from '../astro/minorLines';
+import type { OverlayMinorSample } from '../astro/timeline';
 import { shiftEclipticPositions } from '../astro/ayanamsa';
 import { MINOR_GLYPHS } from '../astro/glyphChars';
 import { isHypotheticalKey, minorId, type MinorBodyId } from './ids';
@@ -49,9 +50,12 @@ export interface WheelMinorBody {
    *  derived from these, never from `lon`. */
   ra: number;
   dec: number;
-  /** Ecliptic longitude motion, degrees/day. */
-  speed: number;
-  retrograde: boolean;
+  /** Ecliptic longitude motion, degrees/day — and its sign as `retrograde`. Both ABSENT
+   *  for a directed or midpoint position (an overlay's solar arc or primaries, a
+   *  composite), which has no motion of its own: every readout then prints an em-dash,
+   *  as it does for the planets' (EclipticPosition), rather than quote a rate. */
+  speed?: number;
+  retrograde?: boolean;
   /** Near a station — the same bracket test the built-ins use (stationFromBracket).
    *  False when the sample was taken without the bracket. */
   stationary: boolean;
@@ -86,10 +90,12 @@ export interface WheelMinorOptions {
  * `samples` must be the chart-moment sample (never a slid or line-projected one): the
  * wheel reads a body's longitude, and a line position that has been projected onto the
  * ecliptic or moved to a Slide instant is a different point from the one the chart was
- * cast for.
+ * cast for. An overlay's samples (timeline.overlayMinorSamples) are the same thing for
+ * its ring — its own instant, direction or midpoints, never a projection — and a
+ * composite chart's are its midpoints (composite.compositeMinorSamples).
  */
 export function buildWheelMinor(
-  samples: readonly (MinorSample & { stationary?: boolean })[],
+  samples: readonly ((MinorSample & { stationary?: boolean }) | OverlayMinorSample)[],
   { ayan, decor, t, list }: WheelMinorOptions,
 ): WheelMinorBody[] {
   const order: Record<number, number> = {};
@@ -110,9 +116,10 @@ export function buildWheelMinor(
       lat: s.lat,
       ra: s.ra,
       dec: s.dec,
-      speed: s.speed,
-      retrograde: s.speed < 0,
-      stationary: s.stationary ?? false,
+      ...(s.speed !== undefined ? { speed: s.speed, retrograde: s.speed < 0 } : {}),
+      // An overlay's sample is never bracketed (overlayMinorSamples), as the planets'
+      // overlay ring never is.
+      stationary: 'stationary' in s ? s.stationary === true : false,
       color: d.color,
       ...(glyph ? { glyph } : {}),
       hypothetical: isHypotheticalKey(s.n),

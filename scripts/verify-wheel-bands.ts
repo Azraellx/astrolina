@@ -43,7 +43,6 @@ import {
   HUB_TARGET_SHARE,
   MINOR_RING_ENABLED,
   MINOR_RING_MIN,
-  MINOR_RING_MIN_BI,
   houseNumberArcPx,
   wheelGeometry,
   type WheelGeometry,
@@ -113,9 +112,10 @@ for (const size of MINIMAP_SIZES) {
 }
 
 let failures = 0;
-// §10 also lays out the catalog minor bodies' ring, which is SWITCHED OFF
-// (MINOR_RING_ENABLED). The sections about it run MEASURED while it is: a problem prints
-// as `meas`, with its numbers, and is tallied here instead of in `failures`. See §10.
+// §10 also lays out the catalog minor bodies' ring where the app never draws it — on a
+// bi-wheel, and anywhere while MINOR_RING_ENABLED is off. Those sections run MEASURED: a
+// problem prints as `meas`, with its numbers, and is tallied here instead of in
+// `failures`. See §10.
 let measuring = false;
 let measuredProblems = 0;
 const fail = (label: string, msg: string) => {
@@ -473,46 +473,49 @@ console.log(
   console.log(`${failures > before ? 'FAIL' : 'ok  '}  the catalog mark's stylesheet leaves the coin symbol alone`);
 }
 
-// ── §10 The catalog minor bodies: their rim diamonds, and the switched-off ring ──
-// Catalog bodies ASK the geometry for a ring of their own (`minorRing`). The ring is
-// SWITCHED OFF (MINOR_RING_ENABLED — the measured reason is written at the switch), so
-// what ships is this: on every wheel, at every size, each catalog body is a diamond in
-// the tick strip at its true degree, and the geometry is EXACTLY the one a wheel with no
-// catalog bodies gets. Those are asserted, and fail the suite:
+// ── §10 The catalog minor bodies: their rim diamonds, and their ring ──────────
+// Catalog bodies ASK the geometry for a ring of their own (`minorRing`). It is granted
+// on a single detailed wheel at or above its gate (600px) and nowhere else: below the
+// gate, on every bi-wheel and on the minimap each catalog body is a diamond in the tick
+// strip at its true degree, and the geometry is EXACTLY the one a wheel with no catalog
+// bodies gets.
 //
 //   §10a INTERNAL-IDENTITY — not asking, and asking wherever the ring is not granted
-//        (with the switch off, everywhere), give exactly the geometry of a wheel with no
-//        catalog bodies, field for field. verify-wheel-layout builds on this when it says
-//        the built-ins are untouched; if it breaks, that suite's claim is hollow.
-//   §10b REQUIREMENT — the ring is OFF, and the gates it would come on at are 500px and
-//        560px on a bi-wheel. Pinned HERE rather than read back from the module, so
-//        switching it on, or moving a gate, is a decision made in two places. As with
-//        §4b, a break means someone changed a policy. Then every pixel from 150px to
-//        1100px, on every kind of wheel: asking for the ring changes nothing at all.
+//        (below the gate, every bi-wheel, the minimap), give exactly the geometry of a
+//        wheel with no catalog bodies, field for field. verify-wheel-layout builds on this
+//        when it says the built-ins are untouched; if it breaks, that suite's claim is
+//        hollow. Then the same with the ring laid out regardless: below the gate and on
+//        the minimap, still nothing.
+//   §10b REQUIREMENT — the ring is ON, its gate is 600px, and a bi-wheel never gets it.
+//        Pinned HERE rather than read back from the module, so switching it, moving the
+//        gate or granting it to a bi-wheel is a decision made in two places. As with §4b,
+//        a break means someone changed a policy. Then every pixel from 150px to 1100px,
+//        on every kind of wheel: drawn exactly when asked for at or above the gate on a
+//        single detailed wheel — and on a bi-wheel, an IDENTITY: asking for it is the
+//        flag omitted, field for field, at every size from 420px.
+//   §10c INTERNAL-IDENTITY — the ring sits where the module says it does: nothing outside
+//        the coins moves (their outer edge takes the disc's old slot), the coins clear the
+//        tick strip above them and the planet discs below, and the ring takes no detail
+//        at any pixel from the gate to 1100px.
 //   §10d INTERNAL-IDENTITY — every rim diamond keeps its outer tip at the tick strip's
 //        outer edge; stays inside the strip on a bi-wheel and the minimap; on a single
 //        wheel grows with the wheel into the gap above the planet discs, never closer
-//        than PIP_CLEAR to their outline; and is clear of the overlay ring.
+//        than PIP_CLEAR to their outline; and is clear of the overlay ring and the coins.
+//   §10e §1–§8 again with the ring drawn: the ring is radius taken from inside the wheel,
+//        so the hub, the house arc and the monotone ladder are re-asserted for the wheels
+//        that carry it (§6–§7 there are OUTSIDE-AGREEMENT, as above).
+//   §10f REQUIREMENT, then INTERNAL-IDENTITY — an OVERLAY's catalog bodies on a bi-wheel
+//        are marks in the same strip, PIP_CLEAR clear of the overlay discs as WheelSvg
+//        draws them, of the natal discs and of both readout fans, at every size and rung;
+//        and asking for them moves no other figure.
 //
-// Everything about the RING itself still runs, laid out through `measureMinorRing` at
-// the gates above, and prints its numbers on every run: that is the baseline for the
-// tuning pass that would bring it back. While the switch is off those sections are
-// MEASURED — labelled so, a problem prints as `meas`, and none fails the suite. Switch
-// the ring on and the same sections are assertions again, with nothing to edit here but
-// the pin in §10b.
-//
-//   §10a (measured) the ring is still not granted below its gate or on the minimap.
-//   §10b (measured) the gate itself: granted exactly when asked at or above it.
-//   §10c (measured) INTERNAL-IDENTITY — the ring sits where the module says it does:
-//        nothing outside the coins moves (their outer edge takes the disc's old slot),
-//        the coins clear the tick strip above them and the planet discs below, and on a
-//        bi-wheel the divider still runs between the two charts. The 608–671px bi-wheel
-//        breaks this: the ring makes the ladder shed the second chart's readout ring.
-//   §10d (measured) the rim diamonds again with the ring drawn: clear of the coins.
-//   §10e (measured) §1–§8 again with the ring drawn: the ring is radius taken from inside
-//        the wheel, so the hub, the house arc and the monotone ladder are re-asserted for
-//        the wheels that would carry it (§6–§7 there are OUTSIDE-AGREEMENT, as above).
-console.log('\n§10 catalog minor bodies: the rim diamonds, and the switched-off ring');
+// The BI-WHEEL's would-be ring is still laid out, through `measureMinorRing` from the same
+// gate, and §10c–§10e print it on every run as a FINDING that never fails the suite
+// ("measured — bi-wheel, never granted"): it is the reason for the exclusion. On a
+// 608–671px bi-wheel the ring makes the ladder shed the second chart's readout ring, and
+// verify-wheel-layout measures its cost to the built-ins over budget up to ~730px. With
+// MINOR_RING_ENABLED off, every section about the ring runs the same way, measured.
+console.log('\n§10 catalog minor bodies: the rim diamonds, and their ring');
 
 /** The strip just inside the zodiac band where every body's true-degree tick is drawn
  *  (WheelSvg: rZodiacInner − 2 to − 8) and Advanced's graduations hang (up to 8px). A
@@ -523,28 +526,31 @@ const TICK_STRIP_INNER = 8;
 // How close a grown rim diamond may come to the planet discs' outline (wheelGeometry's
 // PIP_CLEAR, restated on purpose: the suite pins the policy, it doesn't read it back).
 const PIP_CLEAR = 2;
-/** The ring's switch, as this suite requires it (§10b). */
-const RING_ENABLED = false;
-const GATE_SINGLE = 500;
-const GATE_BI = 560;
-const gateFor = (i: WheelGeometryInput) => (i.hasOverlay ? GATE_BI : GATE_SINGLE);
+/** The ring's switch and gate, as this suite requires them (§10b). There is no bi-wheel
+ *  gate: a bi-wheel never gets the ring, and §10b holds that as an identity. */
+const RING_ENABLED = true;
+const GATE_SINGLE = 600;
 /** Whether the app's geometry may grant the ring to this wheel at all. */
 const grantable = (i: WheelGeometryInput) =>
-  MINOR_RING_ENABLED && i.detailed && i.size >= gateFor(i);
-/** The same wheel with the ring asked for and laid out whether or not it is switched on —
- *  the only way to reach it while it is off. */
+  MINOR_RING_ENABLED && i.detailed && !i.hasOverlay && i.size >= GATE_SINGLE;
+/** The same wheel with the ring asked for and laid out whether or not it is switched on,
+ *  and on a bi-wheel too — the only way to reach either. */
 const withRing = (i: WheelGeometryInput): WheelGeometryInput => ({
   ...i,
   minorRing: true,
   measureMinorRing: true,
 });
-const MEASURED = MINOR_RING_ENABLED ? '' : ' [measured — ring disabled]';
-/** Run a section about the ring itself: while it is switched off its problems print as
- *  `meas` and are counted apart from the suite's failures. Returns how many it found. */
-function ringSection(body: () => void): number {
+/** A section's label: nothing for an assertion, and what kind of measurement otherwise. */
+const measuredLabel = (finding: boolean) =>
+  finding ? ' [measured — bi-wheel, never granted]' : MINOR_RING_ENABLED ? '' : ' [measured — ring disabled]';
+const MEASURED = measuredLabel(false);
+/** Run a section about the ring itself. Its problems print as `meas` and are counted apart
+ *  from the suite's failures while the ring is switched off, and always for a `finding`
+ *  (the bi-wheel's would-be ring). Returns how many it found. */
+function ringSection(body: () => void, finding = false): number {
   const f0 = failures;
   const m0 = measuredProblems;
-  measuring = !MINOR_RING_ENABLED;
+  measuring = finding || !MINOR_RING_ENABLED;
   try {
     body();
   } finally {
@@ -552,7 +558,8 @@ function ringSection(body: () => void): number {
   }
   return failures - f0 + (measuredProblems - m0);
 }
-const ringTag = (problems: number) => (problems === 0 ? 'ok  ' : MINOR_RING_ENABLED ? 'FAIL' : 'meas');
+const ringTag = (problems: number, finding = false) =>
+  problems === 0 ? 'ok  ' : MINOR_RING_ENABLED && !finding ? 'FAIL' : 'meas';
 
 /** Every field of two geometries, compared with Object.is — the first difference, or null. */
 function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
@@ -589,12 +596,12 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
   console.log(
     `${failures > before ? 'FAIL' : 'ok  '}  §10a ${compared} comparisons: minorRing false ≡ omitted, and ` +
       `asked-for ≡ omitted wherever the ring is not granted` +
-      `${MINOR_RING_ENABLED ? ' (below the gate, the minimap)' : ' — with it switched off, every case'}, field for field`,
+      `${MINOR_RING_ENABLED ? ' (below the gate, every bi-wheel, the minimap)' : ' — with it switched off, every case'}, field for field`,
   );
   let below = 0;
   const problems = ringSection(() => {
     for (const c of cases) {
-      if (c.input.detailed && c.input.size >= gateFor(c.input)) continue;
+      if (c.input.detailed && c.input.size >= GATE_SINGLE) continue;
       below += 1;
       const d = geometryDiff(wheelGeometry(c.input), wheelGeometry(withRing(c.input)));
       if (d) fail(c.label, `the ring, laid out below its gate or on the minimap, changed the geometry — ${d}`);
@@ -606,7 +613,7 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
   );
 }
 
-// §10b — the switch and the gates, then every pixel from the smallest wheel to past the largest.
+// §10b — the switch and the gate, then every pixel from the smallest wheel to past the largest.
 {
   const before = failures;
   if (MINOR_RING_ENABLED !== RING_ENABLED) {
@@ -616,11 +623,10 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
         `move both, knowingly`,
     );
   }
-  if (MINOR_RING_MIN !== GATE_SINGLE || MINOR_RING_MIN_BI !== GATE_BI) {
+  if (MINOR_RING_MIN !== GATE_SINGLE) {
     fail(
       'wheelGeometry',
-      `the module's gates read ${MINOR_RING_MIN}/${MINOR_RING_MIN_BI}px, this suite pins ` +
-        `${GATE_SINGLE}/${GATE_BI}px — move both, knowingly`,
+      `the module's gate reads ${MINOR_RING_MIN}px, this suite pins ${GATE_SINGLE}px — move both, knowingly`,
     );
   }
   const inputsAt = (size: number, advanced: boolean): WheelGeometryInput[] => {
@@ -638,6 +644,8 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
     `${input.planetsOnly ? ' planets-only' : ''}${advanced ? ' adv' : ''}${ask ? ' (asked)' : ''}`;
   // As the app draws it.
   let probed = 0;
+  let biProbed = 0;
+  let biDiffer = 0;
   for (let size = 150; size <= 1100; size++) {
     for (const advanced of [false, true]) {
       for (const input of inputsAt(size, advanced)) {
@@ -645,6 +653,11 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
         const gAsk = wheelGeometry({ ...input, minorRing: true });
         const want = grantable(input);
         probed += 1;
+        // The bi-wheel, on its own tally: asking is the flag omitted, at every size.
+        if (input.hasOverlay) {
+          biProbed += 1;
+          if (geometryDiff(g0, gAsk)) biDiffer += 1;
+        }
         if (g0.detail.minorRing || g0.rMinor !== 0) {
           fail(labelOf(input, advanced, false), 'the catalog ring is drawn without being asked for');
         }
@@ -665,11 +678,22 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
   console.log(
     `${failures > before ? 'FAIL' : 'ok  '}  §10b ${probed} probes, 150–1100px: ` +
       (MINOR_RING_ENABLED
-        ? `the ring is drawn exactly when asked for at ≥ ${GATE_SINGLE}px (≥ ${GATE_BI}px bi-wheel), never on the minimap`
+        ? `the ring is drawn exactly when asked for on a single wheel at ≥ ${GATE_SINGLE}px, never on a ` +
+          `bi-wheel or the minimap`
         : 'the ring is switched off and never drawn — asking for it changes nothing, field for field, ' +
           'at any size on any kind of wheel'),
   );
-  // With the ring laid out regardless of the switch: the gate itself.
+  // The bi-wheel's exclusion, stated as what it is: an identity, counted on its own so a
+  // sweep that stopped reaching bi-wheels could not pass it vacuously.
+  if (biProbed === 0 || biDiffer > 0) {
+    fail('bi-wheel', `asking for the ring changed the geometry on ${biDiffer} of ${biProbed} bi-wheels`);
+  }
+  console.log(
+    `${biProbed > 0 && biDiffer === 0 ? 'ok  ' : 'FAIL'}  §10b ${biProbed} bi-wheels, 420–1100px (IDENTITY): ` +
+      `asking for the ring ≡ the flag omitted, field for field — the bi-wheel never gets it`,
+  );
+  // With the ring laid out regardless of the switch and of the bi-wheel's exclusion: the
+  // gate itself.
   let measuredProbes = 0;
   const problems = ringSection(() => {
     for (let size = 150; size <= 1100; size++) {
@@ -677,7 +701,7 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
         for (const input of inputsAt(size, advanced)) {
           for (const ask of [false, true]) {
             const g = wheelGeometry({ ...input, minorRing: ask, measureMinorRing: true });
-            const want = ask && input.detailed && size >= gateFor(input);
+            const want = ask && input.detailed && size >= GATE_SINGLE;
             measuredProbes += 1;
             if (g.detail.minorRing !== want) {
               fail(
@@ -694,84 +718,92 @@ function geometryDiff(a: WheelGeometry, b: WheelGeometry): string | null {
   });
   console.log(
     `${ringTag(problems)}  §10b ${measuredProbes} probes with the ring laid out, 150–1100px: drawn exactly when ` +
-      `asked for at ≥ ${GATE_SINGLE}px (≥ ${GATE_BI}px bi-wheel), never on the minimap${MEASURED}`,
+      `asked for at ≥ ${GATE_SINGLE}px, bi-wheel included, never on the minimap${MEASURED}`,
   );
 }
 
-// The ring-on twin of every detailed case at or above its gate, laid out regardless of
-// the switch.
-const ringCases: Case[] = cases
-  .filter((c) => c.input.detailed && c.input.size >= gateFor(c.input))
-  .map((c) => ({ label: `${c.label} +catalog ring`, input: withRing(c.input) }));
+// The ring-on twin of every detailed case at or above the gate, laid out regardless of
+// the switch: the single wheels, which get it, and the bi-wheels, which never do and are
+// measured as a finding.
+const ringTwin = (c: Case): Case => ({ label: `${c.label} +catalog ring`, input: withRing(c.input) });
+const atGate = cases.filter((c) => c.input.detailed && c.input.size >= GATE_SINGLE);
+const ringCases: Case[] = atGate.filter((c) => !c.input.hasOverlay).map(ringTwin);
+const biRingCases: Case[] = atGate.filter((c) => c.input.hasOverlay).map(ringTwin);
 
-// §10c — where the ring sits, against the same wheel without it.
+// §10c — where the ring sits, against the same wheel without it: on the single wheels
+// that get it, asserted; on the bi-wheels, which never do, the finding behind that.
 {
-  let leastDaylight = Infinity;
-  let leastDaylightAt = '';
-  const problems = ringSection(() => {
-    for (const c of ringCases) {
-      const on = wheelGeometry(c.input);
-      const off = wheelGeometry({ ...c.input, minorRing: false });
-      if (!on.detail.minorRing) {
-        fail(c.label, 'the ring was not drawn at or above its gate');
-        continue;
-      }
-      // Nothing outside the coins moves.
-      for (const k of ['rOuter', 'rZodiacInner', 'rPip', 'pipR', 'rOverlay', 'rOverlayReadout', 'rOverlayDivider'] as const) {
-        if (!Object.is(on[k], off[k])) fail(c.label, `${k} moved with the ring on: ${px(off[k])} → ${px(on[k])}`);
-      }
-      if (on.detail.overlayReadout !== off.detail.overlayReadout) {
-        fail(c.label, `the overlay readout ${off.detail.overlayReadout ? 'was shed' : 'appeared'} when the ring came on`);
-      }
-      // The coin's outer edge takes the planet disc's old slot, exactly.
-      const coinOuter = on.rMinor + on.minorR;
-      if (Math.abs(coinOuter - (off.rPlanets + off.discR)) > 1e-9) {
-        fail(c.label, `coin outer edge ${px(coinOuter)} ≠ the disc's old outer edge ${px(off.rPlanets + off.discR)}`);
-      }
-      // Clear of the tick strip above (outline included) …
-      if (on.rMinor + on.minorDiscHalf > on.rZodiacInner - TICK_STRIP_INNER + 1e-9) {
-        fail(c.label, `coin (${px(on.rMinor + on.minorDiscHalf)}) reaches into the tick strip (${px(on.rZodiacInner - TICK_STRIP_INNER)})`);
-      }
-      // … and of the planet discs below, outline to outline, with daylight between.
-      const daylight = on.rMinor - on.minorDiscHalf - (on.rPlanets + on.discHalf);
-      if (daylight < leastDaylight) {
-        leastDaylight = daylight;
-        leastDaylightAt = c.label;
-      }
-      if (daylight < 1 - 1e-9) {
-        fail(c.label, `only ${px(daylight)}px between a coin's outline and a planet disc's`);
-      }
-      // On a bi-wheel the divider runs between the two charts: inside the overlay ring's
-      // innermost ink, outside the coins.
-      if (c.input.hasOverlay) {
-        const overlayInner = on.detail.overlayReadout
-          ? on.rOverlayReadout - on.overlayFan
-          : on.rOverlay - on.overlayDiscR;
-        if (!(on.rOverlay - on.overlayDiscR > on.rOverlayDivider)) {
-          fail(c.label, `divider ${px(on.rOverlayDivider)} is not inside the overlay discs (${px(on.rOverlay - on.overlayDiscR)})`);
+  const sitsRight = (list: Case[], finding: boolean) => {
+    let leastDaylight = Infinity;
+    let leastDaylightAt = '';
+    const problems = ringSection(() => {
+      for (const c of list) {
+        const on = wheelGeometry(c.input);
+        const off = wheelGeometry({ ...c.input, minorRing: false });
+        if (!on.detail.minorRing) {
+          fail(c.label, 'the ring was not drawn at or above its gate');
+          continue;
         }
-        if (!(overlayInner > on.rOverlayDivider && on.rOverlayDivider > coinOuter)) {
-          fail(c.label, `divider ${px(on.rOverlayDivider)} is not between the overlay (${px(overlayInner)}) and the coins (${px(coinOuter)})`);
+        // Nothing outside the coins moves.
+        for (const k of ['rOuter', 'rZodiacInner', 'rPip', 'pipR', 'rOverlay', 'rOverlayReadout', 'rOverlayDivider'] as const) {
+          if (!Object.is(on[k], off[k])) fail(c.label, `${k} moved with the ring on: ${px(off[k])} → ${px(on[k])}`);
+        }
+        if (on.detail.overlayReadout !== off.detail.overlayReadout) {
+          fail(c.label, `the overlay readout ${off.detail.overlayReadout ? 'was shed' : 'appeared'} when the ring came on`);
+        }
+        // The coin's outer edge takes the planet disc's old slot, exactly.
+        const coinOuter = on.rMinor + on.minorR;
+        if (Math.abs(coinOuter - (off.rPlanets + off.discR)) > 1e-9) {
+          fail(c.label, `coin outer edge ${px(coinOuter)} ≠ the disc's old outer edge ${px(off.rPlanets + off.discR)}`);
+        }
+        // Clear of the tick strip above (outline included) …
+        if (on.rMinor + on.minorDiscHalf > on.rZodiacInner - TICK_STRIP_INNER + 1e-9) {
+          fail(c.label, `coin (${px(on.rMinor + on.minorDiscHalf)}) reaches into the tick strip (${px(on.rZodiacInner - TICK_STRIP_INNER)})`);
+        }
+        // … and of the planet discs below, outline to outline, with daylight between.
+        const daylight = on.rMinor - on.minorDiscHalf - (on.rPlanets + on.discHalf);
+        if (daylight < leastDaylight) {
+          leastDaylight = daylight;
+          leastDaylightAt = c.label;
+        }
+        if (daylight < 1 - 1e-9) {
+          fail(c.label, `only ${px(daylight)}px between a coin's outline and a planet disc's`);
+        }
+        // On a bi-wheel the divider runs between the two charts: inside the overlay ring's
+        // innermost ink, outside the coins.
+        if (c.input.hasOverlay) {
+          const overlayInner = on.detail.overlayReadout
+            ? on.rOverlayReadout - on.overlayFan
+            : on.rOverlay - on.overlayDiscR;
+          if (!(on.rOverlay - on.overlayDiscR > on.rOverlayDivider)) {
+            fail(c.label, `divider ${px(on.rOverlayDivider)} is not inside the overlay discs (${px(on.rOverlay - on.overlayDiscR)})`);
+          }
+          if (!(overlayInner > on.rOverlayDivider && on.rOverlayDivider > coinOuter)) {
+            fail(c.label, `divider ${px(on.rOverlayDivider)} is not between the overlay (${px(overlayInner)}) and the coins (${px(coinOuter)})`);
+          }
         }
       }
-    }
-  });
-  console.log(
-    `${ringTag(problems)}  §10c ${ringCases.length} ring-on cases: nothing outside the coins moves, ` +
-      `the coins clear the tick strip, the divider stays between the charts${MEASURED}` +
-      `\n        least daylight between a coin and a planet disc ${px(leastDaylight)}px (${leastDaylightAt})`,
-  );
+    }, finding);
+    console.log(
+      `${ringTag(problems, finding)}  §10c ${list.length} ring-on ${finding ? 'bi-wheel' : 'single-wheel'} cases: ` +
+        `nothing outside the coins moves, the coins clear the tick strip` +
+        `${finding ? ', the divider stays between the charts' : ''}${measuredLabel(finding)}` +
+        `\n        least daylight between a coin and a planet disc ${px(leastDaylight)}px (${leastDaylightAt})`,
+    );
+  };
+  sitsRight(ringCases, false);
+  sitsRight(biRingCases, true);
   // The listed sizes are a sample; a dragged sidebar passes through every pixel. What
   // can go wrong between them is the shed ladder picking a different rung with the ring
   // on — the ring's radius failing the hub check one rung earlier — which moves
   // everything the ring was supposed to leave alone. Named as runs of sizes, so a break
   // says where rather than only that.
-  const moved: string[] = [];
-  ringSection(() => {
-    for (const advanced of [false, true]) {
-      for (const hasOverlay of [false, true]) {
+  for (const hasOverlay of [false, true]) {
+    const moved: string[] = [];
+    ringSection(() => {
+      for (const advanced of [false, true]) {
         const sizes: number[] = [];
-        for (let size = hasOverlay ? GATE_BI : GATE_SINGLE; size <= 1100; size++) {
+        for (let size = GATE_SINGLE; size <= 1100; size++) {
           const input: WheelGeometryInput = { size, detailed: true, advanced, hasOverlay };
           const on = wheelGeometry(withRing(input));
           const off = wheelGeometry(input);
@@ -796,15 +828,16 @@ const ringCases: Case[] = cases
           moved.push(`${advanced ? 'adv ' : ''}${hasOverlay ? 'bi-wheel' : 'single'} ${runs.join(', ')}px`);
         }
       }
-    }
-    if (moved.length) {
-      fail('every pixel from the gate to 1100px', `the ring changes the detail or the radii it should leave alone at: ${moved.join('; ')}`);
-    }
-  });
-  console.log(
-    `${ringTag(moved.length)}  §10c every pixel from the gate to 1100px: the ring takes no detail and ` +
-      `moves nothing outside the coins${MEASURED}`,
-  );
+      if (moved.length) {
+        fail('every pixel from the gate to 1100px', `the ring changes the detail or the radii it should leave alone at: ${moved.join('; ')}`);
+      }
+    }, hasOverlay);
+    console.log(
+      `${ringTag(moved.length, hasOverlay)}  §10c every pixel from the gate to 1100px, ` +
+        `${hasOverlay ? 'bi-wheel' : 'single wheel'}: the ring takes no detail and moves nothing outside the coins` +
+        `${measuredLabel(hasOverlay)}`,
+    );
+  }
 }
 
 // §10d — the rim diamond, on every wheel: bi-wheel, minimap, asked-for or not — and then
@@ -884,33 +917,37 @@ const ringCases: Case[] = cases
     `${failures > beforeGrow ? 'FAIL' : 'ok  '}  §10d the rim diamond grows with a single wheel ` +
       `(${px(smallest)} → ${px(largest)} half-length, 280–1100px, never shrinking) and stays strip-sized on a bi-wheel`,
   );
-  const problems = ringSection(() => ringCases.forEach(checkPip));
-  console.log(
-    `${ringTag(problems)}  §10d ${ringCases.length} cases with the ring laid out: every rim diamond inside the ` +
-      `tick strip and clear of the coins below it${MEASURED}`,
-  );
+  for (const [list, finding] of [[ringCases, false], [biRingCases, true]] as const) {
+    const problems = ringSection(() => list.forEach(checkPip), finding);
+    console.log(
+      `${ringTag(problems, finding)}  §10d ${list.length} ${finding ? 'bi-wheel' : 'single-wheel'} cases with the ring ` +
+        `laid out: every rim diamond inside the tick strip and clear of the coins below it${measuredLabel(finding)}`,
+    );
+  }
 }
 
 // §10e — §1–§7 over the ring-on cases, then §8's monotone ladder with the ring drawn.
 {
-  const problems = ringSection(() => {
-    for (const c of ringCases) {
-      const g = wheelGeometry(c.input);
-      checkOrder(c.label, g, c.input);
-      checkReadout(c.label, g);
-      checkSignBand(c.label, g);
-      checkCuspRim(c.label, g);
-      checkBandCrowding(c.label, g);
-      checkCuspRimAlways(c.label, g, c.input);
-      checkHouseBand(c.label, g, c.input);
-      checkHouseArc(c.label, g, c.input);
-      checkHub(c.label, g, c.input);
-    }
-  });
-  console.log(
-    `${ringTag(problems)}  §10e §1–§7 over the ${ringCases.length} ring-on cases, ` +
-      `${problems} problem(s)${MEASURED}`,
-  );
+  for (const [list, finding] of [[ringCases, false], [biRingCases, true]] as const) {
+    const problems = ringSection(() => {
+      for (const c of list) {
+        const g = wheelGeometry(c.input);
+        checkOrder(c.label, g, c.input);
+        checkReadout(c.label, g);
+        checkSignBand(c.label, g);
+        checkCuspRim(c.label, g);
+        checkBandCrowding(c.label, g);
+        checkCuspRimAlways(c.label, g, c.input);
+        checkHouseBand(c.label, g, c.input);
+        checkHouseArc(c.label, g, c.input);
+        checkHub(c.label, g, c.input);
+      }
+    }, finding);
+    console.log(
+      `${ringTag(problems, finding)}  §10e §1–§7 over the ${list.length} ring-on ` +
+        `${finding ? 'bi-wheel' : 'single-wheel'} cases, ${problems} problem(s)${measuredLabel(finding)}`,
+    );
+  }
   for (const advanced of [false, true]) {
     for (const hasOverlay of [false, true]) {
       let regressions = 0;
@@ -929,20 +966,131 @@ const ringCases: Case[] = cases
           }
           prev = { size, g };
         }
-      });
+      }, hasOverlay);
       const label = `${advanced ? 'adv' : 'plain'}${hasOverlay ? ' bi-wheel' : ''} +ring`;
       console.log(
-        `${ringTag(regressions)}  §10e ${label.padEnd(16)} ${regressions} regression(s) across ` +
-          `${hasOverlay ? 420 : 280}–900px, the gate included${MEASURED}`,
+        `${ringTag(regressions, hasOverlay)}  §10e ${label.padEnd(16)} ${regressions} regression(s) across ` +
+          `${hasOverlay ? 420 : 280}–900px, the gate included${measuredLabel(hasOverlay)}`,
       );
     }
   }
 }
 
+// §10f — an OVERLAY's catalog bodies on a bi-wheel (rOverlayPip, overlayPipR): marks at their
+// true degree in the tick strip beside the chart's own rim diamonds (the module says why the
+// strip and not the divider, with the measurement). Three kinds of check:
+//   REQUIREMENT — at every pixel from 420 to 1100, on every rung the ladder reaches there
+//        (overlay readout or not, Advanced or not, readouts forced or not), each mark clears
+//        by PIP_CLEAR: the overlay discs' ink — their radius AND their outline, read off
+//        WheelSvg's own drawing rather than restated — the natal discs, and both readout
+//        fans; it keeps the strip's outer edge as the chart's diamonds do; and it is the
+//        lesser mark (never longer than the chart's own rim diamond), yet not a speck.
+//   INTERNAL-IDENTITY — asking for the marks moves nothing: every other figure is the one
+//        a bi-wheel without them gets, field for field. Not asking — every Reports wheel —
+//        and asking without an overlay publish none.
+{
+  // What WheelSvg draws an overlay disc as: its radius and its outline, both draws (the
+  // interactive one and the static one). Read from the component, so a disc redrawn larger
+  // there fails here instead of quietly overlapping the marks.
+  const wheelSrc = readFileSync('src/components/Wheel/WheelSvg.tsx', 'utf8');
+  const discDraws = [
+    ...wheelSrc.matchAll(
+      /r=\{(\d+(?:\.\d+)?)\}\s*className="planet-disc-fill"\s*stroke=\{PLANET_COLORS\[p\.name\]\}\s*strokeWidth=\{(\d+(?:\.\d+)?)\}\s*strokeDasharray="2 1\.5"/g,
+    ),
+  ].map((m) => ({ r: Number(m[1]), stroke: Number(m[2]) }));
+  const before = failures;
+  if (discDraws.length !== 2 || discDraws.some((d) => d.r !== discDraws[0].r || d.stroke !== discDraws[0].stroke)) {
+    fail('WheelSvg', `expected the overlay disc drawn twice, alike; found ${JSON.stringify(discDraws)}`);
+  }
+  const drawn = discDraws[0] ?? { r: NaN, stroke: NaN };
+  const rungs = new Set<string>();
+  // Where the mark sits against the band above it and the overlay ring below it, per
+  // probe: one value each everywhere, or a rung could move it — the ladder only ever
+  // rearranges what lies INSIDE the overlay ring, and this holds it to that.
+  const offsets = new Set<string>();
+  let probed = 0;
+  let identical = 0;
+  let tightest = { clear: Infinity, where: '' };
+  for (let size = 420; size <= 1100; size++) {
+    for (const advanced of [false, true]) {
+      for (const readouts of [false, true]) {
+        const input: WheelGeometryInput = { size, detailed: true, advanced, readouts, hasOverlay: true };
+        const label = `${size}${advanced ? ' adv' : ''}${readouts ? ' forced' : ''} bi-wheel +overlay catalog`;
+        const plain = wheelGeometry(input);
+        const g = wheelGeometry({ ...input, overlayMinor: true });
+        probed += 1;
+        // Identity: nothing but the two published figures differs.
+        const rest = (x: WheelGeometry) => {
+          const { rOverlayPip: _a, overlayPipR: _b, ...others } = x;
+          void _a;
+          void _b;
+          return JSON.stringify(others);
+        };
+        if (rest(g) !== rest(plain)) fail(label, 'asking for the overlay marks moved another figure');
+        else identical += 1;
+        if (plain.rOverlayPip !== 0 || plain.overlayPipR !== 0) {
+          fail(label, `published overlay marks without being asked (${px(plain.rOverlayPip)}, ${px(plain.overlayPipR)})`);
+        }
+        rungs.add(`${g.detail.overlayReadout ? 'overlay readout' : 'plain'}/${g.detail.readout ? (g.detail.readoutMin ? 'trio' : g.detail.readoutSign ? 'deg+sign' : 'deg') : 'no readout'}`);
+        offsets.add(`${(g.rZodiacInner - g.rOverlayPip).toFixed(9)}|${(g.rOverlayPip - g.rOverlay).toFixed(9)}|${g.overlayPipR.toFixed(9)}`);
+        // Requirement: where the marks sit, and what they clear.
+        const inner = g.rOverlayPip - g.overlayPipR;
+        const outer = g.rOverlayPip + g.overlayPipR;
+        if (!(g.overlayPipR >= 2.5)) fail(label, `overlay mark too small to read (half-length ${px(g.overlayPipR)})`);
+        if (!(g.overlayPipR <= g.pipR + 1e-9)) fail(label, `overlay mark (${px(g.overlayPipR)}) larger than the chart's rim diamond (${px(g.pipR)})`);
+        if (Math.abs(outer - (g.rZodiacInner - TICK_STRIP_OUTER)) > 1e-9) {
+          fail(label, `overlay mark's outer tip (${px(outer)}) is off the strip's outer edge (${px(g.rZodiacInner - TICK_STRIP_OUTER)})`);
+        }
+        const clears: Array<[string, number]> = [
+          ['the overlay discs', inner - (g.rOverlay + drawn.r + drawn.stroke / 2)],
+          ['the natal discs', inner - (g.rPlanets + g.discHalf)],
+          ...(g.detail.overlayReadout
+            ? [['the overlay readout', inner - (g.rOverlayReadout + g.overlayFan + g.readoutFont / 2)] as [string, number]]
+            : []),
+          ...(g.detail.readout
+            ? [['the natal readout', inner - (g.rReadoutDeg + g.readoutFont / 2)] as [string, number]]
+            : []),
+        ];
+        for (const [what, clear] of clears) {
+          if (clear < tightest.clear) tightest = { clear, where: `${label}, ${what}` };
+          if (!(clear >= PIP_CLEAR - 1e-9)) fail(label, `overlay mark (${px(inner)}–${px(outer)}) only ${px(clear)}px clear of ${what}`);
+        }
+      }
+    }
+  }
+  // Not asking for them on a single wheel publishes none either.
+  for (const size of [280, 600, 1100]) {
+    const g = wheelGeometry({ size, detailed: true, overlayMinor: true });
+    if (g.rOverlayPip !== 0 || g.overlayPipR !== 0) fail(`${size} single +overlay catalog`, 'published overlay marks with no overlay ring');
+  }
+  console.log(
+    `${failures > before ? 'FAIL' : 'ok  '}  §10f ${probed} bi-wheels, 420–1100px, ${rungs.size} rungs ` +
+      `(${[...rungs].sort().join('; ')}): every overlay catalog mark ≥${PIP_CLEAR}px clear of the overlay discs ` +
+      `(r ${drawn.r} + outline ${drawn.stroke}, as WheelSvg draws them), the natal discs and both readout fans, ` +
+      `tightest ${px(tightest.clear)}px (${tightest.where}); and asking for them moved nothing in ${identical} of ${probed}`,
+  );
+  if (!(probed > 0 && rungs.size >= 2 && identical === probed)) {
+    fail('§10f', `vacuous: ${probed} probes, ${rungs.size} rungs, ${identical} identical`);
+  }
+  if (offsets.size !== 1) {
+    fail('§10f', `the overlay mark moves against the band and the overlay ring with the size or rung: ${[...offsets].slice(0, 4).join(', ')}`);
+  }
+  const [underBand, overRing, half] = ([...offsets][0] ?? 'NaN|NaN|NaN').split('|').map(Number);
+  console.log(
+    `${offsets.size === 1 ? 'ok  ' : 'FAIL'}  §10f one place on every bi-wheel: centred ${px(underBand)}px inside the zodiac ` +
+      `band, ${px(overRing)}px outside the overlay ring's centre line, half-length ${px(half)}px — no size or rung moves ` +
+      `it, so the clearances above hold on rungs the 420–1100px sweep never reaches`,
+  );
+
+}
+
 if (measuredProblems) {
   console.log(
-    `\n${measuredProblems} problem(s) measured in the switched-off catalog ring (the \`meas\` lines above) — ` +
-      `reported for the tuning pass, not failed: MINOR_RING_ENABLED is off`,
+    `\n${measuredProblems} problem(s) measured in a catalog ring the app does not draw (the \`meas\` lines ` +
+      `above) — reported, not failed: ` +
+      (MINOR_RING_ENABLED
+        ? 'the bi-wheel is never granted the ring, and this is why'
+        : 'MINOR_RING_ENABLED is off'),
   );
 }
 

@@ -36,7 +36,7 @@
 // placed first, and above the aspect lines, which step off them (CHIP_RANK).
 import type maplibregl from 'maplibre-gl';
 import type { FeatureCollection, LineString } from 'geojson';
-import type { ParanProps } from '../../lib/astro/parans';
+import { isMinorParan, type MinorParanProps, type ParanProps } from '../../lib/astro/parans';
 import type { PlanetName } from '../../lib/ephemeris';
 import { projectVisible, screenAngleOfNorth } from '../../lib/mapProjection';
 import { CHIP_RANK, type ChipOccupancy } from './chipOccupancy';
@@ -51,6 +51,15 @@ export interface ParanBadge {
   angleA: ParanProps['angleA'];
   planetB: ParanProps['planetB'];
   angleB: ParanProps['angleB'];
+  /** A catalog row (MinorParanProps) sets all three: the catalog body's list key, the side it
+   *  holds and its colour. The chip draws the body's mark on that side in place of a planet
+   *  glyph. Both `planetA` and `planetB` then hold the built-in PARTNER — the fixed-star rows'
+   *  convention — so the key `spreadBadges` tests (`'planetA' in b`) is on every paran chip.
+   *  Flat rather than one object: Map's sameBadges compares a chip's fields by identity, and a
+   *  fresh object every pass would read as a changed chip at every settle. */
+  minorN?: number;
+  minorSide?: 'A' | 'B';
+  minorColor?: string;
   prefix: string;
   /** Click-to-fly target: the paran's intersection point. */
   targetLng: number;
@@ -66,15 +75,20 @@ export interface ParanBadge {
 //     chart counts as the chart (it comes in as the chart's set), as in CHIP_RANK. There is no
 //     tier for a natal × overlay pair because there is no such paran: two bodies angular at one
 //     moment need one sky (calculation-methods.md, "Under an overlay").
-//  2. `body`, for the pair's stronger body and then its weaker one: the luminaries, the personal
+//  2. `pair`: a pair of built-in bodies before a catalog body's pair with one (MinorParanProps).
+//     Without it the pair's stronger body would decide, and Sun × Eros would take the column
+//     ahead of Saturn × Uranus; a catalog row is labelled only after every built-in row of its
+//     set.
+//  3. `body`, for the pair's stronger body and then its weaker one: the luminaries, the personal
 //     planets, Jupiter and Saturn, the outer planets, then the calculated points, then the minor
-//     bodies (Chiron, the four asteroids, and `minorBody` for any body not listed — a catalog
-//     body, should parans ever include one). Planets, points, minor bodies is the class hierarchy
-//     the methods page already states ("Orbs of influence by line class").
-//  3. The row nearer the middle of the map column, measured across the rows.
-//  4. The order the rows came in, so the same view always labels the same rows.
+//     bodies (Chiron, the four asteroids, and `minorBody` for any body not listed — the catalog
+//     body of a catalog row). Planets, points, minor bodies is the class hierarchy the methods
+//     page already states ("Orbs of influence by line class").
+//  4. The row nearer the middle of the map column, measured across the rows.
+//  5. The order the rows came in, so the same view always labels the same rows.
 export const PARAN_RANK = {
   set: { chart: 0, overlay: 1 },
+  pair: { builtIn: 0, catalog: 1 },
   body: {
     Sun: 0,
     Moon: 0,
@@ -109,26 +123,30 @@ const PARAN_SIDE_GAP = 6;
 
 // Everything a paran chip's WIDTH depends on — the key its measured size is cached under (Map's
 // chipSizesRef, beside the edge chips' faces, which never start with "×") and its `data-bface`.
+// A catalog row's face adds the body and its side: the mark drawn there depends on the body.
 export function paranChipFace(b: ParanBadge): string {
-  return `×|${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}`;
+  const minor = b.minorN !== undefined ? `|${b.minorSide}${b.minorN}` : '';
+  return `×|${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}${minor}`;
 }
 
 // A paran chip's size before its face has been measured, built like estimateEdgeChip in Map.tsx
 // and checked against drawn chips (2026-10-01: 78 × 15 bare, 90–92 × 15 with a two-letter tag):
 // 12 px of padding, two 11 px glyphs, ~6 px per code letter, ~8 for the "×" with its margins,
 // ~4.5 per tag letter, 3 px flex gaps. Both codes are two letters on a paran chip (MC, IC, As,
-// Ds — Map.tsx's ANGLE_CODE).
+// Ds — Map.tsx's ANGLE_CODE). A catalog row's mark stands in for one glyph and is up to a pixel
+// wider (the hollow ◇ of a hypothetical point, 12 px; Map.tsx's estimateMinorChip).
 export function estimateParanChip(b: ParanBadge): BadgeSize {
   const codeChars = 4;
   const prefixChars = b.prefix.length;
   const items = 5 + (prefixChars ? 1 : 0);
-  const w = 12 + 22 + 6 * codeChars + 8 + 4.5 * prefixChars + 3 * (items - 1);
+  const w = 12 + 22 + (b.minorN !== undefined ? 1 : 0) + 6 * codeChars + 8 + 4.5 * prefixChars + 3 * (items - 1);
   return { hw: w / 2, hh: 7.5 };
 }
 
 interface Cand {
   b: ParanBadge;
   set: number;
+  pair: number;
   strong: number;
   weak: number;
   /** Distance (px) from the middle of the map column, across the rows. */
@@ -137,17 +155,27 @@ interface Cand {
 }
 
 const byRank = (p: Cand, q: Cand): number =>
-  p.set - q.set || p.strong - q.strong || p.weak - q.weak || p.s - q.s || p.order - q.order;
+  p.set - q.set ||
+  p.pair - q.pair ||
+  p.strong - q.strong ||
+  p.weak - q.weak ||
+  p.s - q.s ||
+  p.order - q.order;
 
 // Place the paran chips for this pass, through the pass's occupancy (made on first use, so a pass
 // with no row on screen reads nothing). `sets` in the order their rows were pushed — the chart's
 // own parans, then an overlay's. `w` × `h` is the map container's size as the pass already read
 // it: read again here, it came after the pass's Local Space section had written the canvas mask,
 // and could force a style recalculation to answer. Returns the chips in that input order, each
-// with its stacking value (the highest-ranked on top, though no two paran chips meet).
+// with its stacking value (the highest-ranked on top, though no two paran chips meet). A set may
+// hold catalog rows (MinorParanProps) — the chart's or an overlay's own, ranked by `pair` after
+// that set's built-in rows wherever they are passed.
 export function placeParanChips(
   map: maplibregl.Map,
-  sets: readonly { fc: FeatureCollection<LineString, ParanProps>; overlay: boolean }[],
+  sets: readonly {
+    fc: FeatureCollection<LineString, ParanProps | MinorParanProps>;
+    overlay: boolean;
+  }[],
   occupancy: () => ChipOccupancy,
   sizeOf: (b: ParanBadge) => BadgeSize,
   inset: number,
@@ -175,23 +203,30 @@ export function placeParanChips(
       // MapLibre's test for one allocates, for every row.
       const a = flat ? map.project([c.lng, p.latitude]) : projectVisible(map, c.lng, p.latitude);
       if (!a || !(a.x >= 0 && a.x <= w && a.y >= 0 && a.y <= h)) return;
-      const ra = bodyRank(p.planetA);
-      const rb = bodyRank(p.planetB);
+      // A catalog row: its body ranks as `minorBody` (no PlanetName to look up), its partner as
+      // itself, and both planet keys hold the partner (ParanBadge.minorN).
+      const minor = isMinorParan(p);
+      const planetA = minor ? p.partner : p.planetA;
+      const planetB = minor ? p.partner : p.planetB;
+      const ra = minor ? PARAN_RANK.minorBody : bodyRank(p.planetA);
+      const rb = bodyRank(planetB);
       cands.push({
         b: {
-          key: `${overlay ? 'pov' : 'pn'}-${i}`,
+          key: `${overlay ? 'pov' : 'pn'}${minor ? 'm' : ''}-${i}`,
           x: a.x,
           y: a.y,
-          planetA: p.planetA,
+          planetA,
           angleA: p.angleA,
-          planetB: p.planetB,
+          planetB,
           angleB: p.angleB,
+          ...(minor ? { minorN: p.number, minorSide: p.side, minorColor: p.color } : {}),
           // Tag prefix (overlay or promoted); empty for the natal chart's own parans.
           prefix: p.tag ?? '',
           targetLng: p.intersectionLng,
           targetLat: p.latitude,
         },
         set,
+        pair: minor ? PARAN_RANK.pair.catalog : PARAN_RANK.pair.builtIn,
         strong: Math.min(ra, rb),
         weak: Math.max(ra, rb),
         s: Math.abs((a.x - cp.x) * nx + (a.y - cp.y) * ny),

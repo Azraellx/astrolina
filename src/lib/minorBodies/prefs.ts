@@ -99,3 +99,32 @@ export function saveMinorBodiesPref(p: MinorBodiesPref): void {
     // Storage full or blocked: the choice still holds for this session.
   }
 }
+
+// ── Parans with the planets ───────────────────────────────────────────────────
+// The catalog bodies' parans (parans.ts generateMinorParans) have their own switch,
+// OFF by default: up to six rows per body for every partner on the map is a lot to
+// add unasked. A preference like the one above — written only by its own control,
+// never on mount, never from the derived value. What keeps it from drawing (map
+// Parans off, the sky hold) is a standing state the App derives over it, so the
+// reader's choice is still here when that state ends (CLAUDE.md, rule 2). An
+// untouched install stores nothing, so the default stays reachable (rule 6).
+export const MINOR_PARANS_PREF_KEY = 'astro:minor-parans:v1';
+
+/** The stored switch: on only for an explicit '1'. Anything else — absent, malformed,
+ *  storage blocked — reads as the default, off, and reading writes nothing. */
+export function loadMinorParansPref(): boolean {
+  try {
+    return localStorage.getItem(MINOR_PARANS_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** For the switch's own control only. */
+export function saveMinorParansPref(on: boolean): void {
+  try {
+    localStorage.setItem(MINOR_PARANS_PREF_KEY, on ? '1' : '0');
+  } catch {
+    // Storage full or blocked: the choice still holds for this session.
+  }
+}

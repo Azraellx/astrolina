@@ -32,7 +32,6 @@ import {
 import {
   MINOR_RING_ENABLED,
   MINOR_RING_MIN,
-  MINOR_RING_MIN_BI,
   angleLabelHalfPx,
   wheelGeometry,
   type WheelGeometry,
@@ -410,24 +409,23 @@ resizeSweep('all nineteen, 280–900px', 40, 19);
 
 // ══ Catalog minor bodies ══════════════════════════════════════════════════
 // Catalog bodies (lib/minorBodies/wheel) can be drawn two ways. Below the gate
-// (MINOR_RING_MIN, and MINOR_RING_MIN_BI on a bi-wheel) each is a rim diamond at its
+// (MINOR_RING_MIN), on every bi-wheel and on the minimap each is a rim diamond at its
 // true degree, which costs no radius, and the natal ring above must come out exactly as
-// it does without them. At and above the gate they would get a ring of coins of their
-// own, laid out by lib/wheelRingLayout — the function WheelSvg calls, imported here
-// rather than restated — with the chart's four axes as walls, and the planet ring
+// it does without them. On a single wheel at and above the gate they get a ring of coins
+// of their own, laid out by lib/wheelRingLayout — the function WheelSvg calls, imported
+// here rather than restated — with the chart's four axes as walls, and the planet ring
 // stepped inward to make room.
 //
-// THE RING IS SWITCHED OFF (MINOR_RING_ENABLED, lib/wheelGeometry, where the reason is
-// written). What ships is the first way on every wheel at every size, and the sections
-// about THAT are asserted and fail the suite: the built-ins laid out exactly as without
-// catalog bodies, and the wheel resized as it is without them.
+// The ring is ON (MINOR_RING_ENABLED, lib/wheelGeometry, where the tuning that brought
+// it back is written up), and every section about it below is an assertion on the
+// budget written into it. Switch it off and the same sections print as measurements
+// ("measured — ring disabled", a break as `meas`) without failing the suite.
 //
-// Every section about the RING still runs — laid out through `measureMinorRing` at the
-// gates it would have — and prints its numbers, because they are the baseline for the
-// tuning pass that would bring it back. While the switch is off those sections are
-// labelled "measured — ring disabled", a break prints as `meas`, and none fails the
-// suite. Switch the ring on and the same sections are assertions again, on the budgets
-// already written into them.
+// The BI-WHEEL is never granted the ring, at any size. Its would-be cost is still laid
+// out through `measureMinorRing` from the same gate and printed on every run, as a
+// FINDING ("measured — bi-wheel, never granted") that never fails the suite: it is the
+// reason for the exclusion, and the baseline if anyone revisits it. What a bi-wheel
+// actually draws — the built-ins exactly as without catalog bodies — is asserted.
 //
 // Each section says which kind of assertion it makes, after verify-directions.ts §8,
 // because the kinds break for different reasons:
@@ -446,21 +444,33 @@ const seeded = (s: number) => () => ((s = (s * 1103515245 + 12345) & 0x7fffffff)
 /** A wheel as the app draws it, catalog bodies on it (`minorRing`) or not. */
 const geomWith = (size: number, advanced: boolean, hasOverlay: boolean, minorRing: boolean) =>
   wheelGeometry({ size, detailed: true, advanced, hasOverlay, minorRing });
-/** The same wheel with the catalog ring laid out whether or not it is switched on — the
- *  only way to reach it while it is off. The gates still apply. */
+/** The same wheel with the catalog ring laid out whether or not it is switched on, and on
+ *  a bi-wheel too, which is never granted it — the only way to reach either. The gate
+ *  still applies. */
 const ringGeom = (size: number, advanced: boolean, hasOverlay: boolean) =>
   wheelGeometry({ size, detailed: true, advanced, hasOverlay, minorRing: true, measureMinorRing: true });
 /** Whether the app's geometry may grant the ring at this size at all. */
 const ringGrantable = (size: number, hasOverlay: boolean) =>
-  MINOR_RING_ENABLED && size >= (hasOverlay ? MINOR_RING_MIN_BI : MINOR_RING_MIN);
+  MINOR_RING_ENABLED && !hasOverlay && size >= MINOR_RING_MIN;
 
-const MEASURED = MINOR_RING_ENABLED ? '' : ' [measured — ring disabled]';
+/** The label on a section about the ring: nothing while it is on and the wheel is one
+ *  that gets it, and a measurement otherwise. */
+const measuredLabel = (hasOverlay: boolean) =>
+  hasOverlay ? ' [measured — bi-wheel, never granted]' : MINOR_RING_ENABLED ? '' : ' [measured — ring disabled]';
+const MEASURED = measuredLabel(false);
 let measuredBreaks = 0;
+let biWheelBreaks = 0;
 let measuredFindings = 0;
-/** The verdict on a section about the ring itself: a break fails the suite only once the
- *  ring is switched on. Until then it prints as `meas` and is counted apart. */
-function ringVerdict(ok: boolean): string {
+/** The verdict on a section about the ring itself: a break fails the suite while the ring
+ *  is switched on — except on a bi-wheel, which never gets it, so a break there is the
+ *  measured finding the exclusion rests on. Either way a non-failing break prints as
+ *  `meas` and is counted apart. */
+function ringVerdict(ok: boolean, hasOverlay = false): string {
   if (ok) return 'ok  ';
+  if (hasOverlay) {
+    biWheelBreaks += 1;
+    return 'meas';
+  }
   if (MINOR_RING_ENABLED) {
     failures += 1;
     return 'FAIL';
@@ -525,18 +535,17 @@ sweep(
 // layout untouched: every body and every angle code at exactly the offset it has with no
 // catalog bodies on the wheel, compared with Object.is rather than a tolerance. (The band
 // suite proves the geometry is identical field for field; this proves nothing between the
-// geometry and the layout reads the request some other way.) With the ring switched off
-// that is every size, so the sizes run from the smallest wheel to the largest, across
-// where the gates would be.
+// geometry and the layout reads the request some other way.) On a single wheel that is
+// every size below the gate; on a bi-wheel, which never gets the ring, every size there
+// is — so the bi-wheel's sizes run to the largest, across the gate.
 //
-// Then the same, MEASURED, with the ring laid out regardless of the switch: below its
-// gate it must still change nothing — which is what makes switching it back on safe for
-// the wheels under the gate.
+// Then the same with the ring laid out regardless of the switch: below its gate it must
+// still change nothing — which is what makes the gate safe for the wheels under it.
 console.log('\nas drawn, the built-ins are laid out exactly as without catalog bodies (IDENTITY)');
 {
   const groups: [string, number[], boolean, number][] = [
-    ['single', [280, 320, 367, 380, 440, MINOR_RING_MIN - 1, MINOR_RING_MIN, 560, 600, 700, 800, 900], false, 20260926],
-    ['bi-wheel', [420, 480, 540, MINOR_RING_MIN_BI - 1, MINOR_RING_MIN_BI, 600, 640, 700, 800, 900], true, 20260927],
+    ['single', [280, 320, 367, 380, 440, 500, 560, MINOR_RING_MIN - 1, MINOR_RING_MIN, 700, 800, 900], false, 20260926],
+    ['bi-wheel', [420, 480, 540, 560, MINOR_RING_MIN - 1, MINOR_RING_MIN, 640, 700, 800, 900], true, 20260927],
   ];
   for (const [kind, sizes, hasOverlay, seed] of groups) {
     const r = seeded(seed);
@@ -579,8 +588,8 @@ console.log('\nas drawn, the built-ins are laid out exactly as without catalog b
 {
   const r = seeded(20260926);
   const groups: [string, number[], boolean][] = [
-    ['single', [280, 320, 367, 380, 440, MINOR_RING_MIN - 1], false],
-    ['bi-wheel', [420, 480, 540, MINOR_RING_MIN_BI - 1], true],
+    ['single', [280, 320, 367, 380, 440, 500, 560, MINOR_RING_MIN - 1], false],
+    ['bi-wheel', [420, 480, 540, 560, MINOR_RING_MIN - 1], true],
   ];
   for (const [kind, sizes, hasOverlay] of groups) {
     let charts = 0;
@@ -617,19 +626,21 @@ console.log('\nas drawn, the built-ins are laid out exactly as without catalog b
   }
 }
 
-// ── At and above the gate: what the ring would cost the built-ins ──────────
+// ── At and above the gate: what the ring costs the built-ins ───────────────
 // OUTSIDE-AGREEMENT — the gate exists so that catalog bodies do not buy their room with
-// the built-ins' positions. The ring takes radius from the planets, a planet ring pushed
-// inward has less circumference to seat the same bodies on, and the readout floor grows
-// as the trio moves in with it. What a reader pays for that is a planet drawn in a sign
-// it is not in, so that is what is counted: the share of charts with a built-in pushed
-// more than a whole sign, with the ring and without it, on the SAME charts. The budget is
-// GATE_COST_PP percentage points at every size the ring is drawn at.
+// the built-ins' positions. The ring takes radius from the planets, and a planet ring
+// pushed inward has less circumference to seat the same bodies on. What a reader pays
+// for that is a planet drawn in a sign it is not in, so that is what is counted: the
+// share of charts with a built-in pushed more than a whole sign, with the ring and
+// without it, on the SAME charts. The budget is GATE_COST_PP percentage points at every
+// size the ring is drawn at.
 //
-// This is the measurement that switched the ring off: at 500px the cost is more than ten
-// times the budget, and it comes within it only at ~900px. MEASURED while the ring is
-// off — these lines are the tuning pass's baseline, and become the assertion again when
-// it is switched back on.
+// This is the measurement that switched the ring off on 2026-09-26 (+2.62 pp at 500px),
+// and the one the tuning pass was judged on. Every 10px from the gate to 900px, because
+// the sizes it used to sample (500/560/600…) stepped straight over a spike at 530–550px
+// that fails the budget by up to three and a half times; a sample is only as good as the
+// sizes nobody thought to list. The bi-wheel's line is the finding behind its exclusion,
+// on a sparser list since it is never asserted.
 //
 // The charts are the realistic sweep's (a third with all nineteen bodies), and each size
 // sees the same ones, so the sizes are comparable with each other. The planet-ring step
@@ -637,14 +648,18 @@ console.log('\nas drawn, the built-ins are laid out exactly as without catalog b
 const GATE_COST_PP = 0.2;
 const GATE_COST_CHARTS = 5000;
 console.log(
-  `\nat and above the gate: what the catalog ring would cost the built-ins (OUTSIDE-AGREEMENT, ` +
+  `\nat and above the gate: what the catalog ring costs the built-ins (OUTSIDE-AGREEMENT, ` +
     `budget +${GATE_COST_PP} pp)${MEASURED}`,
 );
 {
+  const every10: number[] = [];
+  for (let s = MINOR_RING_MIN; s <= 900; s += 10) every10.push(s);
   const groups: [string, number[], boolean][] = [
-    ['single', [MINOR_RING_MIN, 560, 600, 700, 800, 900], false],
-    ['bi-wheel', [MINOR_RING_MIN_BI, 600, 700, 800, 900], true],
+    ['single', every10, false],
+    ['bi-wheel', [MINOR_RING_MIN, 640, 700, 740, 800, 900], true],
   ];
+  let worstSingle = -Infinity;
+  let worstSingleAt = 0;
   for (const [kind, sizes, hasOverlay] of groups) {
     for (const size of sizes) {
       const r = seeded(987654321);
@@ -669,18 +684,26 @@ console.log(
       const pct = (x: number) => `${((100 * x) / GATE_COST_CHARTS).toFixed(2)}%`;
       const dpp = (100 * (pastOn - pastOff)) / GATE_COST_CHARTS;
       const ok = ringMissing === 0 && dpp <= GATE_COST_PP + 1e-9;
+      if (!hasOverlay && dpp > worstSingle) {
+        worstSingle = dpp;
+        worstSingleAt = size;
+      }
       console.log(
-        `${ringVerdict(ok)}  ${kind} ${size}px: past a sign ${pct(pastOff)} → ${pct(pastOn)} ` +
+        `${ringVerdict(ok, hasOverlay)}  ${kind} ${size}px: past a sign ${pct(pastOff)} → ${pct(pastOn)} ` +
           `(${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)} pp, ${newly} chart(s) newly)` +
           `\n        planet ring ${step.toFixed(1)}px inward; some glyph moved more than 2° on ${pct(moved)}` +
-          `${ringMissing ? `; the ring was NOT drawn on ${ringMissing} chart(s)` : ''}`,
+          `${ringMissing ? `; the ring was NOT drawn on ${ringMissing} chart(s)` : ''}` +
+          `${measuredLabel(hasOverlay)}`,
       );
     }
   }
+  console.log(
+    `        single wheels, ${every10.length} sizes: worst +${worstSingle.toFixed(2)} pp at ${worstSingleAt}px`,
+  );
 }
 
 // ── The catalog ring itself ────────────────────────────────────────────────
-// Three assertions, per chart — MEASURED while the ring is switched off:
+// Three assertions, per chart — on a single wheel; on the bi-wheel, a finding:
 //
 //   AGREEMENT  no coin across an axis. The axis line is drawn at the angle; the coin is
 //              laid out by the ring. A coin on the far side of the line — or with its
@@ -696,8 +719,10 @@ console.log(
 //   IDENTITY   coins share no more than BODY_OVERLAP_SHARE of their width.
 //
 // On three sets of bodies — twenty anywhere, eight within 20°, twenty in one quadrant —
-// at 500/560/700/900px single and 560/600/800px bi-wheel, between realistic axes; and on
-// a planets-only wheel, whose walls are the 0/90/180/270° device.
+// at 600/700/800/900px single and 600/700/800px bi-wheel, between realistic axes; and on
+// a planets-only wheel, whose walls are the 0/90/180/270° device. Twenty in one quadrant
+// is the case the coins were thinned for (0.5 of the planet disc, from 0.64): at the
+// old size it put a coin across the ASC or MC on up to a quarter of charts.
 type Walls = number[];
 interface MinorChart {
   walls: Walls;
@@ -835,8 +860,8 @@ console.log(
 {
   const RING_CHARTS = 1000;
   const geoms: [string, number, boolean, boolean][] = [
-    ...[500, 560, 700, 900].map((s): [string, number, boolean, boolean] => [`${s}px`, s, false, false]),
-    ...[560, 600, 800].map((s): [string, number, boolean, boolean] => [`${s}px bi-wheel`, s, true, false]),
+    ...[600, 700, 800, 900].map((s): [string, number, boolean, boolean] => [`${s}px`, s, false, false]),
+    ...[600, 700, 800].map((s): [string, number, boolean, boolean] => [`${s}px bi-wheel`, s, true, false]),
     [`${MINOR_RING_MIN}px planets-only`, MINOR_RING_MIN, false, true],
   ];
   for (const [setName, gen] of MINOR_SETS) {
@@ -867,7 +892,7 @@ console.log(
       }
       const ok = noRing === 0 && sum.crossed === 0 && sum.overlaps === 0 && sum.breaches === 0;
       console.log(
-        `${ringVerdict(ok)}  ${setName}, ${gLabel}: ${RING_CHARTS} charts` +
+        `${ringVerdict(ok, hasOverlay)}  ${setName}, ${gLabel}: ${RING_CHARTS} charts` +
           `, ${crossedCharts} with a coin across an axis` +
           (sum.crossed
             ? ` (${sum.crossed} coins, ${sum.crossedOverfull} of them in an arc too narrow to seat its coins)`
@@ -877,7 +902,7 @@ console.log(
           `${sum.breaches ? ` — ${sum.breaches} arc(s) PAST the ${MAX_PUSH_DEG}° ceiling` : ''}` +
           `; ${sum.tightArcs} tight arc(s) of ${sum.arcs}` +
           `${sum.tightArcs ? ` (${sum.overfullArcs} too narrow to seat their coins at all), worst there ${sum.worstTight.toFixed(2)}°` : ''}` +
-          `${noRing ? `; the ring was NOT drawn on ${noRing}` : ''}`,
+          `${noRing ? `; the ring was NOT drawn on ${noRing}` : ''}${hasOverlay ? measuredLabel(true) : ''}`,
       );
     }
   }
@@ -885,25 +910,26 @@ console.log(
 
 // ── Resizing with catalog bodies on the wheel ──────────────────────────────
 // OUTSIDE-AGREEMENT, as the resize section above: the property the reader sees when
-// they drag the sidebar. Three kinds of line, and only the first fails the suite.
+// they drag the sidebar. Three kinds of line; the second never fails the suite.
 //
 //   • AS DRAWN — the built-ins, with catalog bodies on the wheel, from the smallest wheel
 //     to the largest, on the geometry the app uses. Asserted twice over: every one-pixel
-//     step within the resize bound above (on its declared exclusions), AND at every
-//     pixel where the ring is not granted — with it switched off, all of them — every
-//     body at exactly the offset it has with no catalog bodies (Object.is).
+//     step within the resize bound above (on its declared exclusions — the gate, where
+//     the ring comes on, among them), AND at every pixel where the ring is not granted —
+//     below the gate, and the whole of a bi-wheel — every body at exactly the offset it
+//     has with no catalog bodies (Object.is).
 //   • THE BI-WHEEL'S OWN BEHAVIOUR — the bi-wheel breaks the 5° bound by itself, with no
 //     catalog bodies at all: 5.83° at 621→622px, a readout-font step, the first time
 //     anything resized a bi-wheel. That is a finding about the bi-wheel, not about
 //     catalog bodies or the ring, so it is printed as a measured finding and never
-//     fails the suite. With the ring off, its as-drawn line is the same finding, and the
-//     identity half of that line (above) is what IS asserted.
-//   • THE RING (measured — ring disabled) — the built-ins with the ring laid out, where
-//     the gate is one more declared discontinuity (the ring comes on and the planet ring
-//     steps inward; reported, not bounded); and the coins, from the gate up, every
-//     one-pixel step bounded the same way except where an arc is too narrow to seat its
-//     coins (the ring's own crowded regime, the analogue of codes giving up their axis),
-//     which is excluded and counted.
+//     fails the suite. Its as-drawn line is the same finding, and the identity half of
+//     that line (above) is what IS asserted.
+//   • THE RING — the built-ins with the ring laid out, where the gate is one more
+//     declared discontinuity (the ring comes on and the planet ring steps inward;
+//     reported, not bounded); and the coins, from the gate up, every one-pixel step
+//     bounded the same way except where an arc is too narrow to seat its coins (the
+//     ring's own crowded regime, the analogue of codes giving up their axis), which is
+//     excluded and counted. Asserted on a single wheel; on the bi-wheel, a finding.
 //
 // The declared discontinuities are the ones above (the shed ladder swapping rungs — the
 // bi-wheel's overlay readout included — and a ring so full its codes gave up their axis).
@@ -979,7 +1005,7 @@ function resizeWithCatalog(
   const ok = worst <= MAX_RESIZE_JUMP_DEG;
   let tag: string;
   if (verdict === 'ring') {
-    tag = ringVerdict(ok);
+    tag = ringVerdict(ok, hasOverlay);
   } else if (verdict === 'finding') {
     tag = findingVerdict(ok);
   } else {
@@ -991,7 +1017,8 @@ function resizeWithCatalog(
       `, worst move ${worst.toFixed(2)}° (${worstAt})` +
       `, ${((100 * quiet) / compared).toFixed(1)}% moved nothing` +
       (which === 'ring'
-        ? `\n        at the gate itself the ring moves them up to ${gateJump.toFixed(2)}° (declared, not bounded)`
+        ? `\n        at the gate itself the ring moves them up to ${gateJump.toFixed(2)}° (declared, not bounded)` +
+          `${hasOverlay ? measuredLabel(true) : ''}`
         : ''),
   );
   if (which === 'drawn') {
@@ -1007,7 +1034,7 @@ function resizeWithCatalog(
 function resizeCoins(label: string, charts: number, setIdx: number, hasOverlay: boolean) {
   const [, gen] = MINOR_SETS[setIdx];
   const r = seeded(88000 + setIdx + (hasOverlay ? 10 : 0));
-  const gate = hasOverlay ? MINOR_RING_MIN_BI : MINOR_RING_MIN;
+  const gate = MINOR_RING_MIN;
   let worst = 0;
   let worstAt = '';
   let compared = 0;
@@ -1048,10 +1075,11 @@ function resizeCoins(label: string, charts: number, setIdx: number, hasOverlay: 
   }
   const ok = worst <= MAX_RESIZE_JUMP_DEG;
   console.log(
-    `${ringVerdict(ok)}  ${label}: ${compared} one-pixel steps` +
+    `${ringVerdict(ok, hasOverlay)}  ${label}: ${compared} one-pixel steps` +
       `, worst move ${worst.toFixed(2)}° (${worstAt || 'none'})` +
       `, ${compared ? ((100 * quiet) / compared).toFixed(1) : '0.0'}% moved nothing` +
-      `${crowded ? `, ${crowded} step(s) excluded where an arc was too narrow for its coins` : ''}`,
+      `${crowded ? `, ${crowded} step(s) excluded where an arc was too narrow for its coins` : ''}` +
+      `${hasOverlay ? measuredLabel(true) : ''}`,
   );
 }
 console.log('as drawn (asserted)');
@@ -1077,17 +1105,22 @@ resizeWithCatalog(
 console.log(`the ring${MEASURED}`);
 resizeWithCatalog('built-ins, ten bodies, 280–900px, ring laid out', 60, 10, false, 'ring', 'ring');
 resizeWithCatalog('built-ins, all nineteen, 280–900px, ring laid out', 40, 19, false, 'ring', 'ring');
-resizeWithCatalog('built-ins, bi-wheel, 420–900px, ring laid out', 40, 10, true, 'ring', 'ring');
 resizeCoins(`coins, twenty anywhere, ${MINOR_RING_MIN}–900px`, 40, 0, false);
 resizeCoins(`coins, eight within 20°, ${MINOR_RING_MIN}–900px`, 40, 1, false);
-resizeCoins(`coins, twenty anywhere, bi-wheel, ${MINOR_RING_MIN_BI}–900px`, 40, 0, true);
+console.log("the bi-wheel's would-be ring (measured finding — never granted, not asserted)");
+resizeWithCatalog('built-ins, bi-wheel, 420–900px, ring laid out', 40, 10, true, 'ring', 'ring');
+resizeCoins(`coins, twenty anywhere, bi-wheel, ${MINOR_RING_MIN}–900px`, 40, 0, true);
 
-if (measuredBreaks || measuredFindings) {
+if (measuredBreaks || biWheelBreaks || measuredFindings) {
   console.log(
     `\nmeasured, not failed (the \`meas\` lines above):` +
       (measuredBreaks
-        ? `\n  ${measuredBreaks} line(s) where the switched-off catalog ring is outside its bound — the ` +
-          `tuning pass's baseline; they fail the suite again once MINOR_RING_ENABLED is on`
+        ? `\n  ${measuredBreaks} line(s) where the switched-off catalog ring is outside its bound — ` +
+          `they fail the suite again once MINOR_RING_ENABLED is back on`
+        : '') +
+      (biWheelBreaks
+        ? `\n  ${biWheelBreaks} line(s) where the ring a bi-wheel is never granted would be outside its ` +
+          `bound — the finding the exclusion rests on`
         : '') +
       (measuredFindings
         ? `\n  ${measuredFindings} line(s) of the bi-wheel's own resize behaviour, with or without catalog bodies`

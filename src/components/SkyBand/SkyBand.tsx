@@ -147,6 +147,10 @@ interface SkyBandProps {
    *  chart without a time has no angular lines, so no parans, of its own. Absent =
    *  true (no chart, or a host that doesn't say). */
   chartHasTime?: boolean;
+  /** Handed to a registered track only (SkyBandTrackContext): how many catalog minor bodies
+   *  have parans on the map, and the window that switches them. Absent = none. */
+  minorParanBodies?: number;
+  openMinorBodies?: () => void;
   /** Whether the map draws the Part of Fortune for the active chart (the host's
    *  own gate for its lines, short of the visible set the band already has). The
    *  band's Fortune entry shows only then, so it never explains a Lot that isn't
@@ -175,6 +179,8 @@ export function SkyBand({
   slideTo,
   slideBy,
   chartHasTime = true,
+  minorParanBodies,
+  openMinorBodies,
   fortuneOnMap = false,
   ephemerisEpoch = 0,
   onClose,
@@ -560,6 +566,8 @@ export function SkyBand({
           slideMs,
           slideTo,
           chartHasTime,
+          minorParanBodies,
+          openMinorBodies,
         }
       : null;
 
