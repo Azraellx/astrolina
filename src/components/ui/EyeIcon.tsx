@@ -5,8 +5,9 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Show/hide eye toggle icon: an open eye when shown, a slashed eye when hidden.
-// Shared by the Sidebar's tech-toggles, the timeline nub's bar toggle, and the
-// Capture / Local Space windows (strokes in currentColor, so each host colours it).
+// Shared by the Sidebar's tech-toggles, the timeline drawer's display toggles, and the
+// Capture / Local Space windows (strokes in currentColor, so each host colours it). It
+// means SHOW/HIDE a thing on the map; the overlay nubs' fold toggles take ui/CollapseIcon.
 // `className` / `size` default to the Sidebar's `eye-icon` at 15px; the floating
 // windows pass `location-ls-eye` at 14px to match their toggles.
 export function EyeIcon({

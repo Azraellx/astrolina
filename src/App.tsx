@@ -1675,12 +1675,22 @@ export default function App() {
   // written only by its own switch (setMinorParansPref, below) and never on mount; nothing
   // but that switch and the derivation reads it. The catalog rows are drawn wherever the
   // planets' parans are, so whatever holds THOSE holds these: map Parans off (or Advanced
-  // off), the sky hold on a geodetic map, and Cyclocartography, whose two epochs share no
-  // sky-moment. A standing state, so it derives rather than writes (CLAUDE.md rule 2): the
-  // switch shows the stored value greyed, and the reader's choice is still there when the
-  // hold ends. Guards and generators read the DERIVED `minorParansOn`.
+  // off), the sky hold on a geodetic map, and Cyclocartography standing in for the chart
+  // (paransOverlayBlocked, below). A standing state, so it derives rather than writes
+  // (CLAUDE.md rule 2): the switch shows the stored value greyed, and the reader's choice is
+  // still there when the hold ends. Guards and generators read the DERIVED `minorParansOn`.
+  //
+  // No time overlay draws parans of its own (timeline AUX_BLOCKED_OVERLAYS, 2026-10-06 —
+  // Cyclo's two epochs share no sky-moment; the others have no paran reading). But the
+  // chart's own parans stay on the map beside an overlay (see effParans), so the switch has
+  // nothing left to show only while a time overlay is PROMOTED — the drawer's Natal Chart
+  // eye off, the overlay standing in for the chart (promoteOverlay, further down, which this
+  // restates in the terms readable up here: every paran-blocked mode is a time overlay). One
+  // value for the map toggle, its hotkey, the Sidebar row and this hold, so they cannot
+  // disagree.
+  const paransOverlayBlocked = overlayAuxBlocked(overlayMode, 'paran') && !showNatal;
   const [minorParansPref, setMinorParansPrefState] = useState(loadMinorParansPref);
-  const minorParansHeld = !effShowParans || overlayAuxBlocked(overlayMode, 'paran');
+  const minorParansHeld = !effShowParans || paransOverlayBlocked;
   const minorParansOn = minorParansPref && !minorParansHeld;
   // The switch's own writer. Refuses while held, so the greyed switch is inert in fact and
   // can't store a choice the reader can't see take effect (CLAUDE.md, "a control that shows a
@@ -1937,7 +1947,8 @@ export default function App() {
           // like the section that hosts them). Each is its family's own first letter,
           // in the section's own order; that rule is what N cost Night Shade below.
           case 'n': if (advancedWheel && !parked) setShowNatalLines((v) => !v); break;
-          case 'p': if (advancedWheel && !parked && !held) setShowParans((v) => !v); break;
+          // …and, as its greyed row, while Cyclocartography stands in for the chart.
+          case 'p': if (advancedWheel && !parked && !held && !paransOverlayBlocked) setShowParans((v) => !v); break;
           case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
           case 'm': if (advancedWheel && !parked) setShowMidpointLines((v) => !v); break;
           case 's': if (advancedWheel && !parked && !held) setShowStarLines((v) => !v); break;
@@ -2087,6 +2098,7 @@ export default function App() {
     lineSystem,
     mapTool,
     overlayMode,
+    paransOverlayBlocked,
     showLocalSpace,
     showSkyTimes,
     setShowLocalSpaceSafe,
@@ -3969,10 +3981,19 @@ export default function App() {
   );
 
   // One-frame rule: when an overlay is active the auxiliary families (aspect,
-  // midpoint, paran, star) render from the OVERLAY's frame and the natal set is
-  // hidden — never both. Independent of the Natal display toggle, which keeps
-  // governing only the primary angle lines' dual display. Eclipses are excluded:
-  // their map linework is a separate opt-in (showEclipseMapLines / eclipseSolo).
+  // midpoint, star) render from the OVERLAY's frame and the natal set is hidden —
+  // never both. Independent of the Natal display toggle, which keeps governing only
+  // the primary angle lines' dual display. Eclipses are excluded: their map linework
+  // is a separate opt-in (showEclipseMapLines / eclipseSolo).
+  //
+  // PARANS LEFT THIS RULE on 2026-10-06 (Salvatore, from a support report; seam L23's
+  // addendum). A reader who turned Parans on with Transits running found only the transit
+  // sky's rows, compared them with another program's natal parans, and concluded ours were
+  // wrong. Now the chart's own parans stay on the map beside an overlay, following the
+  // Natal Lines switch, and the time overlays draw none of their own (timeline
+  // AUX_BLOCKED_OVERLAYS says why); a synastry partner's, and an eclipse's opt-in set,
+  // are drawn beside the chart's, tagged. Pairing is untouched: a paran is still two
+  // bodies of ONE chart, and no cross-chart row is drawn. See effParans/drawParans.
   const overlayAux = !!overlayLayer && overlayMode !== 'eclipses';
 
   // The overlay frame's aspect + midpoint lines — the overlay counterpart of the
@@ -4078,8 +4099,8 @@ export default function App() {
           theme,
         ),
       ),
-      // Parans are suppressed under Cyclocartography (no single sky-moment across its
-      // two epochs); hidden here rather than drawn incoherent — see overlayAuxBlocked.
+      // A time overlay draws no parans of its own (Cyclo has no single sky-moment; the
+      // rest no paran reading) — see overlayAuxBlocked. Synastry's and an eclipse's stay.
       parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
             filterParans(
@@ -4413,16 +4434,33 @@ export default function App() {
     [promoted, nadir],
   );
 
+  // The chart's parans as they reach everything but the map's own drawing: gone under the
+  // eclipse clean-up, the overlay's own while it is promoted (it IS the chart then), and
+  // otherwise the chart's — with an overlay up too, since 2026-10-06, when parans left the
+  // one-frame rule (see overlayAux). A synastry partner's or an eclipse's own rows ride
+  // beside them in the overlay's bundle (effOverlayParans); a time overlay has none. Resolved here rather than with the other eff* families further down
+  // because the orb bands below need it.
+  const effParans = eclipseSolo ? EMPTY_FC : promoted ? promoted.parans : parans;
+  // The DRAW-only twin, for Advanced ▸ Lines ▸ Natal Lines — effLines/drawLines' split, and
+  // for the same reason: a panel keeps reading what the map has stopped drawing. Only beside
+  // an overlay — ANY overlay, Eclipses included (overlayLayer, not overlayAux), so the rule
+  // has no exception to explain: there the switch is how a reader puts the chart's rows down
+  // to read the overlay's alone, as it already did for the angle lines. With no overlay the
+  // chart's parans stay with their own toggle, as before — hiding the natal lines on a plain
+  // chart never took them, and nothing about this change asks it to.
+  const drawParans = overlayLayer && hideNatalAngles ? EMPTY_FC : effParans;
+
   const orbBands = useMemo(() => {
     if (!effShowOrbZones) return null;
     // A band is a corridor around a LINE, so it goes when its line does — an empty
-    // halo hugging nothing reads as a rendering fault. The paran bands are untouched:
-    // parans are lines in their own right, with their own toggle.
+    // halo hugging nothing reads as a rendering fault. The paran bands follow the
+    // DRAWN rows (drawParans), for the same reason. Until 2026-10-06 they were built from
+    // the chart's parans while the one-frame rule hid those rows under an overlay, so a
+    // transit map carried shaded bands around rows nobody could see.
     const bandLines =
       eclipseSolo || hideNatalAngles ? EMPTY_FC : promoted ? promoted.lines : lines;
-    const bandParans = eclipseSolo ? EMPTY_FC : promoted ? promoted.parans : parans;
-    return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbKm);
-  }, [effShowOrbZones, eclipseSolo, hideNatalAngles, promoted, lines, parans, orbZoneKm, paranOrbKm]);
+    return generateOrbBands(bandLines, drawParans, orbZoneKm, paranOrbKm);
+  }, [effShowOrbZones, eclipseSolo, hideNatalAngles, promoted, lines, drawParans, orbZoneKm, paranOrbKm]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -6203,12 +6241,12 @@ export default function App() {
       minorParansOn && !skyFamiliesOff && minorLinePositions.length > 0
         ? generateMinorParans(minorLinePositions, linePositions, meridianLng, minorDecor)
         : EMPTY_FC;
-    // One-frame rule: when an overlay is active its auxiliary families REPLACE the
-    // natal ones in the complete set, so a reveal/report reads the active frame.
+    // One-frame rule: when an overlay is active its aspect/midpoint and star families
+    // REPLACE the natal ones in the complete set, so a reveal/report reads the active frame.
+    // The parans left that rule on 2026-10-06 (see overlayAux): the chart's stay in `parans`
+    // beside an overlay, as they stay on the map, and the overlay's ride in `overlayParans`.
     let angleLinesOut: FeatureCollection = natalAngleLines;
     let starLinesOut: FeatureCollection = natalStarLines;
-    let paransOut: FeatureCollection = allParans;
-    let minorParansOut: FeatureCollection = natalMinorParans;
     if (overlayLayer) {
       const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
       const isCyclo = overlayLayer.kind === 'cyclo';
@@ -6293,16 +6331,12 @@ export default function App() {
               ),
               isCyclo ? 'Tr' : prefix,
             );
-        // Natal parans hidden while an overlay is active; the overlay's live in overlayParans.
-        // The catalog rows follow them, as they do on the map.
-        paransOut = EMPTY_FC;
-        minorParansOut = EMPTY_FC;
       }
     }
     return {
       lines: natalLines,
       angleLines: angleLinesOut,
-      parans: paransOut,
+      parans: allParans,
       starLines: starLinesOut,
       localSpace: allLocalSpace,
       overlayLines,
@@ -6311,7 +6345,8 @@ export default function App() {
       // The natal originals the one-frame rule chose between above, published
       // rather than discarded: they are already built, and a consumer reading
       // the natal promise while an overlay is active has no other way back to
-      // them.
+      // them. (natalParans now equals `parans` — the parans left the rule on
+      // 2026-10-06 — and is kept so the slot's readers need not change.)
       natalAngleLines,
       natalParans: allParans,
       natalStarLines,
@@ -6321,8 +6356,8 @@ export default function App() {
       // the chart's rather than in place of them.
       minorLines: allMinorLines,
       overlayMinorLines: overlayMinorAll,
-      // Their parans with the planets, under the parans' one-frame rule (paransOut above).
-      minorParans: minorParansOut,
+      // Their parans with the planets, the chart's, beside an overlay too — as `parans`.
+      minorParans: natalMinorParans,
       overlayMinorParans: overlayMinorParansAll,
       skyHeld,
     };
@@ -6523,24 +6558,18 @@ export default function App() {
       : promoted
         ? (overlayMinor?.zenith ?? EMPTY_FC)
         : minorZenith;
-  const effParans = eclipseSolo
-    ? EMPTY_FC
-    : promoted
-      ? promoted.parans
-      : overlayAux
-        ? EMPTY_FC
-        : parans;
-  // The catalog parans take the planets' parans' exact path: gone under the eclipse clean-up,
-  // the overlay's own while it is promoted (tagged, in the chart's source, as the promoted
-  // planet parans are), and the chart's hidden while an overlay is active (one-frame rule —
-  // the overlay's ride in its bundle, effMapOverlay.minorParans).
+  // (effParans and its draw twin drawParans are resolved above the orb bands, which read
+  // them.) The catalog parans take the planets' parans' exact path: gone under the eclipse
+  // clean-up, the overlay's own while it is promoted (tagged, in the chart's source, as the
+  // promoted planet parans are), and otherwise the chart's, beside an overlay's too — whose
+  // own ride in its bundle, effMapOverlay.minorParans. The draw twin takes the Natal Lines
+  // hide beside an overlay, as drawParans does.
   const effMinorParans: FeatureCollection<LineString, MinorParanProps> = eclipseSolo
     ? NO_MINOR_PARANS
     : promoted
       ? (overlayMinorParans ?? NO_MINOR_PARANS)
-      : overlayAux
-        ? NO_MINOR_PARANS
-        : minorParans;
+      : minorParans;
+  const drawMinorParans = overlayLayer && hideNatalAngles ? NO_MINOR_PARANS : effMinorParans;
   const effLocalSpace = eclipseSolo ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
   // The three below are map-only — nothing on the extension context carries them — so
   // they take the Natal Lines hide in place rather than needing a draw* twin. Each is a
@@ -6598,20 +6627,20 @@ export default function App() {
     (effMapOverlay?.minorLines?.features.length ?? 0) > 0 ||
     effAngleLines.features.length > 0 ||
     effStarLines.features.length > 0 ||
-    effParans.features.length > 0 ||
+    drawParans.features.length > 0 ||
     (effOverlayParans?.features.length ?? 0) > 0 ||
-    effMinorParans.features.length > 0 ||
+    drawMinorParans.features.length > 0 ||
     (effMapOverlay?.minorParans?.features.length ?? 0) > 0;
   // How many of the reader's catalog bodies have parans drawn on the map now, the chart's and
   // an overlay's beside it — handed to the sky band's track (SkyBandTrackContext), which reads
   // only the built-in bodies and says so while any catalog body has some (rule 5).
   const minorParanBodies = useMemo(() => {
     const drawn = new Set<number>();
-    for (const fc of [effMinorParans, effMapOverlay?.minorParans]) {
+    for (const fc of [drawMinorParans, effMapOverlay?.minorParans]) {
       for (const f of fc?.features ?? []) drawn.add(f.properties.number);
     }
     return drawn.size;
-  }, [effMinorParans, effMapOverlay]);
+  }, [drawMinorParans, effMapOverlay]);
   const openMinorBodiesView = useCallback(() => openViewById('minorBodies'), [openViewById]);
   // The Ascendant curves: the reader's choice once they have made one, else on while no body
   // lines are drawn and off (but one click away) while any are. Derived every render, never
@@ -6666,7 +6695,7 @@ export default function App() {
   const fullSet = lineSpotlight?.lines ?? null;
   const spotLines = useMemo(() => applySpot(drawLines, fullSet?.lines), [applySpot, drawLines, fullSet]);
   const spotAngleLines = useMemo(() => applySpot(effAngleLines, fullSet?.angleLines), [applySpot, effAngleLines, fullSet]);
-  const spotParans = useMemo(() => applySpot(effParans, fullSet?.parans), [applySpot, effParans, fullSet]);
+  const spotParans = useMemo(() => applySpot(drawParans, fullSet?.parans), [applySpot, drawParans, fullSet]);
   const spotStarLines = useMemo(() => applySpot(effStarLines, fullSet?.starLines), [applySpot, effStarLines, fullSet]);
   // A spotlight carrying its OWN set but no catalog family (a surface that doesn't
   // handle catalog bodies builds its set without them) reveals NO catalog lines —
@@ -6679,8 +6708,8 @@ export default function App() {
   // The catalog parans on the same terms as their lines: a spotlight with its own set reveals
   // only the catalog parans that set carries.
   const spotMinorParans = useMemo(
-    () => applySpot(effMinorParans, fullSet ? (fullSet.minorParans ?? EMPTY_FC) : undefined),
-    [applySpot, effMinorParans, fullSet],
+    () => applySpot(drawMinorParans, fullSet ? (fullSet.minorParans ?? EMPTY_FC) : undefined),
+    [applySpot, drawMinorParans, fullSet],
   );
   const spotLocalSpace = useMemo(() => applySpot(effLocalSpace, fullSet?.localSpace), [applySpot, effLocalSpace, fullSet]);
   // The overlay bundle for the <Map>: off → the effective overlay; aiming → hidden; reveal → the
@@ -7105,6 +7134,7 @@ export default function App() {
           showMidpointLines={showMidpointLines}
           setShowMidpointLines={setShowMidpointLines}
           overlayMode={overlayMode}
+          paransOverlayBlocked={paransOverlayBlocked}
           showOrbZones={showOrbZones}
           setShowOrbZones={setShowOrbZones}
           orbZoneVal={orbZoneVal}
@@ -7477,8 +7507,8 @@ export default function App() {
               ? null
               : skyHeld
                 ? t('settings.inert.paransHeldFull')
-                : overlayAuxBlocked(overlayMode, 'paran')
-                  ? t('settings.parans.blockedCyclo')
+                : paransOverlayBlocked
+                  ? t(overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay')
                   : t('minorBodies.hud.parans.held'),
             onChange: setMinorParansPref,
           }}

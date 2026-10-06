@@ -1453,10 +1453,12 @@ function lineLabelHtml(
     const own = minorMarkHtml(props, 'cross-tip-glyph') + minorNameHtml(props, t);
     const other = glyphHtml(partner, PLANET_COLORS[partner]) + labels.planet(partner);
     const [first, second] = props.side === 'A' ? [own, other] : [other, own];
+    // The tag leads both sides, as on the planet rows: both bodies are the overlay's.
     row =
       pre +
       `${first} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
       `<span class="cross-tip-x">×</span>` +
+      pre +
       `${second} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
@@ -1464,11 +1466,13 @@ function lineLabelHtml(
   } else if (layerId.startsWith('parans')) {
     const pa = props.planetA as PlanetName;
     const pb = props.planetB as PlanetName;
+    // The tag leads BOTH bodies, as on the chip: an overlay's paran pairs two of its own.
     row =
       pre +
       glyphHtml(pa, PLANET_COLORS[pa]) +
       `${labels.planet(pa)} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
       `<span class="cross-tip-x">×</span>` +
+      pre +
       glyphHtml(pb, PLANET_COLORS[pb]) +
       `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
@@ -9429,10 +9433,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               placement="top"
               tip={t('map.flyToParan')}
             >
+              {/* An overlay's tag goes on BOTH bodies: both are the overlay's (a paran never
+                  pairs across frames). One tag in front read as "transiting ♀ × natal ♆" — a
+                  transit-to-natal paran, which is never drawn (2026-10-06). */}
               {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
               {side('A', b.planetA)}
               <span className="acg-badge-code">{ANGLE_CODE[b.angleA]}</span>
               <span className="paran-badge-x">×</span>
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
               {side('B', b.planetB)}
               <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
             </TipButton>

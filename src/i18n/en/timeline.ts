@@ -22,7 +22,7 @@ export const timeline = {
   },
   nubFallback: 'Overlay',
 
-  // The eye toggle on the nub's right edge — shows/hides the ruler + transport row.
+  // The fold chevron on the nub's right edge — shows/hides the ruler + transport row.
   barToggle: {
     show: 'Show timeline bar',
     hide: 'Hide timeline bar',
@@ -176,6 +176,9 @@ export const timeline = {
   rate: { label: 'Rate' },
   dateField: {
     tipChartZone: 'Transit / progressed moment, in the chart’s time zone',
+    // With the birthplace known (every saved chart): says whose clock it is, and that it
+    // need not be the reader's — the bar's zone was once taken for the reader's own.
+    tipChartZonePlace: 'Transit / progressed moment, on {place} time — the chart’s birthplace, which may not be where you are',
     tipUtc: 'Transit / progressed moment, in UTC',
   },
   // The pop-up date/time picker (TimelineDateModal) — same moment editor as My Charts.

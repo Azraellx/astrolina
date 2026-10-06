@@ -85,11 +85,20 @@ export const settings = {
   userRate: { label: 'Degrees per year' },
   parans: {
     title: 'Parans',
-    hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map.',
-    // Shown on the grayed toggle while Cyclocartography is active (its "sky" mixes
-    // progressed and transiting bodies, so no single simultaneous moment exists).
+    // The second sentence is there because a transit overlay's rows used to REPLACE the
+    // chart's without a word anywhere in the app, and a reader compared them with another
+    // program's natal parans (2026-10-06). Time overlays now draw none of their own; a
+    // synastry partner's (and an eclipse's opt-in set) join the chart's, tagged.
+    hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Your chart’s parans stay on beside an overlay.',
+    // Shown on the grayed toggle while Cyclocartography stands in for the chart (its
+    // "sky" mixes progressed and transiting bodies, so it has no simultaneous moment of
+    // its own, and the chart's parans are off the map with the chart). Names the fix.
     blockedCyclo:
-      'No single sky-moment — parans aren’t defined across two epochs (Cyclocartography reads progressed and transiting bodies together).',
+      'No single sky-moment — Cyclocartography reads progressed and transiting bodies together. Show the Natal Chart to bring the chart’s own parans back.',
+    // The same greyed toggle while any OTHER time overlay stands in for the chart: none of
+    // them draws parans of its own (lib/astro/timeline AUX_BLOCKED_OVERLAYS says why).
+    blockedOverlay:
+      'Parans are read from the chart, and this overlay is standing in for it. Show the Natal Chart to bring the chart’s parans back.',
   },
   // Local Space + its origin selector live in the Local Space view (i18n localSpaceHud).
   aspectLines: {
@@ -154,7 +163,10 @@ export const settings = {
   // and does, because plugins/help is private to the paid build.
   natalLines: {
     title: 'Natal Lines',
-    hint: 'The birth chart’s own angle lines — every body on the Ascendant, MC, Descendant and IC. Hide them for a quiet map. The wheel and readouts stay; hidden lines can’t be clicked.',
+    // "beside an overlay, its parans": since 2026-10-06 the chart's parans stay on the map
+    // beside an overlay's, and this switch is how a reader puts them down to read the
+    // overlay's alone. With no overlay, parans keep their own switch.
+    hint: 'The birth chart’s angle lines on the Ascendant, MC, Descendant and IC — and, beside an overlay, its parans. The wheel and readouts stay; hidden lines can’t be clicked.',
   },
   starLines: {
     title: 'Fixed Stars',

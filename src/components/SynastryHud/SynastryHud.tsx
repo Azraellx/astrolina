@@ -14,7 +14,7 @@ import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
-import { EyeIcon } from '../ui/EyeIcon';
+import { CollapseIcon } from '../ui/CollapseIcon';
 import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
@@ -131,7 +131,7 @@ export function SynastryHud({
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <EyeIcon open={expanded} />
+          <CollapseIcon open={expanded} />
         </TipButton>
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>

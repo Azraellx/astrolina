@@ -198,8 +198,9 @@ export function saveUserPrimaryRate(deg: number) {
 // with — where would I have to live for this transit to reach MY angles — and it
 // holds still enough to be read across a season, where the moment's own frame
 // sweeps ~15° an hour and only means anything at an instant deliberately chosen.
-// The moment frame is one segment click away, and a returns snap still forces it
-// outright (App.tsx), announced.
+// The moment frame is one segment click away, and a returns snap BORROWS it while the
+// return is read (App.tsx's returnBorrow → effTransitFrame), never writing this pref —
+// it forced it outright, announced, until 2026-08-07.
 //
 // v3 abandons every earlier value rather than migrating it, for the reason the key
 // keeps getting bumped: this pref is written on mount, so EVERY install that has

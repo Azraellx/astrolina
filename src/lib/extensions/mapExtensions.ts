@@ -50,12 +50,14 @@ export interface AllLines {
   overlayParans: FeatureCollection | null;
   overlayLocalSpace: FeatureCollection | null;
   /** The NATAL-frame auxiliary families, kept alongside the active-frame ones
-   *  above. While an overlay is active those three slots carry the overlay's
-   *  aspect/midpoint and star lines and an empty paran set — the one-frame rule
-   *  — which is right for a consumer showing "what the map is on", and wrong for
-   *  one that has to read the natal promise regardless of what the map is
-   *  showing. Both are now available, and neither has to be recomputed: these
-   *  are the same values the one-frame rule chooses between. */
+   *  above. While an overlay is active the angleLines/starLines slots carry the
+   *  overlay's aspect/midpoint and star lines — the one-frame rule — which is
+   *  right for a consumer showing "what the map is on", and wrong for one that
+   *  has to read the natal promise regardless of what the map is showing. Both
+   *  are available, and neither has to be recomputed. The parans left the rule on
+   *  2026-10-06: {@link parans} keeps the chart's beside an overlay, so `natalParans`
+   *  now equals it; the slot stays for its readers. {@link overlayParans} is a synastry
+   *  partner's or an eclipse's own set — a time overlay has none since that day. */
   natalAngleLines: FeatureCollection;
   natalParans: FeatureCollection;
   natalStarLines: FeatureCollection;
@@ -77,8 +79,9 @@ export interface AllLines {
    *  for the bodies in {@link minorLines}, paired with every built-in body, as {@link parans}
    *  pairs them. Generated only while the reader's "Parans with the planets" switch is in
    *  effect (MapExtensionContext.minorParansOn — so EMPTY on a geodetic map, where parans
-   *  are held) and the chart has a birth time; under the one-frame rule {@link parans}
-   *  follows, EMPTY while an overlay is active (its rows are {@link overlayMinorParans}).
+   *  are held) and the chart has a birth time. The chart's, beside an overlay too, as
+   *  {@link parans} are since 2026-10-06 (a synastry partner's are {@link overlayMinorParans};
+   *  a time overlay makes none).
    *  OPTIONAL, and treated as EMPTY when absent, for the reason {@link minorLines} is. */
   minorParans?: FeatureCollection;
   /** {@link minorParans}' overlay twin, tagged with the overlay's prefix, wherever the
@@ -297,10 +300,10 @@ export interface MapExtensionContext {
   minorBodies?: readonly MinorRow[];
   /** Whether the reader's "Parans with the planets" switch (the Minor bodies window) is in
    *  effect: switched on, and not held — it is held while the map's parans are (Parans off,
-   *  the sky hold on a geodetic map, Cyclocartography). DERIVED, never the stored switch. A
-   *  surface that builds a frame of its own (not from {@link collectAllLines}, whose
-   *  AllLines.minorParans already follows it) reads this to pair the reader's catalog bodies
-   *  with that frame's planets. Absent in builds that predate it; treat absent as false. */
+   *  the sky hold on a geodetic map, a time overlay standing in for the chart). DERIVED,
+   *  never the stored switch. A surface that builds a frame of its own (not from
+   *  {@link collectAllLines}, whose AllLines.minorParans already follows it) reads this to
+   *  pair the reader's catalog bodies with that frame's planets. Absent in builds that predate it; treat absent as false. */
   minorParansOn?: boolean;
   angleLines: FeatureCollection;
   parans: FeatureCollection;

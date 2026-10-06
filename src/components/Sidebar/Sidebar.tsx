@@ -105,10 +105,13 @@ interface SidebarProps {
   setShowAspectLines: (v: boolean) => void;
   showMidpointLines: boolean;
   setShowMidpointLines: (v: boolean) => void;
-  /** The active overlay mode — grays the Parans & Midpoint toggles on
-   *  Cyclocartography, where those families have no single sky-moment (see
-   *  overlayAuxBlocked). */
+  /** The active overlay mode — grays the Midpoint toggle on Cyclocartography, where
+   *  that family has no single sky-moment (see overlayAuxBlocked). */
   overlayMode: OverlayMode;
+  /** Grays the Parans toggle: a time overlay draws no parans of its own, and while one
+   *  stands in for the chart (promoted) the chart's are not on the map either. Beside the
+   *  chart it is live — the chart's own parans stay (App's paransOverlayBlocked). */
+  paransOverlayBlocked: boolean;
   showOrbZones: boolean;
   setShowOrbZones: (v: boolean) => void;
   orbZoneVal: number;
@@ -1137,6 +1140,7 @@ export function Sidebar({
   showMidpointLines,
   setShowMidpointLines,
   overlayMode,
+  paransOverlayBlocked,
   showOrbZones,
   setShowOrbZones,
   orbZoneVal,
@@ -1975,8 +1979,11 @@ export function Sidebar({
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
-              disabled={skyHeld || overlayAuxBlocked(overlayMode, 'paran')}
-              disabledHint={skyHeldWhy ?? t('settings.parans.blockedCyclo')}
+              disabled={skyHeld || paransOverlayBlocked}
+              disabledHint={
+                skyHeldWhy ??
+                t(overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay')
+              }
               title={t('settings.parans.title')}
               hotkey="Shift P"
               hint={t('settings.parans.hint')}

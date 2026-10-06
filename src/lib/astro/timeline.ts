@@ -196,10 +196,9 @@ export function overlayBlockedFor(
 // and fixed-star lines.
 export type AuxFamily = 'aspect' | 'midpoint' | 'paran' | 'star';
 
-// Which auxiliary families are INCOHERENT under a given overlay and so must be
-// suppressed. Cyclocartography is the sole blocker today: its "sky" stitches two
-// instants together (progressed personal planets + transiting outers), so any
-// construct that needs a single simultaneous moment breaks —
+// Which auxiliary families an overlay does not draw OF ITS OWN. Cyclocartography's
+// "sky" stitches two instants together (progressed personal planets + transiting
+// outers), so any construct that needs a single simultaneous moment breaks —
 //   · a paran is two bodies angular at ONE moment; across two epochs no such
 //     moment exists, so paran rows would be meaningless.
 //   · a midpoint collapses two bodies into ONE point; averaging a progressed and
@@ -207,10 +206,25 @@ export type AuxFamily = 'aspect' | 'midpoint' | 'paran' | 'star';
 // Aspect-to-angle and star lines stay allowed: each is a PER-BODY construct (a
 // body's own position aspecting/marking an angle) needing no cross-body
 // simultaneity, so each Cyclo body stands on its own well-defined position.
+//
+// PARANS are not drawn for ANY time overlay (2026-10-06, Salvatore). Parans are read
+// from a chart: the natal one (which stays on the map beside an overlay), a synastry
+// partner's, an eclipse's. Of the time overlays, none has a paran reading of its own:
+//   · Primary directions, and solar arc applied in right ascension (true or Naibod),
+//     turn the natal set rigidly in RA — every RA gap and declination is kept, so
+//     every paran latitude is the NATAL one, exactly (all 410 rows of a test chart
+//     on their natal twins to 0.000°). Drawn beside the chart's, each row twice.
+//   · A transit sky's parans are that day's sky, the same for everyone on Earth;
+//     what an astrologer times with parans is a transit angular WITH a natal body,
+//     which these are not. Progressed and longitude-directed sets have no
+//     established paran reading either.
+// A reader with Transits on took the transit sky's rows for her natal parans and
+// compared them with another program's (the report behind seam L23's addendum).
+// Synastry (the partner's own parans) and Eclipses (an opt-in) keep theirs.
 export const AUX_BLOCKED_OVERLAYS: Record<AuxFamily, ReadonlySet<OverlayMode>> = {
   aspect: new Set<OverlayMode>(),
   midpoint: new Set<OverlayMode>(['cyclo']),
-  paran: new Set<OverlayMode>(['cyclo']),
+  paran: TIME_OVERLAY_MODES,
   star: new Set<OverlayMode>(),
 };
 

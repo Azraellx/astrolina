@@ -14,7 +14,7 @@ export const synastryHud = {
   chooseComparison: 'Choose comparison chart',
   // Prompt shown in the trigger when no partner is selected yet.
   choosePrompt: 'Choose a chart to compare',
-  // The eye on the nub collapses/expands the body (partner picker + relationship
+  // The chevron on the nub collapses/expands the body (partner picker + relationship
   // controls), leaving just the nub — to focus on the map.
   barToggle: {
     show: 'Show synastry options',

@@ -28,6 +28,7 @@ import type { StoredChart } from '../../lib/chartLibrary';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import {
   formatUtcOffset,
+  getIanaTimezone,
   offsetHoursAt,
   zoneLabelAt,
 } from '../../lib/atlas/timezone';
@@ -39,6 +40,7 @@ import { getMapExtensions, isAvailable, isEntitled } from '../../lib/extensions/
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { AnglesIcon } from '../ui/AnglesIcon';
 import { EyeIcon } from '../ui/EyeIcon';
+import { CollapseIcon } from '../ui/CollapseIcon';
 import { ClickIcon } from '../ui/ClickIcon';
 import { HintMenu, InfoTip, StepperField } from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
@@ -365,6 +367,22 @@ function TimeRuler({
   );
 }
 
+// The birthplace's settlement name when the chart's zone IS the birthplace's own live zone
+// (the one the atlas looks up there), else '' — see tzPlace in the component for why.
+function birthplaceZoneName(chart: StoredChart | null | undefined): string {
+  if (!chart?.tzIana || chart.composite) return '';
+  const { lat, lng, label } = chart.birthplace;
+  let own: string;
+  try {
+    own = getIanaTimezone(lat, lng);
+  } catch {
+    return '';
+  }
+  if (own !== chart.tzIana) return '';
+  const lead = label.split(',')[0].trim();
+  return /^[-+]?\d/.test(lead) ? '' : lead;
+}
+
 export function TimelineHud({
   overlayMode,
   mapState,
@@ -509,6 +527,24 @@ export function TimelineHud({
     : current.tzIana
       ? zoneLabelAt(current.tzIana, tzInstant)
       : formatUtcOffset(current.tzOffset);
+  // Whose clock that is: the chart's birthplace, named beside the offset ("GMT+2 · Voorburg").
+  // A bare offset read as the reader's own clock — a reader in London took the bar's GMT+2
+  // (Amsterdam, her birthplace, in summer time) for hers and set an instant an hour out
+  // (2026-10-06). The settlement only, as the geodetic readout names a place; the tip and the
+  // date picker carry it too.
+  //
+  // Named ONLY when the bar's zone is the birthplace's own live zone — the one the atlas looks
+  // up there — because otherwise the claim "this is Voorburg's clock" is false: a composite
+  // or Davison (zone UTC, place "Space"), a whole-hour UTC pick (an Etc/GMT zone), a zone
+  // picked for somewhere else, a legacy chart with only a fixed offset (which the bar shows
+  // all year, summer or not). A place written as bare coordinates, where the lookup failed,
+  // names nothing. In every such case the bar keeps its bare offset and the old tip. A
+  // stated "Standard + daylight" or exact offset keeps the detected zone for the live clock
+  // (lib/atlas/zoneEntry), so it passes and is named, rightly.
+  // Plain rather than memoised: one polygon lookup per render is microseconds, even per
+  // playback tick, and a memo keyed on the chart object trips the React Compiler.
+  const tzPlace = birthplaceZoneName(current);
+  const tzLabelFull = tzPlace ? `${tzLabel} · ${tzPlace}` : tzLabel;
 
   // The date button's readout, in the chart's zone (display ms = target + offset,
   // read in UTC) — e.g. "5 Jun 1941, 09:30". The picker modal does the inverse.
@@ -881,7 +917,10 @@ export function TimelineHud({
         )}
         {/* Show/hide the ruler + transport (the bar's old Settings toggle, moved
             here so it's reachable while the bar is collapsed). stopPropagation keeps
-            a tap/double-tap on the eye from starting a nub drag or re-centre. */}
+            a tap/double-tap on the toggle from starting a nub drag or re-centre. A fold
+            chevron, not the eye it was until 2026-10-06: it folds the bar and nothing
+            else, and a slashed eye beside "Transits" read as the transits being hidden
+            (ui/CollapseIcon). The class keeps its old name. */}
         <TipButton
           type="button"
           className="thud-eye"
@@ -894,7 +933,7 @@ export function TimelineHud({
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <EyeIcon open={showTimeline} />
+          <CollapseIcon open={showTimeline} />
         </TipButton>
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
@@ -1045,12 +1084,22 @@ export function TimelineHud({
             className="thud-utc"
             placement="top"
             tip={
-              current
-                ? t('timeline.dateField.tipChartZone')
-                : t('timeline.dateField.tipUtc')
+              !current
+                ? t('timeline.dateField.tipUtc')
+                : tzPlace
+                  ? t('timeline.dateField.tipChartZonePlace', { place: tzPlace })
+                  : t('timeline.dateField.tipChartZone')
             }
           >
             {tzLabel}
+            {/* The " · " sits outside the capped span: inside an inline-block its leading
+                space collapsed ("GMT+2· Voorburg"). */}
+            {tzPlace && (
+              <>
+                {' · '}
+                <span className="thud-utc-place">{tzPlace}</span>
+              </>
+            )}
           </TipSpan>
         </span>
 
@@ -1424,7 +1473,7 @@ export function TimelineHud({
         <TimelineDateModal
           valueMs={targetDate}
           offsetMs={offsetMs}
-          zoneLabel={tzLabel}
+          zoneLabel={tzLabelFull}
           yearMin={yearMin}
           yearMax={yearMax}
           onApply={(ms) => setTargetDate(ms)}

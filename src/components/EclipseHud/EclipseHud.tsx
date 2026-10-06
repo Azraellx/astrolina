@@ -29,6 +29,7 @@ import type { Formatters, TFn } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { EyeIcon } from '../ui/EyeIcon';
+import { CollapseIcon } from '../ui/CollapseIcon';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { glyphify } from '../ui/glyphify';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -264,7 +265,7 @@ export function EclipseHud({
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <EyeIcon open={expanded} />
+          <CollapseIcon open={expanded} />
         </TipButton>
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>

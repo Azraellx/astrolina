@@ -23,7 +23,7 @@ export const eclipseHud = {
   noMatches: 'No eclipses match.',
   // Compact Saros tag in rows and the trigger meta line, e.g. "Saros 139".
   saros: 'Saros {n}',
-  // The eye on the nub collapses/expands the body (vitals, contacts, options),
+  // The chevron on the nub collapses/expands the body (vitals, contacts, options),
   // leaving just the nub — to focus on the map.
   barToggle: {
     show: 'Show eclipse details',

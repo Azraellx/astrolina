@@ -130,15 +130,16 @@ export function paranChipFace(b: ParanBadge): string {
 }
 
 // A paran chip's size before its face has been measured, built like estimateEdgeChip in Map.tsx
-// and checked against drawn chips (2026-10-01: 78 × 15 bare, 90–92 × 15 with a two-letter tag):
+// and checked against drawn chips (2026-10-01: 78 × 15 bare, 90–92 × 15 with one two-letter tag):
 // 12 px of padding, two 11 px glyphs, ~6 px per code letter, ~8 for the "×" with its margins,
 // ~4.5 per tag letter, 3 px flex gaps. Both codes are two letters on a paran chip (MC, IC, As,
 // Ds — Map.tsx's ANGLE_CODE). A catalog row's mark stands in for one glyph and is up to a pixel
-// wider (the hollow ◇ of a hypothetical point, 12 px; Map.tsx's estimateMinorChip).
+// wider (the hollow ◇ of a hypothetical point, 12 px; Map.tsx's estimateMinorChip). A tag is
+// drawn TWICE, once before each body (2026-10-06): both bodies are the overlay's.
 export function estimateParanChip(b: ParanBadge): BadgeSize {
   const codeChars = 4;
-  const prefixChars = b.prefix.length;
-  const items = 5 + (prefixChars ? 1 : 0);
+  const prefixChars = 2 * b.prefix.length;
+  const items = 5 + (b.prefix ? 2 : 0);
   const w = 12 + 22 + (b.minorN !== undefined ? 1 : 0) + 6 * codeChars + 8 + 4.5 * prefixChars + 3 * (items - 1);
   return { hw: w / 2, hh: 7.5 };
 }

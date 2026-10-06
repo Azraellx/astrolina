@@ -965,6 +965,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The birthplace beside the zone ("GMT+2 · Voorburg"): set in its own case rather than the
+   offset's capitals, and capped so a long place name can't widen the shrink-to-fit bar —
+   the tip and the date picker carry it whole. */
+.thud-utc-place {
+  display: inline-block;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+
 /* "Now" button — to the right of the zone label; jumps the moment to current time. */
 .thud-now {
   padding: 5px 9px;
