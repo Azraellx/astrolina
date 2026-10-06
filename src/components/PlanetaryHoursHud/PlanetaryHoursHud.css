@@ -48,6 +48,10 @@
 
 /* ── The hour in force ── */
 .ph-hero {
+  /* The positioning box for the elapsed bar along its foot; the clip keeps the bar
+     inside the rounded corners. */
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -76,6 +80,25 @@
   font-size: 11.5px;
   color: var(--text-muted);
 }
+/* How much of the hour has run: a thin track along the block's foot, filled from
+   the left. Drawn inside the block's bottom padding, so it adds no height; scaled
+   rather than sized, so a minute's tick (or Slide spinning the instant) moves no
+   layout. The text above carries the same fact, so the bar is aria-hidden. */
+.ph-hero-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+.ph-hero-bar > span {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+  transform-origin: left center;
+}
 
 .ph-note {
   font-size: 11.5px;
@@ -94,12 +117,23 @@
   margin-top: 2px;
 }
 
+/* The heads and the rows are two grids with the same tracks (see the TSX's
+   `table`), so on a phone the rows can scroll under heads that stay put. Stacked
+   with the 1px the rows keep between them, they read as the one table they were. */
+.ph-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ph-heads,
 .ph-grid {
   display: grid;
   grid-template-columns: auto 1fr 1fr;
   column-gap: 6px;
-  row-gap: 1px;
   align-items: center;
+}
+.ph-grid {
+  row-gap: 1px;
 }
 .ph-head {
   font-size: 9.5px;
@@ -115,6 +149,11 @@
   text-align: right;
   padding-right: 2px;
 }
+/* The heads' corner: the rows' widest number, unseen, so both grids size their
+   first column alike. */
+.ph-n-ghost {
+  visibility: hidden;
+}
 .ph-cell {
   display: flex;
   align-items: center;
@@ -124,6 +163,7 @@
   font-size: 12px;
   color: var(--text);
   min-width: 0;
+  transition: opacity 0.12s, background 0.12s;
 }
 .ph-cell-name {
   flex: 1;
@@ -139,6 +179,33 @@
 /* Hours already run on the day being read — still there, stepped back. */
 .ph-cell.is-past {
   opacity: 0.45;
+}
+/* THE HIGHLIGHT: a planet's hours marked, every other hour stepped further back.
+   The mark is drawn in the theme's own tint rather than the planet's colour — the
+   Moon's near-white or the Sun's gold would vanish on a light theme — and the
+   glyph in each cell already carries the colour. It composes with the other two
+   states: a past hour of the planet stays faded, only less so than the rest, and
+   the hour in force keeps its accent (its rule comes after this one) and stays
+   findable under a focus on another planet. */
+.ph-cell.is-match {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--tint), 0.3);
+}
+.ph-cell.is-match .ph-cell-time {
+  color: var(--text-strong);
+}
+.ph-cell.is-past.is-match {
+  opacity: 0.6;
+}
+.ph-grid.has-focus .ph-cell:not(.is-match) {
+  opacity: 0.3;
+}
+.ph-grid.has-focus .ph-cell.is-past:not(.is-match) {
+  opacity: 0.2;
+}
+.ph-grid.has-focus .ph-cell.is-now:not(.is-match) {
+  opacity: 0.6;
 }
 .ph-cell.is-now {
   color: var(--text-strong);
@@ -192,9 +259,199 @@
   border-top: 1px solid rgba(var(--tint), 0.1);
   padding-top: 7px;
 }
+/* The seven planets, each a button that marks its hours. Inline after the sentence
+   with a mouse, where they fit on its last line; their own row on touch (below). */
 .ph-order-glyphs {
   display: inline-flex;
-  gap: 6px;
-  margin-left: 5px;
-  vertical-align: -2px;
+  gap: 2px;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+.ph-order-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ph-order-btn:hover {
+  background: rgba(var(--tint), 0.08);
+}
+.ph-order-btn[aria-pressed='true'] {
+  background: rgba(var(--tint), 0.12);
+  border-color: rgba(var(--tint), 0.38);
+}
+.ph-order-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .ph-order-glyphs {
+    display: flex;
+    justify-content: space-between;
+    margin: 5px 0 0;
+  }
+  .ph-order-btn {
+    width: 34px;
+    height: 30px;
+  }
+}
+/* The highlighted planet's hour in force, or its next one — or, with none picked,
+   the prompt that holds the line's place. One line, so its height never moves (see
+   focusLine in the TSX)… */
+.ph-focus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ph-focus-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ph-focus.is-prompt {
+  color: var(--text-faint);
+}
+/* …but where some planet has no next hour (a last day before a polar day or night),
+   its line says why, and that runs past one line: 'No Mercury hour left before
+   Wednesday, which has no planetary hours here.' is ~387 px at this size against the
+   ~259 the text gets in this window, so on one line the reason was the part cut off.
+   There the line wraps, and holds two lines' height for every planet and for the
+   prompt alike, so the pointer still can't move it. The glyph keeps to the first line. */
+.ph-focus.is-edge {
+  align-items: flex-start;
+  min-height: calc(2em * 1.35);
+  white-space: normal;
+}
+.ph-focus.is-edge > .astro-glyph {
+  margin-top: 2px;
+}
+
+/* ON A PHONE the window is capped, and only its HOUR ROWS scroll — the approach the
+   Activations list took on 2026-10-02 (plugins/activations/HitListHud.css). Uncapped it
+   is ~580 px tall on a phone (308 px of title bar, where-line, hour in force, day line,
+   next sunrise, the order line with its planet buttons and the line under them; then the
+   column heads' 16 px and 12 rows of ~21 px), and it opens with the band, docked above it
+   as a bottom sheet (useMovableHud's phone home): its foot 8 px above the highest bottom
+   chrome it meets. On a portrait phone that is the profile strip (50 px), which stands
+   over the attribution footer (26 px) on the band's top, so the foot sits 89 px above the
+   band. On a landscape phone the chrome is in the corners, and the foot sits 8 px above
+   the band itself. The band is 64 px, or 140 with the Paran Clock track open, which is
+   Pro's default.
+
+   Measured 2026-10-05 (DPR 2, the Moon hour in force; the nav's bottom at y 56 on every
+   size) with the first cap, max(420px, 48dvh) held under the room above the BAND
+   (100dvh − --sky-band-h − 34px) and never under 240 px:
+   - 390×844: 420 px, 4 rows. Map in view under the nav for 215 px with the track closed and
+     139 with it open (the sheet's top at 271 / 195). Worked out beforehand: ~260.
+   - 432×768: 420 px, 4 rows. 139 / 63 px of map (top 195 / 119). Worked out: ~220.
+   - 360×640, track closed: 420 px, 4 rows, top 67: 11 px of map. With the track OPEN the
+     sheet's home was above the top of the screen, and the clamp held it at the hook's 26 px
+     margin: 30 px over the nav (chart name, Natal, tools, layers, view menus) and the zoom
+     buttons, its foot over 27 px of the profile strip, no map in view. The room term had
+     counted the band but neither the 81 px of chrome standing on it nor the nav.
+   - 844×390: 292 px with the track closed; held at the 240 floor with it open, which ran it
+     16 px over the TRACK's top (the band's two control rows clear). The table at its floor
+     either way, so one row and a sliver; the window scrolled as a whole (356 px of content
+     in 290 / 238), with the planet buttons below its fold; 30 px over the nav's centre
+     (Natal, tools, Overlay) in both.
+   Everywhere the band's controls were clear, the column heads stayed in view, the hour in
+   force was in view on opening, the fade showed while rows were left below, and a finger
+   scrolled the rows without moving the sheet or panning the map.
+
+   Its fixed part is half as big again as the Activations window's (308 px against 199), so
+   that window's figures can't be borrowed: its 260 px cap would leave this one no room for a
+   single row. The cap aims at the same thing, a useful list with the upper map in view and
+   the band uncovered: here, the hour in force and the few after it. And the room it fits in
+   is MEASURED now, not estimated: the window gives the hook a ceiling, the nav's bottom
+   (navCeiling in the TSX), and the hook hands back the height between it and the chrome the
+   sheet stands on, less the 8 px gap at each end, as --hud-phone-room. The cap:
+   - 48% of the screen, never under 420 px: the fixed part and about four rows, the hour in
+     force and the next three, each beside its counterpart in the other half. 420 rules up
+     to ~875 px tall, and wherever it fitted under the nav before it still rules: every
+     figure above for 390×844, 432×768 and 360×640 with the track closed stands.
+   - Never more than the room. From here on the figures are worked out from those
+     measurements, not measured. At 360×640 with the track open the room is 347 px: the
+     sheet stands at 64–411, clear of the nav and the profile strip, with its table at its
+     floor (one row and a sliver) and the window scrolling by ~11 px. Two rows there would
+     take ~370 px, more than the whole room, so no cap gives that phone both two rows and
+     the nav: it keeps the nav, and the rows scroll. On the 844×390 landscape phone the
+     room is 254 px with the track closed (the same row and a sliver; the window scrolls by
+     ~100) and 178 with it open: the sheet at 64–242, clear of the track, showing the hour
+     in force, with the list below the window's fold.
+   - Never under 160 px: the title bar, the where-line and the hour in force (which ends ~144
+     px down, worked out from the stylesheets). In a smaller room the sheet climbs over the
+     nav rather than shrink to a slit (the hook's 26 px margin still holds it on screen). The
+     floor was 240 at first, borrowed from the Activations window; that is what put the
+     landscape sheet over the track, and the reason for a floor needs only this.
+   - Off its home (dragged, or reopened where it was dragged to) a sheet has no room — the
+     hook drops the variable on release — and the cap falls back to the room above the
+     band: 26 px of top margin (the hook's) + the band's own height (--sky-band-h, which on
+     a phone already includes the home-indicator inset) + the sheet's 8 px gap.
+   Desktop and tablets are untouched: this is lib/touch's isPhone query, which matches
+   neither. */
+@media (pointer: coarse) and (max-width: 600px), (pointer: coarse) and (max-height: 600px) {
+  /* Three classes, to outrank the shared cap every window has (TimelineHud.css) whatever
+     order the sheets are injected in. It REPLACES this file's band-aware cap above, which
+     keeps 40 px for a window parked anywhere: 34 is the sheet's own geometry. */
+  .timeline-hud.location-hud.planetary-hours-hud {
+    max-height: max(
+      160px,
+      min(
+        max(420px, 48dvh),
+        var(--hud-phone-room, calc(100dvh - var(--sky-band-h, 0px) - 34px))
+      )
+    );
+  }
+  /* The rows take what the cap leaves and scroll inside it; everything else keeps its
+     height and stays put. The body gives (min-height: 0) so the table inside it can, and
+     the table gives so its rows can. */
+  .planetary-hours-hud > .location-header {
+    flex: none;
+  }
+  .planetary-hours-hud .location-ls {
+    min-height: 0;
+  }
+  .planetary-hours-hud .location-ls > * {
+    flex: none;
+  }
+  /* A floor of the heads and a row and a half, so a note above the list (the hour in
+     force on a neighbouring day) or a landscape screen can't shrink the rows to nothing in
+     a window that doesn't overflow — past it, the window itself scrolls (its overflow,
+     from TimelineHud.css). Measured 2026-10-05 on the 844×390 phone, where it rules: the
+     heads' 16 px over a 32 px scroller, one full row and a sliver of the next. */
+  .planetary-hours-hud .location-ls > .ph-table {
+    flex: 0 1 auto;
+    min-height: 48px;
+  }
+  .planetary-hours-hud .ph-heads {
+    flex: none;
+  }
+  .planetary-hours-hud .ph-grid {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* A scroll that runs out must not carry on to the map behind. */
+    overscroll-behavior: contain;
+  }
+  /* More below the fold: the foot fades out. The same cue as the Activations list and the
+     Capture sheet (.has-more there), set by the TSX's moreBelow. The mask is fixed to the
+     scroller's box, so the fade stays at the visible foot. */
+  .planetary-hours-hud .ph-grid.has-more {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+  }
 }

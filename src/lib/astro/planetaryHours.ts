@@ -248,3 +248,40 @@ export function planetaryHourAt(days: PlanetaryDaysAround, ms: number): Planetar
   if (!days.previous.ok) return { ok: false, day: days.previous };
   return null;
 }
+
+/**
+ * The hour of `ruler` in force at `ms` (epoch ms UT) if there is one, else the next
+ * one to begin after it, from the available days around it (previous → shown →
+ * next); null when none of them holds one. The window's highlight reads it ("Next
+ * Venus hour 15:12", or "Venus hour now, until 15:12").
+ *
+ * Each planet comes round once every seven hours, so from any instant inside an
+ * available day the answer is at most six hours on — and past the listed day's last
+ * hour it lies in the next day, which is why the scan doesn't stop at the shown one.
+ * It does stop at the three, so null has two causes, and both are real: the day
+ * after the instant's has no hours here (a polar edge — nothing follows to find),
+ * or the instant is late in the NEXT day's own night, past what was computed. The
+ * window asks only while an hour around its listed day is in force, and the band
+ * reads the next day only where its sunrise falls before local midnight — its
+ * first hours, never its last six.
+ *
+ * The edges are the tiles' own, as in planetaryHourAt: an hour holds its start and
+ * not its end, so at an hour's end the planet of that hour is seven hours away.
+ * Because the days run in order and their hours tile them, the first hour of
+ * `ruler` that hasn't ended is the one, whichever of the two it is.
+ * verify:planetary-hours §10 holds it to a brute scan and to planetaryHourAt.
+ */
+export function nextHourOf(
+  days: PlanetaryDaysAround,
+  ruler: PlanetaryRuler,
+  ms: number,
+): PlanetaryHour | null {
+  const jd = msToJD(ms);
+  for (const d of [days.previous, days.shown, days.next]) {
+    if (!d.ok || jd >= d.nextSunrise) continue;
+    for (const h of d.hours) {
+      if (h.ruler === ruler && jd < h.end) return h;
+    }
+  }
+  return null;
+}

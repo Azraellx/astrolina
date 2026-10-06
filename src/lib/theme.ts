@@ -97,7 +97,8 @@ export const MOON_LINE_DARK = '#5b6480';
 
 // Per-theme MAP-LINE colour overrides for bodies whose PLANET_COLORS tint washes out
 // against a given basemap. MAP-ONLY: the wheel, sidebar, cards etc. keep the canonical
-// PLANET_COLORS. Single source for App's line-colour swap (withThemeLineColors) AND the
+// PLANET_COLORS (one exception off the map, for a glyph that stands alone: panelGlyphColor
+// below). Single source for App's line-colour swap (withThemeLineColors) AND the
 // baked zenith glyph (glyphImages.ensureGlyphImages), so lines + stamps stay in sync.
 //  • Moon — pale gray fails on BOTH light basemaps (Glass + Earth).
 // Dark's basemap is dark, so it needs no overrides.
@@ -106,6 +107,19 @@ export const MAP_LINE_COLOR_OVERRIDES: Record<Theme, Partial<Record<PlanetName, 
   glass: { Moon: MOON_LINE_DARK },
   vintage: { Moon: MOON_LINE_DARK },
 };
+
+// A planet glyph that stands ALONE on a panel, with no name beside it to carry it: the
+// planetary-hours chip at the head of the Sky Times band, and the planet buttons of its
+// window (and every other glyph in that window, so the window reads in one colour). Pass
+// the canonical tint (PLANET_COLORS[planet]); every planet keeps it but the Moon, whose
+// pale gray all but vanishes on Glass's near-white panels — a planet button with nothing
+// visible in it (smoke test, 2026-10-05). Glass sets --moon-panel-ink to MOON_LINE_DARK
+// (index.css); the other themes' panels are dark, leave it unset, and the Moon keeps its
+// tint. A CSS variable rather than the theme read at render, so a theme switch recolours
+// it at once. The wheel, sidebar and cards are untouched: there the name stands beside it.
+export function panelGlyphColor(planet: PlanetName, tint: string): string {
+  return planet === 'Moon' ? `var(--moon-panel-ink, ${tint})` : tint;
+}
 
 // Lilith's muted purple reads fine on the light map basemap but is hard to make out
 // against Earth's dark-brown SETTINGS panels. The settings-tab planet glyph uses a

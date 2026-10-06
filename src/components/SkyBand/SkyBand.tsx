@@ -46,7 +46,6 @@ import {
   type PlanetaryDay,
 } from '../../lib/astro/planetaryHours';
 import { PlanetaryHoursHud } from '../PlanetaryHoursHud/PlanetaryHoursHud';
-import { PLANETARY_HOURS_HELD } from '../../lib/planetaryHoursHold';
 import {
   getSkyBandTrack,
   isSkyBandTrackEntitled,
@@ -55,6 +54,7 @@ import {
 import { shouldShowNudge } from '../../lib/plan';
 import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
 import { usePhone } from '../../lib/touch';
+import { panelGlyphColor } from '../../lib/theme';
 import { planetRank } from '../../lib/astro/format';
 import { useT } from '../../i18n';
 import { TipButton, TipSpan } from '../ui/HoverTip';
@@ -97,6 +97,20 @@ const MS_DAY = 86_400_000;
 // Unix epoch ms → Julian Day (UT).
 const msToJD = (ms: number) => ms / MS_DAY + 2440587.5;
 const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
+
+/** The local midnight that opens the wall-clock day holding `ms` in `zone` — or
+ *  the one `days` later (1 = that day's end) — as a UT instant: shift to the wall
+ *  clock, floor to the wall-clock day, then shift back by the offset in force AT
+ *  that midnight (one refine pass from the reference's own offset; dayStart below
+ *  says why the refine matters). The shown day's edges and the REAL today's both
+ *  come from here, so the band never measures the two by different rules. The
+ *  verify scripts' `bandDay` reproduces this arithmetic; keep them in step. */
+function localMidnight(zone: string, ms: number, days = 0): number {
+  const offH = offsetHoursAt(zone, ms);
+  const wallMidnight = Math.floor((ms + offH * 3_600_000) / MS_DAY) * MS_DAY + days * MS_DAY;
+  const guess = wallMidnight - offH * 3_600_000;
+  return wallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
+}
 
 /** The four angle moments in the legend card's order (matches the old table). */
 const KINDS: EventKind[] = ['rise', 'culminate', 'set', 'anticulminate'];
@@ -189,10 +203,20 @@ export function SkyBand({
   // Phone-sized screens reflow the band to stacked rows (the is-phone class —
   // the CSS owns the layout; the DOM is the same either way).
   const phone = usePhone();
-  // Day pager: offset from "today", anchored once per mount so the band doesn't
-  // slide under the reader at local midnight.
+  // Day pager: an offset from "today", where "today" is an ANCHOR (nowMs) taken at
+  // mount and re-taken only by Today's click — so the shown day never moves under
+  // the reader. Not at local midnight, and not when a tab left open overnight is
+  // brought back: a band that turned its own page would change the list, the chip
+  // and every track marker with no gesture anyone could name for it (CLAUDE.md
+  // rule 4's test). What DOES follow the clock is whether Today is offered: it greys
+  // only while the shown day IS the real today (onToday below, read from the live
+  // instant), so once the date has moved on it lights up, and the move is the
+  // reader's one click away. It used to grey on `dayOffset === 0`, a fact about the
+  // anchor rather than the date: a tab left open overnight sat on yesterday with
+  // Today greyed and nothing to say why — and after sunrise the chip read
+  // yesterday's ruler with no hour in force (2026-10-05).
   const [dayOffset, setDayOffset] = useState(0);
-  const [nowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   // The day readout doubles as a button opening the shared moment picker (the
   // same editor the timeline bar and My Charts use), for jumps the ‹ › pager
   // can't reasonably make — decades into the past or future.
@@ -224,11 +248,11 @@ export function SkyBand({
     return getIanaTimezone(point.lat, lng);
   }, [point]);
 
-  // WHICH day the band shows. Normally the reader's: the pager's offset from the
-  // frozen "today". While the Slide tool is armed it is DERIVED from the slid
-  // instant instead — the band reads the day the map's sky has been turned to, so
-  // a track's press (which lands on the shown day) can never land decades from
-  // the slid moment. Derived, never written (CLAUDE.md rule 2): `dayOffset` is
+  // WHICH day the band shows. Normally the reader's: the pager's offset from its
+  // anchored "today" (nowMs). While the Slide tool is armed it is DERIVED from the
+  // slid instant instead — the band reads the day the map's sky has been turned
+  // to, so a track's press (which lands on the shown day) can never land decades
+  // from the slid moment. Derived, never written (CLAUDE.md rule 2): `dayOffset` is
   // left exactly as the reader paged it, and comes back on its own the moment
   // Slide closes. Under Slide the pager's controls drive Slide rather than the
   // offset (below), so nothing here has a second source to drift from.
@@ -245,23 +269,17 @@ export function SkyBand({
   // day had the same fault whenever "now" was past the change: its window and
   // every track marker sat an hour out. Measured 2026-09-30 over six DST days at
   // five-minute references: 1,560 of 2,016 off by an hour before, none after.)
-  const dayStart = useMemo(() => {
-    if (!point || !zone) return null;
-    const offH = offsetHoursAt(zone, refMs);
-    const wallMs = refMs + offH * 3_600_000;
-    const wallMidnight = Math.floor(wallMs / MS_DAY) * MS_DAY;
-    const guess = wallMidnight - offH * 3_600_000;
-    return wallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
-  }, [point, zone, refMs]);
+  // The arithmetic is localMidnight's, above.
+  const dayStart = useMemo(
+    () => (!point || !zone ? null : localMidnight(zone, refMs)),
+    [point, zone, refMs],
+  );
   // ...and its END, the next local midnight, by the same refine: a clock-change
   // day runs 23 or 25 hours, as the wall clock does, not 24.
-  const dayEnd = useMemo(() => {
-    if (!point || !zone) return null;
-    const offH = offsetHoursAt(zone, refMs);
-    const nextWallMidnight = Math.floor((refMs + offH * 3_600_000) / MS_DAY) * MS_DAY + MS_DAY;
-    const guess = nextWallMidnight - offH * 3_600_000;
-    return nextWallMidnight - offsetHoursAt(zone, guess) * 3_600_000;
-  }, [point, zone, refMs]);
+  const dayEnd = useMemo(
+    () => (!point || !zone ? null : localMidnight(zone, refMs, 1)),
+    [point, zone, refMs],
+  );
 
   // The day's sky, solved ONCE over the shown day widened by 12 hours each side,
   // every occurrence on its own motion (lib/astro/riseSet.ts): the rows are read
@@ -285,22 +303,25 @@ export function SkyBand({
   // PLANETARY HOURS: the shown day's, with its neighbours (the hour in force can
   // belong to either — a planetary day runs sunrise to sunrise). Built from the
   // Sun alone, so it shows whichever bodies are toggled; named for the shown
-  // day's midday, the same noon the day label reads. Not computed at all while the
-  // feature is HELD (lib/planetaryHoursHold.ts) — and with no planetary days there
-  // is no chip, no hour to wake for, and nothing for the window to open on.
+  // day's midday, the same noon the day label reads. Null with no place, or when
+  // the Sun's solves don't line up a day apart (planetaryDaysAround) — and with no
+  // planetary days there is no chip and no hour to wake for, and the window, if
+  // open, says it has nothing to list. This one memo is all there is: the chip, the
+  // window and a registered track (trackCtx.planetary) read it, so none of them can
+  // disagree with another about where an hour falls.
   const planetary = useMemo(() => {
-    if (PLANETARY_HOURS_HELD || !point || !zone || dayStart === null) return null;
+    if (!point || !zone || dayStart === null) return null;
     return planetaryDaysAround(dayStart + MS_DAY / 2, point.lat, point.lng, zone);
   }, [point, zone, dayStart]);
 
-  // The chip and its window read a LIVE instant — unlike the pager's nowMs, which is
-  // frozen so the shown day can't slide at midnight: the hour in force changes about
-  // hourly and has to be followed. While the Slide tool spins the sky they read the
-  // slid instant instead (the instant a track's time cursor reads). They give the
-  // hour in force while that instant is on the shown calendar day — the cursor's own
-  // gate — OR inside the shown PLANETARY day, sunrise to sunrise: past midnight the
-  // listed day's night hours are still running, and the one in force belongs marked
-  // in the list that holds it.
+  // The chip and its window read a LIVE instant — unlike the pager's anchor (nowMs),
+  // which moves only on Today's click so the shown day can't slide at midnight: the
+  // hour in force changes about hourly and has to be followed. While the Slide tool
+  // spins the sky they read the slid instant instead (the instant a track's time
+  // cursor reads). They give the hour in force while that instant is on the shown
+  // calendar day — the cursor's own gate — OR inside the shown PLANETARY day,
+  // sunrise to sunrise: past midnight the listed day's night hours are still
+  // running, and the one in force belongs marked in the list that holds it.
   const [liveNow, setLiveNow] = useState(() => Date.now());
   const instant = slideMs ?? liveNow;
   const onShownDay = dayStart !== null && instant >= dayStart && instant < dayStart + MS_DAY;
@@ -312,13 +333,34 @@ export function SkyBand({
   const phNow =
     planetary && (onShownDay || inShownPlanetaryDay) ? planetaryHourAt(planetary, instant) : null;
 
+  // The REAL today: the local day holding the live instant, by the same refine as
+  // the shown day's edges (localMidnight), so the two are measured by one rule. It
+  // decides only whether Today is offered (see nowMs); nothing here moves the shown
+  // day. Compared within half a day rather than for equality: in a zone whose clock
+  // changes within an hour of midnight, two references on one date can put its
+  // midnight an hour apart, while two different dates' midnights are 23 h or more
+  // apart. No zone, no day to compare — the anchor's own test stands in.
+  const todayStart = useMemo(() => (zone ? localMidnight(zone, liveNow) : null), [zone, liveNow]);
+  const todayEnd = useMemo(() => (zone ? localMidnight(zone, liveNow, 1) : null), [zone, liveNow]);
+  const onToday =
+    dayStart !== null && todayStart !== null
+      ? Math.abs(dayStart - todayStart) < MS_DAY / 2
+      : dayOffset === 0;
+
   // Wake at the next moment the reading can change: the end of the hour in force;
   // for an instant no hour covers (the night before a polar day's first sunrise),
   // the next sunrise that begins one; else the shown day's edges (when the present
-  // enters or leaves it). While the window is open it also wakes on the minute, for
-  // its "Now" clock — only then, so a closed window costs nothing. Clamped so a
-  // missed wake — a suspended laptop — is caught within the hour; re-armed on every
-  // liveNow, so a clamped wake that lands early simply sets the next.
+  // enters or leaves it). And, whatever the hour, at the next local midnight: the
+  // date turning is what offers Today again, and an hour in force runs across
+  // midnight, so its end alone would light Today up to an hour late. (Only while it
+  // is still ahead: where the clock jumps at midnight, the refine can place that
+  // midnight behind the live instant for the hour before it, and a wake already
+  // passed would re-fire every second.) While the window is open it also wakes on
+  // the minute, for its "Now" clock — only then, so a closed window costs nothing.
+  // None of it while Slide spins the sky: the band reads the slid instant then,
+  // which moves only with the tool. Clamped so a missed wake — a suspended laptop —
+  // is caught within the hour; re-armed on every liveNow, so a clamped wake that
+  // lands early simply sets the next.
   const sunriseAhead = (() => {
     if (!planetary || !phNow || phNow.ok) return null;
     const ahead = [planetary.shown, planetary.next]
@@ -327,13 +369,20 @@ export function SkyBand({
       .filter((ms) => ms > liveNow);
     return ahead.length ? Math.min(...ahead) : null;
   })();
-  const baseWake =
-    dayStart === null || PLANETARY_HOURS_HELD
+  const hourWake =
+    dayStart === null
       ? null
       : phNow?.ok
         ? jdToMs(phNow.hour.end)
         : (sunriseAhead ??
           (liveNow < dayStart ? dayStart : liveNow < dayStart + MS_DAY ? dayStart + MS_DAY : null));
+  const midnightAhead = todayEnd !== null && todayEnd > liveNow ? todayEnd : null;
+  const baseWake =
+    hourWake === null
+      ? midnightAhead
+      : midnightAhead === null
+        ? hourWake
+        : Math.min(hourWake, midnightAhead);
   const nextMinute = (Math.floor(liveNow / 60_000) + 1) * 60_000;
   const wakeAt =
     slideMs != null || baseWake === null
@@ -348,10 +397,10 @@ export function SkyBand({
     return () => window.clearTimeout(id);
   }, [wakeAt, liveNow]);
   // A tab brought back from the background re-reads at once rather than at the
-  // next wake (timers are throttled while hidden). Nothing reads the live instant
-  // while the feature is held, so nothing listens then either.
+  // next wake (timers are throttled while hidden). It re-reads the live instant
+  // only — the chip's hour and whether Today is offered; the shown day stays where
+  // the reader left it, however long the tab slept (see nowMs).
   useEffect(() => {
-    if (PLANETARY_HOURS_HELD) return;
     const refresh = () => {
       if (document.visibilityState === 'visible') setLiveNow(Date.now());
     };
@@ -462,6 +511,9 @@ export function SkyBand({
   // Every state opens the window: that is where the reason is read, too.
   const phChip = ((): ReactNode => {
     if (!planetary) return null;
+    // The face is glyphs with no names beside them, so the Moon's ink follows the
+    // theme (panelGlyphColor): its pale gray all but vanishes on Glass's light band.
+    const chipInk = (p: PlanetName) => panelGlyphColor(p, PLANET_COLORS[p]);
     const shown = planetary.shown;
     // The hour in force when there is one on the shown day, else the shown day.
     const unavailable = phNow ? !phNow.ok : !shown.ok;
@@ -483,9 +535,9 @@ export function SkyBand({
         }),
         face: (
           <>
-            <PlanetGlyph planet={day.ruler} size={13} color={PLANET_COLORS[day.ruler]} />
+            <PlanetGlyph planet={day.ruler} size={13} color={chipInk(day.ruler)} />
             <span className="sky-band-ph-sep" aria-hidden="true" />
-            <PlanetGlyph planet={hour.ruler} size={13} color={PLANET_COLORS[hour.ruler]} />
+            <PlanetGlyph planet={hour.ruler} size={13} color={chipInk(hour.ruler)} />
             <span className="sky-band-ph-until">→ {end}</span>
           </>
         ),
@@ -511,7 +563,7 @@ export function SkyBand({
           </span>
         ),
         aria: t('skyTimes.planetary.aria.day', { weekday, day: bodyName(shown.ruler) }),
-        face: <PlanetGlyph planet={shown.ruler} size={13} color={PLANET_COLORS[shown.ruler]} />,
+        face: <PlanetGlyph planet={shown.ruler} size={13} color={chipInk(shown.ruler)} />,
       };
     }
     return (
@@ -563,6 +615,7 @@ export function SkyBand({
           events: sky.events,
           frac,
           clock,
+          planetary,
           slideMs,
           slideTo,
           chartHasTime,
@@ -914,7 +967,12 @@ export function SkyBand({
                   ›
                 </button>
               )}
-              {/* Today is always offered; it just greys out while already on it.
+              {/* Today is always offered; it just greys out while the shown day IS
+                  today — the real one, from the live instant, not the pager's
+                  anchor (see nowMs). Its click re-takes that anchor at the present
+                  and zeroes the offset, so ‹ › and the picker's offset (wallDay(ms)
+                  − wallDay(nowMs)) count from the day it lands on; the present is
+                  re-read with it, so the button greys on the click that lands.
                   Under Slide it turns the sky to the present MOMENT, which the
                   slid instant is never exactly on — so it stays live there. */}
               {sliding && slideTo ? (
@@ -932,8 +990,13 @@ export function SkyBand({
                 <button
                   type="button"
                   className="sky-band-day-btn sky-band-today"
-                  disabled={dayOffset === 0}
-                  onClick={() => setDayOffset(0)}
+                  disabled={onToday}
+                  onClick={() => {
+                    const present = Date.now();
+                    setNowMs(present);
+                    setLiveNow(present);
+                    setDayOffset(0);
+                  }}
                 >
                   {t('skyTimes.today')}
                 </button>
@@ -1063,7 +1126,7 @@ export function SkyBand({
           instant and day the chip reads); it portals itself out of the band's
           stacking layer. Outside the place/no-place branch, so losing the point
           empties the window rather than making it vanish and reappear. */}
-      {planetaryOpen && !PLANETARY_HOURS_HELD && (
+      {planetaryOpen && (
         <PlanetaryHoursHud
           days={planetary}
           now={phNow}

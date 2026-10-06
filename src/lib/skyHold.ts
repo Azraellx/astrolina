@@ -35,13 +35,13 @@
 // over it would grey controls on a map that can show them. Guards read the derived
 // value; nothing here writes a preference.
 //
-// Not GEODETIC_HELD (lib/geodeticHold, the mapping under review), not
-// PLANETARY_HOURS_HELD (lib/planetaryHoursHold), and not a downstream build's
-// TIMING_GEODETIC_HELD. Two holds are two holds, and this is a third. Those are
-// switches waiting on work, each lifted when its work is done; this is a property
-// of the mapping, true exactly as long as the map is geodetic. So it has no flag
-// and no release event, and nothing persists or freezes it: it ends when the reader
-// switches the line system back, and everything it held is there as they left it.
+// Not GEODETIC_HELD (lib/geodeticHold, the mapping under review), and not a
+// downstream build's TIMING_GEODETIC_HELD. Two holds are two holds, and this is a
+// third. Those are switches waiting on work, each lifted when its work is done;
+// this is a property of the mapping, true exactly as long as the map is geodetic.
+// So it has no flag and no release event, and nothing persists or freezes it: it
+// ends when the reader switches the line system back, and everything it held is
+// there as they left it.
 import type { LineSystem } from './ephemeris';
 
 /** Whether the surfaces that read the sky's turning are held: true exactly on a

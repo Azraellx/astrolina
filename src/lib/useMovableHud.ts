@@ -249,7 +249,8 @@ export interface MovableHudOptions {
    *  below: the viewport y it may not rise above, read live at every re-home, or null when
    *  nothing applies just then. The sheet keeps the shared home — bottom edge on the chrome,
    *  so it stays where the thumb is — and what the ceiling bounds is its HEIGHT, reported back
-   *  as `phoneRoom`. The Capture window, under the frame it adjusts on a phone held upright.
+   *  as `phoneRoom`. The Capture window, under the frame it adjusts on a phone held upright;
+   *  the Planetary hours window, under the nav (its CSS caps by the room it is handed).
    *  Whatever moves the ceiling must announce it with `astro:hud-moved` (it is a surface that
    *  moved), which is what re-homes a sheet; the hook can't see it move otherwise. */
   phoneCeiling?: () => number | null;

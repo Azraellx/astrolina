@@ -258,6 +258,11 @@ span.astro-glyph {
 
   --pin-stroke: #ffffff;
   --label-halo: rgba(255, 255, 255, 0.95);
+
+  /* The Moon's glyph where it stands alone on a panel (lib/theme.ts panelGlyphColor): its
+     pale gray all but vanishes on these near-white panels. MOON_LINE_DARK, the slate its
+     line takes on the light basemaps. */
+  --moon-panel-ink: #5b6480;
 }
 
 /* ── Placeholder ink (single source) ────────────────────────────────

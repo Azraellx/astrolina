@@ -22,9 +22,13 @@ import { initEphemeris } from '../src/lib/ephemeris';
 import { dailySkyEvents, sunHorizonDay } from '../src/lib/astro/riseSet';
 import {
   CHALDEAN_ORDER,
+  nextHourOf,
   planetaryDaysAround,
   planetaryHourAt,
   type PlanetaryDay,
+  type PlanetaryDaysAround,
+  type PlanetaryHour,
+  type PlanetaryRuler,
 } from '../src/lib/astro/planetaryHours';
 import { getIanaTimezone, offsetHoursAt } from '../src/lib/atlas/timezone';
 
@@ -577,6 +581,297 @@ section('§9 Cost');
   const per = (performance.now() - t0) / N;
   console.log(`      planetaryDaysAround: ${per.toFixed(2)} ms per call (${done}/${N} resolved)`);
   check('cheap enough to recompute on every Time Stamp move', per < 20 && done === N);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+section('§10 The next hour of a planet (nextHourOf) — the window’s highlight line');
+{
+  const okDays = (a: PlanetaryDaysAround) =>
+    [a.previous, a.shown, a.next].filter((d): d is PlanetaryDay => d.ok);
+  // The reference: every hour of every available day, taken in no assumed order —
+  // the one in force if there is one, else the earliest to start after. It leans on
+  // nothing nextHourOf does (the days running in order, the tiles meeting, "the
+  // first hour that hasn't ended").
+  const brute = (a: PlanetaryDaysAround, ruler: PlanetaryRuler, jd: number): PlanetaryHour | null => {
+    let best: PlanetaryHour | null = null;
+    for (const d of okDays(a)) {
+      for (const h of d.hours) {
+        if (h.ruler !== ruler) continue;
+        if (h.start <= jd && jd < h.end) return h;
+        if (h.start > jd && (!best || h.start < best.start)) best = h;
+      }
+    }
+    return best;
+  };
+  // An instant (epoch ms) that converts EXACTLY onto `jd` — the edge itself, not a
+  // millisecond either side of it, which is where an off-by-one in the edges would
+  // hide. ms → JD is monotone, so the first ms that reaches `jd` is found by halving;
+  // null if no ms lands on it (never seen: a JD step is ~165 ms-steps wide).
+  const msExactlyAt = (jd: number): number | null => {
+    let lo = jdToMs(jd) - 1;
+    let hi = jdToMs(jd) + 1;
+    if (!(msToJD(lo) < jd && msToJD(hi) >= jd)) return null;
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2;
+      if (mid === lo || mid === hi) break;
+      if (msToJD(mid) < jd) lo = mid;
+      else hi = mid;
+    }
+    return msToJD(hi) === jd ? hi : null;
+  };
+  const label = (a: PlanetaryDaysAround, h: PlanetaryHour | null) => {
+    if (!h) return 'none';
+    const day = [a.previous, a.shown, a.next].find((d) => d.ok && d.hours.includes(h));
+    const which = day === a.previous ? 'previous' : day === a.shown ? 'shown' : 'next';
+    return `${which} hour ${h.index + 1} (${h.ruler})`;
+  };
+
+  // (a) INTERNAL IDENTITY — against the brute scan: every site, the 2026 dates, an
+  // instant every 17 minutes from an hour before the first available sunrise to an
+  // hour after the last hour ends (so the null past the end is asked too), all seven
+  // planets at each.
+  {
+    let compared = 0;
+    let wrong = 0;
+    let nulls = 0;
+    let firstWrong = '';
+    for (const s of SITES) {
+      for (const [y, m, d] of dates2026) {
+        const a = around(s, y, m, d);
+        if (!a) continue;
+        const ok = okDays(a);
+        if (!ok.length) continue;
+        const t0 = jdToMs(ok[0].sunrise) - 3_600_000;
+        const t1 = jdToMs(ok[ok.length - 1].nextSunrise) + 3_600_000;
+        for (let ms = t0; ms <= t1; ms += 17 * 60_000) {
+          const jd = msToJD(ms);
+          for (const p of CHALDEAN_ORDER) {
+            const got = nextHourOf(a, p, ms);
+            const want = brute(a, p, jd);
+            compared += 1;
+            if (!got) nulls += 1;
+            if (got !== want) {
+              wrong += 1;
+              firstWrong ||= `${s.name} ${y}-${m}-${d} ${p} at ${new Date(ms).toISOString()}: got ${label(a, got)}, want ${label(a, want)}`;
+            }
+          }
+        }
+      }
+    }
+    check(
+      `agrees with a brute scan of the three days’ hours (${compared} lookups)`,
+      compared > 100_000 && nulls > 0 && wrong === 0,
+      firstWrong || `${nulls} of them null, past the last computed hour`,
+    );
+  }
+
+  // (b) TWO PARTS AGREE — the hour planetaryHourAt says is in force is the one
+  // nextHourOf names for its planet; and the seven answers at an instant are that
+  // hour and the six after it, as planetaryHourAt itself walks them (each read one
+  // second past the previous one's end, as the chip's timer does). Seven hours in a
+  // row hold the seven planets once each, so the two must name the same hours.
+  {
+    let inForce = 0;
+    let badForce = 0;
+    let walks = 0;
+    let badWalk = 0;
+    let firstBad = '';
+    for (const s of SITES) {
+      for (const [y, m, d] of dates2026.filter((_, i) => i % 2 === 0)) {
+        const a = around(s, y, m, d);
+        if (!a || !a.shown.ok) continue;
+        for (let ms = jdToMs(a.shown.sunrise); ms < jdToMs(a.shown.nextSunrise); ms += 23 * 60_000) {
+          const r = planetaryHourAt(a, ms);
+          if (!r?.ok) continue;
+          inForce += 1;
+          const named = nextHourOf(a, r.hour.ruler, ms);
+          if (named !== r.hour) {
+            badForce += 1;
+            firstBad ||= `${s.name} ${y}-${m}-${d}: in force ${label(a, r.hour)}, named ${label(a, named)}`;
+          }
+          const walk: PlanetaryHour[] = [r.hour];
+          while (walk.length < 7) {
+            const n = planetaryHourAt(a, jdToMs(walk[walk.length - 1].end) + 1000);
+            if (!n?.ok) break;
+            walk.push(n.hour);
+          }
+          if (walk.length < 7) continue; // the walk ran off the computed days
+          walks += 1;
+          const seven = CHALDEAN_ORDER.map((p) => nextHourOf(a, p, ms));
+          if (!(new Set(seven).size === 7 && seven.every((h) => h !== null && walk.includes(h)))) {
+            badWalk += 1;
+            firstBad ||= `${s.name} ${y}-${m}-${d}: the seven answers aren't the walk's seven hours`;
+          }
+        }
+      }
+    }
+    check(
+      `the hour in force is the one named for its planet (${inForce} instants)`,
+      inForce > 1000 && badForce === 0,
+      firstBad || `${badForce} disagree`,
+    );
+    check(
+      `the seven answers are the hour in force and the six planetaryHourAt walks to after it (${walks} instants)`,
+      walks > 1000 && badWalk === 0,
+      firstBad || `${badWalk} disagree`,
+    );
+  }
+
+  // (c) GOLDEN — the edges, at instants that convert exactly onto them. An hour holds
+  // its start: at it, the hour is its planet's answer. It doesn't hold its end: there
+  // its planet's answer is seven hours on, and the hour beginning there is in force.
+  {
+    let starts = 0;
+    let ends = 0;
+    let bad = 0;
+    let unreachable = 0;
+    let firstBad = '';
+    const sites = SITES.filter((s) => ['Quito', 'London', 'Reykjavik', 'Sydney'].includes(s.name));
+    for (const s of sites) {
+      for (const [y, m, d] of [
+        [2026, 3, 15],
+        [2026, 6, 15],
+        [2026, 10, 1],
+      ] as const) {
+        const a = around(s, y, m, d);
+        if (!a || !a.previous.ok || !a.shown.ok || !a.next.ok) continue;
+        // The three days meet exactly, so their hours are one run of 72.
+        const run = okDays(a).flatMap((pd) => pd.hours);
+        run.forEach((h, i) => {
+          const atStart = msExactlyAt(h.start);
+          const atEnd = msExactlyAt(h.end);
+          if (atStart === null || atEnd === null) {
+            unreachable += 1;
+            return;
+          }
+          starts += 1;
+          const got = nextHourOf(a, h.ruler, atStart);
+          if (got !== h) {
+            bad += 1;
+            firstBad ||= `${s.name} ${y}-${m}-${d}, at the start of ${label(a, h)}: got ${label(a, got)}`;
+          }
+          ends += 1;
+          const seventh = run[i + 7] ?? null;
+          const following = run[i + 1] ?? null;
+          const own = nextHourOf(a, h.ruler, atEnd);
+          const next = following ? nextHourOf(a, following.ruler, atEnd) : following;
+          if (own !== seventh || next !== following) {
+            bad += 1;
+            firstBad ||= `${s.name} ${y}-${m}-${d}, at the end of ${label(a, h)}: its planet → ${label(a, own)} (want ${label(a, seventh)}), the next → ${label(a, next)} (want ${label(a, following)})`;
+          }
+        });
+      }
+    }
+    check(
+      `exactly on an hour's start it is in force, on its end it isn't (${starts} starts, ${ends} ends)`,
+      starts >= 600 && ends === starts && bad === 0 && unreachable === 0,
+      firstBad || `${unreachable} edge(s) no instant converts onto`,
+    );
+  }
+
+  // (d) GOLDEN — late in the listed day's night, a planet whose hour doesn't come round
+  // again before sunrise is found in the NEXT day: the scan doesn't stop at the list.
+  {
+    let asked = 0;
+    let bad = 0;
+    let firstBad = '';
+    for (const s of SITES) {
+      for (const [y, m, d] of dates2026) {
+        const a = around(s, y, m, d);
+        if (!a || !a.shown.ok || !a.next.ok) continue;
+        // Halfway through hour 22: hours 22–24 remain, holding three planets.
+        const late = a.shown.hours[21];
+        const ms = jdToMs((late.start + late.end) / 2);
+        const left = new Set(a.shown.hours.slice(21).map((h) => h.ruler));
+        for (const p of CHALDEAN_ORDER.filter((q) => !left.has(q))) {
+          asked += 1;
+          const got = nextHourOf(a, p, ms);
+          // Four planets, and the next day's first four hours are theirs.
+          if (!got || !a.next.hours.includes(got) || got.index > 3 || got !== brute(a, p, msToJD(ms))) {
+            bad += 1;
+            firstBad ||= `${s.name} ${y}-${m}-${d}, ${p}: got ${label(a, got)}`;
+          }
+        }
+      }
+    }
+    check(
+      `late in the listed night, the next hour is found in the next day (${asked} lookups)`,
+      asked >= 900 && bad === 0,
+      firstBad || `${bad} wrong`,
+    );
+  }
+
+  // (e) GOLDEN — unavailable days at Tromsø. The scan skips a day with no hours rather
+  // than reading through it, and says null when nothing follows to find.
+  {
+    const tromso = site('Tromsø', 69.65, 18.96);
+    // A day with hours, and none on any computed day after it: late in its night,
+    // the planets of its remaining hours are found there and the rest are null.
+    let edgeCase = '';
+    let edgeOk = false;
+    for (const [y, m, d0, n] of [
+      [2026, 5, 5, 25],
+      [2026, 11, 18, 15],
+    ] as const) {
+      for (let k = 0; k < n && !edgeCase; k++) {
+        const date = DateTime.fromObject({ year: y, month: m, day: d0 }).plus({ days: k });
+        const a = around(tromso, date.year, date.month, date.day);
+        if (!a) continue;
+        const days = [a.previous, a.shown, a.next];
+        const i = days.findIndex((pd, j) => pd.ok && j < 2 && days.slice(j + 1).every((q) => !q.ok));
+        if (i < 0) continue;
+        const last = days[i] as PlanetaryDay;
+        const h = last.hours[20];
+        const ms = jdToMs((h.start + h.end) / 2);
+        const left = last.hours.slice(20);
+        const got = CHALDEAN_ORDER.map((p) => nextHourOf(a, p, ms));
+        const found = got.filter((g) => g !== null);
+        edgeOk =
+          found.length === new Set(left.map((x) => x.ruler)).size &&
+          found.every((g) => left.includes(g!)) &&
+          CHALDEAN_ORDER.every((p, j) => got[j] === (left.find((x) => x.ruler === p) ?? null));
+        edgeCase = `${date.toISODate()} (${['previous', 'shown', 'next'][i]} is the last day with hours): ${found.length} found, ${7 - found.length} null`;
+      }
+    }
+    check(
+      'Tromsø, the last day with hours: late in its night, only its remaining hours are found',
+      !!edgeCase && edgeOk,
+      edgeCase || 'no such day found in the scans',
+    );
+
+    // The first sunrise after polar night: a second before it, the instant belongs to
+    // a day with no hours, and every planet's answer is among the new day's first seven.
+    let first = '';
+    let firstOk = false;
+    for (let k = 0; k < 30 && !first; k++) {
+      const date = DateTime.fromObject({ year: 2026, month: 1, day: 1 }).plus({ days: k });
+      const a = around(tromso, date.year, date.month, date.day);
+      if (!a || a.previous.ok || !a.shown.ok) continue;
+      const ms = jdToMs(a.shown.sunrise) - 1000;
+      const got = CHALDEAN_ORDER.map((p) => nextHourOf(a, p, ms));
+      const seven = a.shown.hours.slice(0, 7);
+      firstOk =
+        nextHourOf(a, a.shown.ruler, ms) === a.shown.hours[0] &&
+        got.every((g) => g !== null && seven.includes(g)) &&
+        new Set(got).size === 7;
+      first = `${date.toISODate()}: day ruler → ${label(a, nextHourOf(a, a.shown.ruler, ms))}`;
+    }
+    check(
+      'Tromsø, a second before the first sunrise after polar night: the new day’s first seven hours',
+      !!first && firstOk,
+      first || 'no such day found in January',
+    );
+
+    // Midsummer: no day around it has hours, so no planet has one.
+    const summer = around(tromso, 2026, 6, 21);
+    const noon = localNoon(2026, 6, 21, zoneOf(tromso));
+    const answers = summer ? CHALDEAN_ORDER.map((p) => nextHourOf(summer, p, noon)) : [];
+    check(
+      'Tromsø 21 June: all three days unavailable, every planet null',
+      !!summer && !summer.previous.ok && !summer.shown.ok && !summer.next.ok && answers.length === 7 && answers.every((g) => g === null),
+      summer ? `${answers.filter((g) => g !== null).length} found` : 'no result',
+    );
+  }
 }
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

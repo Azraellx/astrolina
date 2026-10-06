@@ -15,21 +15,37 @@
 // sit in the band's own stacking layer (fixed, z-index 6), under every other window,
 // the overlay bars and the nav, and inherit the band's small muted type. The band's
 // date picker (TimelineDateModal) portals out for the same reason.
-import { Fragment, useRef, useState, type ReactNode } from 'react';
+//
+// What the window holds of its own is reading state, and none of it is a preference:
+// the highlighted planet (hover and pin), the list's scroll and the collapse all start
+// fresh with each opening and are never written anywhere.
+import {
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { PLANET_COLORS } from '../../lib/ephemeris';
 import {
   CHALDEAN_ORDER,
+  nextHourOf,
   type PlanetaryDay,
   type PlanetaryDayResult,
   type PlanetaryDaysAround,
   type PlanetaryHour,
   type PlanetaryNow,
+  type PlanetaryRuler,
 } from '../../lib/astro/planetaryHours';
 import { useT } from '../../i18n';
+import { panelGlyphColor } from '../../lib/theme';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { getReservedLeftInset } from '../../lib/leftDock';
+import { useTouchLayout } from '../../lib/touch';
 import { HudHeader } from '../ui/HudHeader';
+import { TipButton } from '../ui/HoverTip';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 // The shared floating-window chrome (.timeline-hud frost + .location-* parts),
 // then this window's own layout.
@@ -42,12 +58,14 @@ const POS_KEY = 'astro:planetary-hours-pos:v1';
 // Kept in sync with .planetary-hours-hud's width in the CSS. The height is an
 // estimate for the FIRST placement only, before there is a frame to measure; the
 // hook clamps every placement against the real frame and keeps it above the band
-// as the band or the window changes size.
+// as the band or the window changes size. (540 until 2026-10-05; the planet buttons
+// and the line under them added about 25.)
 const HUD_W = 300;
-const HUD_H_EST = 540;
+const HUD_H_EST = 565;
 
 const MS_DAY = 86_400_000;
 const msToJD = (ms: number) => ms / MS_DAY + 2440587.5;
+const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
 
 // Home spot: just above the band's left end, where the chip that opened it sits.
 // Read from the band's own box when it has painted (its left edge already honours
@@ -66,6 +84,17 @@ function homeSpot(height: number): { x: number; y: number } {
     x: Math.round(Math.min(left + 8, window.innerWidth - HUD_W - 8)),
     y: Math.round(Math.max(72, top - height - 10)),
   };
+}
+
+// On a phone the window opens as a bottom sheet (the hook's phone home), and it must not
+// climb over the nav to fit: the nav stack's bottom is its ceiling, and the hook hands the
+// room between that and the chrome the sheet stands on to the CSS cap as --hud-phone-room
+// (PlanetaryHoursHud.css says why, with the measurements). Read live at every re-home; the
+// nav announces a change of its box (a readout bar coming and going under it) with
+// `astro:hud-moved` (lib/hudSettled), which is what re-homes the sheet. No stack, no ceiling.
+function navCeiling(): number | null {
+  const nav = document.querySelector<HTMLElement>('.topnav-stack')?.getBoundingClientRect();
+  return nav && nav.height > 0 ? nav.bottom : null;
 }
 
 export interface PlanetaryHoursHudProps {
@@ -102,18 +131,47 @@ export function PlanetaryHoursHud({
   onClose,
 }: PlanetaryHoursHudProps) {
   const { t, fmt } = useT();
+  const touch = useTouchLayout();
   const [collapsed, setCollapsed] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
     floating: true,
     initial: () => homeSpot(hudRef.current?.offsetHeight || HUD_H_EST),
+    phoneCeiling: navCeiling,
   });
+
+  // THE HIGHLIGHT: one planet's hours marked in the list, the rest stepped back.
+  // Two sources, both transient: `pinnedRuler` is a click (or tap) on one of the
+  // planet buttons under the list, and holds until the same button clears it;
+  // `hoverRuler` is the mouse resting on a planet button or on an hour in the list.
+  // The pointer outranks the pin while it is there, so reading another planet's
+  // hours costs nothing — the picked one is back when the pointer leaves.
+  const [hoverRuler, setHoverRuler] = useState<PlanetaryRuler | null>(null);
+  const [pinnedRuler, setPinnedRuler] = useState<PlanetaryRuler | null>(null);
+  const focus = hoverRuler ?? pinnedRuler;
+  // Mouse only. On touch a "hover" is the side effect of a tap, and it would leave a
+  // highlight behind with nothing on a phone to lift it — touch picks through the
+  // buttons, which is the pin. Read by delegation on the container rather than on
+  // each element, so the pointer crossing the gap between two hours keeps the
+  // highlight instead of dropping it for a frame (the whole list would blink). An
+  // element that isn't a planet's (an hour number) clears it; the gaps don't.
+  const hoverFrom = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    const el = (e.target as Element).closest<HTMLElement>('[data-ruler]');
+    if (el && e.currentTarget.contains(el)) setHoverRuler(el.dataset.ruler as PlanetaryRuler);
+    else if (e.target !== e.currentTarget) setHoverRuler(null);
+  };
+  const hoverOff = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.pointerType === 'mouse') setHoverRuler(null);
+  };
 
   const bodyName = (p: PlanetaryHour['ruler']) => t(`planets.${p}.name`);
   const weekday = (d: PlanetaryDayResult) => fmt.weekdayName(d.date.weekday);
+  // The Moon's ink follows the theme here (panelGlyphColor): the planet buttons carry
+  // nothing but the glyph, and its pale gray all but vanishes on Glass's light panel.
   const glyph = (p: PlanetaryHour['ruler'], size: number) => (
-    <PlanetGlyph planet={p} size={size} color={PLANET_COLORS[p]} />
+    <PlanetGlyph planet={p} size={size} color={panelGlyphColor(p, PLANET_COLORS[p])} />
   );
   const reasonText = (d: PlanetaryDayResult): string =>
     d.ok
@@ -127,12 +185,78 @@ export function PlanetaryHoursHud({
           { weekday: weekday(d) },
         );
 
+  // THE LIST'S SCROLLER. On a phone the window is capped and only the hour rows
+  // scroll (PlanetaryHoursHud.css); everywhere else the rows are never cut, so what
+  // follows does nothing there — the class below is set but only the phone rule
+  // styles it, and a list that doesn't overflow has nothing to scroll.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const listed = hasPoint && !!days?.shown.ok;
+  // More below the fold: the foot fades out. A phone shows no scrollbar until a
+  // scroll has started, so a list cut off after four rows would read as a list of
+  // four — the same cue, checked the same way, as the Capture sheet's
+  // (CaptureHud.tsx moreBelow). On scroll, when the scroller's box changes (the cap,
+  // a note above it coming and going, a collapse), and after every render.
+  const [moreBelow, setMoreBelow] = useState(false);
+  const checkMore = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) {
+      checkMore.current = () => {};
+      setMoreBelow(false);
+      return;
+    }
+    const check = () => setMoreBelow(grid.scrollTop + grid.clientHeight < grid.scrollHeight - 2);
+    checkMore.current = check;
+    check();
+    grid.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(grid);
+    return () => {
+      grid.removeEventListener('scroll', check);
+      ro.disconnect();
+    };
+  }, [listed]);
+  useLayoutEffect(() => checkMore.current());
+  // The hour in force kept in view: on open, on expanding from collapsed, on paging
+  // the day, and when the hour turns over — never on any other render, so a reader
+  // who has scrolled to look at the evening isn't pulled back until the hour
+  // changes. If it is already wholly in view nothing moves; if not, its row goes to
+  // the top of what shows, with the hours after it underneath. A listed day that
+  // doesn't hold it (another day paged to, or the hours before its sunrise) starts
+  // from its first hour. Plain scrollTop arithmetic on the list: scrollIntoView would
+  // also scroll every scrollable ancestor to suit — the window, and on a phone the
+  // page itself.
+  const nowKey = now?.ok ? `${now.day.sunrise}:${now.hour.index}` : null;
+  const dayKey = days?.shown.ok ? days.shown.sunrise : null;
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || grid.scrollHeight <= grid.clientHeight + 1) return;
+    const cell = grid.querySelector<HTMLElement>('.ph-cell.is-now');
+    if (!cell) {
+      grid.scrollTop = 0;
+      return;
+    }
+    const top = cell.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop;
+    if (top >= grid.scrollTop && top + cell.offsetHeight <= grid.scrollTop + grid.clientHeight) return;
+    grid.scrollTop = top;
+  }, [nowKey, dayKey, listed, collapsed]);
+
   // ── The hour in force: its ruler large, when it ends, where in the day it falls ──
   const hero: ReactNode = (() => {
     if (!now?.ok) return null;
     const { hour } = now;
     const n = hour.night ? hour.index - 11 : hour.index + 1;
     const at = clock(msToJD(instantMs));
+    // What is left of it, in whole minutes rounded UP: "1 min left" for the last
+    // minute, never "0" while the hour still runs. Held at 1 as well, because the
+    // instant can sit a hair short of an end the ms → JD round trip lands on. No
+    // timer of its own: the band re-reads the present on the minute while this
+    // window is open (and Slide moves the instant itself).
+    const left = Math.max(1, Math.ceil((jdToMs(hour.end) - instantMs) / 60_000));
+    const elapsed = Math.min(
+      1,
+      Math.max(0, (msToJD(instantMs) - hour.start) / (hour.end - hour.start)),
+    );
     return (
       <div className="ph-hero">
         <span className="ph-hero-glyph">{glyph(hour.ruler, 30)}</span>
@@ -147,9 +271,16 @@ export function PlanetaryHoursHud({
           </span>
           <span className="ph-hero-sub">
             {t(sliding ? 'skyTimes.planetary.slideAt' : 'skyTimes.planetary.nowAt', { time: at })}
+            {' · '}
+            {t('skyTimes.planetary.minLeft', { m: left })}
             {/* The day the hour belongs to is named under the hero — by the day
                 line when it's the listed day, by the note when it's a neighbour. */}
           </span>
+        </span>
+        {/* How much of the hour has run, along the block's foot. Hidden from
+            assistive tech: the minutes left above say the same thing in words. */}
+        <span className="ph-hero-bar" aria-hidden="true">
+          <span style={{ transform: `scaleX(${elapsed})` }} />
         </span>
       </div>
     );
@@ -188,6 +319,54 @@ export function PlanetaryHoursHud({
       : t('skyTimes.planetary.nextNone', { next: weekday(now.day) });
   })();
 
+  // The highlighted planet's next hour, under the buttons that pick it — read from
+  // the instant the hero reads (the present, or the slid one), so only while an
+  // hour is in force there: with the pager on another day there is no "next"
+  // worth the name, and the line is left out. While nothing is picked the line
+  // holds its place with a prompt, so the window keeps its height as the pointer
+  // crosses the list — a line coming and going under the mouse would change the
+  // frame's height, the hook would re-clamp a window parked on the band, and the
+  // hour under a resting pointer would change by itself.
+  //
+  // The one line that doesn't fit is the polar one (focus.none, below), which says
+  // WHY there is no next hour — cut to one line, the reason was the part lost. So
+  // wherever any planet would read it, the line wraps, and holds two lines for every
+  // planet and for the prompt alike (`.is-edge`): still a height the pointer can't
+  // move. It is decided by the days and the instant, never by the focus, so only the
+  // instant moving turns it on (the clock or Slide, under seven hours from the end of
+  // a last day before a polar day or night). Ordinary days never meet it.
+  const focusLine: ReactNode = (() => {
+    if (!days || !now?.ok) return null;
+    const edge = CHALDEAN_ORDER.some((p) => !nextHourOf(days, p, instantMs));
+    if (!focus) {
+      return (
+        <div className={`ph-focus is-prompt${edge ? ' is-edge' : ''}`}>
+          {t('skyTimes.planetary.focus.prompt')}
+        </div>
+      );
+    }
+    const h = nextHourOf(days, focus, instantMs);
+    const hour = bodyName(focus);
+    let text: string;
+    if (h && h.start <= msToJD(instantMs)) {
+      text = t('skyTimes.planetary.focus.now', { hour, end: clock(h.end) });
+    } else if (h) {
+      text = t('skyTimes.planetary.focus.next', { hour, time: clock(h.start) });
+    } else {
+      // Nothing in the days computed: the day after the hour in force has no hours
+      // here (a polar edge — nextHourOf's two causes; the window only meets this one).
+      const order = [days.previous, days.shown, days.next];
+      const dark = order.slice(order.indexOf(now.day) + 1).find((d) => !d.ok) ?? days.next;
+      text = t('skyTimes.planetary.focus.none', { hour, weekday: weekday(dark) });
+    }
+    return (
+      <div className={`ph-focus${edge ? ' is-edge' : ''}`}>
+        {glyph(focus, 12)}
+        <span className="ph-focus-text">{text}</span>
+      </div>
+    );
+  })();
+
   // An hour of the listed day that has already ended, while the instant is on it.
   const isPast = (d: PlanetaryDay, h: PlanetaryHour) =>
     !!now?.ok &&
@@ -196,9 +375,13 @@ export function PlanetaryHoursHud({
   const isNow = (d: PlanetaryDay, h: PlanetaryHour) =>
     !!now?.ok && now.day === d && now.hour.index === h.index;
 
+  // A cell is not focusable and not a control: the hours are read, and the keyboard
+  // path to the highlight is the seven planet buttons, not 24 tab stops. `data-ruler`
+  // is what the hover delegation reads.
   const cell = (d: PlanetaryDay, h: PlanetaryHour) => (
     <span
-      className={`ph-cell${isNow(d, h) ? ' is-now' : ''}${isPast(d, h) ? ' is-past' : ''}`}
+      data-ruler={h.ruler}
+      className={`ph-cell${isNow(d, h) ? ' is-now' : ''}${isPast(d, h) ? ' is-past' : ''}${focus === h.ruler ? ' is-match' : ''}`}
     >
       {glyph(h.ruler, 13)}
       <span className="ph-cell-name">{bodyName(h.ruler)}</span>
@@ -209,23 +392,39 @@ export function PlanetaryHoursHud({
   const minutes = (dayFraction: number) =>
     t('skyTimes.planetary.minutes', { m: Math.round(dayFraction * 1440) });
 
+  // The column heads sit OUTSIDE the scroller, in a grid of their own with the same
+  // columns, so they stay in view when the rows scroll on a phone. The two grids
+  // line up because every track is sized the same way in both: the number column by
+  // its widest entry — which is why the heads' corner holds an invisible "12", the
+  // widest number in the rows — and the two halves as equal fractions of the rest.
   const table = (d: PlanetaryDay) => (
     <>
       <div className="ph-dayline">
         {glyph(d.ruler, 15)}
         <span>{t('skyTimes.planetary.day', { weekday: weekday(d), day: bodyName(d.ruler) })}</span>
       </div>
-      <div className="ph-grid">
-        <span aria-hidden="true" />
-        <span className="ph-head">{t('skyTimes.planetary.colDay', { len: minutes(d.dayHour) })}</span>
-        <span className="ph-head">{t('skyTimes.planetary.colNight', { len: minutes(d.nightHour) })}</span>
-        {Array.from({ length: 12 }, (_, i) => (
-          <Fragment key={i}>
-            <span className="ph-n">{i + 1}</span>
-            {cell(d, d.hours[i])}
-            {cell(d, d.hours[i + 12])}
-          </Fragment>
-        ))}
+      <div className="ph-table">
+        <div className="ph-heads">
+          <span className="ph-n ph-n-ghost" aria-hidden="true">
+            12
+          </span>
+          <span className="ph-head">{t('skyTimes.planetary.colDay', { len: minutes(d.dayHour) })}</span>
+          <span className="ph-head">{t('skyTimes.planetary.colNight', { len: minutes(d.nightHour) })}</span>
+        </div>
+        <div
+          ref={gridRef}
+          className={`ph-grid${focus ? ' has-focus' : ''}${moreBelow ? ' has-more' : ''}`}
+          onPointerOver={hoverFrom}
+          onPointerLeave={hoverOff}
+        >
+          {Array.from({ length: 12 }, (_, i) => (
+            <Fragment key={i}>
+              <span className="ph-n">{i + 1}</span>
+              {cell(d, d.hours[i])}
+              {cell(d, d.hours[i + 12])}
+            </Fragment>
+          ))}
+        </div>
       </div>
       <div className="ph-foot">
         {t('skyTimes.planetary.nextSunrise', { time: clock(d.nextSunrise) })}
@@ -250,19 +449,38 @@ export function PlanetaryHoursHud({
             {/* How the list was ruled — only where there is a list. */}
             <div className="ph-order">
               <span>{t('skyTimes.planetary.order')}</span>
-              {/* One image named by the planets, so assistive tech reads "Saturn,
-                  Jupiter, Mars…" rather than the glyphs' Unicode names ("male
-                  sign"). Not per-glyph labels: PlanetGlyph's other call sites sit
-                  beside a visible name, which a label would announce twice. */}
-              <span
-                className="ph-order-glyphs"
-                role="img"
-                aria-label={CHALDEAN_ORDER.map(bodyName).join(', ')}
-              >
+              {/* The order's seven planets, and the HIGHLIGHT's control: each is a
+                  button that marks its planet's hours (aria-pressed is the pin).
+                  Named by aria-label with the planet alone, so assistive tech walks
+                  "Saturn, Jupiter, Mars…" in the order the sentence promises, and
+                  never the glyphs' Unicode names ("male sign"). The label is right
+                  here and not at PlanetGlyph's other call sites: those sit beside a
+                  visible name, which a label would announce twice; these have none.
+                  (Until 2026-10-05 the row was one role="img" named by the list.) */}
+              <span className="ph-order-glyphs" onPointerOver={hoverFrom} onPointerLeave={hoverOff}>
                 {CHALDEAN_ORDER.map((p) => (
-                  <Fragment key={p}>{glyph(p, 12)}</Fragment>
+                  <TipButton
+                    key={p}
+                    type="button"
+                    className="ph-order-btn"
+                    data-ruler={p}
+                    placement="top"
+                    aria-pressed={pinnedRuler === p}
+                    aria-label={bodyName(p)}
+                    tip={t('skyTimes.planetary.focus.tip', { hour: bodyName(p) })}
+                    hint={t(
+                      pinnedRuler === p
+                        ? 'skyTimes.planetary.focus.hintOn'
+                        : 'skyTimes.planetary.focus.hint',
+                    )}
+                    onClick={() => setPinnedRuler((v) => (v === p ? null : p))}
+                  >
+                    {/* A finger-sized target on touch (the CSS), and a glyph to suit. */}
+                    {glyph(p, touch ? 15 : 12)}
+                  </TipButton>
                 ))}
               </span>
+              {focusLine}
             </div>
           </>
         ) : (

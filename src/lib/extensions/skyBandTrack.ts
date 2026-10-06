@@ -13,6 +13,7 @@
 // simply don't see it), carrying the gated-tier tag in its hover tip.
 import type { ReactNode } from 'react';
 import type { BodyDayEvents, SkyEvent } from '../astro/riseSet';
+import type { PlanetaryDaysAround } from '../astro/planetaryHours';
 import { isEntitled as sharedIsEntitled } from './entitlement';
 
 /** Everything the band computes that a track needs: the day's events at the
@@ -41,6 +42,14 @@ export interface SkyBandTrackContext {
   frac: (jd: number) => number;
   /** An instant as "HH:MM" in the point's zone. */
   clock: (jd: number) => string;
+  /** The planetary days around the shown date — previous, shown and next, sunrise
+   *  to sunrise (lib/astro/planetaryHours.ts) — handed over as the band's OWN memo:
+   *  the same days its chip and Planetary hours window read, so a track drawing the
+   *  hours can't put one anywhere they don't. Read it; never re-solve it from the
+   *  point. Absent or null when the band has none to give (the Sun's solves didn't
+   *  line up a day apart); an unavailable (polar) day arrives as `ok: false`, with
+   *  no hours to draw. */
+  planetary?: PlanetaryDaysAround | null;
   /** The Slide tool's slid instant (epoch ms UT) while it spins the sky; null idle. */
   slideMs: number | null;
   /** Scrub the Slide tool's slid instant to an absolute time (epoch ms UT).

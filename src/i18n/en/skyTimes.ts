@@ -115,6 +115,27 @@ export const skyTimes = {
     until: 'until {end}',
     nowAt: 'Now {time}',
     slideAt: 'Slid to {time}',
+    // After the instant on the lead block's last line: "Now 10:19 · 23 min left".
+    // Rounded UP, so it never reads 0 while the hour is still running.
+    minLeft: '{m} min left',
+    // HIGHLIGHT: the seven planets of the order line below the list are buttons —
+    // pick one (or point at it, or at an hour in the list) and its hours are marked
+    // and the rest step back. {hour} is the planet's display name, as above.
+    focus: {
+      // A planet button's tip headline, and its hint by whether it is picked.
+      tip: '{hour} hours',
+      hint: 'Mark its hours in the list, and say when the next one begins.',
+      hintOn: 'Its hours are marked. Pick it again to clear.',
+      // The line under the order while nothing is picked — it holds the line's place,
+      // so the window doesn't change height as the pointer crosses the list.
+      prompt: 'Pick a planet above to mark its hours.',
+      // …and once one is: its hour is in force, or when its next one begins.
+      now: '{hour} hour now, until {end}',
+      next: 'Next {hour} hour {time}',
+      // None in the days computed: the day after this one has no planetary hours here
+      // (near the polar circles). {weekday} names that day.
+      none: 'No {hour} hour left before {weekday}, which has no planetary hours here.',
+    },
     // Column heads: each half of the day and the length of one of its hours.
     colDay: 'Day · {len}',
     colNight: 'Night · {len}',
