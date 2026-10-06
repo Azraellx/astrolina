@@ -5,9 +5,11 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The chart form's time-zone state, 2026-10-02: Auto plus four ways to state a
-// zone in the terms a birth record uses. lib/atlas/zoneEntry.ts holds the
-// arithmetic; zoneEntryModel.ts holds what the field shows and will save, as
-// plain functions a verify script can drive; this only keeps it in React.
+// zone in the terms a birth record uses — shown since 2026-10-05 as one list,
+// which drives `choose`; the four ways' own controls are hidden, not gone.
+// lib/atlas/zoneEntry.ts holds the arithmetic; zoneEntryModel.ts holds what the
+// field shows and will save, as plain functions a verify script can drive; this
+// only keeps it in React.
 
 import { useMemo, useState } from 'react';
 import type { StoredChart } from '../../lib/chartLibrary';
@@ -19,6 +21,7 @@ import {
   zoneView,
   type ZoneAction,
   type ZoneInputs,
+  type ZonePick,
   type ZoneView,
 } from './zoneEntryModel';
 
@@ -33,6 +36,8 @@ export interface ZoneEntryState extends ZoneView {
   takeUt: () => void;
   pickIana: (zone: string) => void;
   pickUtc: (hours: number) => void;
+  /** The form's list: a way and its zone in one step. */
+  choose: (pick: ZonePick) => void;
 }
 
 export function useZoneEntry(
@@ -70,5 +75,6 @@ export function useZoneEntry(
     takeUt: () => dispatch({ type: 'ut' }),
     pickIana: (zone) => dispatch({ type: 'iana', zone }),
     pickUtc: (hours) => dispatch({ type: 'utc', hours }),
+    choose: (pick) => dispatch({ type: 'choose', pick }),
   };
 }

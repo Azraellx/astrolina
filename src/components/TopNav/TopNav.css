@@ -881,6 +881,13 @@ button.topnav-status:hover {
   letter-spacing: 0.02em;
   color: var(--text-muted);
 }
+/* The same heading partway down a list (HintMenu's `section`), set off from the
+   rows above it as well as the ones it heads. */
+.navmenu-header.is-section {
+  margin-top: 5px;
+  border-top: 1px solid rgba(var(--tint), 0.12);
+  padding-top: 8px;
+}
 
 /* ── Compact nav, beside a dock (measured) ─────────────────────────────────────
    The island stays an island, centred on the map column, but trades width for the same

@@ -32,6 +32,10 @@
 //  3. The field shows what it will save. The "verify DST" note reads the same
 //     `flag` that `toSave` writes, and `toSave` is null whenever saving must
 //     wait (`error`).
+//
+// The form now shows one list rather than the five ways (2026-10-05, see
+// TimeZoneField's header): `choose` is that list's one action, and the rows and
+// the value it shows are worked out here too, beside the transitions they drive.
 
 import type { StoredChart } from '../../lib/chartLibrary';
 import {
@@ -39,6 +43,7 @@ import {
   birthplaceLmtSeconds,
   canonicalZone,
   DAYLIGHT_OPTIONS,
+  daylightSeconds,
   entrySeconds,
   formatAstroNotation,
   lmtOffsetSeconds,
@@ -49,15 +54,18 @@ import {
   reopenZoneChoice,
   resolveZoneChoice,
   sanitizeTzEntry,
+  STANDARD_ZONES,
   standardZoneById,
   textReadsAs,
   UTC_PICKER_HOURS,
+  zoneInUse,
   type DaylightCode,
   type OffsetDirection,
   type OffsetEntry,
   type ParsedZoneOffset,
   type ResolvedZone,
   type StandardEntry,
+  type StandardZone,
   type TzEntry,
   type ZoneChoice,
   type ZoneEntryMode,
@@ -135,6 +143,10 @@ export interface ZoneView {
    *  saved in (`was`, null when they can't be read) and what they would give
    *  now. Null otherwise, and when they would give the stored number again. */
   kept: { was: ZoneChoice | null; now: number | null } | null;
+  /** The terms a saved chart reopened in, where no entry in the form's list
+   *  gives them (an IANA zone, a typed offset, war time…): the list then offers
+   *  them back as "As saved". Null for a new chart and for terms it lists. */
+  saved: ZoneChoice | null;
   /** The tzUncertain saving writes, and the "verify DST" note shows. */
   flag: boolean;
   /** Why saving must wait, or null. 'range': the terms add up past ±15 h. */
@@ -153,7 +165,93 @@ export type ZoneAction =
   | { type: 'lmt' }
   | { type: 'ut' }
   | { type: 'iana'; zone: string }
-  | { type: 'utc'; hours: number };
+  | { type: 'utc'; hours: number }
+  | { type: 'choose'; pick: ZonePick };
+
+/** An entry in the form's list: Auto, the birthplace's mean time, UT, the
+ *  terms a saved chart reopened in, or a standard zone with a correction. */
+export type ZonePick = 'auto' | 'lmt' | 'ut' | 'saved' | { zone: string; daylight: DaylightCode };
+
+/** One named row of the list: a zone's standard time, or its daylight time. */
+export interface ZonePickRow {
+  /** The select's value, `id:code` (no catalogue id contains a colon). */
+  value: string;
+  zone: StandardZone;
+  daylight: DaylightCode;
+  /** The offset the row gives, east-positive whole seconds. */
+  seconds: number;
+  /** The standard time's name and abbreviation, or its daylight time's. */
+  name: string;
+  abbr: string | undefined;
+  isDaylight: boolean;
+}
+
+/** The correction a zone's own daylight time adds — Lord Howe's is half an hour. */
+const daylightCodeOf = (z: StandardZone): DaylightCode => z.dstCode ?? 'daylight';
+
+const rowValue = (zone: string, daylight: DaylightCode) => `${zone}:${daylight}`;
+
+function standardRow(z: StandardZone): ZonePickRow {
+  return { value: rowValue(z.id, 'standard'), zone: z, daylight: 'standard', seconds: z.std, name: z.name, abbr: z.abbr, isDaylight: false };
+}
+
+function daylightRow(z: StandardZone): ZonePickRow | null {
+  if (!z.dstName) return null;
+  const daylight = daylightCodeOf(z);
+  return {
+    value: rowValue(z.id, daylight),
+    zone: z,
+    daylight,
+    seconds: z.std + daylightSeconds(daylight),
+    name: z.dstName,
+    abbr: z.dstAbbr,
+    isDaylight: true,
+  };
+}
+
+/** Every row the catalogue gives, whatever the year. */
+const ALL_ROWS: readonly ZonePickRow[] = STANDARD_ZONES.flatMap((z) => {
+  const d = daylightRow(z);
+  return d ? [standardRow(z), d] : [standardRow(z)];
+});
+const ROW_BY_VALUE = new Map(ALL_ROWS.map((r) => [r.value, r]));
+
+/** The row a choice is, if the list has one. */
+function rowOfChoice(c: ZoneChoice): ZonePickRow | undefined {
+  return c.mode === 'standard' && c.zone ? ROW_BY_VALUE.get(rowValue(c.zone, c.daylight)) : undefined;
+}
+
+/**
+ * The list's named rows for a birth year: the zones in use that year (an
+ * era-bounded zone outside its years is left out, so a 1990 birth isn't offered
+ * Hawaii's 1896–1947 half hour), plus the row now selected, wherever it falls.
+ * West to east by offset, then by name.
+ */
+export function zonePickRows(year: number, selected?: string): ZonePickRow[] {
+  return ALL_ROWS.filter((r) => zoneInUse(r.zone, year) || r.value === selected).sort(
+    (a, b) => a.seconds - b.seconds || a.name.localeCompare(b.name, 'en'),
+  );
+}
+
+/** What the list shows for a choice: its entry, or 'saved' for terms it has
+ *  no entry for (only ever a saved chart's own — the list can't produce them). */
+export function pickOfChoice(c: ZoneChoice): string {
+  if (c.mode === 'auto') return 'auto';
+  if (c.mode === 'offset' && (c.basis === 'lmt' || c.basis === 'ut')) return c.basis;
+  return rowOfChoice(c)?.value ?? 'saved';
+}
+
+/** The select's value for a view. */
+export function zonePickValue(view: ZoneView): string {
+  return view.mode === 'auto' ? 'auto' : pickOfChoice(view.choice);
+}
+
+/** The pick a select value stands for. */
+export function pickOfValue(value: string): ZonePick | null {
+  if (value === 'auto' || value === 'lmt' || value === 'ut' || value === 'saved') return value;
+  const r = ROW_BY_VALUE.get(value);
+  return r ? { zone: r.zone.id, daylight: r.daylight } : null;
+}
 
 const directionOf = (seconds: number): OffsetDirection => (seconds < 0 ? 'west' : 'east');
 
@@ -254,6 +352,7 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
   const locked = !!initial?.composite;
   const unnamedStd =
     opened.choice.mode === 'standard' && opened.choice.zone == null ? opened.choice.std : null;
+  const saved = initial && !locked && pickOfChoice(opened.choice) === 'saved' ? opened.choice : null;
   const idle: ZoneView = {
     locked,
     at,
@@ -271,6 +370,7 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
     lmtShifted: false,
     lmtAvailable: false,
     kept: null,
+    saved,
     flag: false,
     error: null,
     toSave: null,
@@ -454,5 +554,27 @@ export function zoneReduce(model: ZoneModel, action: ZoneAction, view: ZoneView,
     }
     case 'utc':
       return act({ choice: { mode: 'utc', hours: action.hours } });
+    case 'choose': {
+      // The list's one action sets the way and its zone together: the controls
+      // above leave `mode` alone (inside the five-way field they run within a
+      // way already chosen), and two dispatches from one handler would lose
+      // the first, since each reduces the same `model`.
+      if (view.locked || !inputs.at) return model;
+      const { pick } = action;
+      // Back to the record's own terms — Auto included, where it was saved on
+      // Auto — reopens them exactly, so saving writes the record back verbatim.
+      if (pick === 'saved' || (pick === 'auto' && inputs.opened.choice.mode === 'auto')) {
+        return initialModel(inputs.opened, inputs.initial);
+      }
+      if (pick === 'auto') return { ...model, mode: 'auto', choice: { mode: 'auto' }, seedFrom: null };
+      if (pick === 'lmt' || pick === 'ut') {
+        const next = zoneReduce(model, { type: pick }, view, inputs);
+        return next === model ? model : { ...next, mode: 'offset' };
+      }
+      const z = standardZoneById(pick.zone);
+      return z
+        ? act({ mode: 'standard', choice: { mode: 'standard', std: z.std, daylight: pick.daylight, zone: z.id } })
+        : model;
+    }
   }
 }

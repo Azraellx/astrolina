@@ -57,10 +57,14 @@ import {
   atOfChart,
   initialModel,
   openZone,
+  pickOfValue,
+  zonePickRows,
+  zonePickValue,
   zoneReduce,
   zoneView,
   type ZoneAction,
   type ZoneInputs,
+  type ZonePickRow,
 } from '../src/components/BirthDataForm/zoneEntryModel';
 import { resolveBirthTimezone, resolveZoneInfo } from '../src/lib/atlas/timezone';
 import { DAYLIGHT_CORRECTION, readAaf } from '../src/lib/import/readers/aaf';
@@ -996,6 +1000,196 @@ console.log('\n── 6d. GOLDEN: what holds a save ──');
   check('  Sitka 1860’s one-click LMT saves Auto’s mean time, to the second',
     !!s.toSave && Math.abs(s.toSave.tzOffset * H - autoAt(sitka).tzOffset * H) <= 1 && s.lmtShifted,
     `${s.toSave?.tzOffset} vs ${autoAt(sitka).tzOffset}`);
+}
+
+// ── 7. The form's one list (2026-10-05) ──────────────────────────────────────
+//
+// The field unfolds to one select whose entries each set a way and its zone in
+// one step (`choose`). The five ways' controls are hidden, so the list is now
+// the only way a reader states a zone, and a chart saved in the hidden terms
+// must still come back as it was.
+
+console.log('\n── 7. INTERNAL IDENTITY: the list’s rows are the catalogue’s arithmetic ──');
+
+/** Every row the list can show, gathered over the years that reach them all. */
+const ALL_PICK_ROWS: ZonePickRow[] = (() => {
+  const years = [MODERN_YEAR, ...STANDARD_ZONES.flatMap((z) => (z.checkYear ? [z.checkYear] : []))];
+  const m = new Map<string, ZonePickRow>();
+  for (const y of years) for (const r of zonePickRows(y)) m.set(r.value, r);
+  return [...m.values()];
+})();
+const nyJuly1980: ZoneMoment = { lat: 40.7128, lng: -74.006, year: 1980, month: 7, day: 4, hour: 14, minute: 30 };
+
+{
+  const standardRows = ALL_PICK_ROWS.filter((r) => !r.isDaylight);
+  check('  every catalogue zone has its standard row',
+    standardRows.length === STANDARD_ZONES.length, `${standardRows.length} of ${STANDARD_ZONES.length}`);
+  every('a row gives its zone’s standard offset plus its correction', ALL_PICK_ROWS, (r) =>
+    r.seconds === r.zone.std + daylightSeconds(r.daylight) ? null : `${r.value}: ${r.seconds}`);
+  every('a daylight row exactly where the zone names its daylight time, with the zone’s own step', ALL_PICK_ROWS, (r) => {
+    if (!r.isDaylight) return r.daylight === 'standard' ? null : `${r.value}: a standard row with ${r.daylight}`;
+    if (!r.zone.dstName) return `${r.value}: a daylight row with no dstName`;
+    return r.daylight === (r.zone.dstCode ?? 'daylight') ? null : `${r.value}: ${r.daylight}`;
+  });
+  every('every zone with a daylight abbreviation has a daylight row', STANDARD_ZONES.filter((z) => z.dstAbbr), (z) =>
+    ALL_PICK_ROWS.some((r) => r.isDaylight && r.zone.id === z.id) ? null : z.id);
+  const modern = zonePickRows(MODERN_YEAR);
+  every('rows run west to east', modern.slice(1), (r) => {
+    const prev = modern[modern.indexOf(r) - 1];
+    return prev.seconds <= r.seconds ? null : `${prev.value} before ${r.value}`;
+  });
+  every('a year’s rows are the zones in use that year', modern, (r) =>
+    zoneInUse(r.zone, MODERN_YEAR) ? null : `${r.value} offered in ${MODERN_YEAR}`);
+  const kept = zonePickRows(1990, 'hst-1896:standard');
+  check('  …except the row now selected, which stays wherever it falls',
+    !zonePickRows(1990).some((r) => r.value === 'hst-1896:standard') && kept.some((r) => r.value === 'hst-1896:standard'));
+}
+
+console.log('\n── 7a. TWO PARTS AGREE: choosing a row saves what the row says ──');
+
+{
+  // The row's own arithmetic against the model's resolution of the same pick:
+  // the offset saved, and the entry the select then shows.
+  every('each row, chosen, saves its offset and shows itself as chosen', ALL_PICK_ROWS, (r) => {
+    const pick = pickOfValue(r.value);
+    if (!pick || typeof pick === 'string') return `${r.value}: reads as ${JSON.stringify(pick)}`;
+    const v = field(null, nyJuly1980).act({ type: 'choose', pick }).view;
+    if (!v.toSave) return `${r.value}: nothing to save (${v.error})`;
+    if (Math.round(v.toSave.tzOffset * H) !== r.seconds) return `${r.value}: saved ${v.toSave.tzOffset}`;
+    if (v.toSave.tzEntry?.mode !== 'standard' || !v.toSave.tzManual || v.toSave.tzUncertain) {
+      return `${r.value}: ${JSON.stringify(v.toSave)}`;
+    }
+    return zonePickValue(v) === r.value ? null : `${r.value}: the select shows ${zonePickValue(v)}`;
+  });
+}
+
+console.log('\n── 7b. GOLDEN: what the list gives ──');
+
+{
+  const byValue = (v: string) => ALL_PICK_ROWS.find((r) => r.value === v);
+  const edt = byValue('est:daylight');
+  check('  Eastern Daylight (EDT) is UTC−4', edt?.name === 'Eastern Daylight' && edt.abbr === 'EDT' && edt.seconds === -4 * H);
+  const lhdt = byValue('lord-howe:half');
+  check('  Lord Howe’s daylight row is its half hour, UTC+11', lhdt?.seconds === 11 * H && !byValue('lord-howe:daylight'));
+  const bst = byValue('gmt:daylight');
+  check('  GMT’s daylight row is British Summer Time, UTC+1, with no bare abbreviation',
+    bst?.name === 'British Summer Time' && bst.seconds === H && bst.abbr === undefined);
+
+  // New York, July 1980: EST + daylight stated, then the date moved to January.
+  const f = field(null, nyJuly1980).act({ type: 'choose', pick: { zone: 'est', daylight: 'daylight' } });
+  const v = f.view;
+  check('  EDT chosen from Auto: no switch in between, saves −4 as stated terms',
+    v.mode === 'standard' && !v.pending && v.toSave?.tzOffset === -4 && !v.flag &&
+      same(v.toSave.tzEntry, { mode: 'standard', std: -5 * H, daylight: 'daylight', zone: 'est' }),
+    JSON.stringify(v.toSave));
+  check('  …and a moved date leaves it as stated', f.move({ ...nyJuly1980, month: 1 }).view.toSave?.tzOffset === -4);
+  const back = field(null, nyJuly1980)
+    .act({ type: 'choose', pick: { zone: 'est', daylight: 'daylight' } })
+    .act({ type: 'choose', pick: 'auto' }).view;
+  check('  Automatic chosen again saves what Auto saves', back.mode === 'auto' && zonePickValue(back) === 'auto' &&
+    back.toSave?.tzOffset === autoAt(nyJuly1980).tzOffset && !back.toSave.tzManual);
+
+  // Ulm 1879: the birthplace's mean time, +0:39:57 (the import fixture's value).
+  const ulmAt: ZoneMoment = { lat: 48.4011, lng: 9.9876, year: 1879, month: 3, day: 14, hour: 10, minute: 30 };
+  const lmt = field(null, ulmAt).act({ type: 'choose', pick: 'lmt' }).view;
+  check('  Local mean time at Ulm 1879 saves +0:39:57',
+    lmt.mode === 'offset' && zonePickValue(lmt) === 'lmt' && Math.round((lmt.toSave?.tzOffset ?? 0) * H) === 2397 &&
+      lmt.toSave?.tzEntry?.mode === 'offset' && lmt.toSave.tzEntry.basis === 'lmt',
+    JSON.stringify(lmt.toSave));
+  const ut = field(null, nyJuly1980).act({ type: 'choose', pick: 'ut' }).view;
+  check('  Universal Time saves zero, recorded as UT',
+    zonePickValue(ut) === 'ut' && ut.toSave?.tzOffset === 0 && ut.toSave.tzEntry?.mode === 'offset' &&
+      ut.toSave.tzEntry.basis === 'ut',
+    JSON.stringify(ut.toSave));
+
+  // Mumbai 1943 is flagged by detection: a row chosen is stated (no flag);
+  // Automatic chosen again is the lookup's again (flagged).
+  const mumbai: ZoneMoment = { lat: 19.076, lng: 72.8777, year: 1943, month: 8, day: 15, hour: 10, minute: 0 };
+  const ist = field(null, mumbai).act({ type: 'choose', pick: { zone: 'india', daylight: 'standard' } });
+  const istFlag = ist.view.flag;
+  const istAuto = ist.act({ type: 'choose', pick: 'auto' }).view;
+  check('  a row chosen for flagged Mumbai 1943 is not flagged; Automatic again is',
+    autoAt(mumbai).tzUncertain && !istFlag && istAuto.flag && !!istAuto.toSave?.tzUncertain);
+
+  // Manila 1840: its mean time is past ±15 h, so the entry does nothing.
+  const manila: ZoneMoment = { lat: 14.5995, lng: 120.9842, year: 1840, month: 6, day: 1, hour: 12, minute: 0 };
+  const man = field(null, manila).act({ type: 'choose', pick: 'lmt' }).view;
+  check('  Local mean time past ±15 h changes nothing (Manila 1840 stays on Automatic)',
+    man.mode === 'auto' && !man.lmtAvailable && man.toSave?.tzOffset === autoAt(manila).tzOffset);
+
+  // A composite's zone is fixed: the list has nothing to change.
+  const comp = chartAt(nyJuly1980, {
+    tzOffset: 0, tzIana: 'UTC', tzManual: true,
+    composite: { a: 'x', b: 'y' } as unknown as StoredChart['composite'],
+  });
+  const locked = field(comp, nyJuly1980).act({ type: 'choose', pick: { zone: 'est', daylight: 'standard' } }).view;
+  check('  a composite is untouched by a pick', locked.locked && locked.mode === 'auto' && locked.toSave === null);
+}
+
+console.log('\n── 7c. TWO PARTS AGREE: a chart saved in hidden terms comes back as it was ──');
+
+{
+  // Terms the list has no row for, each saved as a record. Opened, it must show
+  // "As saved" and write its five fields back untouched; a row chosen must
+  // move it (the list's own control still works); "As saved" chosen again
+  // must restore it exactly. Every record is asked all three.
+  type Hidden = [string, StoredChart];
+  const records: Hidden[] = [
+    ['an IANA pick', chartAt(nyJuly1980, { tzOffset: -5, tzIana: 'America/Chicago', tzManual: true })],
+    ['a whole-hour UTC pick', chartAt(nyJuly1980, { tzOffset: -5, tzIana: 'Etc/GMT+5', tzManual: true })],
+    ['a typed offset', chartAt(nyJuly1980, {
+      tzOffset: -5, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'offset', seconds: -5 * H, text: '5hw00' },
+    })],
+    ['war time', chartAt(yonkers1941, {
+      tzOffset: -4, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'standard', std: -5 * H, daylight: 'war', zone: 'est' },
+    })],
+    ['an unnamed imported standard time', chartAt(nyJuly1980, {
+      tzOffset: -4, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'standard', std: -5 * H, daylight: 'daylight' },
+    })],
+    ['a stored number Auto would no longer give', chartAt(yonkers1941, { tzOffset: -5, tzIana: 'America/New_York', tzUncertain: true })],
+  ];
+  const fieldsOf = (c: StoredChart) => ({
+    tzOffset: c.tzOffset, tzIana: c.tzIana, tzManual: !!c.tzManual, tzUncertain: !!c.tzUncertain, tzEntry: c.tzEntry,
+  });
+  every('opened: offered as "As saved", written back verbatim', records, ([label, c]) => {
+    const v = field(c, atOfChart(c)).view;
+    if (!v.saved || zonePickValue(v) !== 'saved') return `${label}: shows ${zonePickValue(v)}`;
+    return same(v.toSave, fieldsOf(c)) ? null : `${label}: ${JSON.stringify(v.toSave)}`;
+  });
+  every('…a row chosen moves it', records, ([label, c]) => {
+    const v = field(c, atOfChart(c)).act({ type: 'choose', pick: { zone: 'cet', daylight: 'standard' } }).view;
+    return v.toSave?.tzOffset === 1 && zonePickValue(v) === 'cet:standard' ? null : `${label}: ${JSON.stringify(v.toSave)}`;
+  });
+  every('…and "As saved" chosen again restores it exactly', records, ([label, c]) => {
+    const v = field(c, atOfChart(c))
+      .act({ type: 'choose', pick: { zone: 'cet', daylight: 'standard' } })
+      .act({ type: 'choose', pick: 'saved' }).view;
+    return zonePickValue(v) === 'saved' && same(v.toSave, fieldsOf(c)) ? null : `${label}: ${JSON.stringify(v.toSave)}`;
+  });
+
+  // Terms the list does have reopen on their own row, with nothing extra.
+  const edtChart = chartAt(nyJuly1980, {
+    tzOffset: -4, tzIana: 'America/New_York', tzManual: true,
+    tzEntry: { mode: 'standard', std: -5 * H, daylight: 'daylight', zone: 'est' },
+  });
+  const edtView = field(edtChart, nyJuly1980).view;
+  check('  a chart saved as EDT reopens on its row, with no "As saved" entry',
+    edtView.saved === null && zonePickValue(edtView) === 'est:daylight');
+
+  // An Auto record a fraction of a second off the live lookup: a row chosen
+  // and then Automatic again writes the record back, not a re-resolution.
+  const kolkata1850: ZoneMoment = { lat: 22.5726, lng: 88.3639, year: 1850, month: 1, day: 1, hour: 12, minute: 0 };
+  const legacy = chartAt(kolkata1850, { tzOffset: 5.891111, tzIana: 'Asia/Kolkata', tzUncertain: true });
+  const again = field(legacy, kolkata1850)
+    .act({ type: 'choose', pick: { zone: 'india', daylight: 'standard' } })
+    .act({ type: 'choose', pick: 'auto' }).view;
+  check('  an Auto record, a row chosen and Automatic chosen again, is written back as it was',
+    again.saved === null && same(again.toSave, fieldsOf(legacy)) &&
+      Math.abs(autoAt(kolkata1850).tzOffset - legacy.tzOffset) > 0,
+    JSON.stringify(again.toSave));
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);

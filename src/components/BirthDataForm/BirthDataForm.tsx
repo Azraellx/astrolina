@@ -600,9 +600,9 @@ export function BirthDataFields({
         </div>
 
         {/* Time zone: locked until a birthplace and date exist, then Auto (the
-            zone detected from the birthplace), folded to a summary with an
-            "Automatic" link that unfolds the other ways, like the coordinates
-            below. A chart saved another way opens unfolded. The
+            zone detected from the birthplace), folded to a summary with a
+            "Set manually" link that unfolds one list of zones, like the
+            coordinates below. A chart saved another way opens unfolded. The
             line under it says what the entered clock means in UT — the one value
             the chart math uses. A composite's zone is fixed at UT. */}
         <TimeZoneField
@@ -612,7 +612,7 @@ export function BirthDataFields({
         />
 
         {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default;
-            "Enter manually" reveals the inputs to enter a chart by raw lat/lng (which
+            "Set manually" reveals the inputs to enter a chart by raw lat/lng (which
             reverse-geocodes a place + re-detects the zone). */}
         {showCoordInputs ? (
           <div className="row">

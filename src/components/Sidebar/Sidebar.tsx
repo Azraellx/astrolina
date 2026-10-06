@@ -533,6 +533,7 @@ export function HintMenu<V extends string>({
   tier,
   locked,
   triggerTip,
+  listMaxHeight,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -547,6 +548,10 @@ export function HintMenu<V extends string>({
      *  N/A badge (the .ui-inert treatment), as on the other settings controls.
      *  (2026-10-02) */
     disabledHint?: string;
+    /** A heading over this option and the ones after it — static text, not a
+     *  row — where a long list falls into kinds (the chart form's time zones:
+     *  the ways in, then the named zones; 2026-10-05). */
+    section?: string;
   }[];
   /** A line above the options naming the question they answer. Static text, not a
    *  selectable row — use it where the option labels alone don't say what is being
@@ -571,6 +576,12 @@ export function HintMenu<V extends string>({
    *  explicit ask, so it keeps the upgrade flow; it is the on/off SWITCHES that
    *  explain in place instead (ui/HoverTip's TipButton `locked`; seam L73). */
   locked?: boolean;
+  /** A cap on the open list's height, in px, for a list long enough that
+   *  filling the window would bury the form it belongs to (the chart form's
+   *  ninety-odd time zones, 2026-10-05): it then opens beside its trigger like
+   *  a native select and scrolls. Without one the list is capped only by the
+   *  window, as before. */
+  listMaxHeight?: number;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -590,6 +601,7 @@ export function HintMenu<V extends string>({
     width: number;
     top: number;
     maxHeight: number;
+    maxWidth: number;
   } | null>(null);
   const current = options.find((o) => o.value === value);
 
@@ -614,8 +626,13 @@ export function HintMenu<V extends string>({
       const panelH = el
         ? el.scrollHeight + (el.offsetHeight - el.clientHeight) + 1
         : 240;
-      // Never taller than the viewport (minus margins); it scrolls past that.
-      const height = Math.min(panelH, vh - margin * 2);
+      // Never taller than the viewport (minus margins), nor than the caller's
+      // cap; it scrolls past that.
+      const height = Math.min(panelH, vh - margin * 2, listMaxHeight ?? Infinity);
+      // Rows wider than the trigger widen the panel rightward from its left edge;
+      // past the window's right margin they wrap instead (a phone-width form,
+      // whose trigger already spans the width).
+      const maxWidth = Math.max(r.width, window.innerWidth - r.left - margin);
       const spaceBelow = vh - r.bottom - gap - margin;
       const spaceAbove = r.top - gap - margin;
       let top: number;
@@ -635,9 +652,10 @@ export function HintMenu<V extends string>({
         prev.left === r.left &&
         prev.width === r.width &&
         prev.top === top &&
-        prev.maxHeight === height
+        prev.maxHeight === height &&
+        prev.maxWidth === maxWidth
           ? prev
-          : { left: r.left, width: r.width, top, maxHeight: height },
+          : { left: r.left, width: r.width, top, maxHeight: height, maxWidth },
       );
     };
     place();
@@ -651,8 +669,14 @@ export function HintMenu<V extends string>({
       if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
     };
+    // Caught in the CAPTURE phase and stopped there (2026-10-05), as the chart
+    // list's right-click menu does: Escape closes this panel and nothing else.
+    // Heard in the bubble phase, the same press also reached whatever holds the
+    // menu — inside My Charts it closed the whole window along with the list.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
     };
     // Re-pin to the trigger when the SIDEBAR (page) scrolls, but ignore scrolling
     // *inside* the panel — that's the user scrolling the list, and re-placing on it
@@ -664,15 +688,32 @@ export function HintMenu<V extends string>({
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', place);
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
       ro?.disconnect();
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', place);
       document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
     };
-  }, [open]);
+  }, [open, listMaxHeight]);
+
+  // A list long enough to scroll opens on the chosen row, centred, as a native
+  // select does — not at the top, a scroll away from what is chosen. Once per
+  // opening, after the panel is placed (its maxHeight is what makes it scroll);
+  // a list that fits has nowhere to scroll to, so short menus are unchanged.
+  const scrolledOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (!open) {
+      scrolledOpen.current = false;
+      return;
+    }
+    if (!box || scrolledOpen.current) return;
+    scrolledOpen.current = true;
+    const panel = panelRef.current;
+    const on = panel?.querySelector<HTMLElement>('.navmenu-item.on');
+    if (panel && on) panel.scrollTop = on.offsetTop - (panel.clientHeight - on.offsetHeight) / 2;
+  }, [open, box]);
 
   return (
     <div className="calc-menu">
@@ -739,6 +780,7 @@ export function HintMenu<V extends string>({
               left: box?.left ?? 0,
               top: box?.top ?? 0,
               minWidth: box?.width,
+              maxWidth: box?.maxWidth,
               maxHeight: box?.maxHeight,
               overflowY: 'auto',
               zIndex: 900,
@@ -753,20 +795,22 @@ export function HintMenu<V extends string>({
                 to make them do. */}
             {header && <span className="navmenu-header">{header}</span>}
             {options.map((o) => (
-              <HintMenuItem
-                key={o.value}
-                label={o.label}
-                hint={o.hint}
-                glyph={o.glyph}
-                disabled={o.disabled}
-                disabledHint={o.disabledHint}
-                selected={o.value === value}
-                onSelect={() => {
-                  if (o.disabled) return;
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-              />
+              <Fragment key={o.value}>
+                {o.section && <span className="navmenu-header is-section">{o.section}</span>}
+                <HintMenuItem
+                  label={o.label}
+                  hint={o.hint}
+                  glyph={o.glyph}
+                  disabled={o.disabled}
+                  disabledHint={o.disabledHint}
+                  selected={o.value === value}
+                  onSelect={() => {
+                    if (o.disabled) return;
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                />
+              </Fragment>
             ))}
             {note && <span className="navmenu-hint">{note}</span>}
           </div>,

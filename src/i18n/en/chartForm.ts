@@ -57,11 +57,38 @@ export const chartForm = {
       iana: 'Any zone in the time-zone database, found by name, city or abbreviation. Its rules for the birth date give the offset.',
       utc: 'A fixed whole-hour offset from UTC, with no daylight saving.',
     },
-    // The folded field's link (2026-10-05): it names how the zone is set now, as
-    // "Enter manually" sits beside the coordinates, and unfolds the switch. Its
-    // spoken name says what pressing it does, which the one word can't.
-    automatic: 'Automatic',
-    automaticAria: 'Time zone set automatically from the birthplace. Choose another way',
+    // The folded field's link (2026-10-05): the same words as the coordinates'
+    // link below it (enterCoords) — the two sit one under the other and do the
+    // same thing — rather than naming the current state, as "Automatic" did. Its
+    // spoken name also says what is set now, which the visible words don't.
+    setManually: 'Set manually',
+    setManuallyAria: 'Time zone set automatically from the birthplace. Set it manually',
+    // The one list the unfolded field shows (2026-10-05), in the app's own
+    // dropdown, so each entry has a hover tip. {iana} is the zone's id and
+    // {offset} both notations, neither translated. pickSaved names the terms a
+    // saved chart reopened in where the list has no entry for them (a zone
+    // picked from the tz database, a typed offset, war time…); {terms} is built
+    // from the strings here and the catalogue's names.
+    pickAuto: 'Automatic — from the birthplace ({iana})',
+    pickLmt: 'Local mean time of the birthplace · {offset}',
+    // The same entry while it is unavailable (lmtBeyond says why): on its
+    // calendar of the time the birthplace's mean time is past ±15 h.
+    pickLmtName: 'Local mean time of the birthplace',
+    pickUt: 'Universal Time (UT)',
+    // The heading over the named zones, partway down the list.
+    pickZones: 'Standard and daylight times',
+    pickSaved: 'As saved: {terms}',
+    pickSavedHint:
+      'The terms this chart was saved in. Keep them and saving writes its time zone back exactly as stored.',
+    // A saved standard offset that names no zone (an imported file's).
+    pickUnnamed: 'Standard time',
+    // The named rows' tips: where a standard time is kept ({region} is the
+    // catalogue's list of places; {since} is " · from 1946" on a zone that began
+    // within living memory, or empty), and what a daylight time adds to which
+    // standard time ({zone} "Eastern Standard (EST)", {amount} "+1 h").
+    pickStandardHint: 'Standard time, kept in {region}{since}.',
+    pickStandardHintBare: 'Standard time{since}.',
+    pickDaylightHint: 'Daylight time: {zone}, {amount}.',
     setPlace: 'Set a birthplace to choose a time zone',
     setDate: 'Add the birth date to set the time zone',
     // Auto's own line: which zone the birthplace resolved to. {iana} is the
@@ -119,7 +146,7 @@ export const chartForm = {
       'Its longitude ÷ 15, to the second, moved a whole day to the calendar kept there then: {offset}.',
     // Why the LMT button is unavailable: on its calendar of the time the
     // birthplace's mean time is past ±15 h (Manila before 1845).
-    lmtBeyond: 'On this date that comes to more than 15 hours from UT, past what an offset can state. Auto gives it.',
+    lmtBeyond: 'On this date that comes to more than 15 hours from UT, past what an offset can state. Automatic gives it.',
     utButton: 'Time is UT',
     utTip: 'The birth time is in UT',
     utHint: 'For a time recorded in Universal Time (GMT): the offset is zero.',
@@ -150,7 +177,7 @@ export const chartForm = {
     // data, a file's offset kept on import) reopens on that stored number. The
     // note names the terms it was saved in: Auto, a picked zone ({zone} is its
     // id, not translated), the whole-hour picker, or a recorded entry.
-    keptAsSaved: 'Kept as saved. Auto would now give {offset}.',
+    keptAsSaved: 'Kept as saved. Automatic would now give {offset}.',
     keptAsSavedZone: 'Kept as saved. {zone} would now give {offset}.',
     keptAsSavedUtc: 'Kept as saved. Its whole-hour offset would now give {offset}.',
     keptAsSavedTerms: 'Kept as saved. The terms recorded with it would now give {offset}.',
@@ -223,7 +250,9 @@ export const chartForm = {
   placeTabsAria: 'Which place to edit',
   latitude: 'Latitude',
   longitude: 'Longitude',
-  enterCoords: 'Enter manually',
+  // Worded like the time zone's link above it (tz.setManually, 2026-10-05):
+  // two links, one under the other, doing the same thing.
+  enterCoords: 'Set manually',
   errorNoPlace: 'Choose a birthplace from the dropdown.',
   errorNoName: 'Add a name.',
   // The time is optional — leaving it empty marks the birth time unknown.

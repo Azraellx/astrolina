@@ -121,7 +121,7 @@
   text-transform: uppercase;
 }
 
-/* Lat/Lng inputs (shown via "Enter manually"): two equal columns filling the row. */
+/* Lat/Lng inputs (shown via "Set manually"): two equal columns filling the row. */
 .birth-form .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -219,7 +219,7 @@
 }
 
 /* Read-only coordinate summary (the default): the auto-chosen lat/lng plus the
-   "Enter manually" link that swaps in the inputs above. */
+   "Set manually" link that swaps in the inputs above. */
 /* Notes and the source rating share a line — they answer the same question,
    where this data came from, once in prose and once in a code the app can
    reason about. The rating is fixed-width so the textarea takes the slack. */
@@ -633,10 +633,10 @@
 }
 
 /* ── Time zone (TimeZoneField.tsx, 2026-10-02) ───────────────────────────────
-   A caption, the switch between the five ways of giving a zone, that way's own
-   controls, then the line saying what the entered clock means in UT. A <div>
-   group rather than the <label> the other fields use: it holds several
-   controls, and a label can only name one. */
+   A caption, the one list of zones (2026-10-05; with the hidden switch on, the
+   five ways and each way's own controls), then the line saying what the
+   entered clock means in UT. A <div> group rather than the <label> the other
+   fields use: it can hold several controls, and a label can only name one. */
 .tz-field {
   display: flex;
   flex-direction: column;
@@ -652,6 +652,14 @@
 }
 .tz-summary-zone {
   overflow-wrap: anywhere;
+}
+
+/* Unfolded (2026-10-05): the one list, in the app's own dropdown (HintMenu —
+   its chrome comes from .thud-select / .calc-select), spanning the field like
+   the form's other inputs rather than hugging its current label. */
+.tz-pick .calc-menu {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Matches the captions the <label> fields get from `.birth-form label`. */
