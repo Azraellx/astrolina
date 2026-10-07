@@ -16,7 +16,6 @@ import {
 import { createPortal } from 'react-dom';
 import {
   MINOR_BODIES,
-  PLANET_COLORS,
   POINT_BODIES,
   TRADITIONAL_PLANETS,
   type CoordSystem,
@@ -29,7 +28,9 @@ import {
 import { LINE_TYPE_LABEL, type LineType } from '../../lib/astro/lines';
 import { overlayAuxBlocked } from '../../lib/astro/timeline';
 import type { OverlayMode } from '../../lib/astro/timeline';
-import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
+import { THEMES, type Theme, type ThemeChoice } from '../../lib/theme';
+import { planetInk } from '../../lib/themePalette';
+import type { ThemeOptionExtension } from '../../lib/extensions/themeOptions';
 import type { MapProjectionMode } from '../../lib/projection';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { GEODETIC_HELD } from '../../lib/geodeticHold';
@@ -172,8 +173,35 @@ interface SidebarProps {
    *  is that list, which is Advanced-only — hence the row's own gate below. */
   rulershipScheme: RulershipScheme;
   setRulershipScheme: (s: RulershipScheme) => void;
+  /** The DERIVED theme — the built-in the app is drawn in: a Custom theme's base while
+   *  Custom is chosen, else the built-in chosen. It marks the built-in rows, except while
+   *  Custom is LIVE, when the Custom row carries the mark instead. */
   theme: Theme;
-  setTheme: (t: Theme) => void;
+  /** The STORED choice (App's builtinPref + customChosen): 'custom' whenever Custom is the
+   *  choice, live or held. Decides whether the Customize opener shows. */
+  themePref: ThemeChoice;
+  /** App's setThemeSafe. It routes Custom without the entitlement to the upgrade flow,
+   *  seeds a copy of the current theme on a first pick, and refuses a re-pick of the marked
+   *  base while Custom is held — which the rows below also refuse, so nothing reaches it. */
+  setTheme: (t: ThemeChoice) => void;
+  /** The registered Custom option (lib/extensions/themeOptions), or null — always null in
+   *  the open core, whose list is then the three built-ins exactly as before. */
+  customOption: ThemeOptionExtension | null;
+  /** The reader may draw Custom: the option's entitlement (isEntitled), not the plan tier
+   *  — a reader with Advanced off resolves to a lower tier and keeps their theme. */
+  customEntitled: boolean;
+  /** Custom is chosen, entitled and has a spec: it is what is drawn. */
+  customLive: boolean;
+  /** Custom is chosen but can't be drawn. Its row stays, present but unavailable, and the
+   *  base carries the radio: a held choice marks the EFFECTIVE value (2026-10-06). */
+  customHeld: boolean;
+  /** The theme editor window's open state — App's, transient, never persisted. */
+  themeEditorOpen: boolean;
+  onToggleThemeEditor: () => void;
+  /** A live Custom theme is drawing the Outline basemap, which has no roads, rivers or
+   *  place names. Those Details switches then show present-but-unavailable, still showing
+   *  the stored choice, and nothing is written (CLAUDE.md row A: void, never write). */
+  basemapOutline: boolean;
   projection: MapProjectionMode;
   setProjection: (p: MapProjectionMode) => void;
   showRoads: boolean;
@@ -462,6 +490,70 @@ function HintOption({
       <span className="radio">{selected ? '●' : '○'}</span>
       <span className="label">{label}</span>
     </TipToggle>
+  );
+}
+
+// Appearance ▸ Theme's fourth row: a downstream build's Custom theme (lib/extensions/
+// themeOptions), in the built-in rows' own markup — radio, swatch, label — plus the
+// paid rung's badge and a hover tip, which the three built-ins don't carry.
+//
+// Its own component rather than TipToggle's `disabled`, because HELD is not that state.
+// A held Custom row is unavailable (dimmed, with the reason as the tip's note line and the
+// N/A badge), but the row IS the feature — pressing it is an explicit ask, so it keeps the
+// upgrade flow, as every gated teaser row does (lib/plan nudgeAction), where TipToggle's
+// disabled would swallow the click. Nothing it does writes the stored choice: that only
+// happens through setTheme, and only for a reader who may draw Custom. (2026-10-06)
+function CustomThemeOption({
+  option,
+  live,
+  held,
+  badge,
+  onPick,
+}: {
+  option: ThemeOptionExtension;
+  /** The row is what is drawn — it carries the radio. */
+  live: boolean;
+  /** Chosen but not available: dimmed, the base carries the radio, the tip says why. */
+  held: boolean;
+  /** The gated rung's compact badge, or '' when the build sets none or the badge policy
+   *  suppresses it. */
+  badge: string;
+  onPick: () => void;
+}) {
+  const { t } = useT();
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
+  const label = option.label();
+  // The core's own reason only if the option brings none — a held row must still say why
+  // (CLAUDE.md row A), and the core cannot name the tier that brings it back.
+  const heldNote = held ? option.heldHint?.() || t('settings.theme.customHeld') : undefined;
+  return (
+    <li>
+      <button
+        ref={ref}
+        type="button"
+        className={`theme-option theme-option-custom ${live ? 'active' : ''}${held ? ' is-held ui-inert' : ''}`}
+        onClick={onPick}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <span className="radio">{live ? '●' : '○'}</span>
+        {option.swatch?.() ?? <span className="swatch swatch-custom" />}
+        <span className="label">{label}</span>
+        {badge && <span className="navmenu-tier tier-gated">{badge}</span>}
+      </button>
+      <ChoiceTip
+        pos={pos}
+        title={label}
+        hint={option.hint?.() ?? ''}
+        note={heldNote}
+        // The row wears the rung's badge; its tip carries the tag too, as every gated
+        // control's does.
+        gated
+        unavailable={held}
+      />
+    </li>
   );
 }
 
@@ -1015,7 +1107,6 @@ function PlanetToggle({
   on,
   onToggle,
   onShiftClick,
-  theme,
   disabled = false,
   disabledHint,
   advanced,
@@ -1025,7 +1116,6 @@ function PlanetToggle({
   onToggle: () => void;
   /** Shift+click handler — used for "show / hide all planets". */
   onShiftClick?: () => void;
-  theme: Theme;
   /** The standard unavailable state (see .ui-inert and TipToggle's `disabled`):
    *  the current calculation settings can't place this body, so the switch can't
    *  be flipped either way — dimmed + dashed, with `disabledHint` naming the
@@ -1039,12 +1129,18 @@ function PlanetToggle({
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   const { labels } = useT();
   // Lilith's muted purple is hard to read against Earth's dark-brown settings panel,
-  // so its glyph in this list (only) uses a brighter lavender on Earth. Every other
-  // body — and every theme but Earth — keeps its canonical PLANET_COLORS tint.
+  // so its glyph in this list (only) takes --lilith-panel-ink: Earth declares it as a
+  // brighter lavender (index.css, LILITH_PANEL_GLYPH_EARTH), and a custom palette sets
+  // it where its own panel needs the lift (lib/themePalette ui.lilithPanelInk). Where
+  // nothing declares it — Glass, Dark — it falls through to the body's own colour.
+  // Every other body takes its body colour, planetInk: the canonical PLANET_COLORS tint
+  // until a custom palette moves it. A CSS variable rather than a test of the theme
+  // (2026-10-06), so the built-ins draw exactly what they did and a palette can reach it;
+  // safe here because PlanetGlyph's DOM form puts it in `style`, where var() resolves.
   const glyphColor =
-    planet === 'Lilith' && theme === 'vintage'
-      ? LILITH_PANEL_GLYPH_EARTH
-      : PLANET_COLORS[planet];
+    planet === 'Lilith'
+      ? `var(--lilith-panel-ink, ${planetInk('Lilith')})`
+      : planetInk(planet);
   return (
     <li>
       <button
@@ -1179,7 +1275,15 @@ export function Sidebar({
   rulershipScheme,
   setRulershipScheme,
   theme,
+  themePref,
   setTheme,
+  customOption,
+  customEntitled,
+  customLive,
+  customHeld,
+  themeEditorOpen,
+  onToggleThemeEditor,
+  basemapOutline,
   projection,
   setProjection,
   showRoads,
@@ -1274,6 +1378,28 @@ export function Sidebar({
   const skyHeld = skyHeldFor(lineSystem);
   const skyHeldWhy = skyHeld ? t('settings.inert.skyHeld') : undefined;
 
+  // The Outline basemap (a live Custom theme's map choice) is coastlines only, so the
+  // basemap Details switches have nothing to act on: present but unavailable, each still
+  // showing its stored choice, with the reason and its fix. A void combination (CLAUDE.md
+  // row A), so nothing is written — another map brings both back exactly as they were.
+  // (2026-10-06)
+  const outlineWhy = basemapOutline ? t('settings.theme.outlineUnavailable') : undefined;
+
+  // Appearance ▸ Theme, with a downstream Custom option (lib/extensions/themeOptions).
+  // Shown to a reader who may draw it, as a teaser where the build nudges the paid rung,
+  // and ALWAYS while it is held — a chosen theme the reader can't draw stays visible with
+  // its reason (row A), even for a guest, whom the teaser policy would otherwise hide it
+  // from. The open core registers no option, so none of this renders there.
+  const showCustomTheme =
+    customOption != null && (customEntitled || customHeld || shouldShowNudge('gated'));
+  // The Customize opener, beneath the list while Custom is the STORED choice: the Aspect
+  // Lines opener's rules, visible once the reader may use it or as a teaser where the build
+  // nudges (hidden otherwise — a held guest gets the row and its reason, not an opener).
+  const showThemeEditorOpener =
+    customOption != null &&
+    themePref === 'custom' &&
+    (customEntitled || shouldShowNudge('gated'));
+
   // TELL THE MAP when this panel arrives, changes size, and leaves. The map keeps its line labels
   // off every panel's rect (HUD_SELECTORS there lists `.sidebar`), cached until `astro:hud-moved`,
   // and nothing here said so: opening it left labels under it, and closing it left the ones that
@@ -1331,19 +1457,79 @@ export function Sidebar({
         <div className="sidebar-section">
           <h2>{t('settings.headings.theme')}</h2>
           <ul className="theme-list">
-            {THEMES.map((th) => (
-              <li key={th}>
-                <button
-                  type="button"
-                  className={`theme-option ${theme === th ? 'active' : ''}`}
-                  onClick={() => setTheme(th)}
-                >
-                  <span className="radio">{theme === th ? '●' : '○'}</span>
-                  <span className={`swatch swatch-${th}`} />
-                  <span className="label">{labels.theme(th)}</span>
-                </button>
-              </li>
-            ))}
+            {THEMES.map((th) => {
+              // The radio marks what is DRAWN. With no Custom theme live that is
+              // exactly `theme === th`, as it always was; while one is live its row
+              // carries the mark and no built-in does, though `theme` is its base.
+              const marked = !customLive && theme === th;
+              return (
+                <li key={th}>
+                  <button
+                    type="button"
+                    className={`theme-option ${marked ? 'active' : ''}`}
+                    onClick={() => {
+                      // While Custom is HELD, the row marked is the base it is drawn
+                      // in — marked as the effective value, not because it was picked.
+                      // A re-pick would write that masked value over the stored choice
+                      // (CLAUDE.md rule 2; Discovery's menu did exactly this), so it is
+                      // refused here as App's setThemeSafe refuses it: inert in fact,
+                      // and a re-pick of the marked radio looks like a no-op anyway.
+                      if (customHeld && marked) return;
+                      setTheme(th);
+                    }}
+                  >
+                    <span className="radio">{marked ? '●' : '○'}</span>
+                    <span className={`swatch swatch-${th}`} />
+                    <span className="label">{labels.theme(th)}</span>
+                  </button>
+                </li>
+              );
+            })}
+            {showCustomTheme && customOption && (
+              <CustomThemeOption
+                option={customOption}
+                live={customLive}
+                held={customHeld}
+                badge={gatedBadge}
+                // Never a write without the entitlement: the teaser — and a held row,
+                // whose fix is the same — runs the build's upgrade flow instead.
+                onPick={() => (customEntitled ? setTheme('custom') : nudgeAction())}
+              />
+            )}
+            {/* The Customize opener, in the Aspect Lines opener's exact form: a
+                gated-rung sub-row under the choice it belongs to, badged, a teaser
+                that keeps the upgrade flow where the reader can't use it. It toggles
+                the editor only while Custom is drawn; chosen with the entitlement
+                but no spec to edit, it is the same ask as picking Custom again, so
+                it re-seeds through setTheme rather than opening an empty editor.
+                On touch, OPENING the editor also dismisses this dock, as Minor
+                bodies ▸ More does below — done in App (toggleThemeEditor and
+                setThemeSafe), where the first pick's opening is decided. */}
+            {showThemeEditorOpener && (
+              <TipToggle
+                className={`thud-select calc-menu-trigger theme-custom-open ${customLive && themeEditorOpen ? 'open' : ''}`}
+                onClick={() => {
+                  if (customLive) {
+                    onToggleThemeEditor();
+                    return;
+                  }
+                  if (customEntitled) {
+                    setTheme('custom');
+                    return;
+                  }
+                  nudgeAction(); // tier-locked teaser → the account/upgrade flow
+                }}
+                ariaPressed={customLive && themeEditorOpen}
+                title={t('settings.theme.customize')}
+                hint={t('settings.theme.customizeHint')}
+                gated
+              >
+                <span className="calc-menu-value">{t('settings.theme.customize')}</span>
+                {gatedBadge && (
+                  <span className="navmenu-tier tier-gated">{gatedBadge}</span>
+                )}
+              </TipToggle>
+            )}
           </ul>
 
           {/* The whole Details section is map-surface-only (basemap linework,
@@ -1355,7 +1541,8 @@ export function Sidebar({
           <h2>{t('settings.headings.details')}</h2>
           <ul className="technique-list">
             {/* Roads and rivers share one switch — both are low-emphasis basemap
-                linework, so a single toggle covers them. */}
+                linework, so a single toggle covers them. Both basemap switches go
+                unavailable on the Outline map, which has neither (outlineWhy). */}
             <TipToggle
               className={`tech-toggle ${roadsRiversOn ? 'on' : 'off'}`}
               onClick={() => {
@@ -1364,6 +1551,8 @@ export function Sidebar({
                 setShowRivers(next);
               }}
               ariaPressed={roadsRiversOn}
+              disabled={basemapOutline}
+              disabledHint={outlineWhy}
               title={t('settings.details.roadsRivers')}
               hotkey="Shift R"
               hint={t('settings.details.roadsRiversHint')}
@@ -1377,6 +1566,8 @@ export function Sidebar({
               className={`tech-toggle ${showLabels ? 'on' : 'off'}`}
               onClick={() => setShowLabels(!showLabels)}
               ariaPressed={showLabels}
+              disabled={basemapOutline}
+              disabledHint={outlineWhy}
               title={t('settings.details.placeNames')}
               hotkey="Shift L"
               hint={t('settings.details.placeNamesHint')}
@@ -1486,7 +1677,6 @@ export function Sidebar({
                 onShiftClick={() =>
                   setAllPlanets(TRADITIONAL_PLANETS, !visiblePlanets.has(p))
                 }
-                theme={theme}
               />
             ))}
           </ul>
@@ -1516,7 +1706,6 @@ export function Sidebar({
                     !visiblePlanets.has(p),
                   )
                 }
-                theme={theme}
                 disabled={p === 'Fortune' && fortuneBlocked != null}
                 disabledHint={p === 'Fortune' ? fortuneBlocked : undefined}
                 advanced={p === 'Fortune' && !advUnlocked}
@@ -1539,7 +1728,6 @@ export function Sidebar({
                 onShiftClick={() =>
                   setAllPlanets(MINOR_BODIES, !visiblePlanets.has(p))
                 }
-                theme={theme}
               />
             ))}
             {/* The sixth: "More" opens the Minor bodies window (also '4' — the window

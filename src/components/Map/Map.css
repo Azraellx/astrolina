@@ -16,17 +16,23 @@
 /* 3D-globe "space" — the void behind the globe. MapLibre's globe has no native
    background color: the deep void is the transparent map canvas, so we paint it from
    here. Scoped to the globe (`:not(.proj-2d)`) so flat 2D is byte-for-byte unchanged.
-   Dark/Earth read as deep space (the "old Google Earth" look), Glass as a softer
-   twilight blue, Light as a pale daytime sky. Pairs with each theme's
-   `atmosphere-blend` (see SKY_SPECS) for the rim glow that hugs the globe. */
+   Dark reads as deep space, Earth as a dusk slate, Glass as a softer twilight blue.
+   The rim glow that hugs the globe is MapLibre's own atmosphere: the app sets no sky
+   of its own (the SKY_SPECS table this comment used to point to is not in the code).
+
+   The colour is `--globe-void` (2026-10-06): index.css declares each theme's, and a
+   Custom theme writes its own over it (lib/themePalette `map.globeVoid`). Each rule
+   keeps its theme's value as the fallback, so the void stays what it was wherever the
+   property is missing. A declaration HERE would beat the inherited Custom value, so
+   these only read it. */
 :root[data-theme='dark'] .map-container:not(.proj-2d) {
-  background-color: #04050b;
+  background-color: var(--globe-void, #04050b);
 }
 :root[data-theme='vintage'] .map-container:not(.proj-2d) {
-  background-color: #585a67;
+  background-color: var(--globe-void, #585a67);
 }
 :root[data-theme='glass'] .map-container:not(.proj-2d) {
-  background-color: #d6e4f4;
+  background-color: var(--globe-void, #d6e4f4);
 }
 
 /* Local Space ▸ "Hide map (transparent)": every basemap layer is blanked (see
@@ -313,7 +319,7 @@
   border-radius: 12px;
   background: rgb(var(--bg-menu));
   color: var(--text);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, calc(0.5 * var(--fx-shadow)));
 }
 
 .map-gl-fallback-card h2 {
@@ -430,7 +436,10 @@
   align-items: center;
   gap: 8px;
   padding: 9px 18px;
-  background: rgba(var(--bg-panel), 0.7);
+  /* The effect multipliers (index.css, 2026-10-06): a Custom theme's Frosted panels and
+     Shadows reach the map's own chrome too. Each is 1 / 0 on a built-in, so the values
+     below are the literals they replaced. */
+  background: rgba(var(--bg-panel), max(0.7, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.16);
   border-radius: 999px;
   color: var(--text-strong);
@@ -441,8 +450,8 @@
   white-space: nowrap;
   cursor: pointer;
   opacity: 0.42;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(calc(4px * var(--fx-blur)));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, calc(0.25 * var(--fx-shadow)));
   transition: opacity 0.18s ease, background 0.18s ease, border-color 0.18s ease,
     left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -452,7 +461,7 @@
 .map-zoom-out:hover,
 .map-zoom-out:focus-visible {
   opacity: 1;
-  background: rgba(var(--bg-panel), 0.92);
+  background: rgba(var(--bg-panel), max(0.92, var(--fx-opaque)));
   border-color: rgba(var(--tint), 0.3);
 }
 
@@ -677,7 +686,7 @@
   background: rgb(var(--bg-menu));
   border: 1px solid rgba(var(--tint), 0.16);
   border-radius: 8px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
 }
 .zenith-popup .maplibregl-popup-tip {
   display: none;
@@ -1598,7 +1607,7 @@
 }
 
 .maplibregl-ctrl-attrib {
-  background: rgba(var(--bg-panel), 0.78) !important;
+  background: rgba(var(--bg-panel), max(0.78, var(--fx-opaque))) !important;
   color: var(--text-muted) !important;
   font-size: 10px !important;
   padding: 2px 8px !important;
@@ -1674,7 +1683,7 @@
 .maplibregl-ctrl-group {
   display: flex !important;
   flex-direction: column !important;
-  background: rgba(var(--bg-panel), 0.94) !important;
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque))) !important;
   border: 1px solid rgba(var(--tint), 0.08) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
@@ -1709,7 +1718,7 @@
 }
 
 .maplibregl-ctrl-group {
-  background: rgba(var(--bg-panel), 0.94) !important;
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque))) !important;
   border: 1px solid rgba(var(--tint), 0.08) !important;
   box-shadow: none !important;
 }

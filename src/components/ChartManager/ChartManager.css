@@ -547,10 +547,10 @@
   padding: 4px;
   border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 8px;
-  background: rgba(var(--bg-menu), 0.98);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  background: rgba(var(--bg-menu), max(0.98, var(--fx-opaque)));
+  backdrop-filter: blur(calc(8px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(8px * var(--fx-blur)));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, calc(0.3 * var(--fx-shadow)));
   animation: ui-pop var(--dur-quick) var(--ease-pop);
 }
 

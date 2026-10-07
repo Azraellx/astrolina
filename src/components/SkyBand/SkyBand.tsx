@@ -32,7 +32,7 @@ import {
   type WheelEvent as ReactWheelEvent,
   type ReactNode,
 } from 'react';
-import { PLANET_COLORS, type NodeType, type PlanetName } from '../../lib/ephemeris';
+import type { NodeType, PlanetName } from '../../lib/ephemeris';
 import {
   skyDayRows,
   skyEventsBetween,
@@ -55,6 +55,7 @@ import { shouldShowNudge } from '../../lib/plan';
 import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
 import { usePhone } from '../../lib/touch';
 import { panelGlyphColor } from '../../lib/theme';
+import { planetInk } from '../../lib/themePalette';
 import { planetRank } from '../../lib/astro/format';
 import { useT } from '../../i18n';
 import { TipButton, TipSpan } from '../ui/HoverTip';
@@ -447,7 +448,7 @@ export function SkyBand({
   const bodyName = (p: PlanetName) => t(`planets.${p}.name`);
   // The colored body glyph, as the hover-tip PREFIX where the tip names a body.
   const tipGlyph = (p: PlanetName) => (
-    <PlanetGlyph planet={p} size={14} color={PLANET_COLORS[p]} />
+    <PlanetGlyph planet={p} size={14} color={planetInk(p)} />
   );
 
   // A body's times for one moment of the day. Usually one; both when it genuinely
@@ -466,7 +467,7 @@ export function SkyBand({
   // it. Without the entry it was simply missing here while the map drew its lines,
   // with nothing to say why (2026-10-02).
   const fortuneShown = fortuneOnMap && visiblePlanets.has('Fortune');
-  const fortuneGlyph = <PlanetGlyph planet="Fortune" size={14} color={PLANET_COLORS.Fortune} />;
+  const fortuneGlyph = <PlanetGlyph planet="Fortune" size={14} color={planetInk('Fortune')} />;
 
   // The per-body times card (the legend hover's hint).
   const timesCard = (d: BodyDayEvents): ReactNode => (
@@ -513,7 +514,7 @@ export function SkyBand({
     if (!planetary) return null;
     // The face is glyphs with no names beside them, so the Moon's ink follows the
     // theme (panelGlyphColor): its pale gray all but vanishes on Glass's light band.
-    const chipInk = (p: PlanetName) => panelGlyphColor(p, PLANET_COLORS[p]);
+    const chipInk = (p: PlanetName) => panelGlyphColor(p, planetInk(p));
     const shown = planetary.shown;
     // The hour in force when there is one on the shown day, else the shown day.
     const unavailable = phNow ? !phNow.ok : !shown.ok;
@@ -548,7 +549,7 @@ export function SkyBand({
         aria: t('skyTimes.planetary.aria.unavailable'),
         face: (
           <>
-            <PlanetGlyph planet="Sun" size={13} color={PLANET_COLORS.Sun} />
+            <PlanetGlyph planet="Sun" size={13} color={planetInk('Sun')} />
             <span className="sky-band-ph-until">—</span>
           </>
         ),
@@ -744,7 +745,7 @@ export function SkyBand({
                 its own hover tip (glyph · body · angle · time, the clock
                 markers' format), so nothing lights the whole column. */}
             <span className={`sky-band-tbl-body${dim ? ' is-dim' : ''}`}>
-              <PlanetGlyph planet={d.body} size={14} color={PLANET_COLORS[d.body]} />
+              <PlanetGlyph planet={d.body} size={14} color={planetInk(d.body)} />
             </span>
             {KINDS.map((k) => {
               const time = timesText(d, k);
@@ -864,7 +865,7 @@ export function SkyBand({
                     }
                     hint={inlineMode ? undefined : timesCard(d)}
                   >
-                    <PlanetGlyph planet={d.body} size={14} color={PLANET_COLORS[d.body]} />
+                    <PlanetGlyph planet={d.body} size={14} color={planetInk(d.body)} />
                     <span className="sky-band-body-name">{bodyName(d.body)}</span>
                     {inlineMode && inlineTimes(d)}
                   </TipSpan>

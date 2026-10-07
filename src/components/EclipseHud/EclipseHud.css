@@ -31,12 +31,12 @@
 
   --accent: var(--accent-brand);
   --accent-rgb: var(--accent-brand-rgb);
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   /* The edge border keeps the pin-state glow (a designated map-state cue). */
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(7px * var(--fx-blur)));
   /* Rise in when the mode brings the bar up — root only; drag/collapse toggle
      classes on this node and can't restart it. The individual translate/opacity
      animated here compose with the translateX(-50%) centering above. */
@@ -75,7 +75,7 @@
   align-items: center;
   gap: 7px;
   padding: 3px 14px 5px;
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   border-radius: 9px 9px 0 0;
   /* Title + move-grip (currentColor) track the pin state (designated map-state cue). */
   color: var(--map-accent);
@@ -120,11 +120,11 @@
 }
 .eclipse-hud-nub::before {
   left: -9px;
-  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), max(0.96, var(--fx-opaque))) 9.5px);
 }
 .eclipse-hud-nub::after {
   right: -9px;
-  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), max(0.96, var(--fx-opaque))) 9.5px);
 }
 
 .eclipse-hud-nub:hover .hud-move-hint {
@@ -178,8 +178,8 @@
   padding: 5px 14px;
   border-radius: 9px;
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(7px * var(--fx-blur)));
 }
 .eclipse-hud.is-collapsed .eclipse-hud-nub::before,
 .eclipse-hud.is-collapsed .eclipse-hud-nub::after {
@@ -316,10 +316,10 @@
   left: 50%;
   transform: translateX(-50%);
   width: 300px;
-  background: rgba(var(--bg-menu), 0.98);
+  background: rgba(var(--bg-menu), max(0.98, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 10px;
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
   padding: 8px;
   z-index: 20;
 }

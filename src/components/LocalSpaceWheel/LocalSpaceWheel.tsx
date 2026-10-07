@@ -21,11 +21,8 @@ import {
   type HoverTip,
 } from '../Wheel/WheelSvg';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import {
-  PLANET_COLORS,
-  type EclipticPosition,
-  type PlanetName,
-} from '../../lib/ephemeris';
+import type { EclipticPosition, PlanetName } from '../../lib/ephemeris';
+import { planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
 import { fmtDM } from '../../lib/astro/format';
 
@@ -301,12 +298,12 @@ export function LocalSpaceWheel({
               {t('expandedSidebar.localSpace.altTip', { alt: fmtDM(hoveredMark.alt, true) })}
             </>
           ),
-          color: PLANET_COLORS[hoveredMark.name],
+          color: planetInk(hoveredMark.name),
           marker: (
             <PlanetGlyph
               planet={hoveredMark.name}
               size={14}
-              color={PLANET_COLORS[hoveredMark.name]}
+              color={planetInk(hoveredMark.name)}
             />
           ),
         }
@@ -334,6 +331,11 @@ export function LocalSpaceWheel({
           <stop offset="100%" className="lsw-globe-lo" />
         </radialGradient>
       </defs>
+
+      {/* The globe's face, as the zodiac wheel's (.wheel-face, WheelSvg.css): unpainted
+          unless a Custom theme gives the wheels a solid background, which its planet discs
+          (.planet-disc-fill) then share. Under the shading, which is translucent. (2026-10-06) */}
+      <circle cx={c} cy={c} r={Rs} className="wheel-face" />
 
       {/* The sphere body: a shaded disc (lit upper-left) so the wireframe reads as a
           ball, plus a rim to sharpen the silhouette. */}
@@ -426,7 +428,7 @@ export function LocalSpaceWheel({
             y1={p1.sy}
             x2={p2.sx}
             y2={p2.sy}
-            stroke={a.color}
+            style={{ stroke: a.color }}
             strokeWidth={k}
             opacity={bothFront ? 0.7 : 0.22}
           />
@@ -459,7 +461,7 @@ export function LocalSpaceWheel({
                 cy={m.sy}
                 r={r}
                 className="planet-disc-fill"
-                stroke={PLANET_COLORS[m.name]}
+                style={{ stroke: planetInk(m.name) }}
                 strokeWidth={1.3 * k}
                 strokeDasharray={m.below ? '2 1.5' : undefined}
               />
@@ -468,7 +470,7 @@ export function LocalSpaceWheel({
                 x={m.sx}
                 y={m.sy}
                 size={16 * k}
-                color={PLANET_COLORS[m.name]}
+                color={planetInk(m.name)}
               />
             </g>
           </g>

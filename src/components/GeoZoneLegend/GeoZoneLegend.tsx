@@ -5,7 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The geodetic zone shading's legend: a 4×3 grid, elements down and modalities across, each
-// cell a sign's glyph on its zone's colour (GEO_ZONE_COLORS) — so the twelve cells ARE the
+// cell a sign's glyph on its zone's colour (the map's own zone palette) — so the twelve cells ARE the
 // twelve zones, and the palette explains itself. A row head shows only that element's zones,
 // a column head only that modality's; the same head again shows every zone. The cells are
 // not controls. Shown by the host only while the shading is drawn, in the map's bottom-right
@@ -20,7 +20,6 @@ import { BALANCE_ELEMENTS, BALANCE_MODALITIES } from '../../lib/astro/format';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import type { Element, Modality } from '../../lib/astro/dignities';
 import type { GeoZoneIsolate } from '../../lib/astro/geodeticGrid';
-import { GEO_ZONE_COLORS, type Theme } from '../../lib/theme';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -116,19 +115,22 @@ function useClearOfSettings(ref: RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
+// `colors` is the zone palette the map is shading with — MapStyle.geoZones, which is
+// GEO_ZONE_COLORS[theme] on a built-in theme — so a Custom theme's zones and their legend
+// can never disagree. It replaced a `theme` prop (2026-10-06): the theme alone no longer
+// says what colour a zone is.
 export function GeoZoneLegend({
-  theme,
+  colors,
   isolate,
   onIsolate,
 }: {
-  theme: Theme;
+  colors: Readonly<Record<Element, readonly [string, string, string]>>;
   isolate: GeoZoneIsolate;
   onIsolate: (next: GeoZoneIsolate) => void;
 }) {
   const { t } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   useClearOfSettings(rootRef);
-  const colors = GEO_ZONE_COLORS[theme];
   const isOn = (kind: 'element' | 'modality', value: Element | Modality) =>
     isolate?.kind === kind && isolate.value === value;
   // A head's tip says what pressing it will do: show only its group, or (pressed) every zone.

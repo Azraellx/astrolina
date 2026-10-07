@@ -11,12 +11,17 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  PLANET_COLORS,
   POINTS,
   type EclipticPosition,
   type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
+import {
+  ELEMENT_ORDER,
+  aspectInk,
+  planetInk,
+  wheelMotionInk,
+} from '../../lib/themePalette';
 import { useT } from '../../i18n';
 import type { EnumLabels, MsgKey, TFn } from '../../i18n';
 import { ANGLE_LABEL, fmtDM, lonRange, lonToZodiac, truncZodiac } from '../../lib/astro/format';
@@ -262,6 +267,10 @@ export interface Aspect {
   b: string;
   type: string;
   category: AspectCategory;
+  /** A CSS colour expression — `var(--aspect-<type>, <canonical hex>)` (lib/themePalette
+   *  aspectInk) — so a Custom theme recolours every table and chord from the stylesheet.
+   *  Use it in a `style` (a CSS property), never an SVG `fill=` / `stroke=` attribute, and
+   *  never as a hex to do arithmetic on. (2026-10-06) */
   color: string;
   orb: number;
   lonA: number;
@@ -277,11 +286,14 @@ const ASPECT_TYPES: {
   // Orb limits live in AspectOrbs (Advanced ▸ Aspect orbs); the default is
   // the original flat 7° across the majors. The common practice of a tighter
   // sextile (3-5°) is now one settings change away.
-  { name: 'conjunction', angle: 0,   color: '#f5b83d', category: 'conjunction' },
-  { name: 'opposition',  angle: 180, color: '#e85a4f', category: 'hard' },
-  { name: 'trine',       angle: 120, color: '#5ec2e0', category: 'harmonious' },
-  { name: 'square',      angle: 90,  color: '#e85a4f', category: 'hard' },
-  { name: 'sextile',     angle: 60,  color: '#5ec2e0', category: 'harmonious' },
+  //
+  // The colours are the canonical ones (conjunction gold, hard red, harmonious blue),
+  // now read through aspectInk so the hex lives once, in ASPECT_INK_CANON. (2026-10-06)
+  { name: 'conjunction', angle: 0,   color: aspectInk('conjunction'), category: 'conjunction' },
+  { name: 'opposition',  angle: 180, color: aspectInk('opposition'),  category: 'hard' },
+  { name: 'trine',       angle: 120, color: aspectInk('trine'),       category: 'harmonious' },
+  { name: 'square',      angle: 90,  color: aspectInk('square'),      category: 'hard' },
+  { name: 'sextile',     angle: 60,  color: aspectInk('sextile'),     category: 'harmonious' },
 ];
 
 const isLuminary = (name: string) => name === 'Sun' || name === 'Moon';
@@ -371,12 +383,12 @@ export function computeDeclinationAspects(
       if (isParallel && par <= orbs.declinationOrb) {
         out.push({
           a: a.name, b: b.name, type: 'parallel', category: 'conjunction',
-          color: '#f5b83d', orb: par, lonA: a.lon, lonB: b.lon,
+          color: aspectInk('parallel'), orb: par, lonA: a.lon, lonB: b.lon,
         });
       } else if (!isParallel && contra <= orbs.declinationOrb) {
         out.push({
           a: a.name, b: b.name, type: 'contraparallel', category: 'hard',
-          color: '#e85a4f', orb: contra, lonA: a.lon, lonB: b.lon,
+          color: aspectInk('contraparallel'), orb: contra, lonA: a.lon, lonB: b.lon,
         });
       }
     }
@@ -517,10 +529,21 @@ function signSectorPath(
 // about them. placeOnRing above replaced it and takes both sets.)
 
 // Retrograde / stationary highlight colors for the readout (sign · degree ·
-// minute) text only — the planet glyph keeps its own color. Plain hex (not theme
-// vars): red and dark-yellow read clearly on every theme.
-const RETRO_COLOR = '#e85a4f';
-const STATION_COLOR = '#c79a17';
+// minute) text only — the planet glyph keeps its own color. Fixed across the built-in
+// themes: red and dark-yellow read clearly on every one. Since 2026-10-06 they are the
+// var() expressions of lib/themePalette wheelMotionInk — `var(--wheel-retro, #e85a4f)` /
+// `var(--wheel-station, #c79a17)` — which no stylesheet declares, so a built-in theme draws
+// exactly those hexes and a Custom theme can retune them. Style values only.
+//
+// Note for whoever next reads the readout: the degree and minute <text> carry the status
+// colour as a `fill=` ATTRIBUTE, and `.wheel-svg .readout-deg` / `.readout-min` set `fill`
+// in WheelSvg.css — a class rule, which beats a presentation attribute (the header of
+// WheelSvg.css explains the mechanism). So today only the readout's SIGN glyph, which
+// paints currentColor off the group's inline `color`, actually turns red / yellow. Left as
+// it stands on purpose: moving the trio to an inline style would repaint every retrograde
+// readout on the built-in themes, which the Custom theme work must not do.
+const RETRO_COLOR = wheelMotionInk('retro');
+const STATION_COLOR = wheelMotionInk('station');
 
 // (The size-driven detail tiers moved to lib/wheelGeometry.ts, where they became
 // an OFFER rather than a verdict: what a wheel actually draws is now decided by
@@ -551,6 +574,17 @@ const MOTION_MARK: Record<MotionTag, { char: string; color: string }> = {
   stationary: { char: 'S', color: STATION_COLOR },
 };
 const motionWord = (t: TFn, tag: MotionTag) => t(`wheel.motion.${tag}` as MsgKey);
+
+// A sign glyph's ink on the wheel, by sign index (2026-10-06): the Custom theme's colour
+// for the sign's element when it draws signs by element, else its one sign colour, else
+// currentColor — which is what every sign glyph painted before, so a built-in theme (no
+// stylesheet declares any of the three) is unchanged. Element order is the zodiac's own
+// (Aries fire, Taurus earth, Gemini air, Cancer water, and round again). A STYLE value:
+// ZodiacGlyph writes it as one.
+const SIGN_INK: readonly string[] = Array.from(
+  { length: 12 },
+  (_, i) => `var(--wheel-sign-${ELEMENT_ORDER[i % 4]}, var(--wheel-sign, currentColor))`,
+);
 
 interface WheelSvgProps {
   size: number;
@@ -900,12 +934,17 @@ export function WheelSvg({
     Vx: angles.vertex,
     Avx: angles.antivertex,
   };
+  // The axis colours are the Custom theme's wheel axes when it sets them, and the accent /
+  // cool otherwise — the same var(--wheel-axis-*, …) pair the axis lines in WheelSvg.css
+  // read, so a code and its axis can never disagree. Neither variable is declared by any
+  // stylesheet, so a built-in theme paints var(--accent) / var(--cool) as before.
+  // (2026-10-06)
   const angleColor = (key: AngleKey) =>
     key === 'As' || key === 'Ds'
-      ? 'var(--accent)'
+      ? 'var(--wheel-axis-asc, var(--accent))'
       : key === 'Vx' || key === 'Avx'
         ? 'var(--text-muted)'
-        : 'var(--cool)';
+        : 'var(--wheel-axis-mc, var(--cool))';
   // Every mark — the four primary angles AND the Vertex axis — follows the
   // map's line-type filter toggles, so wheel and map always show the same set.
   const angleMarks = showAngleMarks
@@ -1268,6 +1307,10 @@ export function WheelSvg({
   // reads the same way as the zodiac band. When the body is retrograde / stationary
   // (the red / yellow readout, Advanced mode) its `status` appends the matching
   // ℞ / S tag to the hover title. Non-interactive wheels just draw the glyph.
+  //
+  // The glyph takes the sign ink (SIGN_INK) — except under a motion status, where it keeps
+  // currentColor: the group's red / yellow is what says the body is retrograde, and a sign
+  // colour painted over it would erase that. (2026-10-06)
   const readoutSign = (
     signIdx: number,
     x: number,
@@ -1275,8 +1318,9 @@ export function WheelSvg({
     size: number,
     status?: MotionTag | null,
   ) => {
+    const ink = status ? undefined : SIGN_INK[signIdx];
     if (!interactive) {
-      return <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />;
+      return <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} color={ink} />;
     }
     const mark = status ? MOTION_MARK[status] : null;
     const markWord = status ? motionWord(t, status) : null;
@@ -1306,7 +1350,7 @@ export function WheelSvg({
         aria-label={`${labels.sign(signIdx)}${markWord ? ` (${markWord})` : ''}`}
       >
         <circle cx={x} cy={y} r={9} className="planet-hit" />
-        <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} />
+        <ZodiacGlyph sign={signIdx} x={x} y={y} size={size} color={ink} />
       </g>
     );
   };
@@ -1318,6 +1362,13 @@ export function WheelSvg({
       height={size}
       viewBox={`0 0 ${size} ${size}`}
     >
+      {/* The wheel's face: the whole disc out to the rim, drawn first so everything sits
+          on it. Unpainted unless a Custom theme gives the wheel a solid background
+          (`fill: var(--wheel-face, none)` in WheelSvg.css) — no stylesheet declares that
+          variable, so on a built-in theme the panel shows through exactly as before.
+          (2026-10-06) */}
+      <circle cx={cx} cy={cy} r={rOuter} className="wheel-face" />
+
       {/* Zodiac band fill — a thick-stroked circle that paints the band
           between rOuter and rZodiacInner with a faint accent tint. */}
       {detailed && (
@@ -1431,6 +1482,7 @@ export function WheelSvg({
               y={pos.y}
               size={signGlyphPx}
               className="sign-rim"
+              color={SIGN_INK[i]}
             />
           );
         })}
@@ -1502,6 +1554,7 @@ export function WheelSvg({
                 y={signPos.y}
                 size={cuspSignPx}
                 className="cusp-rim-sign"
+                color={SIGN_INK[signIdx]}
               />
               {!maskAngleText && (
                 <text
@@ -1649,7 +1702,7 @@ export function WheelSvg({
             if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
             const pos = svgPos(mid, frameAnchor, rAspectRing, cx, cy);
             return (
-              <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} fill={a.color} opacity={opacity} />
+              <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} style={{ fill: a.color }} opacity={opacity} />
             );
           }
           const posA = svgPos(a.lonA, frameAnchor, rAspectRing, cx, cy);
@@ -1661,7 +1714,7 @@ export function WheelSvg({
               y1={posA.y}
               x2={posB.x}
               y2={posB.y}
-              stroke={a.color}
+              style={{ stroke: a.color }}
               strokeWidth={1}
               opacity={opacity}
             />
@@ -1685,7 +1738,7 @@ export function WheelSvg({
               key={`range-${p.name}`}
               className="wheel-range-arc"
               d={annularSectorPath(p.lon - h, p.lon + h, rPip - pipR, rZodiacInner, frameAnchor, cx, cy)}
-              fill={PLANET_COLORS[p.name]}
+              style={{ fill: planetInk(p.name) }}
               opacity={0.22}
               pointerEvents="none"
             />
@@ -1822,7 +1875,7 @@ export function WheelSvg({
                   y1={truePos.y}
                   x2={glyphPos.x}
                   y2={glyphPos.y}
-                  stroke={PLANET_COLORS[p.name]}
+                  style={{ stroke: planetInk(p.name) }}
                   strokeWidth={0.6}
                   opacity={0.4}
                 />
@@ -1832,7 +1885,7 @@ export function WheelSvg({
                 y1={tickPos.y}
                 x2={tipPos.x}
                 y2={tipPos.y}
-                stroke={PLANET_COLORS[p.name]}
+                style={{ stroke: planetInk(p.name) }}
                 strokeWidth={1.5}
               />
             </g>
@@ -1945,12 +1998,12 @@ export function WheelSvg({
                     note: bodyNotes?.get(p.name),
                     range: ranges?.get(p.name),
                   }),
-                  color: PLANET_COLORS[p.name],
+                  color: planetInk(p.name),
                   marker: (
                     <PlanetGlyph
                       planet={p.name}
                       size={14}
-                      color={PLANET_COLORS[p.name]}
+                      color={planetInk(p.name)}
                     />
                   ),
                 }),
@@ -1971,7 +2024,7 @@ export function WheelSvg({
                 cy={pos.y}
                 r={r}
                 className="planet-disc-fill"
-                stroke={PLANET_COLORS[p.name]}
+                style={{ stroke: planetInk(p.name) }}
                 strokeWidth={1.3}
               />
               <PlanetGlyph
@@ -1979,7 +2032,7 @@ export function WheelSvg({
                 x={pos.x}
                 y={pos.y}
                 size={glyphPx}
-                color={PLANET_COLORS[p.name]}
+                color={planetInk(p.name)}
               />
             </g>
           </g>
@@ -2053,7 +2106,7 @@ export function WheelSvg({
                   y1={truePos.y}
                   x2={glyphPos.x}
                   y2={glyphPos.y}
-                  stroke={PLANET_COLORS[p.name]}
+                  style={{ stroke: planetInk(p.name) }}
                   strokeWidth={0.6}
                   strokeDasharray="2 2"
                   opacity={0.45}
@@ -2063,7 +2116,7 @@ export function WheelSvg({
                   y1={tickPos.y}
                   x2={tipPos.x}
                   y2={tipPos.y}
-                  stroke={PLANET_COLORS[p.name]}
+                  style={{ stroke: planetInk(p.name) }}
                   strokeWidth={1.2}
                 />
                 {interactive ? (
@@ -2076,12 +2129,12 @@ export function WheelSvg({
                         r: 9,
                         title: labels.planet(p.name),
                         ...bodyTip(t, labels, p),
-                        color: PLANET_COLORS[p.name],
+                        color: planetInk(p.name),
                         marker: (
                           <PlanetGlyph
                             planet={p.name}
                             size={14}
-                            color={PLANET_COLORS[p.name]}
+                            color={planetInk(p.name)}
                           />
                         ),
                       })
@@ -2096,7 +2149,7 @@ export function WheelSvg({
                         cy={glyphPos.y}
                         r={9}
                         className="planet-disc-fill"
-                        stroke={PLANET_COLORS[p.name]}
+                        style={{ stroke: planetInk(p.name) }}
                         strokeWidth={1.1}
                         strokeDasharray="2 1.5"
                       />
@@ -2105,7 +2158,7 @@ export function WheelSvg({
                         x={glyphPos.x}
                         y={glyphPos.y}
                         size={13}
-                        color={PLANET_COLORS[p.name]}
+                        color={planetInk(p.name)}
                       />
                     </g>
                   </g>
@@ -2116,7 +2169,7 @@ export function WheelSvg({
                       cy={glyphPos.y}
                       r={9}
                       className="planet-disc-fill"
-                      stroke={PLANET_COLORS[p.name]}
+                      style={{ stroke: planetInk(p.name) }}
                       strokeWidth={1.1}
                       strokeDasharray="2 1.5"
                     />
@@ -2125,7 +2178,7 @@ export function WheelSvg({
                       x={glyphPos.x}
                       y={glyphPos.y}
                       size={13}
-                      color={PLANET_COLORS[p.name]}
+                      color={planetInk(p.name)}
                     />
                   </>
                 )}

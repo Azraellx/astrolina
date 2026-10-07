@@ -168,6 +168,8 @@ import {
 import { buildLineCard, lineReading, minorDisplayName, minorMarkHtml, minorNameHtml } from '../src/lib/lineCard';
 import { generateMinorParans } from '../src/lib/astro/parans';
 import { minorLineColor, minorPaletteSlot, THEMES, type Theme } from '../src/lib/theme';
+import { builtinPalette } from '../src/lib/themePalette';
+import { withMinorInks } from '../src/lib/lineInks';
 import {
   ASPECT_GLYPHS,
   ELEMENT_GLYPHS,
@@ -1299,6 +1301,7 @@ if (presentBodies.length === 0) {
   };
   const arcsec = (deg: number) => Math.abs(deg) * 3600;
   let placed = 0;
+  let paletteCompared = 0;
   let ayanSeen = Infinity;
   for (const [when, jd] of SEC7_DATES) {
     const eps = obliquity(jd);
@@ -1397,17 +1400,31 @@ if (presentBodies.length === 0) {
     }
 
     if (when !== '2012-01-31') continue;
-    // (f) Colour, in every theme — the wheel, every line and the zenith.
+    // (f) Colour, in every theme — the wheel, every line and the zenith. And, since the Custom
+    // theme (2026-10-06), the palette's own inks too: App decorates the wheel's catalog ring
+    // with `inks.minorOf` (minorDecorInked) and the map recolours the lines through
+    // withMinorInks, so for a built-in both must land on the colour minorLineColor gave —
+    // two independent paths to one body's colour, required to agree.
     for (const theme of THEMES) {
       const d = decorFor(theme);
+      const inks = builtinPalette(theme).inks;
       const w = buildWheelMinor(samples, { ayan: 0, decor: d, t, list: listOf(chartNumbers) });
       const lines = generateMinorLines(zod, celestial, d);
       const zen = generateMinorZenith(zod, celestial, d);
+      const inkedLines = withMinorInks(lines, inks);
+      const inkedZen = withMinorInks(zen, inks);
       for (const m of w) {
+        paletteCompared += 1;
         const mine = lines.features.filter((f) => f.properties.number === m.n);
         const z = zen.features.find((f) => f.properties.number === m.n);
         if (!m.color || mine.length === 0 || !mine.every((f) => f.properties.color === m.color) || z?.properties.color !== m.color) {
           note('f', `${theme} ${m.n}: wheel ${m.color}, lines ${[...new Set(mine.map((f) => f.properties.color))].join('/')}, zenith ${z?.properties.color}`);
+        }
+        const inkedMine = inkedLines.features.filter((f) => f.properties.number === m.n);
+        const inkedZ = inkedZen.features.find((f) => f.properties.number === m.n);
+        if (inks.minorOf(m.n) !== m.color || !inkedMine.every((f) => f.properties.color === m.color) ||
+          inkedZ?.properties.color !== m.color) {
+          note('f', `${theme} ${m.n}: wheel ${m.color}, palette minorOf ${inks.minorOf(m.n)}, inked lines ${[...new Set(inkedMine.map((f) => f.properties.color))].join('/')}`);
         }
       }
     }
@@ -1444,7 +1461,8 @@ if (presentBodies.length === 0) {
     !first.d && ayanSeen > 0.25, first.d ?? `least ayanamsa ${(ayanSeen * RAD2DEG).toFixed(2)}°`);
   check('7e one RA/dec, one azimuth and altitude — planet or catalog body, tropical or sidereal wheel (4 observers)',
     !first.e, first.e ?? '');
-  check(`7f the wheel's colour is its lines' and its zenith's, in all ${THEMES.length} themes`, !first.f, first.f ?? '');
+  check(`7f the wheel's colour is its lines' and its zenith's, and the palette's inks agree, in all ${THEMES.length} themes (${paletteCompared} bodies)`,
+    !first.f && paletteCompared > 0, first.f ?? (paletteCompared ? '' : 'NOTHING COMPARED'));
   check('7g the wheel\'s label is the lines\' card name — "Name (n)", "(n)" unnamed, never a leak', !first.g, first.g ?? '');
 
   // (h) Stations, located from the engine's own speeds — daily through 2012, bisected

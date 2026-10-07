@@ -50,15 +50,9 @@ import {
 } from '../../lib/astro/geodeticGrid';
 import type { TruncZodiac } from '../../lib/astro/format';
 import { canonicalLng, fmtLatDM, fmtLngDM } from '../../lib/coordFormat';
-import {
-  BASEMAP_STYLE_URLS,
-  WORLD_FALLBACK_COLORS,
-  LABEL_HALO_COLORS,
-  ECLIPSE_LABEL_HALO,
-  GEO_GRID_STYLE,
-  ZENITH_DISC_COLORS,
-  type Theme,
-} from '../../lib/theme';
+import { BASEMAP_STYLE_URLS, type Theme } from '../../lib/theme';
+import { builtinPalette, planetInk, type BasemapChoice, type MapStyle } from '../../lib/themePalette';
+import { spriteSpecFor, type SpriteSpec } from '../../lib/lineInks';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
 import type { MissionEvent } from '../../lib/missions';
 import {
@@ -74,13 +68,28 @@ import {
   projectVisible,
   screenAngleOfNorth,
 } from '../../lib/mapProjection';
-import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
 import {
+  ensureGlyphImages,
+  rebakeGlyphImages,
+  STAR_MARK_IMAGE,
+  ZENITH_GLYPH_PREFIX,
+  NADIR_GLYPH_PREFIX,
+} from './glyphImages';
+import {
+  applyBasemapPaint,
   applyDetailToggles,
-  applyLabelContrast,
+  forgetBasemapPaint,
   isChartSource,
   WORLD_FALLBACK_SOURCE,
 } from './basemapStyle';
+import {
+  applyMapStyle,
+  applyPreviewInks,
+  bindLayer,
+  BOUND_LAYER_IDS,
+  minorNumbersIn,
+  type MapPreview,
+} from './mapStyleApply';
 import { setLabelColliders } from './labelCollider';
 // Importing it registers MapLibre's right-to-left text plugin, once per page (see the module).
 import { ensureRtlTextPlugin } from './rtlTextPlugin';
@@ -153,7 +162,7 @@ import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { LINE_TYPE_LABEL, OPPOSITE_ANGLE } from '../../lib/astro/lines';
-import { PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
+import type { PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { TFn } from '../../i18n';
@@ -1335,6 +1344,9 @@ function hitReach(touch: boolean): { line: number; zenith: number; cross: number
     : { line: LINE_HIT_TOLERANCE_PX, zenith: ZENITH_HIT_TOLERANCE_PX, cross: CROSS_HIT_TOLERANCE_PX };
 }
 
+// `color` goes into a style attribute, so it may be a var() — planetInk(), for the glyphs below
+// that name a body without a line colour of their own to hand (lib/themePalette: the body's
+// canonical tint for a built-in theme, the palette's glyph ink under a Custom one).
 function glyphHtml(planet: PlanetName, color: string): string {
   return `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${PLANET_GLYPHS[planet]}</span>`;
 }
@@ -1381,10 +1393,10 @@ function lineLabelHtml(
       const opp = OPPOSITE_ANGLE[props.lineType as LineType];
       row =
         pre +
-        glyphHtml('NorthNode', PLANET_COLORS.NorthNode) +
+        glyphHtml('NorthNode', planetInk('NorthNode')) +
         `${labels.planet('NorthNode')} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}` +
         `<span class="cross-tip-x">/</span>` +
-        glyphHtml('SouthNode', PLANET_COLORS.SouthNode) +
+        glyphHtml('SouthNode', planetInk('SouthNode')) +
         `${labels.planet('SouthNode')} ${tagHtml(ANGLE_CODE[opp])}`;
     } else {
       row =
@@ -1398,14 +1410,14 @@ function lineLabelHtml(
     const planet = props.planet as PlanetName;
     if (props.kind === 'midpoint') {
       const pb = props.planetB as PlanetName;
-      // colorB carries the same light-theme colour swap as props.color (see
-      // App.withThemeLineColors), so a "Sun/Moon" tip stays readable on Glass/Earth.
+      // colorB carries the same map-line colour as props.color (lib/lineInks withLineInks:
+      // the Moon's slate on Glass/Earth among them), so a "Sun/Moon" tip stays readable there.
       row =
         pre +
         glyphHtml(planet, props.color as string) +
         labels.planet(planet) +
         `<span class="cross-tip-x">/</span>` +
-        glyphHtml(pb, (props.colorB as string) ?? PLANET_COLORS[pb]) +
+        glyphHtml(pb, (props.colorB as string) ?? planetInk(pb)) +
         `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
     } else {
       // Name the line by the angle it actually is (its `branch`), not the
@@ -1451,7 +1463,7 @@ function lineLabelHtml(
     // other — the planet paran row's shape, with the catalog side named as its lines are.
     const partner = props.partner as PlanetName;
     const own = minorMarkHtml(props, 'cross-tip-glyph') + minorNameHtml(props, t);
-    const other = glyphHtml(partner, PLANET_COLORS[partner]) + labels.planet(partner);
+    const other = glyphHtml(partner, planetInk(partner)) + labels.planet(partner);
     const [first, second] = props.side === 'A' ? [own, other] : [other, own];
     // The tag leads both sides, as on the planet rows: both bodies are the overlay's.
     row =
@@ -1469,11 +1481,11 @@ function lineLabelHtml(
     // The tag leads BOTH bodies, as on the chip: an overlay's paran pairs two of its own.
     row =
       pre +
-      glyphHtml(pa, PLANET_COLORS[pa]) +
+      glyphHtml(pa, planetInk(pa)) +
       `${labels.planet(pa)} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
       `<span class="cross-tip-x">×</span>` +
       pre +
-      glyphHtml(pb, PLANET_COLORS[pb]) +
+      glyphHtml(pb, planetInk(pb)) +
       `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
   } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
     row = t('map.ecliptic');
@@ -1846,7 +1858,27 @@ interface MapProps {
    *  shrinks out from under it and the GL viewport re-fits. Same prop-not-var
    *  reasoning as {@link bottomInset}; likewise ignored under the Capture frame. */
   leftInset?: number;
+  /** The theme the map is drawn ON — a built-in, or a Custom theme's base. A change of it, or of
+   *  `mapStyle.basemap`, takes the full restyle path. */
   theme: Theme;
+  /** Everything the map's own layers take from the palette (lib/themePalette MapStyle): widths,
+   *  dashes, opacities, halos, the zenith discs, the grid, the basemap and its paint. A change of
+   *  `basemap` installs a new style; every other change is repainted live (setPaintProperty, from
+   *  mapStyleApply's LAYER_BINDINGS), never by a new style. Hand it THROTTLED: a dash or a
+   *  data-driven value repainted re-tiles its source. Identity-stable per content (the engine's
+   *  section memo), which is what the repaint keys on. */
+  mapStyle: MapStyle;
+  /** What the glyph, stamp, spark and coin sprites are baked from (lib/lineInks spriteSpecFor of
+   *  the same palette as `mapStyle`); re-baked in place when it changes. Absent → the built-in
+   *  spec for `theme`, which is exactly what the sprites were baked from before the palette. */
+  spriteSpec?: SpriteSpec;
+  /** A Custom theme's editor previewing a draft (mapStyleApply MapPreview): its style painted
+   *  over the chart's layers in place of `mapStyle`, and its line inks as a colour expression on
+   *  each line layer — paint only, transient, never a sprite, a data push or a new style. Null
+   *  or absent → what is committed. Hand it THROTTLED, as `mapStyle` (each change re-tiles the
+   *  line sources), and drop it only once the committed props carry what it showed, or the old
+   *  colours flash in between (App does both). (2026-10-06) */
+  mapPreview?: MapPreview | null;
   /** Flat Mercator ('2d') or 3D globe ('3d'). */
   projection: MapProjectionMode;
   /** Basemap detail toggles (the Theme tab's "Hide details" section). Default-on. */
@@ -2152,43 +2184,46 @@ function flyWithSidebarOffset(
 // space uses '→' on the outward (toward-planet) half and '←' on the inward half,
 // so each axis reads as energy flowing out toward the planet and back in. Tight
 // spacing reads as one connected arrowed line; `text-ignore-placement` keeps them
-// decorative so they never suppress the planet labels.
+// decorative so they never suppress the planet labels. Whether they show at all, and an
+// overlay's catalog arrows' softening, are the palette's (mapStyleApply LAYER_BINDINGS).
 function addArrowLayer(
   map: maplibregl.Map,
+  style: MapStyle,
   id: string,
   source: string,
   filter: ExpressionSpecification,
   glyph: string,
   textSize = 15,
-  opacity = 1,
 ) {
-  map.addLayer({
-    id,
-    source,
-    type: 'symbol',
-    filter,
-    layout: {
-      'text-field': glyph,
-      'symbol-placement': 'line',
-      // Spaced out so the base line shows through as the shaft between arrowheads
-      // — reads as ———→———→ rather than a dense →→→ run.
-      'symbol-spacing': 64,
-      'text-size': textSize,
-      'text-font': ['Noto Sans Regular'],
-      'text-rotation-alignment': 'map',
-      'text-pitch-alignment': 'map',
-      'text-keep-upright': false,
-      'text-allow-overlap': true,
-      'text-ignore-placement': true,
-      'text-padding': 1,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      // Only an overlay's catalog arrows are softened (see 'minor-lines-ov'); every other
-      // arrow layer keeps the paint it always had.
-      ...(opacity !== 1 ? { 'text-opacity': opacity } : {}),
-    },
-  });
+  map.addLayer(
+    bindLayer(
+      {
+        id,
+        source,
+        type: 'symbol',
+        filter,
+        layout: {
+          'text-field': glyph,
+          'symbol-placement': 'line',
+          // Spaced out so the base line shows through as the shaft between arrowheads
+          // — reads as ———→———→ rather than a dense →→→ run.
+          'symbol-spacing': 64,
+          'text-size': textSize,
+          'text-font': ['Noto Sans Regular'],
+          'text-rotation-alignment': 'map',
+          'text-pitch-alignment': 'map',
+          'text-keep-upright': false,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'text-padding': 1,
+        },
+        paint: {
+          'text-color': ['get', 'color'],
+        },
+      },
+      style,
+    ),
+  );
 }
 
 // Filter expression for one direction-tagged local-space half.
@@ -2233,7 +2268,13 @@ const WF_LINE = 'world-fallback-line';
 // URL only so chart-line TEXT can reuse the SW-cached font PBFs when present — each with a bounded
 // wait, so a network that answers nothing can't hold the chart lines back (basemapFallback.ts);
 // the outline's fills/lines need no glyphs, so even a cold cache still shows continents + borders.
-function offlineStyle(theme: Theme): StyleSpecification {
+//
+// Since 2026-10-06 it is also a basemap in its own right: a Custom theme's Outline map (the classic
+// plain sheet — flat land, flat water, coastlines) is this style ON PURPOSE, online or not. Its
+// colours are MapStyle.worldFallback either way: for a built-in theme, that theme's
+// WORLD_FALLBACK_COLORS, as they always were.
+type WorldFallbackColors = MapStyle['worldFallback'];
+function offlineStyle(c: WorldFallbackColors): StyleSpecification {
   return {
     version: 8,
     glyphs: boundedWait('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'),
@@ -2242,10 +2283,29 @@ function offlineStyle(theme: Theme): StyleSpecification {
       {
         id: 'background',
         type: 'background',
-        paint: { 'background-color': WORLD_FALLBACK_COLORS[theme].ocean },
+        paint: { 'background-color': c.ocean },
       },
     ],
   };
+}
+
+// Which style a basemap mode and choice draw: the live vector style for that basemap, or the
+// self-contained one above — with no connection, or for the Outline map.
+type StyleKind = 'live' | 'offline';
+const styleKind = (mode: BasemapMode, basemap: BasemapChoice): StyleKind =>
+  mode === 'live' && basemap !== 'outline' ? 'live' : 'offline';
+/** The live style a basemap choice loads — the base theme's own for Outline, which loads none
+ *  (asked for only by the probes that look for the way back online, which Outline never runs). */
+const liveStyleUrl = (basemap: BasemapChoice, theme: Theme): string =>
+  BASEMAP_STYLE_URLS[basemap === 'outline' ? theme : basemap];
+
+// Repaint the offline / Outline style's own layers — the ocean background, the land fill, the
+// coastlines — from a palette change, on a style that stays. Only ever on that style: a live
+// style's `background` is its land, and applyBasemapPaint's.
+function applyWorldFallbackPaint(map: maplibregl.Map, c: WorldFallbackColors): void {
+  if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', c.ocean);
+  if (map.getLayer(WF_FILL)) map.setPaintProperty(WF_FILL, 'fill-color', c.land);
+  if (map.getLayer(WF_LINE)) map.setPaintProperty(WF_LINE, 'line-color', c.line);
 }
 
 // The world outline's module, imported once. It is dynamic-imported, so it stays off the start-up
@@ -2278,8 +2338,12 @@ function warmWorldOutline(): void {
 }
 
 // Draw the world outline into the current (offline) style, just above the background so it sits
-// BENEATH the chart lines (added by setupCustomLayers before this async load resolves).
-async function installWorldFallback(map: maplibregl.Map, theme: Theme): Promise<void> {
+// BENEATH the chart lines (added by setupCustomLayers before this async load resolves). The colours
+// are read after the load, so a palette that moved meanwhile is the one drawn.
+async function installWorldFallback(
+  map: maplibregl.Map,
+  colours: () => WorldFallbackColors,
+): Promise<void> {
   if (!map.getStyle() || map.getLayer(WF_FILL)) return;
   let worldOutline: () => GeoJSON.FeatureCollection;
   try {
@@ -2292,7 +2356,7 @@ async function installWorldFallback(map: maplibregl.Map, theme: Theme): Promise<
   if (!map.getSource(WF_SOURCE)) {
     map.addSource(WF_SOURCE, { type: 'geojson', data: worldOutline() });
   }
-  const c = WORLD_FALLBACK_COLORS[theme];
+  const c = colours();
   const beforeId = (map.getStyle().layers ?? []).find((l) => l.id !== 'background')?.id;
   map.addLayer(
     { id: WF_FILL, type: 'fill', source: WF_SOURCE, paint: { 'fill-color': c.land } },
@@ -2331,14 +2395,12 @@ const GEO_GRID_STACK = [
   { id: 'geo-grid-asc-layer', before: 'ecliptic-layer' },
 ] as const;
 
-function setupCustomLayers(
-  map: maplibregl.Map,
-  haloColor: string,
-  measureColor: string,
-  zenithFill: string,
-  eclipseLabelHalo: { color: string; width: number },
-  geoGridStyle: { line: string; opacity: number; width: number; hover: number },
-) {
+// Every value a palette decides — widths, dashes, opacities, the halos, the zenith discs, the node
+// pairs' colours, the grid's paint — is written into its layer from `style` by bindLayer, from the
+// one table the live repaint also reads (mapStyleApply LAYER_BINDINGS); the definitions below leave
+// those properties out. `measureColor` is the map-state accent, which has its own effect.
+function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: string) {
+  const bind = <L extends LayerSpecification>(spec: L): L => bindLayer(spec, style);
   // Night-side shading (Filters ▸ Night Shading): the very bottom of the
   // custom stack — an environment wash that everything astrological draws over.
   // No tile buffer: see WASH_SOURCE_OPTS (a buffered z0 tile shaded a band twice on the globe).
@@ -2362,50 +2424,46 @@ function setupCustomLayers(
   // simplification would collapse at the antimeridian (see PARAN_SOURCE_OPTS); and no
   // tile buffer, for the night shade's reason (WASH_SOURCE_OPTS).
   map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...BAND_SOURCE_OPTS });
-  map.addLayer({
-    id: 'orb-bands-layer',
-    source: 'orb-bands',
-    type: 'fill',
-    paint: {
-      'fill-color': ['get', 'color'],
-      'fill-opacity': ['get', 'opacity'],
-      'fill-antialias': false,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'orb-bands-layer',
+      source: 'orb-bands',
+      type: 'fill',
+      // fill-opacity: the per-feature opacity, times the palette's orb strength (bound).
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-antialias': false,
+      },
+    }),
+  );
 
   // The ecliptic (zodiac great circle) projected to its sub-points — a subtle
-  // bright-yellow reference threading through the Sun's zenith. Added first so it
+  // bright-yellow reference threading through the Sun's zenith (its colour, width and
+  // opacity are the palette's: #ffe14d, 1.6, 0.45 on every built-in). Added first so it
   // sits beneath the ACG lines, parans, and stamps.
   map.addSource('ecliptic', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'ecliptic-layer',
-    source: 'ecliptic',
-    type: 'line',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': '#ffe14d',
-      'line-width': 1.6,
-      'line-opacity': 0.45,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'ecliptic-layer',
+      source: 'ecliptic',
+      type: 'line',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+    }),
+  );
   // The overlay's ecliptic — the same bright-yellow reference, but DOTTED so it reads
   // as the derived layer: a short round-capped dash + gap (a non-zero dash so it's
   // reliably visible; round caps soften it toward dots). Fed only while the overlay
   // zeniths are shown (the App gates it). Added right after the natal ecliptic, so
   // both sit beneath the lines, parans, and stamps.
   map.addSource('ecliptic-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'ecliptic-ov-layer',
-    source: 'ecliptic-ov',
-    type: 'line',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': '#ffe14d',
-      'line-width': 1.6,
-      'line-opacity': 0.45,
-      'line-dasharray': [1, 2],
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'ecliptic-ov-layer',
+      source: 'ecliptic-ov',
+      type: 'line',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+    }),
+  );
 
   // ── Eclipses overlay: the selected eclipse's ground geometry — a solar
   // eclipse's track (band/limits/isolines/central) or a lunar eclipse's
@@ -2494,30 +2552,31 @@ function setupCustomLayers(
       'line-dasharray': [5, 2, 1, 2],
     },
   });
-  map.addLayer({
-    id: 'eclipse-isoline-labels',
-    source: 'eclipse',
-    type: 'symbol',
-    filter: [
-      'in',
-      ['get', 'kind'],
-      ['literal', ['isoline', 'lunar-horizon']],
-    ],
-    layout: {
-      'symbol-placement': 'line',
-      'text-field': ['get', 'label'],
-      'text-size': 10,
-      'text-font': ['Noto Sans Regular'],
-      'symbol-spacing': 350,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      // Theme-aware halo: Earth's medium-brown digits need a light parchment ring
-      // (a near-black one buried them); Glass/Dark keep their high-contrast halos.
-      'text-halo-color': eclipseLabelHalo.color,
-      'text-halo-width': eclipseLabelHalo.width,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'eclipse-isoline-labels',
+      source: 'eclipse',
+      type: 'symbol',
+      filter: [
+        'in',
+        ['get', 'kind'],
+        ['literal', ['isoline', 'lunar-horizon']],
+      ],
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['get', 'label'],
+        'text-size': 10,
+        'text-font': ['Noto Sans Regular'],
+        'symbol-spacing': 350,
+      },
+      // The halo is the palette's (bound), theme-aware: Earth's medium-brown digits need a
+      // light parchment ring (a near-black one buried them); Glass/Dark keep their
+      // high-contrast halos.
+      paint: {
+        'text-color': ['get', 'color'],
+      },
+    }),
+  );
   map.addLayer({
     id: 'eclipse-limits',
     source: 'eclipse',
@@ -2549,29 +2608,32 @@ function setupCustomLayers(
   // a row carries no planetA/planetB; the layer name must not start with 'parans' (every
   // paran branch here keys on that prefix and reads those props).
   map.addSource('minor-parans', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
-  map.addLayer({
-    id: 'minor-parans-layer',
-    source: 'minor-parans',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.6,
-      'line-opacity': 1,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'minor-parans-layer',
+      source: 'minor-parans',
+      type: 'line',
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
-  map.addLayer({
-    id: 'parans-layer',
-    source: 'parans',
-    type: 'line',
-    // Full opacity like every chart line; the hairline width keeps the
-    // horizontal rows subordinate to the angle lines.
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.7,
-      'line-opacity': 1,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'parans-layer',
+      source: 'parans',
+      type: 'line',
+      // Full opacity like every chart line; the hairline width (the palette's, 0.7 on every
+      // built-in — the catalog parans' a step under it) keeps the horizontal rows subordinate
+      // to the angle lines.
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Paran labels are DOM chips in one column at the centre meridian, the ranked rows that fit
   // (paranChips.ts, drawn in the paran-badge overlay in the Map component), not repeated along the
   // line.
@@ -2579,36 +2641,39 @@ function setupCustomLayers(
   map.addSource('local-space', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   // Both halves at the normal LS weight; direction reads from the dash pattern (and
   // the → / ← chevrons): the outgoing (toward-planet) half is solid, the inward
-  // (nadir) half dashed. Split into two layers because line-dasharray can't be a
-  // data-driven ('get direction') expression in MapLibre.
-  map.addLayer({
-    id: 'local-space-layer-out',
-    source: 'local-space',
-    type: 'line',
-    filter: lsDir('out'),
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 1.2,
-      'line-opacity': 1,
-    },
-  });
-  map.addLayer({
-    id: 'local-space-layer-in',
-    source: 'local-space',
-    type: 'line',
-    filter: lsDir('in'),
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 1.2,
-      'line-opacity': 1,
-      'line-dasharray': [2, 2],
-    },
-  });
+  // (nadir) half dashed. Two layers. Not, any more, because line-dasharray can't be
+  // data-driven — it has taken a ['match', ['get', 'direction'], …] of literal arrays
+  // since maplibre-gl 5.8 — but because the solid half has no dash at all, and the hover
+  // and snap lists name both layers by id.
+  map.addLayer(
+    bind({
+      id: 'local-space-layer-out',
+      source: 'local-space',
+      type: 'line',
+      filter: lsDir('out'),
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'local-space-layer-in',
+      source: 'local-space',
+      type: 'line',
+      filter: lsDir('in'),
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Outward ('→', toward the planet) and inward ('←', back toward the origin)
   // arrows mark the two halves of each local-space axis. The outward chevrons are
   // oversized (2×) for emphasis; the inward ones stay normal.
-  addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
-  addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
+  addArrowLayer(map, style, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
+  addArrowLayer(map, style, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
   // "Aspects to angles" overlays (aspect lines and/or midpoint lines — the two
   // toggles stack, concatenated into this one source). Added before the base
@@ -2619,27 +2684,27 @@ function setupCustomLayers(
   // share that frame. The fixed-star lines are dotted too, but carry their ✦
   // beads + starlight tint (and butt-cap fine dashes) to tell the two apart.
   map.addSource('angle-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'angle-lines-layer',
-    source: 'angle-lines',
-    type: 'line',
-    // Round caps round the short dashes off into dots. NB the zero-length "pure
-    // dot" dasharray ([0, N]) at width 1 renders as sub-pixel dots too faint to
-    // read over the basemap (all but invisible) — a leading 0 only works when a
-    // real on-segment follows it as a phase offset (e.g. the node-pair [0, 3, 3]
-    // below). So keep the on-segment > 0 with a hair more width; the round cap
-    // does the rest.
-    layout: { 'line-cap': 'round' },
-    // Full opacity like every chart line; the slim width + tight round dots mark
-    // the set as "derived" and keep it distinct from both the solid base lines
-    // and the longer-dashed overlays.
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 1.3,
-      'line-opacity': 1,
-      'line-dasharray': [1, 3],
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'angle-lines-layer',
+      source: 'angle-lines',
+      type: 'line',
+      // Round caps round the short dashes off into dots. NB the zero-length "pure
+      // dot" dasharray ([0, N]) at width 1 renders as sub-pixel dots too faint to
+      // read over the basemap (all but invisible) — a leading 0 only works when a
+      // real on-segment follows it as a phase offset (e.g. the node-pair [0, 3, 3]
+      // below). So keep the on-segment > 0 with a hair more width; the round cap
+      // does the rest. (The palette's dash presets all start with a real segment.)
+      layout: { 'line-cap': 'round' },
+      // Full opacity like every chart line; the slim width + tight round dots (both the
+      // palette's: 1.3 and [1, 3] on every built-in) mark the set as "derived" and keep it
+      // distinct from both the solid base lines and the longer-dashed overlays.
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
 
   // Fixed-star lines (Filters ▸ Fixed Stars): thin and dotted in one shared
   // per-theme starlight tint, under the planet lines so the chart's own
@@ -2648,37 +2713,40 @@ function setupCustomLayers(
   // sprite carries the theme halo, the dotted line stays the thread (and the
   // hover/click hit target).
   map.addSource('star-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'star-lines-layer',
-    source: 'star-lines',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.8,
-      'line-opacity': 0.9,
-      'line-dasharray': [1, 2.5],
-    },
-  });
-  map.addLayer({
-    id: 'star-lines-marks',
-    source: 'star-lines',
-    type: 'symbol',
-    layout: {
-      'icon-image': STAR_MARK_IMAGE,
-      'symbol-placement': 'line',
-      // Tight spacing with the small re-baked spark (see STAR_LOGICAL in
-      // glyphImages): a fine ✦✦✦ bead-thread along the dotted base line. Collision
-      // is disabled below, so every bead draws — but the tiny icon keeps the GPU
-      // fill lower than the old roomy-but-large sparks.
-      'symbol-spacing': 24,
-      // Upright stars (a rotated five-point star reads as noise), decorative
-      // placement that never suppresses or collides with the planet labels.
-      'icon-rotation-alignment': 'viewport',
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-      'icon-padding': 0,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'star-lines-layer',
+      source: 'star-lines',
+      type: 'line',
+      // Width, opacity and dash are the palette's (0.8, 0.9, [1, 2.5] on every built-in).
+      paint: {
+        'line-color': ['get', 'color'],
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'star-lines-marks',
+      source: 'star-lines',
+      type: 'symbol',
+      // Shown or not is the palette's (its star sparks switch; on for every built-in).
+      layout: {
+        'icon-image': STAR_MARK_IMAGE,
+        'symbol-placement': 'line',
+        // Tight spacing with the small re-baked spark (see STAR_LOGICAL in
+        // glyphImages): a fine ✦✦✦ bead-thread along the dotted base line. Collision
+        // is disabled below, so every bead draws — but the tiny icon keeps the GPU
+        // fill lower than the old roomy-but-large sparks.
+        'symbol-spacing': 24,
+        // Upright stars (a rotated five-point star reads as noise), decorative
+        // placement that never suppresses or collides with the planet labels.
+        'icon-rotation-alignment': 'viewport',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-padding': 0,
+      },
+    }),
+  );
 
   // ── Catalog minor bodies (lib/astro/minorLines): the numbered minor planets picked
   // in the Minor bodies window. A source of their own, never merged into acg-lines —
@@ -2694,32 +2762,26 @@ function setupCustomLayers(
   // keeping the planets' order (MC heaviest, then ASC/DSC, then IC, the Vertex axis
   // lightest) — and its coin beaded along it (below).
   map.addSource('minor-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'minor-lines-layer',
-    source: 'minor-lines',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': [
-        'case',
-        ['==', ['get', 'lineType'], 'MC'],
-        1.4,
-        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
-        1.1,
-        ['==', ['get', 'lineType'], 'IC'],
-        0.9,
-        0.8, // VX / AVX
-      ],
-      'line-opacity': 1,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'minor-lines-layer',
+      source: 'minor-lines',
+      type: 'line',
+      // The width per angle is the palette's (MC 1.4, ASC/DSC 1.1, IC 0.9, the Vertex axis
+      // 0.8 on every built-in): a step under the planets' on each.
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Rising vs setting, told the way the planets' horizon lines tell it (→ ASC, ← DSC),
   // a size smaller to match the lighter line. Like the planets, catalog lines also name
   // the angle on their edge chip (since 2026-10-01) — but only where a chip is, at the
   // screen's edges, so mid-map these are still what tells the two horizon lines of one
   // body apart short of hovering each.
-  addArrowLayer(map, 'minor-lines-arrows-asc', 'minor-lines', lineTypeIs('ASC'), '→', 12);
-  addArrowLayer(map, 'minor-lines-arrows-dsc', 'minor-lines', lineTypeIs('DSC'), '←', 12);
+  addArrowLayer(map, style, 'minor-lines-arrows-asc', 'minor-lines', lineTypeIs('ASC'), '→', 12);
+  addArrowLayer(map, style, 'minor-lines-arrows-dsc', 'minor-lines', lineTypeIs('DSC'), '←', 12);
   // The body's coin (its own symbol, or the shared diamond, on its palette ring — see
   // glyphImages' minor coins), beaded along each of its lines. This is what makes a
   // catalog line identifiable at a glance: a palette colour alone repeats every twelve
@@ -2730,22 +2792,25 @@ function setupCustomLayers(
   // crowding the line. Upright (viewport
   // rotation) for the same reason as the star sparks, and decorative placement, so a
   // bead never suppresses or collides with anything else. Hit-testing stays on the
-  // line layer; the beads are not a target.
-  map.addLayer({
-    id: 'minor-lines-marks',
-    source: 'minor-lines',
-    type: 'symbol',
-    layout: {
-      'icon-image': ['get', 'icon'],
-      'icon-size': 0.4,
-      'symbol-placement': 'line',
-      'symbol-spacing': 220,
-      'icon-rotation-alignment': 'viewport',
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-      'icon-padding': 0,
-    },
-  });
+  // line layer; the beads are not a target. Shown or not is the palette's (its catalog
+  // beads switch; on for every built-in).
+  map.addLayer(
+    bind({
+      id: 'minor-lines-marks',
+      source: 'minor-lines',
+      type: 'symbol',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': 0.4,
+        'symbol-placement': 'line',
+        'symbol-spacing': 220,
+        'icon-rotation-alignment': 'viewport',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-padding': 0,
+      },
+    }),
+  );
 
   // lineMetrics:true lets the node-pair layers below colour a single line with a
   // line-gradient (half North Node colour, half South Node colour).
@@ -2755,104 +2820,88 @@ function setupCustomLayers(
     ...LINE_SOURCE_OPTS,
     lineMetrics: true,
   });
-  map.addLayer({
-    id: 'acg-lines-meridian',
-    source: 'acg-lines',
-    // Solid (single-colour) meridians; merged node-pair meridians render in the dedicated
-    // two-tone layer below instead (pair == true), so exclude them here.
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
-      ['!=', ['get', 'pair'], true],
-    ],
-    type: 'line',
-    // Full opacity everywhere — the MC/IC hierarchy reads from width alone.
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': [
-        'case',
-        ['==', ['get', 'lineType'], 'MC'],
-        1.9,
-        1.0,
+  map.addLayer(
+    bind({
+      id: 'acg-lines-meridian',
+      source: 'acg-lines',
+      // Solid (single-colour) meridians; merged node-pair meridians render in the dedicated
+      // two-tone layer below instead (pair == true), so exclude them here.
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+        ['!=', ['get', 'pair'], true],
       ],
-      'line-opacity': 1,
-    },
-  });
+      type: 'line',
+      // Full opacity everywhere — the MC/IC hierarchy reads from width alone (the palette's:
+      // MC 1.9, IC 1.0 on every built-in).
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Base horizon lines are SOLID (no dashes) — dashes are reserved entirely for
   // overlays now. ASC vs DSC is shown instead by periodic arrows: ASC points up,
   // DSC points down (added just below). The Vertex-axis curves (VX/AVX) ride
   // this layer too, a touch thinner and arrow-free, so they read as the quieter
   // cousins of the rising/setting lines; their edge badges name them Vx/Avx.
-  map.addLayer({
-    id: 'acg-lines-horizon',
-    source: 'acg-lines',
-    type: 'line',
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
-      ['!=', ['get', 'pair'], true],
-    ],
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': [
-        'case',
-        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
-        1.0,
-        1.5,
+  map.addLayer(
+    bind({
+      id: 'acg-lines-horizon',
+      source: 'acg-lines',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
+        ['!=', ['get', 'pair'], true],
       ],
-      'line-opacity': 1,
-    },
-  });
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Merged lunar-node pairs: the North Node line and its antipodal South Node line
   // coincide, so we draw ONE line graded half North Node colour, half South Node colour
-  // (a hard split at the line's midpoint) rather than two lines overdrawing. Same
-  // width/opacity as the solid layers above so it reads as the same kind of line.
-  const nodePairGradient = [
-    'step',
-    ['line-progress'],
-    PLANET_COLORS.NorthNode,
-    0.5,
-    PLANET_COLORS.SouthNode,
-  ] as unknown as ExpressionSpecification;
-  map.addLayer({
-    id: 'acg-lines-meridian-pair',
-    source: 'acg-lines',
-    type: 'line',
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
-      ['==', ['get', 'pair'], true],
-    ],
-    paint: {
-      'line-gradient': nodePairGradient,
-      'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.9, 1.0],
-      'line-opacity': 1,
-    },
-  });
-  map.addLayer({
-    id: 'acg-lines-horizon-pair',
-    source: 'acg-lines',
-    type: 'line',
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
-      ['==', ['get', 'pair'], true],
-    ],
-    paint: {
-      'line-gradient': nodePairGradient,
-      'line-width': [
-        'case',
-        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
-        1.0,
-        1.5,
+  // (a hard split at the line's midpoint: ['step', ['line-progress'], nn, 0.5, sn], with
+  // the palette's two node colours — the bodies' own on every built-in) rather than two
+  // lines overdrawing. Same width/opacity as the solid layers above so it reads as the
+  // same kind of line.
+  map.addLayer(
+    bind({
+      id: 'acg-lines-meridian-pair',
+      source: 'acg-lines',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+        ['==', ['get', 'pair'], true],
       ],
-      'line-opacity': 1,
-    },
-  });
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'acg-lines-horizon-pair',
+      source: 'acg-lines',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
+        ['==', ['get', 'pair'], true],
+      ],
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
   // ASC/DSC arrows skip merged node pairs (pair == true): a single line that is both a
   // rising and a setting line can't carry a meaningful up/down arrow.
   addArrowLayer(
     map,
+    style,
     'acg-lines-arrows-asc',
     'acg-lines',
     ['all', lineTypeIs('ASC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
@@ -2860,6 +2909,7 @@ function setupCustomLayers(
   );
   addArrowLayer(
     map,
+    style,
     'acg-lines-arrows-dsc',
     'acg-lines',
     ['all', lineTypeIs('DSC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
@@ -2873,48 +2923,48 @@ function setupCustomLayers(
   // colors as the base, but dashed and dimmed so it reads as "derived". Labels
   // carry a baked-in prefix (t/p/d/s) so the text-field expression is unchanged.
   map.addSource('local-space-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'local-space-ov-layer',
-    source: 'local-space-ov',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 1.0,
-      // Overlay lines are dashed, so they read as "derived" without dimming —
-      // keep them at full opacity (dash pattern alone distinguishes them).
-      'line-opacity': 1,
-      'line-dasharray': [1, 3],
-    },
-  });
-  addArrowLayer(map, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
-  addArrowLayer(map, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
+  map.addLayer(
+    bind({
+      id: 'local-space-ov-layer',
+      source: 'local-space-ov',
+      type: 'line',
+      paint: {
+        'line-color': ['get', 'color'],
+        // Overlay lines are dashed, so they read as "derived" without dimming —
+        // keep them at full opacity (dash pattern alone distinguishes them).
+        'line-opacity': 1,
+      },
+    }),
+  );
+  addArrowLayer(map, style, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
+  addArrowLayer(map, style, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
 
   // An overlay's catalog parans, beneath its planets' as the chart's are, on the overlay
   // parans' own dash so a dash pattern keeps meaning one thing on this map.
   map.addSource('minor-parans-ov', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
-  map.addLayer({
-    id: 'minor-parans-ov-layer',
-    source: 'minor-parans-ov',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.6,
-      'line-opacity': 1,
-      'line-dasharray': [2, 3],
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'minor-parans-ov-layer',
+      source: 'minor-parans-ov',
+      type: 'line',
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
-  map.addLayer({
-    id: 'parans-ov-layer',
-    source: 'parans-ov',
-    type: 'line',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.7,
-      'line-opacity': 1,
-      'line-dasharray': [2, 3],
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'parans-ov-layer',
+      source: 'parans-ov',
+      type: 'line',
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Overlay paran labels are the same DOM chips (paranChips.ts), not drawn along the line.
 
   // ── An overlay's catalog minor bodies: the reader's catalog set placed by the overlay's
@@ -2923,144 +2973,129 @@ function setupCustomLayers(
   // under the overlay's planet lines, which keep priority as the chart's planets do over
   // its catalog lines. Told apart from the chart's catalog lines the way every overlay line
   // is told apart from the chart's: dashed, on the overlay planets' own patterns ([3,3] on
-  // the meridians, [2,3] on the horizon lines) so a dash pattern means one thing on this
-  // map, at the catalog lines' own lighter weights, with their arrows and coin beads
-  // softened to the overlay stamps' 0.85.
+  // the meridians, [2,3] on the horizon lines, on every built-in; MapStyle hands the same
+  // two dashes to both) so a dash pattern means one thing on this map, at the catalog lines'
+  // own lighter weights, with their arrows and coin beads softened to the overlay stamps'
+  // 0.85.
   map.addSource('minor-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'minor-lines-ov-meridian',
-    source: 'minor-lines-ov',
-    type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.4, 0.9],
-      'line-opacity': 1,
-      'line-dasharray': [3, 3],
-    },
-  });
-  map.addLayer({
-    id: 'minor-lines-ov-horizon',
-    source: 'minor-lines-ov',
-    type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 1.1,
-      'line-opacity': 1,
-      'line-dasharray': [2, 3],
-    },
-  });
-  addArrowLayer(map, 'minor-lines-ov-arrows-asc', 'minor-lines-ov', lineTypeIs('ASC'), '→', 12, 0.85);
-  addArrowLayer(map, 'minor-lines-ov-arrows-dsc', 'minor-lines-ov', lineTypeIs('DSC'), '←', 12, 0.85);
-  map.addLayer({
-    id: 'minor-lines-ov-marks',
-    source: 'minor-lines-ov',
-    type: 'symbol',
-    layout: {
-      'icon-image': ['get', 'icon'],
-      'icon-size': 0.4,
-      'symbol-placement': 'line',
-      'symbol-spacing': 220,
-      'icon-rotation-alignment': 'viewport',
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-      'icon-padding': 0,
-    },
-    paint: {
-      'icon-opacity': 0.85,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'minor-lines-ov-meridian',
+      source: 'minor-lines-ov',
+      type: 'line',
+      filter: ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'minor-lines-ov-horizon',
+      source: 'minor-lines-ov',
+      type: 'line',
+      filter: ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
+  addArrowLayer(map, style, 'minor-lines-ov-arrows-asc', 'minor-lines-ov', lineTypeIs('ASC'), '→', 12);
+  addArrowLayer(map, style, 'minor-lines-ov-arrows-dsc', 'minor-lines-ov', lineTypeIs('DSC'), '←', 12);
+  map.addLayer(
+    bind({
+      id: 'minor-lines-ov-marks',
+      source: 'minor-lines-ov',
+      type: 'symbol',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': 0.4,
+        'symbol-placement': 'line',
+        'symbol-spacing': 220,
+        'icon-rotation-alignment': 'viewport',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-padding': 0,
+      },
+    }),
+  );
 
   map.addSource('acg-lines-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'acg-lines-ov-meridian',
-    source: 'acg-lines-ov',
-    type: 'line',
-    // Merged node-pair meridians render in the two-tone pair layers below (pair == true).
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
-      ['!=', ['get', 'pair'], true],
-    ],
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.5, 0.8],
-      'line-opacity': 1,
-      'line-dasharray': [3, 3],
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'acg-lines-ov-meridian',
+      source: 'acg-lines-ov',
+      type: 'line',
+      // Merged node-pair meridians render in the two-tone pair layers below (pair == true).
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+        ['!=', ['get', 'pair'], true],
+      ],
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Overlay horizon lines are dashed (the "dotted equivalent" of the solid base
   // lines); ASC vs DSC is shown by the same up/down arrows, added below. The
   // Vertex-axis curves ride along, slightly thinner, like on the base layer.
-  map.addLayer({
-    id: 'acg-lines-ov-horizon',
-    source: 'acg-lines-ov',
-    type: 'line',
-    filter: [
-      'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
-      ['!=', ['get', 'pair'], true],
-    ],
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': [
-        'case',
-        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
-        0.8,
-        1.1,
+  map.addLayer(
+    bind({
+      id: 'acg-lines-ov-horizon',
+      source: 'acg-lines-ov',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
+        ['!=', ['get', 'pair'], true],
       ],
-      'line-opacity': 1,
-      'line-dasharray': [2, 3],
-    },
-  });
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-opacity': 1,
+      },
+    }),
+  );
   // Merged lunar-node pairs on the OVERLAY: the dashed two-tone counterpart of the base
-  // gradient pair (line-gradient can't combine with dashes, and overlay lines must stay
-  // dashed). Two layers — North-node colour and South-node colour with complementary
-  // (offset) dashes — interleave into alternating green/salmon dashes, so the fused node
-  // line reads as both nodes while still reading as a derived overlay line. One pair of
-  // layers covers all four angles via a data-driven width (MC widest, IC thinnest).
-  map.addLayer({
-    id: 'acg-lines-ov-pair-nn',
-    source: 'acg-lines-ov',
-    type: 'line',
-    filter: ['==', ['get', 'pair'], true],
-    paint: {
-      'line-color': PLANET_COLORS.NorthNode,
-      'line-width': [
-        'case',
-        ['==', ['get', 'lineType'], 'MC'],
-        1.5,
-        ['==', ['get', 'lineType'], 'IC'],
-        0.8,
-        1.1,
-      ],
-      'line-opacity': 1,
-      'line-dasharray': [3, 3],
-    },
-  });
-  map.addLayer({
-    id: 'acg-lines-ov-pair-sn',
-    source: 'acg-lines-ov',
-    type: 'line',
-    filter: ['==', ['get', 'pair'], true],
-    paint: {
-      'line-color': PLANET_COLORS.SouthNode,
-      'line-width': [
-        'case',
-        ['==', ['get', 'lineType'], 'MC'],
-        1.5,
-        ['==', ['get', 'lineType'], 'IC'],
-        0.8,
-        1.1,
-      ],
-      'line-opacity': 1,
-      // Leading 0 offsets these dashes into the North-node layer's gaps → alternating.
-      'line-dasharray': [0, 3, 3],
-    },
-  });
+  // gradient pair. Two layers — North-node colour and South-node colour with complementary
+  // (offset) dashes, [d] and [0, ...d] — interleave into alternating green/salmon dashes all
+  // along the line, so the fused node line reads as both nodes everywhere on it while still
+  // reading as a derived overlay line. Not a gradient under a dash: the gradient's step
+  // splits a line into a North-node half and a South-node half, the chart's own pair's look.
+  // (Nor is that combination ruled out by the engine any more — maplibre-gl 5.24 draws a dash
+  // over a gradient, its line_gradient_sdf program — but the style spec still lists
+  // line-gradient as excluding line-dasharray, and a gradient needs lineMetrics, which this
+  // source doesn't carry.) One pair of layers covers all four angles via a data-driven width
+  // (MC widest, IC thinnest), and takes the meridians' dash on every angle, as it always has.
+  map.addLayer(
+    bind({
+      id: 'acg-lines-ov-pair-nn',
+      source: 'acg-lines-ov',
+      type: 'line',
+      filter: ['==', ['get', 'pair'], true],
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'acg-lines-ov-pair-sn',
+      source: 'acg-lines-ov',
+      type: 'line',
+      filter: ['==', ['get', 'pair'], true],
+      // Its dash's leading 0 offsets these dashes into the North-node layer's gaps → alternating.
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
   addArrowLayer(
     map,
+    style,
     'acg-lines-ov-arrows-asc',
     'acg-lines-ov',
     ['all', lineTypeIs('ASC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
@@ -3068,6 +3103,7 @@ function setupCustomLayers(
   );
   addArrowLayer(
     map,
+    style,
     'acg-lines-ov-arrows-dsc',
     'acg-lines-ov',
     ['all', lineTypeIs('DSC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
@@ -3080,25 +3116,28 @@ function setupCustomLayers(
   // lines (below the zenith stamps); grows a touch on hover, where a .ui-tip explains
   // it.
   map.addSource('acg-ls-cross', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  map.addLayer({
-    id: 'acg-ls-cross-layer',
-    source: 'acg-ls-cross',
-    type: 'circle',
-    paint: {
-      // ~30% smaller than the original 4/6 dot, stroke scaled to match so it
-      // shrinks evenly rather than reading as a heavy ring.
-      'circle-radius': [
-        'case',
-        ['boolean', ['feature-state', 'hover'], false],
-        4.2,
-        2.8,
-      ],
-      'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-color': ['get', 'color'],
-      'circle-stroke-color': haloColor || 'rgba(0,0,0,0.4)',
-      'circle-stroke-width': 0.875,
-    },
-  });
+  map.addLayer(
+    bind({
+      id: 'acg-ls-cross-layer',
+      source: 'acg-ls-cross',
+      type: 'circle',
+      // The stroke is the palette's: the map's label halo (or a soft black where a palette has
+      // none), as it always was.
+      paint: {
+        // ~30% smaller than the original 4/6 dot, stroke scaled to match so it
+        // shrinks evenly rather than reading as a heavy ring.
+        'circle-radius': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          4.2,
+          2.8,
+        ],
+        'circle-radius-transition': { duration: 150, delay: 0 },
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 0.875,
+      },
+    }),
+  );
 
   // ── Catalog minor-body zenith coins: each body's sub-point, on its MC line at
   // latitude = declination, as its baked coin (props.icon) at the planets' stamp size
@@ -3119,23 +3158,25 @@ function setupCustomLayers(
     ...LINE_SOURCE_OPTS,
     promoteId: 'body',
   });
-  // Hover-only bloom behind the coin — the planets' acg-zenith-disc treatment, exactly.
-  map.addLayer({
-    id: 'minor-zenith-disc',
-    source: 'minor-zenith',
-    type: 'circle',
-    paint: {
-      'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
-      'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-color': zenithFill,
-      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-      'circle-opacity-transition': { duration: 150, delay: 0 },
-      'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
-      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
-    },
-  });
+  // Hover-only bloom behind the coin — the planets' acg-zenith-disc treatment, exactly (its
+  // fill, the palette's zenith disc, bound like theirs).
+  map.addLayer(
+    bind({
+      id: 'minor-zenith-disc',
+      source: 'minor-zenith',
+      type: 'circle',
+      paint: {
+        'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
+        'circle-radius-transition': { duration: 150, delay: 0 },
+        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+        'circle-opacity-transition': { duration: 150, delay: 0 },
+        'circle-stroke-color': ['get', 'color'],
+        'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
+        'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+        'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
+      },
+    }),
+  );
   map.addLayer({
     id: MINOR_ZENITH_LAYER,
     source: 'minor-zenith',
@@ -3158,14 +3199,13 @@ function setupCustomLayers(
     promoteId: 'body',
   });
   map.addLayer(
-    {
+    bind({
       id: 'minor-zenith-ov-disc',
       source: 'minor-zenith-ov',
       type: 'circle',
       paint: {
         'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
         'circle-radius-transition': { duration: 150, delay: 0 },
-        'circle-color': zenithFill,
         'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
         'circle-opacity-transition': { duration: 150, delay: 0 },
         'circle-stroke-color': ['get', 'color'],
@@ -3173,11 +3213,12 @@ function setupCustomLayers(
         'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
         'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
       },
-    },
+    }),
     'minor-zenith-disc',
   );
+  // Its 0.85 is the palette's overlay catalog-mark opacity (bound), the same as its beads'.
   map.addLayer(
-    {
+    bind({
       id: MINOR_ZENITH_OV_LAYER,
       source: 'minor-zenith-ov',
       type: 'symbol',
@@ -3187,10 +3228,7 @@ function setupCustomLayers(
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
-      paint: {
-        'icon-opacity': 0.85,
-      },
-    },
+    }),
     'minor-zenith-disc',
   );
 
@@ -3209,17 +3247,17 @@ function setupCustomLayers(
     ...LINE_SOURCE_OPTS,
     promoteId: 'planet',
   });
-  map.addLayer({
+  map.addLayer(bind({
     id: 'acg-zenith-ov-disc',
     source: 'acg-zenith-ov',
     type: 'circle',
     paint: {
       // Hover-only bloom (see the natal disc below): invisible at rest, it grows a
       // softer ring out from behind the overlay stamp on hover. Capped at 0.85 to
-      // stay the derived (dashed-line) layer's lower weight.
+      // stay the derived (dashed-line) layer's lower weight. Its fill is the palette's
+      // zenith disc (bound).
       'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
       'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-color': zenithFill,
       'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
       'circle-opacity-transition': { duration: 150, delay: 0 },
       'circle-stroke-color': ['get', 'color'],
@@ -3227,7 +3265,7 @@ function setupCustomLayers(
       'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
       'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
     },
-  });
+  }));
   map.addLayer({
     id: 'acg-zenith-ov-layer',
     source: 'acg-zenith-ov',
@@ -3296,8 +3334,9 @@ function setupCustomLayers(
   // ONLY: transparent at rest, on hover it blooms a larger ring out from BEHIND the
   // stamp (drawn under the symbol layer) — mirroring the badge hover lift without
   // re-introducing a separate always-on disc that split from its glyph. The rest
-  // radius is kept at the disc size so the bloom grows from the coin's edge.
-  map.addLayer({
+  // radius is kept at the disc size so the bloom grows from the coin's edge. Its fill is the
+  // palette's zenith disc (bound) — the fill the stamp sprite bakes, so the bloom matches it.
+  map.addLayer(bind({
     id: 'acg-zenith-disc',
     source: 'acg-zenith',
     type: 'circle',
@@ -3309,7 +3348,6 @@ function setupCustomLayers(
         13,
       ],
       'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-color': zenithFill,
       'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
       'circle-opacity-transition': { duration: 150, delay: 0 },
       'circle-stroke-color': ['get', 'color'],
@@ -3322,7 +3360,7 @@ function setupCustomLayers(
       'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
       'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
     },
-  });
+  }));
   map.addLayer({
     id: 'acg-zenith-layer',
     source: 'acg-zenith',
@@ -3389,7 +3427,9 @@ function setupCustomLayers(
       'line-dasharray': [2, 2],
     },
   });
-  map.addLayer({
+  // The end discs' ring is the palette's label halo (bound), so they lift off the basemap the
+  // way the labels do.
+  map.addLayer(bind({
     id: 'measure-points',
     source: 'measure',
     type: 'circle',
@@ -3397,10 +3437,9 @@ function setupCustomLayers(
     paint: {
       'circle-radius': 4,
       'circle-color': measureColor,
-      'circle-stroke-color': haloColor,
       'circle-stroke-width': 1.5,
     },
-  });
+  }));
 
   // ── The geodetic grid (lib/astro/geodeticGrid), added LAST and placed by GEO_GRID_STACK's
   // explicit anchors. None of these is on LINE_HIT_LAYERS or SNAP_LINE_LAYERS: a grid line has
@@ -3428,11 +3467,8 @@ function setupCustomLayers(
   // The grid lines tile like the planets' MC lines (LINE_SOURCE_OPTS).
   map.addSource('geo-grid-mc', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addSource('geo-grid-asc', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  const gridLine = {
-    'line-color': geoGridStyle.line,
-    'line-width': geoGridStyle.width,
-    'line-opacity': geoGridStyle.opacity,
-  };
+  // The grid's paint — its one neutral ink, its width and opacity, the lit zone's strength — is
+  // the palette's (bound; GEO_GRID_STYLE for a built-in theme).
   const geoLayers: Record<(typeof GEO_GRID_STACK)[number]['id'], LayerSpecification> = {
     'geo-zones-layer': {
       id: 'geo-zones-layer',
@@ -3450,8 +3486,6 @@ function setupCustomLayers(
       source: 'geo-asc-zones',
       type: 'fill',
       paint: {
-        'fill-color': geoGridStyle.line,
-        'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], geoGridStyle.hover, 0],
         'fill-antialias': false,
       },
     },
@@ -3469,20 +3503,22 @@ function setupCustomLayers(
       id: 'geo-grid-mc-layer',
       source: 'geo-grid-mc',
       type: 'line',
-      paint: gridLine,
     },
     'geo-grid-asc-layer': {
       id: 'geo-grid-asc-layer',
       source: 'geo-grid-asc',
       type: 'line',
       layout: { 'line-join': 'round' },
-      paint: gridLine,
     },
   };
-  for (const { id, before } of GEO_GRID_STACK) map.addLayer(geoLayers[id], before);
+  for (const { id, before } of GEO_GRID_STACK) map.addLayer(bind(geoLayers[id]), before);
   if (import.meta.env.DEV) {
     const order = map.getLayersOrder();
     const at = (id: string) => order.indexOf(id);
+    // Every layer the palette binds must exist, or its rows of LAYER_BINDINGS silently never
+    // apply — a layer renamed here and not there.
+    const unbound = BOUND_LAYER_IDS.filter((id) => at(id) < 0);
+    console.assert(unbound.length === 0, 'LAYER_BINDINGS names layers that were never added:', unbound.join(' '));
     const want = [
       'night-shade-layer',
       'geo-zones-layer',
@@ -4024,6 +4060,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   bottomInset = 0,
   leftInset = 0,
   theme,
+  mapStyle,
+  spriteSpec,
+  mapPreview = null,
   projection,
   showRoads = true,
   showRivers = true,
@@ -5139,6 +5178,60 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     null,
   );
   const themeRef = useRef(theme);
+  // The basemap the map is on or going to (mapStyle.basemap), beside the theme: a change of either
+  // installs a new style (the theme effect below). For a built-in theme the two are the same.
+  const basemapRef = useRef<BasemapChoice>(mapStyle.basemap);
+  // The latest palette for the map, read by every build (the style path in the mount effect) and
+  // by the live repaint: a build that lands mid-edit draws what is current when it draws.
+  const mapStyleRef = useRef(mapStyle);
+  // What the sprites are baked from — `spriteSpec`, or the built-in theme's own (spriteSpecFor of
+  // a built-in palette is one object per theme, so this is identity-stable either way).
+  const sprite = spriteSpec ?? spriteSpecFor(builtinPalette(theme));
+  const spriteRef = useRef(sprite);
+  // The MapStyle the chart's layers were last painted with — set by a build as it adds them, and
+  // by every live repaint; null while a build is under way (its layers aren't there yet, and it
+  // reads mapStyleRef itself when it adds them). The live repaint diffs from it.
+  const paintedStyleRef = useRef<MapStyle | null>(null);
+  // The basemap's own paint as last painted (a build's, or the live repaint's), apart from the
+  // chart layers': a preview on another basemap repaints the chart's layers and leaves this one
+  // as committed (see the repaint effect), so the two are no longer always the same style's.
+  const paintedSurfaceRef = useRef<Pick<MapStyle, 'basemapPaint' | 'worldFallback'> | null>(null);
+  // Which style is drawn — the live vector basemap, or the app's own offline / Outline style —
+  // for the live repaint, which paints the basemap on the one and the world outline on the other.
+  const drawnKindRef = useRef<StyleKind>('live');
+  // A restyle asked for and not yet built: set by the theme effect as it asks (a theme or basemap
+  // switch), cleared by the build of the style that lands, as that build begins. While it is up
+  // the live repaint and the live sprite re-bake stand down — the build reads the refs and paints
+  // and bakes the newest of everything onto the NEW style. Before it (2026-10-06 review) a
+  // built-in switch online, Earth → Dark, re-baked the sprites in place on the outgoing style the
+  // moment the props landed: the old basemap showed Dark's glyphs for as long as Dark's style took
+  // to download, and the build then baked every sprite again.
+  const restylePendingRef = useRef(false);
+  // The editor's map preview (the prop), for the build and the data push, which re-apply it on
+  // what they put down; and what the preview's line colours have written on the chart's layers
+  // (mapStyleApply applyPreviewInks — reset by each build, whose layers carry their definitions).
+  const previewRef = useRef<MapPreview | null>(mapPreview);
+  const previewInksAppliedRef = useRef(new globalThis.Map<string, string>());
+  // The preview's line colours on the chart's layers, or each layer's own `color` back (refs only,
+  // stable). Not while a build is under way or a restyle pending (the build calls it after its
+  // push), nor while a data push is deferred (the deferred run calls it after that push): the
+  // colours go on after the data they describe. The catalog numbers are read off the data drawn.
+  const syncPreviewInks = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !paintedStyleRef.current || restylePendingRef.current || idleDeferRef.current) return;
+    const inks = previewRef.current?.inks ?? null;
+    const d = dataRef.current;
+    const ov = d.overlay;
+    const numbers = inks
+      ? minorNumbersIn([d.minorLines, d.minorZenith, d.minorParans, ov?.minorLines, ov?.minorZenith, ov?.minorParans])
+      : [];
+    try {
+      applyPreviewInks(map, inks, numbers, previewInksAppliedRef.current);
+    } catch {
+      /* mid-swap: the build that follows re-applies it */
+    }
+  }, []);
+  const syncPreviewInksRef = useRef(syncPreviewInks);
   // Put the map on the basemap for themeRef's theme through the one style-swap path, which lives
   // with the map in the mount effect (the theme effect is its caller from outside).
   const restyleRef = useRef<() => void>(() => {});
@@ -5214,6 +5307,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     spotlightActiveRef.current = !!spotlightActive;
     spotlightAimingRef.current = !!spotlightAiming;
     measureColorRef.current = measureColor;
+    mapStyleRef.current = mapStyle;
+    previewRef.current = mapPreview;
+    spriteRef.current = sprite;
     detailRef.current = { showRoads, showRivers, showLabels, hideBasemap };
     hideLsArrowsRef.current = hideLsArrows;
     lsEdgeLabelsRef.current = lsEdgeLabels;
@@ -6294,8 +6390,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Which basemap the map is on or loading. Offline: the live OpenFreeMap styles/tiles need the
     // network (the glass/dark STYLES are remote too), so open on the self-contained offline style
     // instead of a blank map. After that it moves only when a live load demonstrably fails or the
-    // tile host answers again (basemapFallback.ts).
+    // tile host answers again (basemapFallback.ts). `mode` is about the NETWORK; the Outline basemap
+    // draws the offline style in either mode (styleKind), and leaves `mode` as it found it.
     let mode: BasemapMode = navigator.onLine ? 'live' : 'offline';
+    // The style for a mode and basemap: the live style's URL, or the offline / Outline style in the
+    // palette's current world-outline colours.
+    const styleFor = (m: BasemapMode, basemap: BasemapChoice): string | StyleSpecification =>
+      styleKind(m, basemap) === 'live'
+        ? liveStyleUrl(basemap, themeRef.current)
+        : offlineStyle(mapStyleRef.current.worldFallback);
 
     // The probe passing doesn't fully guarantee construction succeeds (a context
     // can be granted then immediately lost), so guard the constructor too and fall
@@ -6307,7 +6410,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: mode === 'live' ? BASEMAP_STYLE_URLS[themeRef.current] : offlineStyle(themeRef.current),
+        style: styleFor(mode, basemapRef.current),
         // Open framed on a continental box centred on the active chart's birthplace
         // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
         // once at mount; fitBoundsOptions keeps the continent off the very edges and
@@ -6430,7 +6533,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // `installed` is the style last handed to MapLibre; `building`, the chart build running on it;
     // `wanted`, a swap waiting for that build to finish. A swap must not land mid-build: the build
     // would carry on into the new style and that style's own build would then add every layer twice.
-    let installed = { mode, theme: themeRef.current };
+    let installed = { mode, basemap: basemapRef.current, theme: themeRef.current };
     let landedOnce = false;
     let building: Promise<void> | null = null;
     let wanted: { deadline: boolean } | null = null;
@@ -6438,29 +6541,39 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     let stopWatch = () => {};
 
     // Everything the app draws, built on each style that lands (a swap drops every source, layer
-    // and image the app added) — the first load and every swap after it alike.
-    const build = async ({ mode: styleMode, theme }: typeof installed, first: boolean) => {
+    // and image the app added) — the first load and every swap after it alike. Everything the
+    // palette decides is read from the refs as the build reaches it, not from `installed`: a build
+    // can wait seconds on the symbol font, and a palette edited meanwhile is the one to draw.
+    const build = async ({ mode: styleMode, basemap }: typeof installed, first: boolean) => {
+      const kind = styleKind(styleMode, basemap);
+      drawnKindRef.current = kind;
+      // The live repaint stands down until this build has painted its own layers (below).
+      paintedStyleRef.current = null;
+      paintedSurfaceRef.current = null;
+      // The restyle asked for has landed (restylePendingRef): from here a live re-bake is held by
+      // the bake below and taken up after it (ensureGlyphImages), and the repaint waits on
+      // paintedStyleRef, so neither needs the flag any more.
+      restylePendingRef.current = false;
       // Apply the persisted projection first (before the async glyph load): setStyle resets it,
       // and a 3D reload mustn't briefly flash the flat map.
       applyProjection(map, projectionRef.current);
-      await ensureGlyphImages(
-        map,
-        theme === 'dark' ? '' : LABEL_HALO_COLORS[theme],
-        ZENITH_DISC_COLORS[theme],
-        theme,
-      );
+      await ensureGlyphImages(map, spriteRef.current);
+      const style = mapStyleRef.current;
       applyDetailToggles(map, detailRef.current);
-      applyLabelContrast(map, theme);
-      setupCustomLayers(
-        map,
-        LABEL_HALO_COLORS[theme],
-        measureColorRef.current,
-        ZENITH_DISC_COLORS[theme],
-        ECLIPSE_LABEL_HALO[theme],
-        // The grid's one neutral colour is per theme, and only a rebuild re-applies it: this
-        // is the one path every style lands on (first load, theme change, basemap fallback).
-        GEO_GRID_STYLE[theme],
-      );
+      // The palette's paint over the served basemap (Dark's place-name lift among it). The new
+      // style's layers are new, so nothing an earlier style was painted with carries over. The
+      // offline / Outline style is the app's own, painted from worldFallback instead.
+      forgetBasemapPaint(map);
+      if (kind === 'live') applyBasemapPaint(map, style.basemapPaint);
+      paintedSurfaceRef.current = { basemapPaint: style.basemapPaint, worldFallback: style.worldFallback };
+      // Every value the palette decides — the grid's one neutral colour among them — is bound
+      // into the layers here: the one path every style lands on (first load, theme change,
+      // basemap fallback). A palette change on a style that stays is the live repaint's. Bound
+      // with the SHOWN style: an editor's preview, if one is up, is drawn on the new style too.
+      const chartStyle = previewRef.current?.style ?? style;
+      setupCustomLayers(map, chartStyle, measureColorRef.current);
+      paintedStyleRef.current = chartStyle;
+      previewInksAppliedRef.current.clear();
       // The swap dropped every feature-state with the sources: no zone is lifted any more, so
       // the next move must lift one afresh rather than think it already has.
       hoveredZoneRef.current = null;
@@ -6472,15 +6585,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // the camera stays turned. Mid-drag the secondary layers stay empty, as the drag keeps them.
       if (slideActiveRef.current)
         spinPaintRef.current(spinDegRef.current, secondaryHiddenRef.current ? 'empty' : 'translate');
+      // An editor's preview over what was just put down: the basemap's paint, where the preview
+      // is for this basemap, and its line colours, after the data they describe.
+      try {
+        repaintShownRef.current(map);
+      } catch {
+        /* the style moved on: its own build paints */
+      }
+      syncPreviewInksRef.current();
       computeBadgesRef.current();
       // The internal map ref is live now — let MapOverlayHost subscribe to a real instance.
       if (first) setMapReady(true);
-      // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
-      // basemap of its own). The outline lands async, so re-run the detail toggles after it: a
-      // live basemap blank must catch it too.
-      if (styleMode === 'offline') {
-        await installWorldFallback(map, theme);
-        if (mapRef.current === map) applyDetailToggles(map, detailRef.current);
+      // Offline (or Outline) → draw the bundled world outline beneath the chart lines (the offline
+      // style has no basemap of its own). The outline lands async, so re-run the detail toggles
+      // after it: a live basemap blank must catch it too. Its colours are read when it lands, and
+      // the style's own background re-painted to match, so a palette moved meanwhile is drawn.
+      if (kind === 'offline') {
+        await installWorldFallback(map, () => mapStyleRef.current.worldFallback);
+        if (mapRef.current === map) {
+          try {
+            const fallback = mapStyleRef.current.worldFallback;
+            applyWorldFallbackPaint(map, fallback);
+            if (paintedSurfaceRef.current) paintedSurfaceRef.current = { ...paintedSurfaceRef.current, worldFallback: fallback };
+            // …in the preview's colours, if one is up for this map.
+            repaintShownRef.current(map);
+          } catch {
+            /* the style moved on during the load: its own build paints it */
+          }
+          applyDetailToggles(map, detailRef.current);
+        }
       }
     };
     const runBuild = (first: boolean) => {
@@ -6494,16 +6627,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
     // While on the live style, watch it — its load closely, then lightly for as long as it stays, so
     // a connection lost mid-session falls back too; while on the offline one, look for the way back.
+    // On the Outline map, neither: it loads nothing, so there is nothing to watch, and nowhere to
+    // go back to — leaving it is the reader's choice, which comes through the restyle path.
     const recovery = createBasemapRecovery({
-      styleUrl: () => BASEMAP_STYLE_URLS[themeRef.current],
+      styleUrl: () => liveStyleUrl(basemapRef.current, themeRef.current),
       onBack: () => swapBasemap('live', false),
     });
     const watch = (deadline: boolean) => {
       stopWatch();
       stopWatch = () => {};
+      if (installed.basemap === 'outline') return recovery.stop();
       if (mode === 'offline') return recovery.start();
       recovery.stop();
-      const styleUrl = BASEMAP_STYLE_URLS[installed.theme];
+      const styleUrl = liveStyleUrl(installed.basemap, installed.theme);
       stopWatch = watchLiveBasemap(map, deadline ? LIVE_BASEMAP_WAIT_MS : null, styleUrl, {
         ok: () => {
           recovery.landed();
@@ -6528,8 +6664,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!wanted || building || mapRef.current !== map) return;
       const { deadline } = wanted;
       wanted = null;
-      const from = installed.mode;
-      installed = { mode, theme: themeRef.current };
+      const from = styleKind(installed.mode, installed.basemap);
+      installed = { mode, basemap: basemapRef.current, theme: themeRef.current };
+      const to = styleKind(installed.mode, installed.basemap);
       watch(deadline);
       if (onStyleLoad) map.off('style.load', onStyleLoad);
       onStyleLoad = null;
@@ -6546,11 +6683,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       // Between the live and the offline style, replace rather than diff: the old style's requests
       // go with it, where a diff keeps a hung sprite request that holds back `load` and `idle` until
-      // its bounded wait gives up on it. A theme change keeps the diff it always had.
-      map.setStyle(
-        mode === 'live' ? BASEMAP_STYLE_URLS[installed.theme] : offlineStyle(installed.theme),
-        from === mode ? undefined : { diff: false },
-      );
+      // its bounded wait gives up on it. A theme change keeps the diff it always had. Outline is the
+      // offline style, so moving to or from it is that same crossing.
+      map.setStyle(styleFor(installed.mode, installed.basemap), from === to ? undefined : { diff: false });
     };
     restyleRef.current = () => swapBasemap(navigator.onLine ? mode : 'offline', true);
 
@@ -6692,6 +6827,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       stopWatch();
       recovery.stop();
       restyleRef.current = () => {};
+      // The same hazard once more: the live repaint diffs from what THIS map's layers were painted
+      // with, and the next map has painted nothing until its own first build.
+      paintedStyleRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -6704,15 +6842,80 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const basemap = mapStyle.basemap;
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (themeRef.current === theme) return;
+    if (themeRef.current === theme && basemapRef.current === basemap) return;
     themeRef.current = theme;
-    // The same basemap in the new theme — the offline one if the browser is offline or the live
-    // one has fallen back — rebuilt through the mount effect's style path.
+    basemapRef.current = basemap;
+    // The new basemap (or the same one in the new theme) — the offline one if the browser is
+    // offline or the live one has fallen back, the offline one by choice for Outline — rebuilt
+    // through the mount effect's style path, which paints it from mapStyleRef as it builds. Until
+    // that build begins, the repaint and the sprite re-bake below stand down (restylePendingRef):
+    // both run after this effect in the same commit, and on the outgoing style they would only
+    // paint what the build is about to replace — the sprites visibly so (see the ref).
+    restylePendingRef.current = true;
     restyleRef.current();
-  }, [theme]);
+  }, [theme, basemap]);
+
+  // A palette change on a style that stays (a Custom theme being edited): repaint, never restyle.
+  // What is painted is the SHOWN style — the editor's preview over the committed one while it has
+  // one up (mapPreview), the committed one otherwise — from what the layers carry now: the chart
+  // layers' bound values that moved (mapStyleApply), then the drawn basemap's own paint on the live
+  // style or the world outline's on the offline / Outline one, each only where its part changed.
+  // The basemap's paint is the shown style's only when that style is for the basemap drawn: a
+  // preview on another (hold to compare from an Outline theme) can't be shown without a new style,
+  // so the drawn one keeps its committed paint. Handed throttled styles (see the props), so a dash
+  // or a data-driven width, which re-tiles its source, lands at most at that rate. Stands down
+  // while a build is under way (it reads the refs as it adds its layers, and calls this when done)
+  // and while a restyle is pending (that build paints everything). Throws what MapLibre throws for
+  // a style that hasn't parsed yet; the callers wrap it, as the detail toggles do.
+  const repaintShown = useCallback((map: maplibregl.Map) => {
+    const prev = paintedStyleRef.current;
+    const surface = paintedSurfaceRef.current;
+    if (!prev || !surface) return;
+    const committed = mapStyleRef.current;
+    const shown = previewRef.current?.style ?? committed;
+    const paint = shown.basemap === committed.basemap ? shown : committed;
+    applyMapStyle(map, prev, shown);
+    if (drawnKindRef.current === 'live') {
+      if (JSON.stringify(surface.basemapPaint) !== JSON.stringify(paint.basemapPaint)) {
+        applyBasemapPaint(map, paint.basemapPaint);
+      }
+    } else if (JSON.stringify(surface.worldFallback) !== JSON.stringify(paint.worldFallback)) {
+      applyWorldFallbackPaint(map, paint.worldFallback);
+    }
+    paintedStyleRef.current = shown;
+    paintedSurfaceRef.current = { basemapPaint: paint.basemapPaint, worldFallback: paint.worldFallback };
+  }, []);
+  const repaintShownRef = useRef(repaintShown);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || restylePendingRef.current) return;
+    try {
+      repaintShown(map);
+    } catch {
+      /* mid-swap: the build that follows paints from the refs */
+    }
+  }, [mapStyle, mapPreview, repaintShown]);
+
+  // The sprites follow their spec in place (glyphImages rebakeGlyphImages: throttled, only the
+  // images whose inputs moved, and held for a build that is baking, which takes the newest up when
+  // it is done). Skipped until the spec first changes: the builds bake the one they start with.
+  // Not while a restyle is pending, either — a built-in theme switch hands the map a new theme and
+  // a new spec in one commit, and the build of the new style bakes spriteRef.current, the newest:
+  // baked here as well, the outgoing style would show the incoming theme's glyphs until the new
+  // one had downloaded, and then be baked a second time. So a built-in → built-in switch bakes
+  // once, on its own style, and calls rebakeGlyphImages not at all.
+  const bakedSpriteRef = useRef(sprite);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || bakedSpriteRef.current === sprite) return;
+    bakedSpriteRef.current = sprite;
+    if (restylePendingRef.current) return;
+    rebakeGlyphImages(map, sprite);
+  }, [sprite]);
 
   // Switch projection on demand (2D ↔ 3D). To 2D snaps flat north-up; to 3D leaves
   // the camera where it is (free rotate/tilt). Overlays recompute for the new view.
@@ -8528,8 +8731,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
         pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
+        // The labels re-placed over the new data. On a pure recolour (a Custom theme's commit:
+        // the same geometry in new colours) this pass's first geometry read — readHudRects'
+        // getBoundingClientRect — forces a layout, and was looked at for that (2026-10-06) and
+        // left: the layout it forces is the one the commit's own changes need at the next frame
+        // anyway (chiefly the custom properties applyAppearance has just written on <html>,
+        // which restyle the whole document, and the rows re-rendered in the new colours), so
+        // cached rects would move that work rather than save it — and the same pass reads the
+        // container's size and a downstream layer's markers while the camera is still, either
+        // of which forces it just the same. The pass itself has to run: the edge badges take
+        // their colours from the data. (While the editor previews, a drag's commit reaches
+        // here a throttle later, when little is left dirty.)
         computeBadges();
       }
+      // An editor's preview line colours, over the data just pushed (or the layers given back
+      // their own colours, once the data carries the preview's — mapStyleApply mapPreviewFor).
+      syncPreviewInks();
     } else {
       // Not ready — usually a transient: the chart's sources are mid-update (a setData still
       // tiling; see chartSourcesBusy), or a style swap hasn't rebuilt them yet. Defer until the
@@ -8554,6 +8771,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           pushData(map, dataRef.current, false, lsTransparentRef.current);
           computeBadges();
         }
+        syncPreviewInks();
       };
       const onSourceData = () => {
         if (map.getSource('acg-lines') && !chartSourcesBusy(map)) run();
@@ -8561,7 +8779,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.on('idle', run);
       map.on('sourcedata', onSourceData);
     }
-  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint]);
+  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint, syncPreviewInks]);
+
+  // The editor's preview line colours (mapStyleApply PREVIEW_INK_BINDINGS) follow the prop — after
+  // the data effect above in the same commit, so that when the preview goes (its colours have
+  // landed in the data, mapPreviewFor) the layers are given back their own `color` only once that
+  // data is pushed: the other way round, the old colours would show for a frame. Paint only.
+  useEffect(() => {
+    syncPreviewInks();
+  }, [mapPreview, syncPreviewInks]);
 
   // New Ascendant-zone data (the readout coming or going, the zones finishing their build)
   // drops the highlight: feature-state outlives setData, so a zone lit when the collection
@@ -9108,7 +9334,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onDetailZoomChange?.(zoom >= CLOSE_ZOOM);
   }, [zoom, onDetailZoomChange]);
 
-  const zenithFill = ZENITH_DISC_COLORS[theme];
+  // The paran chips wear the zenith disc's fill (the palette's; ZENITH_DISC_COLORS for a built-in
+  // theme), with text picked to read on it.
+  const zenithFill = mapStyle.zenithDisc;
   const paranText = badgeTextColor(zenithFill);
   // Compass progress through COMPASS_ZOOM→CLOSE_ZOOM (null until it appears): drives
   // its scale (80%→full, alongside the LS labels) and fade (to full over the first
@@ -9212,8 +9440,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // half, so push the seam later (~60%) to keep it in the gap between the halves
           // rather than slicing through the glyphs.
           const seamPct = b.prefix ? 60 : 50;
+          // The two colours the pair's line is drawn in (MapStyle: the chart's gradient, or the
+          // overlay's two dashed layers, which take the overlay's one ink when it has one).
+          const nodes = b.overlay ? mapStyle.overlayNodePair : mapStyle.nodePair;
           const bg = b.pair
-            ? `linear-gradient(100deg, ${PLANET_COLORS.NorthNode} 0 ${seamPct}%, ${PLANET_COLORS.SouthNode} ${seamPct}% 100%)`
+            ? `linear-gradient(100deg, ${nodes.nn} 0 ${seamPct}%, ${nodes.sn} ${seamPct}% 100%)`
             : b.color;
           // Aspect/midpoint badges fly to their computed point's sub-point —
           // where the aspect-offset (or midpoint) ecliptic degree is directly
@@ -9448,9 +9679,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         })}
         {/* The geodetic grid's sign glyphs (geoGridLabels.ts) — the Coordinates box's own glyphs,
             in the grid's one neutral colour, with no pill: they label a reference, not a reading,
-            and take no clicks. The halo is the eclipse digits' (ECLIPSE_LABEL_HALO), whose Earth
-            entry is a light parchment for exactly this case — dark ink on a pale basemap. Gone
-            with the other labels from the LS-only still and a chart-subject export. */}
+            and take no clicks. The halo is the eclipse digits' (MapStyle.eclipseHalo; for a
+            built-in theme ECLIPSE_LABEL_HALO, whose Earth entry is a light parchment for exactly
+            this case — dark ink on a pale basemap). Both colours are the palette's. Gone with the
+            other labels from the LS-only still and a chart-subject export. */}
         {!chartSubject && !lsTransparent && geoGridBadges.map((b) => (
           <span
             key={b.key}
@@ -9460,9 +9692,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             style={
               {
                 ...badgePos(b.x, b.y),
-                color: GEO_GRID_STYLE[theme].label,
+                color: mapStyle.geoGrid.label,
                 zIndex: b.z,
-                '--geo-halo': ECLIPSE_LABEL_HALO[theme].color,
+                '--geo-halo': mapStyle.eclipseHalo.color,
               } as CSSProperties
             }
           >

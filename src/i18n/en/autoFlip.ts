@@ -100,4 +100,22 @@ export const autoFlip = {
     title: 'These lines are drawn In Mundo',
     body: 'Every program has to decide where a body “is” before it can draw its line. In Mundo places it where it sits in the sky, latitude and all. In Zodiaco flattens that latitude onto the ecliptic first.',
   },
+  // A Custom theme the reader chose but can't draw right now (lib/autoFlipNotice says when).
+  // NEUTRAL on purpose: the core knows no tier names, so it says the theme isn't available
+  // and stops; a build that gates the option retunes this pair at startup to name what
+  // brings it back. As 'line-system-held' does, it ends on the sentence that matters —
+  // nothing was taken — rather than on what moved. (2026-10-06)
+  //
+  // No location clause, although the target (the greyed row, in Appearance) is usually off
+  // screen when this fires at boot. The clause above exists to give a route back, and there
+  // is no setting to go back to here: what returns the theme is its becoming available
+  // again, not a control. The row's own tip carries the reason for anyone who looks.
+  //
+  // And no {base}: the card fills no placeholders (AutoFlipNotice renders the catalog
+  // string as it stands), so the theme being drawn is named by what it is to the reader's
+  // own — the one it was built on — which is also the more useful half of the fact.
+  'theme-held': {
+    title: 'Custom theme on hold',
+    body: 'Your custom theme isn’t available right now, so the app is drawn in the theme it was built on. Nothing is cleared: it comes back as you left it once it’s available again.',
+  },
 } as const;

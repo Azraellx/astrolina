@@ -20,7 +20,7 @@
   z-index: 50;
   width: min(340px, calc(100vw - 32px));
   box-sizing: border-box;
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   /* One tone variable feeds the border, the pointer and the ring on the control, so it
      can't end up half-applied.
      BOTH kinds share it. Nothing on this card has failed — warn reports a setting the
@@ -36,8 +36,8 @@
   border-radius: 12px;
   padding: 12px 14px 12px;
   color: var(--text-strong);
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, calc(0.4 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
   font-family: inherit;
   animation: ui-rise var(--dur-move) var(--ease-settle);
 }
@@ -61,7 +61,7 @@
   width: 10px;
   height: 10px;
   margin-left: -5px;
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   rotate: 45deg;
 }
 /* Card ABOVE the control: the arrow hangs off the bottom edge, pointing down. */
@@ -137,6 +137,13 @@
     animation: none;
     outline-color: rgba(var(--afn-tone), 0.7);
   }
+}
+/* The same hold for a reader who chose Effects ▸ Motion ▸ Reduced in a Custom theme. The
+   effects block in index.css only shortens animations to 0.01ms, which on this cue would
+   end the pulse — and with it the ring — before anyone saw it. (2026-10-06) */
+:root[data-fx-motion='reduced'] .auto-flip-target {
+  animation: none;
+  outline-color: rgba(var(--afn-tone), 0.7);
 }
 
 .afn-title {

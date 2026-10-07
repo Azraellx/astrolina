@@ -19,11 +19,19 @@ import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 import { getViewLock, useViewLock } from './lib/extensions/viewLock';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
-import { type PlanTier, planTierFor, tierMet } from './lib/plan';
+// The theme-option seam (a downstream build's Custom theme): one slot, gated through the
+// shared entitlement above — read as the slot, its spec, and nothing else.
+import {
+  getThemeOption,
+  readThemeSpec,
+  subscribeThemeOption,
+  useThemeOptionSpec,
+  type ThemeEditorContext,
+} from './lib/extensions/themeOptions';
+import { type PlanTier, nudgeAction, planTierFor, tierMet } from './lib/plan';
 import type {
   Feature,
   FeatureCollection,
-  Geometry,
   LineString,
   Point as GeoPoint,
   Polygon,
@@ -265,6 +273,7 @@ import { bundledMinorBody } from './lib/minorBodies/bundled';
 import { loadMinorParansPref, saveMinorParansPref } from './lib/minorBodies/prefs';
 import { buildWheelMinor, type WheelMinorBody } from './lib/minorBodies/wheel';
 import { minorIconId } from './components/Map/glyphImages';
+import { mapPreviewFor } from './components/Map/mapStyleApply';
 import { MinorBodiesHud } from './components/MinorBodiesHud/MinorBodiesHud';
 import { generateNightShade } from './lib/astro/nightShade';
 import {
@@ -388,16 +397,45 @@ import {
 import { toggleDiscreet, useIdentity } from './lib/discreet';
 import { fmtLat, fmtLng } from './lib/coordFormat';
 import {
-  applyTheme,
-  GEO_ZONE_COLORS,
+  loadCustomChosen,
   loadTheme,
-  MAP_LINE_COLOR_OVERRIDES,
   minorLineColor,
-  NIGHT_SHADE_STYLE,
+  saveCustomChosen,
   saveTheme,
   STAR_LINE_COLORS,
   type Theme,
+  type ThemeChoice,
 } from './lib/theme';
+import {
+  builtinPalette,
+  explain as explainToken,
+  resolvePalette,
+  TOKENS,
+  type PaletteOverrides,
+  type ResolvedPalette,
+} from './lib/themePalette';
+import {
+  inkAllLines,
+  inkAspectLines,
+  inkOverlayLines,
+  inkOverlayParans,
+  spriteSpecFor,
+  withLineInks,
+  withMinorInks,
+  withParanInks,
+  withUniformInk,
+  type MapInks,
+} from './lib/lineInks';
+import { applyAppearance, previewAppearance } from './lib/appearance';
+import {
+  decideThemePick,
+  deriveThemeState,
+  heldNoticeStep,
+  themeEditorMounted,
+  toggledThemeEditor,
+  THEME_SHOWN_MARKER_KEY,
+} from './lib/themeChoice';
+import { createThrottle, useSettledValue, useThrottledValue } from './lib/useThrottledValue';
 import {
   loadProjection,
   saveProjection,
@@ -481,40 +519,16 @@ function effectiveLineSystem(
 const toolNeedsSky = (id: string): boolean =>
   !!getToolExtensions().find((e) => e.id === id)?.needsSiderealTime;
 
-// Some bodies' PLANET_COLORS tint washes out against a light basemap, so the MAP draws
-// their lines/zeniths in a per-theme override instead (MAP_LINE_COLOR_OVERRIDES from
-// lib/theme — the Moon on both light themes, plus Mercury/Uranus on Earth; shared with
-// the baked zenith glyph so stamps match). The color is the single source the edge
-// badges, hover tip, crossing-dot blends, AND the zenith disc/stamp all read, so they
-// follow suit. Geometry-agnostic so it covers the line/local-space (LineString) and
-// zenith (Point) sets. Midpoint lines carry a second body (planetB/colorB, read by their
-// hover tip); an overridden body there gets the same swap so a "Sun/Moon" tip stays
-// readable on light themes.
-function withThemeLineColors<G extends Geometry, P extends { planet: PlanetName; color: string }>(
-  fc: FeatureCollection<G, P>,
-  theme: Theme,
-): FeatureCollection<G, P> {
-  const overrides = MAP_LINE_COLOR_OVERRIDES[theme];
-  // Dark (or any theme with no overrides) → nothing to rewrite.
-  if (!Object.keys(overrides).length) return fc;
-  return {
-    type: 'FeatureCollection',
-    features: fc.features.map((f) => {
-      const p = f.properties as P & { planetB?: PlanetName; colorB?: string };
-      const a = overrides[p.planet];
-      const b = p.planetB ? overrides[p.planetB] : undefined;
-      if (!a && !b) return f;
-      return {
-        ...f,
-        properties: {
-          ...p,
-          ...(a ? { color: a } : null),
-          ...(b ? { colorB: b } : null),
-        },
-      };
-    }),
-  };
-}
+// Each line family's COLOUR step (lib/lineInks inkAspectLines and the rest), applied as the LAST
+// memo of its chain so a colour change — a Custom theme being edited — recolours the map's
+// lines without regenerating a single one (2026-10-06). The family functions, and inkAllLines
+// (the complete set a plugin reads, through collectAllLines), live in lib/lineInks beside
+// withLineInks — moved out of this file on 2026-10-06 so a Node suite can hold the drawn chain
+// and the complete set to each other (verify:theme-palette §10); the reasoning sits with them.
+
+// How often a Custom theme editor's draft reaches the MAP while it is being dragged (App's
+// mapDraft): the map style's own throttle, so a preview and a commit repaint at the same rate.
+const MAP_PREVIEW_MS = 80;
 
 // Pure filter helpers shared by the base chart and the overlay, so the two
 // can't drift apart in what the visibility toggles do.
@@ -972,8 +986,9 @@ export default function App() {
   // verify-geodetic-chart §6 holds the memos to it. (2026-10-02)
   const skyFamiliesOff = noTime || skyHeld;
   // Acknowledgement for settings this app moves on the user's behalf (lib/autoFlipNotice).
-  // Declared up here, ahead of the setters that announce. `announce` is only ever called
-  // from event handlers.
+  // Declared up here, ahead of the setters that announce. `announce` is called from event
+  // handlers — with one documented exception, the Custom theme's hold, which arrives with no
+  // gesture to hang it on (see the 'theme-held' effect beside saveTheme below).
   const {
     pending: autoFlipKind,
     announce: announceFlip,
@@ -1024,7 +1039,178 @@ export default function App() {
     },
     [],
   );
-  const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  // On touch the settings dock is a heavy full-height takeover, so don't auto-open it there —
+  // always start closed regardless of the stored (desktop) preference; the user opens it via
+  // the right-edge nub. Desktop keeps its remembered open/closed state. (Declared here, above the
+  // theme block, since 2026-10-06: opening the Custom theme's editor on touch dismisses it.)
+  const [showSettings, setShowSettings] = useState(
+    () => !isTouchLayout() && localStorage.getItem('astro:view-settings:v1') !== '0',
+  );
+  // ── Theme (2026-10-06) ──────────────────────────────────────────────────────────────────
+  // Two STORED values, CLAUDE.md rule 2's shape: the last BUILT-IN theme picked, and whether
+  // the choice is Custom — a downstream build's theme option (lib/extensions/themeOptions;
+  // the open core registers none). Two keys rather than a fourth value, because rule 6 forced
+  // it: see CUSTOM_CHOSEN_KEY in lib/theme. Only the picker (setThemeSafe) changes either.
+  const [builtinPref, setBuiltinPref] = useState<Theme>(loadTheme);
+  const [customChosen, setCustomChosen] = useState(loadCustomChosen);
+  // The installed option and its spec — the spec re-read on each COMMIT the option announces,
+  // never per input (an editor's live preview repaints CSS and renders nothing here).
+  const themeOpt = useSyncExternalStore(subscribeThemeOption, getThemeOption, getThemeOption);
+  const customSpec = useThemeOptionSpec(themeOpt);
+  // ENTITLEMENT, not the gated plan tier: a Pro reader with Advanced off resolves to tier
+  // 'new' (lib/plan), and must keep their theme all the same.
+  const customEntitled = !!themeOpt && isAddonEntitled(themeOpt);
+  // The spec resolved (lib/themePalette; memoized there too, so this is identity-stable).
+  // Resolved while held as well, for one question only: whether the hold changes anything
+  // visible — a spec that moves nothing from its base holds nothing (the notice below).
+  const specPalette = useMemo(
+    () => (customSpec ? resolvePalette(customSpec.base, customSpec.overrides) : null),
+    [customSpec],
+  );
+  // Everything else is DERIVED, by lib/themeChoice (pure, so a Pro suite can drive the hold
+  // through a plan change — this file can't be imported from Node):
+  //  · customLive — chosen, entitled, and a spec to draw.
+  //  · customHeld — chosen, and not drawable now (the plan lapsed, or no option or spec
+  //    here). A standing state, so it masks and never writes: the choice and the spec are
+  //    both still there when it lifts, and the picker marks the base it falls back to.
+  //  · theme — the EFFECTIVE theme, keeping the plain name so the read sites never change
+  //    (lineSystem's shape). Always a built-in: a Custom theme is drawn ON its spec's base,
+  //    held or live, so every Record<Theme, …> table read below keeps working untouched.
+  //  · themeChoice — what the picker shows as chosen: the stored choice, never the effective.
+  //  · palette — drawn now. A built-in's is builtinPalette(theme): one object per theme for
+  //    the page's life, whose map style, inks and sprite spec are exactly the tables the app
+  //    drew from before the engine existed, and whose CSS is empty.
+  const { customLive, customHeld, theme, themeChoice, palette, holdChanges: themeHoldChanges } =
+    deriveThemeState({
+      builtinPref,
+      customChosen,
+      hasOption: !!themeOpt,
+      entitled: customEntitled,
+      spec: customSpec,
+      specPalette,
+    });
+  // The editor window: open or not is TRANSIENT, never stored. A stored flag would need the
+  // downstream-tier trap's load check (CLAUDE.md) and buy nothing — the editor is opened from
+  // the button under the theme list, one click, when it's wanted.
+  const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+  // The map's channels. While the editor is open a burst of commits (an undo held down, a
+  // run of steps) reaches the map at most every 80 ms (style) / 120 ms (line inks: each is a
+  // re-tile), and the plugins that rebuild per colour — through collectAllLines and
+  // linesStamp — once the burst has settled. Closed, all three pass straight through, so a
+  // built-in theme switch lands in the one render that changes `theme`. The map's style is
+  // throttled as the WHOLE palette, so the base theme the Map is handed (mapTheme) and its
+  // style always arrive together — apart, a base change would restyle the map twice.
+  const mapPalette = useThrottledValue(palette, themeEditorOpen ? 80 : 0);
+  const mapStyle = mapPalette.map;
+  const mapTheme = mapPalette.base;
+  // The Outline basemap (a Custom theme's plain coastline sheet) has no roads, rivers or place
+  // names to switch: a row-A void combination. The Details switches show present but
+  // unavailable while it is drawn, and their Shift R / Shift L keys stand down with them —
+  // one refusal per surface, nothing written. Read through a ref by the keydown handler.
+  const basemapOutline = mapStyle.basemap === 'outline';
+  const basemapOutlineRef = useRef(basemapOutline);
+  useEffect(() => {
+    basemapOutlineRef.current = basemapOutline;
+  }, [basemapOutline]);
+  const inks = useThrottledValue(palette.inks, themeEditorOpen ? 120 : 0);
+  const inksCommitted = useSettledValue(palette.inks, themeEditorOpen ? 600 : 0);
+  // The editor's draft on the MAP (2026-10-06). The editor commits a drag only at its end — one
+  // storage write, one undo step — and a commit is too dear to run at input rate (measured at
+  // ~350 ms of main thread), so while a colour or a weight is being dragged the map follows a
+  // TRANSIENT preview instead: the editor context's `preview` publishes its draft here at most
+  // every MAP_PREVIEW_MS, and the Map paints it over what is committed (`mapPreview` below; paint
+  // only — mapStyleApply says what follows and what waits for the commit). Never stored, and
+  // never reaching anything COMMITTED: not `palette`, not the throttled channels above, not
+  // inksCommitted — so not the line set a plugin reads (collectAllLines), linesStamp or ctx.inks
+  // either. `releasing`: the editor has taken its preview down (preview(null) — the window
+  // closing, a compare let go over an imported code), and the draft stays on the map until the
+  // channels above have caught up with the latest commit, so the old colours never show between.
+  const [mapDraft, setMapDraft] = useState<{ palette: ResolvedPalette; releasing: boolean } | null>(null);
+  // Both edges, as useThrottledValue: the first draft after a quiet spell lands at once (a
+  // compare pressed shows on the next render), the last of a burst always lands. A release is
+  // never held back, and carries the newest draft asked for with it.
+  const [mapDraftThrottle] = useState(() =>
+    createThrottle<ResolvedPalette>(MAP_PREVIEW_MS, (draft) => setMapDraft({ palette: draft, releasing: false })),
+  );
+  const pushMapDraft = useCallback(
+    (next: ResolvedPalette | null) => {
+      if (next !== null) {
+        mapDraftThrottle.push(next);
+        return;
+      }
+      const pending = mapDraftThrottle.take();
+      setMapDraft((cur) => {
+        const shown = pending ?? cur?.palette;
+        return shown ? { palette: shown, releasing: true } : null;
+      });
+    },
+    [mapDraftThrottle],
+  );
+  useEffect(() => () => mapDraftThrottle.cancel(), [mapDraftThrottle]);
+  // The picker's one writer. What it does with a pick is lib/themeChoice decideThemePick —
+  // three refusals, each a rule: a teaser without the entitlement (the plan picker opens,
+  // nothing written); a re-pick of the base row a HELD Custom marks (it would write the
+  // masked value over the stored choice — CLAUDE.md: a control that shows a derived value
+  // refuses writes while the mask is up, Discovery's frame menu was the lesson); and Custom
+  // with no option installed. The first pick of Custom seeds a copy of the theme on screen
+  // (the option's onChoose), so choosing it moves nothing by itself, and opens the editor once.
+  const setThemeSafe = useCallback(
+    (next: ThemeChoice) => {
+      const pick = decideThemePick(
+        { hasOption: !!themeOpt, entitled: customEntitled, customChosen, customHeld, theme },
+        next,
+        readThemeSpec(themeOpt) !== null,
+      );
+      switch (pick.kind) {
+        case 'refuse':
+          return;
+        case 'nudge':
+          nudgeAction();
+          return;
+        case 'custom':
+          try {
+            themeOpt?.onChoose?.(theme);
+          } catch {
+            /* the option's own failure: no seed, and the choice then reads as held */
+          }
+          if (pick.writeChosen) {
+            setCustomChosen(true);
+            saveCustomChosen(true);
+          }
+          if (pick.openEditor) {
+            setThemeEditorOpen(true);
+            // On the touch layout, opening the editor dismisses the dock (see toggleThemeEditor).
+            if (isTouchLayout()) setShowSettings(false);
+          }
+          return;
+        case 'builtin':
+          setBuiltinPref(pick.theme);
+          if (pick.clearChosen) {
+            setCustomChosen(false);
+            saveCustomChosen(false);
+          }
+          setThemeEditorOpen(false);
+      }
+    },
+    [themeOpt, customEntitled, customChosen, customHeld, theme],
+  );
+  // The Customize button: opens the editor only while the custom theme is live (a held one
+  // has nothing to edit on screen); closing is never refused.
+  //
+  // On the touch layout OPENING the editor also dismisses the settings dock — the precedent of
+  // the Minor bodies window's More button (Sidebar), for the same reason: the dock is a
+  // full-height takeover above every floating window, and on a phone the editor is a bottom sheet
+  // it would cover, its close, undo, redo, compare and help among it. One tap, both moves, and
+  // the dock comes back from its nub as always; closing the editor leaves the dock alone. Read at
+  // the tap (isTouchLayout). Nothing is stored by it: the dock's stored open state is the
+  // desktop's, and a touch layout never writes it (the astro:view-settings:v1 effect). The first
+  // pick of Custom, which opens the editor too, does the same (setThemeSafe).
+  const toggleThemeEditor = useCallback(() => {
+    const next = toggledThemeEditor(themeEditorOpen, customLive);
+    setThemeEditorOpen(next);
+    if (next && !themeEditorOpen && isTouchLayout()) setShowSettings(false);
+  }, [themeEditorOpen, customLive]);
+  const closeThemeEditor = useCallback(() => setThemeEditorOpen(false), []);
   // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
   const [projection, setProjection] = useState<MapProjectionMode>(loadProjection);
 
@@ -1037,12 +1223,6 @@ export default function App() {
   );
   const [showCoords, setShowCoords] = useState(
     () => localStorage.getItem('astro:view-coords:v1') !== '0',
-  );
-  // On touch the settings dock is a heavy full-height takeover, so don't auto-open it there —
-  // always start closed regardless of the stored (desktop) preference; the user opens it via
-  // the right-edge nub. Desktop keeps its remembered open/closed state.
-  const [showSettings, setShowSettings] = useState(
-    () => !isTouchLayout() && localStorage.getItem('astro:view-settings:v1') !== '0',
   );
   // The settings dock mounts on open. On touch it slides in/out (see Sidebar.css); to let the
   // CLOSE animation play, keep it mounted through the slide-out and unmount only when that
@@ -1599,10 +1779,82 @@ export default function App() {
 
   const mapRef = useRef<MapHandle>(null);
 
+  // The STORED built-in, never the derived theme — a held Custom choice draws its base, and
+  // persisting that would write a masked value over the reader's own (rule 2). Written on
+  // mount as the [theme] effect always was; that is why Custom needed a key of its own.
   useEffect(() => {
-    applyTheme(theme);
-    saveTheme(theme);
-  }, [theme]);
+    saveTheme(builtinPref);
+  }, [builtinPref]);
+  // The editor as mounted (the gate on its render below): the option's, with the custom
+  // theme live, the window open, and no add-on surface owning the viewport.
+  const themeEditorShown = themeEditorMounted(!!themeOpt, customLive, themeEditorOpen, viewParked);
+  // Paint the palette on the document (lib/appearance) BEFORE the browser paints, so a theme
+  // change never shows a frame of the old one — replacing the passive effect that set
+  // data-theme after paint. A built-in writes data-theme and data-panel-tone and no custom
+  // property, so the stylesheet alone paints it, as before. Re-applied whenever the editor
+  // goes away, too: a preview it left on the document (ctx.preview) is dropped for the
+  // committed palette rather than outliving the window that made it.
+  //
+  // While the editor is up, its input-rate preview (ctx.preview → lib/appearance
+  // previewAppearance) OUTRANKS a commit: this records the commit and leaves the preview on
+  // screen, because a throttled commit can carry an older draft than the one being shown.
+  // The preview is always the editor's whole draft — it re-previews after every
+  // whole-document step too (undo, a preset, an outside change) — so it is never behind
+  // what was committed. With no editor mounted, a preview is dropped here (`endPreview`).
+  useLayoutEffect(() => {
+    applyAppearance(palette, { endPreview: !themeEditorShown });
+  }, [palette, themeEditorShown]);
+  // The map's preview (mapDraft, above): the draft, until a release completes — the editor gone
+  // or its preview taken down, AND the throttled channels caught up with the latest commit
+  // (mapPalette and inks ARE palette's), so what replaces the draft is the last thing committed.
+  // mapPreviewFor then hands the Map only what differs from what it draws, by key: a draft equal
+  // to what has landed — the commit arriving behind a drag — is no preview at all, and the line
+  // layers read their own colours again once the data carries the draft's.
+  //
+  // The editor gone counts as a release without waiting for the editor's own (it gives it from
+  // its unmount cleanup, after committing its last edit), so a window that never releases can't
+  // leave its draft on the map. The one thing that costs: an edit made under the editor's commit
+  // throttle (120 ms) before the window closes reaches `palette` a render after this one, so the
+  // map shows the colours before it for that render. A drag commits as it ends, so only a
+  // keystroke that quick ahead of the close can see it.
+  const mapCaughtUp = mapPalette === palette && inks === palette.inks;
+  const mapDraftShown =
+    mapDraft && !((mapDraft.releasing || !themeEditorShown) && mapCaughtUp) ? mapDraft.palette : null;
+  // A spent draft is dropped as soon as a render finds it spent — during the render, React's
+  // pattern for state that follows other state (useThrottledValue does the same): left in state,
+  // a released draft would show again the next time the channels fell behind a commit.
+  if (mapDraft && !mapDraftShown) setMapDraft(null);
+  const mapPreview = useMemo(() => mapPreviewFor(mapDraftShown, mapStyle, inks), [mapDraftShown, mapStyle, inks]);
+  // The held notice ('theme-held'). The one effect in this file that announces, and it has to
+  // be one: a hold arrives with no gesture of the reader's to hang it on — a plan that lapsed
+  // while they were away (seen at boot), or a sign-out in another tab (seen mid-session). It
+  // fires only when the hold changes what is drawn — the spec moves something from its base —
+  // and only for a theme that was actually SHOWN here: THEME_SHOWN_MARKER_KEY is a
+  // bookkeeping marker, written while the theme is live and cleared when its hold is
+  // announced, never a preference. Boot is the ref's null; mid-session, the live → held edge.
+  // A run of renders while already held says nothing more. (The decision is lib/themeChoice
+  // heldNoticeStep; this effect only does its storage and its announce.)
+  const themeLiveRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const was = themeLiveRef.current;
+    themeLiveRef.current = customLive;
+    let step;
+    try {
+      step = heldNoticeStep(
+        was,
+        { customLive, customHeld, holdChanges: themeHoldChanges },
+        localStorage.getItem(THEME_SHOWN_MARKER_KEY) === '1',
+        // Under a view lock the card stands down without consuming the announcement, so the
+        // step keeps the marker for the next boot rather than spend it unseen.
+        getViewLock() !== null,
+      );
+      if (step.marker === 'set') localStorage.setItem(THEME_SHOWN_MARKER_KEY, '1');
+      else if (step.marker === 'clear') localStorage.removeItem(THEME_SHOWN_MARKER_KEY);
+    } catch {
+      return; // storage blocked: no marker to go on, so nothing to say
+    }
+    if (step.announce) announceFlip('theme-held', step.changed);
+  }, [customLive, customHeld, themeHoldChanges, announceFlip]);
 
   useEffect(() => {
     saveProjection(projection);
@@ -1952,14 +2204,15 @@ export default function App() {
           case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
           case 'm': if (advancedWheel && !parked) setShowMidpointLines((v) => !v); break;
           case 's': if (advancedWheel && !parked && !held) setShowStarLines((v) => !v); break;
-          // Appearance ▸ Details toggles (always available).
+          // Appearance ▸ Details toggles — always available, except on the Outline basemap,
+          // which has neither layer (their rows are greyed there, and so are their keys).
           case 'r':
-            if (parked) break;
+            if (parked || basemapOutlineRef.current) break;
             // Roads + rivers move together (one Details switch), so stay in sync.
             setShowRoads((v) => !v);
             setShowRivers((v) => !v);
             break;
-          case 'l': if (!parked) setShowLabels((v) => !v); break;
+          case 'l': if (!parked && !basemapOutlineRef.current) setShowLabels((v) => !v); break;
           // Advanced ▸ Display toggles — gated on Advanced mode.
           case 'o': if (advancedWheel && !parked) setShowOrbZones((v) => !v); break;
           case 'z': if (advancedWheel && !parked && !held) setShowZenith((v) => !v); break;
@@ -3069,7 +3322,7 @@ export default function App() {
   // Fixed-star lines (Filters ▸ Fixed Stars): proper-motion + precessed star
   // positions for the chart instant, through the same meridian mapping as the
   // planet lines (so they follow Celestial vs Geodetic like everything else).
-  const starLines = useMemo(() => {
+  const starLinesGeom = useMemo(() => {
     if (!effShowStarLines || !current || skyFamiliesOff) return EMPTY_FC;
     return generateStarLines(
       starsOfDate(jd, starSet),
@@ -3080,6 +3333,12 @@ export default function App() {
       STAR_LINE_COLORS[theme],
     );
   }, [effShowStarLines, current, skyFamiliesOff, jd, starSet, meridianLng, lineSystem, eps, theme]);
+  // The colour step (see the note above inkAspectLines): the palette's star ink, which for a
+  // built-in theme IS the tint above, so the same collection comes back.
+  const starLines = useMemo(
+    () => withUniformInk(starLinesGeom, inks.star),
+    [starLinesGeom, inks.star],
+  );
 
   // ── Catalog minor bodies (lib/minorBodies/) ──────────────────────────────────
   // The reader's list is a PREFERENCE (minorApi.pref). Whether each body on it draws is
@@ -3157,7 +3416,9 @@ export default function App() {
   const minorAnglesOff = !(['MC', 'IC', 'ASC', 'DSC'] as const).some((a) => visibleLineTypes.has(a));
   // Each body's name, colour and sprite — named exactly as its row is (minorRowName), and
   // read off the list and the load state rather than the rows, which are derived further
-  // down once the overlay beside the chart is known.
+  // down once the overlay beside the chart is known. The colour is the base theme's table
+  // entry, what the generators write; the palette's own catalog inks go on as the last step
+  // of each chain (withMinorInks), so a colour change never regenerates these lines.
   const minorDecor = useMemo(() => {
     // A plain record: `Map` in this module is the map component.
     const names: Record<number, string> = {};
@@ -3170,24 +3431,34 @@ export default function App() {
     // minorLoadVer: a file landing can bring a name with it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minorPref, minorLoadVer, theme]);
+  // The same decoration in the palette's inks, for the surfaces off the map that colour a
+  // catalog body from it (the wheel's catalog ring), so a body reads one colour on the wheel
+  // and on its lines. A built-in's ink IS the table entry above.
+  const minorDecorInked = useMemo(
+    () =>
+      (n: number): MinorDecor => ({ ...minorDecor(n), color: inks.minorOf(n) }),
+    [minorDecor, inks],
+  );
   const allMinorLines = useMemo(
     () => generateMinorLines(minorLinePositions, meridianLng, minorDecor),
     [minorLinePositions, meridianLng, minorDecor],
   );
-  // The Angles filter applies to catalog bodies exactly as to the planets.
-  const minorLines = useMemo(
+  // The Angles filter applies to catalog bodies exactly as to the planets — then the colour
+  // step (see the note above inkAspectLines).
+  const minorLinesGeom = useMemo(
     () => ({
       ...allMinorLines,
       features: allMinorLines.features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
     }),
     [allMinorLines, visibleLineTypes],
   );
+  const minorLines = useMemo(() => withMinorInks(minorLinesGeom, inks), [minorLinesGeom, inks]);
   // A zenith coin sits ON its body's MC line, so it follows the MC toggle in the Angles
   // filter exactly as the planets' stamps do (filterZenith) — with MC off, a coin left
   // standing would mark a line the reader switched off. No birth time, no coins, as for
   // the planets' stamps (allZenith): a timeless chart's lines on a geodetic map don't
   // bring them back. (2026-10-02)
-  const minorZenith = useMemo(
+  const minorZenithGeom = useMemo(
     () =>
       generateMinorZenith(
         visibleLineTypes.has('MC') && !skyFamiliesOff ? minorLinePositions : [],
@@ -3196,14 +3467,16 @@ export default function App() {
       ),
     [skyFamiliesOff, minorLinePositions, meridianLng, minorDecor, visibleLineTypes],
   );
+  const minorZenith = useMemo(() => withMinorInks(minorZenithGeom, inks), [minorZenithGeom, inks]);
 
-  const lines = useMemo(
-    () =>
-      mergeNodePairs(
-        withThemeLineColors(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
-      ),
-    [allLines, visiblePlanets, visibleLineTypes, theme],
+  // The chart's angle lines: filtered and node-paired (geometry), then inked — the colour
+  // step last, so a colour change never re-runs the filters. (The merge reads no colour, so
+  // inking after it draws exactly what inking before it did.)
+  const linesGeom = useMemo(
+    () => mergeNodePairs(filterLines(allLines, visiblePlanets, visibleLineTypes)),
+    [allLines, visiblePlanets, visibleLineTypes],
   );
+  const lines = useMemo(() => withLineInks(linesGeom, inks), [linesGeom, inks]);
 
   // Slide readout (reuses the measure slot): the spin as a rotation angle about the
   // pole, plus the resulting WALL-CLOCK time + date at the birthplace in the chart's
@@ -3248,7 +3521,7 @@ export default function App() {
   // depends on it. In geodetic mode the positions are already ecliptic-projected
   // (see linePositions), so the measuring frame is zodiacal regardless of the
   // (possibly stale, hidden) In-Mundo/In-Zodiaco radio.
-  const angleLines = useMemo<
+  const angleLinesGeom = useMemo<
     FeatureCollection<LineString, AngleOverlayLineProps>
   >(() => {
     if ((!effShowAspectLines && !effShowMidpointLines) || !current) return EMPTY_FC;
@@ -3278,15 +3551,12 @@ export default function App() {
         ...generateMidpointLines(vis, meridianLng, effCoordSystem, eps, lineOpts).features,
       );
     }
-    return withThemeLineColors(
-      {
-        type: 'FeatureCollection',
-        features: features.filter((f) =>
-          visibleLineTypes.has(f.properties.lineType),
-        ),
-      },
-      theme,
-    );
+    return {
+      type: 'FeatureCollection',
+      features: features.filter((f) =>
+        visibleLineTypes.has(f.properties.lineType),
+      ),
+    };
   }, [
     effShowAspectLines,
     effShowMidpointLines,
@@ -3299,17 +3569,20 @@ export default function App() {
     visibleLineTypes,
     meridianLng,
     eps,
-    theme,
     lineOpts,
   ]);
+  const angleLines = useMemo(() => inkAspectLines(angleLinesGeom, inks), [angleLinesGeom, inks]);
 
-  const parans = useMemo(
+  // The chart's parans, then their colour step: canonical for every built-in theme (parans
+  // never took the Moon swap), so the same collection comes back there.
+  const paransGeom = useMemo(
     () =>
       effShowParans
         ? mergeNodeParans(filterParans(allParans, visiblePlanets), visiblePlanets)
         : EMPTY_FC,
     [allParans, visiblePlanets, effShowParans],
   );
+  const parans = useMemo(() => withParanInks(paransGeom, inks), [paransGeom, inks]);
   // The catalog bodies' parans with the planets (Minor bodies ▸ "Parans with the planets"):
   // each body on the reader's list paired with the visible built-in bodies, never with
   // another catalog body (parans.ts says why). From EXACTLY what the two families' lines are
@@ -3317,7 +3590,7 @@ export default function App() {
   // one meridianLng, with the catalog lines' own decoration — so every row crosses the drawn
   // lines where it says it does (CLAUDE.md rule 5; verify-parans §7). No birth time, none, as
   // for the planets' (allParans: skyFamiliesOff).
-  const minorParans = useMemo(
+  const minorParansGeom = useMemo(
     () =>
       !minorParansOn || skyFamiliesOff || minorLinePositions.length === 0
         ? NO_MINOR_PARANS
@@ -3329,6 +3602,8 @@ export default function App() {
           ),
     [minorParansOn, skyFamiliesOff, minorLinePositions, linePositions, visiblePlanets, meridianLng, minorDecor],
   );
+  // Coloured as their catalog body's lines are (the colour step, last).
+  const minorParans = useMemo(() => withMinorInks(minorParansGeom, inks), [minorParansGeom, inks]);
 
   // Local Space is its own View now: the window being open IS the on switch, so the
   // lines render exactly while showLocalSpace is true (no separate toggle) — except on a
@@ -3336,39 +3611,32 @@ export default function App() {
   // (skyHeld). Everything that means "local space is ON" reads this, never the raw flag,
   // so the flag stays as the reader left it. (2026-10-02)
   const lsActive = showLocalSpace && !skyHeld;
-  const localSpace = useMemo(
-    () =>
-      lsActive
-        ? withThemeLineColors(
-            filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound),
-            theme,
-          )
-        : EMPTY_FC,
-    [allLocalSpace, visiblePlanets, lsActive, hideLsInbound, theme],
+  const localSpaceGeom = useMemo(
+    () => (lsActive ? filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound) : EMPTY_FC),
+    [allLocalSpace, visiblePlanets, lsActive, hideLsInbound],
   );
+  const localSpace = useMemo(() => withLineInks(localSpaceGeom, inks), [localSpaceGeom, inks]);
   // Dots where the (visible) local-space lines cross the (visible) birth-chart
-  // lines — only while local space is shown.
+  // lines — only while local space is shown. AFTER the colour step, not before it: each dot
+  // is the blend of the two lines' colours as drawn.
   const localSpaceCross = useMemo(
     () =>
       lsActive ? generateLocalSpaceCrossings(localSpace, lines) : EMPTY_FC,
     [lsActive, localSpace, lines],
   );
-  const zenith = useMemo(
-    () =>
-      withThemeLineColors(filterZenith(allZenith, visiblePlanets, visibleLineTypes), theme),
-    [allZenith, visiblePlanets, visibleLineTypes, theme],
+  const zenithGeom = useMemo(
+    () => filterZenith(allZenith, visiblePlanets, visibleLineTypes),
+    [allZenith, visiblePlanets, visibleLineTypes],
   );
+  const zenith = useMemo(() => withLineInks(zenithGeom, inks), [zenithGeom, inks]);
   // The nadir (sub-anti-planetary) stamps: the antipodes of the zeniths, on the IC
   // line — so they follow the IC toggle (the zeniths follow MC). Shown together with
   // the zeniths under the one Zeniths/Nadirs filter (showZenith), gated at the Map prop.
-  const nadir = useMemo(
-    () =>
-      withThemeLineColors(
-        filterZenith(antipodeStamps(allZenith), visiblePlanets, visibleLineTypes, 'IC'),
-        theme,
-      ),
-    [allZenith, visiblePlanets, visibleLineTypes, theme],
+  const nadirGeom = useMemo(
+    () => filterZenith(antipodeStamps(allZenith), visiblePlanets, visibleLineTypes, 'IC'),
+    [allZenith, visiblePlanets, visibleLineTypes],
   );
+  const nadir = useMemo(() => withLineInks(nadirGeom, inks), [nadirGeom, inks]);
 
   // ── Timeline / overlay: a second chart layer (transits, secondary
   // progressions, solar-arc directions, or a synastry partner) derived from the
@@ -3467,12 +3735,14 @@ export default function App() {
         : '',
     [resolvedEclipse, fmt, t],
   );
+  // In the palette's eclipse inks — the base theme's table entry for a built-in, so what
+  // buildEclipseMap would pick by itself. Only this cheap link re-runs for a colour change.
   const eclipseMapData = useMemo(
     () =>
       resolvedEclipse && eclipsesMod
-        ? eclipsesMod.buildEclipseMap(resolvedEclipse, eclipseIsoStep, theme, eclipseTitle)
+        ? eclipsesMod.buildEclipseMap(resolvedEclipse, eclipseIsoStep, theme, eclipseTitle, inks.eclipse)
         : null,
-    [resolvedEclipse, eclipsesMod, eclipseIsoStep, theme, eclipseTitle],
+    [resolvedEclipse, eclipsesMod, eclipseIsoStep, theme, eclipseTitle, inks.eclipse],
   );
   const eclipseDetails = useMemo(
     () =>
@@ -3502,9 +3772,10 @@ export default function App() {
         : overlayMode === 'transits' || overlayMode === 'cyclo'
           ? epochMsToJD(targetDate)
           : jd;
-    const style = NIGHT_SHADE_STYLE[theme];
+    // The map style's (NIGHT_SHADE_STYLE for a built-in), at the map's own rate.
+    const style = mapStyle.nightShade;
     return generateNightShade(nightJd, style.color, style.opacity);
-  }, [showNightShade, current, skyHeld, overlayMode, resolvedEclipse, targetDate, jd, theme]);
+  }, [showNightShade, current, skyHeld, overlayMode, resolvedEclipse, targetDate, jd, mapStyle.nightShade]);
 
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
@@ -4001,7 +4272,7 @@ export default function App() {
   // overlay prefix (per-body Sp/Tr on Cyclocartography, whose aspect-to-angle lines
   // each have one well-defined source body). Midpoint lines are suppressed on
   // Cyclocartography — a midpoint would average two epochs into a single point.
-  const overlayAngleLines = useMemo<
+  const overlayAngleLinesGeom = useMemo<
     FeatureCollection<LineString, AngleOverlayLineProps>
   >(() => {
     if (!overlayFrame || !overlayAux) return EMPTY_FC;
@@ -4032,10 +4303,7 @@ export default function App() {
       type: 'FeatureCollection',
       features: features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
     };
-    return withThemeLineColors(
-      isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix),
-      theme,
-    );
+    return isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix);
   }, [
     overlayFrame,
     overlayAux,
@@ -4047,15 +4315,20 @@ export default function App() {
     coordSystem,
     visiblePlanets,
     visibleLineTypes,
-    theme,
     lineOpts,
   ]);
+  // In the aspect inks, as the chart's own aspect lines are: they take those lines' place
+  // in the one layer while an overlay is up, so they read as that family, not the overlay's.
+  const overlayAngleLines = useMemo(
+    () => inkAspectLines(overlayAngleLinesGeom, inks),
+    [overlayAngleLinesGeom, inks],
+  );
 
   // The overlay frame's fixed-star lines — star positions precessed to the overlay's
   // own epoch (the natal set uses the natal epoch). Replaces the natal star lines
   // while an overlay is active. Cyclocartography reads its bodies at the transit
   // instant, so its stars carry the 'Tr' epoch tag.
-  const overlayStarLines = useMemo(() => {
+  const overlayStarLinesGeom = useMemo(() => {
     if (!overlayFrame || !overlayAux || !effShowStarLines) return EMPTY_FC;
     const { ovMeridianLng, ovEps, prefix, isCyclo, jd: ovJd } = overlayFrame;
     return tagLabels(
@@ -4068,8 +4341,13 @@ export default function App() {
       isCyclo ? 'Tr' : prefix,
     );
   }, [overlayFrame, overlayAux, effShowStarLines, starSet, lineSystem, theme]);
+  const overlayStarLines = useMemo(
+    () => withUniformInk(overlayStarLinesGeom, inks.star),
+    [overlayStarLinesGeom, inks.star],
+  );
 
-  const overlay = useMemo<OverlayData | null>(() => {
+  // The overlay's own families as geometry; the colour step is the memo after this one.
+  const overlayGeom = useMemo<OverlayData | null>(() => {
     if (!overlayLayer) return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     // CCG names each feature's actual source — Sp on the progressed personal
@@ -4086,17 +4364,14 @@ export default function App() {
     const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
     return {
       lines: mergeNodePairs(
-        withThemeLineColors(
-          filterLines(
-            isCyclo
-              ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
-                  cycloBodyTag(p.planet),
-                )
-              : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
-            visiblePlanets,
-            visibleLineTypes,
-          ),
-          theme,
+        filterLines(
+          isCyclo
+            ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
+                cycloBodyTag(p.planet),
+              )
+            : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+          visiblePlanets,
+          visibleLineTypes,
         ),
       ),
       // A time overlay draws no parans of its own (Cyclo has no single sky-moment; the
@@ -4111,18 +4386,15 @@ export default function App() {
           )
         : EMPTY_FC,
       localSpace: lsActive
-        ? withThemeLineColors(
-            filterLocalSpace(
-              generateLocalSpace(
-                overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
-                overlayLayer.gmst,
-                overlayLayer.originLat,
-                overlayLayer.originLng,
-              ),
-              visiblePlanets,
-              hideLsInbound,
+        ? filterLocalSpace(
+            generateLocalSpace(
+              overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
+              overlayLayer.gmst,
+              overlayLayer.originLat,
+              overlayLayer.originLng,
             ),
-            theme,
+            visiblePlanets,
+            hideLsInbound,
           )
         : EMPTY_FC,
       // Zenith points for the overlay bodies. When the (shared) Zeniths/Nadirs toggle is
@@ -4131,13 +4403,10 @@ export default function App() {
       // with no fly target, the overlay labels become non-clickable.
       zenith: effShowZenith
         ? tagZeniths(
-            withThemeLineColors(
-              filterZenith(
-                generateZenithStamps(ovPositions, ovMeridianLng),
-                visiblePlanets,
-                visibleLineTypes,
-              ),
-              theme,
+            filterZenith(
+              generateZenithStamps(ovPositions, ovMeridianLng),
+              visiblePlanets,
+              visibleLineTypes,
             ),
             isCyclo ? cycloBodyTag : prefix,
           )
@@ -4147,14 +4416,11 @@ export default function App() {
       // Zeniths/Nadirs gate as the zeniths above.
       nadir: effShowZenith
         ? tagZeniths(
-            withThemeLineColors(
-              filterZenith(
-                antipodeStamps(generateZenithStamps(ovPositions, ovMeridianLng)),
-                visiblePlanets,
-                visibleLineTypes,
-                'IC',
-              ),
-              theme,
+            filterZenith(
+              antipodeStamps(generateZenithStamps(ovPositions, ovMeridianLng)),
+              visiblePlanets,
+              visibleLineTypes,
+              'IC',
             ),
             isCyclo ? cycloBodyTag : prefix,
           )
@@ -4166,7 +4432,45 @@ export default function App() {
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowZenith, coordSystem, lineSystem, theme, lineOpts]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowZenith, coordSystem, lineSystem, lineOpts]);
+  // …and its colour step: the bodies' inks, the overlay's one ink over its lines, local
+  // space and parans when the palette sets one (inkOverlayLines says why not its stamps).
+  // The same bundle back when nothing differs, which on Dark is every family (on the light
+  // maps, all but those carrying the Moon's slate).
+  const overlay = useMemo<OverlayData | null>(() => {
+    if (!overlayGeom) return null;
+    const g = overlayGeom;
+    const ink = {
+      lines: inkOverlayLines(g.lines, inks),
+      parans: inkOverlayParans(g.parans, inks),
+      localSpace: inkOverlayLines(g.localSpace, inks),
+      zenith: withLineInks(g.zenith, inks),
+      nadir: withLineInks(g.nadir, inks),
+    };
+    return ink.lines === g.lines &&
+      ink.parans === g.parans &&
+      ink.localSpace === g.localSpace &&
+      ink.zenith === g.zenith &&
+      ink.nadir === g.nadir
+      ? g
+      : { ...g, ...ink };
+  }, [overlayGeom, inks]);
+  // The overlay's catalog lines and coins in the palette's catalog inks — the geometry
+  // (overlayMinor: positions, meridian) is what its parans and the complete set build from.
+  const overlayMinorInked = useMemo(() => {
+    if (!overlayMinor) return null;
+    const ink = {
+      lines: withMinorInks(overlayMinor.lines, inks),
+      zenith: withMinorInks(overlayMinor.zenith, inks),
+    };
+    return ink.lines === overlayMinor.lines && ink.zenith === overlayMinor.zenith
+      ? overlayMinor
+      : { ...overlayMinor, ...ink };
+  }, [overlayMinor, inks]);
+  const overlayMinorParansInked = useMemo(
+    () => overlayMinorParans && withMinorInks(overlayMinorParans, inks),
+    [overlayMinorParans, inks],
+  );
 
   // The overlay layer as it reaches the MAP (and the plugin context). For every mode
   // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are
@@ -4182,15 +4486,15 @@ export default function App() {
   // memo above, so a catalog file landing doesn't regenerate the planets' lines.
   const overlayWithMinor = useMemo<OverlayData | null>(
     () =>
-      overlay && overlayMinor
+      overlay && overlayMinorInked
         ? {
             ...overlay,
-            minorLines: overlayMinor.lines,
-            minorZenith: overlayMinor.zenith,
-            minorParans: overlayMinorParans,
+            minorLines: overlayMinorInked.lines,
+            minorZenith: overlayMinorInked.zenith,
+            minorParans: overlayMinorParansInked,
           }
         : overlay,
-    [overlay, overlayMinor, overlayMinorParans],
+    [overlay, overlayMinorInked, overlayMinorParansInked],
   );
   const mapOverlay =
     overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlayWithMinor;
@@ -4334,7 +4638,7 @@ export default function App() {
   // (e.g. "Tr") on their labels so the user isn't misled into reading them as the
   // entered birth chart (and as a reminder the toggle is on); the zenith stamps +
   // ecliptic still follow the Zenith toggle. Null unless promoting.
-  const promoted = useMemo(() => {
+  const promotedGeom = useMemo(() => {
     if (!promoteOverlay || !overlayLayer) return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     const ovPositions =
@@ -4346,8 +4650,8 @@ export default function App() {
     const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
     // Promoted CCG keeps the per-body source tags (see the overlay memo above).
     const isCyclo = overlayLayer.kind === 'cyclo';
-    const pLines = mergeNodePairs(
-      withThemeLineColors(
+    return {
+      lines: mergeNodePairs(
         filterLines(
           isCyclo
             ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
@@ -4357,26 +4661,7 @@ export default function App() {
           visiblePlanets,
           visibleLineTypes,
         ),
-        theme,
       ),
-    );
-    const pLocalSpace = lsActive
-      ? withThemeLineColors(
-          filterLocalSpace(
-            generateLocalSpace(
-              overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
-              overlayLayer.gmst,
-              overlayLayer.originLat,
-              overlayLayer.originLng,
-            ),
-            visiblePlanets,
-            hideLsInbound,
-          ),
-          theme,
-        )
-      : EMPTY_FC;
-    return {
-      lines: pLines,
       // Parans suppressed under Cyclocartography (see the overlay memo above).
       parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
@@ -4387,22 +4672,27 @@ export default function App() {
             visiblePlanets,
           )
         : EMPTY_FC,
-      localSpace: pLocalSpace,
-      localSpaceCross: lsActive
-        ? generateLocalSpaceCrossings(pLocalSpace, pLines)
+      localSpace: lsActive
+        ? filterLocalSpace(
+            generateLocalSpace(
+              overlayLayer.positions, // true-sky, never ecliptic-projected (Q3a)
+              overlayLayer.gmst,
+              overlayLayer.originLat,
+              overlayLayer.originLng,
+            ),
+            visiblePlanets,
+            hideLsInbound,
+          )
         : EMPTY_FC,
       // Zeniths + ecliptic follow the Zenith toggle here too, so it still has an effect
       // while Natal is hidden: empty when off → the stamps/line vanish and the promoted
       // labels lose their fly target, just like a normal overlay with Zenith off.
       zenith: effShowZenith
         ? tagZeniths(
-            withThemeLineColors(
-              filterZenith(
-                generateZenithStamps(ovPositions, ovMeridianLng),
-                visiblePlanets,
-                visibleLineTypes,
-              ),
-              theme,
+            filterZenith(
+              generateZenithStamps(ovPositions, ovMeridianLng),
+              visiblePlanets,
+              visibleLineTypes,
             ),
             isCyclo ? cycloBodyTag : prefix,
           )
@@ -4423,9 +4713,24 @@ export default function App() {
     effShowZenith,
     coordSystem,
     lineSystem,
-    theme,
     lineOpts,
   ]);
+  // …in the chart's own inks, not the overlay's: promoted, it IS the chart, drawn through
+  // the natal path. The crossing dots come after the colour step, as the chart's do (they
+  // blend the two lines' colours as drawn).
+  const promoted = useMemo(() => {
+    if (!promotedGeom) return null;
+    const pLines = withLineInks(promotedGeom.lines, inks);
+    const pLocalSpace = withLineInks(promotedGeom.localSpace, inks);
+    return {
+      ...promotedGeom,
+      lines: pLines,
+      parans: withParanInks(promotedGeom.parans, inks),
+      localSpace: pLocalSpace,
+      localSpaceCross: lsActive ? generateLocalSpaceCrossings(pLocalSpace, pLines) : EMPTY_FC,
+      zenith: withLineInks(promotedGeom.zenith, inks),
+    };
+  }, [promotedGeom, inks, lsActive]);
 
   // The nadir stamps fed to the map: the natal nadirs, or — when an overlay is
   // promoted to BE the chart — the antipodes of that promoted chart's zeniths.
@@ -4732,7 +5037,10 @@ export default function App() {
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
-  // WebGL measure layers. Re-resolves on theme change too (the palette differs).
+  // WebGL measure layers. Re-resolves on a palette change too — a theme switch, or a Custom
+  // theme's accent — keyed on the palette's key, which for a built-in theme is its name, so
+  // it runs exactly when the [theme] key did. Passive, so it reads the custom properties the
+  // layout effect above has already put on the document.
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-mapstate', coordSource);
@@ -4741,7 +5049,7 @@ export default function App() {
     // can't be derived during render — the effect + setState is the correct tool.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (resolved) setMeasureColor(resolved);
-  }, [coordSource, theme]);
+  }, [coordSource, palette.key]);
 
   // While the Capture frame is armed, flag the root so the floating HUD panels can go opaque
   // (see Map.css). Otherwise the frame's viewfinder scrim — a dim OUTSIDE the frame — bleeds
@@ -5126,12 +5434,12 @@ export default function App() {
       wheelIsNatal && minorSamples.length > 0
         ? buildWheelMinor(minorSamples, {
             ayan: natalAyan,
-            decor: minorDecor,
+            decor: minorDecorInked,
             t,
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [wheelIsNatal, minorSamples, natalAyan, minorDecor, t, minorPref.list],
+    [wheelIsNatal, minorSamples, natalAyan, minorDecorInked, t, minorPref.list],
   );
   // Not natal and not NO CHART: the promoted overlay, the only other way here.
   const promotedWheelMinor = useMemo<readonly WheelMinorBody[]>(
@@ -5139,12 +5447,12 @@ export default function App() {
       !wheelIsNatal && !noChart && overlayMinorSampled.length > 0
         ? buildWheelMinor(overlayMinorSampled, {
             ayan: overlayAyan,
-            decor: minorDecor,
+            decor: minorDecorInked,
             t,
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [wheelIsNatal, noChart, overlayMinorSampled, overlayAyan, minorDecor, t, minorPref.list],
+    [wheelIsNatal, noChart, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
   );
   const wheelMinor = wheelIsNatal ? natalWheelMinor : promotedWheelMinor;
   // Hold the catalog ring while a wanted body's file is still on its way. A body with no
@@ -5176,12 +5484,12 @@ export default function App() {
       !promoteOverlay && !isCyclo && overlayMinorSampled.length > 0
         ? buildWheelMinor(overlayMinorSampled, {
             ayan: overlayAyan,
-            decor: minorDecor,
+            decor: minorDecorInked,
             t,
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [promoteOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecor, t, minorPref.list],
+    [promoteOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
   );
   const overlayMinorCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
@@ -5886,7 +6194,7 @@ export default function App() {
   // Never drawn as map lines (the catalog × planet set is hundreds of latitude
   // rows; the conventional reading is a per-location list). Follows the star-lines
   // toggle/set and, in Geodetic mode, the same ecliptic projection.
-  const starParans = useMemo(() => {
+  const starParansGeom = useMemo(() => {
     // Natal star × planet parans; hidden while an overlay is active (one-frame rule —
     // these are the natal frame's own parans). None without a birth time, as for the
     // planets' parans (allParans): a geodetic map's timeless lines don't bring them back.
@@ -5904,6 +6212,8 @@ export default function App() {
       STAR_LINE_COLORS[theme],
     );
   }, [effShowStarLines, current, overlayAux, skyFamiliesOff, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
+  // A star paran wears the star ink (withParanInks reads its `star`), as its star's lines do.
+  const starParans = useMemo(() => withParanInks(starParansGeom, inks), [starParansGeom, inks]);
 
   // ── Map-HUD extensions ────────────────────────────────────────────────────
   // Features registered via registerMapExtension() (e.g. add-ons in a downstream
@@ -6171,6 +6481,10 @@ export default function App() {
   // linework, minus every filter/gate. Expensive (midpoints are quadratic), so it runs on demand;
   // this is the raw builder — callers get the caching wrapper below, and this callback's identity
   // (it changes exactly when a dependency does) is that cache's invalidation key.
+  //
+  // GEOMETRY only, in the generators' own colours (2026-10-06): the wrapper below puts the
+  // palette's inks on it (inkAllLines), so a colour change re-inks the cached set rather than
+  // regenerating it — the quadratic midpoints above all.
   const buildAllLines = useCallback((): AllLines => {
     if (!current) {
       return {
@@ -6197,15 +6511,15 @@ export default function App() {
     // regenerated here from the FULL body set (not the visible subset), all line types; star lines
     // are generated regardless of the Fixed Stars toggle. The aspect-line display
     // filters are intentionally NOT applied either — this is the everything set.
-    const natalLines = withThemeLineColors(allLines, theme);
+    const natalLines = allLines;
     const angleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
       ...generateAspectLines(linePositions, meridianLng, effCoordSystem, eps, lineOpts).features,
       ...generateMidpointLines(linePositions, meridianLng, effCoordSystem, eps, lineOpts).features,
     ];
-    const natalAngleLines = withThemeLineColors(
-      { type: 'FeatureCollection', features: angleFeatures },
-      theme,
-    );
+    const natalAngleLines: FeatureCollection<LineString, AngleOverlayLineProps> = {
+      type: 'FeatureCollection',
+      features: angleFeatures,
+    };
     // Unknown birth time: on a celestial map the natal families above are already empty
     // (linePositions is emptied at the source). On a geodetic map the planet, aspect and
     // midpoint lines are drawn from the 12:00 placeholder, so they are here too — every
@@ -6256,14 +6570,11 @@ export default function App() {
           ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
           : overlayLayer.positions;
       const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
-      overlayLines = withThemeLineColors(
-        isCyclo
-          ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
-              cycloBodyTag(p.planet),
-            )
-          : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
-        theme,
-      );
+      overlayLines = isCyclo
+        ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
+            cycloBodyTag(p.planet),
+          )
+        : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix);
       // Parans suppressed under Cyclocartography (no single sky-moment across epochs), and
       // held on a geodetic map.
       overlayParans =
@@ -6291,14 +6602,11 @@ export default function App() {
           : null;
       overlayLocalSpace = skyHeld
         ? null
-        : withThemeLineColors(
-            generateLocalSpace(
-              overlayLayer.positions,
-              overlayLayer.gmst,
-              overlayLayer.originLat,
-              overlayLayer.originLng,
-            ),
-            theme,
+        : generateLocalSpace(
+            overlayLayer.positions,
+            overlayLayer.gmst,
+            overlayLayer.originLat,
+            overlayLayer.originLng,
           );
       if (overlayAux) {
         // Aspect + midpoint (midpoint dropped on Cyclo) + star, on the overlay frame.
@@ -6314,12 +6622,9 @@ export default function App() {
           type: 'FeatureCollection',
           features: ovAngleFeatures,
         };
-        angleLinesOut = withThemeLineColors(
-          isCyclo
-            ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
-            : tagLabels(ovAngleFc, prefix),
-          theme,
-        );
+        angleLinesOut = isCyclo
+          ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
+          : tagLabels(ovAngleFc, prefix);
         starLinesOut = skyHeld
           ? EMPTY_FC
           : tagLabels(
@@ -6393,18 +6698,30 @@ export default function App() {
   // so `collectAllLines` still changes identity exactly when the set's inputs do —
   // callers keep keying their own caches on it. The returned object is shared:
   // treat it as immutable.
-  const allLinesCacheRef = useRef<{ build: () => AllLines; set: AllLines } | null>(null);
+  //
+  // Two layers since 2026-10-06: the geometry, keyed on the builder, and that geometry in the
+  // COMMITTED inks (inksCommitted — settled, while the Custom theme's editor is open, so the
+  // plugins that rebuild per colour do it once per finished gesture rather than per commit).
+  // An ink change re-inks the cached geometry and never re-runs a generator. Identity still
+  // changes exactly when the set handed out does — now on either key.
+  const allLinesCacheRef = useRef<{
+    build: () => AllLines;
+    geom: AllLines;
+    inks: MapInks;
+    set: AllLines;
+  } | null>(null);
   const collectAllLines = useCallback((): AllLines => {
     const cur = allLinesCacheRef.current;
-    if (cur && cur.build === buildAllLines) return cur.set;
-    const set = buildAllLines();
-    allLinesCacheRef.current = { build: buildAllLines, set };
+    if (cur && cur.build === buildAllLines && cur.inks === inksCommitted) return cur.set;
+    const geom = cur && cur.build === buildAllLines ? cur.geom : buildAllLines();
+    const set = inkAllLines(geom, inksCommitted);
+    allLinesCacheRef.current = { build: buildAllLines, geom, inks: inksCommitted, set };
     return set;
-  }, [buildAllLines]);
+  }, [buildAllLines, inksCommitted]);
 
   // A compact stamp of the STABLE inputs behind the line set: it changes exactly when the
   // regenerated geometry/labels/colours would — chart, framing systems, node type, late-loaded
-  // ephemeris data, star catalog, theme, overlay KIND + its rate settings — while deliberately
+  // ephemeris data, star catalog, line inks, overlay KIND + its rate settings — while deliberately
   // EXCLUDING the overlay's moving instant (targetDate / an eclipse pick), so a consumer keying
   // a cache or a recompute effect on it is not re-triggered per animation tick while a timeline
   // plays. Read `targetDate` alongside it when the frame instant matters. (The local-space
@@ -6419,7 +6736,11 @@ export default function App() {
         lineSystem,
         coordSystem,
         starSet,
-        theme,
+        // The COMMITTED line inks' key, where the theme stood until 2026-10-06 — the same
+        // string for a built-in theme (its inks' key IS its name), so a stamp computed
+        // before the palette engine still matches. It moves only when a line colour does: a
+        // custom theme that changes the panels alone leaves it put.
+        inksCommitted.key,
         overlayMode,
         overlayAux,
         partner?.id ?? '',
@@ -6442,7 +6763,7 @@ export default function App() {
       lineSystem,
       coordSystem,
       starSet,
-      theme,
+      inksCommitted.key,
       overlayMode,
       overlayAux,
       partner,
@@ -6533,7 +6854,7 @@ export default function App() {
   const effMinorLines = eclipseSolo
     ? EMPTY_FC
     : promoted
-      ? (overlayMinor?.lines ?? EMPTY_FC)
+      ? (overlayMinorInked?.lines ?? EMPTY_FC)
       : minorLines;
   const drawMinorLines = hideNatalAngles ? EMPTY_FC : effMinorLines;
   // The rows follow the same split, so a row reads 'shown' only while its lines are
@@ -6556,7 +6877,7 @@ export default function App() {
     eclipseSolo || hideNatalAngles || !effShowZenith
       ? EMPTY_FC
       : promoted
-        ? (overlayMinor?.zenith ?? EMPTY_FC)
+        ? (overlayMinorInked?.zenith ?? EMPTY_FC)
         : minorZenith;
   // (effParans and its draw twin drawParans are resolved above the orb bands, which read
   // them.) The catalog parans take the planets' parans' exact path: gone under the eclipse
@@ -6567,7 +6888,7 @@ export default function App() {
   const effMinorParans: FeatureCollection<LineString, MinorParanProps> = eclipseSolo
     ? NO_MINOR_PARANS
     : promoted
-      ? (overlayMinorParans ?? NO_MINOR_PARANS)
+      ? (overlayMinorParansInked ?? NO_MINOR_PARANS)
       : minorParans;
   const drawMinorParans = overlayLayer && hideNatalAngles ? NO_MINOR_PARANS : effMinorParans;
   const effLocalSpace = eclipseSolo ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
@@ -6650,12 +6971,14 @@ export default function App() {
     () =>
       geoGridShown && geoZonesOn
         ? buildGeoZones(
-            GEO_ZONE_COLORS[theme],
+            // The map style's zone colours (GEO_ZONE_COLORS for a built-in), the same set the
+            // legend is handed, so a swatch always matches its zone.
+            mapStyle.geoZones,
             geoZonesPresentation ? GEO_ZONE_OPACITY.presentation : GEO_ZONE_OPACITY.normal,
             geoZoneIsolate,
           )
         : EMPTY_FC,
-    [geoGridShown, geoZonesOn, geoZonesPresentation, geoZoneIsolate, theme],
+    [geoGridShown, geoZonesOn, geoZonesPresentation, geoZoneIsolate, mapStyle.geoZones],
   );
   // The hover readout's place names: the bundled cities, loaded on first use of the grid.
   // (2026-10-02)
@@ -6743,6 +7066,45 @@ export default function App() {
     };
   }, [lineSpotlight, effMapOverlay, fullSet, applySpot]);
 
+  // The Custom theme's editor window — the theme option's to render (lib/extensions/
+  // themeOptions), opened from the Customize button under the theme list. Context and window
+  // are memoized: App re-renders on every mouse move (the hover readout), and the editor has
+  // no reason to follow it. `preview` is the input-rate path: CSS and attributes at once
+  // (lib/appearance), and the map on a throttle through the transient mapDraft above — never
+  // the spec, the store or anything committed; the rest of the map follows the spec once it is
+  // committed. The context itself never changes under a preview. Mounted only while
+  // the theme is live and no add-on surface owns the viewport, so `viewParked` reads false
+  // whenever the window is up (the open state is kept, and it comes back with the view).
+  const themeEditorCtx = useMemo<ThemeEditorContext | null>(() => {
+    if (!customSpec) return null;
+    const specBase = customSpec.base;
+    return {
+      palette,
+      builtin: builtinPalette,
+      tokens: TOKENS,
+      explain: (id) => explainToken(palette, id),
+      // The preview layer (lib/appearance) holds it so a commit landing behind it can't paint
+      // over it; null drops it for the latest COMMITTED palette — the one App last applied,
+      // not the store's spec: the editor calls preview(null) from its unmount cleanup right
+      // after its final commit, and on a hold that unmount comes with a built-in palette, so
+      // reading the spec there would paint a held theme. A commit that hasn't rendered yet
+      // paints itself in the layout effect above, in the same task.
+      preview: (overrides: PaletteOverrides | null, base?: Theme) => {
+        const draft = overrides === null ? null : resolvePalette(base ?? specBase, overrides);
+        previewAppearance(draft);
+        pushMapDraft(draft);
+      },
+      onClose: closeThemeEditor,
+      openExtension: openExtensionById,
+      viewParked,
+    };
+  }, [customSpec, palette, viewParked, closeThemeEditor, openExtensionById, pushMapDraft]);
+  const themeEditor = useMemo(
+    () =>
+      themeEditorShown && themeOpt && themeEditorCtx ? themeOpt.renderEditor(themeEditorCtx) : null,
+    [themeEditorShown, themeOpt, themeEditorCtx],
+  );
+
   // The read-only snapshot + actions handed to each open HUD extension.
   const extensionCtx = useMemo<MapExtensionContext>(
     () => ({
@@ -6808,6 +7170,10 @@ export default function App() {
       minorBodies: minorRowsEff,
       // DERIVED: the stored switch, held while the map's parans are (CLAUDE.md rule 2).
       minorParansOn,
+      // The line colours the complete set is inked in — the COMMITTED inks, which
+      // linesStamp and collectAllLines key on, so a panel colouring its own rows (a catalog
+      // body by ctx.inks.minorOf(n)) agrees with the set it reads them beside.
+      inks: inksCommitted,
       flyTo: extFlyTo,
       markArrival,
       // The borrow-ending setter, so a panel's "jump to this date" leaves the return
@@ -6872,9 +7238,10 @@ export default function App() {
       promoted,
       eclipseSolo,
       minorLines,
-      overlayMinor,
+      overlayMinorInked,
       minorRowsEff,
       minorParansOn,
+      inksCommitted,
       extFlyTo,
       selectOverlay,
       openExtensions,
@@ -6994,7 +7361,17 @@ export default function App() {
         // A docked panel that reserves a left column (lib/leftDock) — the GL frame
         // shrinks in from the left so the panel sits in its own space, not over the map.
         leftInset={reservedLeftInset}
-        theme={theme}
+        // The base theme and the map style, from ONE throttled palette (mapPalette), so the
+        // two always arrive in the same render: `theme` itself whenever the editor is
+        // closed, and a base switched in the editor restyles the map once, not twice. The
+        // sprites (glyphs, zenith rings, coins, star sparks) come off the same palette, so they
+        // arrive with the style; spriteSpecFor is identity-stable, so no memo is needed.
+        theme={mapTheme}
+        mapStyle={mapStyle}
+        spriteSpec={spriteSpecFor(mapPalette)}
+        // The Custom theme editor's draft while one is being dragged (mapDraft): paint only,
+        // transient, and gone once the commit has landed in the props above.
+        mapPreview={mapPreview}
         projection={projection}
         showRoads={showRoads}
         showRivers={showRivers}
@@ -7184,8 +7561,22 @@ export default function App() {
           setNodeType={setNodeType}
           rulershipScheme={rulershipScheme}
           setRulershipScheme={setRulershipScheme}
+          // The EFFECTIVE theme marks the list (a held Custom choice marks its base), the
+          // stored choice is themePref, and setThemeSafe holds the picker's refusals.
           theme={theme}
-          setTheme={setTheme}
+          themePref={themeChoice}
+          setTheme={setThemeSafe}
+          customOption={themeOpt}
+          customEntitled={customEntitled}
+          customLive={customLive}
+          customHeld={customHeld}
+          // The open state as the reader left it (aspectHudOpen's shape): a view lock parks
+          // the window without closing it.
+          themeEditorOpen={themeEditorOpen}
+          onToggleThemeEditor={toggleThemeEditor}
+          // The Outline basemap draws no roads, rivers or place names: the Details switches
+          // show present but unavailable while it is drawn, and are never written (row A).
+          basemapOutline={basemapOutline}
           projection={projection}
           setProjection={setProjection}
           showRoads={showRoads}
@@ -7259,7 +7650,11 @@ export default function App() {
       {/* The zone-shading legend, bottom-right above the active-systems chip: only while the
           shading is drawn. Its isolate is session state (geoZoneIsolate). (2026-10-02) */}
       {geoGridShown && geoZonesOn && !spotlightActive && !viewParked && (
-        <GeoZoneLegend theme={theme} isolate={geoZoneIsolate} onIsolate={setGeoZoneIsolate} />
+        <GeoZoneLegend
+          colors={mapStyle.geoZones}
+          isolate={geoZoneIsolate}
+          onIsolate={setGeoZoneIsolate}
+        />
       )}
       {showInfo && !viewParked && (
         <InfoBar
@@ -7483,7 +7878,9 @@ export default function App() {
       {advancedWheel && showMinorHud && !viewParked && (
         <MinorBodiesHud
           onClose={closeMinorHud}
-          theme={theme}
+          // Each catalog body's colour as its lines are drawn (the throttled inks the map
+          // chain reads), so a row's swatch matches its line.
+          minorInk={inks.minorOf}
           // The RAW built-in preference and its own toggle — the five main asteroids
           // here are the very same switches as in Map filters.
           visiblePlanets={visiblePlanetsPref}
@@ -7523,6 +7920,10 @@ export default function App() {
           setAspectOrbs={setAspectOrbs}
         />
       )}
+      {/* The Custom theme's editor (Settings ▸ Appearance ▸ Customize): the theme option's
+          window, mounted on the gate in themeEditorShown — live theme, window open, no view
+          lock. Nothing in the open core registers one, so there this is always null. */}
+      {themeEditor}
       {mapTool === 'capture' && (
         <CaptureHud
           onClose={() => setMapTool('off')}

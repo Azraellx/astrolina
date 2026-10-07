@@ -44,8 +44,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { MINOR_BODIES, PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
-import { minorLineColor, type Theme } from '../../lib/theme';
+import { MINOR_BODIES, type PlanetName } from '../../lib/ephemeris';
+import { planetInk } from '../../lib/themePalette';
 import { MINOR_GLYPHS } from '../../lib/astro/glyphChars';
 import type { MinorBodiesApi } from '../../lib/minorBodies/useMinorBodies';
 import type { OverlayKind } from '../../lib/astro/timeline';
@@ -152,7 +152,11 @@ const viewportWidth = () => window.innerWidth;
 
 export interface MinorBodiesHudProps {
   onClose: () => void;
-  theme: Theme;
+  /** A catalog body's line colour by number — the map's own ink for it (App passes
+   *  palette.inks.minorOf, which is minorLineColor(n, theme) on a built-in theme), so a
+   *  row and its line read as the same thing under a Custom theme too. Replaced the
+   *  `theme` prop, 2026-10-06: the theme alone no longer says what colour a line is. */
+  minorInk: (n: number) => string;
   /** The RAW built-in body preference (Map filters' own) and its toggle: the five
    *  main asteroids shown here are the very same switches as in Map filters. */
   visiblePlanets: ReadonlySet<PlanetName>;
@@ -249,10 +253,10 @@ function rankHits(q: string, hits: readonly MinorBodyHit[]): MinorBodyHit[] {
 // read as the same thing; a hypothetical point's diamond is hollow, as on the map.
 // The mark itself is the shared one (MinorMark), which the chart wheel, its tips and
 // the positions table draw too.
-function RowMark({ n, theme }: { n: number; theme: Theme }) {
+function RowMark({ n, ink }: { n: number; ink: string }) {
   return (
     <MinorMark
-      color={minorLineColor(n, theme)}
+      color={ink}
       glyph={MINOR_GLYPHS.get(n)}
       hollow={isHypotheticalKey(n)}
       className="mbh-mark"
@@ -343,7 +347,7 @@ function MbTipButton({
 
 export function MinorBodiesHud({
   onClose,
-  theme,
+  minorInk,
   visiblePlanets,
   togglePlanet,
   api,
@@ -916,7 +920,7 @@ export function MinorBodiesHud({
           fullName={name}
         >
           <EyeIcon open={on} className="location-ls-eye" size={14} />
-          <RowMark n={entry.n} theme={theme} />
+          <RowMark n={entry.n} ink={minorInk(entry.n)} />
           <span className="mbh-body">
             <span className="mbh-main">
               <span className="mbh-name">
@@ -1284,7 +1288,7 @@ export function MinorBodiesHud({
             <ul className="mbh-main-grid">
               {MINOR_BODIES.map((p) => {
                 const on = visiblePlanets.has(p);
-                const color = PLANET_COLORS[p];
+                const color = planetInk(p);
                 return (
                   <li key={p}>
                     <MbTipButton
@@ -1319,7 +1323,7 @@ export function MinorBodiesHud({
                   {builtinPointers.map(({ n, planet }) => {
                     const name = labels.planet(planet);
                     const glyph = (
-                      <PlanetGlyph planet={planet} size={13} color={PLANET_COLORS[planet]} className="mbh-mark" />
+                      <PlanetGlyph planet={planet} size={13} color={planetInk(planet)} className="mbh-mark" />
                     );
                     // A main minor body points (and moves focus) to its switch
                     // above; Pluto lives with the planets in Map filters, and this

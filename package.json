@@ -39,6 +39,7 @@
     "verify:zone-entry": "node scripts/harness/run.mjs scripts/verify-zone-entry.ts",
     "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",
     "verify:minor-bodies": "node scripts/harness/run.mjs scripts/verify-minor-bodies.ts",
+    "verify:theme-palette": "node scripts/harness/run.mjs scripts/verify-theme-palette.ts",
     "build:lmt": "node scripts/build-lmt-table.mjs",
     "verify:eclipses": "tsx scripts/verify-eclipses.ts",
     "build:eclipses": "node scripts/build-eclipses.mjs",

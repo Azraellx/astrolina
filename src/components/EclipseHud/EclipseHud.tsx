@@ -16,7 +16,8 @@ import {
   formatEclipseMagnitude,
 } from '../../lib/astro/eclipseFormat';
 import type { EclipseIsoStep } from '../../lib/overlayPrefs';
-import { PLANET_COLORS, jdToCivil } from '../../lib/ephemeris';
+import { jdToCivil } from '../../lib/ephemeris';
+import { planetInk } from '../../lib/themePalette';
 import {
   ASPECT_GLYPHS,
   PLANET_GLYPHS,
@@ -636,7 +637,7 @@ export function EclipseHud({
                             planet={c.planet}
                             size={13}
                             className="eclipse-hud-contact-planet"
-                            color={PLANET_COLORS[c.planet]}
+                            color={planetInk(c.planet)}
                           />
                         )}
                         <span className="eclipse-hud-contact-name">

@@ -12,7 +12,7 @@
   right: 58px;
   z-index: 10;
   width: 200px;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 8px;
   color: var(--text-strong);
@@ -146,16 +146,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   border: 1px solid rgba(var(--tint), 0.12);
   border-right: none;
   border-radius: 10px 0 0 10px;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   /* Frosted glass like the top nav + overlay bars. Without it the nub sat as a flat tint over the
      map, reading heavier/thicker than the rest of the HUD. -webkit- so it frosts on iOS too. */
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(6px * var(--fx-blur)));
   color: var(--text-muted);
   cursor: pointer;
   /* Kill the browser's blue/grey tap-flash on this touch-only control — it doesn't need one. */
   -webkit-tap-highlight-color: transparent;
-  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
+  box-shadow: -2px 0 10px rgba(0, 0, 0, calc(0.2 * var(--fx-shadow)));
   /* Slide via TRANSFORM (not `right`) so the nub rides on the compositor exactly like the panel's
      translateX slide. Animating `right` runs on the MAIN thread, which janks behind the panel
      while the dock's controls mount — making the two look detached on mobile. */
@@ -266,6 +266,10 @@ html[data-mapstate='natal-pinned'] .sidebar {
 .sidebar-header-accent .sidebar-title,
 .sidebar-header-accent:hover .sidebar-title,
 .sidebar-header-accent[aria-expanded='true'] .sidebar-title {
+  /* White, and NOT --on-accent: this fill is the section's own accent (the advanced red,
+     or a plugin's), never the reader's --accent, so text chosen to read on the reader's
+     accent would be a guess here. Those fills are fixed tier colours a Custom theme does not
+     move (index.css, --advanced), and white is what reads on them. (2026-10-06) */
   color: #fff;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
 }
@@ -367,6 +371,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
 
 .theme-option .swatch-glass {
   background: linear-gradient(135deg, #b8bfcb 0%, #e9edf3 45%, #ffffff 68%, #cfd5de 100%);
+}
+
+/* The Custom row's fallback swatch, drawn only when the theme option supplies none (a
+   downstream build's option, lib/extensions/themeOptions — the open core shows no row): a
+   strip of the three built-ins it can be made on. */
+.theme-option .swatch-custom {
+  background: linear-gradient(135deg, #4f9a4a 0%, #5fa6d6 33%, #e9edf3 66%, #2b2b35 100%);
 }
 
 .theme-option .label {
@@ -488,6 +499,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   margin: 2px 8px 4px;
 }
 .aspect-hud-open .calc-menu-value {
+  flex: 1;
+  min-width: 0;
+}
+/* The Customize opener beneath the theme list — the Aspect Lines opener's form: an inset
+   sub-row, no caret, the tier badge riding the right edge. */
+.theme-custom-open {
+  width: calc(100% - 16px);
+  margin: 2px 8px 4px;
+}
+.theme-custom-open .calc-menu-value {
   flex: 1;
   min-width: 0;
 }

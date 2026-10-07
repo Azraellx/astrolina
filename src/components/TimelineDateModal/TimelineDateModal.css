@@ -95,7 +95,8 @@
 .tdm-btn.primary {
   background: rgba(var(--accent-rgb), 0.92);
   border: 1px solid transparent;
-  color: #0a0a0f;
+  /* Text on the accent fill: see .birth-form button.primary (BirthDataForm.css). */
+  color: var(--on-accent, #0a0a0f);
   font-weight: 600;
 }
 

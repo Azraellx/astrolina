@@ -34,6 +34,7 @@ import type {
 } from '../ephemeris';
 import type { ZodiacMode } from '../astro/ayanamsa';
 import type { MinorRow } from '../minorBodies/status';
+import type { MapInks } from '../lineInks';
 
 /** The COMPLETE line set — every planet, line type, and family (natal angular + aspects +
  *  midpoints + parans + star lines + local space, and the active overlay's equivalents) — with the
@@ -305,6 +306,14 @@ export interface MapExtensionContext {
    *  {@link collectAllLines}, whose AllLines.minorParans already follows it) reads this to
    *  pair the reader's catalog bodies with that frame's planets. Absent in builds that predate it; treat absent as false. */
   minorParansOn?: boolean;
+  /** The palette's LINE colours (lib/lineInks MapInks) — the ones {@link collectAllLines}
+   *  inks its set in, and that {@link linesStamp} keys on: COMMITTED, so while a Custom
+   *  theme's editor is open they move once a gesture has settled, never per input. A surface
+   *  colouring something of its own as a line is drawn reads it here rather than from the
+   *  lib/theme tables, which describe the built-in themes only: a catalog body is
+   *  `inks.minorOf(n)`, a body's map line `inks.planet[p]`, the fixed stars `inks.star`. For
+   *  a built-in theme every value is the table's own. (2026-10-06) */
+  inks: MapInks;
   angleLines: FeatureCollection;
   parans: FeatureCollection;
   /** Fixed-star × planet parans (the Brady-school list). Computed but never drawn
@@ -380,7 +389,8 @@ export interface MapExtensionContext {
    *  reveal the full set on the map, and read it for a "which lines are near here" list. */
   collectAllLines: () => AllLines;
   /** A compact identity of the STABLE inputs behind the line set (chart, framing systems,
-   *  star catalog, theme, overlay kind + rate settings) — it changes exactly when regenerated
+   *  star catalog, line inks — {@link inks}' key, which is the theme's name for a built-in
+   *  theme — overlay kind + rate settings) — it changes exactly when regenerated
    *  lines would, EXCLUDING the overlay's moving instant, so it stays put while a timeline
    *  plays. Key caches / recompute effects on this (instead of on object identities) and read
    *  `targetDate` alongside it when the frame instant matters. */

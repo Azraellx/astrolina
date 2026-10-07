@@ -6,7 +6,10 @@
 
 // The auto-flip notice queue-of-one. Mirrors useMissions' shape: state here, the
 // card is a pure renderer, and every call happens in an event handler rather than
-// an effect, so there are no cascading renders to reason about.
+// an effect, so there are no cascading renders to reason about — with ONE documented
+// exception: the Custom theme's hold ('theme-held', 2026-10-06) arrives with no gesture
+// to hang it on (a plan that lapsed while the reader was away), so App announces it
+// from a single effect (lib/themeChoice heldNoticeStep decides when).
 import { useCallback, useState } from 'react';
 import {
   AUTO_FLIP_META,

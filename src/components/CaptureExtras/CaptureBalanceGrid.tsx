@@ -8,33 +8,25 @@
 // Cardinal/Fixed/Mutable) × 4-row (elements: Fire/Earth/Air/Water) table, each cell
 // holding the planet glyphs whose sign falls in that element+modality combo (4×3 = the
 // 12 signs). The header row/column carry the modality/element glyphs; cell bodies are
-// PLANET_COLORS-tinted `.astro-glyph` spans, so the existing capture glyph re-stamp draws
+// body-tinted `.astro-glyph` spans, so the existing capture glyph re-stamp draws
 // them in the export with no extra code (same as the list rows).
 import { Fragment } from 'react';
-import { PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
+import type { PlanetName } from '../../lib/ephemeris';
 import { PLANET_GLYPHS, ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import {
   BALANCE_ELEMENTS,
   BALANCE_MODALITIES,
   type BalanceGrid,
 } from '../../lib/astro/format';
+import { elementInk, modalityInk, planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
 import './CaptureBalanceGrid.css';
 
-// Element tints, matching the expanded sidebar's Balance palette (es-el-* in
-// ExpandedChartSidebar.css), so the grid reads in the app's established colours.
-const ELEMENT_COLORS: Record<(typeof BALANCE_ELEMENTS)[number], string> = {
-  fire: 'rgb(232, 90, 79)',
-  earth: 'rgb(141, 188, 109)',
-  air: 'rgb(94, 194, 224)',
-  water: 'rgb(126, 116, 219)',
-};
-// Modalities have no traditional colour — the sidebar's amber/slate/teal triad.
-const MODALITY_COLORS: Record<(typeof BALANCE_MODALITIES)[number], string> = {
-  cardinal: 'rgb(216, 154, 65)',
-  fixed: 'rgb(140, 152, 170)',
-  mutable: 'rgb(95, 178, 152)',
-};
+// Element and modality tints, matching the expanded sidebar's Balance palette (es-el-* /
+// es-mod-* in ExpandedChartSidebar.css), so the grid reads in the app's established colours.
+// Both read lib/themePalette (elementInk / modalityInk: var(--element-fire, rgb(232, 90, 79))
+// and so on), whose literals are the ones that used to be written out here — one TS source,
+// with a Custom theme's colours taking over when it sets them. (2026-10-06)
 
 export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
   const { t } = useT();
@@ -44,12 +36,12 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
       <div className="cbg-corner" />
       {BALANCE_MODALITIES.map((m) => (
         <div className="cbg-head cbg-col-head" key={`h-${m}`}>
-          <span className="astro-glyph cbg-head-glyph" style={{ color: MODALITY_COLORS[m] }}>
+          <span className="astro-glyph cbg-head-glyph" style={{ color: modalityInk(m) }}>
             {MODALITY_GLYPHS[m]}
           </span>
           {/* The modality glyphs aren't widely recognised (unlike the element triangles), so spell
               the name out beside each one. The element row heads stay glyph-only. */}
-          <span className="cbg-head-name" style={{ color: MODALITY_COLORS[m] }}>
+          <span className="cbg-head-name" style={{ color: modalityInk(m) }}>
             {t(`expandedSidebar.modality.${m}`)}
           </span>
         </div>
@@ -58,7 +50,7 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
       {BALANCE_ELEMENTS.map((e, ei) => (
         <Fragment key={`row-${e}`}>
           <div className="cbg-head cbg-row-head">
-            <span className="astro-glyph cbg-head-glyph" style={{ color: ELEMENT_COLORS[e] }}>
+            <span className="astro-glyph cbg-head-glyph" style={{ color: elementInk(e) }}>
               {ELEMENT_GLYPHS[e]}
             </span>
           </div>
@@ -68,7 +60,7 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
                 <span
                   key={name}
                   className="astro-glyph cbg-body"
-                  style={{ color: PLANET_COLORS[name] }}
+                  style={{ color: planetInk(name) }}
                 >
                   {PLANET_GLYPHS[name]}
                 </span>

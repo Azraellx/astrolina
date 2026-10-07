@@ -28,27 +28,48 @@
    else. If a size ever has to be overridden per-surface again, it has to be done
    with a real inline `style`, or by giving the geometry the case. */
 
+/* ── The Custom theme's wheel inks (2026-10-06) ──────────────────────────────
+   The frame below reads four variables a Custom theme may set, each with today's value
+   as its fallback, and NO stylesheet declares any of them — so on a built-in theme every
+   rule resolves to exactly what it drew before:
+     --wheel-ink-rgb   rings, spokes, cusps, dividers, ticks   (falls back to --tint)
+     --wheel-axis-asc-rgb / --wheel-axis-mc-rgb   the two axes (accent / cool)
+     --wheel-face      the disc behind everything             (none: the panel shows)
+   The report paper's .palette-canonical (index.css) resets all of them to `initial`, which
+   is how a printed wheel stays on the paper's own palette whatever theme is live. The
+   planet, aspect, sign and motion colours are set inline by WheelSvg.tsx from
+   lib/themePalette (planetInk, aspectInk, SIGN_INK, wheelMotionInk) — the same contract. */
+
+/* The face: drawn first, under everything. With a solid face (the old-school white wheel)
+   the planet discs and the angle-code halo below take it too, so a disc never shows the
+   panel's colour on a face of another; with none, both keep their panel fills. */
+.wheel-svg .wheel-face {
+  fill: var(--wheel-face, none);
+  stroke: none;
+  pointer-events: none;
+}
+
 .wheel-svg .ring {
   fill: none;
-  stroke: rgba(var(--tint), 0.18);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.18);
   stroke-width: 1;
 }
 
 .wheel-svg .planet-disc-fill {
-  fill: rgba(var(--bg-panel), 0.94);
+  fill: var(--wheel-face, rgba(var(--bg-panel), 0.94));
 }
 
 .wheel-svg .angle {
-  stroke: rgba(var(--tint), 0.25);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.25);
   stroke-width: 1;
 }
 
 .wheel-svg .angle.asc-dsc {
-  stroke: rgba(var(--accent-rgb), 0.55);
+  stroke: rgba(var(--wheel-axis-asc-rgb, var(--accent-rgb)), 0.55);
 }
 
 .wheel-svg .angle.mc-ic {
-  stroke: rgba(var(--cool-rgb), 0.55);
+  stroke: rgba(var(--wheel-axis-mc-rgb, var(--cool-rgb)), 0.55);
 }
 
 .wheel-svg .angle-label {
@@ -68,7 +89,7 @@
 /* Placidus intermediate house cusps — fainter than the four angle axes. Drawn
    over the house-ring hover band, so kept pointer-transparent to leave it hot. */
 .wheel-svg .house-cusp {
-  stroke: rgba(var(--tint), 0.28);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.28);
   stroke-width: 1;
   stroke-dasharray: 2 3;
   pointer-events: none;
@@ -77,7 +98,7 @@
 /* Faint full-length house spokes spanning the inner rings out to the zodiac
    band, so the 12 house sectors read across the whole wheel. */
 .wheel-svg .house-spoke {
-  stroke: rgba(var(--tint), 0.2);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.2);
   stroke-width: 0.7;
 }
 
@@ -89,23 +110,23 @@
 }
 
 .wheel-svg .sign-divider {
-  stroke: rgba(var(--tint), 0.22);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.22);
   stroke-width: 1;
 }
 
 /* Degree graduation scale on the zodiac rim (Advanced mode). */
 .wheel-svg .deg-tick {
-  stroke: rgba(var(--tint), 0.22);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.22);
   stroke-width: 0.6;
 }
 
 .wheel-svg .deg-tick-5 {
-  stroke: rgba(var(--tint), 0.32);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.32);
   stroke-width: 0.8;
 }
 
 .wheel-svg .deg-tick-10 {
-  stroke: rgba(var(--tint), 0.45);
+  stroke: rgba(var(--wheel-ink-rgb, var(--tint)), 0.45);
   stroke-width: 1;
 }
 
@@ -272,7 +293,9 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   paint-order: stroke;
-  stroke: rgba(var(--bg-panel), 0.92);
+  /* The halo is the colour behind the code: a solid face when a Custom theme gives the
+     wheel one (see .wheel-face above), the panel otherwise. */
+  stroke: var(--wheel-face, rgba(var(--bg-panel), 0.92));
   stroke-width: 3px;
   stroke-linejoin: round;
 }

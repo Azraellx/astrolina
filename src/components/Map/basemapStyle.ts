@@ -5,11 +5,13 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Post-load adjustments to the remote vector basemap: global road / river layer
-// visibility toggles, a whole-basemap blank (Local Space ▸ "Hide map"), and a
-// per-theme place-name contrast lift. We mutate the already-loaded style's layers
-// rather than shipping custom style JSON, so it tracks whatever OpenFreeMap serves.
+// visibility toggles, a whole-basemap blank (Local Space ▸ "Hide map"), and the
+// palette's paint over the served style (applyBasemapPaint: Dark's place-name contrast
+// lift, and a Custom theme's land, water, borders, roads, buildings and names). We mutate
+// the already-loaded style's layers rather than shipping custom style JSON, so it tracks
+// whatever OpenFreeMap serves.
 import type { Map as MlMap, LayerSpecification, StyleSpecification } from 'maplibre-gl';
-import { LABEL_CONTRAST, type Theme } from '../../lib/theme';
+import type { MapStyle } from '../../lib/themePalette';
 
 const ROAD_RE = /(highway|motorway|trunk|primary|secondary|street|road|transport|bridge|tunnel)/i;
 const RIVER_RE = /(waterway|river|stream|canal)/i;
@@ -63,7 +65,7 @@ export const WORLD_FALLBACK_SOURCE = 'world-fallback';
  *  from GeoJSON sources the app adds itself, so "geojson" covers it — less the offline
  *  coastline, which rides a geojson source but is ground, so it's picked out by name.
  *  The one split between the two: the basemap toggles below read it through
- *  isBasemapLayer, and Map.tsx's chartSourcesBusy reads it directly. */
+ *  isBasemapLayer, and applyBasemapPaint and Map.tsx's chartSourcesBusy read it directly. */
 export function isChartSource(id: string, type: string | undefined): boolean {
   return type === 'geojson' && id !== WORLD_FALLBACK_SOURCE;
 }
@@ -151,31 +153,111 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
   }
 }
 
-/** Lift the basemap's PLACE-NAME contrast where the theme asks for it
- *  (lib/theme LABEL_CONTRAST; currently the dark style, whose dim slate names
- *  are hard to read on the near-black ground). Only the `place` source-layer —
- *  country/state/city/town names, the labels people read to orient — is
- *  touched; POI / water / housenumber keep the style's own quieter paint. The
- *  constant color deliberately replaces the style's per-class expressions:
- *  size and weight still carry the settlement hierarchy. Call after each style
- *  load (setPaintProperty needs only a parsed style, like the toggles above). */
-export function applyLabelContrast(map: MlMap, theme: Theme): void {
-  const c = LABEL_CONTRAST[theme];
-  if (!c) return;
-  let style: StyleSpecification | undefined;
+// ── The palette's paint over the served basemap ──────────────────────────────────────────────
+// MapStyle.basemapPaint: one colour (or setting) per KIND of basemap layer, each null for "the
+// style's own" (2026-10-06). It replaced applyLabelContrast, which painted Dark's place names
+// and could never put them back — harmless while the only caller was a fresh style, fatal once a
+// palette edited live can set a colour and then clear it. So the first write to any property
+// snapshots the style's own value, and a null puts that back. Dark's place-name lift
+// (lib/theme LABEL_CONTRAST) is now simply the built-in of the label tokens, painted through the
+// same writes in the same order as before.
+//
+// Layers are told apart by SOURCE-LAYER, the OpenMapTiles schema all three served styles share,
+// rather than by id, which each style names its own way. Only basemap layers are touched (the
+// split isBasemapLayer makes, through isChartSource: never the chart's), and only on the live
+// vector style — the offline / Outline style is the app's own and is painted from
+// MapStyle.worldFallback (Map.tsx), its `background` being the ocean there, not the land.
+type BasemapPaint = MapStyle['basemapPaint'];
+type PaintSlot = Exclude<keyof BasemapPaint, 'landcover'>;
+// Each kind's paint properties by layer type, and the slot each one takes.
+const COLOUR: Readonly<Record<string, Readonly<Partial<Record<string, readonly [string, PaintSlot][]>>>>> = {
+  // The ground itself. The style's `background` IS the land on a vector basemap: water,
+  // landcover and the rest are drawn on top of it.
+  '': { background: [['background-color', 'land']] },
+  water: { fill: [['fill-color', 'water']], line: [['line-color', 'water']] },
+  waterway: { line: [['line-color', 'waterway']] },
+  boundary: { line: [['line-color', 'border']] },
+  transportation: { line: [['line-color', 'road']], fill: [['fill-color', 'road']] },
+  building: { fill: [['fill-color', 'building']], 'fill-extrusion': [['fill-extrusion-color', 'building']] },
+  // Place names only — country / state / city / town, the labels people read to orient — as
+  // Dark's lift always was: POI, water and road names keep the style's own quieter paint. The
+  // constant colour deliberately replaces the style's per-class expressions: size and weight
+  // still carry the settlement hierarchy.
+  place: {
+    symbol: [
+      ['text-color', 'label'],
+      ['text-halo-color', 'labelHalo'],
+      ['text-halo-width', 'labelHaloWidth'],
+    ],
+  },
+};
+// The patchwork over the land (woods, farmland, parks): `landcover: 'flat'` fades it out so a
+// land colour reads as one sheet. Opacity, not visibility, so the detail toggles and the
+// whole-basemap blank above (which own visibility, and restore exactly what they hid) never
+// meet a layer this has hidden.
+const LANDCOVER_SOURCE_LAYERS = new Set(['landcover', 'landuse', 'park']);
+const LANDCOVER_FADE: Readonly<Partial<Record<string, string>>> = { fill: 'fill-opacity', line: 'line-opacity' };
+
+// Per map: each property this has written ("layer\0prop") → the style's own value before the
+// first write. Dropped by forgetBasemapPaint when a new style lands — its layers are new.
+const basemapPaintOriginals = new WeakMap<MlMap, Map<string, unknown>>();
+
+/** A new style has landed on `map`: whatever applyBasemapPaint wrote went with the old one. */
+export function forgetBasemapPaint(map: MlMap): void {
+  basemapPaintOriginals.delete(map);
+}
+
+/**
+ * Paint the served basemap from `paint`: every non-null slot is written to its kind of layer,
+ * every null slot puts back the style's own value where an earlier call changed it. Call after
+ * each style load (with forgetBasemapPaint first) and on a live palette change. Reached through
+ * the layer list rather than getStyle(), which would serialize every chart source's GeoJSON on
+ * every repaint of a colour drag. setPaintProperty skips a value equal to the current one, so an
+ * unchanged slot costs nothing; needs only a parsed style, like the toggles above.
+ */
+export function applyBasemapPaint(map: MlMap, paint: BasemapPaint): void {
+  let ids: string[];
   try {
-    style = map.getStyle();
+    ids = map.getLayersOrder();
   } catch {
     return;
   }
-  if (!style) return;
-  const sources = style.sources ?? {};
-  for (const l of style.layers ?? []) {
-    if (l.type !== 'symbol' || sourceLayer(l) !== 'place') continue;
-    if (!isBasemapLayer(l, sources)) continue;
-    safe(() => map.setPaintProperty(l.id, 'text-color', c.color));
-    safe(() => map.setPaintProperty(l.id, 'text-halo-color', c.halo));
-    safe(() => map.setPaintProperty(l.id, 'text-halo-width', c.haloWidth));
+  let originals = basemapPaintOriginals.get(map);
+  const write = (id: string, prop: string, want: unknown) => {
+    const key = `${id}\u0000${prop}`;
+    if (want === null || want === undefined) {
+      if (!originals?.has(key)) return;
+      const own = originals.get(key);
+      originals.delete(key);
+      safe(() => map.setPaintProperty(id, prop, own === undefined ? null : own));
+      return;
+    }
+    if (!originals) basemapPaintOriginals.set(map, (originals = new Map()));
+    if (!originals.has(key)) {
+      let own: unknown;
+      try {
+        own = map.getPaintProperty(id, prop);
+      } catch {
+        return;
+      }
+      // A copy: the value is the style's own object, and must still be what it was when it is
+      // put back.
+      originals.set(key, own === undefined ? undefined : JSON.parse(JSON.stringify(own)));
+    }
+    safe(() => map.setPaintProperty(id, prop, want));
+  };
+  for (const id of ids) {
+    const l = map.getLayer(id);
+    if (!l) continue;
+    const type = l.type as string;
+    if (type !== 'background') {
+      if (!l.source) continue;
+      if (isChartSource(l.source, map.getSource(l.source)?.type)) continue;
+    }
+    const sl = type === 'background' ? '' : (l.sourceLayer ?? '');
+    for (const [prop, slot] of COLOUR[sl]?.[type] ?? []) write(id, prop, paint[slot]);
+    const fade = LANDCOVER_SOURCE_LAYERS.has(sl) ? LANDCOVER_FADE[type] : undefined;
+    if (fade) write(id, fade, paint.landcover === 'flat' ? 0 : null);
   }
 }
 

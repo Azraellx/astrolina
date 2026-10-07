@@ -24,11 +24,11 @@
   grid-auto-rows: 22px;
   gap: 2px;
   padding: 4px;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 6px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(6px * var(--fx-blur)));
 }
 
 .geo-legend-corner {

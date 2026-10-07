@@ -39,8 +39,14 @@
    very elements — resolves against these instead of against :root. Only the properties the
    wheel and the rows actually read. The dark themes are left alone: their own palettes
    already read correctly here, and keeping them preserves each theme's character in an
-   export. A new LIGHT theme must be added to this selector. */
-:root[data-theme='glass'] .capture-extras {
+   export.
+
+   Keyed on the panel TONE since 2026-10-06, not on Glass: lib/appearance sets
+   data-panel-tone on every palette (a built-in's own tone included), so a Custom theme with
+   light panels on any base gets this restatement, and a new light built-in needs nothing
+   added here. Glass is the only built-in whose tone is light, so the built-ins draw exactly
+   what they did. */
+:root[data-panel-tone='light'] .capture-extras {
   --bg-panel: 15, 15, 22;
   --tint: 255, 255, 255;
   --text-strong: #e7e7ea;

@@ -31,7 +31,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useT } from '../../i18n';
 import {
-  PLANET_COLORS,
   POINTS,
   type PlanetName,
   type EclipticPosition,
@@ -49,6 +48,7 @@ import {
 } from '../../lib/astro/format';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import { maskText } from '../../lib/discreet';
+import { planetInk } from '../../lib/themePalette';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import { MinorMark } from '../MinorMark/MinorMark';
@@ -270,7 +270,7 @@ export function CaptureExtras({
               (2026-10-02) */}
           {data.planets.map((p) => (
             <div className="cx-row" key={`p-${p.name}`}>
-              <span className="cx-glyph astro-glyph" style={{ color: PLANET_COLORS[p.name] }}>
+              <span className="cx-glyph astro-glyph" style={{ color: planetInk(p.name) }}>
                 {PLANET_GLYPHS[p.name]}
               </span>
               <span className="cx-name">
@@ -326,7 +326,7 @@ export function CaptureExtras({
                   <span
                     key={name}
                     className="astro-glyph cx-body"
-                    style={{ color: PLANET_COLORS[name] }}
+                    style={{ color: planetInk(name) }}
                   >
                     {PLANET_GLYPHS[name]}
                   </span>

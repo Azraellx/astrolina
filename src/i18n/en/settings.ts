@@ -199,6 +199,23 @@ export const settings = {
     glass: { label: 'Glass' },
     dark: { label: 'Dark' },
     vintage: { label: 'Earth' },
+    // A downstream build's Custom theme (lib/extensions/themeOptions). The option brings
+    // its own label, hint and held reason; these are what the CORE draws around it — the
+    // opener beneath the list, and the reasons a row gives while it can't act. Neutral on
+    // purpose: the core knows no tier names, and none of these reach the open core's
+    // screen, which registers no option. Each under the tip cap (180, ui/tipWidth.ts).
+    // (2026-10-06)
+    customize: 'Customize',
+    customizeHint:
+      'Open the theme editor: colours, line styles and effects, from a few broad choices down to every single value.',
+    // The held row's reason when the option brings none of its own. It can't say what
+    // brings the theme back (the core doesn't know), so it says what is true meanwhile.
+    customHeld:
+      'Not available right now. The app is drawn in the theme this one was built on meanwhile; your custom theme is kept, not cleared.',
+    // The Details basemap switches on the Outline map. Names the fix by the editor's own
+    // words (its Map row, behind Customize) and says the switch's setting survives.
+    outlineUnavailable:
+      'The Outline map is coastlines only: it has no roads, rivers or place names. Choose another Map in Customize to use this; your choice is kept.',
   },
 
   projection: {

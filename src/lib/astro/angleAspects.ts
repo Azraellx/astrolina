@@ -114,7 +114,7 @@ export function aspectBranchReading(
 }
 
 /** A planet-aspects-angle line. Extends LineProps so the generic line helpers
- *  (withThemeLineColors, lineType filtering, edge badges) apply unchanged. The
+ *  (lib/lineInks withLineInks, lineType filtering, edge badges) apply unchanged. The
  *  displayed `lineType` is always MC or ASC (the labeling convention above). */
 export interface AspectLineProps extends LineProps {
   kind: 'aspect';
@@ -136,8 +136,8 @@ export interface AspectLineProps extends LineProps {
 export interface MidpointLineProps extends LineProps {
   kind: 'midpoint';
   planetB: PlanetName;
-  /** planetB's display color. The inherited `color` (planetA's) gets the
-   *  light-theme colour swap from App.withThemeLineColors — this field gets the
+  /** planetB's display color. The inherited `color` (planetA's) takes the
+   *  palette's line ink from lib/lineInks withLineInks — this field gets the
    *  same treatment there, so a "Sun/Moon" hover tip stays readable. */
   colorB: string;
   /** The (near or far, per the line's side) midpoint's sub-point — the edge

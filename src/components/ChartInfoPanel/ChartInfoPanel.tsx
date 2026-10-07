@@ -5,11 +5,8 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useState } from 'react';
-import {
-  PLANET_COLORS,
-  type EclipticPosition,
-  type RelocatedAngles,
-} from '../../lib/ephemeris';
+import type { EclipticPosition, RelocatedAngles } from '../../lib/ephemeris';
+import { planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import './ChartInfoPanel.css';
@@ -65,11 +62,11 @@ export function ChartInfoPanel({
               <li key={p.name}>
                 <span
                   className="cip-dot"
-                  style={{ background: PLANET_COLORS[p.name] }}
+                  style={{ background: planetInk(p.name) }}
                 />
                 <span
                   className="cip-glyph"
-                  style={{ color: PLANET_COLORS[p.name] }}
+                  style={{ color: planetInk(p.name) }}
                 >
                   <PlanetGlyph planet={p.name} size={14} />
                 </span>

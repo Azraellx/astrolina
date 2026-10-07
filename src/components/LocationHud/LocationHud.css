@@ -175,6 +175,13 @@
     animation-duration: 2s;
   }
 }
+/* Effects ▸ Motion ▸ Reduced (index.css) would stop the spinner after one 0.01ms turn, and a
+   still spinner says nothing is happening; it slows as above instead. !important to
+   outrank that block's own. (2026-10-06) */
+:root[data-fx-motion='reduced'] .location-spinner {
+  animation-duration: 2s !important;
+  animation-iteration-count: infinite !important;
+}
 
 /* "Go back / Return" toggle, shown once a jump has happened — flips the camera
    between the current spot and the one from before the last jump. The target's

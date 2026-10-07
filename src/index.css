@@ -85,7 +85,13 @@ span.astro-glyph {
   --danger: #e85a4f;
   --danger-rgb: 232, 90, 79;
   /* Semantic alias for the "advanced mode" accent (the ADV tag + the Advanced
-     settings tab). Reuses the danger red but resolves per-theme via --danger. */
+     settings tab). Reuses the danger red but resolves per-theme via --danger.
+
+     Pinned against a Custom theme (2026-10-06): the ADV badge explains a tier to
+     onlookers, so it must not turn the colour a reader picked for warnings. The pin lives
+     in the palette engine, not here — lib/themePalette's `ui.advanced` writes --advanced
+     inline with the BASE theme's danger exactly when a custom --danger would otherwise
+     drag it along — so this alias stays the stylesheet's whole word on a built-in theme. */
   --advanced: var(--danger);
   --advanced-rgb: var(--danger-rgb);
   /* The gated (downstream) plan tier's accent — a premium purple, distinct from ADV's red
@@ -135,6 +141,16 @@ span.astro-glyph {
   --pin-stroke: #0a0a0f;
   --label-halo: rgba(10, 10, 15, 0.95);
 
+  /* The panel material's inset top highlight, as an r, g, b TRIPLET: the material rules
+     below draw it as rgba(var(--panel-highlight), <their own alpha>). White here and on
+     Glass; Earth's is its parchment. A token rather than the literal those rules carried
+     until 2026-10-06, so a Custom theme's panel can give its own edge light — each rule
+     keeps its alpha, so the built-ins draw exactly the rgba() they did. */
+  --panel-highlight: 255, 255, 255;
+  /* The 3D globe's void — the space around the sphere (Map.css reads it, with each
+     theme's literal as its fallback). Per theme; a Custom theme's map surface sets it. */
+  --globe-void: #04050b;
+
   /* Chart tags: a steady gold star, a cool slate for the (system) "space" tag, a
      warm red for the (system) "shared" gift, and a neutral grey for the (system)
      "unknown" birth-time mark. Fixed hues, so the marks read the same across
@@ -168,6 +184,162 @@ span.astro-glyph {
   --ease-spring: cubic-bezier(0.22, 1.2, 0.4, 1);
   /* Snappy pop with a small bounce past 100% — confirmation moments. */
   --ease-pop: cubic-bezier(0.2, 0.9, 0.3, 1.35);
+}
+
+/* ── Effects (2026-10-06) ───────────────────────────────────────────────────
+   A Custom theme's Effects — Frosted panels, Shadows, Glows & flourishes, Motion — as
+   four multipliers and a few attribute rules. lib/appearance writes data-fx-frost /
+   -shadows / -glows / -motion on <html> ONLY while a palette's value differs from the
+   default (lib/themePalette FX_DEFAULTS; FX_VARS there states these same values), and
+   removes them otherwise. So a built-in theme carries none of the attributes, and every
+   consumer — the materials below and the component stylesheets — resolves to exactly the
+   literal it replaced:
+     rgba(var(--bg-panel), max(α, var(--fx-opaque)))   --fx-opaque 0   → α
+     blur(calc(Npx * var(--fx-blur)))                  --fx-blur 1     → Npx
+     rgba(…, calc(α * var(--fx-shadow)))               --fx-shadow 1   → α
+     rgba(…, calc(α * var(--fx-glow)))                 --fx-glow 1     → α
+   Which shadows scale: decorative ones only — blurred and offset, the lift under a panel,
+   a menu or a tip. A spread-only ring (0 0 0 Npx) and an inset are focus, selection and
+   state marks, and are never touched: Flat keeps every focus ring. */
+:root {
+  --fx-blur: 1;
+  --fx-opaque: 0;
+  --fx-shadow: 1;
+  --fx-glow: 1;
+}
+/* Frosted panels ▸ Light: half the blur, over a panel at least 88% opaque. */
+:root[data-fx-frost='subtle'] {
+  --fx-blur: 0.5;
+  --fx-opaque: 0.88;
+}
+/* Frosted panels ▸ Off: solid panels, and no backdrop filter ANYWHERE — the surfaces that
+   never adopted the multipliers too (the map controls in Map.css, a plugin's window), so
+   nothing keeps paying for a blur behind an opaque panel. One thing this moves besides
+   the look: a backdrop filter makes its element the containing block of position:fixed
+   descendants, and without it they resolve against the viewport. The settings tips are
+   portalled to <body> and unaffected; a fixed child of a frosted panel would not be. */
+:root[data-fx-frost='solid'] {
+  --fx-blur: 0;
+  --fx-opaque: 1;
+}
+:root[data-fx-frost='solid'] *,
+:root[data-fx-frost='solid'] *::before,
+:root[data-fx-frost='solid'] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Shadows ▸ off. */
+:root[data-fx-shadows='off'] {
+  --fx-shadow: 0;
+}
+/* Glows & flourishes ▸ off: the edge glow and the sheen (both below, through --fx-glow),
+   the Synastry starfield (SynastryHud.css), and the pin's pulse rings. --sheen-alpha is
+   zeroed for any sheen that reads it unscaled. */
+:root[data-fx-glows='off'] {
+  --fx-glow: 0;
+  --sheen-alpha: 0;
+}
+/* The pulse rings live in Map.css (.map-pin-glow with its celebration ping, and the camera
+   arrival's .arrival-mark-ping, which share map-pin-pulse). Dropped, each rests on its base
+   style, which is the static ring it settles into anyway — Map.css's own reduced-motion
+   block relies on the same fact. Nothing waits on their animationend. */
+:root[data-fx-glows='off'] .map-pin-glow,
+:root[data-fx-glows='off'] .arrival-mark.is-arrived .arrival-mark-ping {
+  animation: none;
+}
+/* Motion ▸ Reduced: what the device's own reduced-motion setting gets, for a reader who
+   wants it here only. Durations go to 0.01ms rather than `animation: none`, so every
+   animationend still fires: the touch settings dock unmounts on its slide-out's end
+   (Sidebar.tsx; Sidebar.css's own reduced-motion block uses 0.01ms for that reason), and
+   with no animation at all it would never close. One iteration, so nothing loops.
+   Where the device's block resolves a cue differently — a ring held instead of pulsed, a
+   chip held instead of faded out, a spinner slowed rather than stopped — the file that
+   owns the cue restates that block for this attribute beside it (AutoFlipNotice.css,
+   TimelineHud.css, LocationHud.css, PlaceSearchField.css; the arrival chip's is just
+   below, as its rules live in Map.css). Without those, 0.01ms would end the cue before
+   anyone saw it. */
+:root[data-fx-motion='reduced'] *,
+:root[data-fx-motion='reduced'] *::before,
+:root[data-fx-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+/* Map.css's reduced-motion block for the camera arrival: the ping rests on its ring, and
+   the chip — whose whole job is to fade away — is held visible instead. */
+:root[data-fx-motion='reduced'] .arrival-mark.is-arrived .arrival-mark-ping {
+  animation: none;
+}
+:root[data-fx-motion='reduced'] .arrival-mark.is-arrived .arrival-mark-label {
+  animation: none;
+  opacity: 1;
+}
+
+/* ── The canonical palette, for surfaces that must not follow a Custom theme ──
+   Every colour a component reads as var(--x, <canonical literal>) — the bodies, the
+   aspects, elements and modalities, the wheel's inks, the text on an accent fill — is
+   declared by NO stylesheet (verify:theme-palette §2f), so an untouched theme resolves
+   each to its literal. A Custom theme writes them inline on <html>; `initial` here drops
+   that again for a subtree, and var() falls back to the literal. Exactly the list in
+   lib/themePalette CANONICAL_RESET_VARS (§3a checks it, both ways). (2026-10-06)
+
+   Two users. The report paper (`.palette-canonical` on its root): a report is a record,
+   printed on its own fixed palette whatever theme was live when it was read. And the
+   capture panel on a LIGHT-toned palette: its backdrop is a fixed near-black
+   (CaptureExtras.css, which restates the dark UI palette for it on a light tone), and a
+   Custom theme's inks tuned for light panels — black lines, a black wheel — would vanish
+   on it exactly as Glass's dark text would. A dark-toned theme keeps its own inks there,
+   as each built-in keeps its character. On a built-in, nothing here has anything to reset. */
+.palette-canonical,
+:root[data-panel-tone='light'] .capture-extras {
+  --on-accent: initial;
+  --planet-sun: initial;
+  --planet-moon: initial;
+  --planet-mercury: initial;
+  --planet-venus: initial;
+  --planet-mars: initial;
+  --planet-jupiter: initial;
+  --planet-saturn: initial;
+  --planet-uranus: initial;
+  --planet-neptune: initial;
+  --planet-pluto: initial;
+  --planet-north-node: initial;
+  --planet-south-node: initial;
+  --planet-chiron: initial;
+  --planet-ceres: initial;
+  --planet-pallas: initial;
+  --planet-juno: initial;
+  --planet-vesta: initial;
+  --planet-lilith: initial;
+  --planet-fortune: initial;
+  --wheel-sign: initial;
+  --wheel-sign-fire: initial;
+  --wheel-sign-earth: initial;
+  --wheel-sign-air: initial;
+  --wheel-sign-water: initial;
+  --element-fire: initial;
+  --element-earth: initial;
+  --element-air: initial;
+  --element-water: initial;
+  --modality-cardinal: initial;
+  --modality-fixed: initial;
+  --modality-mutable: initial;
+  --aspect-conjunction: initial;
+  --aspect-opposition: initial;
+  --aspect-trine: initial;
+  --aspect-square: initial;
+  --aspect-sextile: initial;
+  --aspect-parallel: initial;
+  --aspect-contraparallel: initial;
+  --wheel-axis-asc: initial;
+  --wheel-axis-asc-rgb: initial;
+  --wheel-axis-mc: initial;
+  --wheel-axis-mc-rgb: initial;
+  --wheel-ink-rgb: initial;
+  --wheel-face: initial;
+  --wheel-retro: initial;
+  --wheel-station: initial;
 }
 
 :root[data-theme='vintage'] {
@@ -214,6 +386,17 @@ span.astro-glyph {
 
   --pin-stroke: #2a2017;
   --label-halo: rgba(28, 20, 12, 0.95);
+
+  /* The material's warm inset highlight (the parchment its rules hard-coded until
+     2026-10-06), and this basemap's globe void. */
+  --panel-highlight: 240, 226, 192;
+  --globe-void: #585a67;
+  /* Lilith's glyph where it stands alone on a panel (the settings list): the canonical
+     violet sinks on this warm brown, so it is lifted to this lavender — lib/theme.ts
+     LILITH_PANEL_GLYPH_EARTH, the same value, which the list read in TS until 2026-10-06.
+     The list now reads var(--lilith-panel-ink, <the body's ink>), as the Moon's twin
+     below does on Glass. */
+  --lilith-panel-ink: #b092dc;
 }
 
 /* Glass: frosted silver/white panels floating over the light basemap. Gray,
@@ -263,6 +446,23 @@ span.astro-glyph {
      pale gray all but vanishes on these near-white panels. MOON_LINE_DARK, the slate its
      line takes on the light basemaps. */
   --moon-panel-ink: #5b6480;
+
+  /* The pale basemap's globe void. (The inset highlight is the :root white.) */
+  --globe-void: #d6e4f4;
+}
+
+/* The panel TONE's colour scheme — the native form controls, scrollbars and default
+   canvas a light or dark panel wants. lib/appearance sets data-panel-tone on every
+   palette, a built-in's own tone included (Glass light; Earth and Dark dark), so for the
+   built-ins this restates exactly the color-scheme each theme block above declares; it
+   only decides anything for a Custom theme whose panels are the other tone from its base.
+   After the theme blocks, at their specificity, so it wins where the two disagree.
+   (2026-10-06) */
+:root[data-panel-tone='light'] {
+  color-scheme: light;
+}
+:root[data-panel-tone='dark'] {
+  color-scheme: dark;
 }
 
 /* ── Placeholder ink (single source) ────────────────────────────────
@@ -313,6 +513,18 @@ textarea::placeholder {
   --map-accent-rgb: var(--success-rgb);
 }
 
+/* ── The panel materials, and the Effects multipliers they read ─────
+   The Glass and Earth materials below stay keyed on data-theme: a Custom theme sets
+   data-theme to its BASE, so it wears its base's material. What a Custom theme may move
+   is read through four effect multipliers and one token, all declared in the effects
+   block further down with defaults that make every expression here exactly the literal it
+   replaced (2026-10-06):
+     background   rgba(var(--bg-panel), max(α, var(--fx-opaque)))   --fx-opaque 0 → α
+     frost        blur(calc(Npx * var(--fx-blur)))                   --fx-blur 1 → Npx
+     drop shadow  rgba(…, calc(α * var(--fx-shadow)))                --fx-shadow 1 → α
+     highlight    inset 0 1px 0 rgba(var(--panel-highlight), α)      the theme's own triplet
+   The inset highlight is never scaled: it is the material's edge, not a shadow. */
+
 /* ── Glass surfaces: frost the floating HUD panels ──────────────── */
 :root[data-theme='glass'] .app-header,
 :root[data-theme='glass'] .profile-window,
@@ -321,28 +533,28 @@ textarea::placeholder {
 :root[data-theme='glass'] .thud-drawer,
 :root[data-theme='glass'] .sidebar,
 :root[data-theme='glass'] .chart-wheel {
-  background: rgba(var(--bg-panel), 0.6);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  background: rgba(var(--bg-panel), max(0.6, var(--fx-opaque)));
+  backdrop-filter: blur(calc(16px * var(--fx-blur))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(16px * var(--fx-blur))) saturate(160%);
   box-shadow:
-    0 8px 30px rgba(40, 48, 70, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    0 8px 30px rgba(40, 48, 70, calc(0.16 * var(--fx-shadow))),
+    inset 0 1px 0 rgba(var(--panel-highlight), 0.65);
 }
 
 /* The drawer carries the display toggles, so it reads better as a denser chip than the
    airy glass bar — at the shared 0.6 it was too see-through. Bump only its fill; the
    frost/blur/shadow from the shared rule above still apply. */
 :root[data-theme='glass'] .thud-drawer {
-  background: rgba(var(--bg-panel), 0.85);
+  background: rgba(var(--bg-panel), max(0.85, var(--fx-opaque)));
 }
 
 /* The expanded chart reader is a dense surface — a touch more opaque so its
    text stays crisp over a busy map. */
 :root[data-theme='glass'] .expanded-sidebar {
-  background: rgba(var(--bg-panel), 0.72);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: rgba(var(--bg-panel), max(0.72, var(--fx-opaque)));
+  backdrop-filter: blur(calc(18px * var(--fx-blur))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(18px * var(--fx-blur))) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(var(--panel-highlight), 0.6);
 }
 
 /* ── Glass buttons: translucent white chips. :not() guards keep each control's
@@ -356,8 +568,10 @@ textarea::placeholder {
 :root[data-theme='glass'] .tech-toggle:not(.on),
 :root[data-theme='glass'] .planet-toggle:not(.on),
 :root[data-theme='glass'] .line-toggle:not(.on) {
-  background: rgba(255, 255, 255, 0.42);
-  border-color: rgba(255, 255, 255, 0.6);
+  /* The chips are the same light as the panel edge — --panel-highlight, which is white on
+     Glass — so a Custom theme built on Glass lights them in its own panel's colour. */
+  background: rgba(var(--panel-highlight), 0.42);
+  border-color: rgba(var(--panel-highlight), 0.6);
 }
 
 /* ── Earth: a lighter touch of the same frosting ──────────────────
@@ -371,12 +585,12 @@ textarea::placeholder {
 :root[data-theme='vintage'] .thud-drawer,
 :root[data-theme='vintage'] .sidebar,
 :root[data-theme='vintage'] .chart-wheel {
-  background: rgba(var(--bg-panel), 0.72);
-  backdrop-filter: blur(12px) saturate(125%);
-  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  background: rgba(var(--bg-panel), max(0.72, var(--fx-opaque)));
+  backdrop-filter: blur(calc(12px * var(--fx-blur))) saturate(125%);
+  -webkit-backdrop-filter: blur(calc(12px * var(--fx-blur))) saturate(125%);
   box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(240, 226, 192, 0.12);
+    0 8px 30px rgba(0, 0, 0, calc(0.3 * var(--fx-shadow))),
+    inset 0 1px 0 rgba(var(--panel-highlight), 0.12);
 }
 
 /* The info-bar + settings nub hardcode the heavier 0.94 fill (like the bars), which over Earth's
@@ -385,22 +599,22 @@ textarea::placeholder {
    from that rule so their own box-shadows (the nub's left-edge lift) stay intact. */
 :root[data-theme='vintage'] .info-bar,
 :root[data-theme='vintage'] .settings-nub {
-  background: rgba(var(--bg-panel), 0.72);
-  backdrop-filter: blur(12px) saturate(125%);
-  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  background: rgba(var(--bg-panel), max(0.72, var(--fx-opaque)));
+  backdrop-filter: blur(calc(12px * var(--fx-blur))) saturate(125%);
+  -webkit-backdrop-filter: blur(calc(12px * var(--fx-blur))) saturate(125%);
 }
 
 /* Same denser-than-the-bar fill for the drawer on Earth — at the shared 0.72 panel
    value it read too see-through for the small toggle chip. */
 :root[data-theme='vintage'] .thud-drawer {
-  background: rgba(var(--bg-panel), 0.86);
+  background: rgba(var(--bg-panel), max(0.86, var(--fx-opaque)));
 }
 
 :root[data-theme='vintage'] .expanded-sidebar {
-  background: rgba(var(--bg-panel), 0.82);
-  backdrop-filter: blur(14px) saturate(125%);
-  -webkit-backdrop-filter: blur(14px) saturate(125%);
-  box-shadow: inset 0 1px 0 rgba(240, 226, 192, 0.1);
+  background: rgba(var(--bg-panel), max(0.82, var(--fx-opaque)));
+  backdrop-filter: blur(calc(14px * var(--fx-blur))) saturate(125%);
+  -webkit-backdrop-filter: blur(calc(14px * var(--fx-blur))) saturate(125%);
+  box-shadow: inset 0 1px 0 rgba(var(--panel-highlight), 0.1);
 }
 
 /* The small map controls (zoom group) and the two bottom-center HUD BAR BODIES (the
@@ -410,12 +624,12 @@ textarea::placeholder {
    dark, so the difference is invisible there — hence this is Earth-only. The protruding
    NUBS are unified just below (they stay denser than their bars, on purpose). */
 :root[data-theme='vintage'] .maplibregl-ctrl-group {
-  background: rgba(var(--bg-panel), 0.72) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(var(--bg-panel), max(0.72, var(--fx-opaque))) !important;
+  backdrop-filter: blur(calc(12px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(12px * var(--fx-blur)));
 }
 :root[data-theme='vintage'] .synastry-hud {
-  background: rgba(var(--bg-panel), 0.72);
+  background: rgba(var(--bg-panel), max(0.72, var(--fx-opaque)));
 }
 
 /* Every overlay-label NUB (timeline / synastry / eclipse) shares ONE fill on Earth: a
@@ -428,17 +642,17 @@ textarea::placeholder {
 :root[data-theme='vintage'] .thud-measure,
 :root[data-theme='vintage'] .synastry-hud-nub,
 :root[data-theme='vintage'] .eclipse-hud-nub {
-  background: rgba(var(--bg-panel), 0.9);
+  background: rgba(var(--bg-panel), max(0.9, var(--fx-opaque)));
 }
 :root[data-theme='vintage'] .thud-measure::before,
 :root[data-theme='vintage'] .synastry-hud-nub::before,
 :root[data-theme='vintage'] .eclipse-hud-nub::before {
-  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.9) 9.5px);
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), max(0.9, var(--fx-opaque))) 9.5px);
 }
 :root[data-theme='vintage'] .thud-measure::after,
 :root[data-theme='vintage'] .synastry-hud-nub::after,
 :root[data-theme='vintage'] .eclipse-hud-nub::after {
-  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.9) 9.5px);
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), max(0.9, var(--fx-opaque))) 9.5px);
 }
 
 /* Chart-tag glyphs (TagIcon): colour is intrinsic to the tag (gold star, slate
@@ -571,7 +785,8 @@ html {
 .map-edge-glow[data-state='hover'],
 .map-edge-glow[data-state='pinned'],
 .map-edge-glow[data-state='natal-pinned'] {
-  --glow-color: rgba(var(--map-accent-rgb), 0.85);
+  /* × --fx-glow (1, or 0 under Effects ▸ Glows off — the effects block below). */
+  --glow-color: rgba(var(--map-accent-rgb), calc(0.85 * var(--fx-glow)));
   opacity: 0.38;
   animation: edge-pulse 5.2s ease-in-out 4;
 }
@@ -641,11 +856,13 @@ html {
   opacity: 0;
   translate: -130% 0;
   /* Accent glint by default; a host can retune it (e.g. a solid accent-filled
-     button sets --sheen-rgb to white — accent-on-accent would vanish). */
+     button sets --sheen-rgb to white — accent-on-accent would vanish). The alpha is
+     scaled by --fx-glow as well as zeroed through --sheen-alpha under Glows off, because
+     a host that retunes --sheen-alpha on itself would outrank the root's zero. */
   background: linear-gradient(
     105deg,
     transparent -10%,
-    rgba(var(--sheen-rgb, var(--accent-rgb)), var(--sheen-alpha, 0.14)) 50%,
+    rgba(var(--sheen-rgb, var(--accent-rgb)), calc(var(--sheen-alpha, 0.14) * var(--fx-glow))) 50%,
     transparent 110%
   );
 }
@@ -770,7 +987,7 @@ html {
   left: calc(var(--es-width, 0px) + 16px);
   z-index: 20;
   padding: 12px 16px;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 8px;
   transition: border-color 0.15s;
@@ -833,7 +1050,7 @@ html[data-mapstate='natal-pinned'] .app-header {
   background: rgb(var(--bg-menu));
   border: 1px solid rgba(var(--tint), 0.16);
   border-radius: 8px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
 }
 .ui-tip-title {
   font-size: 12px;

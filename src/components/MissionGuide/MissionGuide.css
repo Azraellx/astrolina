@@ -16,13 +16,13 @@
   z-index: 50;
   width: min(360px, calc(100vw - 32px));
   /* Same translucent panel fill as the other HUDs (timeline / nav). */
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--accent-rgb), 0.45);
   border-radius: 12px;
   padding: 12px 16px 14px;
   color: var(--text-strong);
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, calc(0.4 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
   font-family: inherit;
   /* Rise in on appear (the guide mounts fresh each time it's shown). */
   animation: ui-rise var(--dur-move) var(--ease-settle);
@@ -261,7 +261,8 @@
   border-radius: 6px;
   border: 1px solid transparent;
   background: rgba(var(--accent-rgb), 0.92);
-  color: #0a0a0f;
+  /* Text on the accent fill: see .birth-form button.primary (BirthDataForm.css). */
+  color: var(--on-accent, #0a0a0f);
   font: inherit;
   font-size: 12px;
   font-weight: 600;

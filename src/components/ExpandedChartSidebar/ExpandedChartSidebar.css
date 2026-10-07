@@ -12,7 +12,9 @@
   left: 0;
   bottom: 0;
   z-index: 30;
-  background: rgba(var(--bg-panel), 0.98);
+  /* max(): a Custom theme's Effects ▸ Frosted panels can only make a panel MORE opaque
+     (index.css, the effects block); --fx-opaque is 0 by default, so this is 0.98. */
+  background: rgba(var(--bg-panel), max(0.98, var(--fx-opaque)));
   border-right: 1px solid rgba(var(--tint), 0.1);
   color: var(--text-strong);
   /* Standalone PWA: keep the Hide button + content out from under the device notch — top in
@@ -145,7 +147,9 @@
   border-color: rgba(var(--accent-brand-rgb), 0.35);
 }
 /* adv uses the advanced-mode gradient (same as the Advanced settings tab): a
-   half-opacity tint at top-left deepening to the full advanced red at bottom-right. */
+   half-opacity tint at top-left deepening to the full advanced red at bottom-right.
+   Both tier badges keep white text rather than --on-accent: their fills are the tier
+   colours, which a Custom theme leaves fixed, not the reader's accent. (2026-10-06) */
 .es-plan-tag.tier-adv {
   background: linear-gradient(
     to bottom right,
@@ -434,14 +438,17 @@
 
 /* Declination, flagged only when out of bounds (beyond the Sun's 23°26' max),
    north or south alike. One colour: dark pink on the Dark/Earth themes, swapped
-   to the brighter pink under Glass (below) where dark pink reads muddy over the
+   to the brighter pink on a light panel (below) where dark pink reads muddy over the
    frosted-light panels. Within bounds the value keeps the default text colour. */
 .es-dec-oob {
   color: #b5638b;
   font-weight: 600;
 }
 
-:root[data-theme='glass'] .es-dec-oob {
+/* Keyed on the panel TONE, not on Glass (2026-10-06): the swap is about a light panel, and a
+   Custom theme can have one on any base. Glass is the only built-in with a light tone, and
+   lib/appearance always sets the attribute, so the built-ins are exactly as before. */
+:root[data-panel-tone='light'] .es-dec-oob {
   color: #ff8ad1;
 }
 
@@ -451,10 +458,12 @@
   font-weight: 600;
 }
 
-/* Stationary marker — sibling of .es-rx, in the wheel's station yellow. */
+/* Stationary marker — sibling of .es-rx, in the wheel's station yellow: the same
+   var(--wheel-station, #c79a17) the wheel paints (lib/themePalette wheelMotionInk), which
+   no stylesheet declares, so it is #c79a17 until a Custom theme moves it. */
 .es-station {
   margin-left: 4px;
-  color: #c79a17;
+  color: var(--wheel-station, #c79a17);
   font-weight: 600;
 }
 
@@ -938,17 +947,21 @@
   color: var(--text-muted);
 }
 
-/* Per-category tint (the --cat custom property the row's glyphs inherit). */
-.es-el-fire { --cat: rgb(232, 90, 79); }
-.es-el-earth { --cat: rgb(141, 188, 109); }
-.es-el-air { --cat: rgb(94, 194, 224); }
-.es-el-water { --cat: rgb(126, 116, 219); }
+/* Per-category tint (the --cat custom property the row's glyphs inherit). Each reads its
+   Custom-theme colour first — --element-* / --modality-*, declared by no stylesheet — with
+   the literal that was here as the fallback; the same literals are lib/themePalette's
+   ELEMENT_INK / MODALITY_INK, which CaptureBalanceGrid reads, so the two Balance views
+   cannot drift apart. (2026-10-06) */
+.es-el-fire { --cat: var(--element-fire, rgb(232, 90, 79)); }
+.es-el-earth { --cat: var(--element-earth, rgb(141, 188, 109)); }
+.es-el-air { --cat: var(--element-air, rgb(94, 194, 224)); }
+.es-el-water { --cat: var(--element-water, rgb(126, 116, 219)); }
 
 /* Modalities have no traditional colour — a triad kept distinct from the element
    palette: amber (cardinal), slate (fixed), teal (mutable). */
-.es-mod-cardinal { --cat: rgb(216, 154, 65); }
-.es-mod-fixed { --cat: rgb(140, 152, 170); }
-.es-mod-mutable { --cat: rgb(95, 178, 152); }
+.es-mod-cardinal { --cat: var(--modality-cardinal, rgb(216, 154, 65)); }
+.es-mod-fixed { --cat: var(--modality-fixed, rgb(140, 152, 170)); }
+.es-mod-mutable { --cat: var(--modality-mutable, rgb(95, 178, 152)); }
 
 .es-dignity-list {
   list-style: none;

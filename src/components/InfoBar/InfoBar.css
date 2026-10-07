@@ -27,7 +27,7 @@
   padding: 3px 8px;
   /* Match the top nav + overlay bars' glass recipe (rgba(bg-panel,0.94) + blur(6px)). The old
      0.78 + blur(4) read as a heavier flat tint than the rest of the HUD across all themes. */
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 5px;
   font-family: inherit;
@@ -35,8 +35,8 @@
   letter-spacing: 0.02em;
   color: var(--text-muted);
   white-space: nowrap;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(6px * var(--fx-blur)));
 }
 
 /* Each value is a bare button that highlights on its own hover. */

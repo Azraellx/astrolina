@@ -28,7 +28,6 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { PLANET_COLORS } from '../../lib/ephemeris';
 import {
   CHALDEAN_ORDER,
   nextHourOf,
@@ -41,6 +40,7 @@ import {
 } from '../../lib/astro/planetaryHours';
 import { useT } from '../../i18n';
 import { panelGlyphColor } from '../../lib/theme';
+import { planetInk } from '../../lib/themePalette';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { getReservedLeftInset } from '../../lib/leftDock';
 import { useTouchLayout } from '../../lib/touch';
@@ -171,7 +171,7 @@ export function PlanetaryHoursHud({
   // The Moon's ink follows the theme here (panelGlyphColor): the planet buttons carry
   // nothing but the glyph, and its pale gray all but vanishes on Glass's light panel.
   const glyph = (p: PlanetaryHour['ruler'], size: number) => (
-    <PlanetGlyph planet={p} size={size} color={panelGlyphColor(p, PLANET_COLORS[p])} />
+    <PlanetGlyph planet={p} size={size} color={panelGlyphColor(p, planetInk(p))} />
   );
   const reasonText = (d: PlanetaryDayResult): string =>
     d.ok
@@ -486,7 +486,7 @@ export function PlanetaryHoursHud({
         ) : (
           <div className="ph-unavailable">
             <span className="ph-unavailable-glyph">
-              <PlanetGlyph planet="Sun" size={18} color={PLANET_COLORS.Sun} />
+              <PlanetGlyph planet="Sun" size={18} color={planetInk('Sun')} />
             </span>
             <span>
               <span className="ph-unavailable-title">{t('skyTimes.planetary.unavailableShort')}</span>

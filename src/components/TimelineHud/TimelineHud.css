@@ -38,12 +38,12 @@
      and the flexible gap absorbs the difference. */
   display: flex;
   flex-direction: column;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 10px;
   color: var(--text-strong);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, calc(0.28 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
 }
 
 /* The bar's chrome (dropdowns, step/play buttons, focus rings, the measure pill)
@@ -111,7 +111,7 @@
   align-items: center;
   gap: 7px;
   padding: 3px 14px 5px;
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border-radius: 9px 9px 0 0;
   /* Title + move-grip (currentColor) track the pin state — a designated map-state
      cue, like the bar border (the bar's --accent is steady brand by default). */
@@ -281,11 +281,11 @@
 }
 .thud-measure::before {
   left: -9px;
-  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.94) 9.5px);
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), max(0.94, var(--fx-opaque))) 9.5px);
 }
 .thud-measure::after {
   right: -9px;
-  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.94) 9.5px);
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), max(0.94, var(--fx-opaque))) 9.5px);
 }
 
 /* Collapsed (Display ▸ Timeline off): no ruler/transport, so the bar reduces to just
@@ -304,8 +304,8 @@
   padding: 5px 14px;
   border-radius: 9px;
   border: 1px solid rgba(var(--map-accent-rgb), 0.55);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, calc(0.28 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
 }
 
 .timeline-hud.thud-collapsed .thud-measure::before,
@@ -753,6 +753,12 @@
     box-shadow: 0 0 0 3px rgba(var(--accent-brand-rgb), 0.45);
   }
 }
+/* …and for Effects ▸ Motion ▸ Reduced (index.css's effects block), whose 0.01ms would fade
+   the ring out before it was seen: held while the class is up, as above. (2026-10-06) */
+:root[data-fx-motion='reduced'] .thud-frame-seg.is-flash {
+  animation: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-brand-rgb), 0.45);
+}
 /* Disabled on non-Celestial line systems (framing has no effect) and on a
    time-unknown chart (the frame is forced): dimmed, no hover accent — but still
    hoverable so the tips can explain why. */
@@ -1042,12 +1048,12 @@
   --accent: var(--accent-brand);
   --accent-rgb: var(--accent-brand-rgb);
   --accent-hover: var(--accent-brand);
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--map-accent-rgb), 0.55);
   border-left: none;
   border-radius: 0 9px 9px 0;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, calc(0.28 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
   /* No element opacity here on purpose: fading the whole drawer at rest also faded its
      BORDER (0.55 → ~0.33 effective), so the closed handle's edge read a tone lighter
      than the bar's same-token border and broke the "one continuous edge" illusion. The

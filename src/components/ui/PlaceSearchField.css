@@ -70,6 +70,12 @@
     animation-duration: 2s;
   }
 }
+/* Effects ▸ Motion ▸ Reduced (index.css) would stop it after one 0.01ms turn; slowed as above
+   instead, !important to outrank that block's own. (2026-10-06) */
+:root[data-fx-motion='reduced'] .psf-spinner {
+  animation-duration: 2s !important;
+  animation-iteration-count: infinite !important;
+}
 
 /* ── Scope chips ──────────────────────────────────────────────────────────
    Only rendered when more than one scope exists, so the open core's field is

@@ -51,7 +51,7 @@ import {
 } from './lunarEclipse';
 import { SIGN_GLYPHS } from './glyphChars';
 import type { EclipseIsoStep } from '../overlayPrefs';
-import type { Theme } from '../theme';
+import { ECLIPSE_PATH_COLORS, type Theme } from '../theme';
 
 // Re-exported so the App can reach the per-location lookups through its one
 // lazy `import('./lib/astro/eclipses')` — this module (with its catalog JSON
@@ -278,18 +278,8 @@ export interface EclipseFeatureProps {
 
 export type EclipseMapData = FeatureCollection<Geometry, EclipseFeatureProps>;
 
-// Path/contour colors per basemap theme. Total/hybrid solar paths burn red,
-// annular paths a ring-of-fire orange, lunar features a moonlit indigo; the
-// partial-magnitude contours use a quiet slate so the dashed family reads as
-// reference lines, not chart lines.
-const PATH_COLORS: Record<
-  Theme,
-  { total: string; annular: string; iso: string; lunar: string }
-> = {
-  glass: { total: '#d8434e', annular: '#d97e2f', iso: '#5d6679', lunar: '#5868b8' },
-  dark: { total: '#ff6b6b', annular: '#ffb066', iso: '#9aa3b8', lunar: '#94a7ff' },
-  vintage: { total: '#c03a32', annular: '#bd7427', iso: '#6e6253', lunar: '#5d5a8a' },
-};
+/** The four path/contour colours one eclipse map is drawn in (see ECLIPSE_PATH_COLORS). */
+export type EclipsePathColors = (typeof ECLIPSE_PATH_COLORS)[Theme];
 
 const lineFeature = (
   coords: [number, number][],
@@ -304,14 +294,19 @@ const lineFeature = (
  * Everything the map draws for one resolved eclipse, as a single mixed-geometry
  * FeatureCollection (the layers filter on `kind`). Longitudes arrive unwrapped
  * from the geometry modules, so dateline-crossing features render seamlessly.
+ *
+ * `colours` (2026-10-06): the palette's own eclipse inks (lib/themePalette MapInks.eclipse),
+ * which follow the basemap a custom palette draws on. Omitted, the theme's table entry —
+ * exactly what a built-in palette resolves to, so a caller not yet passing it draws the same.
  */
 export function buildEclipseMap(
   resolved: ResolvedEclipse,
   isoStep: EclipseIsoStep,
   theme: Theme,
   dateLabel: string,
+  colours?: EclipsePathColors,
 ): EclipseMapData {
-  const pal = PATH_COLORS[theme];
+  const pal = colours ?? ECLIPSE_PATH_COLORS[theme];
   const features: Feature<Geometry, EclipseFeatureProps>[] = [];
   const props = (
     kind: EclipseFeatureProps['kind'],

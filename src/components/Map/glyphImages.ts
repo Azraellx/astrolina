@@ -12,14 +12,12 @@
 // lib/astro/glyphChars (the same ones the DOM/SVG components use).
 import type { Map as MlMap } from 'maplibre-gl';
 import { PLANET_COLORS, PLANET_NAMES, type PlanetName } from '../../lib/ephemeris';
-import {
-  MAP_LINE_COLOR_OVERRIDES,
-  MINOR_LINE_PALETTE,
-  STAR_LINE_COLORS,
-  minorLineColor,
-  minorPaletteSlot,
-  type Theme,
-} from '../../lib/theme';
+import { minorPaletteSlot } from '../../lib/theme';
+// What a sprite set is baked from (2026-10-06): a pure function of the palette, which
+// lib/lineInks spriteSpecFor builds from the same MapInks the lines are coloured with — so a
+// stamp, a spark or a coin can't come out in a colour its line isn't. A built-in theme's spec
+// holds exactly the per-theme tables these bakes read directly before.
+import type { SpriteSpec } from '../../lib/lineInks';
 import { MINOR_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { MINOR_DIAMOND_IN_COIN, minorDiamondPoints, minorHollowPoints } from '../../lib/minorBodies/mark';
 import { isHypotheticalKey } from '../../lib/minorBodies/ids';
@@ -167,23 +165,100 @@ function loadFont(): Promise<boolean> {
 
 // The maps whose sprites were last baked WITHOUT the font, with what they were baked from. An entry
 // is dropped when a build starts on that map (the build bakes afresh, and an entry still holding the
-// previous theme must not overwrite it), and re-added only when that build, too, bakes without.
-type BakeArgs = { halo: string; zenithHalo: string; theme: Theme };
-const bakedWithoutFont = new Map<MlMap, BakeArgs>();
+// previous theme must not overwrite it), and re-added only when that build, too, bakes without. A
+// live re-bake (rebakeGlyphImages) that lands while the font is still missing REPLACES the entry's
+// spec: the font's arrival re-bakes from what is stored here, and an entry left holding the spec
+// before the change would put the old colours back the moment the font arrived.
+const bakedWithoutFont = new Map<MlMap, SpriteSpec>();
 const watchedForRemoval = new WeakSet<MlMap>();
 
 function rebakeInFont(): void {
-  for (const [map, args] of [...bakedWithoutFont]) {
+  for (const [map, spec] of [...bakedWithoutFont]) {
     bakedWithoutFont.delete(map);
     try {
       // No sprite on the style: a swap has replaced it, and the build that follows bakes in the font.
       if (!map.hasImage(`${GLYPH_IMAGE_PREFIX}Sun`)) continue;
-      bakeAll(map, args, true);
+      bakeAll(map, spec, true);
       map.triggerRepaint();
     } catch {
       /* the map has gone */
     }
   }
+}
+
+// ── Live re-bakes ────────────────────────────────────────────────────────────────────────────
+// A palette edited while the map is up (the Custom theme's editor) changes what the sprites are
+// baked from without changing the style, so they are re-baked IN PLACE — updateImage, the path the
+// font's arrival already takes: every sprite keeps its id and its size, only the pixels change, so
+// no layer is re-laid-out and no tile re-cut. And only the sprites whose inputs moved (spriteJobs:
+// each image's `inputs`, diffed against what the map was baked from), since 2026-10-06: a full
+// bake is ~90 canvases read back with getImageData, ~85 ms of a commit measured, while one body's
+// colour moves three images (its glyph, its zenith stamp, its nadir stamp). A colour dragged
+// across the picker is followed at most every REBAKE_MS, the last position always landing.
+//
+// A re-bake asked for while a build is baking (ensureGlyphImages, which may be waiting on the font)
+// is held, not baked: the build is about to replace every sprite with what IT was handed, which may
+// be older — so the build takes the held spec up once its own bake is done.
+const REBAKE_MS = 150;
+interface RebakeState {
+  /** The spec asked for and not yet baked. */
+  want: SpriteSpec | null;
+  /** What the map's sprites are baked from now (by the last build or re-bake). */
+  baked: SpriteSpec | null;
+  building: boolean;
+  timer: number;
+  last: number;
+}
+const rebakes = new WeakMap<MlMap, RebakeState>();
+function rebakeState(map: MlMap): RebakeState {
+  let st = rebakes.get(map);
+  if (!st) {
+    st = { want: null, baked: null, building: false, timer: 0, last: 0 };
+    rebakes.set(map, st);
+  }
+  return st;
+}
+
+function flushRebake(map: MlMap, st: RebakeState): void {
+  window.clearTimeout(st.timer);
+  st.timer = 0;
+  const spec = st.want;
+  // Mid-build: the build takes `want` up when it has baked (see above).
+  if (!spec || st.building) return;
+  st.want = null;
+  if (spec === st.baked) return;
+  try {
+    // No sprite on the style yet (a swap has dropped it and its build hasn't begun): hold the spec
+    // for that build, which bakes whatever is current when it starts and checks `want` after.
+    if (!map.hasImage(`${GLYPH_IMAGE_PREFIX}Sun`)) {
+      st.want = spec;
+      return;
+    }
+    // Only what moved, against what the map's sprites were baked from (every image, the first
+    // time a map is re-baked with nothing recorded).
+    if (st.baked) bakeChanged(map, st.baked, spec);
+    else bakeAll(map, spec, true);
+  } catch {
+    return; // the map has gone
+  }
+  st.baked = spec;
+  st.last = Date.now();
+  if (bakedWithoutFont.has(map)) bakedWithoutFont.set(map, spec);
+  map.triggerRepaint();
+}
+
+/**
+ * Re-bake the map's sprites from `spec`, in place, throttled to one bake per REBAKE_MS (the
+ * first at once, the last always). A spec the sprites are already baked from does nothing. For a
+ * palette change on a style that stays; a new style goes through ensureGlyphImages.
+ */
+export function rebakeGlyphImages(map: MlMap, spec: SpriteSpec): void {
+  const st = rebakeState(map);
+  st.want = spec;
+  if (st.timer) return;
+  const wait = st.last + REBAKE_MS - Date.now();
+  if (wait <= 0) flushRebake(map, st);
+  else st.timer = window.setTimeout(() => flushRebake(map, st), wait);
 }
 
 function rasterize(
@@ -419,8 +494,9 @@ function rasterizeMinorCoin(
 }
 
 // Put one sprite on the map. A build removes and re-adds (the ids stay the same across themes and
-// the new halo has to be picked up); the re-bake once the font has arrived updates IN PLACE, on a
-// style whose layers already draw these images — the same size and ratio, only the pixels change.
+// the new halo has to be picked up); the re-bakes on a style that stays — once the font has arrived,
+// or for a live palette change — update IN PLACE, on a style whose layers already draw these images:
+// the same size and ratio, only the pixels change.
 type Put = (id: string, data: ImageData | null, pixelRatio: number) => void;
 const putter =
   (map: MlMap, inPlace: boolean): Put =>
@@ -431,72 +507,126 @@ const putter =
     map.addImage(id, data, { pixelRatio });
   };
 
-function bakeMinorImages(put: Put, discFill: string, theme: Theme): void {
-  MINOR_LINE_PALETTE[theme].forEach((color, slot) => {
-    put(`${MINOR_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined), RATIO);
-    put(`${MINOR_HOLLOW_COIN_PREFIX}${slot}`, rasterizeMinorCoin(color, discFill, undefined, true), RATIO);
-  });
-  for (const [n, glyph] of MINOR_GLYPHS) {
-    put(`${MINOR_GLYPH_PREFIX}${n}`, rasterizeMinorCoin(minorLineColor(n, theme), discFill, glyph), RATIO);
-  }
-}
-
-// (Re)bake the planet-glyph images onto the map, each at its planet color with
-// the theme's `halo` outline. Always re-bakes rather than skipping existing
-// images: a theme change keeps the same image ids but needs the new halo (none
-// in dark, dark in vintage, white in glass/light), so we remove and re-add to
-// pick it up. Awaited before the custom layers are added so the `['image', …]`
-// references resolve immediately — after waiting a bounded time for the symbol
-// font, never on it (see FONT_WAIT_MS).
-export async function ensureGlyphImages(
-  map: MlMap,
-  halo: string,
-  zenithHalo: string,
-  theme: Theme,
-): Promise<void> {
+// (Re)bake the planet-glyph images onto the map from `spec`, each in its body's map-line colour
+// with the spec's `halo` outline. Always re-bakes rather than skipping existing images: a theme
+// change keeps the same image ids but needs the new halo (none on Dark, dark on Earth, white on
+// Glass), so we remove and re-add to pick it up. Awaited before the custom layers are added so the
+// `['image', …]` references resolve immediately — after waiting a bounded time for the symbol
+// font, never on it (see FONT_WAIT_MS). The build that calls this hands it the spec current when
+// the build began; a newer one asked for meanwhile (rebakeGlyphImages) is baked straight after.
+export async function ensureGlyphImages(map: MlMap, spec: SpriteSpec): Promise<void> {
   // This build bakes afresh: a re-bake still holding the previous build's theme must not land
   // after it.
   bakedWithoutFont.delete(map);
-  if (!fontOk) {
-    let cut = 0;
-    await Promise.race([
-      loadFont(),
-      new Promise<void>((resolve) => {
-        cut = window.setTimeout(resolve, FONT_WAIT_MS);
-      }),
-    ]);
-    window.clearTimeout(cut);
+  const st = rebakeState(map);
+  st.building = true;
+  window.clearTimeout(st.timer);
+  st.timer = 0;
+  try {
+    if (!fontOk) {
+      let cut = 0;
+      await Promise.race([
+        loadFont(),
+        new Promise<void>((resolve) => {
+          cut = window.setTimeout(resolve, FONT_WAIT_MS);
+        }),
+      ]);
+      window.clearTimeout(cut);
+    }
+    bakeAll(map, spec, false);
+    st.baked = spec;
+    st.last = Date.now();
+  } finally {
+    st.building = false;
   }
-  const args = { halo, zenithHalo, theme };
-  bakeAll(map, args, false);
   // Read at bake time, not from the wait: the bake is synchronous, so this is what it drew with.
   if (!fontOk) {
     if (!watchedForRemoval.has(map)) {
       watchedForRemoval.add(map);
       map.once('remove', () => bakedWithoutFont.delete(map));
     }
-    bakedWithoutFont.set(map, args);
+    bakedWithoutFont.set(map, spec);
   }
+  // A palette change that came in while this build waited: bake it now, through the throttle.
+  if (st.want === spec) st.want = null;
+  else if (st.want) rebakeGlyphImages(map, st.want);
 }
 
-function bakeAll(map: MlMap, { halo, zenithHalo, theme }: BakeArgs, inPlace: boolean): void {
-  const put = putter(map, inPlace);
+/** One sprite a spec bakes: its id and pixel ratio, the spec values its pixels are drawn from
+ *  (`inputs` — equal inputs, equal pixels), and the bake itself. */
+export interface SpriteJob {
+  readonly id: string;
+  readonly ratio: number;
+  readonly inputs: string;
+  draw(): ImageData | null;
+}
+
+/**
+ * Every sprite `spec` bakes, in bake order — the one list a full bake (a build, the font's
+ * arrival) and a live re-bake of what changed (bakeChanged) both walk, so the two can't disagree
+ * about what an image is drawn from. Each body in its MAP-LINE colour — the spec's `planet`, which
+ * is the MapInks.planet lib/lineInks puts on the lines themselves, so a stamp and its line can't
+ * disagree. For a built-in theme that is PLANET_COLORS under the theme's MAP_LINE_COLOR_OVERRIDES
+ * (today one entry: the Moon's slate on both light maps, where its pale grey vanished over the pale
+ * zenith disc). Everything else, every body on Dark included, keeps its own tint.
+ * verify:theme-palette §7 draws each job on a recording canvas and holds `inputs` to what the
+ * rasterizer really reads.
+ */
+export function spriteJobs(spec: SpriteSpec): SpriteJob[] {
+  const { halo, discFill, minor } = spec;
+  const jobs: SpriteJob[] = [];
   for (const p of PLANET_NAMES) {
-    // Bodies whose tint washes out on a light basemap are baked in the shared per-theme
-    // override (MAP_LINE_COLOR_OVERRIDES) — the Moon over the pale zenith disc on both
-    // light themes, Mercury/Uranus on Earth — matching App's withThemeLineColors for the
-    // lines. Everything else (incl. all bodies on dark) keeps its PLANET_COLORS tint.
-    const color = MAP_LINE_COLOR_OVERRIDES[theme][p] ?? PLANET_COLORS[p];
+    const color = spec.planet[p] ?? PLANET_COLORS[p];
     // Line-label glyph: nudged down to sit on the angle-code baseline.
-    put(`${GLYPH_IMAGE_PREFIX}${p}`, rasterize(p, color, halo), RATIO);
+    jobs.push({ id: `${GLYPH_IMAGE_PREFIX}${p}`, ratio: RATIO, inputs: `${color}|${halo}`, draw: () => rasterize(p, color, halo) });
     // Zenith STAMP: the full coin (disc + ring + glyph) baked as one image, so the
-    // stamp draws as a single overlap-stacking unit. `zenithHalo` is the disc fill.
-    put(`${ZENITH_GLYPH_PREFIX}${p}`, rasterizeZenith(p, color, zenithHalo), RATIO);
+    // stamp draws as a single overlap-stacking unit, on the spec's disc fill.
+    jobs.push({ id: `${ZENITH_GLYPH_PREFIX}${p}`, ratio: RATIO, inputs: `${color}|${discFill}`, draw: () => rasterizeZenith(p, color, discFill) });
     // Nadir STAMP: the diamond variant, same fill/ring, for the antipodal point.
-    put(`${NADIR_GLYPH_PREFIX}${p}`, rasterizeNadir(p, color, zenithHalo), RATIO);
+    jobs.push({ id: `${NADIR_GLYPH_PREFIX}${p}`, ratio: RATIO, inputs: `${color}|${discFill}`, draw: () => rasterizeNadir(p, color, discFill) });
   }
-  // The star-line spark, in the theme's star tint (see STAR_LINE_COLORS).
-  put(STAR_MARK_IMAGE, rasterizeStarMark(STAR_LINE_COLORS[theme], halo), STAR_RATIO);
-  // Catalog minor-body coins, on the same disc fill as the planets' stamps.
-  bakeMinorImages(put, zenithHalo, theme);
+  // The star-line spark, in the star lines' own colour (MapInks.star; STAR_LINE_COLORS for a
+  // built-in theme).
+  jobs.push({ id: STAR_MARK_IMAGE, ratio: STAR_RATIO, inputs: `${spec.star}|${halo}`, draw: () => rasterizeStarMark(spec.star, halo) });
+  // Catalog minor-body coins, on the same disc fill as the planets' stamps: one per palette slot
+  // (solid and hollow), and one per body with a symbol of its own, in the slot colour its lines
+  // are drawn in.
+  minor.forEach((color, slot) => {
+    const inputs = `${color}|${discFill}`;
+    jobs.push({ id: `${MINOR_COIN_PREFIX}${slot}`, ratio: RATIO, inputs, draw: () => rasterizeMinorCoin(color, discFill, undefined) });
+    jobs.push({ id: `${MINOR_HOLLOW_COIN_PREFIX}${slot}`, ratio: RATIO, inputs, draw: () => rasterizeMinorCoin(color, discFill, undefined, true) });
+  });
+  for (const [n, glyph] of MINOR_GLYPHS) {
+    const color = minor[minorPaletteSlot(n)] ?? minor[0];
+    jobs.push({
+      id: `${MINOR_GLYPH_PREFIX}${n}`,
+      ratio: RATIO,
+      inputs: `${color}|${discFill}`,
+      draw: () => rasterizeMinorCoin(color, discFill, glyph),
+    });
+  }
+  return jobs;
+}
+
+/** The ids of the sprites whose inputs differ between two specs — what a live re-bake from
+ *  `from` to `to` redraws. */
+export function changedSpriteIds(from: SpriteSpec, to: SpriteSpec): string[] {
+  const before = new Map(spriteJobs(from).map((j) => [j.id, j.inputs]));
+  return spriteJobs(to)
+    .filter((j) => before.get(j.id) !== j.inputs)
+    .map((j) => j.id);
+}
+
+function bakeAll(map: MlMap, spec: SpriteSpec, inPlace: boolean): void {
+  const put = putter(map, inPlace);
+  for (const j of spriteJobs(spec)) put(j.id, j.draw(), j.ratio);
+}
+
+// In place, only the sprites whose inputs moved from `from` (what the map is baked from) to `to`.
+function bakeChanged(map: MlMap, from: SpriteSpec, to: SpriteSpec): void {
+  const put = putter(map, true);
+  const before = new Map(spriteJobs(from).map((j) => [j.id, j.inputs]));
+  for (const j of spriteJobs(to)) {
+    if (before.get(j.id) !== j.inputs) put(j.id, j.draw(), j.ratio);
+  }
 }

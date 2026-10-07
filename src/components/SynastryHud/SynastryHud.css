@@ -34,11 +34,11 @@
      (below) keeps the pin-state glow as a designated map-state cue. */
   --accent: var(--accent-brand);
   --accent-rgb: var(--accent-brand-rgb);
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(7px * var(--fx-blur)));
   /* Rise in when the mode brings the bar up — root only; drag/collapse toggle
      classes on this node and can't restart it. The individual translate/opacity
      animated here compose with the translateX(-50%) centering above. */
@@ -65,7 +65,7 @@
   align-items: center;
   gap: 7px;
   padding: 3px 14px 5px;
-  background: rgba(var(--bg-panel), 0.96);
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
   border-radius: 9px 9px 0 0;
   /* Title + move-grip (currentColor) track the pin state (designated map-state cue). */
   color: var(--map-accent);
@@ -107,11 +107,11 @@
 }
 .synastry-hud-nub::before {
   left: -9px;
-  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), max(0.96, var(--fx-opaque))) 9.5px);
 }
 .synastry-hud-nub::after {
   right: -9px;
-  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.96) 9.5px);
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), max(0.96, var(--fx-opaque))) 9.5px);
 }
 
 .synastry-hud-nub:hover .hud-move-hint {
@@ -169,8 +169,8 @@
   padding: 5px 14px;
   border-radius: 9px;
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(7px * var(--fx-blur)));
 }
 .synastry-hud.is-collapsed .synastry-hud-nub::before,
 .synastry-hud.is-collapsed .synastry-hud-nub::after {
@@ -360,11 +360,13 @@
   color: #b9d6f7;
 }
 
-/* Glass (light theme): swap the near-black deep space for a lighter periwinkle twilight, so
+/* A light panel (Glass): swap the near-black deep space for a lighter periwinkle twilight, so
    the ready button blends with the light UI instead of punching a dark hole in it. White
    label + the white stars still read on the medium fill. Scoped :not(.is-disabled) so the
-   muted disabled chip is unaffected (this rule would otherwise outrank .is-disabled). */
-:root[data-theme='glass'] .synastry-hud-generate:not(.is-disabled) {
+   muted disabled chip is unaffected (this rule would otherwise outrank .is-disabled).
+   Keyed on the panel TONE since 2026-10-06 — it is about a light UI, which a Custom theme
+   can have on any base; Glass is the one built-in with a light tone, so nothing moves. */
+:root[data-panel-tone='light'] .synastry-hud-generate:not(.is-disabled) {
   background:
     radial-gradient(ellipse at 22% 12%, rgba(170, 152, 232, 0.5), transparent 60%),
     radial-gradient(ellipse at 82% 92%, rgba(142, 178, 236, 0.5), transparent 55%),
@@ -372,7 +374,7 @@
   color: #fff;
   text-shadow: 0 1px 2px rgba(40, 32, 92, 0.55);
 }
-:root[data-theme='glass'] .synastry-hud-generate:not(.is-disabled) .tag-glyph--space {
+:root[data-panel-tone='light'] .synastry-hud-generate:not(.is-disabled) .tag-glyph--space {
   color: #eaf2ff;
 }
 
@@ -457,7 +459,7 @@
   border-color: rgba(var(--tag-space-rgb), 0.9);
   box-shadow:
     0 0 0 1px rgba(var(--tag-space-rgb), 0.3),
-    0 5px 20px rgba(86, 96, 208, 0.5);
+    0 5px 20px rgba(86, 96, 208, calc(0.5 * var(--fx-glow)));
   transform: translateY(-1px);
 }
 .synastry-hud-generate:hover::before {
@@ -494,6 +496,16 @@
 .synastry-hud-generate.is-disabled::after,
 .synastry-hud-generate.is-disabled .synastry-gen-stars {
   display: none; /* remove the space layers + their animations entirely */
+}
+
+/* Effects ▸ Glows & flourishes off (a Custom theme; the effects block in index.css): the
+   starfield, its twinkle and the hover sweep go, the way the disabled chip drops them
+   below, and the nebula base stays — the button is still the space scene, only still and
+   starless. The hover's coloured lift fades with them through --fx-glow. (2026-10-06) */
+:root[data-fx-glows='off'] .synastry-hud-generate::before,
+:root[data-fx-glows='off'] .synastry-hud-generate::after,
+:root[data-fx-glows='off'] .synastry-hud-generate .synastry-gen-stars {
+  display: none;
 }
 
 /* Reduced motion: keep the static space scene, drop all the motion. */

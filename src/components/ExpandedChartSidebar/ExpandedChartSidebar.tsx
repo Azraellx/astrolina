@@ -13,7 +13,6 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  PLANET_COLORS,
   POINTS,
   birthDataToJD,
   obliquity,
@@ -72,6 +71,7 @@ import {
   type RulershipScheme,
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
+import { planetInk, wheelMotionInk } from '../../lib/themePalette';
 import {
   ANGLE_LABEL,
   lonToZodiac,
@@ -632,10 +632,10 @@ function PlanetTipGlyph({
   return (
     <TipGlyph
       className={className}
-      color={PLANET_COLORS[planet]}
+      color={planetInk(planet)}
       title={
         <span className="es-tip-title">
-          <PlanetGlyph planet={planet} size={14} color={PLANET_COLORS[planet]} />
+          <PlanetGlyph planet={planet} size={14} color={planetInk(planet)} />
           {labels.planet(planet)}
           {suffix ? ` ${suffix}` : ''}
         </span>
@@ -1629,7 +1629,7 @@ export function ExpandedChartSidebar({
           className="es-station"
           title={
             <span className="es-tip-title">
-              <span style={{ color: '#c79a17' }}>S</span> {t('expandedSidebar.stationary')}
+              <span style={{ color: wheelMotionInk('station') }}>S</span> {t('expandedSidebar.stationary')}
             </span>
           }
           hint={t('expandedSidebar.stationaryHint')}

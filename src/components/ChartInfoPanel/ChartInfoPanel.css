@@ -15,7 +15,7 @@
   z-index: 10;
   width: 240px;
   max-height: calc(100vh - 120px - 360px - 16px);
-  background: rgba(var(--bg-panel), 0.94);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 8px;
   color: var(--text-strong);

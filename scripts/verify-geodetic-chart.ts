@@ -690,11 +690,29 @@ section("6. App's sky families read one gate (SOURCE TRIPWIRE)");
   // half, so a deleted clause would publish parans and star lines into a plugin's complete
   // set on a geodetic map. (2026-10-05: the check above alone passed with it gone.)
   check('…and whenever the map is held (noTime || skyHeld, noTime first)', !!gate && /=\s*noTime\s*\|\|\s*skyHeld\s*;/.test(gate), gate ?? 'not found');
-  const families = ['allParans', 'allZenith', 'eclipticLine', 'starLines', 'starParans', 'minorZenith', 'natalStarLines'];
+  // Since the Custom theme (2026-10-06) three of the families are two memos each: the
+  // geometry (`*Geom`, which generates — and so is where the gate belongs) and an ink step
+  // after it that only recolours. The gate is asserted on the geometry; the second check
+  // below holds each ink step to reading its own gated geometry, so the gate still covers
+  // what is drawn and what a plugin's complete set carries.
+  const families = ['allParans', 'allZenith', 'eclipticLine', 'starLinesGeom', 'starParansGeom', 'minorZenithGeom', 'natalStarLines'];
   // The body without its dependency list, which names the gate whether the body reads it or not.
-  const reads = (n: string) => !!decl(n)?.replace(/^\s*\[[^\n]*\],?[ \t]*$/gm, '').includes('skyFamiliesOff');
+  const bodyOf = (n: string) => decl(n)?.replace(/^\s*\[[^\n]*\],?[ \t]*$/gm, '') ?? null;
+  const reads = (n: string) => !!bodyOf(n)?.includes('skyFamiliesOff');
   const ungated = families.filter((n) => !reads(n));
   check(`each sky family reads it: ${families.join(', ')}`, ungated.length === 0, `not gated: ${ungated.join(', ')}`);
+  const INKED: [inked: string, geom: string][] = [
+    ['starLines', 'starLinesGeom'],
+    ['starParans', 'starParansGeom'],
+    ['minorZenith', 'minorZenithGeom'],
+  ];
+  const strays = INKED.filter(([inked, geom]) => {
+    const b = bodyOf(inked);
+    // Reads its gated geometry, and generates nothing of its own.
+    return !b || !new RegExp(`\\b${geom}\\b`).test(b) || /\bgenerate[A-Z]\w*\(/.test(b);
+  });
+  check(`…and each inked family only recolours its gated geometry: ${INKED.map(([a, b]) => `${a} ← ${b}`).join(', ')}`,
+    strays.length === 0, `not reading its geometry, or generating: ${strays.map(([a]) => a).join(', ')}`);
 }
 
 // ── 7. App's sky hold: what it masks, and what it never writes ───────────────────────

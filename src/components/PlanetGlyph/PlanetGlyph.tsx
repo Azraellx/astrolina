@@ -13,6 +13,14 @@ import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 //     inherits from the parent unless `color` is given.
 //   • SVG mode (x/y given): an SVG <text> centered on (x, y), for use inside the
 //     chart wheel; `color` (default currentColor) sets the fill.
+//
+// A given `color` is written as a STYLE in both modes, never as the SVG `fill=`
+// attribute (2026-10-06). Callers now pass a body's ink as `var(--planet-<slug>, <hex>)`
+// (lib/themePalette planetInk), so a Custom theme can recolour the wheel from CSS alone,
+// and var() is not reliable inside a presentation attribute. The move is safe for the
+// built-in themes because no stylesheet sets `fill` on a planet glyph — the attribute was
+// never being overridden, so the inline style (which would outrank such a rule) paints
+// exactly what it did. The export bakes computed styles (lib/wheelRaster), so it follows.
 // SVG’s dominant-baseline="central" centres the FONT’s em box, not the mark drawn
 // inside it — so a symbol whose ink is not centred in its own em box comes out
 // off-centre by exactly that much, and inside the wheel's planet discs it shows.
@@ -73,7 +81,8 @@ export function PlanetGlyph({
         y={y - size * (GLYPH_LIFT_BY_PLANET[planet] ?? GLYPH_LIFT)}
         className={cls}
         fontSize={size}
-        fill={color ?? 'currentColor'}
+        fill={color ? undefined : 'currentColor'}
+        style={color ? { fill: color } : undefined}
         textAnchor="middle"
         dominantBaseline="central"
       >

@@ -97,7 +97,7 @@
   left: 0;
   min-width: 260px;
   max-width: 360px;
-  background: rgba(var(--bg-menu), 0.98);
+  background: rgba(var(--bg-menu), max(0.98, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 8px;
   z-index: 50;

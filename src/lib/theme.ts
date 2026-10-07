@@ -13,10 +13,17 @@ export type Theme = 'glass' | 'dark' | 'vintage';
 // Earth (vintage) leads the list and is the default; Glass and Dark follow.
 export const THEMES: Theme[] = ['vintage', 'glass', 'dark'];
 
+/** What the reader picked in the theme list: one of the three built-ins, or a Custom
+ *  theme (a downstream build's option, lib/extensions/themeOptions). `Theme` itself stays
+ *  the three built-ins — every Record<Theme, …> table below and every loop over THEMES is
+ *  untouched by Custom, which is always drawn ON a built-in (its spec's `base`). */
+export type ThemeChoice = Theme | 'custom';
+
 // Theme display labels moved to the i18n catalog (settings.theme.*); resolve via
 // useT().labels.theme(theme). Internal ids stay 'glass'/'dark'/'vintage' (persisted
 // prefs + [data-theme] selectors); only the display label for vintage ("Earth") differs.
 
+// The last BUILT-IN theme picked. Never holds 'custom' — see CUSTOM_CHOSEN_KEY.
 const STORAGE_KEY = 'astro:theme:v1';
 
 export function loadTheme(): Theme {
@@ -27,6 +34,38 @@ export function loadTheme(): Theme {
 
 export function saveTheme(theme: Theme) {
   localStorage.setItem(STORAGE_KEY, theme);
+}
+
+// Whether the reader's choice is Custom, in a key of its OWN rather than as a fourth value
+// of astro:theme:v1 (2026-10-06). The app saves the theme on mount, not only on a pick
+// (App's [theme] effect), so every build that loads this origin rewrites astro:theme:v1 with
+// what it understood there. A build that doesn't know 'custom' — `dev:core` on the same
+// origin, a rollback, a stale PWA shell still being served — would read 'custom' as unknown,
+// fall back to Earth, and write Earth back: the reader's choice destroyed by a visit to an
+// older page, which is CLAUDE.md rule 6's failure exactly. Kept apart, the old key keeps
+// meaning what every build already agrees it means (the last built-in, which is also the
+// theme a Custom choice falls back to while it is held), and the new key is invisible to
+// builds that don't read it. Absent = not chosen; only the picker writes it.
+const CUSTOM_CHOSEN_KEY = 'astro:theme-custom:v1';
+
+/** Whether Custom is the stored theme choice. Never throws (a blocked storage reads as no). */
+export function loadCustomChosen(): boolean {
+  try {
+    return localStorage.getItem(CUSTOM_CHOSEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Record (true) or clear (false) the Custom choice. Clearing REMOVES the key, so a reader
+ *  who never picked Custom and one who picked it and left look the same: absent. */
+export function saveCustomChosen(chosen: boolean): void {
+  try {
+    if (chosen) localStorage.setItem(CUSTOM_CHOSEN_KEY, '1');
+    else localStorage.removeItem(CUSTOM_CHOSEN_KEY);
+  } catch {
+    /* storage blocked: the choice lasts this session only */
+  }
 }
 
 export function applyTheme(theme: Theme) {
@@ -64,9 +103,10 @@ export const LABEL_HALO_COLORS: Record<Theme, string> = {
   vintage: 'rgba(28, 20, 12, 0.95)',
 };
 
-// Basemap PLACE-NAME contrast override, applied post-load (basemapStyle's
-// applyLabelContrast — the same mutate-the-served-style discipline as the detail
-// toggles). OpenFreeMap's stock dark style paints place names in a dim slate
+// Basemap PLACE-NAME contrast override, applied post-load by basemapStyle's
+// applyBasemapPaint as the built-in of the label tokens (basemap.label / .labelHalo /
+// .labelHaloWidth) — the same mutate-the-served-style discipline as the detail
+// toggles. OpenFreeMap's stock dark style paints place names in a dim slate
 // that's hard to read against the near-black ground; lift them to a soft light
 // gray over a deeper halo. Null = the style's own label paint reads fine
 // (glass/vintage), so it isn't touched.
@@ -98,9 +138,13 @@ export const MOON_LINE_DARK = '#5b6480';
 // Per-theme MAP-LINE colour overrides for bodies whose PLANET_COLORS tint washes out
 // against a given basemap. MAP-ONLY: the wheel, sidebar, cards etc. keep the canonical
 // PLANET_COLORS (one exception off the map, for a glyph that stands alone: panelGlyphColor
-// below). Single source for App's line-colour swap (withThemeLineColors) AND the
-// baked zenith glyph (glyphImages.ensureGlyphImages), so lines + stamps stay in sync.
-//  • Moon — pale gray fails on BOTH light basemaps (Glass + Earth).
+// below). Single source for the map's line inks — read through the palette engine
+// (lib/themePalette `map.ink.<body>`, applied by lib/lineInks) — AND the baked zenith glyph
+// (glyphImages, from the same palette's sprite spec), so lines + stamps stay in sync. Keyed
+// by the BASEMAP a palette draws on, which for a built-in theme is the theme itself.
+//  • Moon — pale gray fails on BOTH light basemaps (Glass + Earth). The only entry: the
+//    Mercury/Uranus swaps on Earth that two comments elsewhere described were never in this
+//    table (found and corrected 2026-10-06, when the palette engine began reading it).
 // Dark's basemap is dark, so it needs no overrides.
 export const MAP_LINE_COLOR_OVERRIDES: Record<Theme, Partial<Record<PlanetName, string>>> = {
   dark: {},
@@ -173,8 +217,25 @@ export function minorLineColor(n: number, theme: Theme): string {
   return MINOR_LINE_PALETTE[theme][minorPaletteSlot(n)];
 }
 
+// Path/contour colors per basemap theme for the Eclipses overlay (lib/astro/eclipses
+// buildEclipseMap). Total/hybrid solar paths burn red, annular paths a ring-of-fire orange,
+// lunar features a moonlit indigo; the partial-magnitude contours use a quiet slate so the
+// dashed family reads as reference lines, not chart lines. Lives HERE rather than in
+// eclipses.ts (where it was PATH_COLORS until 2026-10-06) because the palette engine needs it
+// at startup, and eclipses.ts is a lazy chunk: importing a table from it would pull the whole
+// catalog and path fitting into the main bundle. They carry meaning (which kind of eclipse),
+// so a one-ink palette leaves them alone (lib/themePalette `eclipse.*`).
+export const ECLIPSE_PATH_COLORS: Record<
+  Theme,
+  { total: string; annular: string; iso: string; lunar: string }
+> = {
+  glass: { total: '#d8434e', annular: '#d97e2f', iso: '#5d6679', lunar: '#5868b8' },
+  dark: { total: '#ff6b6b', annular: '#ffb066', iso: '#9aa3b8', lunar: '#94a7ff' },
+  vintage: { total: '#c03a32', annular: '#bd7427', iso: '#6e6253', lunar: '#5d5a8a' },
+};
+
 // Halo behind the eclipse magnitude-isoline percentage labels (e.g. "50%"), whose
-// digits draw in the quiet isoline tint (eclipses.ts PATH_COLORS.iso). Glass pairs
+// digits draw in the quiet isoline tint (ECLIPSE_PATH_COLORS.iso above). Glass pairs
 // its medium-slate digits with a white halo and Dark pairs light-slate digits with a
 // near-black one — both already high-contrast. Earth's digits are a MEDIUM brown, so
 // reusing its near-black LABEL_HALO_COLORS buried them (dark-on-dark mud); Earth gets

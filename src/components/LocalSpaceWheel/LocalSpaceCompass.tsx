@@ -14,11 +14,8 @@ import {
 } from '../Wheel/WheelSvg';
 import { relaxRing } from '../../lib/ringLayout';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import {
-  PLANET_COLORS,
-  type EclipticPosition,
-  type PlanetName,
-} from '../../lib/ephemeris';
+import type { EclipticPosition, PlanetName } from '../../lib/ephemeris';
+import { planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
 import { fmtDM, type Store } from './LocalSpaceWheel';
 
@@ -62,7 +59,10 @@ export function LocalSpaceCompass({
   hoverStore,
 }: LocalSpaceCompassProps) {
   const { t, labels } = useT();
-  const hovered = useSyncExternalStore(hoverStore.subscribe, hoverStore.get);
+  // The store's own getter as the server snapshot too: unused in the browser, and it lets the
+  // dial render to static markup (a report-is-a-record check renders the paper's compass that
+  // way), where React throws without one. (2026-10-06)
+  const hovered = useSyncExternalStore(hoverStore.subscribe, hoverStore.get, hoverStore.get);
 
   // Fixed-pixel metrics scale with the dial so the paired ~half-width compasses read
   // like a full one (matches the globe's scaling).
@@ -143,8 +143,8 @@ export function LocalSpaceCompass({
                 {t('expandedSidebar.localSpace.altTip', { alt: fmtDM(hoveredCd.alt, true) })}
               </>
             ),
-            color: PLANET_COLORS[hovered!],
-            marker: <PlanetGlyph planet={hovered!} size={14} color={PLANET_COLORS[hovered!]} />,
+            color: planetInk(hovered!),
+            marker: <PlanetGlyph planet={hovered!} size={14} color={planetInk(hovered!)} />,
           };
         })()
       : null;
@@ -158,6 +158,10 @@ export function LocalSpaceCompass({
       height={size}
       viewBox={`0 0 ${size} ${size}`}
     >
+      {/* The dial's face, the zodiac wheel's own (.wheel-face, WheelSvg.css): unpainted
+          unless a Custom theme gives the wheels a solid background — and then this dial
+          takes it too, since its planet discs (.planet-disc-fill) already do. (2026-10-06) */}
+      <circle cx={c} cy={c} r={R} className="wheel-face" />
       <circle cx={c} cy={c} r={R} className="lsc-ring" />
       {/* Inner circle: the boundary the aspect web stays within. */}
       <circle cx={c} cy={c} r={rInner} className="lsc-inner" />
@@ -224,7 +228,7 @@ export function LocalSpaceCompass({
             y1={p1.y}
             x2={p2.x}
             y2={p2.y}
-            stroke={a.color}
+            style={{ stroke: a.color }}
             strokeWidth={k}
             opacity={0.7}
           />
@@ -263,7 +267,7 @@ export function LocalSpaceCompass({
               y1={spokeIn.y}
               x2={spokeOut.x}
               y2={spokeOut.y}
-              stroke={PLANET_COLORS[p.name]}
+              style={{ stroke: planetInk(p.name) }}
               strokeWidth={0.6 * k}
               opacity={0.35}
             />
@@ -274,7 +278,7 @@ export function LocalSpaceCompass({
                 cy={pos.y}
                 r={r}
                 className="planet-disc-fill"
-                stroke={PLANET_COLORS[p.name]}
+                style={{ stroke: planetInk(p.name) }}
                 strokeWidth={1.3 * k}
                 strokeDasharray={below ? '2 1.5' : undefined}
               />
@@ -283,7 +287,7 @@ export function LocalSpaceCompass({
                 x={pos.x}
                 y={pos.y}
                 size={16 * k}
-                color={PLANET_COLORS[p.name]}
+                color={planetInk(p.name)}
               />
             </g>
             {/* The body's azimuth — degrees nearest the glyph, arcminutes stepped a
@@ -293,8 +297,7 @@ export function LocalSpaceCompass({
               x={azPosTxt.x}
               y={azPosTxt.y}
               className="lsc-az"
-              style={{ fontSize: 9.75 * k, strokeWidth: 2.8 * k }}
-              fill={PLANET_COLORS[p.name]}
+              style={{ fontSize: 9.75 * k, strokeWidth: 2.8 * k, fill: planetInk(p.name) }}
               textAnchor="middle"
               dominantBaseline="central"
             >
@@ -304,8 +307,7 @@ export function LocalSpaceCompass({
               x={azMinPos.x}
               y={azMinPos.y}
               className="lsc-az"
-              style={{ fontSize: 7.5 * k, strokeWidth: 2.2 * k }}
-              fill={PLANET_COLORS[p.name]}
+              style={{ fontSize: 7.5 * k, strokeWidth: 2.2 * k, fill: planetInk(p.name) }}
               textAnchor="middle"
               dominantBaseline="central"
             >

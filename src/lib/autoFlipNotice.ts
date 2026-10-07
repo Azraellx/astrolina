@@ -18,8 +18,9 @@
 //     stored choice is masked by a derived value and the control shows it
 //     unavailable with the reason. Where that mask moves the map in answer to a
 //     gesture about something else — a return borrowing the moment's frame, a
-//     sidereal zodiac holding a geodetic choice — it is said here, as a HOLD:
-//     nothing was taken away, and it comes back on its own.
+//     sidereal zodiac holding a geodetic choice, a Custom theme the reader can no
+//     longer draw — it is said here, as a HOLD: nothing was taken away, and it
+//     comes back on its own.
 //   - A setting genuinely REWRITTEN because an action required it would be
 //     announced here too, one-way on purpose: silently undoing it later would move
 //     the map again, out of nowhere, which is the same failure one step removed.
@@ -69,7 +70,20 @@ export type AutoFlipKind =
    *  it. The notice keeps until they arrive on their own. (The union has outgrown its
    *  "auto-flip" name by exactly one member; if a third non-flip notice turns up, rename
    *  the module rather than stretching it further.) */
-  | 'line-projection';
+  | 'line-projection'
+  /** A Custom theme is HELD: chosen, but not available to draw right now — a downstream
+   *  build's option (lib/extensions/themeOptions) whose entitlement has lapsed, at boot
+   *  or mid-session (a sign-out in another tab). The whole app is drawn in the built-in
+   *  the theme was made on, and the stored choice and the palette are untouched
+   *  underneath: the Settings row stays, greyed with its reason, and the base carries the
+   *  radio, because a held choice marks the effective value. Announced only when that
+   *  changes what is drawn — a theme that differs from its base, which had been on screen
+   *  — so the caller's `changed` carries both (App, 2026-10-06).
+   *
+   *  A kind of its own, not a reuse of either hold above: a different fact about a
+   *  different setting, and someone who has understood that a zodiac holds Geodetic has
+   *  not thereby understood this. */
+  | 'theme-held';
 
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one
  *  edit and can't half-land. */
@@ -135,6 +149,16 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     targets: ['[data-autoflip="line-projection"]'],
     tone: 'info',
     once: true,
+  },
+  // The greyed Custom row in Appearance ▸ Theme — the record of the hold, whose tip carries
+  // the reason. On screen only while that section is open, which at boot (one of the two
+  // moments this fires) it usually isn't; the card then keeps the neutral position, and the
+  // copy is written to stand without the ring (i18n/en/autoFlip says why it needs no
+  // location clause). Repeats until dismissed: it reports something that just happened.
+  'theme-held': {
+    targets: ['.theme-option.is-held'],
+    tone: 'warn',
+    once: false,
   },
 };
 

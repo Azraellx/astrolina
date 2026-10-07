@@ -992,10 +992,15 @@ const biRingCases: Case[] = atGate.filter((c) => c.input.hasOverlay).map(ringTwi
   // What WheelSvg draws an overlay disc as: its radius and its outline, both draws (the
   // interactive one and the static one). Read from the component, so a disc redrawn larger
   // there fails here instead of quietly overlapping the marks.
+  //
+  // Source-agnostic about the disc's COLOUR (2026-10-06): whatever props sit between the
+  // class and the width — a `stroke={…}` attribute, as it was, or the `style={{ stroke: … }}`
+  // the Custom theme moved it to — are skipped. Only the geometry is this check's business;
+  // restating how the colour is spelled made it fail on a change that moved no pixel.
   const wheelSrc = readFileSync('src/components/Wheel/WheelSvg.tsx', 'utf8');
   const discDraws = [
     ...wheelSrc.matchAll(
-      /r=\{(\d+(?:\.\d+)?)\}\s*className="planet-disc-fill"\s*stroke=\{PLANET_COLORS\[p\.name\]\}\s*strokeWidth=\{(\d+(?:\.\d+)?)\}\s*strokeDasharray="2 1\.5"/g,
+      /r=\{(\d+(?:\.\d+)?)\}\s*className="planet-disc-fill"\s*(?:\w+=(?:\{\{[^}]*\}\}|\{[^}]*\}|"[^"]*")\s*)*?strokeWidth=\{(\d+(?:\.\d+)?)\}\s*strokeDasharray="2 1\.5"/g,
     ),
   ].map((m) => ({ r: Number(m[1]), stroke: Number(m[2]) }));
   const before = failures;

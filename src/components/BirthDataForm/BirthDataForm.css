@@ -343,10 +343,10 @@
   padding: 4px;
   border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 8px;
-  background: rgba(var(--bg-menu), 0.98);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: rgba(var(--bg-menu), max(0.98, var(--fx-opaque)));
+  backdrop-filter: blur(calc(8px * var(--fx-blur)));
+  -webkit-backdrop-filter: blur(calc(8px * var(--fx-blur)));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, calc(0.28 * var(--fx-shadow)));
   z-index: 30;
   animation: ui-rise var(--dur-move) var(--ease-settle);
 }
@@ -580,7 +580,7 @@
   right: 0;
   margin-top: 2px;
   padding: 4px;
-  background: rgba(var(--bg-menu), 0.98);
+  background: rgba(var(--bg-menu), max(0.98, var(--fx-opaque)));
   border: 1px solid rgba(var(--tint), 0.12);
   border-radius: 6px;
   text-transform: none;
@@ -943,7 +943,11 @@
 .birth-form button.primary {
   background: rgba(var(--accent-rgb), 0.92);
   border: 1px solid transparent;
-  color: #0a0a0f;
+  /* Text on the accent fill. A Custom theme with an accent of the reader's own sets
+     --on-accent to whichever of black and white reads on it (lib/themePalette ui.onAccent);
+     no stylesheet declares it, so every built-in accent keeps this near-black. The same in
+     the import, date and guide dialogs' primary buttons. (2026-10-06) */
+  color: var(--on-accent, #0a0a0f);
   font-weight: 600;
   /* Solid accent fill, so the opt-in sheen (see index.css .ui-sheen) glints
      white here — an accent-tinted glint would vanish on this background. */

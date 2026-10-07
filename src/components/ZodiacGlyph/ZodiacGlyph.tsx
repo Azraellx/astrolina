@@ -10,6 +10,13 @@ import { SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 // `.astro-glyph` class). Same two render modes as PlanetGlyph: an inline <span>
 // in the DOM, or a centered SVG <text> when x/y are supplied (chart wheel).
 // `sign` is 0 (Aries) … 11 (Pisces).
+//
+// A given `color` goes in a STYLE in SVG mode too, not the `fill=` attribute, for
+// PlanetGlyph's reason (2026-10-06): the wheel passes a var() expression — the sign ink
+// `var(--wheel-sign-<element>, var(--wheel-sign, currentColor))` — and var() is not reliable
+// in a presentation attribute. No stylesheet sets `fill` on a sign glyph, so nothing the
+// attribute used to lose to is now outranked. Without `color` it is still the attribute's
+// currentColor, exactly as before.
 interface ZodiacGlyphProps {
   sign: number;
   size?: number;
@@ -37,7 +44,8 @@ export function ZodiacGlyph({
         y={y}
         className={cls}
         fontSize={size}
-        fill={color ?? 'currentColor'}
+        fill={color ? undefined : 'currentColor'}
+        style={color ? { fill: color } : undefined}
         textAnchor="middle"
         dominantBaseline="central"
       >
