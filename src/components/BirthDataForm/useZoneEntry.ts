@@ -6,7 +6,8 @@
 
 // The chart form's time-zone state, 2026-10-02: Auto plus four ways to state a
 // zone in the terms a birth record uses — shown since 2026-10-05 as one list,
-// which drives `choose`; the four ways' own controls are hidden, not gone.
+// and since 2026-10-07 as Lina's radios, both of which drive `choose`; the
+// four ways' own controls are hidden, not gone.
 // lib/atlas/zoneEntry.ts holds the arithmetic; zoneEntryModel.ts holds what the
 // field shows and will save, as plain functions a verify script can drive; this
 // only keeps it in React.

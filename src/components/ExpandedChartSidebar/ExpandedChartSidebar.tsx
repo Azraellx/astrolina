@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -21,18 +22,24 @@ import {
   type HorizontalCoords,
   type HouseSystem,
   type LineSystem,
+  type NodeType,
   type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
-import { displayName, type StoredChart } from '../../lib/chartLibrary';
-import { timeUnknown } from '../../lib/birthData';
+import type { StoredChart } from '../../lib/chartLibrary';
 import { skyHeldFor } from '../../lib/skyHold';
 import { isPhone, isTouchLayout, usePhone } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
+import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
-import { fmtLat, fmtLng } from '../../lib/coordFormat';
-import { formatUtcOffset } from '../../lib/atlas/timezone';
-import { MASK_DATE, MASK_TIME, useIdentity } from '../../lib/discreet';
+import { fmtCoordPairDM } from '../../lib/coordFormat';
+import {
+  chartHeaderModel,
+  type HeaderLine,
+  type HeaderOverlay,
+  type OverlayMoment,
+} from '../../lib/chartHeader';
+import { useIdentity } from '../../lib/discreet';
 import { planTierFor, tierName } from '../../lib/plan';
 import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
@@ -90,7 +97,6 @@ import { HintMenu } from '../Sidebar/Sidebar';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
-import type { Formatters } from '../../i18n';
 import './ExpandedChartSidebar.css';
 
 // (PLANET_ORDER / planetRank and the compact longitude format now live in
@@ -200,8 +206,37 @@ function SignLon({ lon, trunc = false }: { lon: number; trunc?: boolean }) {
   );
 }
 
-function fmtChartDate(c: StoredChart, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+// The pin marker beside a place the reader pinned — line-style, inheriting the line's
+// state colour.
+const PIN_ICON = (
+  <svg
+    className="es-pin-icon"
+    width="12"
+    height="12"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);
+
+/** What the chart statement needs beyond the panel's other props (lib/chartHeader):
+ *  the overlay as a moment rather than a caption string, and the chart-data settings the
+ *  last line names. One bundle, so App hands the statement its inputs in one place.
+ *  (2026-10-07) */
+export interface SidebarHeaderInfo {
+  /** The overlay riding with (or promoted over) the chart — CCG included; the model
+   *  knows it makes no wheel. Null with none. */
+  overlay: HeaderOverlay | null;
+  /** The EFFECTIVE zodiac. */
+  zodiac: ZodiacMode;
+  nodeType: NodeType;
 }
 
 interface ExpandedChartSidebarProps {
@@ -258,9 +293,11 @@ interface ExpandedChartSidebarProps {
   overlayMinorCoords?: ReadonlyMap<number, { az: number; alt: number }> | null;
   overlayAngles?: RelocatedAngles | null;
   overlayLabel?: string | null;
-  /** The overlay's instant "YYYY-MM-DD HH:MM" (UTC) — shown with the overlay name over the
-   *  wheel so the date/time reads without the timeline bar. null when there's none. */
-  overlayMoment?: string | null;
+  /** The chart statement's inputs (lib/chartHeader): the header, the wheel corners and
+   *  the Dual layout's second header all render from the one model built from these.
+   *  The overlay's instant comes in here as epoch ms, never as a caption string to
+   *  parse back. (2026-10-07) */
+  header: SidebarHeaderInfo;
   /** The active overlay's kind, used to label the wheel caption by tag — cyclo shows
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
@@ -1058,7 +1095,7 @@ export function ExpandedChartSidebar({
   overlayPlanets,
   overlayAngles,
   overlayLabel,
-  overlayMoment,
+  header,
   overlayKind,
   overlayPartner = null,
   overlayReturn,
@@ -1206,21 +1243,18 @@ export function ExpandedChartSidebar({
   // wheel has a full frame whatever the birth time — there it is the unpromoted wheel,
   // and the note stays, or a noon placeholder would read as a timed chart. (2026-10-02)
   //
-  // The geodetic header's first line says it too ("birth time unknown, noon used"), and
-  // the note is kept anyway: it belongs to the WHEEL, and goes where the wheel goes — a
-  // header scrolled out of view, the Dual layout's second wheel under it — and the same
-  // chart's wheel then says the same thing in both line systems. The celestial header
-  // still prints 12:00, so there the note is the only place it is said. (2026-10-02)
+  // The header's moment line says it too ("birth time unknown, noon used" — on either
+  // map since 2026-10-07), and the note is kept anyway: it belongs to the WHEEL, and goes
+  // where the wheel goes — a header scrolled out of view, the Dual layout's second wheel
+  // under it — and the same chart's wheel then says the same thing in both line
+  // systems. (2026-10-02)
   const timeUnknownShown =
     planetsOnly && (!angles || (!!angles.geodetic && !promotedLabel));
-  // The panel header's geodetic data block (see geoLines). Its first line follows the
-  // DERIVED line system; the lines about the frame follow the frame itself
-  // (`angles.geodetic`), so a state with no frame (NO CHART) never names a place it
-  // is cast for. (2026-10-02)
-  const geoMap = lineSystem === 'geodetic';
+  // The panel header's geodetic data block (see geoLines) follows the frame itself
+  // (`angles.geodetic`), so a state with no frame (NO CHART) never names a place it is
+  // cast for. (2026-10-02) The label and the lines above it follow the DERIVED line
+  // system, inside lib/chartHeader. (2026-10-07)
   const geoFrame = !!angles?.geodetic;
-  // `chart` is the derived chart, so a time being tried on (lib/birthData) lifts it.
-  const timeless = !!chart && timeUnknown(chart);
   // The sky hold (lib/skyHold), derived here from the one line-system prop rather than
   // passed as a second boolean that could disagree with it. In this panel it holds the
   // Advanced table's azimuth and altitude — where a body stands in a place's sky is the
@@ -1313,22 +1347,34 @@ export function ExpandedChartSidebar({
     [chart],
   );
 
-  // Bold state title for the wheel's top-left corner (always shown when a chart is
-  // up). Coloured by the live map state via --map-accent — neutral natal, blue
-  // hover, gold pinned, green natal-pin — so it tracks the same palette as the pin.
-  const baseTitle = isNatalPin
-    ? t('expandedSidebar.wheelTitle.natal')
-    : pinned
-      ? t('expandedSidebar.wheelTitle.pinned')
-      : point
-        ? t('expandedSidebar.wheelTitle.hover')
-        : t('expandedSidebar.wheelTitle.natal');
-  // When a time overlay is promoted (Natal toggle off, so it stands in for the chart),
-  // the wheel's state title is REPLACED by the overlay's own name ("Sec. Progressed",
-  // "Transits", "CCG", …) rather than "NATAL/HOVER/PINNED CHART": the live --map-accent
-  // colour (applied below) already conveys the hover/pin state, so the text is freed to
-  // name the promoted overlay outright.
-  const wheelTitle = promotedLabel ?? baseTitle;
+  // The chart's statement (lib/chartHeader): the state label and the lines under it, for
+  // the panel header, the wheel's corner title and the Dual layout's second header — one
+  // model, so the corner and the header cannot name the same wheel two ways. It replaced
+  // the corner's NATAL / PINNED / HOVER CHART, which said "natal" over a transit ring or
+  // a relocation; the corner keeps its --map-accent colour, so the pin state still shows
+  // there, and the words now say what the wheel IS. Discreet is applied inside the model.
+  // (2026-10-07)
+  const headerModel = useMemo(
+    () =>
+      chartHeaderModel({
+        chart,
+        point,
+        pointLabel: pointLabel ?? null,
+        isNatalPin,
+        lineSystem,
+        overlay: header.overlay,
+        noChart,
+        // The houses the wheel draws: in the frame's own system, Porphyry where that one
+        // is undefined at the place — and none where there are no angles.
+        houses: angles && houseSystem ? { system: houseSystem, fallback: !!angles.fallback } : null,
+        zodiac: header.zodiac,
+        nodeType: header.nodeType,
+        discreet: id.on,
+        t,
+        fmt,
+      }),
+    [chart, point, pointLabel, isNatalPin, lineSystem, header, noChart, angles, houseSystem, id, t, fmt],
+  );
   // Just the overlay's name for the wheel's top-right corner (the full label
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
   // Cyclo is special-cased to "CCG": its name "Cyclo·carto·graphy" contains middots,
@@ -1368,12 +1414,14 @@ export function ExpandedChartSidebar({
       ? overlayLabel.slice(overlayLabel.indexOf('·') + 1).trim()
       : '';
   const overlaySubject = overlaySubjectRaw ? id.name(overlaySubjectRaw) : null;
-  // The overlay's date/time (UTC) to show alongside its name over the wheel, so the moment
-  // reads even without the timeline bar in view. A middot splits date · time (matching the
-  // bar's separator convention); "UTC" is kept explicit as the labelFull captions do.
-  const momentText = overlayMoment
-    ? `${overlayMoment.replace(' ', ' · ')} UTC`
-    : overlaySubject;
+  // The overlay's moment beside its name over the wheel, so it reads even without the
+  // timeline bar or the header in view: the clock in the cast place's zone, as the
+  // header's line prints it, with the date first wherever the corner title beside it
+  // does not already carry it (a solar return's year, a composite's or a geodetic
+  // chart's label). Synastry has no moment; its partner's name takes the slot.
+  // (2026-10-07)
+  const cornerMoment: OverlayMoment | null = headerModel.overlayView?.moment ?? null;
+  const cornerDated = !!cornerMoment && !headerModel.labelHasOverlayDate;
 
   // Built from the current prop rather than an updater callback: the set lives with the
   // caller now, and one pill click per commit needs no queued form.
@@ -2087,110 +2135,106 @@ export function ExpandedChartSidebar({
   // exact for the one table that can hold one. (2026-10-02)
   const maskPoint = (name: PlanetName) => maskGeAngles && POINTS.includes(name);
 
-  // The place line and its coordinates — the panel header's, and the overlay
-  // wheel's below it, because they are the same fact about both: the angles on
-  // either wheel are cast for this point. Rendered from one function so the two
-  // cannot drift into saying it differently. (A synastry partner's wheel is the
-  // exception: a partner has a birthplace of their own, so theirs is partnerLines.)
-  const relocatedLines = (): ReactNode => {
-    const displayPoint = castPoint;
-    if (!displayPoint) return null;
-    const stateClass = castState;
-    const hasPin = isNatalPin || pinned;
-    const blankPlace = castBlank;
-    // The pin marker, shown whenever a pin is placed. It sits beside the place
-    // name when there is one; if the name line is hidden (e.g. the measure tool
-    // nulls it) it falls back beside the coordinates, so a placed pin is never
-    // left unmarked.
-    const pinIcon = (
-      <svg
-        className="es-pin-icon"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-        <circle cx="12" cy="10" r="3" />
-      </svg>
-    );
-    // On a geodetic map the same two facts are ONE line of the header's data block,
-    // "Cast for [place] · [coordinates]": there the wheel's angles and houses are the
-    // place's own, so the place is what the frame is cast for, not just where the map
-    // is pointing. One row that never wraps — the name ellipsizes, and its box is always
-    // rendered — so a hover swapping the name still cannot move the header (the nbsp
-    // note below). State colour and Discreet's blanking are the two-line form's. The
-    // FRAME decides, as in partnerLines: no frame, no "cast for". (2026-10-02)
-    if (geoFrame) {
-      const named = blankPlace || !!pointLabel?.trim();
+  // The statement's lines (lib/chartHeader), rendered — one function for the panel
+  // header and the Dual layout's second header, so the two introduce their wheels alike.
+  // The model has already applied Discreet; this decides only how each line reads.
+  //
+  // A line whose text follows the cursor — the place a hover or pin casts for, and an
+  // overlay's moment in that place's clock — is ONE row that never wraps, the place
+  // name ellipsizing while its coordinates stay whole: the hover swaps that text on
+  // every mouse move, and a line that re-wrapped between one row and two would bounce
+  // the header's height each time (scroll anchoring; see .es-scroll). Its separators are
+  // non-breaking, since flex would trim plain spaces at its items' edges. The chart's
+  // own lines hold still, so a long birthplace wraps there instead, between facts and
+  // never inside a date, a clock and its zone, or a coordinate pair. (2026-10-07)
+  //
+  // `own` is the panel's chart (or the overlay cast for its point): its place lines take
+  // the cast state's colour, and the pin marker sits beside whichever place the pin is
+  // on. A partner's record (`own` false) is their birth data in the natal colour.
+  const renderLines = (lines: HeaderLine[], keyPrefix: string, own = true): ReactNode =>
+    lines.map((l, i) => {
+      const key = `${keyPrefix}${i}`;
+      if (l.role === 'geo') return <Fragment key={key}>{geoLines()}</Fragment>;
+      const fixed = l.role === 'relocated' || l.role === 'overlay-moment' || l.role === 'overlay-place';
+      const placeLine = l.role === 'birthplace' || l.role === 'overlay-place';
+      const stateCls = !own
+        ? placeLine
+          ? 'natal'
+          : ''
+        : l.role === 'relocated'
+          ? castState
+          : placeLine
+            ? isNatalPin
+              ? 'natal-pinned'
+              : 'natal'
+            : '';
+      const pin =
+        own && ((l.role === 'relocated' && pinned) || (placeLine && isNatalPin));
       return (
-        <div className={`es-relocated es-geo-cast ${stateClass}`}>
-          {hasPin && pinIcon}
-          <span className="es-cast-for-label">{t('expandedSidebar.partnerHead.castFor')}</span>
-          <span className="es-relocated-name">
-            {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || ' '}
-          </span>
-          {named && (
-            <span className="es-geo-sep" aria-hidden="true">
-              ·
-            </span>
+        <div
+          key={key}
+          className={`es-hl es-hl-${l.role}${fixed ? ' es-hl-fixed' : ''}${stateCls ? ` ${stateCls}` : ''}`}
+        >
+          {pin && PIN_ICON}
+          {l.segs.map((s, j) => {
+            const sep =
+              fixed || s.kind === 'zone' ? s.sep.replace(/ /g, '\u00a0') : s.sep;
+            const cls =
+              s.kind === 'lead'
+                ? 'es-hl-lead'
+                : s.kind === 'zone'
+                  ? 'es-meta-tz es-hl-fig'
+                  : s.kind === 'place' || s.kind === 'name' || s.kind === 'text'
+                    ? `es-hl-${s.kind}`
+                    : 'es-hl-fig';
+            return (
+              <Fragment key={j}>
+                {sep && <span className="es-hl-sep">{sep}</span>}
+                <span className={cls}>{s.text}</span>
+              </Fragment>
+            );
+          })}
+          {l.tzUncertain && (
+            <TipGlyph
+              className="es-meta-warn es-hl-warn"
+              title={
+                <span className="es-tip-title">
+                  <span className="es-meta-warn">⚠</span> {t('expandedSidebar.tzUncertain')}
+                </span>
+              }
+              hint={t('expandedSidebar.tzUncertainHint')}
+            >
+              ⚠
+            </TipGlyph>
           )}
-          <span className="es-relocated-text">
-            {blankPlace
-              ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
-              : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
-          </span>
         </div>
       );
-    }
-    // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
-    // the wheel's top-left corner, so here we show the place name (marked with a
-    // pin when one's placed) above its coordinates.
-    return (
-      <div className={`es-relocated ${stateClass}`}>
-        {/* The active point's place name — the chart's only location line (the
-            fixed birthplace line was removed to avoid showing the place twice).
-            Falls back to the birthplace when nothing is pinned, so it's never
-            blank; null only in transient states (e.g. the measure tool). When a
-            pin is placed, the pin marker sits beside the name (the place IS the
-            pin's location). */}
-        {/* ALWAYS rendered (nbsp while there's no name): the hover
-            geocode resolves per mouse move, so a line that mounts/
-            unmounts — or re-wraps between 1 and 2 lines — changes the
-            header's height on every move, and the scroll container then
-            "self-scrolls" to compensate whenever the user has scrolled
-            down (scroll anchoring; see .es-scroll). A permanent one-line
-            box (ellipsized in CSS) keeps the header geometry still. The
-            pin marker lives here in every case, so a placed pin is
-            never left unmarked. */}
-        {/* The pin marker and the name are a ROW, stated as one. The marker used
-            to be an inline SVG in front of a bare text node, which reads correctly
-            only while the line has room to spare — put the same markup in a
-            narrower box and the name drops below the marker instead of sitting
-            beside it. The name keeps the ellipsis, so it needs a box of its own to
-            ellipsize inside. */}
-        <span className="es-relocated-place">
-          {hasPin && pinIcon}
-          <span className="es-relocated-name">
-            {blankPlace ? id.text(pointLabel || 'birthplace') : pointLabel || ' '}
+    });
+  // The state label, as a row of parts ("TRANSITS · 1 August 2026 · RELOCATED") in the
+  // header, and stacked one part per line in a wheel's corner, where 44% of the pane is
+  // too narrow for the whole label on one line.
+  const labelRow = (parts: string[]): ReactNode =>
+    parts.length > 0 && (
+      <div className="es-hl-label">
+        {parts.map((p, i) => (
+          <span key={i} className="es-hl-label-part">
+            {p}
           </span>
-        </span>
-        <span className="es-relocated-text">
-          {blankPlace
-            ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
-            : `${fmtLat(displayPoint.lat)} ${fmtLng(displayPoint.lng)}`}
-        </span>
+        ))}
       </div>
     );
-  };
+  const cornerTitle = (parts: string[]): ReactNode => (
+    <span className="es-wheel-title es-wheel-title-stack" style={{ color: 'var(--map-accent)' }}>
+      {parts.map((p, i) => (
+        <span key={i} className="es-wheel-title-part">
+          {p}
+        </span>
+      ))}
+    </span>
+  );
 
-  // The rest of the geodetic data block, under "Cast for" (relocatedLines): the place's
-  // AS and MC, to the minute by the one truncation rule (truncZodiac) — the Coordinates
+  // The rest of the geodetic data block, after the statement's place lines (the model's
+  // 'geo' marker, renderLines): the place's AS and MC, to the minute by the one truncation rule (truncZodiac) — the Coordinates
   // box's figures, sign glyph between degrees and minutes as there, labelled as the
   // grid's hover readout labels them (map.geoReadout) — and then where the wheel's
   // planets and houses come from. The house system named is the one the cusps
@@ -2238,10 +2282,11 @@ export function ExpandedChartSidebar({
   };
 
   // The Dual layout's header over a synastry PARTNER's wheel: under the partner's
-  // name (the line above, from overlaySubject), their own birth record in the panel
-  // header's form — date · time with its UTC offset, then their birthplace and
-  // coordinates in the natal colour — and then, set apart, the place their wheel is
-  // cast for.
+  // name (the line above, from overlaySubject), their own record in the panel header's
+  // form (lib/chartHeader's overlay view: their birth date and clock in THEIR zone,
+  // then their birthplace — or, for a relationship chart, what the panel header would
+  // say of it, which for a composite is no moment at all) — and then, set apart, the
+  // place their wheel is cast for.
   //
   // That last line is the honest half. A partner's angles and houses are cast at
   // the active point — pin, else hover, else the ACTIVE chart's birthplace — not
@@ -2254,8 +2299,7 @@ export function ExpandedChartSidebar({
   //
   // A COMPOSITE partner has no "cast for": its angles are the midpoints of its two
   // parents' own angles and don't relocate (App's overlayAngles), so that line says
-  // that instead. Its date line is the composite's stored moment, exactly as the
-  // panel header shows a composite that is the active chart.
+  // that instead.
   //
   // Except on a geodetic map (2026-10-02). There every wheel is cast in the place's
   // own geodetic frame — App hands a composite partner `angles` like any other — so
@@ -2264,8 +2308,8 @@ export function ExpandedChartSidebar({
   // or not.
   //
   // Discreet mode masks every field of the record — it is a second person's birth
-  // data, which is what the mode exists for — with the panel header's own masks
-  // (and the 2026-08-24 lesson above: mask where the value is rendered, all of it).
+  // data, which is what the mode exists for — inside the model, as the panel header's
+  // are (and the 2026-08-24 lesson above: mask where the value is rendered, all of it).
   // The "Cast for" place follows the panel header's place-line rule (castBlank).
   const partnerLines = (p: StoredChart): ReactNode => {
     const bp = p.birthplace;
@@ -2276,7 +2320,7 @@ export function ExpandedChartSidebar({
       !!castPoint &&
       (Math.abs(castPoint.lat - bp.lat) > 1e-4 ||
         Math.abs(wrapLng(castPoint.lng - bp.lng)) > 1e-4);
-    const castCoords = castPoint ? `${fmtLat(castPoint.lat)} ${fmtLng(castPoint.lng)}` : '';
+    const castCoords = castPoint ? fmtCoordPairDM(castPoint.lat, castPoint.lng) : '';
     // pointLabel can be momentarily empty while a hover geocode resolves; the
     // coordinates stand in, so the line never blinks out (header geometry, as above).
     const castPlace = castBlank
@@ -2284,37 +2328,7 @@ export function ExpandedChartSidebar({
       : pointLabel?.trim() || castCoords;
     return (
       <>
-        <div className="es-meta">
-          <span className="es-meta-when">
-            {id.on ? `${MASK_DATE} · ${MASK_TIME}` : fmtChartDate(p, fmt)}
-            {!id.on && <span className="es-meta-tz">{formatUtcOffset(p.tzOffset)}</span>}
-            {p.tzUncertain && (
-              <TipGlyph
-                className="es-meta-warn"
-                title={
-                  <span className="es-tip-title">
-                    <span className="es-meta-warn">⚠</span> {t('expandedSidebar.tzUncertain')}
-                  </span>
-                }
-                hint={t('expandedSidebar.tzUncertainHint')}
-              >
-                ⚠
-              </TipGlyph>
-            )}
-          </span>
-        </div>
-        <div className="es-relocated natal">
-          <span className="es-relocated-place">
-            <span className="es-relocated-name">
-              {id.on ? id.text(bp.label || 'birthplace') : bp.label || ' '}
-            </span>
-          </span>
-          <span className="es-relocated-text">
-            {id.on
-              ? `${id.text('00°00′N')} ${id.text('000°00′E')}`
-              : `${fmtLat(bp.lat)} ${fmtLng(bp.lng)}`}
-          </span>
-        </div>
+        {renderLines(headerModel.overlayView?.lines ?? [], 'p', false)}
         {midpointFrame ? (
           <div className="es-cast-for">
             <span className="es-cast-for-label">
@@ -2347,18 +2361,13 @@ export function ExpandedChartSidebar({
     );
   };
 
-  // The overlay's instant in the header's own date form ("10 Aug 2026 · 04:43"),
-  // rather than the raw "YYYY-MM-DD HH:MM" the timeline hands over. The overlay is
-  // always given in UTC — it has no birth zone of its own to be offset from — so
-  // that stands where the chart's UTC offset does above.
-  //
-  // Synastry has no instant, and its partner's NAME takes the line instead (see
-  // overlaySubject) — which is not a time, so it carries no UTC mark.
-  const overlayWhen = (() => {
-    const m = overlayMoment?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-    if (!m) return overlayMoment ?? overlaySubject;
-    return `${Number(m[3])} ${fmt.monthName(Number(m[2]))} ${m[1]} · ${m[4]}:${m[5]}`;
-  })();
+  // The panel header shows the whole display's state — except in the Dual layout, where
+  // the overlay is a second chart with a header of its own below the first wheel, and
+  // the panel header introduces the first wheel alone (the chart view). Otherwise the two
+  // headers would print the overlay's moment twice and the chart's not at all.
+  // (2026-10-07)
+  const dualLayout = dualWheels && hasOverlay && !!frame;
+  const headerView = dualLayout ? headerModel.chartView : headerModel;
 
   return (
     <aside
@@ -2447,58 +2456,16 @@ export function ExpandedChartSidebar({
           </div>
         </div>
         {chart && (
-          // On a geodetic map this is the first line of the data block (the rest is
-          // relocatedLines and geoLines): GEODETIC · name · date · time. The name is here
-          // as well as in the switcher above because the block is a record of what the
-          // wheel is, read as one. A chart with no birth time says so in the time's place
-          // — its planets are read at 12:00, and "12:00" would read as a recorded time —
-          // and drops the UTC offset with it; a recorded time keeps its offset, as it is
-          // the time's own qualifier and the ⚠ below is about it. The celestial header is
-          // unchanged. (2026-10-02)
-          <div className={`es-meta${geoMap ? ' es-geo-head' : ''}`}>
-            <span className="es-meta-when">
-              {geoMap && (
-                <>
-                  <b className="es-geo-title">{t('expandedSidebar.geodetic.title')}</b>
-                  {' · '}
-                  {id.on ? id.name(chart.name) : displayName(chart.name)}
-                  {' · '}
-                </>
-              )}
-              {/* Masked as date · time rather than through id.date() alone: this one
-                  string carries both, and keeping the shape says "two things hidden
-                  here" where a lone date mask would read as the time being absent. */}
-              {id.on
-                ? `${MASK_DATE} · ${MASK_TIME}`
-                : geoMap && timeless
-                  ? `${chart.day} ${fmt.monthName(chart.month)} ${chart.year} · ${t(
-                      'expandedSidebar.timeUnknownNoon',
-                    )}`
-                  : fmtChartDate(chart, fmt)}
-              {/* The offset drops out entirely while masked instead of trailing a
-                  second run of dots — one mask per fact reads as hidden, two reads
-                  as broken. */}
-              {!id.on && !(geoMap && timeless) && (
-                <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
-              )}
-              {chart.tzUncertain && (
-                <TipGlyph
-                  className="es-meta-warn"
-                  title={
-                    <span className="es-tip-title">
-                      <span className="es-meta-warn">⚠</span> {t('expandedSidebar.tzUncertain')}
-                    </span>
-                  }
-                  hint={t('expandedSidebar.tzUncertainHint')}
-                >
-                  ⚠
-                </TipGlyph>
-              )}
-            </span>
+          // The chart's statement (lib/chartHeader): under the chart's name, the state
+          // label, then the lines — the moment, the places, then the rating and the
+          // chart-data settings. In the Dual layout it introduces the first wheel alone
+          // (headerView). The plan tag above floats over this block's right edge, which
+          // the label row leaves clear. (2026-10-07)
+          <div className="es-statement">
+            {labelRow(headerView.labelParts)}
+            {renderLines(headerView.lines, 'h')}
           </div>
         )}
-        {relocatedLines()}
-        {geoLines()}
 
       </section>
 
@@ -2635,12 +2602,12 @@ export function ExpandedChartSidebar({
               {/* Use the wheel's empty top corners: the chart-state title (left,
                   always) and, when an overlay is on, its caption (right — in
                   Dual Wheels the overlay is a chart in its own right and gets a
-                  header of its own below, so this corner stays the natal one). */}
+                  header of its own below, so this corner stays the natal one).
+                  The title is the header's own label (lib/chartHeader), stacked a
+                  part per line; in Dual Wheels, the first wheel's (chartView). */}
               {frame && (
                 <div className="es-wheel-corner es-wheel-corner-left">
-                  <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
-                    {wheelTitle}
-                  </span>
+                  {cornerTitle(showDual ? headerModel.chartView.labelParts : headerModel.labelParts)}
                   {frame.fallback && (
                     <TipSpan
                       className="es-house-fallback es-house-fallback-info"
@@ -2680,17 +2647,27 @@ export function ExpandedChartSidebar({
                   // Synastry has no moment and puts its partner's name on that line
                   // instead — same slot, so the layout is unchanged.
                   className={`es-wheel-corner es-wheel-corner-right${
-                    momentText ? ' es-overlay-corner' : ''
+                    cornerMoment || overlaySubject ? ' es-overlay-corner' : ''
                   }`}
                 >
-                  {momentText && (
-                    <span
-                      className={`es-overlay-moment${
-                        overlayMoment ? '' : ' es-overlay-subject'
-                      }`}
-                    >
-                      {momentText}
-                    </span>
+                  {cornerMoment ? (
+                    // Date (only where the title beside it lacks one) over the clock in
+                    // the cast place's zone — a line each, so neither runs into the wheel.
+                    <>
+                      {cornerDated && (
+                        <span className="es-overlay-moment">{cornerMoment.date.text}</span>
+                      )}
+                      <span className="es-overlay-moment">
+                        {cornerMoment.clock.text}
+                        {cornerMoment.zone && (
+                          <span className="es-meta-tz">{`\u00a0${cornerMoment.zone.text}`}</span>
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    overlaySubject && (
+                      <span className="es-overlay-moment es-overlay-subject">{overlaySubject}</span>
+                    )
                   )}
                   <span className="es-overlay-caption es-overlay-dashed">
                     {overlayName}
@@ -2729,59 +2706,41 @@ export function ExpandedChartSidebar({
                         ranges={ranges}
                       />
                       {/* The overlay wheel is introduced the way the natal one is:
-                          the same three header lines — instant, place, coordinates
-                          — and then its own name in its top-left corner where the
-                          chart-state title sits above. The two wheels are separate
-                          charts in this layout, and the second was getting a
-                          middot-joined caption where the first got a header.
-                          Everything but the name is the SECOND chart's own: its
-                          instant rather than the birth moment, and the place both
-                          are cast for (which is a fact about this wheel's angles,
-                          not a repetition of the one above). A synastry partner
-                          is the one second chart with a birth record and a place
-                          of its own, so it is introduced from that record, with
-                          the cast-for place on a line apart (partnerLines). */}
+                          the statement's own lines (lib/chartHeader's overlay view) —
+                          its moment, in the clock of the place both wheels are cast
+                          for, then that place — and its label in its top-left corner
+                          where the first wheel's sits above. The two wheels are
+                          separate charts in this layout, so each gets a header.
+                          Everything here is the SECOND chart's own: its instant
+                          rather than the birth moment, and the place both are cast
+                          for (a fact about this wheel's angles, not a repetition of
+                          the one above). A synastry partner is the one second chart
+                          with a record and a place of its own, so it is introduced
+                          by name and record, with the cast-for place on a line apart
+                          (partnerLines). (2026-10-07) */}
                       <div className="es-overlay-head">
-                        {overlayWhen && (
-                          <div className="es-meta">
-                            {/* When this line is a NAME rather than an instant it
-                                is the second chart's name, and a chart's name is
-                                the thing an astrologer reads first — so it takes
-                                the weight the natal chart's own name has at the
-                                top of the panel, instead of the quiet form a
-                                date wants. */}
-                            <span
-                              className={`es-meta-when${
-                                overlayMoment ? '' : ' es-overlay-chart-name'
-                              }`}
-                            >
-                              {overlayWhen}
-                              {/* Only a time is marked UTC. Synastry puts its
-                                  partner's name on this line, and a name has no
-                                  zone. */}
-                              {overlayMoment && (
-                                <span className="es-meta-tz">
-                                  {t('expandedSidebar.utc')}
+                        {overlayPartner ? (
+                          <>
+                            {/* A chart's name is the thing an astrologer reads first,
+                                so the partner's takes the weight the first chart's own
+                                name has at the top of the panel. */}
+                            {overlaySubject && (
+                              <div className="es-meta">
+                                <span className="es-meta-when es-overlay-chart-name">
+                                  {overlaySubject}
                                 </span>
-                              )}
-                            </span>
-                          </div>
+                              </div>
+                            )}
+                            {partnerLines(overlayPartner)}
+                          </>
+                        ) : (
+                          renderLines(headerModel.overlayView?.lines ?? [], 'o')
                         )}
-                        {/* A partner is a person with a birthplace of their own,
-                            so their header is their record (partnerLines); every other
-                            second chart is a moment with no place, cast where the
-                            first one is, and repeats the panel header's lines. */}
-                        {overlayPartner ? partnerLines(overlayPartner) : relocatedLines()}
                       </div>
                       <div className="es-wheel-slot">
-                        {overlayName && (
+                        {headerModel.overlayView && (
                           <div className="es-wheel-corner es-wheel-corner-left">
-                            <span
-                              className="es-wheel-title"
-                              style={{ color: 'var(--map-accent)' }}
-                            >
-                              {overlayName}
-                            </span>
+                            {cornerTitle(headerModel.overlayView.labelParts)}
                           </div>
                         )}
                         {/* The overlay chart's own catalog bodies, placed by its rule —

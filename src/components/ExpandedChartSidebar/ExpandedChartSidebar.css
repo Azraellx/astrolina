@@ -208,7 +208,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Date + time, with the UTC offset (and a DST-uncertain ⚠ if needed) beside it. */
+/* The Dual layout's partner-name line (and the shape the moment lines below copy). */
 .es-meta-when {
   display: inline-flex;
   align-items: center;
@@ -225,146 +225,150 @@
 }
 
 /* Plain line-style pin (replaces the 📌 emoji) — inherits the row's state color. */
-/* The place line is a flex row now, so its centring comes from align-items and
-   the old vertical-align nudge (which only ever applied to inline layout) is
-   gone. flex-shrink stays and finally means something: a long place name
-   ellipsizes on its own, never by squeezing the marker. */
+/* flex-shrink keeps it whole on a fixed row, where a long place name ellipsizes on its
+   own, never by squeezing the marker. */
 .es-pin-icon {
   margin-right: 4px;
   flex-shrink: 0;
 }
 
-.es-relocated {
+/* The chart's statement (lib/chartHeader, 2026-10-07): the state label under the
+   chart's name, then one block per line — the moment, the places, the parents, the
+   rating, the settings. The type ramp of the header it replaced: moments at 12px in
+   the muted colour, places at 11px in the cast state's colour, the rest quieter. */
+.es-statement {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* "TRANSITS · 1 August 2026 · RELOCATED". Wraps between parts, never inside one. The
+   right padding keeps it clear of the plan tag, which floats over this row's right end
+   (.es-plan-tag) without adding height to the header. */
+.es-hl-label {
+  display: flex;
   flex-wrap: wrap;
-  /* Tight row gap (place name → coordinates) but keep the wider column gap between the
-     coordinates and the recenter button. */
-  gap: 2px 8px;
-  /* Sit close under the date/time above (the place name is now the line right below it). */
-  margin: 1px 0 0 0;
+  margin: 2px 0 1px;
+  padding-right: 44px;
   font-size: 11px;
-  color: var(--cool);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-/* The active point's place name, on its own line above the relocated coordinates (so the
-   name tracks the point like the coordinates do). Full-width so the coordinates wrap below
-   it; inherits the relocated block's state colour. */
-.es-relocated-place {
-  flex-basis: 100%;
-  /* A row, so the pin marker and the name stay side by side however narrow the
-     box gets. They used to be inline content in a block, which holds only while
-     the line has room to spare: in the dual-wheel header, where the same lines
-     are reused under the second wheel, the name dropped below the marker. */
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  font-size: 12px;
-  letter-spacing: 0;
-}
-
-/* One line, always: hover relocation swaps this name on every mouse move, and a
-   wrap to a second line would bounce the header's height (see the always-rendered
-   nbsp fallback in the TSX). Long names ellipsize — the coordinates right below
-   still identify the spot. Its own box because ellipsis needs one; the marker
-   beside it must not be ellipsized with it. */
-.es-relocated-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-/* Recenter button beside the "Pinned at …" text — flies the map to the pin. */
-.es-recenter-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 2px 7px;
-  background: rgba(var(--accent-rgb), 0.12);
-  border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: 5px;
-  color: var(--accent);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.es-recenter-btn:hover {
-  background: rgba(var(--accent-rgb), 0.22);
-  border-color: rgba(var(--accent-rgb), 0.65);
-}
-
-.es-relocated.natal-pinned .es-recenter-btn {
-  background: rgba(var(--success-rgb), 0.12);
-  border-color: rgba(var(--success-rgb), 0.4);
-  color: var(--success);
-}
-
-.es-relocated.natal-pinned .es-recenter-btn:hover {
-  background: rgba(var(--success-rgb), 0.22);
-  border-color: rgba(var(--success-rgb), 0.65);
-}
-
-.es-relocated.pinned {
-  color: var(--accent);
-}
-
-.es-relocated.natal-pinned {
-  color: var(--success);
-}
-
-.es-relocated.natal {
-  color: var(--text);
-}
-
-/* The geodetic data block (2026-10-02): the header's first line (GEODETIC · name · date ·
-   time), the one-row "Cast for" place line, then the place's GE angles and the line
-   saying where the planets and houses come from. The type ramp of .es-meta and
-   .es-relocated above, with the planets line muted like the date. */
-.es-geo-head .es-meta-when {
-  /* Text, not the date's inline-flex row: this line carries the chart's name and can
-     run past the panel's width, so it has to wrap as words rather than overflow. */
-  display: inline;
-}
-.es-geo-head .es-meta-when > .es-meta-tz,
-.es-geo-head .es-meta-when > .es-meta-warn {
-  margin-left: 6px;
-}
-.es-geo-title {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--text);
 }
-/* One row that never wraps, so a hover swapping the place name can't change the
-   header's height (see .es-relocated-name): the name ellipsizes, the lead word, the
-   separator and the coordinates hold their width. */
-.es-relocated.es-geo-cast {
-  flex-wrap: nowrap;
-  gap: 6px;
-  min-width: 0;
+.es-hl-label-part {
+  white-space: nowrap;
 }
-.es-geo-cast .es-relocated-name {
+.es-hl-label-part + .es-hl-label-part::before {
+  content: '\00a0·\00a0';
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.es-hl {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+/* A moment: the birth's, a Davison's, an overlay's, a parent's. */
+.es-hl-moment,
+.es-hl-overlay-moment,
+.es-hl-parent {
   font-size: 12px;
   letter-spacing: 0;
 }
-.es-geo-cast .es-geo-sep,
-.es-geo-cast .es-relocated-text {
-  flex-shrink: 0;
+/* A place, in the colour of the state it stands for — the panel's own place lines read
+   neutral at the birthplace, gold for a pin, green for the natal pin, and the default
+   cool blue for the hover (the classes mirror the map's pin states). */
+.es-hl-birthplace,
+.es-hl-overlay-place,
+.es-hl-relocated {
+  color: var(--cool);
 }
+.es-hl.natal,
+.es-hl-parent-place {
+  color: var(--text);
+}
+.es-hl.pinned {
+  color: var(--accent);
+}
+.es-hl.natal-pinned {
+  color: var(--success);
+}
+.es-hl-rodden,
+.es-hl-settings {
+  color: var(--text-faint);
+}
+/* A line's own label ("Born:", "Relocated to:") — set apart from the facts it heads. */
+.es-hl-lead {
+  color: var(--text-faint);
+}
+.es-hl-sep {
+  color: var(--text-faint);
+}
+/* Figures never break inside: a date, a clock and its zone, a coordinate pair. */
+.es-hl-fig {
+  white-space: nowrap;
+}
+.es-hl > .es-pin-icon {
+  vertical-align: -2px;
+}
+.es-hl-warn {
+  margin-left: 6px;
+}
+
+/* A line whose text follows the cursor — the cast place, an overlay's moment in that
+   place's clock: one row, always. The hover swaps its text on every mouse move, and a
+   line that re-wrapped between one row and two would bounce the header's height each
+   time (see .es-scroll). The place name ellipsizes; the coordinates beside it, the
+   separators and the figures hold their width. */
+.es-hl-fixed {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.es-hl-fixed > * {
+  flex: none;
+}
+.es-hl-fixed > .es-hl-place {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Too narrow for an overlay's whole moment on one row (a phone, where the panel takes
+   70% of 390px): the date ALWAYS takes a row of its own and the clock the next. Decided
+   by the panel's width, never by the text, so the hover still cannot change the
+   height — a wrap that came and went with the zone name's length would. */
+.es-statement,
+.es-overlay-head {
+  container-type: inline-size;
+}
+@container (max-width: 300px) {
+  .es-hl-overlay-moment {
+    flex-wrap: wrap;
+  }
+  .es-hl-overlay-moment > :first-child {
+    flex-basis: 100%;
+  }
+  .es-hl-overlay-moment > :first-child + .es-hl-sep {
+    display: none;
+  }
+}
+
+/* The geodetic data block (2026-10-02), after the statement's place lines: the place's
+   GE angles and the line saying where the planets and houses come from. */
 .es-geo-lines {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  margin-top: 2px;
+  margin: 1px 0;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
@@ -1702,6 +1706,24 @@
   /* colour set inline from --map-accent (per chart state) */
 }
 
+/* The header's state label in the corner (lib/chartHeader, 2026-10-07): a part per
+   line — TRANSITS / 1 August 2026 / RELOCATED — since the corner is too narrow for the
+   whole label on one. The parts arrive cased as the header prints them (a date is not
+   upper case), and a part too long for the corner wraps between its words. */
+.es-wheel-title-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  white-space: normal;
+  text-transform: none;
+}
+.es-wheel-title-part + .es-wheel-title-part {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 /* Polar-latitude caution under the wheel title: the chosen quadrant house
    system is undefined here, so the cusps shown are the Porphyry fallback. */
 .es-house-fallback {
@@ -1825,7 +1847,7 @@
   display: none;
 }
 
-/* Clear the wheel-state title (HOVER / PINNED / NATAL CHART) off the wheel: condensed, the wheel
+/* Clear the wheel-state title (NATAL CHART, TRANSITS / date, …) off the wheel: condensed, the wheel
    is large for the narrow pane and reaches the title at top:4px. Nudge the title up and drop the
    wheel a little so the two no longer overlap. */
 .expanded-sidebar.es-compact .es-wheel-corner {

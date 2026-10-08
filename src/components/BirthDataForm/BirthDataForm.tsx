@@ -4,8 +4,10 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { reverseGeocode, type GeocodeResult } from '../../lib/atlas/geocode';
+import { fmtCoordPair } from '../../lib/coordFormat';
+import { parseCoord } from '../../lib/import/fields';
 import {
   folderName,
   isValidFolderName,
@@ -45,8 +47,23 @@ import { useZoneEntry } from './useZoneEntry';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
-const validLat = (n: number) => Number.isFinite(n) && n >= -90 && n <= 90;
-const validLng = (n: number) => Number.isFinite(n) && n >= -180 && n <= 180;
+
+/** A typed latitude or longitude, or null: a decimal as before, and since
+ *  2026-10-07 the DMS forms too (40°55'52"N, 40N55'52", 073°W53'56" — the
+ *  summary's own form, so it can be copied back in), through the importer's
+ *  reader, which refuses rather than guesses. A trailing degree sign on a
+ *  decimal ("40.9312°") still reads, as it did when this was parseFloat. */
+function readCoord(text: string, axis: 'lat' | 'lng'): number | null {
+  const r = parseCoord(text, axis) ?? parseCoord(text.replace(/[°º]\s*$/, ''), axis);
+  return r && !r.outOfRange ? r.value : null;
+}
+
+/** "9:30 am", "12:30 pm" for 12:30, "12:30 am" for 00:30 — the echo beside the
+ *  time boxes. */
+function twelveHour(hour: number, minute: number, t: TFn): string {
+  const time = `${hour % 12 || 12}:${String(minute).padStart(2, '0')}`;
+  return t(hour < 12 ? 'chartForm.timeEcho.am' : 'chartForm.timeEcho.pm', { time });
+}
 
 // A birthplace is a settlement — regions and countries aren't birthplaces, and
 // offering them here only invites an imprecise chart. Module-level so the search
@@ -179,16 +196,22 @@ export function BirthDataFields({
 
   // Manual coordinate drafts (kept as text so partial typing works). Editing them
   // reverse-geocodes a label and re-detects the zone, so a chart can be entered by
-  // raw lat/lng — the way many birth records / rectified charts are kept.
+  // raw lat/lng — the way many birth records / rectified charts are kept. They
+  // hold decimals (exact; the DMS summary is rounded to the second) and read DMS
+  // too (readCoord).
   const [latText, setLatText] = useState(
     initial ? String(initial.birthplace.lat) : '',
   );
   const [lngText, setLngText] = useState(
     initial ? String(initial.birthplace.lng) : '',
   );
-  // Coordinates default to a read-only summary of the auto-chosen lat/lng; "Enter
+  // Coordinates default to a read-only summary of the auto-chosen lat/lng; "Set
   // manually" reveals the editable inputs (for raw-coordinate / rectified charts).
   const [showCoordInputs, setShowCoordInputs] = useState(false);
+  const summaryLat = readCoord(latText, 'lat');
+  const summaryLng = readCoord(lngText, 'lng');
+  const coordPair =
+    summaryLat != null && summaryLng != null ? fmtCoordPair(summaryLat, summaryLng) : null;
 
   // If a birthplace is chosen while the date is still blank, fill the DATE with
   // "today" so the time zone (which anchors at noon until a time is typed) is
@@ -216,7 +239,8 @@ export function BirthDataFields({
   }, [selectedPlace, year, month, day, hour, minute]);
 
   // Timezone: Auto (the zone detected from the birthplace, DST-aware) by default,
-  // or one of the four stated ways in (TimeZoneField / useZoneEntry, 2026-10-02).
+  // or a zone stated through TimeZoneField's radios (useZoneEntry; 2026-10-02,
+  // radios since 2026-10-07).
   // Whichever way, the offset saved is the one value birthDataToJD subtracts to
   // get the UT birth instant, so accuracy here is load-bearing.
   // A DST-aware offset needs a whole moment, so detection waits for the DATE; an
@@ -225,6 +249,15 @@ export function BirthDataFields({
   const effHour = hour ?? 12;
   const effMinute = minute ?? 0;
   const zone = useZoneEntry(initial, selectedPlace, year, month, day, effHour, effMinute);
+
+  // The 12-hour echo beside the time boxes (Lina, 2026-10-06): someone reading
+  // "9:30 PM" off a certificate can type 09:30 and cast a chart twelve hours
+  // out with nothing on screen contradicting them. It replaces the UT readback
+  // as the error catch at the moment the error can enter. Never stored, never
+  // shown elsewhere; hidden while the time is empty (an unknown time has no
+  // half of the day). A bare hour reads as :00, as the save does.
+  const echoId = useId();
+  const echo = hour != null ? twelveHour(hour, minute ?? 0, t) : null;
 
   // Latest selected place, read by the reverse-geocode effect below WITHOUT being
   // one of its triggers (declared first so it syncs before that effect runs).
@@ -240,9 +273,9 @@ export function BirthDataFields({
   // place (e.g. just after a forward-search pick) so it never loops or fires
   // redundant lookups.
   useEffect(() => {
-    const lat = parseFloat(latText);
-    const lng = parseFloat(lngText);
-    if (!validLat(lat) || !validLng(lng)) return;
+    const lat = readCoord(latText, 'lat');
+    const lng = readCoord(lngText, 'lng');
+    if (lat == null || lng == null) return;
     const current = selectedPlaceRef.current;
     if (current && approxEq(current.lat, lat) && approxEq(current.lng, lng)) {
       return;
@@ -321,9 +354,11 @@ export function BirthDataFields({
         t(
           zone.error === 'offset'
             ? 'chartForm.tz.offsetUnread'
-            : zone.error === 'range'
-              ? 'chartForm.tz.errorRange'
-              : 'chartForm.tz.errorPending',
+            : zone.error === 'direction'
+              ? 'chartForm.tz.offsetDirection'
+              : zone.error === 'range'
+                ? 'chartForm.tz.errorRange'
+                : 'chartForm.tz.errorPending',
         ),
       );
       return;
@@ -362,6 +397,9 @@ export function BirthDataFields({
       // A composite chart's parents survive an edit (renames, place tweaks):
       // the planet positions stay the midpoints.
       composite: initial?.composite,
+      // So do a Davison chart's (2026-10-07): the header's "Derived from" line
+      // reads them, and checks they still reproduce this moment and place.
+      davison: initial?.davison,
     };
     if (initial?.composite) {
       // The stored moment IS the composite's angle frame (the ASC-midpoint of
@@ -434,70 +472,21 @@ export function BirthDataFields({
             setHour(v.hour);
             setMinute(v.minute);
           }}
-          trailing={
-            // A "Tag" field to the right of the time inputs: a caption (aligned with the
-            // Date / Time captions) over the tag toggle. Normally a Star toggle (the only
-            // user-ASSIGNABLE tag). A chart carrying a SYSTEM tag shows that here instead:
-            // 'shared' (a link-received chart) is highlighted and REMOVABLE — pressing
-            // clears it and the button reverts to the plain Star toggle — while 'space'
-            // (an app-generated chart) is a fixed mark, shown but not editable.
-            <div className="tag-field">
-              <span className="moment-caption">{t('chartForm.tag.caption')}</span>
-              {tag === 'shared' ? (
-                <TipButton
-                  type="button"
-                  className="tag-toggle tag-toggle--shared"
-                  aria-pressed={true}
-                  onClick={() => setTag('none')}
-                  placement="top"
-                  tip={
-                    <>
-                      <TagIcon tag="shared" className="tag-icon" />
-                      {t('chartForm.tag.removeSharedTitle')}
-                    </>
-                  }
-                  hint={t('chartForm.tag.removeSharedHint')}
-                >
-                  <TagIcon tag="shared" className="tag-toggle-icon" />
-                  <span className="tag-toggle-label">{t('chartForm.tag.sharedLabel')}</span>
-                </TipButton>
-              ) : tag === 'space' ? (
-                <TipSpan
-                  className="tag-toggle tag-toggle--space is-fixed"
-                  placement="top"
-                  tapReveal
-                  tip={
-                    <>
-                      <TagIcon tag="space" className="tag-icon" />
-                      {t('chartForm.tag.spaceTitle')}
-                    </>
-                  }
-                  hint={t('chartForm.tag.spaceHint')}
-                >
-                  <TagIcon tag="space" className="tag-toggle-icon" />
-                  <span className="tag-toggle-label">{t('chartForm.tag.spaceLabel')}</span>
-                </TipSpan>
-              ) : (
-                <TipButton
-                  type="button"
-                  className="tag-toggle"
-                  aria-pressed={tag === 'star'}
-                  onClick={() => setTag((prev) => (prev === 'star' ? 'none' : 'star'))}
-                  placement="top"
-                  tip={
-                    <>
-                      <TagIcon tag="star" className="tag-icon" />
-                      {t('chartForm.tag.assignTitle')}
-                    </>
-                  }
-                  hint={t('chartForm.tag.assignHint')}
-                >
-                  <TagIcon tag="star" className="tag-toggle-icon" />
-                  <span className="tag-toggle-label">{t('chartForm.tag.label')}</span>
-                </TipButton>
-              )}
-            </div>
+          timeSuffix={
+            echo && (
+              <>
+                <span className="time-echo" aria-hidden="true">
+                  {echo}
+                </span>
+                {/* What the time boxes are described by: the echo is a visual
+                    check, so it is described rather than announced live. */}
+                <span id={echoId} hidden>
+                  {t('chartForm.timeEcho.aria', { echo })}
+                </span>
+              </>
+            )
           }
+          timeDescribedBy={echo ? echoId : undefined}
         />
         {/* An EMPTY time means "birth time unknown" (never for a composite — its
             moment is synthesized). The note appears once the user has moved PAST
@@ -510,6 +499,13 @@ export function BirthDataFields({
             <p className="time-unknown-note">{t('chartForm.timeUnknown.hint')}</p>
           )}
         </fieldset>
+
+        {/* Time zone, beside the time it modifies (Lina, 2026-10-06; it sat
+            under the birthplace): the zone in force for the entered date, by
+            name, with "Set manually" for the chooser — the coordinates' pattern.
+            Locked until a birthplace and date exist. A composite's zone is
+            fixed at UT. */}
+        <TimeZoneField zone={zone} hasPlace={!!selectedPlace} />
 
         {/* Both of a chart's places — the birthplace, and where its subject
             lives NOW (optional; unset means "the birthplace") — share this one
@@ -599,20 +595,10 @@ export function BirthDataFields({
           )}
         </div>
 
-        {/* Time zone: locked until a birthplace and date exist, then Auto (the
-            zone detected from the birthplace), folded to a summary with a
-            "Set manually" link that unfolds one list of zones, like the
-            coordinates below. A chart saved another way opens unfolded. The
-            line under it says what the entered clock means in UT — the one value
-            the chart math uses. A composite's zone is fixed at UT. */}
-        <TimeZoneField
-          zone={zone}
-          hasPlace={!!selectedPlace}
-          noTime={noTime}
-        />
-
-        {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default;
-            "Set manually" reveals the inputs to enter a chart by raw lat/lng (which
+        {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default,
+            in DMS with the longitude padded to three digits (2026-10-07: every
+            other surface prints a chart's place so; it showed decimals); "Set
+            manually" reveals the inputs to enter a chart by raw lat/lng (which
             reverse-geocodes a place + re-detects the zone). */}
         {showCoordInputs ? (
           <div className="row">
@@ -620,7 +606,6 @@ export function BirthDataFields({
               <span>{t('chartForm.latitude')}</span>
               <input
                 type="text"
-                inputMode="decimal"
                 value={latText}
                 onChange={(e) => setLatText(e.target.value)}
                 placeholder="48.4011"
@@ -631,7 +616,6 @@ export function BirthDataFields({
               <span>{t('chartForm.longitude')}</span>
               <input
                 type="text"
-                inputMode="decimal"
                 value={lngText}
                 onChange={(e) => setLngText(e.target.value)}
                 placeholder="9.9876"
@@ -642,15 +626,11 @@ export function BirthDataFields({
         ) : (
           <div className="coord-summary">
             <span className="coord-summary-item">
-              <span className="coord-summary-label">{t('chartForm.latitude')}</span>
-              <span className="coord-summary-value">{latText ? `${latText}°` : '—'}</span>
-            </span>
-            <span className="coord-summary-item">
-              <span className="coord-summary-label">{t('chartForm.longitude')}</span>
-              <span className="coord-summary-value">{lngText ? `${lngText}°` : '—'}</span>
+              <span className="coord-summary-label">{t('chartForm.coordinates')}</span>
+              <span className="coord-summary-value">{coordPair ?? '—'}</span>
             </span>
             {/* Only worth offering once there are auto-chosen coords to refine. */}
-            {latText.trim() !== '' && lngText.trim() !== '' && (
+            {coordPair && (
               <button
                 type="button"
                 className="coord-edit-link"
@@ -661,6 +641,72 @@ export function BirthDataFields({
             )}
           </div>
         )}
+
+        {/* The chart's tag, on its own row since 2026-10-07 (it was a column
+            beside the time boxes, which the 12-hour echo now needs; Lina's
+            order puts it after the coordinates). Normally a Star toggle (the
+            only user-ASSIGNABLE tag). A chart carrying a SYSTEM tag shows that
+            here instead: 'shared' (a link-received chart) is highlighted and
+            REMOVABLE — pressing clears it and the button reverts to the plain
+            Star toggle — while 'space' (an app-generated chart) is a fixed
+            mark, shown but not editable. */}
+        <div className="tag-field">
+          <span className="coord-summary-label">{t('chartForm.tag.caption')}</span>
+          {tag === 'shared' ? (
+            <TipButton
+              type="button"
+              className="tag-toggle tag-toggle--shared"
+              aria-pressed={true}
+              onClick={() => setTag('none')}
+              placement="top"
+              tip={
+                <>
+                  <TagIcon tag="shared" className="tag-icon" />
+                  {t('chartForm.tag.removeSharedTitle')}
+                </>
+              }
+              hint={t('chartForm.tag.removeSharedHint')}
+            >
+              <TagIcon tag="shared" className="tag-toggle-icon" />
+              <span className="tag-toggle-label">{t('chartForm.tag.sharedLabel')}</span>
+            </TipButton>
+          ) : tag === 'space' ? (
+            <TipSpan
+              className="tag-toggle tag-toggle--space is-fixed"
+              placement="top"
+              tapReveal
+              tip={
+                <>
+                  <TagIcon tag="space" className="tag-icon" />
+                  {t('chartForm.tag.spaceTitle')}
+                </>
+              }
+              hint={t('chartForm.tag.spaceHint')}
+            >
+              <TagIcon tag="space" className="tag-toggle-icon" />
+              <span className="tag-toggle-label">{t('chartForm.tag.spaceLabel')}</span>
+            </TipSpan>
+          ) : (
+            <TipButton
+              type="button"
+              className="tag-toggle"
+              aria-pressed={tag === 'star'}
+              onClick={() => setTag((prev) => (prev === 'star' ? 'none' : 'star'))}
+              placement="top"
+              tip={
+                <>
+                  <TagIcon tag="star" className="tag-icon" />
+                  {t('chartForm.tag.assignTitle')}
+                </>
+              }
+              hint={t('chartForm.tag.assignHint')}
+            >
+              <TagIcon tag="star" className="tag-toggle-icon" />
+              <span className="tag-toggle-label">{t('chartForm.tag.label')}</span>
+            </TipButton>
+          )}
+        </div>
+
         {/* Notes hold whatever came in with the record: the source, a rating,
             why a time is only remembered. That last is the part of an imported
             chart an astrologer would most mind losing — but it is wanted

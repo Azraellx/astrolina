@@ -50,7 +50,9 @@
   letter-spacing: 0;
 }
 
-/* Optional zone label sitting just after the minute box (timeSuffix). */
+/* Optional zone label sitting just after the minute box (timeSuffix). The birth
+   form's 12-hour echo uses the same slot and restyles its own text
+   (BirthDataForm.css, .time-echo). */
 .moment-tz {
   margin-left: 2px;
   font-size: 11px;

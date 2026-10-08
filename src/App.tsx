@@ -79,7 +79,10 @@ import { CaptureHud } from './components/CaptureHud/CaptureHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import type { ChartQuickFlash } from './components/ChartSwitcher/ChartSwitcher';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
-import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
+import {
+  ExpandedChartSidebar,
+  type SidebarHeaderInfo,
+} from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
 import { ProfileWindow } from './components/ProfileWindow/ProfileWindow';
 import { SynastryIcon } from './components/ui/SynastryIcon';
@@ -115,10 +118,13 @@ import type {
 } from './components/CaptureExtras/CaptureExtras';
 import { ARIES_FRAME, type AspectCategory } from './components/Wheel/WheelSvg';
 import {
-  offsetHoursAt,
-  zoneLabelAt,
-  formatUtcOffset,
-} from './lib/atlas/timezone';
+  formatZoneClock,
+  formatZoneLabel,
+  timelineZoneAt,
+  wallClockAt,
+  zoneNameForChart,
+} from './lib/atlas/zoneName';
+import { castClockAt } from './lib/chartHeader';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
 import { useNearestCity, useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { useCountryOf } from './lib/atlas/useCountryOf';
@@ -3491,25 +3497,19 @@ export default function App() {
     const dtHours = slideDt * 24;
     const birthUtcMs = chartUtcMs(current);
     const slidMs = birthUtcMs + dtHours * 3_600_000;
-    const offH = current.tzIana
-      ? offsetHoursAt(current.tzIana, slidMs)
-      : current.tzOffset;
-    const label = current.tzIana
-      ? zoneLabelAt(current.tzIana, slidMs)
-      : formatUtcOffset(current.tzOffset);
-    // Wall-clock = instant + offset, read in UTC (the timeline bar uses the same trick).
-    const wall = new Date(slidMs + offH * 3_600_000);
-    const hh = String(wall.getUTCHours()).padStart(2, '0');
-    const mm = String(wall.getUTCMinutes()).padStart(2, '0');
+    // The chart's zone at the slid instant by the timeline bar's own rule (timelineZoneAt —
+    // its IANA zone, else its fixed offset), so the two clocks cannot disagree, named in the
+    // one format every zoned clock uses: "18:42 EDT (UTC−04:00)". (2026-10-07)
+    const zone = timelineZoneAt(current, slidMs);
+    const wall = wallClockAt(slidMs, zone);
     // The date, with the year only when the spin left the chart's own year.
-    const year = wall.getUTCFullYear();
-    const date = `${wall.getUTCDate()} ${fmt.monthAbbr(wall.getUTCMonth() + 1)}${
-      year !== current.year ? ` ${year}` : ''
+    const date = `${wall.day} ${fmt.monthAbbr(wall.month)}${
+      wall.year !== current.year ? ` ${wall.year}` : ''
     }`;
     return {
       thetaDeg: dtHours * SIDEREAL_DEG_PER_HOUR,
       dtHours,
-      clock: `${hh}:${mm} ${label}`,
+      clock: formatZoneClock(wall.hour, wall.minute, zone),
       date,
       ms: slidMs,
     };
@@ -3831,7 +3831,7 @@ export default function App() {
     const maxJd = resolvedEclipse.event.maximum;
     const [eclY, eclM, eclD] = resolvedEclipse.row.id.split('-').map(Number);
     // All values below are computed numbers/times and localized strings (the
-    // zone abbreviations come from the platform's time-zone data) — nothing
+    // zone names come from the app's zone catalogue, lib/atlas/zoneName) — nothing
     // user-authored reaches this HTML.
     const card = (rows: string, twoClocks: boolean, sub = '') =>
       `<div class="ui-tip"><span class="ui-tip-title">${title}</span>` +
@@ -3858,9 +3858,13 @@ export default function App() {
         head: t('map.eclipseCard.utc'),
         utc: true,
       };
+      // The place's clock (eclipsePlaceClock, on the one zone reader every surface uses:
+      // the zone in force at each instant, the place's own LMT in its era), named in the
+      // shared format — "EDT (UTC−04:00)", "LMT (UTC+00:39:57)" — on the head and on any
+      // time read under another name. (2026-10-07)
       const place = eclipsePlaceClock(lat, lng);
       if (!place || [maxJd, ...jds].every((jd) => place(jd).offsetHours === 0)) return [utc];
-      const zoneAt = (jd: number) => place(jd).zone ?? t('map.eclipseCard.lmt');
+      const zoneAt = (jd: number) => formatZoneLabel(place(jd).name);
       return [
         {
           read: (jd) => jdToClock(jd, place(jd).offsetHours),
@@ -4515,6 +4519,39 @@ export default function App() {
   // "no overlay" leave the natal chart alone.)
   const isTimeOverlay = TIME_OVERLAY_MODES.has(overlayMode);
   const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
+  // The overlay's instant as epoch ms — what the chart statement and the capture caption
+  // read its moment from, rather than parsing the layer's "YYYY-MM-DD HH:MM" caption
+  // string back: the target date, or the eclipse maximum the eclipse chart is cast for.
+  // Null for synastry, which is a person rather than a moment. (2026-10-07)
+  const overlayMs =
+    !overlayLayer || overlayLayer.kind === 'synastry'
+      ? null
+      : overlayLayer.kind === 'eclipses'
+        ? resolvedEclipse
+          ? jdToMs(resolvedEclipse.event.maximum)
+          : null
+        : targetDate;
+  // The chart statement's inputs for the sidebar (lib/chartHeader), in one bundle. The
+  // overlay goes in whole — CCG too, which the model knows makes no wheel — with the REAL
+  // return body and promotion state: the sidebar's other overlay props are nulled while
+  // the overlay is promoted, but the statement has to name a promoted return as the
+  // return it is. (2026-10-07)
+  const sidebarHeader = useMemo<SidebarHeaderInfo>(
+    () => ({
+      overlay: overlayLayer
+        ? {
+            kind: overlayLayer.kind,
+            ms: overlayMs,
+            promoted: promoteOverlay,
+            returnBody: overlayReturn,
+            partner: overlayLayer.kind === 'synastry' ? partner : null,
+          }
+        : null,
+      zodiac: effZodiacMode,
+      nodeType,
+    }),
+    [overlayLayer, overlayMs, promoteOverlay, overlayReturn, partner, effZodiacMode, nodeType],
+  );
   // Eclipses ▸ Display ▸ Other Lines: unlike the time overlays' Natal toggle
   // (which promotes the overlay to stand in for the chart), turning this off simply
   // clears every OTHER line off the map — the chart's angle lines, derived
@@ -4925,6 +4962,38 @@ export default function App() {
     };
   }, [current, pinned, isNatalPin, pinnedLabel, hoverLabel]);
 
+  // The Calculations caption ends with the TIME overlay drawn on the map and its moment
+  // (Lina's capture question, answered yes on 2026-10-07): a capture showing Tr or Sp
+  // lines otherwise captioned only the natal date, and the overlay's date was nowhere.
+  // The moment reads in the caption place's clock — the pin, else the birthplace, the
+  // place the captured wheel is cast for — as the chart header's overlay line reads in
+  // its cast place's. Transits (and a return, which is transits at one instant) carry
+  // the clock; the symbolic clocks — progressions, directions, CCG — the date alone,
+  // since the time of day is no part of what they say. A return's date is the subject's
+  // (a solar return falls on the birthday), so Discreet masks it as it masks the birth
+  // date. Nothing is added with no time overlay drawn. Built here rather than in
+  // captureCalcText, which is declared before the overlay exists. (2026-10-07)
+  const captureOverlayText = useMemo(() => {
+    if (!overlayLayer || overlayMs == null || !captionPlace) return null;
+    const kind = overlayLayer.kind;
+    if (!TIME_OVERLAY_MODES.has(kind)) return null;
+    const { zone, wall } = castClockAt(overlayMs, captionPlace.lat, captionPlace.lng);
+    const name = overlayReturn
+      ? t(`timeline.returns.${overlayReturn}.chartName` as 'timeline.returns.solar.chartName')
+      : t(`captureHud.calcOverlay.${kind as Exclude<typeof kind, 'synastry' | 'eclipses'>}`);
+    const date = new Intl.DateTimeFormat('en', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(wall.year, wall.month - 1, wall.day)));
+    const masked = !!overlayReturn && identity.on;
+    if (kind !== 'transits') return `${name} · ${date}`;
+    return masked
+      ? `${name} · ${identity.date(date)} · ${identity.time('')}`
+      : `${name} · ${date} · ${formatZoneClock(wall.hour, wall.minute, zone)}`;
+  }, [overlayLayer, overlayMs, captionPlace, overlayReturn, identity, t]);
+
   // The formatted value of every caption field, computed once. The caption joins the
   // ENABLED ones (below) and the download filename reuses the same values, so the two can
   // never drift. Date/time are formatted in UTC so the birth clock time isn't shifted by
@@ -4943,11 +5012,17 @@ export default function App() {
     // when a pin has relocated the caption to somewhere the user chose.
     const blankPlace = identity.on && !captionPlace.relocated;
     const place = blankPlace ? identity.text : (v: string) => v;
+    // A composite has no moment (Lina's ruling, 2026-10-06 — a chart of midpoints is
+    // not a chart OF a moment): its stored minute is only the frame's anchor, so the
+    // date and time fields stay empty and drop out of the caption below, as the header,
+    // the Reports cover and the synastry bar already leave it out. (2026-10-07)
+    const noMoment = !!current.composite;
     return {
+      noMoment,
       name: identity.on
         ? identity.name(current.name)
         : displayName(current.name),
-      date: identity.date(
+      date: noMoment ? '' : identity.date(
         new Intl.DateTimeFormat('en', {
           day: 'numeric',
           month: 'short',
@@ -4955,7 +5030,7 @@ export default function App() {
           timeZone: 'UTC',
         }).format(dt),
       ),
-      time: identity.time(
+      time: noMoment ? '' : identity.time(
         new Intl.DateTimeFormat('en', {
           hour: '2-digit',
           minute: '2-digit',
@@ -4963,34 +5038,39 @@ export default function App() {
           timeZone: 'UTC',
         }).format(dt),
       ),
-      // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
-      // Stays the BIRTH offset even when relocated: the date and time are the birth
+      // The birth moment's clock with its zone in the shared format (2026-10-07):
+      // "09:30 EDT (UTC−04:00)", the abbreviation in force at the birthplace on that
+      // date, named only where it gives exactly the stored offset (lib/atlas/zoneName).
+      // Stays the BIRTH zone even when relocated: the date and time are the birth
       // moment, and that moment's clock reading doesn't change by looking from
-      // elsewhere. Only the place fields below follow the pin. Blanked, it drops out
-      // entirely rather than becoming a second run of dots after the blanked time —
-      // one mask per fact reads as hidden, two reads as broken.
-      tzLabel: identity.on ? '' : formatUtcOffset(current.tzOffset),
+      // elsewhere. Only the place fields below follow the pin. Blanked, the zone drops
+      // out entirely rather than becoming a second run of dots after the blanked time —
+      // one mask per fact reads as hidden, two reads as broken. Empty when blanked, so
+      // the caption line falls back to the bare (masked) time.
+      timeZoned: identity.on || noMoment
+        ? ''
+        : formatZoneClock(current.hour, current.minute, zoneNameForChart(current)),
       location: place(captionPlace.label),
       // The captioned place's full latitude + longitude (DMS, same format as the
       // corner readout).
       coordinates: place(`${fmtLat(captionPlace.lat)} ${fmtLng(captionPlace.lng)}`),
-      calculations: captureCalcText,
+      calculations: captureOverlayText
+        ? `${captureCalcText} · ${captureOverlayText}`
+        : captureCalcText,
     };
-  }, [current, captionPlace, captureCalcText, identity]);
+  }, [current, captionPlace, captureCalcText, captureOverlayText, identity]);
   // Caption fields — only the enabled ones, in display order. The footer joins them into one
   // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
   // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
   const captureCaptionLines = useMemo(() => {
     if (!captureFields) return [] as string[];
     return (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
-      .filter((k) => captureCaptionFields[k])
-      // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
-      // other field renders as-is. The offset is appended only here, so the filename — which
+      .filter((k) => captureCaptionFields[k] && !(captureFields.noMoment && (k === 'date' || k === 'time')))
+      // The time field carries its zone alongside it (e.g. "09:30 EDT (UTC−04:00)"); every
+      // other field renders as-is. The zone is added only here, so the filename — which
       // reads the bare value from captureFields — never picks it up.
       .map((k) =>
-        k === 'time' && captureFields.tzLabel
-          ? `${captureFields.time} ${captureFields.tzLabel}`
-          : captureFields[k],
+        k === 'time' && captureFields.timeZoned ? captureFields.timeZoned : captureFields[k],
       );
   }, [captureFields, captureCaptionFields]);
   // Which of those lines the band keeps whole when a caption still overflows at two lines: the
@@ -5000,7 +5080,7 @@ export default function App() {
   const captureCaptionKeep = useMemo(() => {
     if (!captureFields) return null;
     const i = (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
-      .filter((k) => captureCaptionFields[k])
+      .filter((k) => captureCaptionFields[k] && !(captureFields.noMoment && (k === 'date' || k === 'time')))
       .indexOf('coordinates');
     return i < 0 ? null : i;
   }, [captureFields, captureCaptionFields]);
@@ -6127,7 +6207,9 @@ export default function App() {
 
   // Build a relationship chart from the active chart + its synastry partner using the
   // chosen method, make it the active chart, and clear the partner — the synastry view
-  // stays on (its partner slot just empties for re-picking).
+  // stays on (its partner slot just empties for re-picking). Both builders return their
+  // parents with the chart — `composite` or, since 2026-10-07, `davison`, which the
+  // chart header reads to say what a Davison was derived from — so the spread stores them.
   const handleGenerateRelationship = () => {
     if (overlayMode !== 'synastry') return;
     if (!current || !partner) return;
@@ -8088,9 +8170,9 @@ export default function App() {
           overlayLabel={
             promoteOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
           }
-          overlayMoment={
-            promoteOverlay || isCyclo ? null : (overlayLayer?.moment ?? null)
-          }
+          // The chart statement's inputs: the header, the wheel corners and the Dual
+          // layout's second header all read the one model built from these. (2026-10-07)
+          header={sidebarHeader}
           overlayKind={overlayLayer?.kind ?? null}
           // The synastry partner's own record, so the second wheel's header can
           // introduce the partner as the panel header introduces the active chart —

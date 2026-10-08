@@ -154,20 +154,8 @@ export function offsetHoursAt(iana: string, ms: number): number {
   return DateTime.fromMillis(ms, { zone: iana }).offset / 60;
 }
 
-// Short zone label at an instant, e.g. "EDT", "GMT+5:30". Falls back to a plain
-// UTC offset when the zone has no localized name.
-export function zoneLabelAt(iana: string, ms: number): string {
-  const dt = DateTime.fromMillis(ms, { zone: iana });
-  const name = dt.toFormat('ZZZZ');
-  return name && !/^GMT$/.test(name) ? name : formatUtcOffset(dt.offset / 60);
-}
-
-// Format an east-positive hour offset as "UTC-05:00" / "UTC+05:30".
-export function formatUtcOffset(hours: number): string {
-  const sign = hours < 0 ? '-' : '+';
-  const abs = Math.abs(hours);
-  const h = Math.floor(abs);
-  const m = Math.round((abs - h) * 60);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `UTC${sign}${p(h)}:${p(m)}`;
-}
+// zoneLabelAt ("EDT", "GMT+5:30") and formatUtcOffset ("UTC-05:00") were removed on
+// 2026-10-07, once the last importer had moved. Every zoned clock now prints one way,
+// "09:30 EDT (UTC−04:00)", through zoneName.ts: the name in force is read from the zone
+// catalogue, where the browser has none for New York before 1970 ("GMT-4") nor for
+// Berlin in en-US ("GMT+2"), and the offset keeps a mean time's seconds and a true minus.

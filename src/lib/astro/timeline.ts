@@ -370,7 +370,7 @@ export interface OverlayLayer {
    *  (which has no timeline bar). */
   measure: string | null;
   /** Full spelled-out label for the roomy expanded-view caption, e.g.
-   *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 UTC". */
+   *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 (UTC)". */
   labelFull: string;
   /** The overlay's target instant as "YYYY-MM-DD HH:MM" (UTC), for surfaces that want the
    *  raw date/time without the timeline bar in view (the expanded wheel's overlay caption).

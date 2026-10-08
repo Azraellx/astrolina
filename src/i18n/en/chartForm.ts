@@ -58,11 +58,33 @@ export const chartForm = {
       utc: 'A fixed whole-hour offset from UTC, with no daylight saving.',
     },
     // The folded field's link (2026-10-05): the same words as the coordinates'
-    // link below it (enterCoords) — the two sit one under the other and do the
-    // same thing — rather than naming the current state, as "Automatic" did. Its
-    // spoken name also says what is set now, which the visible words don't.
+    // link (enterCoords) — the two do the same thing — rather than naming the
+    // current state, as "Automatic" did. It also folds the chooser it opened
+    // (2026-10-07); the row beside it says what is set.
     setManually: 'Set manually',
-    setManuallyAria: 'Time zone set automatically from the birthplace. Set it manually',
+    // The radios the link unfolds (2026-10-07, Lina's spec). {zone} is the
+    // zone's name as the row prints it: "Eastern Daylight Time · EDT
+    // (UTC−04:00)". chooseAuto marks the zone in force; chooseStated is an
+    // override the date or place has since moved off the place's own pair, so
+    // it still has a row to stay checked on.
+    chooseAuto: '{zone} — Automatic',
+    chooseStated: '{zone} — Manual override',
+    // Trails the row's zone when it was stated rather than looked up: it stays
+    // put when the date or place moves.
+    manualOverride: 'Manual override',
+    // The last radio, with a box beside it. The placeholder is the format the
+    // row prints offsets in; the parser also reads 5hw00, 4:56:02 W and UT.
+    customLabel: 'Custom offset:',
+    customPlaceholder: '−04:00',
+    // A typed offset with no sign or letter: the Custom row has no East/West
+    // control, so it asks rather than guessing a side.
+    offsetDirection: 'Which way from UTC? Add a sign or a letter: −5:30 or +5:30, 5:30 W or 5:30 E.',
+    // The ⚠ on an override that no longer fits the place and date (no offset the
+    // place's clock read that year, nor its mean time in that era). The override
+    // is kept: this flags it, it never reverts it. The title is short because tip
+    // titles don't wrap — the sentence overflowed its card on a phone (2026-10-07).
+    implausible: 'Check this zone',
+    implausibleHint: 'It matches no time this place kept that year. It stays as you set it: check the source, or choose Automatic under Set manually.',
     // The one list the unfolded field shows (2026-10-05), in the app's own
     // dropdown, so each entry has a hover tip. {iana} is the zone's id and
     // {offset} both notations, neither translated. pickSaved names the terms a
@@ -91,9 +113,6 @@ export const chartForm = {
     pickDaylightHint: 'Daylight time: {zone}, {amount}.',
     setPlace: 'Set a birthplace to choose a time zone',
     setDate: 'Add the birth date to set the time zone',
-    // Auto's own line: which zone the birthplace resolved to. {iana} is the
-    // zone's id, not translated.
-    detected: 'Detected from the birthplace: {iana}',
     // Standard zone + daylight. The zone names themselves are catalogue data
     // (lib/atlas/zoneEntry.ts), shown with region and offset, never alone.
     standardLabel: 'Standard zone',
@@ -109,7 +128,7 @@ export const chartForm = {
     standardNone:
       'No zone in this list was this birthplace’s standard time on this date. Choose one, or give the offset instead.',
     // A daylight correction that takes the total past ±15 h (Line Islands +
-    // double summer time). {offset} in both notations.
+    // double summer time). {offset} as "UTC+16:00".
     offsetRange: 'That comes to {offset}, more than 15 hours from UT. Choose another correction.',
     daylightLabel: 'Daylight correction',
     // {amount} is the correction, "+1 h" or "+0:30".
@@ -123,8 +142,10 @@ export const chartForm = {
     // Exact offset: typed as the source prints it.
     offsetLabel: 'Offset as your source gives it',
     offsetPlaceholder: 'e.g. 5hw00, +5:30, 4:56:02 W',
+    // Leads with the ISO form the row prints (2026-10-07); "5hw00" still reads,
+    // but is no longer the example a reader is shown.
     offsetUnread:
-      'Can’t read that as an offset. Write it as 5hw00, −5:00, 4:56:02 W or UT, without decimals.',
+      'Can’t read that as an offset. Write it as −05:00, +5:30, 4:56:02 W or UT, without decimals.',
     directionAria: 'Direction from Greenwich',
     east: 'E',
     eastTip: 'East of Greenwich',
@@ -166,29 +187,39 @@ export const chartForm = {
     // Switching into Exact offset from an offset past ±15 h (a date-line mean time).
     offsetNone:
       'This birth’s offset, {offset}, is more than 15 hours from UT, past what an offset can state. Type one, or switch back to Auto.',
-    // The line under the control: what the entered clock means in UT.
-    // {local} is the clock plus any zone abbreviation ("14:30 EDT"), {offset}
-    // both notations ("UTC−4 · 4h W").
-    confirm: '{local} ({offset}) = {ut} UT',
-    confirmNextDay: '{local} ({offset}) = {ut} UT the next day',
-    confirmPrevDay: '{local} ({offset}) = {ut} UT the day before',
-    confirmNoTime: '{line}, using noon for the unknown time',
     // A saved chart whose stored offset its own terms no longer give (older zone
     // data, a file's offset kept on import) reopens on that stored number. The
     // note names the terms it was saved in: Auto, a picked zone ({zone} is its
-    // id, not translated), the whole-hour picker, or a recorded entry.
-    keptAsSaved: 'Kept as saved. Automatic would now give {offset}.',
-    keptAsSavedZone: 'Kept as saved. {zone} would now give {offset}.',
-    keptAsSavedUtc: 'Kept as saved. Its whole-hour offset would now give {offset}.',
-    keptAsSavedTerms: 'Kept as saved. The terms recorded with it would now give {offset}.',
+    // id, not translated), the whole-hour picker, or a recorded entry. {now} is
+    // what they would give now, named as the row names a zone: "EDT (UTC−04:00)".
+    // (The readback line that sat above this — "09:30 (UTC−4 · 4h W) = 13:30
+    // UT" — was retired on 2026-10-07; the 12-hour echo took its job.)
+    keptAsSaved: 'Kept as saved. Automatic would now give {now}.',
+    keptAsSavedZone: 'Kept as saved. {zone} would now give {now}.',
+    keptAsSavedUtc: 'Kept as saved. Its whole-hour offset would now give {now}.',
+    keptAsSavedTerms: 'Kept as saved. The terms recorded with it would now give {now}.',
     keptAsSavedUnread: 'Kept as saved. The terms recorded with it can’t be read.',
     composite: 'UT, fixed for a composite chart',
-    errorPending: 'Choose a time zone, or switch back to Auto.',
-    errorRange: 'A time zone can’t be more than 15 hours from UT. Choose another correction, or switch back to Auto.',
-    verifyDst: 'verify DST',
-    // Shown when the birth predates standard time in this region: the offset is
-    // the birthplace's own local mean time, derived from its longitude.
-    lmt: 'LMT (local mean time of the birthplace)',
+    errorPending: 'Choose a time zone, or switch back to Automatic.',
+    errorRange: 'A time zone can’t be more than 15 hours from UT. Choose another correction, or switch back to Automatic.',
+    // The ⚠ on the row when the zone data's daylight-saving history for this
+    // place and date is doubtful (a lookup's flag; never a stated zone's). Was
+    // the words "⚠ verify DST" in a line of their own until 2026-10-07. A
+    // local-mean-time birth needs no note of its own any more: the row's name
+    // says it ("Local Mean Time · LMT (UTC−04:56:02)").
+    verifyDst: 'Verify daylight saving',
+    verifyDstHint:
+      'The time-zone data is unsure whether daylight saving applied here on this date. Check the zone against the birth record.',
+  },
+  // The 12-hour echo beside the time boxes (2026-10-07, Lina's spec): "21 : 30
+  // 9:30 pm", so a "9:30 PM" off a certificate typed as 09:30 has something on
+  // screen contradicting it. Never stored and never shown anywhere else — the
+  // app's one 12-hour text. {time} is "9:30"; noon is 12:30 pm, midnight 12:30
+  // am. `aria` is what the time boxes are described by (the echo is visual).
+  timeEcho: {
+    am: '{time} am',
+    pm: '{time} pm',
+    aria: 'In the 12-hour clock: {echo}',
   },
   // The note shown once the user has moved past an EMPTY time (started on the
   // birthplace) — the moment "leave it empty" has already happened, so it says
@@ -197,8 +228,9 @@ export const chartForm = {
   timeUnknown: {
     hint: 'No birth time will be saved as Unknown. You’ll still see the planets in their signs; on celestial maps, lines and houses need an exact time, so they’ll stay hidden there.',
   },
-  // The tag toggle beside the time inputs: a "Tag" caption over a button whose label
-  // is the tag name; its .ui-tip explains what it does. Normally the Star toggle; a
+  // The tag toggle, on its own row after the coordinates since 2026-10-07 (it sat
+  // beside the time boxes): a "Tag" caption, then a button whose label is the tag
+  // name; its .ui-tip explains what it does. Normally the Star toggle; a
   // chart carrying a system tag shows that instead — 'shared' (link-received) can be
   // removed by pressing it, 'space' (app-generated) is a fixed, informational mark.
   tag: {
@@ -250,6 +282,10 @@ export const chartForm = {
   placeTabsAria: 'Which place to edit',
   latitude: 'Latitude',
   longitude: 'Longitude',
+  // The coordinates' summary row: one pair in DMS, 40°N55'52" 073°W53'56", as
+  // every other surface prints a chart's place (2026-10-07; it showed the
+  // decimal latitude and longitude under a label each).
+  coordinates: 'Coordinates',
   // Worded like the time zone's link above it (tz.setManually, 2026-10-05):
   // two links, one under the other, doing the same thing.
   enterCoords: 'Set manually',

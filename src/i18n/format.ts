@@ -19,6 +19,12 @@ export interface Formatters {
   /** Full weekday name in the active locale, 0 = Sunday (the `Date#getUTCDay`
    *  numbering, not Luxon's Monday-first one). */
   weekdayName(weekday0Sun: number): string;
+  /** Abbreviated weekday name ("Thu"), same numbering as weekdayName. */
+  weekdayAbbr(weekday0Sun: number): string;
+  /** A civil date with its weekday — "5 June 1941, Thu" — for a chart's own moment
+   *  (Lina's chart-header spec, 2026-10-06). The weekday is the civil date's, so it is
+   *  computed from year/month/day alone, never from an instant in some zone. */
+  dateWithWeekday(year: number, month1to12: number, day: number): string;
   /** Locale-aware number formatting (decimal separator, grouping). */
   num(value: number, opts?: Intl.NumberFormatOptions): string;
   /**
@@ -40,6 +46,13 @@ export function makeFormatters(locale: string): Formatters {
     monthAbbr: (month) =>
       DateTime.fromObject({ month }).setLocale(locale).toFormat('LLL'),
     weekdayName: (wd) => Info.weekdays('long', { locale })[(wd + 6) % 7],
+    weekdayAbbr: (wd) => Info.weekdays('short', { locale })[(wd + 6) % 7],
+    dateWithWeekday: (year, month, day) => {
+      const wd = new Date(Date.UTC(2000, month - 1, day)).setUTCFullYear(year);
+      const weekday0Sun = new Date(wd).getUTCDay();
+      const monthName = DateTime.fromObject({ month }).setLocale(locale).toFormat('LLLL');
+      return `${day} ${monthName} ${year}, ${Info.weekdays('short', { locale })[(weekday0Sun + 6) % 7]}`;
+    },
     num: (value, opts) => new Intl.NumberFormat(locale, opts).format(value),
     list: (items, type = 'conjunction') =>
       new Intl.ListFormat(locale, { style: 'long', type }).format(items),

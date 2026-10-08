@@ -11,45 +11,50 @@
 // sign flips or a daylight hour goes in twice. Auto stays the default and works
 // as it always has; the other four ways sit beside it on one switch.
 //
-// Every offset is written in BOTH notations, "UTC−5 · 5h W", because they run
-// in opposite directions and a reader copying from a source in one should never
-// have to convert to the other. The line under the control says what the
-// entered clock means in UT, which is the one number the chart is cast from.
-//
 // State lives in useZoneEntry (it is read again on submit); this only draws it.
 //
-// Auto opens folded (2026-10-05, Salvatore): the detected zone and the UT line
-// as a read-only summary, with a link on the right to unfold the rest — the
-// coordinates' pattern, and since the same day their wording too: both links
-// read "Set manually" (they had said "Automatic" and "Enter manually", two
-// names for one gesture, one above the other). Most births need nothing
-// else, and five ways of giving a zone up front read as a form to fill rather
-// than an answer already given. A chart saved in any other way opens unfolded,
-// in its own terms. Unfolding is one-way for the form's life and writes nothing.
+// Auto opens folded (2026-10-05, Salvatore): a read-only summary, with a link on
+// the right to unfold the rest — the coordinates' pattern, and since the same
+// day their wording too: both links read "Set manually" (they had said
+// "Automatic" and "Enter manually", two names for one gesture, one above the
+// other). Most births need nothing else, and five ways of giving a zone up
+// front read as a form to fill rather than an answer already given.
 //
 // One list instead of five ways (2026-10-05, Salvatore): unfolded, the field
 // was a form of its own — a five-way switch over two selects, a text box, an
 // E/W switch, two chips and a search — in a pane people come to for a name, a
-// date and a place. It now unfolds to ONE dropdown (the app's own, HintMenu —
-// see ZonePickMenu for why not a native select): Automatic, the birthplace's
-// local mean time, UT, and the named standard and daylight times, each row a
-// whole answer as a birth record prints it ("Eastern Daylight (EDT)"). That
-// covers what a source states nearly always; the typed offset, the IANA search,
-// the whole-hour UTC picker and the war, double and half-hour corrections are
-// hidden behind SHOW_ALL_ZONE_WAYS below, not removed. A chart saved in any of
-// those terms still reopens in them — the list offers them back as "As saved" —
-// and saves them back verbatim; imports and share links still carry them.
+// date and a place. It unfolded to ONE dropdown (the app's own, HintMenu — see
+// ZonePickMenu for why not a native select) of Automatic, the birthplace's
+// local mean time, UT, and the named standard and daylight times.
+//
+// Lina's radios (2026-10-07, her entry-form spec of 6 October; Salvatore chose
+// them). The row names the zone IN FORCE for the entered date — "Eastern
+// Daylight Time · EDT (UTC−04:00)", live as the date changes — because it is
+// the reader's only check that daylight saving was resolved; the IANA id it
+// showed ("America/New_York") answered neither question. No line under it:
+// the date and the birthplace are on the same screen, so saying where the zone
+// came from adds nothing. "Set manually" unfolds two plausible zones — the one
+// in force (Automatic) and the other half of the place's standard/daylight
+// pair — plus a custom offset: the real question is "was DST applied?", and a
+// long list is where people mis-pick. An override is said on the row ("·
+// Manual override"), stays put when the date or place moves, and is flagged —
+// never reverted — when it stops fitting them.
+//
+// Every offset is printed in the ISO form only, "UTC−04:00" (Lina, 2026-10-06).
+// The astrological "4h W" runs the other way, and showing both put two opposite
+// notations on one line; the readback "… = 13:30 UT" went with it, its job now
+// done by the 12-hour echo beside the time. The parser still READS "5hw00" and
+// "4:56:02 W" — sources print them. The list and the five ways stay in the code
+// behind the switches below; they keep their own notation, being hidden.
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { DateTime } from 'luxon';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
   DAYLIGHT_OPTIONS,
   daylightSeconds,
   entrySeconds,
   formatAstroNotation,
   formatBothNotations,
-  formatClock,
-  localToUt,
+  formatUtcNotation,
   MAX_ZONE_OFFSET_SECONDS,
   OFFSET_TEXT_MAX,
   resolveZoneChoice,
@@ -57,28 +62,42 @@ import {
   standardZoneById,
   UTC_PICKER_HOURS,
   type DaylightCode,
-  type ResolvedZone,
   type StandardZone,
   type ZoneChoice,
   type ZoneEntryMode,
   type ZoneMoment,
 } from '../../lib/atlas/zoneEntry';
-import { TipButton } from '../ui/HoverTip';
+import { formatZoneLabel, formatZoneLong, type ZoneName } from '../../lib/atlas/zoneName';
+import { TipButton, TipSpan } from '../ui/HoverTip';
+import { WarningIcon } from '../ui/WarningIcon';
 import { HintMenu } from '../Sidebar/Sidebar';
 import { useT, type TFn } from '../../i18n';
 import { ZoneSearchField } from './ZoneSearchField';
 import type { ZoneEntryState } from './useZoneEntry';
-import { pickOfValue, zonePickRows, zonePickValue, type ZonePickRow } from './zoneEntryModel';
+import {
+  choiceFields,
+  customOffsetText,
+  pickOfValue,
+  zoneNameOf,
+  zonePickRows,
+  zonePickValue,
+  type ZonePickRow,
+  type ZoneRadio,
+} from './zoneEntryModel';
 import '../ui/SplitSelect.css';
 
-// ── THE SWITCH ───────────────────────────────────────────────────────────────
-// false: the field unfolds to the one list (2026-10-05). true: the five-way
-// switch of 2026-10-02 comes back, every way's controls with it, exactly as it
-// was — nothing below it was changed or removed, and the model, its verify
-// script, the importer and the share link run the same either way. Bringing it
-// back also wants the Help article's two time-zone paragraphs and the methods
-// page's sentences on typed offsets restored (git history, 2026-10-05).
+// ── THE SWITCHES ─────────────────────────────────────────────────────────────
+// Both false: the field unfolds to Lina's radios (2026-10-07). SHOW_ZONE_LIST
+// brings back the one list of 2026-10-05; SHOW_ALL_ZONE_WAYS the five-way
+// switch of 2026-10-02, every way's controls with it, exactly as it was (it
+// wins if both are on). Nothing behind them was removed, and the model, its
+// verify script, the importer and the share link run the same whichever is on.
+// Bringing either back also wants the Help article's time-zone paragraphs and
+// the methods page's sentences on typed offsets restored (git history,
+// 2026-10-05 and 2026-10-07).
 const SHOW_ALL_ZONE_WAYS = false as boolean;
+const SHOW_ZONE_LIST = false as boolean;
+const RADIOS = !SHOW_ALL_ZONE_WAYS && !SHOW_ZONE_LIST;
 
 const MODES: readonly ZoneEntryMode[] = ['auto', 'standard', 'offset', 'iana', 'utc'];
 
@@ -143,8 +162,9 @@ const daylightText = (code: DaylightCode, t: TFn) =>
     amount: amountOf(daylightSeconds(code)),
   });
 
-/** The terms a saved chart reopened in, for its "As saved" entry — the ones the
- *  list has no row for. Each ends on the offset they give at this moment. */
+/** The terms a saved chart reopened in, for the list's "As saved" entry — the
+ *  ones the list has no row for. Each ends on the offset they give at this
+ *  moment. (The list's own notation; the radios name the zone instead.) */
 function savedTerms(c: ZoneChoice, at: ZoneMoment, t: TFn): string {
   const offset = formatBothNotations(resolveZoneChoice(c, at).seconds);
   switch (c.mode) {
@@ -162,9 +182,8 @@ function savedTerms(c: ZoneChoice, at: ZoneMoment, t: TFn): string {
 }
 
 /**
- * The unfolded field (2026-10-05): one list, each entry a whole answer.
- * Choosing is the whole action — there is nothing to confirm, and the line
- * under it says at once what the clock now means in UT.
+ * The one list (2026-10-05; behind SHOW_ZONE_LIST since 2026-10-07): each entry
+ * a whole answer. Choosing is the whole action — there is nothing to confirm.
  *
  * The app's own dropdown (HintMenu, as the Source rating and the Calculations
  * settings use), not a native <select>: a native one can only be styled shut —
@@ -236,64 +255,186 @@ function ZonePickMenu({ zone }: { zone: ZoneEntryState }) {
   );
 }
 
-/** The zone's own short name at the birth moment ("EDT"), where it has one; a
- *  bare "GMT+5:30" says nothing the offset beside it doesn't. */
-function zoneAbbrev(iana: string | undefined, at: ZoneMoment): string {
-  if (!iana) return '';
-  const dt = DateTime.fromObject(
-    { year: at.year, month: at.month, day: at.day, hour: at.hour, minute: at.minute },
-    { zone: iana },
-  );
-  const name = dt.isValid ? (dt.setLocale('en-US').offsetNameShort ?? '') : '';
-  return /^[A-Za-z]{2,6}$/.test(name) ? name : '';
+/** The names every row of the field prints, worked out together — each one a
+ *  call into the shared naming rule. */
+interface RowNames {
+  /** The zone the field will save (the summary row). */
+  row: ZoneName;
+  auto: ZoneName | null;
+  other: ZoneName | null;
+  saved: ZoneName | null;
+  stated: ZoneName | null;
 }
 
-/** Abbreviations that stand for more than one offset — CST is four zones in the
- *  catalogue, IST and AST two each — and so are never shown on their own. BST is
- *  added by hand: the catalogue's only BST is Bangladesh, because British Summer
- *  Time is GMT + daylight there (GMT deliberately has no dstAbbr), but it is the
- *  name every British source prints. */
-const AMBIGUOUS_ABBRS: ReadonlySet<string> = (() => {
-  const offsets = new Map<string, Set<number>>();
-  const note = (abbr: string | undefined, seconds: number) => {
-    if (!abbr) return;
-    const key = abbr.toUpperCase();
-    const set = offsets.get(key) ?? new Set<number>();
-    set.add(seconds);
-    offsets.set(key, set);
-  };
-  for (const z of STANDARD_ZONES) {
-    note(z.abbr, z.std);
-    note(z.dstAbbr, z.std + daylightSeconds(z.dstCode ?? 'daylight'));
-  }
-  const out = new Set(['BST']);
-  for (const [abbr, set] of offsets) if (set.size > 1) out.add(abbr);
-  return out;
-})();
+/**
+ * The radios (2026-10-07). Native radio inputs sharing one name, so the group
+ * is one tab stop, the arrows move and choose, and every row is its label —
+ * with nothing hand-rolled to get wrong for a screen reader or a thumb.
+ *
+ * A pick made with a pointer folds the chooser, and the row above then states
+ * the result (Lina: "the same row states it plainly, and the link remains so
+ * the chooser can be reopened"). An arrow key only chooses: the arrows are how
+ * a keyboard reads the rows, and folding on the first press would close the
+ * list under them; Enter or Escape folds it. Custom never folds on its own
+ * click — it hands the pointer to the box beside it, where the work is.
+ */
+function ZoneRadios({
+  zone,
+  names,
+  id,
+  captionId,
+  problemId,
+  onDone,
+}: {
+  zone: ZoneEntryState;
+  names: RowNames;
+  id: string;
+  captionId: string;
+  problemId: string;
+  onDone: () => void;
+}) {
+  const { t } = useT();
+  const uid = useId();
+  const customLabelId = `${uid}-custom`;
+  const customRef = useRef<HTMLInputElement>(null);
+  // Set by a pointer press anywhere in the group, cleared by any key: the
+  // click a radio gets from an arrow key is otherwise indistinguishable.
+  const pointer = useRef(false);
+  const c = zone.chooser;
+  const r = zone.resolved;
+  if (!c || !r) return null;
 
-/** The label after the clock in the confirmation line: "EDT", "LMT", "UT", or
- *  nothing where the offset is the whole story — including where the only name
- *  to hand is an abbreviation several zones share. */
-function confirmLabel(choice: ZoneChoice, r: ResolvedZone, at: ZoneMoment): string {
-  if (r.lmt) return 'LMT';
-  let abbr = '';
-  switch (choice.mode) {
-    case 'auto':
-    case 'iana':
-      abbr = zoneAbbrev(r.tzIana, at);
-      break;
-    case 'standard': {
-      // The daylight name only on the correction it names: LHDT is Lord Howe
-      // + half an hour, never + 1 h.
-      const z = standardZoneById(choice.zone);
-      if (z && choice.daylight === 'standard') abbr = z.abbr ?? '';
-      else if (z && choice.daylight === (z.dstCode ?? 'daylight')) abbr = z.dstAbbr ?? '';
-      break;
+  const pick = (key: ZoneRadio) => {
+    switch (key) {
+      case 'auto':
+        zone.choose('auto');
+        break;
+      case 'other':
+        if (c.other) zone.choose({ zone: c.other.zone.id, daylight: c.other.daylight });
+        break;
+      case 'saved':
+        zone.choose('saved');
+        break;
+      case 'custom':
+        // Opens on the offset in effect, so choosing the row changes nothing
+        // until something is typed — and what is typed starts from a number
+        // that reads back exactly.
+        if (c.value !== 'custom') zone.choose({ custom: customOffsetText(r.seconds) });
+        break;
+      case 'stated':
+        // Already in effect: the row exists only while it is.
+        break;
     }
-    case 'offset':
-      return choice.basis === 'ut' ? 'UT' : '';
-  }
-  return abbr && !AMBIGUOUS_ABBRS.has(abbr.toUpperCase()) ? abbr : '';
+  };
+
+  const radio = (key: ZoneRadio, labelledBy?: string) => (
+    <input
+      type="radio"
+      className="tz-choice-radio"
+      name={uid}
+      checked={c.value === key}
+      aria-labelledby={labelledBy}
+      onChange={() => pick(key)}
+      onClick={() => {
+        if (!pointer.current) return;
+        pointer.current = false;
+        if (key === 'custom') {
+          customRef.current?.focus();
+          customRef.current?.select();
+        } else onDone();
+      }}
+      onKeyDown={(e) => {
+        // Enter would submit the whole form from a radio.
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (key === 'custom') customRef.current?.focus();
+        else onDone();
+      }}
+    />
+  );
+
+  const row = (key: ZoneRadio, label: string) => (
+    <label key={key} className={`tz-choice${c.value === key ? ' is-on' : ''}`}>
+      {radio(key)}
+      <span className="tz-choice-text">{label}</span>
+    </label>
+  );
+
+  const customBad = c.value === 'custom' && (zone.error === 'offset' || zone.error === 'direction');
+
+  return (
+    <div
+      className="tz-choices"
+      id={id}
+      role="radiogroup"
+      aria-labelledby={captionId}
+      onPointerDown={() => {
+        pointer.current = true;
+      }}
+      onKeyDown={(e) => {
+        pointer.current = false;
+        if (e.key === 'Escape') {
+          // The chooser closes, not the pane it sits in.
+          e.preventDefault();
+          e.stopPropagation();
+          onDone();
+        }
+      }}
+    >
+      {names.auto && row('auto', t('chartForm.tz.chooseAuto', { zone: formatZoneLong(names.auto) }))}
+      {c.other && names.other && row('other', formatZoneLong(names.other))}
+      {c.saved && names.saved && row('saved', t('chartForm.tz.pickSaved', { terms: formatZoneLong(names.saved) }))}
+      {c.stated && names.stated && row('stated', t('chartForm.tz.chooseStated', { zone: formatZoneLong(names.stated) }))}
+      <div className={`tz-choice tz-choice-custom${c.value === 'custom' ? ' is-on' : ''}`}>
+        <label className="tz-choice-label">
+          {radio('custom', customLabelId)}
+          <span className="tz-choice-text" id={customLabelId}>
+            {t('chartForm.tz.customLabel')}
+          </span>
+        </label>
+        <input
+          ref={customRef}
+          type="text"
+          className="tz-custom-input"
+          value={c.value === 'custom' ? zone.offsetText : ''}
+          onChange={(e) => zone.choose({ custom: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (!zone.error) onDone();
+          }}
+          placeholder={t('chartForm.tz.customPlaceholder')}
+          aria-labelledby={customLabelId}
+          aria-invalid={customBad || undefined}
+          aria-describedby={problemId}
+          maxLength={OFFSET_TEXT_MAX}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** A compact ⚠ on the row: the fact is the tip, the mark only says there is
+ *  one. Focusable, and named for a screen reader (the tip card is aria-hidden). */
+function ZoneMark({ tip, hint, className }: { tip: string; hint: string; className: string }) {
+  return (
+    <TipSpan
+      className={`tz-mark ${className}`}
+      tabIndex={0}
+      role="img"
+      aria-label={`${tip} ${hint}`}
+      placement="top"
+      tapReveal
+      tip={tip}
+      hint={hint}
+    >
+      <WarningIcon size={12} />
+    </TipSpan>
+  );
 }
 
 interface SegOption<V extends string> {
@@ -382,65 +523,85 @@ function SegmentedRadios<V extends string>({
 
 /** What "Kept as saved" names as the terms that would now give another offset:
  *  the way the chart was saved in, not always Auto (2026-10-02, found in
- *  review — a chart saved on Asia/Karachi was told Auto had moved). */
-function keptNote(kept: NonNullable<ZoneEntryState['kept']>, t: TFn): string {
+ *  review — a chart saved on Asia/Karachi was told Auto had moved). What they
+ *  would give is named the way the row names a zone (2026-10-07). */
+function keptNote(kept: NonNullable<ZoneEntryState['kept']>, at: ZoneMoment, t: TFn): string {
   const { was, now } = kept;
   if (!was || now == null) return t('chartForm.tz.keptAsSavedUnread');
-  const offset = formatBothNotations(now);
+  const name = formatZoneLabel(zoneNameOf(at, choiceFields(was, at)));
   switch (was.mode) {
     case 'auto':
-      return t('chartForm.tz.keptAsSaved', { offset });
+      return t('chartForm.tz.keptAsSaved', { now: name });
     case 'iana':
-      return t('chartForm.tz.keptAsSavedZone', { zone: was.zone, offset });
+      return t('chartForm.tz.keptAsSavedZone', { zone: was.zone, now: name });
     case 'utc':
-      return t('chartForm.tz.keptAsSavedUtc', { offset });
+      return t('chartForm.tz.keptAsSavedUtc', { now: name });
     default:
-      return t('chartForm.tz.keptAsSavedTerms', { offset });
+      return t('chartForm.tz.keptAsSavedTerms', { now: name });
   }
 }
 
-export function TimeZoneField({
-  zone,
-  hasPlace,
-  noTime,
-}: {
-  zone: ZoneEntryState;
-  hasPlace: boolean;
-  /** The time was left empty: the line says noon stands in for it. */
-  noTime: boolean;
-}) {
+export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPlace: boolean }) {
   const { t } = useT();
   const uid = useId();
   const captionId = `${uid}-caption`;
-  const confirmId = `${uid}-confirm`;
+  const problemId = `${uid}-problem`;
+  const chooserId = `${uid}-chooser`;
   const r = zone.resolved;
   const at = zone.at;
   const ready = hasPlace && !!r && !!at;
   const live = zone.choice;
 
-  // Folded only while the way is Auto: the mode can only leave Auto from the
-  // unfolded switch, and a chart reopened in other terms (a fall-back to its
-  // stored number included) starts unfolded, so nothing the reader set or must
-  // act on is ever folded away.
-  const [unfolded, setUnfolded] = useState(() => zone.mode !== 'auto');
-  const folded = !unfolded && zone.mode === 'auto';
-  // The link unmounts as it unfolds, so focus moves to the list (or the
-  // switch's checked segment) rather than dropping to the page.
+  // The radios start closed, override or not: the row states the zone either
+  // way. The older ways open on a chart saved in other terms, as they did.
+  const [open, setOpen] = useState(() => !RADIOS && zone.mode !== 'auto');
   const fieldRef = useRef<HTMLDivElement>(null);
-  const focusOnUnfold = useRef(false);
+  const linkRef = useRef<HTMLButtonElement>(null);
+  // Opening moves focus into what opened (the checked radio), so a keyboard
+  // lands where the choice is rather than back at the top of the page.
+  const focusOnOpen = useRef(false);
   useEffect(() => {
-    if (!unfolded || !focusOnUnfold.current) return;
-    focusOnUnfold.current = false;
+    if (!open || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
     fieldRef.current
       ?.querySelector<HTMLElement>(
-        SHOW_ALL_ZONE_WAYS ? '.tz-modes [role="radio"][aria-checked="true"]' : '.tz-pick .calc-menu-trigger',
+        SHOW_ALL_ZONE_WAYS
+          ? '.tz-modes [role="radio"][aria-checked="true"]'
+          : SHOW_ZONE_LIST
+            ? '.tz-pick .calc-menu-trigger'
+            : '.tz-choices input[type="radio"]:checked',
       )
       ?.focus();
-  }, [unfolded]);
-  const unfold = () => {
-    focusOnUnfold.current = true;
-    setUnfolded(true);
+  }, [open]);
+  const toggle = () => {
+    focusOnOpen.current = !open;
+    setOpen(!open);
   };
+  // Folding takes focus back to the link, which stays — the chooser it left
+  // is gone.
+  const fold = () => {
+    setOpen(false);
+    linkRef.current?.focus();
+  };
+
+  const { toSave, chooser } = zone;
+  const names = useMemo<RowNames | null>(() => {
+    if (!r || !at) return null;
+    // The row names what will be saved: an untouched record's own fields,
+    // otherwise the zone as resolved.
+    const row = zoneNameOf(at, toSave ?? { tzOffset: r.seconds / 3600, tzIana: r.tzIana, tzEntry: r.tzEntry });
+    if (!chooser) return { row, auto: null, other: null, saved: null, stated: null };
+    const { auto, other, saved, stated } = chooser;
+    return {
+      row,
+      auto: zoneNameOf(at, { tzOffset: auto.seconds / 3600, tzIana: auto.tzIana, tzEntry: auto.tzEntry }),
+      other: other
+        ? zoneNameOf(at, choiceFields({ mode: 'standard', std: other.zone.std, daylight: other.daylight, zone: other.zone.id }, at))
+        : null,
+      saved: saved ? zoneNameOf(at, choiceFields(saved, at)) : null,
+      stated: stated ? zoneNameOf(at, choiceFields(stated, at)) : null,
+    };
+  }, [r, at, toSave, chooser]);
 
   const modeOptions: SegOption<ZoneEntryMode>[] = MODES.map((m) => ({
     value: m,
@@ -452,10 +613,12 @@ export function TimeZoneField({
   if (zone.locked) {
     return (
       <div className="tz-field" role="group" aria-labelledby={captionId}>
-        <span className="tz-caption" id={captionId}>
-          {t('chartForm.timeZone')}
-        </span>
-        <p className="tz-fixed">{t('chartForm.tz.composite')}</p>
+        <div className="coord-summary tz-summary">
+          <span className="coord-summary-label" id={captionId}>
+            {t('chartForm.timeZone')}
+          </span>
+          <span className="tz-fixed">{t('chartForm.tz.composite')}</span>
+        </div>
       </div>
     );
   }
@@ -463,16 +626,11 @@ export function TimeZoneField({
   const offsetBad = ready && zone.mode === 'offset' && zone.error === 'offset';
   const rangeBad = ready && zone.error === 'range';
 
+  // The five ways' own controls (SHOW_ALL_ZONE_WAYS). Auto has none: the row
+  // above names its zone.
   let body: ReactNode = null;
-  if (ready && r && at) {
+  if (SHOW_ALL_ZONE_WAYS && ready && r && at) {
     switch (zone.mode) {
-      case 'auto':
-        body = (
-          <p className="tz-detected">
-            {t('chartForm.tz.detected', { iana: r.detected?.iana ?? r.tzIana ?? '' })}
-          </p>
-        );
-        break;
       case 'standard': {
         const std = live.mode === 'standard' ? live : null;
         body = (
@@ -547,7 +705,7 @@ export function TimeZoneField({
                 placeholder={t('chartForm.tz.offsetPlaceholder')}
                 aria-label={t('chartForm.tz.offsetLabel')}
                 aria-invalid={offsetBad || undefined}
-                aria-describedby={confirmId}
+                aria-describedby={problemId}
                 maxLength={OFFSET_TEXT_MAX}
                 autoComplete="off"
                 autoCapitalize="off"
@@ -653,76 +811,81 @@ export function TimeZoneField({
     }
   }
 
-  // The confirmation: what the entered clock means in UT. Replaced by the
-  // reason when the offset can't be used; absent while a way is pending.
-  let confirm: string | null = null;
-  if (ready && r && at && !zone.pending && !offsetBad && !rangeBad) {
-    const label = confirmLabel(live, r, at);
-    const clock = formatClock(at.hour, at.minute);
-    const u = localToUt(at.hour, at.minute, r.seconds);
-    const vars = {
-      local: label ? `${clock} ${label}` : clock,
-      offset: formatBothNotations(r.seconds),
-      ut: formatClock(u.hour, u.minute, u.second),
-    };
-    const line = t(
-      u.dayShift > 0
-        ? 'chartForm.tz.confirmNextDay'
-        : u.dayShift < 0
-          ? 'chartForm.tz.confirmPrevDay'
-          : 'chartForm.tz.confirm',
-      vars,
-    );
-    confirm = noTime ? t('chartForm.tz.confirmNoTime', { line }) : line;
-  }
-  const problem = offsetBad
-    ? t('chartForm.tz.offsetUnread')
-    : rangeBad && (live.mode === 'standard' || live.mode === 'offset')
-      ? t('chartForm.tz.offsetRange', { offset: formatBothNotations(entrySeconds(live)) })
-      : null;
+  // Why saving must wait, where the field can say. A way still pending says
+  // so in its own controls (the hidden ways); the radios never leave one.
+  const problem = !ready
+    ? null
+    : zone.error === 'direction'
+      ? t('chartForm.tz.offsetDirection')
+      : offsetBad
+        ? t('chartForm.tz.offsetUnread')
+        : rangeBad && (live.mode === 'standard' || live.mode === 'offset')
+          ? t('chartForm.tz.offsetRange', { offset: formatUtcNotation(entrySeconds(live), { padded: true }) })
+          : RADIOS && zone.error === 'pending'
+            ? t('chartForm.tz.errorPending')
+            : null;
 
-  // The notes Auto always had: its mean-time era, and the DST-history warning.
-  // The warning shows the flag saving will write (zone.flag): a lookup's, kept
-  // by a way that was only switched to; never a stated offset's.
-  const showLmt = ready && !zone.pending && zone.mode === 'auto' && !!r?.lmt;
+  // The DST-history warning shows the flag saving will write (zone.flag): a
+  // lookup's, kept by a way that was only switched to; never a stated offset's.
   const showDst = ready && !zone.pending && zone.flag;
+  const showKept = ready && !!zone.kept && !zone.pending && !!at;
+  // "Manual override" names a zone the reader (or the record) stated. A record
+  // kept on its stored number says what it is in the note under the row
+  // instead — nobody overrode anything there.
+  const suffix = zone.overridden && !showKept ? t('chartForm.tz.manualOverride') : null;
 
   const prompt = hasPlace ? t('chartForm.tz.setDate') : t('chartForm.tz.setPlace');
 
   return (
     <div ref={fieldRef} className="tz-field" role="group" aria-labelledby={captionId}>
-      {folded ? (
-        // The coordinates' summary row (.coord-summary): caption, value, and the
-        // link pushed to the right edge — offered only once there is a detected
-        // zone to change, as the coordinates' link waits for coordinates.
-        <div className="coord-summary tz-summary">
-          <span className="coord-summary-item">
-            <span className="coord-summary-label" id={captionId}>
-              {t('chartForm.timeZone')}
-            </span>
-            {ready && r && (
-              <span className="coord-summary-value tz-summary-zone">
-                {r.detected?.iana ?? r.tzIana ?? formatBothNotations(r.seconds)}
+      {/* The coordinates' summary row (.coord-summary): caption, value, and the
+          link pushed to the right edge — offered once there is a zone to
+          change, as the coordinates' link waits for coordinates. */}
+      <div className="coord-summary tz-summary">
+        <span className="coord-summary-label" id={captionId}>
+          {t('chartForm.timeZone')}
+        </span>
+        {ready && names ? (
+          <span className="coord-summary-value tz-summary-zone">
+            {formatZoneLong(names.row)}
+            {suffix && (
+              <span className="tz-summary-note">
+                {' · '}
+                <span className="tz-summary-suffix">{suffix}</span>
               </span>
             )}
+            {showDst && (
+              <ZoneMark className="tz-mark-dst" tip={t('chartForm.tz.verifyDst')} hint={t('chartForm.tz.verifyDstHint')} />
+            )}
+            {zone.implausible && (
+              <ZoneMark
+                className="tz-mark-implausible"
+                tip={t('chartForm.tz.implausible')}
+                hint={t('chartForm.tz.implausibleHint')}
+              />
+            )}
           </span>
-          {ready && (
-            <button
-              type="button"
-              className="coord-edit-link"
-              aria-label={t('chartForm.tz.setManuallyAria')}
-              onClick={unfold}
-            >
-              {t('chartForm.tz.setManually')}
-            </button>
-          )}
-        </div>
-      ) : (
-        <>
-          <span className="tz-caption" id={captionId}>
-            {t('chartForm.timeZone')}
-          </span>
-          {SHOW_ALL_ZONE_WAYS && (
+        ) : (
+          <span className="tz-prompt">{prompt}</span>
+        )}
+        {ready && (
+          <button
+            ref={linkRef}
+            type="button"
+            className="coord-edit-link"
+            aria-expanded={open}
+            aria-controls={open ? chooserId : undefined}
+            onClick={toggle}
+          >
+            {t('chartForm.tz.setManually')}
+          </button>
+        )}
+      </div>
+      {ready && open && names && (
+        RADIOS ? (
+          <ZoneRadios zone={zone} names={names} id={chooserId} captionId={captionId} problemId={problemId} onDone={fold} />
+        ) : SHOW_ALL_ZONE_WAYS ? (
+          <div id={chooserId} className="tz-ways">
             <SegmentedRadios
               className="tz-modes"
               ariaLabel={t('chartForm.tz.modesAria')}
@@ -732,34 +895,20 @@ export function TimeZoneField({
               disabledHint={prompt}
               options={modeOptions}
             />
-          )}
-        </>
-      )}
-      {!ready ? (
-        <p className="tz-prompt">{prompt}</p>
-      ) : folded ? null : SHOW_ALL_ZONE_WAYS ? (
-        body
-      ) : (
-        <ZonePickMenu zone={zone} />
+            {body}
+          </div>
+        ) : (
+          <div id={chooserId}>
+            <ZonePickMenu zone={zone} />
+          </div>
+        )
       )}
       {ready && (
-        <p
-          id={confirmId}
-          className={`tz-confirm${problem ? ' is-error' : ''}`}
-          aria-live="polite"
-          hidden={!confirm && !problem}
-        >
-          {problem ?? confirm}
+        <p id={problemId} className="tz-problem" aria-live="polite" hidden={!problem}>
+          {problem}
         </p>
       )}
-      {(showLmt || showDst) && (
-        <p className="tz-note">
-          {showLmt && <span>{t('chartForm.tz.lmt')}</span>}
-          {showLmt && showDst && <span> · </span>}
-          {showDst && <span className="tz-warn">⚠ {t('chartForm.tz.verifyDst')}</span>}
-        </p>
-      )}
-      {ready && zone.kept && !zone.pending && <p className="tz-note">{keptNote(zone.kept, t)}</p>}
+      {showKept && zone.kept && at && <p className="tz-note">{keptNote(zone.kept, at, t)}</p>}
     </div>
   );
 }

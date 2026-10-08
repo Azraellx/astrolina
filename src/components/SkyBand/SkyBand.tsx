@@ -52,7 +52,8 @@ import {
   type SkyBandTrackContext,
 } from '../../lib/extensions/skyBandTrack';
 import { shouldShowNudge } from '../../lib/plan';
-import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
+import { getIanaTimezone, offsetHoursAt } from '../../lib/atlas/timezone';
+import { formatZoneLabel, zoneNameAtInstant } from '../../lib/atlas/zoneName';
 import { usePhone } from '../../lib/touch';
 import { panelGlyphColor } from '../../lib/theme';
 import { planetInk } from '../../lib/themePalette';
@@ -433,6 +434,13 @@ export function SkyBand({
     const month = (phone ? fmt.monthAbbr : fmt.monthName)(wall.getUTCMonth() + 1);
     return `${wall.getUTCDate()} ${month} ${wall.getUTCFullYear()}`;
   }, [dayStart, zone, fmt, phone]);
+  // The shown day's zone, read at its local noon as the day label and the picker are —
+  // named in the one zone format, "EDT (UTC−04:00)" (2026-10-07): the abbreviation says
+  // whether daylight time applies on THIS day, which the zone's city never did.
+  const dayZone = useMemo(
+    () => (dayStart === null || !zone ? null : zoneNameAtInstant(zone, dayStart + MS_DAY / 2)),
+    [dayStart, zone],
+  );
   // An instant's wall-clock fraction of the shown day (the track's x-mapping).
   // Both ends use the offset AT THEIR OWN instant, so DST days place every
   // marker at its true local clock position.
@@ -1005,16 +1013,20 @@ export function SkyBand({
             </div>
             <div className="sky-band-side-row">
               {/* The zone is information, not an action — a clock icon + plain
-                  text with a hover note. */}
-              {zone && (
+                  text with a hover note. The text is the day's zone in the one format
+                  (it was the zone's city, "New York"); the note names it in full where a
+                  name is known, which on a phone is all there is (the text is hidden). */}
+              {zone && dayZone && (
                 <TipSpan
                   className="sky-band-zone"
                   placement="top"
                   tapReveal
-                  tip={t('skyTimes.zoneNote', { zone })}
+                  tip={t('skyTimes.zoneNote', {
+                    zone: dayZone.long ?? dayZone.abbr ?? dayZone.iso,
+                  })}
                 >
                   <ClockIcon className="sky-band-zone-icon" size={12} />
-                  <span>{zone.split('/').pop()?.replace(/_/g, ' ') ?? zone}</span>
+                  <span>{formatZoneLabel(dayZone)}</span>
                 </TipSpan>
               )}
               {/* "Time Stamp": read the sky at a chosen spot, marked by the map beacon.
@@ -1081,11 +1093,11 @@ export function SkyBand({
               point's zone — the picker moves the sky by whole days, as ‹ › do,
               rather than snapping it to the seed's noon. Read at apply time, so
               a Slide that closed while the picker was open pages as usual. */}
-          {pickerOpen && zone && dayStart !== null && (
+          {pickerOpen && zone && dayStart !== null && dayZone && (
             <TimelineDateModal
               valueMs={dayStart + MS_DAY / 2}
               offsetMs={offsetHoursAt(zone, dayStart + MS_DAY / 2) * 3_600_000}
-              zoneLabel={zoneLabelAt(zone, dayStart + MS_DAY / 2)}
+              zoneLabel={formatZoneLabel(dayZone)}
               yearMin={BIRTH_YEAR_MIN}
               yearMax={BIRTH_YEAR_MAX}
               dateOnly

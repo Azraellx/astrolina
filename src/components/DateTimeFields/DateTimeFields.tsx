@@ -66,6 +66,9 @@ interface SpinInputProps {
    *  Enter) calls this instead of snapping back to the old value — for fields where
    *  "no value" is meaningful (an unknown birth time). */
   onClear?: () => void;
+  /** Ids of elements describing the box (aria-describedby) — the birth form's
+   *  12-hour echo describes the time boxes (2026-10-07). */
+  ariaDescribedBy?: string;
   onChange: (v: number) => void;
 }
 
@@ -83,6 +86,7 @@ export function SpinInput({
   outOfRangeHint,
   rangeHint,
   onClear,
+  ariaDescribedBy,
   onChange,
 }: SpinInputProps) {
   const ref = useRef<HTMLInputElement>(null);
@@ -136,6 +140,7 @@ export function SpinInput({
       className={`spin-input${invalid ? ' invalid' : ''}`}
       style={width ? { width } : undefined}
       aria-label={rangeHint ? `${ariaLabel} — ${rangeHint}` : ariaLabel}
+      aria-describedby={ariaDescribedBy}
       aria-invalid={invalid || undefined}
       maxLength={pad || undefined}
       placeholder={placeholder}
@@ -197,8 +202,12 @@ interface DateTimeFieldsProps<V extends PartialMoment> {
    *  KEEP the clamp (the date modals). See SpinInput.rangeHint for why this is not
    *  the same prop as `yearHint`. */
   yearRangeHint?: string;
-  /** Optional element rendered right after the minute input — e.g. a zone label. */
+  /** Optional element rendered right after the minute input — a zone label (the
+   *  timeline's date modal), or the birth form's 12-hour echo. */
   timeSuffix?: ReactNode;
+  /** Ids describing the hour and minute boxes (aria-describedby): the birth
+   *  form points them at its 12-hour echo, which is otherwise only visual. */
+  timeDescribedBy?: string;
   /** Let the TIME boxes (hour/minute) be CLEARED back to empty — for callers where
    *  "no time" is meaningful (the birth form treats an empty time as unknown). The
    *  timeline date modal omits it, so its full moment can never lose a field. */
@@ -207,9 +216,9 @@ interface DateTimeFieldsProps<V extends PartialMoment> {
    *  meaningful (a day-scale pick). The emitted value keeps whatever hour/minute
    *  it was seeded with; `timeSuffix`/`timeClearable` are moot while hidden. */
   dateOnly?: boolean;
-  /** Optional column rendered to the right of the time inputs (e.g. the birth form's
-   *  Star toggle). The timeline date modal omits it. */
-  trailing?: ReactNode;
+  // (A `trailing` column to the right of the time boxes carried the birth form's
+  // Tag until 2026-10-07, when Tag moved to its own row after the coordinates.
+  // It had no other caller, so it went with it.)
 }
 
 // Date (Y / M / D) and Time (local, 24h) side by side — the shared moment editor.
@@ -225,9 +234,9 @@ export function DateTimeFields<V extends PartialMoment>({
   yearHint,
   yearRangeHint,
   timeSuffix,
+  timeDescribedBy,
   timeClearable = false,
   dateOnly = false,
-  trailing,
 }: DateTimeFieldsProps<V>) {
   const { t } = useT();
   const { year, month, day, hour, minute } = value;
@@ -301,6 +310,7 @@ export function DateTimeFields<V extends PartialMoment>({
             width="40px"
             placeholder="HH"
             ariaLabel={t('chartForm.hour')}
+            ariaDescribedBy={timeDescribedBy}
             onClear={timeClearable ? () => patch({ hour: null }) : undefined}
             onChange={(h) => patch({ hour: h })}
           />
@@ -313,6 +323,7 @@ export function DateTimeFields<V extends PartialMoment>({
             width="48px"
             placeholder="MM"
             ariaLabel={t('chartForm.minute')}
+            ariaDescribedBy={timeDescribedBy}
             onClear={timeClearable ? () => patch({ minute: null }) : undefined}
             onChange={(mi) => patch({ minute: mi })}
           />
@@ -320,7 +331,6 @@ export function DateTimeFields<V extends PartialMoment>({
         </div>
       </label>
       )}
-      {trailing}
     </div>
   );
 }

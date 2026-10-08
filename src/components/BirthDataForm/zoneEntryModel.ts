@@ -36,8 +36,18 @@
 // The form now shows one list rather than the five ways (2026-10-05, see
 // TimeZoneField's header): `choose` is that list's one action, and the rows and
 // the value it shows are worked out here too, beside the transitions they drive.
+//
+// Since 2026-10-07 (Lina's entry-form spec) the field unfolds to radios instead:
+// Automatic, the other half of the place's standard/daylight pair for the year,
+// the record's own terms where they are neither, and a typed custom offset.
+// What those rows are, which one is checked, and whether an override still fits
+// the place and date (`implausible`) are worked out in zoneView as `chooser`, so
+// the verify script asks the same questions of the same code. `choose` drives
+// the radios too; the Custom row is its `{ custom }` pick.
 
+import { DateTime } from 'luxon';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { zoneNameForChart, type ZoneName } from '../../lib/atlas/zoneName';
 import {
   applyOffsetDirection,
   birthplaceLmtSeconds,
@@ -46,6 +56,7 @@ import {
   daylightSeconds,
   entrySeconds,
   formatAstroNotation,
+  formatUtcNotation,
   lmtOffsetSeconds,
   MAX_ZONE_OFFSET_SECONDS,
   OFFSET_TEXT_MAX,
@@ -65,6 +76,7 @@ import {
   type ParsedZoneOffset,
   type ResolvedZone,
   type StandardEntry,
+  type StandardProposal,
   type StandardZone,
   type TzEntry,
   type ZoneChoice,
@@ -91,6 +103,11 @@ export interface ZoneModel {
    *  place moves, so a reopened chart's stored seconds (an imported LMT can
    *  carry its source's own rounding) come back if the place is put back. */
   lmtAt: number | null;
+  /** The offset in effect was typed into the chooser's Custom row (2026-10-07).
+   *  That row has no East/West control, so an offset that names no direction
+   *  ("5:30") can't be read either way and holds the save — where the hidden
+   *  Exact-offset way would take the direction from its E/W switch. */
+  custom: boolean;
 }
 
 /** What the field is drawn from besides its own state. */
@@ -149,11 +166,47 @@ export interface ZoneView {
   saved: ZoneChoice | null;
   /** The tzUncertain saving writes, and the "verify DST" note shows. */
   flag: boolean;
-  /** Why saving must wait, or null. 'range': the terms add up past ±15 h. */
-  error: 'pending' | 'offset' | 'range' | null;
+  /** Why saving must wait, or null. 'range': the terms add up past ±15 h.
+   *  'direction': the Custom row holds an offset that names no direction. */
+  error: 'pending' | 'offset' | 'range' | 'direction' | null;
   /** What saving writes, or null while it must wait (always null when locked:
    *  the form fixes a composite's zone itself). */
   toSave: ZoneFields | null;
+  /** The radios the field unfolds to (2026-10-07), or null until there is a
+   *  moment and place (and always for a composite). */
+  chooser: ZoneChooser | null;
+  /** The zone is not Automatic's: it was stated (here, or in the record) and
+   *  stays put when the date or place moves. */
+  overridden: boolean;
+  /** An override that gives neither half of this place's pair on this date,
+   *  nor its local mean time in that era (Lina, 2026-10-06: "flag instead if
+   *  the stored zone becomes implausible" — never revert it). A time stated in
+   *  UT is never implausible; it names no place's clock. */
+  implausible: boolean;
+}
+
+/** The chooser's rows, by what they are rather than where they sit. */
+export type ZoneRadio = 'auto' | 'other' | 'saved' | 'stated' | 'custom';
+
+export interface ZoneChooser {
+  /** What Automatic gives at this moment and place — the zone in force. */
+  auto: ResolvedZone;
+  /** The catalogue's reading of that zone (EST + daylight), or null in a
+   *  mean-time era or where the catalogue has no row for the place that year. */
+  inForce: StandardProposal | null;
+  /** The other half of the place's standard/daylight pair for the year: EST
+   *  when EDT is in force, EDT when EST is (offered only if the place kept it
+   *  that year). Null where there is no pair. */
+  other: ZonePickRow | null;
+  /** The record's own terms, where they are none of the rows (war time, a
+   *  zone picked by name, the stored number kept as saved…): "As saved". */
+  saved: ZoneChoice | null;
+  /** The terms in effect, where they are none of the rows either — an override
+   *  the date or place has since moved off the pair (EST chosen against June's
+   *  EDT, then the date moved to December, where EST is Automatic's). */
+  stated: ZoneChoice | null;
+  /** The row that is checked. */
+  value: ZoneRadio;
 }
 
 export type ZoneAction =
@@ -169,8 +222,15 @@ export type ZoneAction =
   | { type: 'choose'; pick: ZonePick };
 
 /** An entry in the form's list: Auto, the birthplace's mean time, UT, the
- *  terms a saved chart reopened in, or a standard zone with a correction. */
-export type ZonePick = 'auto' | 'lmt' | 'ut' | 'saved' | { zone: string; daylight: DaylightCode };
+ *  terms a saved chart reopened in, or a standard zone with a correction — or
+ *  (2026-10-07) the radios' Custom row with its text as typed. */
+export type ZonePick =
+  | 'auto'
+  | 'lmt'
+  | 'ut'
+  | 'saved'
+  | { zone: string; daylight: DaylightCode }
+  | { custom: string };
 
 /** One named row of the list: a zone's standard time, or its daylight time. */
 export interface ZonePickRow {
@@ -253,6 +313,117 @@ export function pickOfValue(value: string): ZonePick | null {
   return r ? { zone: r.zone.id, daylight: r.daylight } : null;
 }
 
+// ── The radios (2026-10-07) ──────────────────────────────────────────────────
+
+/** Whether a zone's clock read `seconds` at some point in a year, sampled on the
+ *  1st and 15th of every month — so a daylight half is offered only where the
+ *  place kept it that year (Arizona's MST has a daylight row in the catalogue
+ *  that Phoenix has not kept since 1967). Cached: the answer is a fact of the
+ *  tz database, and the field asks it on every render. */
+const keptCache = new Map<string, boolean>();
+function zoneKept(iana: string, year: number, seconds: number): boolean {
+  const key = `${iana}|${year}|${seconds}`;
+  const hit = keptCache.get(key);
+  if (hit !== undefined) return hit;
+  let kept = false;
+  for (let month = 1; month <= 12 && !kept; month++) {
+    for (const day of [1, 15]) {
+      const dt = DateTime.fromObject({ year, month, day, hour: 12 }, { zone: iana });
+      if (dt.isValid && Math.round(dt.offset * 60) === seconds) {
+        kept = true;
+        break;
+      }
+    }
+  }
+  keptCache.set(key, kept);
+  return kept;
+}
+
+/**
+ * The other half of the zone in force: the standard time when a daylight
+ * (summer, war, double) time is in force, the zone's own daylight time when its
+ * standard time is. Exactly two plausible answers, so the question the reader
+ * is really asking — was daylight saving applied? — has one click each way
+ * (Lina, 2026-10-06). Null where there is no pair: a mean-time era, a place the
+ * catalogue has no row for that year, a zone with no daylight time of its own
+ * (India), or one that kept none that year.
+ */
+function otherHalf(inForce: StandardProposal | null, detected: ResolvedZone['detected'], year: number): ZonePickRow | null {
+  if (!inForce || !detected) return null;
+  // Double summer time in force: the question is whether the SECOND hour was applied,
+  // so the other half is the zone's single daylight time where the place kept it that
+  // year — London's summer of 1941 offers BST, not a GMT it never kept that year (found
+  // in review, 2026-10-07). Berlin's 1945 midsummer time offers CEST the same way.
+  if (inForce.daylight === 'double') {
+    const d = daylightRow(inForce.zone);
+    if (d && zoneKept(detected.iana, year, d.seconds)) return d;
+  }
+  if (inForce.daylight !== 'standard') return standardRow(inForce.zone);
+  const d = daylightRow(inForce.zone);
+  return d && zoneKept(detected.iana, year, d.seconds) ? d : null;
+}
+
+/** Every offset the zone's clock read in the year among its standard time and its
+ *  daylight steps — what an override may plausibly state. Wider than the pair: in
+ *  1941 London read +1 all winter and +2 all summer, so either is a real reading for
+ *  any 1941 date, and a ⚠ on the one the radio doesn't offer would flag the right
+ *  answer as wrong (review, 2026-10-07). */
+function keptOffsets(inForce: StandardProposal | null, detected: ResolvedZone['detected'], year: number): number[] {
+  if (!inForce || !detected) return [];
+  const z = inForce.zone;
+  const codes: DaylightCode[] = ['standard', daylightCodeOf(z), 'double'];
+  return codes
+    .map((c) => z.std + daylightSeconds(c))
+    .filter((s) => Math.abs(s) <= MAX_ZONE_OFFSET_SECONDS && zoneKept(detected.iana, year, s));
+}
+
+const isOtherRow = (c: ZoneChoice, other: ZonePickRow | null): boolean =>
+  !!other && c.mode === 'standard' && c.zone === other.zone.id && c.daylight === other.daylight;
+
+/** The kind of entry the Custom row states: a plain typed offset, or one
+ *  stated as UT. A local mean time is terms of its own (it follows the
+ *  birthplace), so a saved one is offered back as "As saved". */
+const isCustomKind = (c: ZoneChoice): boolean => c.mode === 'offset' && c.basis !== 'lmt';
+
+const sameChoice = (a: ZoneChoice, b: ZoneChoice): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** A bare UT the reader typed into the Custom row: the time was given in
+ *  Universal Time, recorded as such (basis 'ut') so it is named UT and never
+ *  flagged against the birthplace's zones. */
+const UT_WORDS = /^(ut|utc|gmt|z)$/i;
+
+/** The Custom row's text for an offset it didn't get from typing: the ISO form
+ *  without its "UTC" ("−04:00", "+00:39:57"), which reads back to the second —
+ *  never the "4h W" astrological form (Lina, 2026-10-06). Empty past ±15 h,
+ *  where no offset can be stated. */
+export function customOffsetText(seconds: number): string {
+  return Math.abs(seconds) <= MAX_ZONE_OFFSET_SECONDS ? formatUtcNotation(seconds, { padded: true }).replace(/^UTC/, '') : '';
+}
+
+/** The name of the zone a chart with these zone fields would carry at this
+ *  moment and place — what every row of the field prints, through the one
+ *  naming rule the chart header uses (lib/atlas/zoneName.ts), so the form and
+ *  the header can't name one saved zone two ways. */
+export function zoneNameOf(at: ZoneMoment, f: { tzOffset: number; tzIana?: string; tzEntry?: TzEntry }): ZoneName {
+  return zoneNameForChart({
+    year: at.year,
+    month: at.month,
+    day: at.day,
+    hour: at.hour,
+    minute: at.minute,
+    tzOffset: f.tzOffset,
+    tzIana: f.tzIana,
+    tzEntry: f.tzEntry,
+    birthplace: { lat: at.lat, lng: at.lng },
+  });
+}
+
+/** The zone fields a choice resolves to here, for naming a row. */
+export function choiceFields(c: ZoneChoice, at: ZoneMoment): { tzOffset: number; tzIana?: string; tzEntry?: TzEntry } {
+  const r = resolveZoneChoice(c, at);
+  return { tzOffset: r.seconds / 3600, tzIana: r.tzIana, tzEntry: r.tzEntry };
+}
+
 const directionOf = (seconds: number): OffsetDirection => (seconds < 0 ? 'west' : 'east');
 
 /** A chart's own stored moment and place. */
@@ -278,10 +449,11 @@ export function openZone(initial: StoredChart | null | undefined): ZoneReopen {
     : { choice: { mode: 'auto' }, fellBack: false };
 }
 
-/** What the offset box shows for an entry it didn't get from typing. */
+/** What the offset box shows for an entry it didn't get from typing: the ISO
+ *  form since 2026-10-07, now that the Custom row shows it (it was "5h W"). */
 function offsetDisplay(e: OffsetEntry): string {
   if (e.text) return e.text;
-  return e.basis === 'ut' && e.seconds === 0 ? 'UT' : formatAstroNotation(e.seconds);
+  return e.basis === 'ut' && e.seconds === 0 ? 'UT' : customOffsetText(e.seconds) || formatAstroNotation(e.seconds);
 }
 
 export function initialModel(opened: ZoneReopen, initial: StoredChart | null | undefined): ZoneModel {
@@ -294,6 +466,10 @@ export function initialModel(opened: ZoneReopen, initial: StoredChart | null | u
     offsetText: c.mode === 'offset' ? offsetDisplay(c) : '',
     offsetDir: c.mode === 'offset' ? directionOf(c.seconds) : 'east',
     lmtAt: c.mode === 'offset' && c.basis === 'lmt' && initial ? initial.birthplace.lng : null,
+    // A saved offset reopens as stated, whatever its text: only typing in the
+    // Custom row asks for a direction (a "5:30" saved through the hidden E/W
+    // switch already has its sign in `seconds`).
+    custom: false,
   };
 }
 
@@ -374,6 +550,9 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
     flag: false,
     error: null,
     toSave: null,
+    chooser: null,
+    overridden: false,
+    implausible: false,
   };
   if (!at) return idle;
 
@@ -430,17 +609,20 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
 
   const rangeBad = !pending && (live.mode === 'standard' || live.mode === 'offset') && !resolved.tzEntry;
   const unreadable = model.mode === 'offset' && !offsetParsed;
+  const directionless = model.custom && model.mode === 'offset' && !!offsetParsed && !offsetParsed.explicit;
   const error: ZoneView['error'] = locked
     ? null
-    : unreadable && offsetText.trim()
-      ? 'offset'
-      : pending
-        ? 'pending'
-        : unreadable
-          ? 'offset'
-          : rangeBad
-            ? 'range'
-            : null;
+    : directionless
+      ? 'direction'
+      : unreadable && offsetText.trim()
+        ? 'offset'
+        : pending
+          ? 'pending'
+          : unreadable
+            ? 'offset'
+            : rangeBad
+              ? 'range'
+              : null;
 
   let toSave: ZoneFields | null = null;
   if (!locked && !error) {
@@ -462,6 +644,47 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
           };
   }
 
+  // The radios. Automatic's zone is the lookup at this moment whatever the
+  // field holds, so the row offering it names what choosing it would give.
+  let chooser: ZoneChooser | null = null;
+  let implausible = false;
+  const overridden = !locked && model.mode !== 'auto';
+  if (!locked) {
+    const auto = model.mode === 'auto' && !source ? resolved : resolveZoneChoice({ mode: 'auto' }, at);
+    const inForce = proposeStandardEntry(auto.detected, at);
+    const other = otherHalf(inForce, auto.detected, at.year);
+    const o = opened.choice;
+    const savedTerms =
+      record && o.mode !== 'auto' && !isOtherRow(o, other) && !(isCustomKind(o) && !opened.fellBack) ? o : null;
+    // Text typed in the Custom row keeps that row checked even while it can't
+    // be read (no direction yet) and the zone in effect is still the last one.
+    const value: ZoneRadio =
+      model.mode === 'auto'
+        ? 'auto'
+        : model.custom
+          ? 'custom'
+          : isOtherRow(live, other)
+            ? 'other'
+            : savedTerms && sameChoice(live, savedTerms)
+              ? 'saved'
+              : isCustomKind(live)
+                ? 'custom'
+                : 'stated';
+    chooser = { auto, inForce, other, saved: savedTerms, stated: value === 'stated' ? live : null, value };
+    // Plausible: the zone in force, the other half of its pair, any other offset
+    // the zone's clock read that year (keptOffsets), or (in the mean-time era,
+    // where the zone in force IS the local mean time) that. To the second, within
+    // the one a legacy record's float can carry.
+    const plausible = [
+      auto.seconds,
+      ...(other ? [other.seconds] : []),
+      ...keptOffsets(inForce, auto.detected, at.year),
+    ];
+    const ut = live.mode === 'offset' && live.basis === 'ut';
+    implausible =
+      overridden && !error && !ut && !plausible.some((s) => Math.abs(s - resolved.seconds) <= 1);
+  }
+
   return {
     ...idle,
     choice: live,
@@ -479,14 +702,18 @@ export function zoneView(model: ZoneModel, { initial, opened, at }: ZoneInputs):
     flag,
     error,
     toSave,
+    chooser,
+    overridden,
+    implausible,
   };
 }
 
 /** What a control does. `view` is zoneView of this same model and inputs. */
 export function zoneReduce(model: ZoneModel, action: ZoneAction, view: ZoneView, inputs: ZoneInputs): ZoneModel {
   const live = view.choice;
-  // Anything done inside a way states its zone and ends the derivation.
-  const act = (patch: Partial<ZoneModel>): ZoneModel => ({ ...model, ...patch, seedFrom: null, stated: true });
+  // Anything done inside a way states its zone and ends the derivation. Only
+  // the Custom row's own typing (below) marks the offset as typed there.
+  const act = (patch: Partial<ZoneModel>): ZoneModel => ({ ...model, custom: false, ...patch, seedFrom: null, stated: true });
 
   switch (action.type) {
     case 'mode': {
@@ -494,9 +721,9 @@ export function zoneReduce(model: ZoneModel, action: ZoneAction, view: ZoneView,
       // Derive from the zone the reader actually gave (or the record), however
       // many ways have been looked at since; returning to that way returns it.
       const root = model.seedFrom ?? model.choice;
-      if (root.mode === action.mode) return { ...model, mode: action.mode, choice: root, seedFrom: null };
-      if (action.mode === 'auto') return { ...model, mode: 'auto', choice: { mode: 'auto' }, seedFrom: null };
-      return { ...model, mode: action.mode, seedFrom: root };
+      if (root.mode === action.mode) return { ...model, mode: action.mode, choice: root, seedFrom: null, custom: false };
+      if (action.mode === 'auto') return { ...model, mode: 'auto', choice: { mode: 'auto' }, seedFrom: null, custom: false };
+      return { ...model, mode: action.mode, seedFrom: root, custom: false };
     }
     case 'standard': {
       const daylight: DaylightCode = live.mode === 'standard' ? live.daylight : 'standard';
@@ -566,10 +793,40 @@ export function zoneReduce(model: ZoneModel, action: ZoneAction, view: ZoneView,
       if (pick === 'saved' || (pick === 'auto' && inputs.opened.choice.mode === 'auto')) {
         return initialModel(inputs.opened, inputs.initial);
       }
-      if (pick === 'auto') return { ...model, mode: 'auto', choice: { mode: 'auto' }, seedFrom: null };
+      if (pick === 'auto') return { ...model, mode: 'auto', choice: { mode: 'auto' }, seedFrom: null, custom: false };
       if (pick === 'lmt' || pick === 'ut') {
         const next = zoneReduce(model, { type: pick }, view, inputs);
         return next === model ? model : { ...next, mode: 'offset' };
+      }
+      if ('custom' in pick) {
+        // The radios' Custom row (2026-10-07): the typed offset and the way
+        // that holds it in one step, like every pick here.
+        const text = pick.custom;
+        const p = parseZoneOffset(text);
+        if (p && !p.explicit) {
+          // "5:30" with no sign or letter: which way is the whole question, and
+          // the row has no East/West control to answer it. Keep the text and
+          // the last offset; zoneView holds the save ('direction'). Guessing a
+          // side would cast a perfectly plausible chart on the wrong side of UT.
+          return {
+            ...model,
+            mode: 'offset',
+            choice: live.mode === 'offset' ? live : model.choice,
+            seedFrom: null,
+            stated: true,
+            offsetText: text,
+            lmtAt: null,
+            custom: true,
+          };
+        }
+        const next = zoneReduce(model, { type: 'type', text }, view, inputs);
+        const asUt = !!p && p.seconds === 0 && UT_WORDS.test(text.trim()) && next.choice.mode === 'offset';
+        return {
+          ...next,
+          mode: 'offset',
+          choice: asUt ? { ...(next.choice as OffsetEntry), basis: 'ut' } : next.choice,
+          custom: true,
+        };
       }
       const z = standardZoneById(pick.zone);
       return z

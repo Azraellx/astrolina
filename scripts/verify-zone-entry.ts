@@ -55,9 +55,12 @@ import {
 } from '../src/lib/atlas/zoneEntry';
 import {
   atOfChart,
+  choiceFields,
+  customOffsetText,
   initialModel,
   openZone,
   pickOfValue,
+  zoneNameOf,
   zonePickRows,
   zonePickValue,
   zoneReduce,
@@ -1190,6 +1193,261 @@ console.log('\n── 7c. TWO PARTS AGREE: a chart saved in hidden terms comes b
     again.saved === null && same(again.toSave, fieldsOf(legacy)) &&
       Math.abs(autoAt(kolkata1850).tzOffset - legacy.tzOffset) > 0,
     JSON.stringify(again.toSave));
+}
+
+// ── 8. The radios (2026-10-07) ───────────────────────────────────────────────
+//
+// Lina's entry-form spec: "Set manually" unfolds the zone in force (Automatic),
+// the other half of the place's standard/daylight pair, "As saved" for a
+// record's terms that are neither, and a custom offset. An override stays put
+// when the date or place moves and is flagged, never reverted, when it stops
+// fitting them. The hidden list of §7 still runs on the same `choose`.
+
+console.log('\n── 8. GOLDEN: the radios offer the place’s own standard/daylight pair ──');
+
+const nyDec1941: ZoneMoment = { ...yonkers1941, month: 12 };
+const londonDec1941: ZoneMoment = { ...nyDec1941, lat: 51.5074, lng: -0.1278 };
+const ulm1879: ZoneMoment = { lat: 48.4011, lng: 9.9876, year: 1879, month: 3, day: 14, hour: 10, minute: 30 };
+
+{
+  type Pair = [string, ZoneMoment, string | null, string | null];
+  // [label, moment, the catalogue's reading of the zone in force, the other half]
+  const pairs: Pair[] = [
+    ['New York, June 1941: EDT in force, EST the other half', yonkers1941, 'est/daylight', 'est:standard'],
+    ['New York, December 1941: EST in force, EDT the other half', nyDec1941, 'est/standard', 'est:daylight'],
+    ['New York, January 1943 (war time all year): EST the other half', { ...yonkers1941, year: 1943, month: 1 }, 'est/daylight', 'est:standard'],
+    // Double time in force: the other half is the single daylight step where the place
+    // kept it that year — London kept no GMT at all in 1941 (review, 2026-10-07).
+    ['London, July 1941 (double summer time): BST the other half, not a GMT it never kept',
+      { lat: 51.5074, lng: -0.1278, year: 1941, month: 7, day: 1, hour: 12, minute: 0 }, 'gmt/double', 'gmt:daylight'],
+    ['Berlin, July 1945 (midsummer time): CEST the other half',
+      { lat: 52.52, lng: 13.405, year: 1945, month: 7, day: 15, hour: 12, minute: 0 }, 'cet/double', 'cet:daylight'],
+    ['Lord Howe, January 2025: its half-hour daylight, LHST the other half',
+      { lat: -31.5553, lng: 159.0821, year: 2025, month: 1, day: 15, hour: 12, minute: 0 }, 'lord-howe/half', 'lord-howe:standard'],
+    ['Kolkata 2000: no daylight time of its own, no pair',
+      { lat: 22.5726, lng: 88.3639, year: 2000, month: 3, day: 1, hour: 12, minute: 0 }, 'india/standard', null],
+    ['Phoenix, July 2000: MST has a daylight row Arizona did not keep that year, no pair',
+      { lat: 33.4484, lng: -112.074, year: 2000, month: 7, day: 1, hour: 12, minute: 0 }, 'mst/standard', null],
+    ['Ulm 1879, a mean-time birth: no catalogue reading, no pair', ulm1879, null, null],
+  ];
+  every('the pair offered', pairs, ([label, at, inForce, other]) => {
+    const c = field(null, at).view.chooser;
+    if (!c) return `${label}: no chooser`;
+    const gotIn = c.inForce ? `${c.inForce.zone.id}/${c.inForce.daylight}` : null;
+    const gotOther = c.other?.value ?? null;
+    if (gotIn !== inForce || gotOther !== other) return `${label}: ${gotIn} / ${gotOther}`;
+    // A new chart on Automatic: only Automatic (+ the pair) + Custom.
+    return c.value === 'auto' && !c.saved && !c.stated ? null : `${label}: ${JSON.stringify(c)}`;
+  });
+  const ny = field(null, yonkers1941).view.chooser;
+  check('  New York, June 1941: Automatic gives −4, the other half −5',
+    ny?.auto.seconds === -4 * H && ny.other?.seconds === -5 * H, `${ny?.auto.seconds} / ${ny?.other?.seconds}`);
+  const ulm = field(null, ulm1879).view.chooser;
+  check('  Ulm 1879: Automatic is its local mean time, +0:39:57', ulm?.auto.seconds === 2397 && ulm.auto.lmt);
+  const comp = chartAt(nyJuly1980, {
+    tzOffset: 0, tzIana: 'UTC', tzManual: true,
+    composite: { a: 'x', b: 'y' } as unknown as StoredChart['composite'],
+  });
+  check('  a composite has no chooser', field(comp, nyJuly1980).view.chooser === null);
+}
+
+console.log('\n── 8a. GOLDEN: the Custom row reads what sources print, and asks for a side ──');
+
+{
+  type Custom = [string, string, ZoneMoment, number, boolean];
+  // [label, typed, moment, seconds saved, flagged implausible there]
+  const typed: Custom[] = [
+    ['5hw00, the exchange form, is EST at New York 1941', '5hw00', yonkers1941, -5 * H, false],
+    ['−05:00, the row’s own form (U+2212)', '−05:00', yonkers1941, -5 * H, false],
+    ['-4:00 is EDT', '-4:00', yonkers1941, -4 * H, false],
+    ['4:56:02 W, New York’s mean time, is no zone in force in 1941', '4:56:02 W', yonkers1941, -17762, true],
+    ['+5:30 is nowhere near New York', '+5:30', yonkers1941, 19800, true],
+    ['+0:39:57 is Ulm’s mean time in 1879', '+0:39:57', ulm1879, 2397, false],
+    ['+1:00 is not Ulm’s clock in 1879', '+1:00', ulm1879, H, true],
+    ['UT names no place’s clock, so is never implausible', 'UT', yonkers1941, 0, false],
+    // Plausible is every offset the zone's clock read that year, not just the pair:
+    // London read +1 all winter and +2 all summer in 1941, and no +0 at all.
+    ['+01:00 (BST) is a real reading for London, July 1941',
+      '+01:00', { lat: 51.5074, lng: -0.1278, year: 1941, month: 7, day: 1, hour: 12, minute: 0 }, H, false],
+    ['+02:00 (BDST) is a real reading for London, January 1941',
+      '+02:00', { lat: 51.5074, lng: -0.1278, year: 1941, month: 1, day: 15, hour: 12, minute: 0 }, 2 * H, false],
+    ['+00:00 is no clock London kept in 1941',
+      '+00:00', { lat: 51.5074, lng: -0.1278, year: 1941, month: 7, day: 1, hour: 12, minute: 0 }, 0, true],
+  ];
+  every('typed, saved, flagged', typed, ([label, text, at, want, flagged]) => {
+    const v = field(null, at).act({ type: 'choose', pick: { custom: text } }).view;
+    if (!v.toSave || v.error) return `${label}: ${v.error}`;
+    if (Math.round(v.toSave.tzOffset * H) !== want) return `${label}: saved ${v.toSave.tzOffset}`;
+    const e = v.toSave.tzEntry;
+    if (e?.mode !== 'offset' || e.seconds !== want || e.text !== text) return `${label}: entry ${JSON.stringify(e)}`;
+    if (v.chooser?.value !== 'custom' || !v.overridden || v.toSave.tzUncertain) return `${label}: ${v.chooser?.value} ${v.overridden}`;
+    return v.implausible === flagged ? null : `${label}: implausible ${v.implausible}`;
+  });
+  const ut = field(null, yonkers1941).act({ type: 'choose', pick: { custom: 'UT' } }).view;
+  check('  UT typed is recorded as a time in UT (basis ut)',
+    ut.toSave?.tzEntry?.mode === 'offset' && ut.toSave.tzEntry.basis === 'ut', JSON.stringify(ut.toSave?.tzEntry));
+  // No sign, no letter: the row has no East/West switch, so it asks.
+  const est = field(null, yonkers1941).act({ type: 'choose', pick: { zone: 'est', daylight: 'standard' } });
+  const bare = est.act({ type: 'choose', pick: { custom: '5:30' } }).view;
+  check('  "5:30" holds the save for a direction, keeps the last zone, and stays on Custom',
+    bare.error === 'direction' && bare.toSave === null && bare.resolved?.seconds === -5 * H &&
+      bare.chooser?.value === 'custom' && bare.offsetText === '5:30',
+    `${bare.error} ${bare.resolved?.seconds} ${bare.chooser?.value}`);
+  const fixed = est.act({ type: 'choose', pick: { custom: '5:30 W' } }).view;
+  check('  …and "5:30 W" then saves −5:30', fixed.error === null && Math.round((fixed.toSave?.tzOffset ?? 0) * H) === -19800);
+  const garbage = field(null, yonkers1941).act({ type: 'choose', pick: { custom: '5.5' } }).view;
+  check('  an unreadable offset holds the save', garbage.error === 'offset' && garbage.toSave === null);
+  // The row opens on the offset in effect, in a form that reads back exactly.
+  const seeds = [-4 * H, -5 * H, 19800, 2397, -17762, 0, 45900];
+  every('the Custom row’s opening text reads back to the second', seeds, (s) => {
+    const p = parseZoneOffset(customOffsetText(s));
+    return p && p.explicit && p.seconds === s ? null : `${s} → ${customOffsetText(s)} → ${p?.seconds}`;
+  });
+  check('  …and is the ISO form, never "4h W"', customOffsetText(-4 * H) === '−04:00' && customOffsetText(2397) === '+00:39:57',
+    `${customOffsetText(-4 * H)} ${customOffsetText(2397)}`);
+}
+
+console.log('\n── 8b. GOLDEN: an override stays put, and is flagged rather than reverted ──');
+
+{
+  // EST chosen against June 1941's EDT; the date moved to December, then the
+  // place to London (Lina: "Changing the date or place later must not silently
+  // revert it — flag instead if the stored zone becomes implausible").
+  const f = field(null, yonkers1941).act({ type: 'choose', pick: { zone: 'est', daylight: 'standard' } });
+  const june = f.view;
+  check('  June: EST is the other half, checked as such, saved −5, not flagged',
+    june.chooser?.value === 'other' && june.toSave?.tzOffset === -5 && june.overridden && !june.implausible);
+  const dec = f.move(nyDec1941).view;
+  check('  December: still −5, and still not flagged (EST is the zone in force)',
+    dec.toSave?.tzOffset === -5 && dec.overridden && !dec.implausible && autoAt(nyDec1941).tzOffset === -5);
+  check('  …its row is the override itself (EST is Automatic’s row now, EDT the other half)',
+    dec.chooser?.value === 'stated' && dec.chooser.stated?.mode === 'standard' && dec.chooser.other?.value === 'est:daylight',
+    `${dec.chooser?.value} / ${dec.chooser?.other?.value}`);
+  const london = f.move(londonDec1941).view;
+  check('  London: still −5 — never reverted — and flagged implausible',
+    london.toSave?.tzOffset === -5 && london.overridden && london.implausible && autoAt(londonDec1941).tzOffset !== -5,
+    `${london.toSave?.tzOffset} ${london.implausible}`);
+  const back = f.act({ type: 'choose', pick: 'auto' }).view;
+  check('  Automatic chosen: London’s own zone, no override, no flag',
+    back.mode === 'auto' && back.chooser?.value === 'auto' && back.toSave?.tzOffset === autoAt(londonDec1941).tzOffset &&
+      !back.toSave.tzManual && !back.overridden && !back.implausible,
+    JSON.stringify(back.toSave));
+  // Automatic is never flagged, whatever the moment.
+  const autos = [yonkers1941, nyDec1941, londonDec1941, ulm1879, nyJuly1980];
+  every('Automatic is never implausible', autos, (at) => {
+    const v = field(null, at).view;
+    return !v.implausible && !v.overridden ? null : `${at.lat},${at.lng} ${at.year}-${at.month}`;
+  });
+}
+
+console.log('\n── 8c. TWO PARTS AGREE: "As saved" is offered only for terms none of the rows give ──');
+
+{
+  // Each record opened at its own moment: which row it sits on, and whether an
+  // "As saved" row is offered. Where it is, a row chosen moves it and "As
+  // saved" chosen again writes it back exactly — the record's own control
+  // still works, and the live one still moves it.
+  type Saved = [string, StoredChart, 'auto' | 'other' | 'saved' | 'custom'];
+  const records: Saved[] = [
+    ['an Automatic record', chartAt(yonkers1941, { tzOffset: -4, tzIana: 'America/New_York' }), 'auto'],
+    ['EST stated in June (the other half)', chartAt(yonkers1941, {
+      tzOffset: -5, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'standard', std: -5 * H, daylight: 'standard', zone: 'est' },
+    }), 'other'],
+    ['a custom offset', chartAt(yonkers1941, {
+      tzOffset: -5, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'offset', seconds: -5 * H, text: '5hw00' },
+    }), 'custom'],
+    ['EDT stated in June (an import’s EST + daylight: the zone in force, but stated)', chartAt(yonkers1941, {
+      tzOffset: -4, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'standard', std: -5 * H, daylight: 'daylight', zone: 'est' },
+    }), 'saved'],
+    ['war time', chartAt(yonkers1941, {
+      tzOffset: -4, tzIana: 'America/New_York', tzManual: true,
+      tzEntry: { mode: 'standard', std: -5 * H, daylight: 'war', zone: 'est' },
+    }), 'saved'],
+    ['a zone picked by name', chartAt(nyJuly1980, { tzOffset: -5, tzIana: 'America/Chicago', tzManual: true }), 'saved'],
+    ['a stored number Automatic would no longer give', chartAt(yonkers1941, { tzOffset: -5, tzIana: 'America/New_York', tzUncertain: true }), 'saved'],
+    ['a local mean time', chartAt(ulm1879, {
+      tzOffset: 2397 / H, tzIana: 'Europe/Berlin', tzManual: true,
+      tzEntry: { mode: 'offset', seconds: 2397, basis: 'lmt' },
+    }), 'saved'],
+  ];
+  every('opened on its own row, "As saved" only where no row gives it', records, ([label, c, want]) => {
+    const v = field(c, atOfChart(c)).view;
+    const ch = v.chooser;
+    if (!ch) return `${label}: no chooser`;
+    if (ch.value !== want) return `${label}: on ${ch.value}`;
+    if ((want === 'saved') !== !!ch.saved) return `${label}: As saved ${JSON.stringify(ch.saved)}`;
+    return ch.stated === null ? null : `${label}: a stated row too`;
+  });
+  every('…and written back verbatim, untouched', records, ([label, c]) => {
+    const v = field(c, atOfChart(c)).view;
+    return same(v.toSave, {
+      tzOffset: c.tzOffset, tzIana: c.tzIana, tzManual: !!c.tzManual, tzUncertain: !!c.tzUncertain, tzEntry: c.tzEntry,
+    }) ? null : `${label}: ${JSON.stringify(v.toSave)}`;
+  });
+  const asSaved = records.filter(([, , want]) => want === 'saved');
+  every('…a pick moves an "As saved" record, and "As saved" restores it', asSaved, ([label, c]) => {
+    const f = field(c, atOfChart(c)).act({ type: 'choose', pick: 'auto' });
+    const moved = f.view;
+    if (moved.chooser?.value !== 'auto' || !moved.chooser.saved) return `${label}: Automatic left ${moved.chooser?.value}`;
+    const back = f.act({ type: 'choose', pick: 'saved' }).view;
+    return back.chooser?.value === 'saved' && same(back.toSave, field(c, atOfChart(c)).view.toSave)
+      ? null : `${label}: ${JSON.stringify(back.toSave)}`;
+  });
+  // The rows are the place's at the date shown, so "As saved" follows them:
+  // the stated EDT of June is December's other half.
+  const edt = records[3][1];
+  const decView = field(edt, atOfChart(edt)).move({ ...atOfChart(edt), month: 12 }).view;
+  check('  the stated EDT moved to December sits on the other-half row, with no "As saved"',
+    decView.chooser?.value === 'other' && decView.chooser.saved === null && decView.toSave?.tzOffset === -4,
+    `${decView.chooser?.value} / saved ${JSON.stringify(decView.chooser?.saved)}`);
+  // A saved custom offset reopens in its own words.
+  const custom = field(records[2][1], atOfChart(records[2][1])).view;
+  check('  a saved custom offset reopens with its text', custom.offsetText === '5hw00', custom.offsetText);
+}
+
+console.log('\n── 8d. TWO PARTS AGREE: every row’s name gives the offset that row saves ──');
+
+{
+  // The name each radio prints comes from lib/atlas/zoneName.ts; the offset
+  // choosing it saves comes from this model. They must agree to the second,
+  // or a reader picks "EST (UTC−05:00)" and saves something else.
+  const moments: [string, ZoneMoment][] = [
+    ['New York June 1941', yonkers1941],
+    ['New York December 1941', nyDec1941],
+    ['London December 1941', londonDec1941],
+    ['London July 1941', { lat: 51.5074, lng: -0.1278, year: 1941, month: 7, day: 1, hour: 12, minute: 0 }],
+    ['Ulm 1879', ulm1879],
+    ['Kolkata 2000', { lat: 22.5726, lng: 88.3639, year: 2000, month: 3, day: 1, hour: 12, minute: 0 }],
+    ['Berlin July 2000', { lat: 52.52, lng: 13.405, year: 2000, month: 7, day: 1, hour: 12, minute: 0 }],
+  ];
+  type Row = { label: string; named: number; saved: number | null };
+  const rows: Row[] = moments.flatMap(([label, at]) => {
+    const c = field(null, at).view.chooser;
+    if (!c) return [{ label: `${label}: no chooser`, named: NaN, saved: null }];
+    const out: Row[] = [];
+    const autoSaved = field(null, at).act({ type: 'choose', pick: 'auto' }).view.toSave;
+    out.push({
+      label: `${label} Automatic`,
+      named: zoneNameOf(at, { tzOffset: c.auto.seconds / H, tzIana: c.auto.tzIana, tzEntry: c.auto.tzEntry }).seconds,
+      saved: autoSaved ? Math.round(autoSaved.tzOffset * H) : null,
+    });
+    if (c.other) {
+      const o = c.other;
+      const v = field(null, at).act({ type: 'choose', pick: { zone: o.zone.id, daylight: o.daylight } }).view;
+      out.push({
+        label: `${label} ${o.value}`,
+        named: zoneNameOf(at, choiceFields({ mode: 'standard', std: o.zone.std, daylight: o.daylight, zone: o.zone.id }, at)).seconds,
+        saved: v.toSave ? Math.round(v.toSave.tzOffset * H) : null,
+      });
+    }
+    return out;
+  });
+  every('a radio’s name and its save agree', rows, (r) =>
+    r.saved != null && Math.abs(r.named - r.saved) <= 1 ? null : `${r.label}: named ${r.named}, saves ${r.saved}`,
+  );
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);

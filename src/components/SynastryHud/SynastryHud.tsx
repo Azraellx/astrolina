@@ -6,6 +6,7 @@
 
 import { useRef } from 'react';
 import { chartTag, displayName, type StoredChart } from '../../lib/chartLibrary';
+import { formatZoneClock, zoneNameForChart } from '../../lib/atlas/zoneName';
 import { useIdentity } from '../../lib/discreet';
 import type { RelationshipMethod } from '../../lib/astro/timeline';
 import { useMovableHud } from '../../lib/useMovableHud';
@@ -19,9 +20,11 @@ import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
 
-// Full date + time, e.g. "14 March 1879 · 11:30".
+// Full date + time in the one zone format, e.g. "5 June 1941 · 09:30 EDT (UTC−04:00)" — the
+// birth clock, in the zone it was read in, named only where the name gives exactly the
+// stored offset (2026-10-07; it was a bare "09:30" with no zone at all).
 function fmtDate(c: StoredChart, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${formatZoneClock(c.hour, c.minute, zoneNameForChart(c))}`;
 }
 
 // Just the city from a "City, Region, Country" birthplace label — matching how the
@@ -195,7 +198,12 @@ export function SynastryHud({
                     <path d="M8 11h8" />
                   </svg>
                 </span>
-                {partner && (
+                {/* No moment for a composite partner: a composite is built by
+                    midpointing two charts' positions and HAS no moment — its stored
+                    minute is only the frame's anchor, and printing it here as a birth
+                    clock invented one (Lina's chart-header ruling, 2026-10-06; its
+                    place is "Space"). The name already says what it is. */}
+                {partner && !partner.composite && (
                   <span className="synastry-hud-meta">
                     {id.date(fmtDate(partner, fmt))} · {id.text(cityOf(partner))}
                   </span>

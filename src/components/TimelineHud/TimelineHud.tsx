@@ -26,14 +26,11 @@ import type { LineSystem } from '../../lib/ephemeris';
 import { activeReturnBody, type ReturnBody } from '../../lib/astro/returns';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
-import {
-  formatUtcOffset,
-  getIanaTimezone,
-  offsetHoursAt,
-  zoneLabelAt,
-} from '../../lib/atlas/timezone';
+import { getIanaTimezone } from '../../lib/atlas/timezone';
+import { formatZoneLabel, timelineZoneAt, wallClockAt } from '../../lib/atlas/zoneName';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
+import { useIdentity } from '../../lib/discreet';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
 import { shouldShowNudge, tierOfEntitlement } from '../../lib/plan';
 import { getMapExtensions, isAvailable, isEntitled } from '../../lib/extensions/mapExtensions';
@@ -421,6 +418,7 @@ export function TimelineHud({
   setUserPrimaryRate,
 }: TimelineHudProps) {
   const { t, fmt, labels } = useT();
+  const identity = useIdentity();
   const current = charts.find((c) => c.id === currentId) ?? null;
   // The angle controls on a geodetic map (lib/skyHold's companion hold): a place's angles
   // come from its coordinates there, so there is no moving frame to pick. Both pairs hold
@@ -515,36 +513,44 @@ export function TimelineHud({
   // instant — this is display-only). DST-aware via the chart's IANA zone at the
   // shown moment; only a zone-less legacy chart falls back to its fixed offset. No
   // chart → UTC. offsetMs shifts the ruler/field into local wall-clock and back.
+  //
+  // The rule lives in lib/atlas/zoneName (timelineZoneAt) since 2026-10-07, so the
+  // Activations rows that jump here read the same clock by construction rather than by a
+  // restated copy. This bar deliberately keeps the CHART's clock where the chart header
+  // shows an overlay moment at the cast place: it is the clock the reader scrubs, and it
+  // names whose clock it is (below).
   const tzInstant = clamp(targetDate);
-  const tzHours = !current
-    ? 0
-    : current.tzIana
-      ? offsetHoursAt(current.tzIana, tzInstant)
-      : current.tzOffset;
-  const offsetMs = tzHours * 3_600_000;
-  const tzLabel = !current
-    ? 'UTC'
-    : current.tzIana
-      ? zoneLabelAt(current.tzIana, tzInstant)
-      : formatUtcOffset(current.tzOffset);
-  // Whose clock that is: the chart's birthplace, named beside the offset ("GMT+2 · Voorburg").
-  // A bare offset read as the reader's own clock — a reader in London took the bar's GMT+2
-  // (Amsterdam, her birthplace, in summer time) for hers and set an instant an hour out
-  // (2026-10-06). The settlement only, as the geodetic readout names a place; the tip and the
-  // date picker carry it too.
+  const tzZone = timelineZoneAt(current, tzInstant);
+  const offsetMs = tzZone.seconds * 1000;
+  // The one zone format (Lina's spec, Part 3, 2026-10-06): the abbreviation in force on the
+  // shown date, then the ISO offset — "CEST (UTC+02:00)", "(UTC)" with no chart — never
+  // the "GMT+2" the browser's own zone names gave.
+  const tzLabel = formatZoneLabel(tzZone);
+  // Whose clock that is: the chart's birthplace, named beside the zone ("CEST (UTC+02:00) ·
+  // Voorburg"). A bare offset read as the reader's own clock — a reader in London took the
+  // bar's GMT+2 (Amsterdam, her birthplace, in summer time) for hers and set an instant an
+  // hour out (2026-10-06). The settlement only, as the geodetic readout names a place; the
+  // tip and the date picker carry it too.
   //
   // Named ONLY when the bar's zone is the birthplace's own live zone — the one the atlas looks
   // up there — because otherwise the claim "this is Voorburg's clock" is false: a composite
   // or Davison (zone UTC, place "Space"), a whole-hour UTC pick (an Etc/GMT zone), a zone
   // picked for somewhere else, a legacy chart with only a fixed offset (which the bar shows
   // all year, summer or not). A place written as bare coordinates, where the lookup failed,
-  // names nothing. In every such case the bar keeps its bare offset and the old tip. A
+  // names nothing. In every such case the bar shows its zone alone and the old tip. A
   // stated "Standard + daylight" or exact offset keeps the detected zone for the live clock
   // (lib/atlas/zoneEntry), so it passes and is named, rightly.
   // Plain rather than memoised: one polygon lookup per render is microseconds, even per
   // playback tick, and a memo keyed on the chart object trips the React Compiler.
-  const tzPlace = birthplaceZoneName(current);
-  const tzLabelFull = tzPlace ? `${tzLabel} · ${tzPlace}` : tzLabel;
+  // Discreet mode blanks the place as every other surface blanks a birthplace (id.text),
+  // keeping the "whose clock" warning without the name (2026-10-07).
+  const tzPlace = identity.text(birthplaceZoneName(current));
+  const withPlace = (label: string) => (tzPlace ? `${label} · ${tzPlace}` : label);
+  // The picker captions the zone in force on the date being TYPED, and converts with it.
+  const zoneAtForPicker = (ms: number) => {
+    const z = timelineZoneAt(current, ms);
+    return { offsetMs: z.seconds * 1000, label: withPlace(formatZoneLabel(z)) };
+  };
 
   // The date button's readout, in the chart's zone (display ms = target + offset,
   // read in UTC) — e.g. "5 Jun 1941, 09:30". The picker modal does the inverse.
@@ -555,12 +561,29 @@ export function TimelineHud({
   // BOTH its edges by half a character under the cursor. It gets a two-digit box
   // rather than a zero-pad, so the reading stays "5 Jun" while the geometry stays
   // "15 Jun" — see .thud-date-day, exact because the readout is tabular-nums.
-  const dispDate = new Date(targetDate + offsetMs);
-  const dateDay = dispDate.getUTCDate();
-  const dateMon = fmt.monthAbbr(dispDate.getUTCMonth() + 1);
-  const dateRest = ` ${dispDate.getUTCFullYear()}, ${pad2(
-    dispDate.getUTCHours(),
-  )}:${pad2(dispDate.getUTCMinutes())}`;
+  const disp = wallClockAt(targetDate, tzZone);
+  const dateDay = disp.day;
+  const dateMon = fmt.monthAbbr(disp.month);
+  const dateRest = ` ${disp.year}, ${pad2(disp.hour)}:${pad2(disp.minute)}`;
+  // The bar shows the zone's ABBREVIATION alone — "EDT" — and its tip carries the rest:
+  // the shared format's "EDT (UTC−04:00)" as the headline and, in the hint, whose clock it
+  // is. The full "EDT (UTC−04:00) · Toronto" made the shrink-to-fit bar too wide and read
+  // oddly beside the date (Salvatore, 2026-10-07). A zone with no name for the date shows
+  // its bare offset ("UTC+04:00"), and no chart shows "UTC" — the bar never goes blank.
+  //
+  // The abbreviation is the other piece that changes width mid-scrub (CET ⇄ CEST at every
+  // daylight change). Its box is sized by stacking the year's winter and summer names in
+  // one grid cell with only the live one visible, so it is exactly as wide as the wider of
+  // the pair and no wider.
+  const abbrStack = (() => {
+    if (!tzZone.abbr) return null;
+    const names = new Set([tzZone.abbr]);
+    for (const month of [1, 7]) {
+      const a = timelineZoneAt(current, birthDateUTCms({ year: disp.year, month, day: 15 })).abbr;
+      if (a) names.add(a);
+    }
+    return [...names];
+  })();
   // Year clamp for the picker's spinner, from the slider's own range.
   const yearMin = new Date(sliderMin).getUTCFullYear();
   const yearMax = new Date(sliderMax).getUTCFullYear();
@@ -1055,8 +1078,8 @@ export function TimelineHud({
         <span className="thud-datewrap">
           {/* The date is a button that opens the shared moment picker (same control as
               My Charts), keeping date entry consistent across the app. The readout +
-              picker share the toDisplay/fromDisplay round-trip, with offsetMs the only
-              zone shift (the active chart's zone). */}
+              picker share the toDisplay/fromDisplay round-trip in the active chart's
+              zone — the picker re-reading it for the date typed (zoneAt). */}
           <TipButton
             type="button"
             className="thud-date"
@@ -1080,10 +1103,17 @@ export function TimelineHud({
           >
             {t('timeline.now.label')}
           </TipButton>
+          {/* The abbreviation alone; the tip's headline is the full zone ("EDT (UTC−04:00)",
+              or "(UTC)" with no chart) and its hint says whose clock it is, naming the
+              birthplace — a headline doesn't wrap, so a long place name stays in the hint.
+              Tap-revealed on touch: the label has no action of its own. */}
           <TipSpan
             className="thud-utc"
             placement="top"
-            tip={
+            tapReveal
+            aria-label={withPlace(tzLabel)}
+            tip={tzLabel}
+            hint={
               !current
                 ? t('timeline.dateField.tipUtc')
                 : tzPlace
@@ -1091,14 +1121,20 @@ export function TimelineHud({
                   : t('timeline.dateField.tipChartZone')
             }
           >
-            {tzLabel}
-            {/* The " · " sits outside the capped span: inside an inline-block its leading
-                space collapsed ("GMT+2· Voorburg"). */}
-            {tzPlace && (
-              <>
-                {' · '}
-                <span className="thud-utc-place">{tzPlace}</span>
-              </>
+            {abbrStack ? (
+              <span className="thud-utc-abbr">
+                {abbrStack.map((a) => (
+                  <span
+                    key={a}
+                    className={a === tzZone.abbr ? undefined : 'is-sizer'}
+                    aria-hidden={a === tzZone.abbr ? undefined : true}
+                  >
+                    {a}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              tzZone.iso
             )}
           </TipSpan>
         </span>
@@ -1473,7 +1509,8 @@ export function TimelineHud({
         <TimelineDateModal
           valueMs={targetDate}
           offsetMs={offsetMs}
-          zoneLabel={tzLabelFull}
+          zoneLabel={withPlace(tzLabel)}
+          zoneAt={zoneAtForPicker}
           yearMin={yearMin}
           yearMax={yearMax}
           onApply={(ms) => setTargetDate(ms)}

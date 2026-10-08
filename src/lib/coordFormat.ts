@@ -83,3 +83,19 @@ export function fmtLngDM(lngDeg: number): string {
   const dir = lng >= 0 || (d === 0 && m === 0) ? 'E' : 'W';
   return `${d}°${dir}${pad2(m)}'`;
 }
+
+// A chart's place as a coordinate PAIR, longitude padded to three degree digits —
+// 40°N55'52" 073°W53'56" — so a column of them aligns (Lina's chart-header spec,
+// 2026-10-06). For the places a chart is cast for: the entry form, the chart header,
+// Reports. The single-axis formatters above stay unpadded: the corner readout, the map
+// chips and verify-geodetic's shape check read them, and none of those is a column.
+export function fmtCoordPair(latDeg: number, lngDeg: number): string {
+  const lng = fmtLng(lngDeg);
+  return `${fmtLat(latDeg)} ${lng.replace(/^(\d+)°/, (_, d: string) => `${d.padStart(3, '0')}°`)}`;
+}
+
+/** The same pair to the minute — 43°N39' 079°W23' — for a relocated place. */
+export function fmtCoordPairDM(latDeg: number, lngDeg: number): string {
+  const lng = fmtLngDM(lngDeg);
+  return `${fmtLatDM(latDeg)} ${lng.replace(/^(\d+)°/, (_, d: string) => `${d.padStart(3, '0')}°`)}`;
+}

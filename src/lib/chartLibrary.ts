@@ -19,11 +19,18 @@ import { notifyChartsChanged } from './extensions/chartSync';
  *  absent `tag` field means on older records. */
 export type ChartTag = 'none' | 'star' | 'space' | 'shared';
 
-/** A composite-midpoints chart's parents, snapshotted at generation so the
- *  composite stays intact if a parent chart is later edited or deleted. */
+/** One parent of a relationship chart as snapshotted at generation: its BirthData,
+ *  plus the zone it was entered in (tzIana, tzEntry) so the chart header can name the
+ *  parent's clock the way the parent's own header does (2026-10-07). Snapshots taken
+ *  before that carry neither, and are named from the stored offset alone. */
+export type ParentSnapshot = BirthData & { tzIana?: string; tzEntry?: TzEntry };
+
+/** A relationship chart's parents, snapshotted at generation so the chart stays intact
+ *  if a parent chart is later edited or deleted — a composite's (which its planets are
+ *  computed from) and, since 2026-10-07, a Davison's (which only its header reads). */
 export interface CompositeParents {
-  a: BirthData;
-  b: BirthData;
+  a: ParentSnapshot;
+  b: ParentSnapshot;
 }
 
 /** Where a chart's subject lives NOW — a second place on the record, distinct
@@ -85,6 +92,14 @@ export interface StoredChart extends BirthData {
    *  of the stored moment — that moment is the synthesized sidereal-frame
    *  anchor, which every gmst/houses/relocation consumer reads normally. */
   composite?: CompositeParents;
+  /** A Davison's parents, recorded when it was generated (2026-10-07). Nothing casts
+   *  from them — a Davison IS its stored moment and place, cast like any chart — but
+   *  its header says what it was derived from, and only while buildDavison(parents)
+   *  still reproduces that moment and place (lib/chartHeader davisonParents), so an
+   *  edited Davison stops naming them. Absent on every Davison generated before it
+   *  existed (they keep the 'space' tag, which is how one is still recognised) and on
+   *  every other chart. The form carries it through an edit like `composite`. */
+  davison?: CompositeParents;
   /** Free text about where this record came from and how far to trust it: the
    *  source, a rating, why a time was rectified or is only remembered. Carried
    *  in from imports, which is where most of it originates, and editable in the

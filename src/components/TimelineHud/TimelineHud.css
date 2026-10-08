@@ -971,18 +971,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The birthplace beside the zone ("GMT+2 · Voorburg"): set in its own case rather than the
-   offset's capitals, and capped so a long place name can't widen the shrink-to-fit bar —
-   the tip and the date picker carry it whole. */
-.thud-utc-place {
-  display: inline-block;
-  max-width: 9em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-weight: 500;
+/* The zone abbreviation's box (2026-10-07): the year's two names (CET, CEST) stacked in
+   one cell, only the live one visible, so crossing a daylight change mid-scrub doesn't
+   resize the shrink-to-fit bar — the reason .thud-date-day/-mon are boxed. Since
+   2026-10-07 the abbreviation stands alone in the bar (the offset and the birthplace moved
+   into its tip), so the box is centred. */
+.thud-utc-abbr {
+  display: inline-grid;
+  justify-items: center;
+}
+.thud-utc-abbr > span {
+  grid-area: 1 / 1;
+}
+.thud-utc-abbr > .is-sizer {
+  visibility: hidden;
 }
 
 /* "Now" button — to the right of the zone label; jumps the moment to current time. */

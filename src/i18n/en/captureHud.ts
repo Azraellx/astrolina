@@ -113,14 +113,28 @@ export const captureHud = {
     coordinatesHint:
       'Show the place’s full latitude and longitude in the caption: the birthplace, or your pin once you place one.',
     calculations: 'Calculations',
+    // While a time overlay is drawn, the line ends with it and its moment (2026-10-07) —
+    // otherwise a capture with transit lines on it captioned only the natal date.
     calculationsHint:
-      'Show the active calculation systems (the same line as the Info view) in the caption footer.',
+      'Show the active calculation systems (the same line as the Info view) in the caption footer, and the time overlay with its date while one is drawn.',
     // Shown only while discreet mode is on. It has to say that the EXPORT is blanked
     // too, not just the preview: someone who turned the mode on hours ago and is now
     // producing an image for somebody else needs to know before they send it, and the
     // frame they are looking at is the only place that fact can reach them in time.
     discreet:
       'Discreet mode is on, so the name, birth date and time are blanked here and in the exported image. Press P to show them.',
+  },
+  // The time overlay's name where the Calculations caption ends with it, before its
+  // moment: "Transits · 1 Aug 2026 · 12:13 EDT (UTC−04:00)", "Sec. Progressed · 1 Aug
+  // 2026". The short forms the timeline bar uses. A return takes the return chart's name
+  // instead (timeline.returns.*.chartName). (2026-10-07)
+  calcOverlay: {
+    transits: 'Transits',
+    progressed: 'Sec. Progressed',
+    'tertiary-progressed': 'Tert. Progressed',
+    'solar-arc': 'Solar Arc',
+    'primary-directions': 'Primary Directions',
+    cyclo: 'CCG',
   },
   share: {
     title: 'Share',

@@ -9,11 +9,50 @@
 // aspect names/descriptions and toggles, and the section headings. Planet names come
 // from labels.planet, sign names from labels.sign, month names from fmt.monthName.
 export const expandedSidebar = {
-  // Bold state title in the wheel's top-left corner, tracking the live map state.
-  wheelTitle: {
+  // The chart's statement (lib/chartHeader, Lina's chart-header spec 2026-10-06): the
+  // state label under the chart's name — repeated in the wheel's top-left corner — and
+  // the lead words of the lines beneath it. The label names what the wheel really IS,
+  // and is never a bare type when the chart is modified: a pin or the hover adds
+  // RELOCATED, an overlay takes the label with its date. State names are upper case;
+  // a date beside one is not ("TRANSITS · 1 August 2026"). (2026-10-07)
+  header: {
     natal: 'NATAL CHART',
-    pinned: 'PINNED CHART',
-    hover: 'HOVER CHART',
+    relocated: 'RELOCATED',
+    geodetic: 'GEODETIC CHART',
+    composite: 'COMPOSITE (MIDPOINTS)',
+    davison: 'DAVISON',
+    synastry: 'SYNASTRY',
+    solarReturn: 'SOLAR RETURN {year}',
+    lunarReturn: 'LUNAR RETURN',
+    // The time overlays, as a chart: the wheel's overlay ring, or the chart a promoted
+    // overlay stands in for. CCG never makes a wheel, so it never shows; kept for the
+    // type's sake.
+    kind: {
+      transits: 'TRANSITS',
+      progressed: 'SECONDARY PROGRESSED',
+      'tertiary-progressed': 'TERTIARY PROGRESSED',
+      'solar-arc': 'SOLAR ARC',
+      'primary-directions': 'PRIMARY DIRECTIONS',
+      eclipses: 'ECLIPSE',
+      cyclo: 'CCG',
+    },
+    // A relocated chart's birth moment stays the birthplace's own clock; "Born:" says
+    // whose moment it is once a second place sits under it.
+    born: 'Born:',
+    // The point a relocated chart is cast for — coordinates only, no zone: the clock
+    // there is not an input to anything.
+    relocatedTo: 'Relocated to:',
+    // The same line on a geodetic map, where the frame is the place's own rather than
+    // a natal frame moved there.
+    castFor: 'Cast for:',
+    midpoint: 'Geographic midpoint:',
+    // A Davison's parents, named only while the chart is still their midpoint.
+    derivedFrom: 'Derived from:',
+    // The source rating, then the chart form's own short label for it.
+    rodden: 'Rodden: {code}',
+    // The first item of the settings line (chart-data settings: geocentric, zodiac,
+    // house system, node). The map's status line keeps the line-geometry ones.
+    geocentric: 'Geocentric',
   },
   empty: 'No chart selected',
   // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
@@ -48,20 +87,21 @@ export const expandedSidebar = {
   // Shown under the wheel-state title on a planets-only wheel. Kept terse — the
   // chart form's note carries the full explanation of the degrade.
   timeUnknownNote: 'Birth time unknown',
-  // In place of the birth time in the geodetic header (geodetic.title below), for a
+  // In place of the birth time in the header's moment line (lib/chartHeader), for a
   // chart with none: the planets are read at 12:00 on the birth date, and "12:00"
   // alone would read as a time somebody recorded. Lower case: it follows the date in
-  // the middle of a line. (2026-10-02)
+  // the middle of a line. On the geodetic header from 2026-10-02; on every header,
+  // and with no zone after it, since 2026-10-07.
   timeUnknownNoon: 'birth time unknown, noon used',
 
   // The panel header's data block on a geodetic map, which says what the wheel is: the
-  // chart's own planets inside a PLACE's geodetic angles and houses. Four lines — title,
-  // name, date and time; "Cast for" (partnerHead.castFor) and the place; the place's
-  // AS and MC; and these planets lines, which say where the planets and the houses come
-  // from. {system} is the house system's own name, Porphyry wherever the chosen one is
-  // undefined at the place's latitude (houseFallback says why). (2026-10-02)
+  // chart's own planets inside a PLACE's geodetic angles and houses. After the
+  // statement's place lines (header.*, where the label reads GEODETIC CHART since
+  // 2026-10-07): the place's AS and MC, and these planets lines, which say where the
+  // planets and the houses come from. {system} is the house system's own name, Porphyry
+  // wherever the chosen one is undefined at the place's latitude (houseFallback says
+  // why). (2026-10-02)
   geodetic: {
-    title: 'GEODETIC',
     // Geodetic equivalents: the place's own angles. The Coordinates box heads its
     // angles with the same two letters (coordReadout.geodetic).
     ge: 'GE',
@@ -73,10 +113,7 @@ export const expandedSidebar = {
     planetsPromoted: 'Planets from {overlay} · houses: {system}, from the geodetic angles',
   },
 
-  // Pre-1970 timezone DST caution glyph in the meta row.
-  // Where the birth chart's header carries a UTC offset, an overlay's carries
-  // this: its instant is given in UTC, having no birth zone to be offset from.
-  utc: 'UTC',
+  // Pre-1970 timezone DST caution glyph beside a moment line.
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
 

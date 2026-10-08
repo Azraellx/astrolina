@@ -18,12 +18,7 @@
 // eclipse mode first opens. Anything the panel calls at runtime has to live
 // outside it, or the import would drag the whole chunk into the main bundle.
 import type { Formatters } from '../../i18n';
-import {
-  getIanaTimezone,
-  offsetHoursAt,
-  resolveBirthTimezone,
-  zoneLabelAt,
-} from '../atlas/timezone';
+import { formatZoneLabel, placeZoneAt, type ZoneName } from '../atlas/zoneName';
 
 const UNIX_EPOCH_JD = 2440587.5;
 const MS_DAY = 86_400_000;
@@ -60,11 +55,15 @@ export function jdToClock(jd: number, offsetHours = 0): EclipseClock {
 }
 
 /** A place's civil clock at one instant: hours ahead of UTC, and the zone's
- *  short name then ("EDT", "GMT+3") — or null for local mean time, which the
- *  caller labels in its own words (the zone data has no name for it). */
+ *  label then in the shared format ("EDT (UTC−04:00)", "(UTC+03:00)") — or null
+ *  for local mean time, which the caller labels in its own words. `name` is the
+ *  whole reading (zoneName.ts), for a caller printing the clock itself
+ *  (formatZoneClock) or the mean time WITH its offset (formatZoneLabel gives
+ *  "LMT (UTC+00:39:57)"). */
 export interface PlaceClockReading {
   offsetHours: number;
   zone: string | null;
+  name: ZoneName;
 }
 
 /**
@@ -74,50 +73,30 @@ export interface PlaceClockReading {
  * force on the eclipse's own date, and an eclipse that happens to straddle a
  * clock change reads each contact on the clock of its own moment.
  *
- * Before the place's region adopted standard time, the time-zone database can
- * only offer the mean time of the zone's reference city (all of Germany before
- * 1893 reads as Berlin's). A clock at the place in that era kept the place's own
- * LOCAL MEAN TIME, so that is substituted, the same way a birth chart's offset
- * is in that era (resolveBirthTimezone, which this reuses for the era test).
- * The offset itself still comes from the instant (offsetHoursAt), never from a
- * wall-clock round trip, which would land an hour out inside a fall-back hour.
+ * Before the place's region adopted standard time, the place's own LOCAL MEAN
+ * TIME is substituted for the zone reference city's, as a birth chart's offset
+ * is in that era. Both rules, and the name in force, are placeZoneAt's
+ * (lib/atlas/zoneName.ts) since 2026-10-07, so the card, the chart header and
+ * the timeline name one place's clock alike; the zone's name used to come from
+ * the browser, which gives "GMT-4" for New York before 1970.
  *
  * null when the point resolves to no zone (non-finite or out-of-range
- * coordinates: the zone lookup throws on those), and the caller then gives UTC
- * alone rather than guess.
+ * coordinates, or a zone the host's time-zone data doesn't know), and the caller
+ * then gives UTC alone rather than guess.
  */
 export function eclipsePlaceClock(
   lat: number,
   lng: number,
 ): ((jd: number) => PlaceClockReading) | null {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90) return null;
-  // A click on a world copy can arrive with a longitude outside ±180.
-  const wrapped = ((((lng + 180) % 360) + 360) % 360) - 180;
-  let iana: string;
-  try {
-    iana = getIanaTimezone(lat, wrapped);
-  } catch {
-    return null;
-  }
-  // A zone name the host's time-zone data doesn't know yields NaN offsets —
-  // give UTC alone then, as for a point with no zone.
-  if (!Number.isFinite(offsetHoursAt(iana, Date.now()))) return null;
+  const clock = placeZoneAt(lat, lng);
+  if (!clock) return null;
   return (jd) => {
-    const ms = (jd - UNIX_EPOCH_JD) * MS_DAY;
-    const offsetHours = offsetHoursAt(iana, ms);
-    const wall = new Date(ms + offsetHours * 3_600_000);
-    const era = resolveBirthTimezone(
-      lat,
-      wrapped,
-      wall.getUTCFullYear(),
-      wall.getUTCMonth() + 1,
-      wall.getUTCDate(),
-      wall.getUTCHours(),
-      wall.getUTCMinutes(),
-    );
-    return era.lmt
-      ? { offsetHours: era.offsetHours, zone: null }
-      : { offsetHours, zone: zoneLabelAt(iana, ms) };
+    const name = clock((jd - UNIX_EPOCH_JD) * MS_DAY);
+    return {
+      offsetHours: name.seconds / 3600,
+      zone: name.kind === 'lmt' ? null : formatZoneLabel(name),
+      name,
+    };
   };
 }
 

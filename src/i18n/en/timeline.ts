@@ -6,8 +6,9 @@
 
 // Timeline / overlay HUD (TimelineHud.tsx) plus the overlay caption templates that
 // lib/astro/timeline.ts builds (buildOverlay receives t and resolves labelFull/measure
-// from here). Unit symbols (min/h/d/mo), transport glyphs (‹ › ▶ ❚❚), UTC, and the
-// 2-letter overlay prefixes stay language-neutral.
+// from here). Unit symbols (min/h/d/mo), transport glyphs (‹ › ▶ ❚❚), UTC (and the zone
+// labels lib/atlas/zoneName prints), and the 2-letter overlay prefixes stay
+// language-neutral.
 export const timeline = {
   // Name shown on the draggable nub for each time-overlay mode (Primary is shortened
   // here vs the top-bar menu's "Primary Directions").
@@ -204,15 +205,19 @@ export const timeline = {
 
   // Spelled-out overlay captions (from lib/astro/timeline.ts via the passed t()). The
   // date/number values are formatted by the caller and interpolated here.
+  // {datetime} is the instant in UT ("2026-05-10 14:30"), so it closes with the one zone
+  // format's UT form, "14:30 (UTC)" (2026-10-07). It stays UT rather than taking a place's
+  // clock: the builder knows no place, and the chart header states an overlay's moment at
+  // the cast place in full.
   labelFull: {
-    transits: 'Transits · {datetime} UTC',
+    transits: 'Transits · {datetime} (UTC)',
     progressed: 'Sec. Progressed · age {years}',
     'tertiary-progressed': 'Tert. Progressed · age {years}',
     'solar-arc': 'Solar Arc · {deg}°',
     'primary-directions': 'Primary Directions · {deg}°',
-    cyclo: 'Cyclo·carto·graphy · {datetime} UTC',
+    cyclo: 'Cyclo·carto·graphy · {datetime} (UTC)',
     synastry: 'Synastry · {partner}',
-    eclipses: 'Eclipse · {datetime} UTC',
+    eclipses: 'Eclipse · {datetime} (UTC)',
   },
   // Dynamic nub readout. Solar-arc / primary show just "{deg}°" (number + degree
   // symbol, language-neutral), so only the progressed "Age …" form needs a key.

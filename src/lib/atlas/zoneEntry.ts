@@ -281,6 +281,14 @@ function entriesForZone(iana: string, year: number): StandardZone[] {
   return [...all.filter((z) => z.years), ...all.filter((z) => !z.years)];
 }
 
+/** The catalogue entries that list a zone and were in use in `year`, in the
+ *  order the proposal tries them. Exported for zoneName.ts (2026-10-07), whose
+ *  browser-name fallback is only for a zone the catalogue says nothing about
+ *  that year — where it does, its silence is the answer. */
+export function catalogueRowsFor(iana: string, year: number): readonly StandardZone[] {
+  return entriesForZone(iana, year);
+}
+
 // ── Offsets: reading what sources print ─────────────────────────────────────
 
 /** The largest offset accepted, the importer's bound (parseOffsetToken): past it
@@ -868,8 +876,32 @@ export function proposeStandardEntry(
   at: Pick<ZoneMoment, 'year' | 'month' | 'day' | 'hour' | 'minute'>,
 ): StandardProposal | null {
   if (!detected || detected.lmt) return null;
-  const offset = Math.round(detected.offsetHours * H);
-  const candidates = entriesForZone(detected.iana, at.year);
+  const dt = DateTime.fromObject(
+    { year: at.year, month: at.month, day: at.day, hour: at.hour, minute: at.minute },
+    { zone: detected.iana },
+  );
+  return proposeIn(detected.iana, dt, Math.round(detected.offsetHours * H), at.year);
+}
+
+/**
+ * proposeStandardEntry for an INSTANT rather than a wall clock (2026-10-07), for
+ * naming a clock that is read at a moment — the timeline, a place's clock, a
+ * stored chart once its offset has fixed the instant (zoneName.ts). Rebuilding
+ * the moment from its wall clock cannot say which pass of a fall-back hour was
+ * meant: DateTime.fromObject takes the first, so New York's second 01:30 on
+ * 2 November 2025 (EST) was proposed as EDT. An instant has one offset. Same
+ * rules otherwise, including no proposal in the zone's mean-time era.
+ */
+export function proposeStandardEntryAt(iana: string, ms: number): StandardProposal | null {
+  const dt = DateTime.fromMillis(ms, { zone: iana });
+  if (!dt.isValid || !Number.isFinite(dt.offset)) return null;
+  if (resolveZoneInfo(iana, dt.year, dt.month, dt.day, dt.hour, dt.minute).lmt) return null;
+  return proposeIn(iana, dt, Math.round(dt.offset * 60), dt.year);
+}
+
+/** The proposal's rules, for a zone's clock at `dt` keeping `offset` seconds. */
+function proposeIn(iana: string, dt: DateTime, offset: number, year: number): StandardProposal | null {
+  const candidates = entriesForZone(iana, year);
   if (!candidates.length) return null;
   const make = (zone: StandardZone, daylight: DaylightCode): StandardProposal => ({
     zone,
@@ -877,10 +909,6 @@ export function proposeStandardEntry(
     entry: { mode: 'standard', std: zone.std, daylight, zone: zone.id },
   });
 
-  const dt = DateTime.fromObject(
-    { year: at.year, month: at.month, day: at.day, hour: at.hour, minute: at.minute },
-    { zone: detected.iana },
-  );
   if (!dt.isValid) return null;
   const state = clockState(dt);
   if (state !== 'summer') {
@@ -890,7 +918,7 @@ export function proposeStandardEntry(
     // name to give — Moscow's +4 in 2012.
     if (state === 'standard') return null;
   }
-  const std = eraStandard(detected.iana, at.year);
+  const std = eraStandard(iana, year);
   if (std == null || std >= offset) return null;
   const zone = candidates.find((z) => z.std === std);
   const step = DAYLIGHT_STEPS.find((o) => o.seconds === offset - std);

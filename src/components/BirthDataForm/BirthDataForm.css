@@ -157,21 +157,33 @@
   color: var(--text-faint);
 }
 
-/* A captioned "Tag" field to the right of the time inputs (a DateTimeFields `trailing`
-   slot): the caption reuses .moment-caption to line up with the Date / Time captions,
-   and the toggle sits under it (so its baseline matches the input boxes). The toggle is
-   a small pill — a star icon + its label, muted when off and gold when starred. */
+/* The 12-hour echo after the minute box (DateTimeFields' timeSuffix, 2026-10-07):
+   "9:30 pm", lower case and set back from the boxes, a reading of what was typed
+   rather than another field. Undoes the zone-label look .moment-tz gives the slot. */
+.moment-tz .time-echo {
+  margin-left: 6px;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* The "Tag" row (its own since 2026-10-07; it was a column beside the time boxes):
+   the caption the summary rows use, then the toggle. The toggle is a small pill — a
+   star icon + its label, muted when off and gold when starred. */
 .tag-field {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
 }
 .tag-toggle {
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: 30px;
   padding: 0 12px;
   border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 8px;
@@ -633,9 +645,9 @@
 }
 
 /* ── Time zone (TimeZoneField.tsx, 2026-10-02) ───────────────────────────────
-   A caption, the one list of zones (2026-10-05; with the hidden switch on, the
-   five ways and each way's own controls), then the line saying what the
-   entered clock means in UT. A <div> group rather than the <label> the other
+   The summary row naming the zone in force (2026-10-07), the radios it unfolds
+   to (with a hidden switch on, the one list or the five ways), then any problem
+   and the "Kept as saved" note. A <div> group rather than the <label> the other
    fields use: it can hold several controls, and a label can only name one. */
 .tz-field {
   display: flex;
@@ -644,19 +656,158 @@
   min-width: 0;
 }
 
-/* Folded Auto (2026-10-05): the coordinates' summary row, whose link brings the
-   auto margin. A long zone id ("America/Argentina/Buenos_Aires") wraps rather
-   than widening a phone-width pane. */
-.tz-summary .coord-summary-item {
-  min-width: 0;
+/* The coordinates' summary row, whose link brings the auto margin. The name
+   ("Eastern Daylight Time · EDT (UTC−04:00) · Manual override") is long, so it
+   takes the slack and wraps under itself — the caption and the link stay on its
+   first line rather than the row breaking apart in a phone-width pane. */
+.tz-summary {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.tz-summary > .coord-summary-label {
+  flex: none;
 }
 .tz-summary-zone {
-  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+.tz-summary .coord-edit-link {
+  flex: none;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+.tz-summary-note {
+  color: var(--text-muted);
+}
+/* "Manual override" wraps as one phrase; the row breaks at the dot before it. */
+.tz-summary-suffix {
+  white-space: nowrap;
 }
 
-/* Unfolded (2026-10-05): the one list, in the app's own dropdown (HintMenu —
-   its chrome comes from .thud-select / .calc-select), spanning the field like
-   the form's other inputs rather than hugging its current label. */
+/* The ⚠ marks on the row: "verify daylight saving", and an override that no
+   longer fits the place and date. The facts are their tips; a mark is only a
+   handle on one, so it is small, and focusable for the keyboard. */
+.tz-mark {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--accent);
+  border-radius: 3px;
+  cursor: help;
+}
+.tz-mark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The radios (2026-10-07): one per line under the row, set in a little so they
+   read as the row's options. Each is a native radio with its own label; these
+   rules undo the uppercase caption look `.birth-form label` gives every label. */
+.tz-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 2px;
+}
+.birth-form .tz-choice,
+.birth-form .tz-choice-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.birth-form .tz-choice.is-on {
+  color: var(--text-strong);
+}
+.tz-choice {
+  display: flex;
+}
+.tz-choice-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.tz-choice-custom .tz-choice-label {
+  display: inline-flex;
+  flex: none;
+}
+/* Drawn rather than native, so it takes the theme: a ring, filled with the
+   accent when chosen. The resets beat `.birth-form input`, which would give it
+   a text box's padding and border. */
+.birth-form .tz-choice-radio {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(var(--tint), 0.38);
+  border-radius: 50%;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+.birth-form .tz-choice-radio::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform var(--dur-quick);
+}
+.birth-form .tz-choice-radio:checked {
+  border-color: var(--accent);
+}
+.birth-form .tz-choice-radio:checked::before {
+  transform: scale(1);
+}
+.birth-form .tz-choice-radio:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.birth-form .tz-custom-input {
+  width: 7.5rem;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.birth-form .tz-custom-input[aria-invalid='true'] {
+  border-color: rgba(var(--danger-rgb), 0.7);
+  outline-color: rgba(var(--danger-rgb), 0.5);
+}
+/* A touch screen gets rows tall enough to hit without the neighbour. */
+@media (pointer: coarse) {
+  .birth-form .tz-choice,
+  .birth-form .tz-choice-label {
+    min-height: 36px;
+  }
+  .birth-form .tz-choice-radio {
+    width: 18px;
+    height: 18px;
+  }
+  .birth-form .tz-choice-radio::before {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+/* The one list (behind SHOW_ZONE_LIST since 2026-10-07), in the app's own
+   dropdown (HintMenu — its chrome comes from .thud-select / .calc-select),
+   spanning the field like the form's other inputs rather than hugging its
+   current label. */
 .tz-pick .calc-menu {
   flex: 1 1 auto;
   min-width: 0;
@@ -836,9 +987,8 @@
   letter-spacing: 0;
 }
 
-/* Auto's detected zone, the not-ready prompt and the composite's fixed zone:
-   plain statements in the field's place. */
-.tz-detected,
+/* The not-ready prompt and the composite's fixed zone: plain statements in the
+   value's place on the row. */
 .tz-prompt,
 .tz-fixed {
   margin: 0;
@@ -850,22 +1000,17 @@
   overflow-wrap: anywhere;
 }
 
-/* What the entered clock means in UT — the one number the chart is cast from,
-   so it reads at full strength; the reason takes its place when the offset box
-   can't be read. */
-.tz-confirm {
+/* Why saving must wait (an offset that can't be read, or reads no direction).
+   It used to share a line with the UT readback, retired on 2026-10-07. */
+.tz-problem {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.4;
-  color: var(--text-strong);
+  color: var(--danger);
   text-transform: none;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
-}
-.tz-confirm.is-error {
-  color: var(--danger);
-  font-size: 12px;
 }
 
 .tz-note {
@@ -876,10 +1021,6 @@
   text-transform: none;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
-}
-
-.tz-warn {
-  color: var(--accent);
 }
 
 /* Announced, not shown: the IANA list's count as it narrows. */

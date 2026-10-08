@@ -40,8 +40,16 @@ interface TimelineDateModalProps {
   valueMs: number;
   /** Chart-zone shift applied for display (hours × 3.6e6). */
   offsetMs: number;
-  /** Zone shown to the user (e.g. "EDT", "UTC") — for the caption only. */
+  /** Zone shown to the user, in the shared format (e.g. "EDT (UTC−04:00)", "(UTC)") —
+   *  for the caption only. */
   zoneLabel: string;
+  /** The zone in force at a UTC instant: the shift and the label. When given, the label
+   *  follows the DRAFT's date and Set converts with the offset in force on that date.
+   *  Without it, `offsetMs`/`zoneLabel` (read at open) held for every date typed, so a
+   *  January date typed while the bar sat in July landed an hour off and was captioned
+   *  with July's zone — invisible as "GMT+2", plainly wrong once the caption names the
+   *  zone and its offset (2026-10-07). A fixed zone (UTC) can omit it. */
+  zoneAt?: (utcMs: number) => { offsetMs: number; label: string };
   /** Year clamp for the spinner (the slider's own range) — the only bound applied,
    *  matching the old field, which let any entered moment through unclamped. */
   yearMin: number;
@@ -65,6 +73,7 @@ export function TimelineDateModal({
   valueMs,
   offsetMs,
   zoneLabel,
+  zoneAt,
   yearMin,
   yearMax,
   dateOnly = false,
@@ -76,6 +85,18 @@ export function TimelineDateModal({
   const [draft, setDraft] = useState<DateTimeValue>(() =>
     displayMsToValue(valueMs + offsetMs),
   );
+
+  // The draft's wall clock → the stored UTC instant, and the zone to caption it with.
+  // One refine pass, as the Sky Band's picker does: guess with the open-time offset, then
+  // take the offset in force at that guess. The caption reads the zone at the RESULT, so
+  // it names the clock the bar will show after Set.
+  const resolve = (v: DateTimeValue): { ms: number; label: string } => {
+    const display = valueToDisplayMs(v);
+    if (!zoneAt) return { ms: display - offsetMs, label: zoneLabel };
+    const ms = display - zoneAt(display - offsetMs).offsetMs;
+    return { ms, label: zoneAt(ms).label };
+  };
+  const resolved = resolve(draft);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -90,7 +111,7 @@ export function TimelineDateModal({
     // No range clamp here (the year spinner already bounds the entry): honour the
     // entered moment exactly, like the field this replaced. The ruler still clamps
     // its own needle for display.
-    onApply(valueToDisplayMs(draft) - offsetMs);
+    onApply(resolved.ms);
     onClose();
   };
 
@@ -128,7 +149,7 @@ export function TimelineDateModal({
             min: String(yearMin),
             max: String(yearMax),
           })}
-          timeSuffix={zoneLabel}
+          timeSuffix={resolved.label}
           dateOnly={dateOnly}
         />
 

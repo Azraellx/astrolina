@@ -59,8 +59,9 @@ export const map = {
     // Lunar moonrise/set circle at a phase contact; {phase} is the contact
     // tag in the astronomical convention (U1, U4, P1, P4).
     horizon: 'Moonrise/set line at {phase}',
-    // {pct} obscuration (area covered) + {time} "HH:MM" UTC of the local peak.
-    localMax: '{pct} of the Sun covered here, at {time} UTC',
+    // {pct} obscuration (area covered) + {time} "HH:MM" UTC of the local peak, written
+    // in the one zone format's UT form, "16:12 (UTC)" (2026-10-07).
+    localMax: '{pct} of the Sun covered here, at {time} (UTC)',
     // Hover sub-line on lunar curves: how much of the eclipse this place sees.
     lunarAllVisible: 'The whole eclipse is visible from here',
     lunarPartView: 'Part of the eclipse is visible from here ({n} of {total} contacts)',
@@ -73,12 +74,10 @@ export const map = {
   eclipseCard: {
     notVisible: 'Eclipse not visible from here',
     // The second column's head. The first column is headed by the place's own
-    // zone abbreviation ("EDT", "GMT+3"), which comes from the time-zone data,
-    // not from this catalog.
+    // zone in the shared format ("EDT (UTC−04:00)", "LMT (UTC+00:39:57)" in the
+    // mean-time era), which comes from the zone-name module, not from this catalog.
+    // (The separate `lmt` head retired 2026-10-07: the shared label carries it.)
     utc: 'UTC',
-    // The first column's head for a place and date before standard time was
-    // adopted there, when the clock was the place's own local mean time.
-    lmt: 'LMT',
     // Solar contact rows; each carries the place's time and the UTC time.
     c1: 'Partial begins',
     c2: 'Totality begins',
