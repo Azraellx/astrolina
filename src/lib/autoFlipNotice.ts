@@ -18,7 +18,7 @@
 //     stored choice is masked by a derived value and the control shows it
 //     unavailable with the reason. Where that mask moves the map in answer to a
 //     gesture about something else — a return borrowing the moment's frame, a
-//     sidereal zodiac holding a geodetic choice, a Custom theme the reader can no
+//     sidereal zodiac holding a geodetic choice, a chosen theme the reader can no
 //     longer draw — it is said here, as a HOLD: nothing was taken away, and it
 //     comes back on its own.
 //   - A setting genuinely REWRITTEN because an action required it would be
@@ -71,19 +71,32 @@ export type AutoFlipKind =
    *  "auto-flip" name by exactly one member; if a third non-flip notice turns up, rename
    *  the module rather than stretching it further.) */
   | 'line-projection'
-  /** A Custom theme is HELD: chosen, but not available to draw right now — a downstream
-   *  build's option (lib/extensions/themeOptions) whose entitlement has lapsed, at boot
-   *  or mid-session (a sign-out in another tab). The whole app is drawn in the built-in
-   *  the theme was made on, and the stored choice and the palette are untouched
-   *  underneath: the Settings row stays, greyed with its reason, and the base carries the
-   *  radio, because a held choice marks the effective value. Announced only when that
-   *  changes what is drawn — a theme that differs from its base, which had been on screen
-   *  — so the caller's `changed` carries both (App, 2026-10-06).
+  /** A theme option is HELD: chosen, but its row isn't open to the reader right now — a
+   *  downstream build's option (lib/extensions/themeOptions) whose entitlement has lapsed
+   *  (signed out), at boot or mid-session (a sign-out in another tab). The whole app is
+   *  drawn in the last built-in the reader picked, and the stored choice and their spec are
+   *  untouched underneath: the Settings row stays, greyed with its reason, and that built-in
+   *  carries the radio, because a held choice marks the effective value. Announced only
+   *  when that changes what is drawn, and only for a theme that had been on screen — so
+   *  the caller's `changed` carries both (App, 2026-10-06; since 2026-10-08 the sign-out
+   *  hold alone, the editor's having a kind of its own below).
    *
    *  A kind of its own, not a reuse of either hold above: a different fact about a
    *  different setting, and someone who has understood that a zodiac holds Geodetic has
    *  not thereby understood this. */
-  | 'theme-held';
+  | 'theme-held'
+  /** The reader's OWN version of a theme option is HELD: the row is still theirs and still
+   *  drawn, but its editor's rung has lapsed (a paid plan ended), so the option draws its
+   *  fallback while their own spec waits underneath, untouched, until the rung returns
+   *  (lib/themeChoice editsHeld). Announced at that transition, or once at the next boot,
+   *  and only when their spec differs from the fallback — otherwise nothing on screen moved.
+   *
+   *  Not 'theme-held' with another sentence: the reader keeps the option here and loses
+   *  only their version of it, and telling them the theme is unavailable — what that kind
+   *  says — would be false. Same setting, different fact, so a different kind with its own
+   *  dismissal (CLAUDE.md rule 3; 'overlay-frame-held' says why ids are never shared).
+   *  (2026-10-08) */
+  | 'theme-edits-held';
 
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one
  *  edit and can't half-land. */
@@ -150,13 +163,21 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     tone: 'info',
     once: true,
   },
-  // The greyed Custom row in Appearance ▸ Theme — the record of the hold, whose tip carries
+  // The greyed option row in Appearance ▸ Theme — the record of the hold, whose tip carries
   // the reason. On screen only while that section is open, which at boot (one of the two
   // moments this fires) it usually isn't; the card then keeps the neutral position, and the
   // copy is written to stand without the ring (i18n/en/autoFlip says why it needs no
   // location clause). Repeats until dismissed: it reports something that just happened.
   'theme-held': {
     targets: ['.theme-option.is-held'],
+    tone: 'warn',
+    once: false,
+  },
+  // The option's row, live — not greyed: the row is still the reader's, and its tip's note
+  // carries the hold (the option's editsHeldHint). Off screen at boot as often as the one
+  // above, with the same copy rule; repeats until dismissed for the same reason.
+  'theme-edits-held': {
+    targets: ['.theme-option-custom'],
     tone: 'warn',
     once: false,
   },

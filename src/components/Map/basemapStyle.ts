@@ -5,9 +5,10 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Post-load adjustments to the remote vector basemap: global road / river layer
-// visibility toggles, a whole-basemap blank (Local Space ▸ "Hide map"), and the
-// palette's paint over the served style (applyBasemapPaint: Dark's place-name contrast
-// lift, and a Custom theme's land, water, borders, roads, buildings and names). We mutate
+// visibility toggles (Bright's ferry routes hidden whatever they say), a whole-basemap
+// blank (Local Space ▸ "Hide map"), and the palette's paint over the served style
+// (applyBasemapPaint: Dark's place-name contrast lift, and a Custom theme's land, water,
+// borders, roads, buildings and names). We mutate
 // the already-loaded style's layers rather than shipping custom style JSON, so it tracks
 // whatever OpenFreeMap serves.
 import type { Map as MlMap, LayerSpecification, StyleSpecification } from 'maplibre-gl';
@@ -55,6 +56,16 @@ function isRiverLayer(l: LayerSpecification): boolean {
 
 function isLabelLayer(l: LayerSpecification): boolean {
   return l.type === 'symbol' && LABEL_SOURCE_LAYERS.has(sourceLayer(l));
+}
+
+// Ferry routes, which only Bright (Glass's map since 2026-10-08) draws: a `ferry` line on the
+// transportation source-layer, Bright's own id for it. At the zooms a chart is read at (about
+// 4–6) they are long dashed lines across open sea, which read as chart lines — the one thing a
+// basemap line must never do here. So they are hidden on every load, whatever Roads says:
+// a ferry is not a road a reader switches on to find their way. Matched by id rather than by the
+// filter's `ferry` class: a road layer's filter can name a class only to exclude it.
+function isFerryLayer(l: LayerSpecification): boolean {
+  return sourceLayer(l) === 'transportation' && /ferry/i.test(l.id);
 }
 
 // The offline coastline fallback's source (Map.tsx installWorldFallback): the one
@@ -120,6 +131,13 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
   for (const l of style.layers ?? []) {
     // Never touch the chart's own (geojson) layers — their visibility is data-driven.
     if (!isBasemapLayer(l, sources)) continue;
+    // Ferries first, and out of the blank's bookkeeping altogether: hidden here before the blank
+    // can record them as visible, they are never in `hidden`, so lifting the blank can't bring
+    // them back either.
+    if (isFerryLayer(l)) {
+      safe(() => map.setLayoutProperty(l.id, 'visibility', 'none'));
+      continue;
+    }
     if (t.hideBasemap) {
       const vis =
         (l.layout as { visibility?: string } | undefined)?.visibility ?? 'visible';
@@ -162,7 +180,7 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
 // (lib/theme LABEL_CONTRAST) is now simply the built-in of the label tokens, painted through the
 // same writes in the same order as before.
 //
-// Layers are told apart by SOURCE-LAYER, the OpenMapTiles schema all three served styles share,
+// Layers are told apart by SOURCE-LAYER, the OpenMapTiles schema all four served styles share,
 // rather than by id, which each style names its own way. Only basemap layers are touched (the
 // split isBasemapLayer makes, through isChartSource: never the chart's), and only on the live
 // vector style — the offline / Outline style is the app's own and is painted from

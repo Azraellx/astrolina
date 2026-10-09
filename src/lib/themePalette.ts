@@ -37,6 +37,7 @@ import type { Element, Modality } from './astro/dignities';
 import type { AspectName } from './aspectPrefs';
 import type { MapInks } from './lineInks';
 import {
+  BASEMAP_ROAD_PAINT,
   ECLIPSE_LABEL_HALO,
   ECLIPSE_PATH_COLORS,
   GEO_GRID_STYLE,
@@ -53,6 +54,7 @@ import {
   WORLD_FALLBACK_COLORS,
   ZENITH_DISC_COLORS,
   minorPaletteSlot,
+  type ServedMap,
   type Theme,
 } from './theme';
 
@@ -171,9 +173,13 @@ export interface AppearanceAttrs {
   readonly motion: FxMotion;
 }
 
-/** Which map to draw: a built-in theme's basemap, or the bundled world outline. */
-export type BasemapChoice = Theme | 'outline';
-export const BASEMAP_CHOICES: readonly BasemapChoice[] = ['vintage', 'glass', 'dark', 'outline'];
+/** Which map to draw: a served vector map — a built-in theme's own, or Positron, the plain
+ *  light-grey map that was Glass's until 2026-10-08 (lib/theme BASEMAP_STYLE_URLS) — or the
+ *  bundled world outline. The id is the map's, not a theme's: no built-in draws Positron now, so
+ *  a downstream build names the option however its editor does. A SYNCED VALUE like every token
+ *  option, so it is never repurposed: 'glass' means "Glass's map", and followed Glass to Bright. */
+export type BasemapChoice = ServedMap | 'outline';
+export const BASEMAP_CHOICES: readonly BasemapChoice[] = ['vintage', 'glass', 'dark', 'positron', 'outline'];
 
 /** Everything the map's own layers need from a palette, with every width FINAL (the line
  *  weight already applied). A built-in theme's equals the constants Map.tsx drew before the
@@ -566,6 +572,13 @@ export const PLANET_SLUG: Readonly<Record<PlanetName, string>> = Object.fromEntr
  *  Use it in a `style` (a CSS property), never an SVG presentation attribute — var() is not
  *  reliable in `fill=` / `stroke=`. */
 export function planetInk(p: PlanetName): string {
+  // The Moon falls back through --moon-panel-ink before its pale tint (2026-10-08): that ink is
+  // set wherever the Moon's glyph sits on a LIGHT ground — Glass's panels (index.css, or the
+  // engine's ui.moonPanelInk for a light custom panel) and the report paper (report.css) — and
+  // left unset on dark panels, where the pale grey reads. Until then only the sky band and the
+  // planetary-hours window read it (panelGlyphColor), so the same Moon was slate there and
+  // nearly invisible pale grey in the wheel, the lists and on the paper beside them.
+  if (p === 'Moon') return `var(--planet-moon, var(--moon-panel-ink, ${PLANET_COLORS.Moon}))`;
   return `var(--planet-${PLANET_SLUG[p]}, ${PLANET_COLORS[p]})`;
 }
 export function aspectInk(a: AspectInkName): string {
@@ -826,15 +839,27 @@ const mirror = (t: Theme, name: string): string => UI_CSS_MIRROR[t][name] ?? '';
 const mirrorHex = (t: Theme, name: string): string => toHex(mirror(t, name));
 const str = (v: TokenValue): string => (typeof v === 'string' ? v : '');
 const isTheme = (v: unknown): v is Theme => v === 'vintage' || v === 'glass' || v === 'dark';
+const isServedMap = (v: unknown): v is ServedMap => isTheme(v) || v === 'positron';
 
 /** The table a map token reads its built-in from: the chosen basemap's, or for the Outline
- *  map the light or dark table its land tone calls for. Reads map.land only for Outline. */
+ *  map the light or dark table its land tone calls for. Reads map.land only for Outline.
+ *  Positron reads GLASS's tables (2026-10-08): they were tuned on it, and a palette pinned to it
+ *  must resolve every map token exactly as Glass did there. Only the offline colours are the
+ *  map's own (fallbackTableOf). */
 function mapTableOf(get: TokenGetter, base: Theme): Theme {
   const choice = get('map.basemap');
   if (choice === 'outline') {
     return isLightColor(str(get('map.land'))) ? (base === 'dark' ? 'glass' : base) : 'dark';
   }
+  if (choice === 'positron') return 'glass';
   return isTheme(choice) ? choice : base;
+}
+/** The WORLD_FALLBACK_COLORS entry a palette's land, water and coastline follow: the served map
+ *  chosen, Positron included; for the Outline map, mapTableOf's light or dark table. Reads only
+ *  what mapTableOf reads. */
+function fallbackTableOf(get: TokenGetter, base: Theme): ServedMap {
+  const choice = get('map.basemap');
+  return choice === 'positron' ? choice : mapTableOf(get, base);
 }
 const MAP_TABLE_DEPS = ['map.basemap', 'map.land'] as const;
 
@@ -904,7 +929,7 @@ add({
   deps: ['map.basemap'],
   derive: (get, c) => {
     const choice = get('map.basemap');
-    return WORLD_FALLBACK_COLORS[isTheme(choice) ? choice : c.base].land;
+    return WORLD_FALLBACK_COLORS[isServedMap(choice) ? choice : c.base].land;
   },
 });
 add({
@@ -916,7 +941,7 @@ add({
   deps: ['map.basemap'],
   derive: (get, c) => {
     const choice = get('map.basemap');
-    return WORLD_FALLBACK_COLORS[isTheme(choice) ? choice : c.base].ocean;
+    return WORLD_FALLBACK_COLORS[isServedMap(choice) ? choice : c.base].ocean;
   },
 });
 add({
@@ -1273,7 +1298,12 @@ for (const p of PLANET_NAMES) {
     },
   });
 }
-// Parans have never taken the Moon's legibility swap: built-ins stay canonical.
+// A body's parans are drawn in its map ink, the colour of its own lines on the same map — so the
+// Moon's parans take the Moon's slate on the light maps like its lines do (2026-10-08). Until
+// then parans kept the canonical colours ("they have never taken the Moon's legibility swap"),
+// which left the Moon's parans pale grey on Glass and Earth right beside its slate lines: a
+// legibility swap applied to one family of the Moon's lines and not the next. One rule now —
+// the Moon is slate on a light ground, pale grey elsewhere (lib/theme MOON_LINE_DARK).
 for (const p of PLANET_NAMES) {
   add({
     id: `paran.${p}`,
@@ -1281,9 +1311,9 @@ for (const p of PLANET_NAMES) {
     group: 'mapLines',
     tier: 'derived',
     hidden: true,
-    builtin: () => PLANET_COLORS[p],
-    deps: [`planet.${p}`, 'lines.mode', 'lines.ink'],
-    derive: (get) => (inkMode(get) ? str(get('lines.ink')) : str(get(`planet.${p}`))),
+    builtin: (b) => MAP_LINE_COLOR_OVERRIDES[b][p] ?? PLANET_COLORS[p],
+    deps: [`map.ink.${p}`],
+    derive: (get) => str(get(`map.ink.${p}`)),
   });
 }
 add({
@@ -1451,9 +1481,23 @@ add({
   deps: ['map.land'],
   derive: (_get, c) => (c.own('map.land') ? 'flat' : 'keep'),
 });
-for (const id of ['basemap.border', 'basemap.road', 'basemap.building']) {
-  add({ id, kind: 'color?', group: 'mapSurface', tier: 'detail', builtin: () => null });
-}
+add({ id: 'basemap.border', kind: 'color?', group: 'mapSurface', tier: 'detail', builtin: () => null });
+// Roads: the style's own, but on Glass's map (Bright) a quiet warm grey since 2026-10-08 — lib/theme
+// BASEMAP_ROAD_PAINT says why. Follows the map CHOSEN, not mapTableOf: that reads Glass's tables for
+// Positron, and Positron keeps its own roads. (Outline has none to paint.)
+add({
+  id: 'basemap.road',
+  kind: 'color?',
+  group: 'mapSurface',
+  tier: 'detail',
+  builtin: (b) => BASEMAP_ROAD_PAINT[b],
+  deps: ['map.basemap'],
+  derive: (get) => {
+    const choice = get('map.basemap');
+    return isServedMap(choice) ? BASEMAP_ROAD_PAINT[choice] : null;
+  },
+});
+add({ id: 'basemap.building', kind: 'color?', group: 'mapSurface', tier: 'detail', builtin: () => null });
 add({
   id: 'basemap.label',
   kind: 'color?',
@@ -1676,10 +1720,15 @@ add({
   tier: 'derived',
   builtin: (b) => WORLD_FALLBACK_COLORS[b].line,
   deps: [...LAND_DEPS],
-  derive: landRule(
-    (land, light) => toHex(mix(land, light ? '#000000' : '#ffffff', 0.38)),
-    (t) => WORLD_FALLBACK_COLORS[t].line,
-  ),
+  // landRule, but keyed by the MAP's offline colours rather than its table: Positron's coastline
+  // is its own, where its other marks are Glass's (mapTableOf). Same reads, in the same order.
+  derive: (get, c) => {
+    if (c.own('map.land')) {
+      const land = str(get('map.land'));
+      return toHex(mix(land, isLightColor(land) ? '#000000' : '#ffffff', 0.38));
+    }
+    return WORLD_FALLBACK_COLORS[fallbackTableOf(get, c.base)].line;
+  },
 });
 // Eclipse paths carry meaning (which kind of eclipse), so one ink leaves them alone.
 for (const k of ['total', 'annular', 'iso', 'lunar'] as const) {
@@ -2526,7 +2575,8 @@ export function paletteTrace(palette: ResolvedPalette): Readonly<Record<TokenId,
   return TRACES.get(palette)?.reads ?? {};
 }
 
-/** The basemap table a palette's map tokens read (its basemap, or Outline's light/dark one). */
+/** The basemap table a palette's map tokens read (its basemap — Glass's for Positron — or
+ *  Outline's light/dark one). */
 export function paletteMapTable(palette: ResolvedPalette): Theme {
   return mapTableOf((id) => palette.values[id] ?? null, palette.base);
 }

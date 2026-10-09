@@ -15,7 +15,8 @@
    written by the component (useClearOfSettings), never by a stylesheet (2026-10-05). */
 .geo-zone-legend {
   position: fixed;
-  right: calc(var(--edge, 16px) + var(--geo-legend-dodge, 0px));
+  /* + a right dock's width (lib/rightDock, 0px with none), stacked over the chip as it is. */
+  right: calc(var(--right-dock-w, 0px) + var(--edge, 16px) + var(--geo-legend-dodge, 0px));
   /* The chip's own offset, plus its height and a gap; + the reserved bottom band (the sky band). */
   bottom: calc(44px + 32px + var(--sky-band-h, 0px));
   z-index: 8;

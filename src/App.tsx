@@ -19,15 +19,19 @@ import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 import { getViewLock, useViewLock } from './lib/extensions/viewLock';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
-// The theme-option seam (a downstream build's Custom theme): one slot, gated through the
-// shared entitlement above — read as the slot, its spec, and nothing else.
+// The theme-option seam (a downstream build's fourth theme): one slot, its row and its editor
+// gated apart through the shared entitlement above — read as the slot, the reader's own spec,
+// the option's fallback, and nothing else.
 import {
   getThemeOption,
+  readFallbackSpec,
   readThemeSpec,
   subscribeThemeOption,
+  themeOptionHasEditor,
   useThemeOptionSpec,
   type ThemeEditorContext,
 } from './lib/extensions/themeOptions';
+import { builtinThemeEntitled } from './lib/extensions/builtinThemeTiers';
 import { type PlanTier, nudgeAction, planTierFor, tierMet } from './lib/plan';
 import type {
   Feature,
@@ -72,6 +76,7 @@ import {
 } from './lib/extensions/localSpaceAnchors';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
+import { getReservedRightInset, subscribeReservedRightInset } from './lib/rightDock';
 import { watchSettled } from './lib/hudSettled';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
@@ -100,7 +105,7 @@ import { GEODETIC_HELD } from './lib/geodeticHold';
 // The sky hold: what a geodetic map can't show, keyed on the DERIVED line system. A third
 // hold beside the one above, never folded into it (lib/skyHold says why).
 import { skyHeldFor } from './lib/skyHold';
-import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
+import { isPhone, isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
 import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
@@ -434,12 +439,16 @@ import {
 } from './lib/lineInks';
 import { applyAppearance, previewAppearance } from './lib/appearance';
 import {
+  decideEditorKey,
   decideThemePick,
   deriveThemeState,
+  heldNoticeMarkerKey,
   heldNoticeStep,
   themeEditorMounted,
   toggledThemeEditor,
-  THEME_SHOWN_MARKER_KEY,
+  THEME_OWN_SHOWN_MARKER_KEY,
+  type ThemeHoldKind,
+  type ThemePick,
 } from './lib/themeChoice';
 import { createThrottle, useSettledValue, useThrottledValue } from './lib/useThrottledValue';
 import {
@@ -458,6 +467,16 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 // The wheel's catalog set when it has none — one stable reference, so a wheel with no
 // catalog bodies never re-runs its ring layout on a fresh empty array.
 const NO_WHEEL_MINOR: readonly WheelMinorBody[] = [];
+
+/** One of the theme holds' bookkeeping markers (lib/themeChoice), read as set or not.
+ *  Blocked storage reads as unset: no marker, so nothing a hold could announce. */
+function readThemeMarker(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
 const NO_OVERLAY_MINOR: readonly OverlayMinorSample[] = [];
 // Every angle a catalog body draws: the unfiltered complete set (collectAllLines).
 const ALL_MINOR_ANGLES: ReadonlySet<LineType> = new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']);
@@ -993,8 +1012,8 @@ export default function App() {
   const skyFamiliesOff = noTime || skyHeld;
   // Acknowledgement for settings this app moves on the user's behalf (lib/autoFlipNotice).
   // Declared up here, ahead of the setters that announce. `announce` is called from event
-  // handlers — with one documented exception, the Custom theme's hold, which arrives with no
-  // gesture to hang it on (see the 'theme-held' effect beside saveTheme below).
+  // handlers — with one documented exception, the theme option's two holds, which arrive with
+  // no gesture to hang them on (see the held-notice effect beside saveTheme below).
   const {
     pending: autoFlipKind,
     announce: announceFlip,
@@ -1054,47 +1073,91 @@ export default function App() {
   );
   // ── Theme (2026-10-06) ──────────────────────────────────────────────────────────────────
   // Two STORED values, CLAUDE.md rule 2's shape: the last BUILT-IN theme picked, and whether
-  // the choice is Custom — a downstream build's theme option (lib/extensions/themeOptions;
-  // the open core registers none). Two keys rather than a fourth value, because rule 6 forced
-  // it: see CUSTOM_CHOSEN_KEY in lib/theme. Only the picker (setThemeSafe) changes either.
+  // the choice is the theme option — a downstream build's fourth theme (lib/extensions/
+  // themeOptions; the open core registers none). Two keys rather than a fourth value, because
+  // rule 6 forced it: see CUSTOM_CHOSEN_KEY in lib/theme. Only the picker (setThemeSafe)
+  // changes either. (The `custom` names here are the option's internal id, kept since round
+  // one; what the reader sees is the option's own label().)
   const [builtinPref, setBuiltinPref] = useState<Theme>(loadTheme);
   const [customChosen, setCustomChosen] = useState(loadCustomChosen);
-  // The installed option and its spec — the spec re-read on each COMMIT the option announces,
-  // never per input (an editor's live preview repaints CSS and renders nothing here).
+  // The installed option, the reader's own spec — re-read on each COMMIT the option
+  // announces, never per input (an editor's live preview repaints CSS and renders nothing
+  // here) — and the option's fallback, which is fixed for the option's life.
   const themeOpt = useSyncExternalStore(subscribeThemeOption, getThemeOption, getThemeOption);
-  const customSpec = useThemeOptionSpec(themeOpt);
-  // ENTITLEMENT, not the gated plan tier: a Pro reader with Advanced off resolves to tier
-  // 'new' (lib/plan), and must keep their theme all the same.
-  const customEntitled = !!themeOpt && isAddonEntitled(themeOpt);
-  // The spec resolved (lib/themePalette; memoized there too, so this is identity-stable).
-  // Resolved while held as well, for one question only: whether the hold changes anything
-  // visible — a spec that moves nothing from its base holds nothing (the notice below).
+  // An option may come without an editor (a fixed theme — lib/extensions/themeOptions): then
+  // the reader has no spec of their own at all. Not "held": a spec they can't reach is one
+  // they can't see, so it is neither drawn nor announced, and it comes back as it was if the
+  // build installs the editor again. (2026-10-08: how Prism ships while its editor is held.)
+  const themeHasEditor = themeOptionHasEditor(themeOpt);
+  const ownSpec = useThemeOptionSpec(themeOpt);
+  const customSpec = themeHasEditor ? ownSpec : null;
+  const fallbackSpec = useMemo(() => readFallbackSpec(themeOpt), [themeOpt]);
+  // Two ENTITLEMENTS (2026-10-08), the row's and the editor's, both the account's answer
+  // through the shared resolver and neither the plan tier: a reader with Advanced off
+  // resolves to tier 'new' (lib/plan), and must keep their theme all the same.
+  //  · customOptionEntitled — the row's rung: may this reader draw the option at all.
+  //  · customEditorEntitled — the editor's rung: may they make it their own (Customize,
+  //    Shift C). Without it the option draws its fallback.
+  const customOptionEntitled = !!themeOpt && isAddonEntitled(themeOpt);
+  const customEditorEntitled =
+    !!themeOpt && themeHasEditor && isAddonEntitled({ id: themeOpt.id, tier: themeOpt.editorTier });
+  // Both specs resolved (lib/themePalette; memoized there too, so these are identity-stable).
+  // Resolved while held as well, for one question only: whether a hold changes anything
+  // visible — a spec that draws what it is held for holds nothing (the notices below).
   const specPalette = useMemo(
     () => (customSpec ? resolvePalette(customSpec.base, customSpec.overrides) : null),
     [customSpec],
   );
-  // Everything else is DERIVED, by lib/themeChoice (pure, so a Pro suite can drive the hold
-  // through a plan change — this file can't be imported from Node):
-  //  · customLive — chosen, entitled, and a spec to draw.
-  //  · customHeld — chosen, and not drawable now (the plan lapsed, or no option or spec
+  const fallbackPalette = useMemo(
+    () => (fallbackSpec ? resolvePalette(fallbackSpec.base, fallbackSpec.overrides) : null),
+    [fallbackSpec],
+  );
+  // Read while signed out only, and only for the sign-out notice: whether what that hold
+  // took off the screen was the reader's own spec rather than the fallback (lib/themeChoice
+  // ThemeChoiceInput.ownShown). A bookkeeping marker the notice effect below keeps; nothing
+  // changes it while the row is closed, so a read in render is never behind.
+  const customOwnShown =
+    customChosen && !customOptionEntitled && readThemeMarker(THEME_OWN_SHOWN_MARKER_KEY);
+  // Everything else is DERIVED, by lib/themeChoice (pure, so a Pro suite can drive the holds
+  // through plan changes — this file can't be imported from Node):
+  //  · customLive — chosen, the row open to this reader, and a spec to draw: their own with
+  //    the editor's rung and one of their own, else the option's fallback.
+  //  · customHeld — chosen, and the row closed to this reader (signed out, or no option
   //    here). A standing state, so it masks and never writes: the choice and the spec are
-  //    both still there when it lifts, and the picker marks the base it falls back to.
+  //    both still there when it lifts, and the picker marks the built-in it falls back to.
+  //  · customEditsHeld — live on the fallback while the reader's own spec, which differs
+  //    from it, waits for the editor's rung. Standing too: the spec is never touched.
+  //  · customDrawn — which spec the option draws ('own' | 'fallback'), or null.
   //  · theme — the EFFECTIVE theme, keeping the plain name so the read sites never change
-  //    (lineSystem's shape). Always a built-in: a Custom theme is drawn ON its spec's base,
-  //    held or live, so every Record<Theme, …> table read below keeps working untouched.
+  //    (lineSystem's shape). Always a built-in: a live option is drawn ON its spec's base,
+  //    and a held one in the last built-in picked, so every Record<Theme, …> table read
+  //    below keeps working untouched.
   //  · themeChoice — what the picker shows as chosen: the stored choice, never the effective.
   //  · palette — drawn now. A built-in's is builtinPalette(theme): one object per theme for
   //    the page's life, whose map style, inks and sprite spec are exactly the tables the app
   //    drew from before the engine existed, and whose CSS is empty.
-  const { customLive, customHeld, theme, themeChoice, palette, holdChanges: themeHoldChanges } =
-    deriveThemeState({
-      builtinPref,
-      customChosen,
-      hasOption: !!themeOpt,
-      entitled: customEntitled,
-      spec: customSpec,
-      specPalette,
-    });
+  const {
+    customLive,
+    customHeld,
+    editsHeld: customEditsHeld,
+    drawn: customDrawn,
+    theme,
+    themeChoice,
+    palette,
+    holdChanges: themeHoldChanges,
+    ownHoldChanges: themeOwnHoldChanges,
+  } = deriveThemeState({
+    builtinPref,
+    customChosen,
+    hasOption: !!themeOpt,
+    optionEntitled: customOptionEntitled,
+    editorEntitled: customEditorEntitled,
+    spec: customSpec,
+    fallbackSpec,
+    specPalette,
+    fallbackPalette,
+    ownShown: customOwnShown,
+  });
   // The editor window: open or not is TRANSIENT, never stored. A stored flag would need the
   // downstream-tier trap's load check (CLAUDE.md) and buy nothing — the editor is opened from
   // the button under the theme list, one click, when it's wanted.
@@ -1154,30 +1217,54 @@ export default function App() {
   );
   useEffect(() => () => mapDraftThrottle.cancel(), [mapDraftThrottle]);
   // The picker's one writer. What it does with a pick is lib/themeChoice decideThemePick —
-  // three refusals, each a rule: a teaser without the entitlement (the plan picker opens,
-  // nothing written); a re-pick of the base row a HELD Custom marks (it would write the
-  // masked value over the stored choice — CLAUDE.md: a control that shows a derived value
-  // refuses writes while the mask is up, Discovery's frame menu was the lesson); and Custom
-  // with no option installed. The first pick of Custom seeds a copy of the theme on screen
-  // (the option's onChoose), so choosing it moves nothing by itself, and opens the editor once.
+  // three refusals, each a rule: a teaser without the row's entitlement (the upgrade flow
+  // opens, nothing written); a re-pick of the built-in row a HELD option marks (it would
+  // write the masked value over the stored choice — CLAUDE.md: a control that shows a
+  // derived value refuses writes while the mask is up, Discovery's frame menu was the
+  // lesson); and the option with no option installed. An editor-entitled reader's first pick
+  // seeds a copy of the theme on screen (the option's onChoose), so choosing it moves nothing
+  // by itself, and opens the editor once; a reader without the editor's rung chooses the
+  // option's fallback, and nothing is seeded or opened for them (2026-10-08). And a switch TO a
+  // built-in the reader's account doesn't reach, where a build has tiered one
+  // (lib/extensions/builtinThemeTiers), is a teaser too — while the built-in they're drawn in
+  // stays theirs, re-pickable, whatever its tier (2026-10-08).
+  //
+  // Returns the decision, for the editor's key, which opens the editor after a pick that
+  // didn't (decideEditorKey's 'pick-and-open'); the Sidebar ignores it.
   const setThemeSafe = useCallback(
-    (next: ThemeChoice) => {
+    (next: ThemeChoice): ThemePick => {
       const pick = decideThemePick(
-        { hasOption: !!themeOpt, entitled: customEntitled, customChosen, customHeld, theme },
+        {
+          hasOption: !!themeOpt,
+          optionEntitled: customOptionEntitled,
+          editorEntitled: customEditorEntitled,
+          customChosen,
+          customHeld,
+          theme,
+        },
         next,
         readThemeSpec(themeOpt) !== null,
+        { entitled: builtinThemeEntitled, customLive },
       );
       switch (pick.kind) {
         case 'refuse':
-          return;
+          return pick;
         case 'nudge':
           nudgeAction();
-          return;
+          return pick;
         case 'custom':
-          try {
-            themeOpt?.onChoose?.(theme);
-          } catch {
-            /* the option's own failure: no seed, and the choice then reads as held */
+          if (pick.seed) {
+            try {
+              // While the option already draws its fallback (an editor-entitled reader with
+              // no theme of their own yet — one who reached the editor's rung after choosing
+              // it), the seed must copy THAT, not its base: themeOptions says why.
+              themeOpt?.onChoose?.(
+                theme,
+                customLive && customDrawn === 'fallback' && fallbackSpec ? fallbackSpec : undefined,
+              );
+            } catch {
+              /* the option's own failure: no seed, and the option then draws its fallback */
+            }
           }
           if (pick.writeChosen) {
             setCustomChosen(true);
@@ -1188,7 +1275,7 @@ export default function App() {
             // On the touch layout, opening the editor dismisses the dock (see toggleThemeEditor).
             if (isTouchLayout()) setShowSettings(false);
           }
-          return;
+          return pick;
         case 'builtin':
           setBuiltinPref(pick.theme);
           if (pick.clearChosen) {
@@ -1196,12 +1283,28 @@ export default function App() {
             saveCustomChosen(false);
           }
           setThemeEditorOpen(false);
+          return pick;
       }
     },
-    [themeOpt, customEntitled, customChosen, customHeld, theme],
+    [
+      themeOpt,
+      customOptionEntitled,
+      customEditorEntitled,
+      customChosen,
+      customHeld,
+      customLive,
+      customDrawn,
+      fallbackSpec,
+      theme,
+    ],
   );
-  // The Customize button: opens the editor only while the custom theme is live (a held one
-  // has nothing to edit on screen); closing is never refused.
+  // The Customize button: opens the editor only while the option is live and the editor's
+  // rung is reached (a held option has nothing to edit on screen; below the rung the button
+  // is the teaser, which the Sidebar routes to the upgrade flow before it gets here); closing
+  // is never refused. Opening with no spec of the reader's own — live on the fallback, having
+  // reached the editor's rung after choosing the option — has nothing to edit yet, so it is
+  // the same ask as a first pick and goes through the picker's writer, which seeds a copy of
+  // what is on screen and opens the editor (round one's opener did the same with no spec).
   //
   // On the touch layout OPENING the editor also dismisses the settings dock — the precedent of
   // the Minor bodies window's More button (Sidebar), for the same reason: the dock is a
@@ -1210,13 +1313,59 @@ export default function App() {
   // the dock comes back from its nub as always; closing the editor leaves the dock alone. Read at
   // the tap (isTouchLayout). Nothing is stored by it: the dock's stored open state is the
   // desktop's, and a touch layout never writes it (the astro:view-settings:v1 effect). The first
-  // pick of Custom, which opens the editor too, does the same (setThemeSafe).
+  // pick, which opens the editor too, does the same (setThemeSafe), and so does Shift C.
   const toggleThemeEditor = useCallback(() => {
-    const next = toggledThemeEditor(themeEditorOpen, customLive);
+    if (!themeEditorOpen && customEditorEntitled && customChosen && readThemeSpec(themeOpt) === null) {
+      setThemeSafe('custom');
+      return;
+    }
+    const next = toggledThemeEditor(themeEditorOpen, customLive, customEditorEntitled);
     setThemeEditorOpen(next);
     if (next && !themeEditorOpen && isTouchLayout()) setShowSettings(false);
-  }, [themeEditorOpen, customLive]);
+  }, [themeEditorOpen, customLive, customEditorEntitled, customChosen, themeOpt, setThemeSafe]);
   const closeThemeEditor = useCallback(() => setThemeEditorOpen(false), []);
+  // The rule's twin (2026-10-08): on a touch TABLET, OPENING the settings dock closes the
+  // editor. There the editor is a dock on the right edge and the settings dock is the
+  // full-height overlay on the same edge, so the two would stand one over the other — one
+  // right-hand panel at a time, whichever was asked for last. On the open state rather than in
+  // an opener, because the dock has five (the nub, View ▸ Settings, the 3 key, the Info chip,
+  // the openSettings context action) and the next would be written without it; a LAYOUT effect,
+  // so the two are never painted together. Not on a phone, where the editor is a bottom sheet
+  // the takeover covers and gives back on closing, as it always has. Both open states are
+  // transient here — the touch layout never stores the dock's — so nothing is written.
+  useLayoutEffect(() => {
+    if (showSettings && isTouchLayout() && !isPhone()) setThemeEditorOpen(false);
+  }, [showSettings]);
+  // Shift C (2026-10-08): Customize from the keyboard, and the option picked first when it
+  // isn't the live choice — lib/themeChoice decideEditorKey. It does nothing below the
+  // editor's rung, as every gated key does (a locked teaser's key does nothing until the
+  // rung is reached, so the button shows no pill there), and nothing while an add-on surface
+  // owns the viewport, as the rest of the Shift row. 'pick-and-open' goes
+  // through the picker's writer — so every refusal and the seed are the picker's own — and
+  // then opens the editor if that pick didn't; 'toggle' is the Customize button exactly,
+  // its touch rule and no-spec seed included. Read through a ref by the keydown handler.
+  const runThemeEditorKey = useCallback(() => {
+    const step = decideEditorKey({
+      hasOption: themeHasEditor,
+      editorEntitled: customEditorEntitled,
+      customChosen,
+      customLive,
+      parked: getViewLock() !== null,
+    });
+    if (step === 'toggle') {
+      toggleThemeEditor();
+      return;
+    }
+    if (step !== 'pick-and-open') return;
+    const pick = setThemeSafe('custom');
+    if (pick.kind !== 'custom' || pick.openEditor) return; // refused, or already opened
+    setThemeEditorOpen(true);
+    if (isTouchLayout()) setShowSettings(false);
+  }, [themeHasEditor, customEditorEntitled, customChosen, customLive, toggleThemeEditor, setThemeSafe]);
+  const themeEditorKeyRef = useRef(runThemeEditorKey);
+  useEffect(() => {
+    themeEditorKeyRef.current = runThemeEditorKey;
+  }, [runThemeEditorKey]);
   // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
   const [projection, setProjection] = useState<MapProjectionMode>(loadProjection);
 
@@ -1785,15 +1934,23 @@ export default function App() {
 
   const mapRef = useRef<MapHandle>(null);
 
-  // The STORED built-in, never the derived theme — a held Custom choice draws its base, and
+  // The STORED built-in, never the derived theme — a live option draws its spec's base, and
   // persisting that would write a masked value over the reader's own (rule 2). Written on
-  // mount as the [theme] effect always was; that is why Custom needed a key of its own.
+  // mount as the [theme] effect always was; that is why the option needed a key of its own.
   useEffect(() => {
     saveTheme(builtinPref);
   }, [builtinPref]);
-  // The editor as mounted (the gate on its render below): the option's, with the custom
-  // theme live, the window open, and no add-on surface owning the viewport.
-  const themeEditorShown = themeEditorMounted(!!themeOpt, customLive, themeEditorOpen, viewParked);
+  // The editor as mounted (the gate on its render below): the option's, with the option
+  // live, the editor's rung reached, the window open, and no add-on surface owning the
+  // viewport. A plan that drops below the editor's rung mid-session unmounts it here and
+  // keeps the open state, as a view lock does: transient, so a reload closes it anyway.
+  const themeEditorShown = themeEditorMounted(
+    themeHasEditor,
+    customLive,
+    customEditorEntitled,
+    themeEditorOpen,
+    viewParked,
+  );
   // Paint the palette on the document (lib/appearance) BEFORE the browser paints, so a theme
   // change never shows a frame of the old one — replacing the passive effect that set
   // data-theme after paint. A built-in writes data-theme and data-panel-tone and no custom
@@ -1831,36 +1988,49 @@ export default function App() {
   // a released draft would show again the next time the channels fell behind a commit.
   if (mapDraft && !mapDraftShown) setMapDraft(null);
   const mapPreview = useMemo(() => mapPreviewFor(mapDraftShown, mapStyle, inks), [mapDraftShown, mapStyle, inks]);
-  // The held notice ('theme-held'). The one effect in this file that announces, and it has to
-  // be one: a hold arrives with no gesture of the reader's to hang it on — a plan that lapsed
-  // while they were away (seen at boot), or a sign-out in another tab (seen mid-session). It
-  // fires only when the hold changes what is drawn — the spec moves something from its base —
-  // and only for a theme that was actually SHOWN here: THEME_SHOWN_MARKER_KEY is a
-  // bookkeeping marker, written while the theme is live and cleared when its hold is
-  // announced, never a preference. Boot is the ref's null; mid-session, the live → held edge.
-  // A run of renders while already held says nothing more. (The decision is lib/themeChoice
-  // heldNoticeStep; this effect only does its storage and its announce.)
-  const themeLiveRef = useRef<boolean | null>(null);
+  // The held notices — two holds, two kinds (lib/themeChoice says why they never share one):
+  // 'theme-held' (the option's row closed to the reader: signed out) and 'theme-edits-held'
+  // (their own version behind the option's fallback: the editor's rung lapsed). The one
+  // effect in this file that announces, and it has to be one: a hold arrives with no gesture
+  // of the reader's to hang it on — a plan that lapsed while they were away (seen at boot), or
+  // a sign-out in another tab (seen mid-session). Each fires only when its hold changes what
+  // is drawn, and only for what was actually SHOWN here: each kind has a bookkeeping marker
+  // (THEME_SHOWN_MARKER_KEY, THEME_OWN_SHOWN_MARKER_KEY), written while the thing it would
+  // hold is drawn and differs from what the hold would draw, cleared when its hold is
+  // announced — never a preference. Boot is a ref's null; mid-session, the hold's own
+  // down → up edge. A run of renders while already held says nothing more. (The decision is
+  // lib/themeChoice heldNoticeStep; this effect only does its storage and its announce.)
+  const themeHeldRef = useRef<boolean | null>(null);
+  const themeEditsHeldRef = useRef<boolean | null>(null);
   useEffect(() => {
-    const was = themeLiveRef.current;
-    themeLiveRef.current = customLive;
-    let step;
-    try {
-      step = heldNoticeStep(
-        was,
-        { customLive, customHeld, holdChanges: themeHoldChanges },
-        localStorage.getItem(THEME_SHOWN_MARKER_KEY) === '1',
-        // Under a view lock the card stands down without consuming the announcement, so the
-        // step keeps the marker for the next boot rather than spend it unseen.
-        getViewLock() !== null,
-      );
-      if (step.marker === 'set') localStorage.setItem(THEME_SHOWN_MARKER_KEY, '1');
-      else if (step.marker === 'clear') localStorage.removeItem(THEME_SHOWN_MARKER_KEY);
-    } catch {
-      return; // storage blocked: no marker to go on, so nothing to say
+    // Under a view lock the card stands down without consuming the announcement, so the
+    // step keeps the marker for the next boot rather than spend it unseen.
+    const parked = getViewLock() !== null;
+    const holds: readonly [ThemeHoldKind, { current: boolean | null }, boolean, boolean][] = [
+      ['theme-held', themeHeldRef, customHeld, themeHoldChanges],
+      ['theme-edits-held', themeEditsHeldRef, customEditsHeld, themeOwnHoldChanges],
+    ];
+    for (const [kind, ref, active, changes] of holds) {
+      const was = ref.current;
+      ref.current = active;
+      let step;
+      try {
+        step = heldNoticeStep(
+          kind,
+          was,
+          active,
+          changes,
+          localStorage.getItem(heldNoticeMarkerKey(kind)) === '1',
+          parked,
+        );
+        if (step.marker === 'set') localStorage.setItem(step.markerKey, '1');
+        else if (step.marker === 'clear') localStorage.removeItem(step.markerKey);
+      } catch {
+        continue; // storage blocked: no marker to go on, so nothing to say
+      }
+      if (step.announce) announceFlip(kind, step.changed);
     }
-    if (step.announce) announceFlip('theme-held', step.changed);
-  }, [customLive, customHeld, themeHoldChanges, announceFlip]);
+  }, [customHeld, customEditsHeld, themeHoldChanges, themeOwnHoldChanges, announceFlip]);
 
   useEffect(() => {
     saveProjection(projection);
@@ -2231,6 +2401,15 @@ export default function App() {
           // Appearance ▸ Projection (absolute mode, not a toggle).
           // One key cycles the projection (flat ↔ globe), like 'o' cycles overlays.
           case 'f': if (!parked) setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
+          // Appearance ▸ Theme ▸ Customize (2026-10-08) — the theme option's editor, picking
+          // the option first when it isn't the live choice (runThemeEditorKey above, whose
+          // decision stands down below the editor's rung). C for Customize, free on this row.
+          // With no option installed — or one without an editor (a fixed theme) — the key
+          // isn't claimed at all, so the open core's Shift C is exactly what it was.
+          case 'c':
+            if (!themeOptionHasEditor(getThemeOption())) return;
+            if (!parked) themeEditorKeyRef.current();
+            break;
           default: return;
         }
         e.preventDefault();
@@ -2732,6 +2911,10 @@ export default function App() {
   // rather than overlaying. Read into state (not the --es-width var) so the map's
   // inset arrives as a prop on the same commit as its resize (see lib/leftDock).
   const reservedLeftInset = useSyncExternalStore(subscribeReservedLeftInset, getReservedLeftInset);
+  // Its mirror (lib/rightDock, 2026-10-08): the widest RESERVED right dock — the theme
+  // option's editor on desktop — read the same way, so the map's right inset arrives on the
+  // same commit as its resize. 0 with no right dock open, which is every built-in screen.
+  const reservedRightInset = useSyncExternalStore(subscribeReservedRightInset, getReservedRightInset);
 
   // Keep the top-left stack (profile strip + coordinates readout) clear of the
   // top bars: a docked left panel shifts the stack right (--es-width) while the
@@ -2798,8 +2981,10 @@ export default function App() {
       settled.dispose();
     };
     // reservedLeftInset: a dock opening/closing/resizing moves both boxes.
+    // reservedRightInset: so does a right dock — the nav re-centres on what is left of the
+    // map, which can bring it over the stack from the other side (2026-10-08).
     // wheelExpanded: the stack unmounts/remounts around the expanded sidebar.
-  }, [reservedLeftInset, wheelExpanded]);
+  }, [reservedLeftInset, reservedRightInset, wheelExpanded]);
 
   useEffect(() => {
     localStorage.setItem('astro:view-local-space:v1', showLocalSpace ? '1' : '0');
@@ -7148,15 +7333,18 @@ export default function App() {
     };
   }, [lineSpotlight, effMapOverlay, fullSet, applySpot]);
 
-  // The Custom theme's editor window — the theme option's to render (lib/extensions/
-  // themeOptions), opened from the Customize button under the theme list. Context and window
-  // are memoized: App re-renders on every mouse move (the hover readout), and the editor has
-  // no reason to follow it. `preview` is the input-rate path: CSS and attributes at once
+  // The theme option's editor — the option's to render (lib/extensions/themeOptions), opened
+  // from the Customize button under the theme list or Shift C. Context and window are
+  // memoized: App re-renders on every mouse move (the hover readout), and the editor has no
+  // reason to follow it. `preview` is the input-rate path: CSS and attributes at once
   // (lib/appearance), and the map on a throttle through the transient mapDraft above — never
   // the spec, the store or anything committed; the rest of the map follows the spec once it is
-  // committed. The context itself never changes under a preview. Mounted only while
-  // the theme is live and no add-on surface owns the viewport, so `viewParked` reads false
-  // whenever the window is up (the open state is kept, and it comes back with the view).
+  // committed. The context itself never changes under a preview. Mounted only while the
+  // option is live, the editor's rung is reached and no add-on surface owns the viewport, so
+  // `viewParked` reads false whenever the window is up (the open state is kept, and it comes
+  // back with the view). No context without a spec of the reader's own: the editor edits
+  // theirs, never the fallback, and opening it on the fallback seeds one first
+  // (toggleThemeEditor).
   const themeEditorCtx = useMemo<ThemeEditorContext | null>(() => {
     if (!customSpec) return null;
     const specBase = customSpec.base;
@@ -7183,7 +7371,9 @@ export default function App() {
   }, [customSpec, palette, viewParked, closeThemeEditor, openExtensionById, pushMapDraft]);
   const themeEditor = useMemo(
     () =>
-      themeEditorShown && themeOpt && themeEditorCtx ? themeOpt.renderEditor(themeEditorCtx) : null,
+      themeEditorShown && themeOpt?.renderEditor && themeEditorCtx
+        ? themeOpt.renderEditor(themeEditorCtx)
+        : null,
     [themeEditorShown, themeOpt, themeEditorCtx],
   );
 
@@ -7443,6 +7633,8 @@ export default function App() {
         // A docked panel that reserves a left column (lib/leftDock) — the GL frame
         // shrinks in from the left so the panel sits in its own space, not over the map.
         leftInset={reservedLeftInset}
+        // …and its mirror on the right (lib/rightDock): the theme editor's dock.
+        rightInset={reservedRightInset}
         // The base theme and the map style, from ONE throttled palette (mapPalette), so the
         // two always arrive in the same render: `theme` itself whenever the editor is
         // closed, and a base switched in the editor restyles the map once, not twice. The
@@ -7643,15 +7835,18 @@ export default function App() {
           setNodeType={setNodeType}
           rulershipScheme={rulershipScheme}
           setRulershipScheme={setRulershipScheme}
-          // The EFFECTIVE theme marks the list (a held Custom choice marks its base), the
-          // stored choice is themePref, and setThemeSafe holds the picker's refusals.
+          // The EFFECTIVE theme marks the list (a held option marks the built-in it is drawn
+          // in), the stored choice is themePref, and setThemeSafe holds the picker's refusals.
           theme={theme}
           themePref={themeChoice}
           setTheme={setThemeSafe}
           customOption={themeOpt}
-          customEntitled={customEntitled}
+          // The option's two rungs, apart: the row's, and the editor's (Customize).
+          customOptionEntitled={customOptionEntitled}
+          customEditorEntitled={customEditorEntitled}
           customLive={customLive}
           customHeld={customHeld}
+          customEditsHeld={customEditsHeld}
           // The open state as the reader left it (aspectHudOpen's shape): a view lock parks
           // the window without closing it.
           themeEditorOpen={themeEditorOpen}
@@ -8002,9 +8197,11 @@ export default function App() {
           setAspectOrbs={setAspectOrbs}
         />
       )}
-      {/* The Custom theme's editor (Settings ▸ Appearance ▸ Customize): the theme option's
-          window, mounted on the gate in themeEditorShown — live theme, window open, no view
-          lock. Nothing in the open core registers one, so there this is always null. */}
+      {/* The theme option's editor (Settings ▸ Appearance ▸ Customize, or Shift C): the
+          option's window (on desktop a right dock, which reserves its column through
+          lib/rightDock), on the gate in themeEditorShown: option live, editor's rung, window
+          open, no view lock. Nothing in the open core registers one, so there this is
+          always null. */}
       {themeEditor}
       {mapTool === 'capture' && (
         <CaptureHud

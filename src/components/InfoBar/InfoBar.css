@@ -11,7 +11,10 @@
    settings tab that owns it (Calculation or Advanced). */
 .info-bar {
   position: fixed;
-  right: var(--edge, 16px);
+  /* Fixed to the viewport, so it doesn't ride the map frame in as the attribution does: + the
+     width a right dock covers (lib/rightDock, 0px with none) keeps it over that attribution and
+     out from under the dock. */
+  right: calc(var(--right-dock-w, 0px) + var(--edge, 16px));
   /* + the reserved bottom band (the sky band), when one is up. */
   bottom: calc(44px + var(--sky-band-h, 0px));
   /* On the placed pin's rung (8), and after the map frame in #root, so a value tapped here is

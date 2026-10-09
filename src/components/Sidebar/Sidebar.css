@@ -9,7 +9,11 @@
 .sidebar {
   position: absolute;
   top: 16px;
-  right: 58px;
+  /* 58px clears the zoom control (16px gutter + its 36px + a gap). That control rides the map
+     frame, which a RESERVING right dock shrinks (lib/rightDock, 2026-10-08), so the window steps
+     in by the same width and stays usable beside the dock instead of under it. 0px with none.
+     The touch dock below is an overlay of its own, flush with the screen's edge or a dock's. */
+  right: calc(var(--right-dock-reserved, 0px) + 58px);
   z-index: 10;
   width: 200px;
   background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
@@ -45,7 +49,11 @@ html[data-mapstate='natal-pinned'] .sidebar {
   .sidebar {
     position: fixed;
     top: 0;
-    right: 0;
+    /* Beside a right dock, not over it (lib/rightDock, 2026-10-08). On a touch tablet the two
+       don't stay open together — opening either closes the other (App) — so this is for any
+       frame where they could still meet; with no dock it is 0px, flush with the screen's edge
+       as before. Every right dock counts, reserving or not: either one covers the edge. */
+    right: var(--right-dock-w, 0px);
     /* 200px content + the side-notch inset so the options clear a notch-on-the-right landscape
        hold; env() is 0 in portrait / on desktop, so it stays exactly 200px there. */
     width: calc(200px + env(safe-area-inset-right));
@@ -75,6 +83,11 @@ html[data-mapstate='natal-pinned'] .sidebar {
      the frame between the animation finishing and React unmounting, so there's no snap-back. */
   .sidebar.is-closing {
     animation: sb-dock-slide-out 0.18s ease forwards;
+    /* Leaving, it leaves from the screen's edge. The one closing that meets a dock is opening
+       the theme editor's from here (App's touch rule closes this as that one opens): the dock
+       arrives in the same frame, and riding over to its edge first would jump the closing
+       panel 340+ px sideways before it slid out — over the dock all the same. */
+    right: 0;
   }
   /* Touch-only close affordance (no `S` hotkey on a phone): a wide tap target, right-aligned
      at the top of the dock, above the accordion headers. Kept short vertically — a full 44px
@@ -135,7 +148,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
   position: fixed;
   right: 0;
   top: 50%;
-  transform: translateY(-50%);
+  /* Beside a right dock on a touch tablet (lib/rightDock, 2026-10-08) the tab sits at the dock's
+     edge, not over its rows — moved by TRANSFORM, as it moves when Settings opens (below), so
+     both moves ride the compositor. With no dock the shift is 0 and this is translateY(-50%).
+     The extra min(8px, dock) clears the dock's resize band, which reaches 7px out past its edge
+     with its grip centred on the same row as this tab: flush, the tab sat over 6px of the band
+     and took a touch meant for the resize (smoke, 2026-10-08). min() makes it 0 with no dock. */
+  transform: translate(calc(-1 * var(--right-dock-w, 0px) - min(8px, var(--right-dock-w, 0px))), -50%);
   z-index: 39;
   display: inline-flex;
   align-items: center;
@@ -164,9 +183,10 @@ html[data-mapstate='natal-pinned'] .sidebar {
 /* While the dock is open, ride to its left edge (the dock is 200px wide, flush right) so the nub
    stays reachable as a close affordance instead of hiding behind the panel. translateX(-200px)
    matches the panel's slide distance; -50% keeps it vertically centred. Reads as the handle being
-   pushed out by the opening panel, in lockstep with it. */
+   pushed out by the opening panel, in lockstep with it. Beside a right dock the panel stands at
+   that dock's edge (above), so the nub rides out from there too; with none it is -200px. */
 .settings-nub.is-open {
-  transform: translate(-200px, -50%);
+  transform: translate(calc(-200px - var(--right-dock-w, 0px)), -50%);
 }
 /* Hover tint only where a real pointer can actually hover. The nub is touch-only, and on touch a
    tap leaves :hover STUCK (sticky hover) — so after opening the dock the nub stayed darkened and
@@ -511,6 +531,14 @@ html[data-mapstate='natal-pinned'] .sidebar {
 .theme-custom-open .calc-menu-value {
   flex: 1;
   min-width: 0;
+}
+/* The gap above it: 6px, as under Aspect Lines, whose opener gets its 2px margin plus the 4px
+   gap of the .technique-list it sits in. The theme list is a plain block with no gap, and the
+   margin above loses to .calc-menu-trigger's `margin-top: 2px` (same specificity, later in the
+   file), so the opener sat 2px under the theme rows. Two classes outrank that rule wherever it
+   sits (2026-10-08). */
+.theme-list .theme-custom-open {
+  margin-top: 6px;
 }
 
 /* The orb-zone StepperFields stack as full-width rows (their own top margins

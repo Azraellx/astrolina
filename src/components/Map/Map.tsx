@@ -1858,6 +1858,12 @@ interface MapProps {
    *  shrinks out from under it and the GL viewport re-fits. Same prop-not-var
    *  reasoning as {@link bottomInset}; likewise ignored under the Capture frame. */
   leftInset?: number;
+  /** Width (px) of a reserved LAYOUT band along the viewport RIGHT (a panel docked to the right
+   *  edge that claims its own column — lib/rightDock's reserved inset): the right-edge twin of
+   *  {@link leftInset}, with the same prop-not-var reasoning, and likewise ignored under the
+   *  Capture frame, which fits itself beside it instead. 0/absent = the frame reaches the right
+   *  edge as usual. */
+  rightInset?: number;
   /** The theme the map is drawn ON — a built-in, or a Custom theme's base. A change of it, or of
    *  `mapStyle.basemap`, takes the full restyle path. */
   theme: Theme;
@@ -2294,8 +2300,10 @@ function offlineStyle(c: WorldFallbackColors): StyleSpecification {
 type StyleKind = 'live' | 'offline';
 const styleKind = (mode: BasemapMode, basemap: BasemapChoice): StyleKind =>
   mode === 'live' && basemap !== 'outline' ? 'live' : 'offline';
-/** The live style a basemap choice loads — the base theme's own for Outline, which loads none
- *  (asked for only by the probes that look for the way back online, which Outline never runs). */
+/** The live style a basemap choice loads — its own served map (Positron, which no built-in draws
+ *  since 2026-10-08, among them: lib/theme BASEMAP_STYLE_URLS), or the base theme's own for
+ *  Outline, which loads none (asked for only by the probes that look for the way back online,
+ *  which Outline never runs). */
 const liveStyleUrl = (basemap: BasemapChoice, theme: Theme): string =>
   BASEMAP_STYLE_URLS[basemap === 'outline' ? theme : basemap];
 
@@ -4059,6 +4067,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   initialView,
   bottomInset = 0,
   leftInset = 0,
+  rightInset = 0,
   theme,
   mapStyle,
   spriteSpec,
@@ -7672,8 +7681,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // the Capture frame itself ignores that inset, so fit + centre the frame in the
       // VISIBLE area to its right — the same "use the room you actually have" move as the
       // cramped mobile screen — so the whole frame stays on-screen instead of hiding
-      // under the dock. availW collapses to the full width when nothing is docked.
-      const availW = Math.max(0, W - leftInset);
+      // under the dock. A reserved RIGHT column (lib/rightDock, 2026-10-08) is the same
+      // on the other side: the visible area is what lies between the two. availW
+      // collapses to the full width when nothing is docked.
+      const availW = Math.max(0, W - leftInset - rightInset);
       const usableW = availW * (1 - 2 * mx);
       const usableH = H * (1 - 2 * my);
       let boxW: number;
@@ -7688,9 +7699,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Horizontal insets from each host edge. With a reserved left column the frame
       // skews TOWARD the dock — a 25/75 padding split of the leftover width, not a
       // 50/50 centre — since sitting nearer the dock reads more naturally than floating
-      // dead-centre in the visible strip. Plain centre (50/50) when nothing is docked.
+      // dead-centre in the visible strip. A right column alone skews it the other way
+      // (75/25), toward that dock; with a dock on each side there is no one dock to sit
+      // nearer, so it centres between them. Plain centre (50/50) when nothing is docked.
       const freeW = availW - boxW;
-      const leftPadFrac = leftInset > 0 ? 0.25 : 0.5;
+      const leftPadFrac =
+        leftInset > 0 && rightInset > 0
+          ? 0.5
+          : leftInset > 0
+            ? 0.25
+            : rightInset > 0
+              ? 0.75
+              : 0.5;
       const il = Math.round(leftInset + freeW * leftPadFrac);
       const ir = Math.round(W - il - boxW);
       // Landscape mobile: pin the frame flush to the bottom (no margin — like the full-bleed
@@ -7786,7 +7806,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       window.removeEventListener('resize', compute);
       navRo?.disconnect();
     };
-  }, [frameActive, frameAspect, leftInset, noCaption, captionLineCount]);
+  }, [frameActive, frameAspect, leftInset, rightInset, noCaption, captionLineCount]);
 
   // Caption fit: does the enabled caption fit the band on one line, and if not, where does
   // it break? Measured on the LIVE band, because the face is not ours to assume — a
@@ -8024,11 +8044,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
   // Match the GL viewport to the inset container once it's laid out (layout effect so
   // there's no flash of the old size), and again when the frame, extras inset, or a
-  // reserved bottom/left band changes. Both insets arrive as inline styles on the same
+  // reserved bottom/left/right band changes. The insets arrive as inline styles on the same
   // commit, so the container already has its final size when this measures it.
   useLayoutEffect(() => {
     mapRef.current?.resize();
-  }, [frameInset, extraSize, bottomInset, leftInset]);
+  }, [frameInset, extraSize, bottomInset, leftInset, rightInset]);
 
   // Esc exits whichever map tool is armed — the keyboard counterpart to the right-click
   // cancel that Measure/Slide already have, and Capture's primary exit. It calls each
@@ -9403,14 +9423,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 '--capture-extra-left': `${showExtras && extraSide === 'left' ? extraSize : 0}px`,
                 '--capture-extra-top': `${showExtras && extraSide === 'top' ? extraSize : 0}px`,
               } as CSSProperties)
-            : bottomInset || leftInset
-              ? // A reserved bottom and/or left layout band (e.g. a docked bar or a
-                // left-docked panel): the whole frame — canvas, edge badges, markers,
-                // attribution — lifts above / shrinks in from the reserved edge as one
-                // unit, and the resize layout effect re-fits the GL viewport.
+            : bottomInset || leftInset || rightInset
+              ? // A reserved bottom, left and/or right layout band (e.g. a docked bar, a
+                // left-docked panel, a right-docked one): the whole frame — canvas, edge
+                // badges, markers, the zoom control, attribution — lifts above / shrinks in
+                // from the reserved edge as one unit, and the resize layout effect re-fits
+                // the GL viewport. With none of them the style is undefined, as it was.
                 {
                   bottom: bottomInset || undefined,
                   left: leftInset || undefined,
+                  right: rightInset || undefined,
                 }
               : undefined
         }

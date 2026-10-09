@@ -100,22 +100,35 @@ export const autoFlip = {
     title: 'These lines are drawn In Mundo',
     body: 'Every program has to decide where a body “is” before it can draw its line. In Mundo places it where it sits in the sky, latitude and all. In Zodiaco flattens that latitude onto the ecliptic first.',
   },
-  // A Custom theme the reader chose but can't draw right now (lib/autoFlipNotice says when).
-  // NEUTRAL on purpose: the core knows no tier names, so it says the theme isn't available
-  // and stops; a build that gates the option retunes this pair at startup to name what
-  // brings it back. As 'line-system-held' does, it ends on the sentence that matters —
-  // nothing was taken — rather than on what moved. (2026-10-06)
+  // A theme the reader chose but can't draw right now (lib/autoFlipNotice says when).
+  // NEUTRAL on purpose: the core knows no tier names and no option's name (the option
+  // brings its own label), so it says "your theme", says it isn't available, and stops; a
+  // build that gates the option retunes this pair at startup to name it and what brings it
+  // back. As 'line-system-held' does, it ends on the sentence that matters — nothing was
+  // taken — rather than on what moved. (2026-10-06)
   //
   // No location clause, although the target (the greyed row, in Appearance) is usually off
   // screen when this fires at boot. The clause above exists to give a route back, and there
   // is no setting to go back to here: what returns the theme is its becoming available
   // again, not a control. The row's own tip carries the reason for anyone who looks.
   //
-  // And no {base}: the card fills no placeholders (AutoFlipNotice renders the catalog
-  // string as it stands), so the theme being drawn is named by what it is to the reader's
-  // own — the one it was built on — which is also the more useful half of the fact.
+  // And no {name}: the card fills no placeholders (AutoFlipNotice renders the catalog
+  // string as it stands), so the theme being drawn is named by what it is to the reader —
+  // the one they used before choosing this. Since 2026-10-08 that is what a hold draws (the
+  // last built-in picked, App's builtinPref), no longer the base the theme was built on,
+  // and the sentence moved with it.
   'theme-held': {
-    title: 'Custom theme on hold',
-    body: 'Your custom theme isn’t available right now, so the app is drawn in the theme it was built on. Nothing is cleared: it comes back as you left it once it’s available again.',
+    title: 'Your theme is on hold',
+    body: 'The theme you chose isn’t available right now, so the app is drawn in the one you used before it. Nothing is cleared: it comes back as you left it once it’s available again.',
+  },
+  // The reader's OWN version of a theme held behind the option's fallback (a paid rung
+  // ended; lib/autoFlipNotice). As neutral as the one above, for the same reasons — the
+  // core can't name the option, the fallback, or the plan — and a build retunes it to say
+  // all three. It must not read as the one above: the theme is still chosen and still
+  // drawn, only not as the reader made it, so what it calls unavailable is their VERSION,
+  // never the theme. Same last sentence, because it is the same promise. (2026-10-08)
+  'theme-edits-held': {
+    title: 'Your own version is on hold',
+    body: 'Your own version of this theme isn’t available right now, so its standard version is drawn instead. Nothing is cleared: yours comes back as you left it once it’s available again.',
   },
 } as const;

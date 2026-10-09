@@ -87,12 +87,13 @@ import {
   visibleAngleSpecs,
   type AngleCode,
 } from '../../lib/astro/format';
+import { publishLeftDock, retireLeftDock } from '../../lib/leftDock';
 import {
-  getLeftDockMax,
-  publishLeftDock,
-  retireLeftDock,
-  useLeftDockMax,
-} from '../../lib/leftDock';
+  dockWidthFor,
+  nextDockStamp,
+  useDockWidth,
+  type DockRequest,
+} from '../../lib/dockColumn';
 import { HintMenu } from '../Sidebar/Sidebar';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -488,21 +489,26 @@ const minSidebarWidth = (): number => {
 function maxSidebarWidth(): number {
   return Math.min(window.innerWidth * 0.7, 1200);
 }
-/** The width the panel is DRAWN at: the reader's, inside [floor, cap], where the cap is also
- *  `navMax` — the window less the column the top nav needs to stay on ONE row beside the panel
- *  (lib/leftDock `useLeftDockMax`, measured and published by TopNav). Measured: at its 70% the
- *  panel left the nav's one-row form too little column on a 1100 or 1024 window, and the menus
- *  wrapped under the toggle. Unlike the 70% cap, this one does NOT outrank the floor: on a
- *  window too narrow for both the panel keeps its floor and the nav wraps to its two-row form —
- *  a panel squeezed under its floor loses its own labels, while the two-row nav is a designed
- *  state with every control whole (TopNav.css). There the range is the floor alone and the
- *  handle holds still, as it already did wherever the 70% cap had crossed the floor — on a
- *  portrait tablet now, and a desktop window under ~883 px.
+/** The id the panel publishes under, in the left-dock registry and the dock column alike. */
+const DOCK_ID = 'expanded-sidebar';
+/** What the panel asks of the map column (lib/dockColumn), which answers with the width it is
+ *  DRAWN at: the reader's, inside [floor, cap], where the cap is also what the column leaves —
+ *  the window less the room the top nav needs to stay on ONE row beside the panel (measured and
+ *  published by TopNav), and less a right dock's share where one is open, the room going first
+ *  to whichever was opened or dragged last. Measured: at its 70% the panel left the nav's
+ *  one-row form too little column on a 1100 or 1024 window, and the menus wrapped under the
+ *  toggle. Unlike the 70% cap, the column does NOT outrank the floor: on a window too narrow
+ *  for both the panel keeps its floor and the nav wraps to its two-row form — a panel squeezed
+ *  under its floor loses its own labels, while the two-row nav is a designed state with every
+ *  control whole (TopNav.css). There the range is the floor alone and the handle holds still,
+ *  as it already did wherever the 70% cap had crossed the floor — on a portrait tablet now, and
+ *  a desktop window under ~883 px. With no right dock the answer is exactly the clamp this
+ *  panel applied itself before 2026-10-08.
  *
- *  Whole pixels: the 70% cap is fractional (1440 × 0.7 = 1007.9999999999999), and a drag that
- *  ended on it stored that string. */
-function sidebarWidthFor(pref: number, navMax: number): number {
-  return Math.round(Math.max(minSidebarWidth(), Math.min(pref, maxSidebarWidth(), navMax)));
+ *  Whole pixels (the column rounds): the 70% cap is fractional (1440 × 0.7 =
+ *  1007.9999999999999), and a drag that ended on it stored that string. */
+function sidebarRequest(pref: number, stamp: number): DockRequest {
+  return { side: 'left', pref, min: minSidebarWidth(), cap: maxSidebarWidth(), stamp };
 }
 /** How far the pointer travels from the press before the edge follows it (useMovableHud's
  *  figure, for its reason: a press jitters, and must not be saved as a width). */
@@ -1140,15 +1146,17 @@ export function ExpandedChartSidebar({
   // standing states — the window's size and the column the top nav needs — so the drawn width
   // is derived at render and the stored one is never rewritten to fit them. A width dragged on
   // a wide monitor comes back there instead of being shaved to what the last small window
-  // allowed. Only the reader's drag writes it (onUp below). `useLeftDockMax` re-renders on a
-  // window resize as well as a change of the nav's claim, which is also what keeps the
-  // innerWidth read inside sidebarWidthFor current.
+  // allowed. Only the reader's drag writes it (onUp below). `useDockWidth` re-renders on a
+  // window resize as well as a change in the column (the nav's claim, a right dock), which is
+  // also what keeps the innerWidth read inside sidebarRequest current.
   const [widthPref, setWidthPref] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
     return saved && saved >= minSidebarWidth() ? saved : DEFAULT_WIDTH;
   });
-  const navMax = useLeftDockMax();
-  const width = sidebarWidthFor(widthPref, navMax);
+  // When the panel was opened, or last dragged: the dock column serves the most recent first
+  // (lib/dockColumn). Never stored — it orders this session's docks and nothing more.
+  const [stamp, setStamp] = useState(nextDockStamp);
+  const width = useDockWidth(DOCK_ID, sidebarRequest(widthPref, stamp));
 
   // A LANDSCAPE phone has the same problem by a different route: the panel stays resizable, but
   // its cap (70% of an already-short viewport) sits under the 640px column cutoff, so dragging can
@@ -1162,8 +1170,8 @@ export function ExpandedChartSidebar({
   // docked panel can be open at the same time without the two fighting over
   // the var; retiring on unmount recomputes it from whatever remains.
   useEffect(() => {
-    publishLeftDock('expanded-sidebar', width);
-    return () => retireLeftDock('expanded-sidebar');
+    publishLeftDock(DOCK_ID, width);
+    return () => retireLeftDock(DOCK_ID);
   }, [width]);
 
   // Aspect-frame view while horizon data is in: combined (default — one merged
@@ -1450,10 +1458,12 @@ export function ExpandedChartSidebar({
   });
 
   // The width the current drag last set (null until it moves past the slop) — what onUp stores;
-  // and what the press started from: where, the reader's width, and the width drawn from it
-  // (they differ whenever a cap is holding the panel in).
+  // what the press started from: where, the reader's width, the width drawn from it (they
+  // differ whenever a cap is holding the panel in) and the panel's place in the dock column's
+  // order; and the place the drag took once it left the slop.
   const draggedRef = useRef<number | null>(null);
-  const dragStartRef = useRef({ x: 0, pref: 0, width: 0 });
+  const dragStartRef = useRef({ x: 0, pref: 0, width: 0, stamp: 0 });
+  const dragStampRef = useRef(0);
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -1462,9 +1472,18 @@ export function ExpandedChartSidebar({
       // reader's width with the CAPPED one (1200 kept, 1008 drawn at 1440).
       const start = dragStartRef.current;
       if (draggedRef.current == null && Math.abs(e.clientX - start.x) < DRAG_SLOP) return;
+      // Out of the slop it is a drag, and the panel being dragged is the one the dock column
+      // serves first (lib/dockColumn): a right dock gives way to it, down to its own minimum.
+      if (draggedRef.current == null) {
+        dragStampRef.current = nextDockStamp();
+        setStamp(dragStampRef.current);
+      }
       // Clamped by the same rule the panel is drawn by, so the handle stops dead at the cap
       // (no stretch past it that snaps back), and what gets stored is a width the reader saw.
-      const newWidth = sidebarWidthFor(e.clientX + dragOffsetRef.current, getLeftDockMax());
+      const newWidth = dockWidthFor(
+        DOCK_ID,
+        sidebarRequest(e.clientX + dragOffsetRef.current, dragStampRef.current),
+      );
       draggedRef.current = newWidth;
       setWidthPref(newWidth);
     };
@@ -1473,11 +1492,15 @@ export function ExpandedChartSidebar({
       draggingRef.current = false;
       // The one place the stored width is written: the reader's own drag — and only one that
       // changed what is drawn. A drag that ends where it began hands back the width it started
-      // from, which may be wider than the cap and is still the reader's.
+      // from, which may be wider than the cap and is still the reader's — and its place in the
+      // dock column's order, so a drag that came to nothing moves no other dock either.
       const start = dragStartRef.current;
       const dragged = draggedRef.current;
       if (dragged != null && dragged !== start.width) localStorage.setItem(WIDTH_KEY, String(dragged));
-      else if (dragged != null) setWidthPref(start.pref);
+      else if (dragged != null) {
+        setWidthPref(start.pref);
+        setStamp(start.stamp);
+      }
       setDragging(false);
       onResizingChangeRef.current?.(false);
       document.body.style.cursor = '';
@@ -1534,7 +1557,7 @@ export function ExpandedChartSidebar({
     if (e.button !== 0) return; // primary button / single touch contact only
     draggingRef.current = true;
     draggedRef.current = null;
-    dragStartRef.current = { x: e.clientX, pref: widthPref, width };
+    dragStartRef.current = { x: e.clientX, pref: widthPref, width, stamp };
     setDragging(true);
     onResizingChange?.(true);
     dragOffsetRef.current = width - e.clientX;

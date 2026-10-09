@@ -59,9 +59,12 @@ Maps & places
     https://openfreemap.org
   - OpenMapTiles — vector tile schema.
     https://openmaptiles.org
-  - MapTiler Basic style (the "Earth" theme) — BSD-3-Clause.
-    © MapTiler.com & OpenMapTiles contributors; © Mapbox.
-    https://github.com/openmaptiles/maptiler-basic-gl-style
+  - OpenMapTiles styles — MapTiler Basic, OSM Bright, Dark Matter and
+    Positron, some adapted. Code BSD-3-Clause, design CC BY 4.0.
+    © MapTiler.com & OpenMapTiles contributors; © Mapbox; © CartoDB.
+    The copy of MapTiler Basic redistributed in public/basemaps/ keeps its
+    notice beside it (MAPTILER-BASIC-LICENSE.md).
+    https://openmaptiles.org/styles/
   - GeoNames — offline place-name search and city lookup. CC BY 4.0.
     https://www.geonames.org
   - IANA Time Zone Database — the per-zone standard-time adoption dates

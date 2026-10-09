@@ -72,8 +72,9 @@ geocoding.
 
 - **Vite + React + TypeScript**
 - **MapLibre GL** rendering **OpenFreeMap** vector basemaps (OpenMapTiles schema,
-  OpenStreetMap data); the "Earth" theme uses a self-hosted **MapTiler Basic**
-  style (BSD-3-Clause)
+  OpenStreetMap data) in OpenMapTiles' **MapTiler Basic** (self-hosted), **OSM
+  Bright**, **Dark Matter** and **Positron** styles (BSD-3-Clause code, CC BY 4.0
+  design)
 - **Swiss Ephemeris** (`@swisseph/browser`, WebAssembly, AGPL-3.0) for all body
   positions, houses, and sidereal time, client-side, with self-hosted `.se1`
   data in `public/ephe/`

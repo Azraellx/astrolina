@@ -26,10 +26,14 @@ export type ThemeChoice = Theme | 'custom';
 // The last BUILT-IN theme picked. Never holds 'custom' — see CUSTOM_CHOSEN_KEY.
 const STORAGE_KEY = 'astro:theme:v1';
 
+/** What a missing or unreadable stored theme loads as (Earth). Also the one built-in a
+ *  downstream build can't tier (lib/extensions/builtinThemeTiers): every reader reaches it. */
+export const DEFAULT_THEME: Theme = 'vintage';
+
 export function loadTheme(): Theme {
   const v = localStorage.getItem(STORAGE_KEY);
   if (v === 'glass' || v === 'dark' || v === 'vintage') return v;
-  return 'vintage';
+  return DEFAULT_THEME;
 }
 
 export function saveTheme(theme: Theme) {
@@ -72,10 +76,25 @@ export function applyTheme(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
-export const BASEMAP_STYLE_URLS: Record<Theme, string> = {
-  // Glass rides over the light "positron" basemap — frosted silver panels read
-  // cleanest over a pale map.
-  glass: 'https://tiles.openfreemap.org/styles/positron',
+/** A served vector map: each built-in theme's own, and Positron, which no built-in draws since
+ *  2026-10-08 (below) but a palette can still choose (themePalette BasemapChoice). */
+export type ServedMap = Theme | 'positron';
+
+// GLASS MOVED TO OSM BRIGHT (Salvatore, 2026-10-08), so the four themes look distinct: Glass
+// and the Prism theme a downstream build adds (its colour-blind look) both drew Positron, pale
+// grey under light panels, and side by side the two read as one theme. Bright (OpenFreeMap's
+// maintained fork of OpenMapTiles' OSM Bright; BSD-3-Clause code, CC BY 4.0 design — credited in
+// CreditsModal) gives Glass cream land and pale-blue water under the same frosted panels. Same
+// OpenMapTiles schema, fonts and sprite as the other three, so basemapStyle's source-layer
+// repaint and toggles work on it unchanged; its one layer the others lack, the ferry routes,
+// basemapStyle hides. Positron stays, under its own id rather than Glass's: a palette that was
+// designed on that plain map (a downstream build's colour-blind look promises 3:1 on ITS land
+// and water) pins it, so it doesn't move with Glass. Glass's built-in line colours read no worse
+// on Bright than they did on Positron (both rely on their halos), which is why Glass itself could.
+export const BASEMAP_STYLE_URLS: Record<ServedMap, string> = {
+  glass: 'https://tiles.openfreemap.org/styles/bright',
+  // The plain light-grey map, Glass's until 2026-10-08.
+  positron: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
   // Vintage uses a self-hosted MapTiler-Basic style (BSD-3-Clause) retiled onto
   // OpenFreeMap's free OpenMapTiles vector tiles. See public/basemaps/README.md.
@@ -85,11 +104,16 @@ export const BASEMAP_STYLE_URLS: Record<Theme, string> = {
 // Offline basemap fallback palette (see Map's offlineStyle + installWorldFallback). With no
 // connection the live OpenFreeMap styles/tiles can't load — the glass/dark STYLES are remote too,
 // so offline they wouldn't even reach the background — so the map draws a plain ocean + the bundled
-// coarse world outline instead. These echo each theme's basemap so it reads as a muted version of
+// coarse world outline instead. These echo each served map so it reads as a muted version of
 // the real one: `ocean` is the background, `land` the continent fill, `line` the coastlines + borders.
-export const WORLD_FALLBACK_COLORS: Record<Theme, { ocean: string; land: string; line: string }> = {
+// Keyed by the MAP, not the theme: `positron` is Positron's, the values Glass had until 2026-10-08
+// (exactly, so a palette pinned to that map keeps its land and water tokens); `glass` echoes Bright
+// now — cream land, pale-blue water, and a slate coastline that reads on both (2.9:1 on the land
+// and 2.0:1 on the water, where Positron's has 2.4 and 1.9).
+export const WORLD_FALLBACK_COLORS: Record<ServedMap, { ocean: string; land: string; line: string }> = {
   vintage: { ocean: 'hsl(205, 42%, 80%)', land: 'hsl(47, 26%, 86%)', line: 'hsl(34, 16%, 56%)' },
-  glass: { ocean: 'hsl(205, 32%, 86%)', land: 'hsl(0, 0%, 96%)', line: 'hsl(210, 12%, 64%)' },
+  glass: { ocean: 'hsl(203, 45%, 80%)', land: 'hsl(32, 40%, 95%)', line: 'hsl(205, 20%, 56%)' },
+  positron: { ocean: 'hsl(205, 32%, 86%)', land: 'hsl(0, 0%, 96%)', line: 'hsl(210, 12%, 64%)' },
   dark: { ocean: 'hsl(210, 26%, 15%)', land: 'hsl(210, 12%, 23%)', line: 'hsl(210, 12%, 44%)' },
 };
 
@@ -109,13 +133,34 @@ export const LABEL_HALO_COLORS: Record<Theme, string> = {
 // toggles. OpenFreeMap's stock dark style paints place names in a dim slate
 // that's hard to read against the near-black ground; lift them to a soft light
 // gray over a deeper halo. Null = the style's own label paint reads fine
-// (glass/vintage), so it isn't touched.
+// (glass/vintage — on Bright and on Positron alike), so it isn't touched.
 export const LABEL_CONTRAST: Record<
   Theme,
   { color: string; halo: string; haloWidth: number } | null
 > = {
   dark: { color: '#c5cad4', halo: 'rgba(8, 10, 15, 0.92)', haloWidth: 1.15 },
   glass: null,
+  vintage: null,
+};
+
+// GLASS'S ROADS, A QUIET WARM GREY (Salvatore, 2026-10-08). Painted over every road layer (the
+// transportation source-layer) by basemapStyle's applyBasemapPaint, as the built-in of the Roads
+// token (themePalette basemap.road), the way LABEL_CONTRAST is the built-in of the place-name ones.
+// From about z5 Bright draws a dense road net in orange and yellow (motorways #fc8, trunk and
+// primary #fea, casings #e9ac77): the hues of the Sun, Mars, Jupiter and half a dozen other bodies'
+// lines, laid across every landmass a chart is read on. #cfc7bc is Bright's own land hue (#f8f4f0)
+// taken darker: 1.53:1 on the land, so the net still reads as roads, but with no colour for a line
+// to be confused with, below the borders (#9e9cab, 2.46:1), and 3.5:1 off the Moon's slate, the one
+// grey line. Chosen by eye at z5–6 over Japan, Korea and central Europe against #d9d2c8 (roads all
+// but gone at z5) and #c5bcb0 (a grey texture as busy as the borders); world view draws no roads.
+// KEYED BY THE SERVED MAP, and read on the map choice itself — never through themePalette's
+// mapTableOf, which reads Glass's tables for Positron: a palette pinned to Positron must draw
+// exactly as Glass did there, roads included. Null = the style's own roads. A Custom theme's own
+// Roads colour still wins: it is an override of the token.
+export const BASEMAP_ROAD_PAINT: Record<ServedMap, string | null> = {
+  glass: '#cfc7bc',
+  positron: null,
+  dark: null,
   vintage: null,
 };
 
@@ -133,6 +178,15 @@ export const ZENITH_DISC_COLORS: Record<Theme, string> = {
 // Glass themes — including over the pale zenith disc, where its baked glyph and ring
 // nearly disappear. On those themes only, the Moon's lines, labels, and zenith
 // glyph/stamp use this darker slate instead.
+//
+// ONE RULE (2026-10-08): the Moon is this slate wherever it is drawn on a LIGHT ground, and
+// its pale gray elsewhere. On the map that is the Glass and Earth basemaps — every family of
+// its lines: its own lines, parans (lib/themePalette paran.*) and local space, drawn and in
+// the line set plugins read (lib/lineInks inkAllLines). Off the map it is Glass's light panels
+// and the report paper, through --moon-panel-ink (planetInk falls back through it). Until then
+// the rule held for the Moon's own lines only: its parans stayed pale beside them, Radar's
+// reveal drew its local space pale, and the wheel, lists and paper drew its glyph pale on a
+// near-white ground — none of it decided, each an omission.
 export const MOON_LINE_DARK = '#5b6480';
 
 // Per-theme MAP-LINE colour overrides for bodies whose PLANET_COLORS tint washes out
@@ -160,7 +214,9 @@ export const MAP_LINE_COLOR_OVERRIDES: Record<Theme, Partial<Record<PlanetName, 
 // visible in it (smoke test, 2026-10-05). Glass sets --moon-panel-ink to MOON_LINE_DARK
 // (index.css); the other themes' panels are dark, leave it unset, and the Moon keeps its
 // tint. A CSS variable rather than the theme read at render, so a theme switch recolours
-// it at once. The wheel, sidebar and cards are untouched: there the name stands beside it.
+// it at once. (Since 2026-10-08 the wheel, lists and cards read the same ink through
+// themePalette planetInk — "the name stands beside it" didn't make a pale glyph on a
+// near-white panel any easier to see; see MOON_LINE_DARK.)
 export function panelGlyphColor(planet: PlanetName, tint: string): string {
   return planet === 'Moon' ? `var(--moon-panel-ink, ${tint})` : tint;
 }

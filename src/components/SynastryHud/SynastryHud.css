@@ -21,14 +21,19 @@
      against band+edge, never added on top. */
   bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--sky-band-h, 0px) + var(--edge, 16px)));
   /* Quarter-shift past an overlaying sidebar; a RESERVING dock (--es-reserved)
-     adds the second quarter so the bar centres on the remaining map column. */
-  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
+     adds the second quarter so the bar centres on the remaining map column. A right dock
+     (lib/rightDock) takes the same two quarters off; every var falls back to 0px. */
+  left: calc(
+    50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4 - var(--right-dock-w, 0px) / 4 -
+      var(--right-dock-reserved, 0px) / 4
+  );
   transform: translateX(-50%);
   /* Above the top nav (z-25) so a bar dragged up isn't stuck behind it; also clears the profile
      box (20). Below the movable windows (27) / reports (29) / sidebar (30). */
   z-index: 26;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-  max-width: calc(100vw - var(--es-width, 0px) - 80px);
+  /* Narrower by whatever is docked on either side (each var 0px with nothing docked). */
+  max-width: calc(100vw - var(--es-width, 0px) - var(--right-dock-w, 0px) - 80px);
 
   /* The bar's chrome defaults to the steady brand accent. The bar's edge border
      (below) keeps the pin-state glow as a designated map-state cue. */
@@ -531,7 +536,8 @@
 
 @media (max-width: 1080px) {
   .synastry-hud {
-    max-width: calc(100vw - 32px);
+    /* Inside the column a right dock leaves (lib/rightDock; 0px with none). */
+    max-width: calc(100vw - var(--right-dock-w, 0px) - 32px);
   }
   .synastry-hud-body {
     flex-wrap: wrap;

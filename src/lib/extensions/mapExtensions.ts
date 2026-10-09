@@ -455,8 +455,18 @@ export interface MapExtensionContext {
   closeTool: (id: string) => void;
 }
 
-/** 'core' is always available; 'gated' is subject to the entitlement resolver. */
-export type Entitlement = 'core' | 'gated';
+/** 'core' is always available; 'gated' is subject to the entitlement resolver.
+ *
+ *  'adv' (2026-10-08) is an ACCOUNT rung below 'gated' — the theme option's row
+ *  (./themeOptions), which a downstream build opens to every signed-in reader while its
+ *  editor stays 'gated'. It is resolved by the SHARED policy only (./entitlement
+ *  isEntitled, which sends it to the resolver as it does 'gated'), and reads as the ADV
+ *  rung on the plan ladder (lib/plan tierOfEntitlement). This seam's own isEntitled below,
+ *  and the sky-band track's (./skyBandTrack), still test `tier !== 'gated'`, so an 'adv'
+ *  extension there would fall OPEN: teach them the rung before a View-menu or band
+ *  extension declares it. It is not the Advanced reading toggle — a reader who switches
+ *  Advanced off keeps what their account entitles them to. */
+export type Entitlement = 'core' | 'adv' | 'gated';
 
 export interface MapExtension {
   /** Stable unique id; also the open/closed-state key. */

@@ -196,26 +196,49 @@ export const settings = {
   },
 
   theme: {
-    glass: { label: 'Glass' },
-    dark: { label: 'Dark' },
-    vintage: { label: 'Earth' },
-    // A downstream build's Custom theme (lib/extensions/themeOptions). The option brings
-    // its own label, hint and held reason; these are what the CORE draws around it — the
+    // `hint`: the row's hover tip, one sentence of what the theme looks like (2026-10-08, beside
+    // the Prism row's). Describes, never ranks — no theme is the "accurate" one. Under the tip
+    // cap (180). Glass's map is Bright since 2026-10-08 (lib/theme BASEMAP_STYLE_URLS); until
+    // then its hint said "a quiet light-grey map", which went false with the move.
+    glass: { label: 'Glass', hint: 'Frosted silver panels over a bright, detailed map of cream land and pale-blue seas.' },
+    dark: { label: 'Dark', hint: 'A deep slate map under dark panels, made for late nights, where every line stands out.' },
+    vintage: { label: 'Earth', hint: 'A warm atlas look: soft blue seas and sandy land, framed in parchment-brown panels.' },
+    // A downstream build's theme option (lib/extensions/themeOptions). The option brings
+    // its own label, hint and held reasons; these are what the CORE draws around it — the
     // opener beneath the list, and the reasons a row gives while it can't act. Neutral on
-    // purpose: the core knows no tier names, and none of these reach the open core's
-    // screen, which registers no option. Each under the tip cap (180, ui/tipWidth.ts).
-    // (2026-10-06)
+    // purpose: the core knows no tier names and never names the option (its label() does),
+    // and none of these reach the open core's screen, which registers no option. Each under
+    // the tip cap (180, ui/tipWidth.ts). (2026-10-06)
     customize: 'Customize',
     customizeHint:
       'Open the theme editor: colours, line styles and effects, from a few broad choices down to every single value.',
     // The held row's reason when the option brings none of its own. It can't say what
-    // brings the theme back (the core doesn't know), so it says what is true meanwhile.
+    // brings the theme back (the core doesn't know), so it says what is true meanwhile —
+    // since 2026-10-08 a hold draws the theme used before this one, not this one's base.
     customHeld:
-      'Not available right now. The app is drawn in the theme this one was built on meanwhile; your custom theme is kept, not cleared.',
+      'Not available right now. The app is drawn in the theme you used before this one meanwhile; your choice is kept, not cleared.',
+    // The live row's note while the reader's own version waits behind the option's
+    // fallback (lib/themeChoice editsHeld), when the option brings no editsHeldHint. The
+    // row still works — this is a note under its hint, not an unavailable state.
+    // (2026-10-08)
+    customEditsHeld:
+      'Your own version of this theme isn’t available right now, so its standard version is drawn; yours is kept, not cleared.',
     // The Details basemap switches on the Outline map. Names the fix by the editor's own
     // words (its Map row, behind Customize) and says the switch's setting survives.
     outlineUnavailable:
       'The Outline map is coastlines only: it has no roads, rivers or place names. Choose another Map in Customize to use this; your choice is kept.',
+    // The note line under a theme row's hint while the reader is below its rung: `lockedNote` on
+    // a teaser — a built-in a downstream build has tiered (lib/extensions/builtinThemeTiers), or
+    // the theme option's row when not chosen (a chosen one is HELD and says so instead) — and
+    // `keptNote` on a tiered built-in the reader is drawn in, which stays theirs. One locked note
+    // for every row, so the hints above it can be what each theme LOOKS like, the same for
+    // every reader (2026-10-08: Prism's hint used to say who it was free for, to Members too). Neutral, as the option's are: the
+    // core knows no tier names (the tip's headline carries the rung's tag), and the build that
+    // tiers a theme retunes both to name what unlocks it. Never on the open core's screen,
+    // which tiers nothing. Under the tip cap (180). (2026-10-08)
+    lockedNote: 'Not open to this account yet. Press to see what unlocks it.',
+    keptNote:
+      'Yours to keep. If you switch to another theme, coming back to this one needs what the badge shows.',
   },
 
   projection: {

@@ -50,6 +50,11 @@ import {
   publishMapColumnNeed,
   subscribeLeftDock,
 } from '../../lib/leftDock';
+import {
+  getReservedRightInset,
+  getRightDockWidth,
+  subscribeRightDock,
+} from '../../lib/rightDock';
 import { navColumn, fitToNavColumn, ZOOM_GAP } from './navColumn';
 import { watchSettled } from '../../lib/hudSettled';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
@@ -1056,7 +1061,7 @@ export function TopNav({
       const col = navColumn();
 
       // 1b. The compact bar's ONE-ROW width, published as the column no dock may take
-      // (leftDock.ts publishMapColumnNeed; the Reports dock and the expanded sidebar cap their
+      // (lib/dockColumn; the Reports dock, the expanded sidebar and a right dock cap their
       // width by it). It is what keeps this bar on one row however far a dock is dragged —
       // Salvatore, 1 Oct: "it should stay on one row" — and the cap is measured, not a number in
       // the docks, because this width moves with the chart's initials and year, the language and
@@ -1083,8 +1088,10 @@ export function TopNav({
         const oneRowW = w(left) + g + w(center) + g + w(right) + chrome;
         if (hidName) stack.classList.add('chart-expanded');
         if (!isCompact) stack.classList.remove('topnav-compact');
-        // In from the screen's right edge: the zoom control and its gutter, the gap the bar
-        // keeps from it, the bar, and the bar's own gutter from the dock.
+        // In from the map column's right end: the zoom control and its gutter, the gap the bar
+        // keeps from it, the bar, and the bar's own gutter from the dock. Measured from the
+        // column's end, not the screen's, so the figure is the column's own need whatever is
+        // docked on the right — each dock subtracts the docks on the far side itself.
         publishMapColumnNeed(col.right - col.zoomLeft + ZOOM_GAP + oneRowW + col.edge);
       }
 
@@ -1143,7 +1150,15 @@ export function TopNav({
       const cb = (stack.offsetParent as HTMLElement | null)?.getBoundingClientRect();
       const cbLeft = cb?.left ?? 0;
       const cbWidth = cb?.width ?? window.innerWidth;
-      const c0 = cbLeft + cbWidth / 2 + col.left / 4 + getReservedLeftInset() / 4;
+      // The CSS resting place (TopNav.css), restated: a quarter of each left dock's width added,
+      // a quarter of each right dock's taken away — the map column's true centre.
+      const c0 =
+        cbLeft +
+        cbWidth / 2 +
+        col.left / 4 +
+        getReservedLeftInset() / 4 -
+        getRightDockWidth() / 4 -
+        getReservedRightInset() / 4;
       const halfL = Math.max(sW / 2, bW / 2 - d);
       const halfR = Math.max(sW / 2, bW / 2 + d);
       const lo = col.left + col.edge + halfL;
@@ -1190,9 +1205,10 @@ export function TopNav({
     };
     pass();
     // What changes the room or the bar: the window, a dock opening/closing/being dragged (either
-    // kind — subscribeLeftDock fires for both), and the bar or the readout under it resizing
-    // (a name change, a tool's readout appearing). A resize the layout itself causes settles on
-    // the next pass: the natural width it measures doesn't change with the mode.
+    // kind, either side — subscribeLeftDock and subscribeRightDock fire for both kinds), and the
+    // bar or the readout under it resizing (a name change, a tool's readout appearing). A resize
+    // the layout itself causes settles on the next pass: the natural width it measures doesn't
+    // change with the mode.
     //
     // The window and the dock registry are read once a frame, not per event: a docked panel that
     // republishes from an effect retires itself in the cleanup first, so a listener called on
@@ -1216,11 +1232,13 @@ export function TopNav({
     ro.observe(stack);
     window.addEventListener('resize', schedule);
     const unsubDock = subscribeLeftDock(schedule);
+    const unsubRightDock = subscribeRightDock(schedule);
     return () => {
       ro.disconnect();
       readoutRo.disconnect();
       window.removeEventListener('resize', schedule);
       unsubDock();
+      unsubRightDock();
       cancelAnimationFrame(raf);
       settled.dispose();
     };

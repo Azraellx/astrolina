@@ -19,7 +19,7 @@ type NoteKey =
   | 'sourceCode'
   | 'openstreetmap'
   | 'openfreemap'
-  | 'maptiler'
+  | 'mapStyles'
   | 'geonames'
   | 'photon'
   | 'swisseph'
@@ -89,10 +89,19 @@ const CREDIT_GROUPS: CreditGroup[] = [
         noteKey: 'openfreemap',
       },
       {
-        name: 'MapTiler Basic style',
-        href: 'https://github.com/openmaptiles/maptiler-basic-gl-style',
-        license: 'BSD-3-Clause',
-        noteKey: 'maptiler',
+        // Every served map's style, in one row (2026-10-08): MapTiler Basic (self-hosted), and OSM
+        // Bright, Dark Matter and Positron through OpenFreeMap's forks. All four are OpenMapTiles
+        // styles under the same two licences — code BSD-3-Clause, design CC BY 4.0 — and each asks
+        // for its design credit to be "reasonably accessible from maps based on this style (for
+        // example, in a webpage linked from copyright notice on the map)", which this dialog is. So
+        // one line names the four and each copyright holder once, says some are adapted (CC BY asks
+        // that a change be indicated), and links the page that lists them, from which each style's
+        // licence is a click away. BSD-3's reproduce-the-notice term binds only what this app
+        // redistributes — Earth's copy, whose notice ships beside it (public/basemaps).
+        name: 'OpenMapTiles styles',
+        href: 'https://openmaptiles.org/styles/',
+        license: 'BSD-3-Clause · CC BY 4.0',
+        noteKey: 'mapStyles',
       },
       {
         name: 'GeoNames',

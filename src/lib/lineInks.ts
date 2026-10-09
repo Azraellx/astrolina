@@ -18,7 +18,7 @@
 // never '#rrggbbaa': the map's badge-text and crossing-blend readers parse 6-digit hex only.
 import type { FeatureCollection, Geometry } from 'geojson';
 import { PLANET_COLORS, type PlanetName } from './ephemeris';
-import { THEMES, minorPaletteSlot } from './theme';
+import { minorPaletteSlot } from './theme';
 import { builtinPalette, cssColor, type ResolvedPalette } from './themePalette';
 import type { AllLines } from './extensions/mapExtensions';
 
@@ -182,13 +182,6 @@ export function withMinorInks<G extends Geometry, P extends { color: string }>(
   return out ? { ...fc, features: out } : fc;
 }
 
-/** Whether `inks` ARE a built-in theme's — the engine hands back the built-in's own inks for
- *  built-in content, keyed by the theme's bare name (MapInks.key); a custom palette's key is
- *  `base~hash`. */
-export function isBuiltinInks(inks: MapInks): boolean {
-  return (THEMES as readonly string[]).includes(inks.key);
-}
-
 // ── Line families ──
 // Each line family's COLOUR step, applied as the LAST memo of its chain in App so a colour
 // change — a Custom theme being edited — recolours the map's lines without regenerating a
@@ -239,14 +232,14 @@ export function inkOverlayParans<G extends Geometry, P extends { planetA: Planet
  *  very functions the drawn chain uses. Families nothing would recolour come back as they went
  *  in, so `natalParans` stays the same object as `parans`, as buildAllLines makes it.
  *
- *  The chart's own local space is the one family that depends on WHICH inks. The set has
- *  always carried it raw (allLocalSpace), where the drawn local space takes the Moon's slate on
- *  the light maps; inking it under a built-in theme would move the Moon's local-space colour in
- *  every built-in's complete set, so a built-in's set keeps it exactly as generated. Under a
- *  custom palette there is no "as it always was" to keep, and a raw family would be the one
- *  part of the set in colours the map doesn't draw — a one-ink theme's local space handed to a
- *  plugin in planet colours beside black lines (review, 2026-10-06). So it is inked there, with
- *  the drawn chain's own function. */
+ *  The chart's own local space is inked like every other family, built-in theme or not
+ *  (2026-10-08). Until then a built-in's set carried it raw (allLocalSpace), so Radar's reveal
+ *  drew the Moon's local space pale on the light maps while the map drew it in the Moon's slate.
+ *  That was never a decision: when the theme swap reached this set (2026-07-08) it was applied
+ *  to every family, the overlay's local space included, and the natal local space was simply
+ *  missed — and the 2026-10-06 note that kept it raw "so built-ins stay as they were" was
+ *  preserving that miss. One rule now, everywhere the Moon is drawn: slate on a light ground,
+ *  its pale grey elsewhere (lib/theme MOON_LINE_DARK). */
 export function inkAllLines(set: AllLines, inks: MapInks): AllLines {
   type Body = FeatureCollection<Geometry, BodyProps>;
   type Paran = FeatureCollection<Geometry, { planetA: PlanetName; color: string }>;
@@ -267,7 +260,7 @@ export function inkAllLines(set: AllLines, inks: MapInks): AllLines {
     angleLines: set.angleLines === set.natalAngleLines ? inkedNatalAngle : aspect(set.angleLines),
     parans: inkedParans,
     starLines: set.starLines === set.natalStarLines ? inkedNatalStars : star(set.starLines),
-    localSpace: isBuiltinInks(inks) ? set.localSpace : body(set.localSpace),
+    localSpace: body(set.localSpace),
     overlayLines: set.overlayLines && ovLines(set.overlayLines),
     overlayParans: set.overlayParans && ovParans(set.overlayParans),
     overlayLocalSpace: set.overlayLocalSpace && ovLines(set.overlayLocalSpace),

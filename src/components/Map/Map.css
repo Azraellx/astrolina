@@ -414,8 +414,12 @@
      expanded sidebar's width (--es-width), matching the nav + timeline bars (and
      useMovableHud's effectiveCenterX) so the button tracks the same centre when
      the sidebar is open. 0 when it's closed. A RESERVING dock (--es-reserved)
-     adds the second quarter — the remaining map column's true centre. */
-  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
+     adds the second quarter — the remaining map column's true centre. A right dock
+     (lib/rightDock) takes the same two quarters off; every var falls back to 0px. */
+  left: calc(
+    50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4 - var(--right-dock-w, 0px) / 4 -
+      var(--right-dock-reserved, 0px) / 4
+  );
   /* Rest 160px up, but lift to clear a TALLER bar: max() raises the chip to the bar's top
      (its --edge bottom offset + the bar's live height/gap) whenever that exceeds 160px. The
      --zoom-out-clearance is added inside the calc (not outside the max) so desktop's no-bar rest
@@ -1554,9 +1558,14 @@
    reach it is a column too narrow for even the compact bar (a dock dragged nearly across):
    there the bar keeps its left end clear of the dock and this corner gives way. A desktop
    window narrow enough for the phone layout spans the bar edge to edge and drops it the same
-   way; the portrait-phone rule below still wins on coarse pointers. */
+   way; the portrait-phone rule below still wins on coarse pointers.
+   The control rides the map frame, so a reserving right dock (lib/rightDock, 2026-10-08) carries
+   it in from the screen edge by the dock's width: its left edge is (100vw − --right-dock-w) −
+   the gutter − 36px, the same column end navColumn.ts measures from. 0px with nothing docked. */
 .maplibregl-ctrl-top-right {
-  --zoom-nav-overlap: calc(var(--topnav-right, 0px) + 8px + var(--edge, 16px) + 36px - 100vw);
+  --zoom-nav-overlap: calc(
+    var(--topnav-right, 0px) + 8px + var(--edge, 16px) + 36px - (100vw - var(--right-dock-w, 0px))
+  );
   top: calc(
     max(var(--edge, 16px), env(safe-area-inset-top)) +
       clamp(

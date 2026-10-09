@@ -19,7 +19,9 @@
 .sky-band {
   position: fixed;
   left: var(--es-width, 0px);
-  right: 0;
+  /* And clear of a right dock (lib/rightDock), which runs the full height of the screen — the
+     band's context column would otherwise sit under it. 0px with none. */
+  right: var(--right-dock-w, 0px);
   bottom: 0;
   height: var(--sky-band-h, 28px);
   z-index: 6;
@@ -47,6 +49,19 @@
   bottom: 0;
   right: 100%;
   width: var(--es-width, 0px);
+  background: inherit;
+  border-top: inherit;
+  pointer-events: none;
+}
+/* Its twin on the RIGHT, under a right dock (2026-10-08): the same band chrome for a translucent
+   dock to sample instead of the raw background. Zero-width with no right dock. */
+.sky-band::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: 0;
+  left: 100%;
+  width: var(--right-dock-w, 0px);
   background: inherit;
   border-top: inherit;
   pointer-events: none;

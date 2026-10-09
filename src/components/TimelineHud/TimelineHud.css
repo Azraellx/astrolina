@@ -26,10 +26,17 @@
      The bar is freely movable, so the user can nudge it over if the shifted bar still
      overlaps the sidebar. --es-width is 0 when the sidebar is closed. A RESERVING
      dock (lib/leftDock --es-reserved) owns its column outright, so it adds the
-     second quarter — landing the bar on the remaining map column's true centre. */
-  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
+     second quarter — landing the bar on the remaining map column's true centre. A right
+     dock (lib/rightDock) takes the same two quarters off; every var falls back to 0px. */
+  left: calc(
+    50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4 - var(--right-dock-w, 0px) / 4 -
+      var(--right-dock-reserved, 0px) / 4
+  );
   transform: translateX(-50%);
   z-index: 12;
+  /* Not narrowed by a right dock either, for the --es-width reason above: at this width the
+     rows don't wrap, so a cap under the content only overflows the box. The narrow-screen rule
+     below, where they do wrap, takes the right dock off (2026-10-08). */
   max-width: calc(100vw - 360px);
   /* A column so the bar's width is driven only by the ruler + transport row (the
      same content every overlay bar has) — the returns/frame row then FILLS that
@@ -1288,7 +1295,10 @@
 
 @media (max-width: 1080px) {
   .timeline-hud {
-    max-width: calc(100vw - 32px);
+    /* The rows wrap here, so the bar can narrow to the map column a right dock leaves
+       (lib/rightDock; 0px with none) rather than run off the screen's left edge from the
+       column's centre. */
+    max-width: calc(100vw - var(--right-dock-w, 0px) - 32px);
   }
   .thud-row {
     flex-wrap: wrap;
@@ -1318,12 +1328,19 @@
      must keep its natural content size — otherwise the bar's min-width held the lone nub stretched
      way too wide. Mirrors .eclipse-hud:not(.is-collapsed). */
   .timeline-hud.thud-bar:not(.thud-collapsed) {
-    left: 50%;
+    /* Centred on the screen — or, on a touch tablet with a right dock open (lib/rightDock,
+       2026-10-08; a phone never docks one), on the map column the dock leaves and no wider than
+       it, since the dock owns the strip beyond. Both vars are 0px with nothing docked, so this
+       is the plain 50% and the full width. */
+    left: calc(50% - var(--right-dock-w, 0px) / 4 - var(--right-dock-reserved, 0px) / 4);
     /* Floor the width at --overlay-bar-min-w (tweak it in index.css). The inner min() clamps that
        floor to the screen (minus edge padding) so a narrow phone can't force horizontal overflow;
        max-width keeps the same ceiling for content-driven growth. */
-    min-width: min(var(--overlay-bar-min-w, 520px), calc(100vw - 2 * var(--edge, 3px)));
-    max-width: calc(100vw - 2 * var(--edge, 3px));
+    min-width: min(
+      var(--overlay-bar-min-w, 520px),
+      calc(100vw - var(--right-dock-w, 0px) - 2 * var(--edge, 3px))
+    );
+    max-width: calc(100vw - var(--right-dock-w, 0px) - 2 * var(--edge, 3px));
   }
   /* Tighten the rows vertically so the bar is shorter — the transport buttons and the scrubber
      sit closer together. The returns/setting rows keep their top:0 hug under the row above. */

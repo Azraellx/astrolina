@@ -14,6 +14,11 @@ import {
   type RefObject,
 } from 'react';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './leftDock';
+import {
+  getReservedRightInset,
+  getRightDockWidth,
+  subscribeReservedRightInset,
+} from './rightDock';
 import { subscribeBottomDock } from './bottomDock';
 import { safeAreaBottom } from './safeArea';
 import { isPhone } from './touch';
@@ -65,12 +70,20 @@ function phoneKey(key: string): string {
 // on the true centre of the remaining map column). Shared so every centred surface
 // agrees on one centre — the docked bottom bars' snap point, the floating Location
 // window's home spot, and the map's Zoom-out button (which mirrors this in CSS).
+// A right dock (lib/rightDock, 2026-10-08) takes the same two quarters off, as the CSS
+// does with --right-dock-w and --right-dock-reserved; both are 0 with nothing docked.
 export function effectiveCenterX(): number {
   const es =
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
     ) || 0;
-  return window.innerWidth / 2 + es / 4 + getReservedLeftInset() / 4;
+  return (
+    window.innerWidth / 2 +
+    es / 4 +
+    getReservedLeftInset() / 4 -
+    getRightDockWidth() / 4 -
+    getReservedRightInset() / 4
+  );
 }
 
 // A reserved LAYOUT band along the viewport bottom (the sky band — see
@@ -108,7 +121,10 @@ function attributionBox(x: number, w: number): DOMRect | null {
 // The LEFT floor honours a RESERVING dock (lib/leftDock) the same way the bottom
 // honours the reserved band: that column belongs to the docked panel, so windows
 // can be neither dragged into it nor restored/stranded under it. An OVERLAYING
-// panel (the expanded chart sidebar) reserves nothing and clamps like before.
+// panel (the expanded chart sidebar) reserves nothing and clamps like before. A
+// RESERVING right dock (lib/rightDock, 2026-10-08) is the same on the other side:
+// the right bound stops 4 px short of it, and the narrow-frame centring below
+// centres in the column between the two.
 // A frame that would cover the map attribution (attributionBox) stands just above it
 // instead — only where the frame's x-span meets it, so a window beside the corner still
 // reaches the bottom edge, and only when standing above actually clears it: a frame too
@@ -123,12 +139,16 @@ function attributionBox(x: number, w: number): DOMRect | null {
 // at the margin as before: that is where its grip is.
 function clampPos(x: number, y: number, w: number, h: number): { x: number; y: number } {
   const reserved = getReservedLeftInset();
+  const reservedRight = getReservedRightInset();
   const left = reserved + 4;
-  const spare = window.innerWidth - reserved - w;
+  const spare = window.innerWidth - reserved - reservedRight - w;
   const cx =
     spare >= 0 && spare < 8
       ? reserved + Math.round(spare / 2)
-      : Math.min(Math.max(x, left), Math.max(left, window.innerWidth - w - 4));
+      : Math.min(
+          Math.max(x, left),
+          Math.max(left, window.innerWidth - reservedRight - w - 4),
+        );
   const top = TOP_MARGIN;
   let cy = Math.min(
     Math.max(y, top),
@@ -318,6 +338,11 @@ export function useMovableHud(
     fromHome: boolean;
   } | null>(null);
   const [dragging, setDragging] = useState(false);
+  // How far a reserving RIGHT dock has carried this window left since the reader last placed
+  // it (the layout effect below; negative when a dock that was open at that placement has
+  // since given room back). Never stored: the drawn spot rides the dock, the stored one is the
+  // reader's.
+  const rightRideRef = useRef(0);
 
   // The room under a `phoneCeiling` (see MovableHud.phoneRoom). The ceiling is read through a
   // ref because the layout effect below is bound once per frame-size change, while a caller
@@ -397,13 +422,28 @@ export function useMovableHud(
   // Keep a floated bar on-screen — clamped against the CURRENT viewport on mount
   // (a position saved on a larger/other screen may now be off-screen, and the grip
   // is the only way to recover it), on resize, whenever a docked panel's RESERVED
-  // column changes (its open/close/resize re-clamps every floated window into the
-  // remaining map column, like the anchored chrome shifting with it), whenever the
+  // column changes on either side (its open/close/resize re-clamps every floated
+  // window into the remaining map column, like the anchored chrome shifting with
+  // it — never saved, so the stored spot is still the reader's), whenever the
   // reserved BOTTOM band changes (the sky band growing into its table or a track
   // pushes a window parked just above it up, rather than sliding beneath it and
   // burying the band's own controls), and whenever the frame itself changes size
   // (a window whose content grows downward — or that is expanded from collapsed —
   // stays clear of the band the same way).
+  //
+  // A RESERVING RIGHT dock (lib/rightDock, 2026-10-08) carries a window with it before the
+  // clamp, where the window sits in the right-hand part of the column: Settings, parked beside
+  // the zoom control, steps in by the dock's width (Sidebar.css), and a window parked beside
+  // Settings has to step in with it — clamped alone, it slid on top of Settings instead
+  // (Activations at 752–1128 over Settings at 802–1002, at 1440 as the 380 px dock opened). So
+  // when the inset grows by Δ such a window moves left by Δ, keeping its distance from the
+  // right-hand chrome, and when it shrinks the window moves back. "Right-hand" is its centre
+  // right of the centre of the column it was in — or its having ridden a dock already
+  // (rightRideRef), so the move back is the move out reversed, whatever the narrower column's
+  // centre says. A window on the left half rides nothing, as it rode nothing beside the
+  // Reports dock: there only the clamp moves it. Like every re-clamp it moves the DRAWN spot
+  // only and is never saved (CLAUDE.md rule 2, the widths entry): the reader's own drag is
+  // what stores a spot, and one placed since starts riding afresh.
   //
   // A phone window still at its bottom-sheet home (homedRef) is RE-HOMED by the same
   // triggers rather than clamped — its bottom edge is the anchored one, so content that
@@ -436,6 +476,25 @@ export function useMovableHud(
         return c.x === p.x && c.y === p.y ? p : c; // no-op when already on-screen
       });
     };
+    // The right inset as this effect last saw it: what a change is measured from.
+    let rightInset = getReservedRightInset();
+    const onRightInset = () => {
+      const now = getReservedRightInset();
+      const delta = now - rightInset;
+      const before = rightInset;
+      rightInset = now;
+      const el = barRef.current;
+      if (delta !== 0 && el && !homedRef.current) {
+        const r = el.getBoundingClientRect();
+        const w = clampWidth === undefined ? r.width : Math.min(r.width, clampWidth);
+        const mid = (getReservedLeftInset() + window.innerWidth - before) / 2;
+        if (rightRideRef.current !== 0 || r.left + w / 2 > mid) {
+          rightRideRef.current += delta;
+          setPos((p) => (p ? { x: p.x - delta, y: p.y } : p));
+        }
+      }
+      onResize(); // then the clamp, as for any column change
+    };
     onResize();
     window.addEventListener('resize', onResize);
     const onHudMoved = () => {
@@ -443,6 +502,7 @@ export function useMovableHud(
     };
     window.addEventListener('astro:hud-moved', onHudMoved);
     const unsubscribeLeft = subscribeReservedLeftInset(onResize);
+    const unsubscribeRight = subscribeReservedRightInset(onRightInset);
     const unsubscribeBottom = subscribeBottomDock(onResize);
     const el = barRef.current;
     const ro = el ? new ResizeObserver(onResize) : null;
@@ -451,6 +511,7 @@ export function useMovableHud(
       window.removeEventListener('resize', onResize);
       window.removeEventListener('astro:hud-moved', onHudMoved);
       unsubscribeLeft();
+      unsubscribeRight();
       unsubscribeBottom();
       ro?.disconnect();
     };
@@ -487,8 +548,10 @@ export function useMovableHud(
     const r = el.getBoundingClientRect();
     const next = clampPos(e.clientX - d.offX, e.clientY - d.offY, r.width, r.height);
     d.moved = next;
-    // Placed by hand now: the window stops riding its phone home.
+    // Placed by hand now: the window stops riding its phone home, and whatever a right dock
+    // carried it by is the reader's spot from here.
     homedRef.current = false;
+    rightRideRef.current = 0;
     setPos(next);
   };
   const onPointerUp = (e: ReactPointerEvent) => {
@@ -542,6 +605,7 @@ export function useMovableHud(
       // choice, so the next open lands on the home as it is then.
       onDoubleClick: () => {
         save(null);
+        rightRideRef.current = 0; // re-homed: placed afresh, as by a drag
         const el = barRef.current;
         if (el && phoneSheet()) {
           const r = el.getBoundingClientRect();

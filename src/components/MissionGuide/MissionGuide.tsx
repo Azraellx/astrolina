@@ -9,6 +9,7 @@ import type { MissionGesture, MissionSet } from '../../lib/missions';
 import { holdGuideOpen } from '../../lib/guideOpen';
 import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
+import { getReservedRightInset } from '../../lib/rightDock';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -45,12 +46,15 @@ const MAX_W = 360;
 // to) — it's movable, so this is just the starting spot. On DESKTOP it insets a quarter of the
 // viewport from the right so it doesn't crowd the corner. On TOUCH that wastes scarce screen, so
 // it hugs the right edge instead. x is floored at 16 so a narrow viewport — where the panel is
-// nearly full-width — can't push it off the left edge.
+// nearly full-width — can't push it off the left edge. "The right edge" is the map's: a
+// reserving right dock (lib/rightDock, 2026-10-08) owns the strip beyond it, so the home is
+// measured from the dock's edge as it would be from the screen's (0 with no dock).
 function topRightHome(): { x: number; y: number } {
-  const w = Math.min(MAX_W, window.innerWidth - 32);
-  const rightGap = isTouchLayout() ? 8 : window.innerWidth * 0.25;
+  const right = window.innerWidth - getReservedRightInset();
+  const w = Math.min(MAX_W, right - 32);
+  const rightGap = isTouchLayout() ? 8 : right * 0.25;
   return {
-    x: Math.max(16, window.innerWidth - w - rightGap),
+    x: Math.max(16, right - w - rightGap),
     y: window.innerHeight * 0.25,
   };
 }

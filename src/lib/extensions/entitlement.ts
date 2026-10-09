@@ -27,7 +27,9 @@ export type { Entitlement } from './mapExtensions';
 export interface GatedExtension {
   /** Stable unique id (also the policy's natural lookup key). */
   id: string;
-  /** Defaults to 'core'. Only 'gated' extensions consult the resolver. */
+  /** Defaults to 'core'. 'adv' and 'gated' extensions consult the resolver; 'core' never
+   *  does. The resolver tells the two rungs apart by this field, so one that predates
+   *  'adv' (and answers every call alike) must learn it before anything declares 'adv'. */
   tier?: Entitlement;
 }
 
@@ -41,7 +43,11 @@ export function setEntitlementResolver(fn: (ext: GatedExtension) => boolean): vo
   resolveEntitled = fn;
 }
 
-/** Whether `ext`'s real HUD (vs. its CTA) should render for the current user. */
+/** Whether `ext`'s real HUD (vs. its CTA) should render for the current user. 'core' (or
+ *  no tier) is always entitled; 'adv' and 'gated' go to the installed resolver — the
+ *  account's answer, never the Advanced reading toggle (lib/plan's tier), so a reader who
+ *  switches Advanced off keeps what they are entitled to. (The 'adv' entitlement,
+ *  2026-10-08: the theme option's row, open to every signed-in reader.) */
 export function isEntitled(ext: GatedExtension): boolean {
-  return ext.tier !== 'gated' || resolveEntitled(ext);
+  return ext.tier === undefined || ext.tier === 'core' || resolveEntitled(ext);
 }

@@ -16,7 +16,10 @@
   position: absolute;
   top: max(var(--edge, 10px), env(safe-area-inset-top));
   /* Quarter-shift past an overlaying sidebar; a RESERVING dock (--es-reserved)
-     adds the second quarter so the bar centres on the remaining map column.
+     adds the second quarter so the bar centres on the remaining map column. A right dock
+     (lib/rightDock: --right-dock-w, --right-dock-reserved) takes the same two quarters off,
+     so with docks on both sides the bar sits on the centre of the column between them. Every
+     var falls back to 0px, so with nothing docked this is exactly 50%.
 
      That formula is the resting place, and it holds wherever the bar fits there — every roomy
      layout, dock closed or not. Where it doesn't, TopNav.tsx's layout pass overrides it with
@@ -29,7 +32,13 @@
      control — work this rule can't do, because it needs the bar's natural width, its sideways
      pill-recentring nudge and the readout bar under it. It replaces a CSS-only right-edge cap
      (1 Oct) that kept the bar on screen but could only trade one edge for the other. */
-  left: var(--topnav-left, calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4));
+  left: var(
+    --topnav-left,
+    calc(
+      50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4 - var(--right-dock-w, 0px) / 4 -
+        var(--right-dock-reserved, 0px) / 4
+    )
+  );
   transform: translateX(-50%);
   /* The movable HUD windows + overlay bars deliberately layer ABOVE this nav now (windows at 27,
      overlay bars at 26, plugin HUDs at 40) so one dragged over the bar is never stuck behind it —
@@ -903,7 +912,7 @@ button.topnav-status:hover {
    control, less gutters) is narrower than the FULL bar's measured width, with hysteresis, and
    never on the phone layout; the class sits on the stack, so the readout bar can follow it.
 
-   This form stays on ONE row: TopNav.tsx publishes its one-row width (leftDock.ts
+   This form stays on ONE row: TopNav.tsx publishes its one-row width (lib/dockColumn
    publishMapColumnNeed) and the docks cap their own width by it, so dragging a dock wider stops
    where the row would start to break (Salvatore, 1 Oct: "it should stay on one row"). The wrap
    below is the fallback for the one case the cap yields — a window too narrow for a dock's own

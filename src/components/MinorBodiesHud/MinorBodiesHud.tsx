@@ -84,6 +84,7 @@ import {
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { getReservedLeftInset, subscribeReservedLeftInset } from '../../lib/leftDock';
+import { getReservedRightInset, subscribeReservedRightInset } from '../../lib/rightDock';
 import { useTouchLayout } from '../../lib/touch';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { MinorMark } from '../MinorMark/MinorMark';
@@ -380,7 +381,8 @@ export function MinorBodiesHud({
   // instead of one under the other. Only where two columns fit: the touch layout
   // keeps one (a phone has no room for two, and a tablet shares the phone's touch
   // layout — lib/touch reads the pointer, not the width), and so does a viewport
-  // too narrow for the pair once a docked panel's reserved column is taken out.
+  // too narrow for the pair once the docked panels' reserved columns are taken out
+  // (either side: a right dock reserves its column too, 2026-10-08).
   // There the list is a section below the results, as it always was.
   const touch = useTouchLayout();
   const viewportW = useSyncExternalStore(subscribeViewport, viewportWidth, () => WIDTH);
@@ -389,7 +391,15 @@ export function MinorBodiesHud({
     getReservedLeftInset,
     () => 0,
   );
-  const split = rows.length > 0 && !touch && viewportW - reservedLeft >= SPLIT_WIDTH + 16;
+  const reservedRight = useSyncExternalStore(
+    subscribeReservedRightInset,
+    getReservedRightInset,
+    () => 0,
+  );
+  const split =
+    rows.length > 0 &&
+    !touch &&
+    viewportW - reservedLeft - reservedRight >= SPLIT_WIDTH + 16;
   // Kept on screen as it widens. useMovableHud clamps on mount, on resize and when a
   // docked panel's column moves — never when the window's own size changes — so the
   // list opening beside a window parked near the right edge would put that column
@@ -400,10 +410,10 @@ export function MinorBodiesHud({
   // The clamp is the hook's own; a collapsed nub needs none.
   const hudW = Math.min(split ? SPLIT_WIDTH : WIDTH, viewportW - 16);
   const floorX = reservedLeft + 4;
+  // The right bound stops short of a reserving right dock, as the hook's own clamp does.
+  const ceilX = viewportW - reservedRight - hudW - 4;
   const x =
-    pos && !collapsed
-      ? Math.min(Math.max(pos.x, floorX), Math.max(floorX, viewportW - hudW - 4))
-      : pos?.x;
+    pos && !collapsed ? Math.min(Math.max(pos.x, floorX), Math.max(floorX, ceilX)) : pos?.x;
   // The map dodges its edge labels off every floating window's frame, measured once
   // and cached until a window says it moved — which useMovableHud says only when the
   // SAVED spot changes. This frame also changes by itself (the list's column opening

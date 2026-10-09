@@ -37,6 +37,17 @@
     env(safe-area-inset-left),
     min(var(--es-width, 0px), calc(100vw - 460px))
   );
+  /* And a RIGHT dock the same way (lib/rightDock, 2026-10-08), out of whatever room the left
+     inset leaves above the same floor — so with a dock on each side the panel still keeps its
+     460px less the gutters, and with none this is the shorthand's own right padding. */
+  padding-right: max(
+    20px,
+    env(safe-area-inset-right),
+    min(
+      var(--right-dock-w, 0px),
+      calc(100vw - 460px - min(var(--es-width, 0px), calc(100vw - 460px)))
+    )
+  );
   /* Fade the scrim in on open (the panel pops via the rule below). Entrance
      only — dismiss stays instant. */
   animation: mb-fade-in var(--dur-move) ease;

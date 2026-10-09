@@ -43,6 +43,7 @@ import { panelGlyphColor } from '../../lib/theme';
 import { planetInk } from '../../lib/themePalette';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { getReservedLeftInset } from '../../lib/leftDock';
+import { getRightDockWidth } from '../../lib/rightDock';
 import { useTouchLayout } from '../../lib/touch';
 import { HudHeader } from '../ui/HudHeader';
 import { TipButton } from '../ui/HoverTip';
@@ -69,19 +70,22 @@ const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
 
 // Home spot: just above the band's left end, where the chip that opened it sits.
 // Read from the band's own box when it has painted (its left edge already honours
-// the chart sidebar), else from the same vars the band's layout reads. `height` is
-// the frame's own when it has one (a double-click re-home), else the estimate.
+// the chart sidebar, its right edge a right dock), else from the same vars the band's
+// layout reads. `height` is the frame's own when it has one (a double-click re-home),
+// else the estimate.
 function homeSpot(height: number): { x: number; y: number } {
   const band = document.querySelector('.sky-band')?.getBoundingClientRect();
   const root = getComputedStyle(document.documentElement);
   const left =
     band?.left ??
     Math.max(parseFloat(root.getPropertyValue('--es-width')) || 0, getReservedLeftInset());
+  // The band stops at a right dock (SkyBand.css), so a window kept inside it does too.
+  const right = band?.right ?? window.innerWidth - getRightDockWidth();
   const top =
     band?.top ??
     window.innerHeight - (parseFloat(root.getPropertyValue('--sky-band-h')) || 0);
   return {
-    x: Math.round(Math.min(left + 8, window.innerWidth - HUD_W - 8)),
+    x: Math.round(Math.min(left + 8, right - HUD_W - 8)),
     y: Math.round(Math.max(72, top - height - 10)),
   };
 }

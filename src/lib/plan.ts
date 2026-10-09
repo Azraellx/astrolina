@@ -154,9 +154,15 @@ export function nudgeAction(): void {
   nudgeAct();
 }
 
-/** A registered extension's coarse 'core' | 'gated' entitlement expressed on the plan
- *  ladder: a 'gated' add-on is the gated tier, everything else is the baseline. Reconciles
- *  the two vocabularies in ONE place so a gated extension automatically reads as gated. */
+/** A registered extension's coarse 'core' | 'adv' | 'gated' entitlement expressed on the
+ *  plan ladder: a 'gated' add-on is the gated tier, an 'adv' one the ADV rung, everything
+ *  else the baseline. Reconciles the two vocabularies in ONE place so a gated extension
+ *  automatically reads as gated — its badge, its tip's tag and its nudge policy.
+ *
+ *  'adv' maps to the ADV rung for those three things only. Whether the reader HAS the
+ *  extension is still the entitlement resolver's answer (./extensions/entitlement), not
+ *  tierMet on this ladder: the ladder follows the Advanced reading toggle, an 'adv'
+ *  entitlement follows the account (2026-10-08 — the theme option's row). */
 export function tierOfEntitlement(tier: Entitlement | undefined): PlanTier {
-  return tier === 'gated' ? 'gated' : 'new';
+  return tier === 'gated' ? 'gated' : tier === 'adv' ? 'adv' : 'new';
 }

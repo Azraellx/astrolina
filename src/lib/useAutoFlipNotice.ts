@@ -7,9 +7,12 @@
 // The auto-flip notice queue-of-one. Mirrors useMissions' shape: state here, the
 // card is a pure renderer, and every call happens in an event handler rather than
 // an effect, so there are no cascading renders to reason about — with ONE documented
-// exception: the Custom theme's hold ('theme-held', 2026-10-06) arrives with no gesture
-// to hang it on (a plan that lapsed while the reader was away), so App announces it
-// from a single effect (lib/themeChoice heldNoticeStep decides when).
+// exception: the theme option's holds arrive with no gesture to hang them on (a plan that
+// lapsed while the reader was away), so App announces them from a single effect, one
+// lib/themeChoice heldNoticeStep per kind deciding when. Two kinds, two facts: 'theme-held'
+// (2026-10-06 — the option itself is closed to this reader, drawn as a built-in) and
+// 'theme-edits-held' (2026-10-08 — the option still draws, but the reader's own edits wait
+// while it shows the downstream build's fallback).
 import { useCallback, useState } from 'react';
 import {
   AUTO_FLIP_META,

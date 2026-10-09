@@ -36,6 +36,9 @@
 //                 reads it
 //   §10 TWO PARTS the complete line set's local space against the drawn chain's
 //   §11 SOURCE    a restyle bakes once, on its own style (no live re-bake while one is pending)
+//   §12 TWO PARTS Glass draws Bright; a palette pinned to Positron resolves as Glass did there
+//                 before the move (2026-10-08); then IDENTITY: Bright's ferry routes stay hidden,
+//                 and Glass's roads are a grey on Bright only — then TWO PARTS through the paint path
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -63,6 +66,8 @@ import { ensureMinorBodies, minorLoadState } from '../src/lib/minorBodies/loader
 import { bundledSource } from '../src/lib/minorBodies/bundled';
 import { minorIconId, MINOR_COIN_PREFIX, MINOR_HOLLOW_COIN_PREFIX } from '../src/components/Map/glyphImages';
 import {
+  BASEMAP_ROAD_PAINT,
+  BASEMAP_STYLE_URLS,
   ECLIPSE_LABEL_HALO,
   ECLIPSE_PATH_COLORS,
   GEO_GRID_STYLE,
@@ -71,6 +76,7 @@ import {
   LABEL_HALO_COLORS,
   MAP_LINE_COLOR_OVERRIDES,
   MINOR_LINE_PALETTE,
+  MOON_LINE_DARK,
   NIGHT_SHADE_STYLE,
   STAR_LINE_COLORS,
   THEMES,
@@ -81,6 +87,7 @@ import {
   type Theme,
 } from '../src/lib/theme';
 import {
+  BASEMAP_CHOICES,
   builtinPalette,
   CANONICAL_RESET_VARS,
   checkTokenGraph,
@@ -116,6 +123,7 @@ import {
   type SpriteSpec,
 } from '../src/lib/lineInks';
 import { changedSpriteIds, spriteJobs } from '../src/components/Map/glyphImages';
+import { applyBasemapPaint, applyDetailToggles } from '../src/components/Map/basemapStyle';
 import {
   applyMapStyle,
   applyPreviewInks,
@@ -340,7 +348,7 @@ const resolve2 = (base: Theme, o: Record<string, TokenValue>) => {
     eq('worldFallback', m.worldFallback, WORLD_FALLBACK_COLORS[t]);
     const lc = LABEL_CONTRAST[t];
     eq('basemapPaint', m.basemapPaint, {
-      water: null, waterway: null, land: null, landcover: 'keep', border: null, road: null, building: null,
+      water: null, waterway: null, land: null, landcover: 'keep', border: null, road: BASEMAP_ROAD_PAINT[t], building: null,
       label: lc?.color ?? null, labelHalo: lc?.halo ?? null, labelHaloWidth: lc?.haloWidth ?? null,
     });
     eq('switches', [m.basemap, m.arrows, m.minorBeads, m.starSparks, m.orbStrength, m.lineWeight], [t, true, true, true, 1, 1]);
@@ -349,7 +357,9 @@ const resolve2 = (base: Theme, o: Record<string, TokenValue>) => {
     const inkBad: string[] = [];
     for (const p of PLANET_NAMES) {
       if (b.inks.planet[p] !== (MAP_LINE_COLOR_OVERRIDES[t][p] ?? PLANET_COLORS[p])) inkBad.push(`planet ${p}`);
-      if (b.inks.paran[p] !== PLANET_COLORS[p]) inkBad.push(`paran ${p}`);
+      // Parans take the body's MAP ink since 2026-10-08 (the Moon's slate on the light maps,
+      // as its own lines; lib/theme MOON_LINE_DARK says why) — until then the canonical tint.
+      if (b.inks.paran[p] !== (MAP_LINE_COLOR_OVERRIDES[t][p] ?? PLANET_COLORS[p])) inkBad.push(`paran ${p}`);
     }
     if (b.inks.star !== STAR_LINE_COLORS[t]) inkBad.push('star');
     if (!deepEqual(b.inks.minor, MINOR_LINE_PALETTE[t])) inkBad.push('minor palette');
@@ -388,22 +398,36 @@ const resolve2 = (base: Theme, o: Record<string, TokenValue>) => {
       check(`1j ${t}: … and that comparison moved features (the Moon's slate), so it isn't equal by doing nothing`, moved > 0, `${moved}`);
     }
 
-    // The families the old code coloured at generation: the engine must change nothing.
+    // The families the old code coloured at generation: the engine must change nothing — but
+    // the planet parans, which take the map ink since 2026-10-08: the same objects on Dark (no
+    // swap there), and on the light maps exactly the Moon's parans moved to its slate.
     const sameBad: string[] = [];
     let sameN = 0;
+    let moonParans = 0;
     for (const g of GEOM) {
       const stars = generateStarLines(starsOfDate(g.jd, 'bright'), g.meridianLng, null, STAR_LINE_COLORS[t]);
       const minorL = generateMinorLines(g.minorPositions, g.meridianLng, decorFor(t));
       const minorZ = generateMinorZenith(g.minorPositions, g.meridianLng, decorFor(t));
       const starParans = generateStarParans(starsOfDate(g.jd, 'bright'), getPlanetPositions(g.jd, 'mean'), g.meridianLng, STAR_LINE_COLORS[t]);
       sameN += g.parans.features.length + stars.features.length + minorL.features.length + minorZ.features.length + starParans.features.length;
-      if (withParanInks(g.parans, b.inks) !== g.parans) sameBad.push('parans');
+      const inkedParans = withParanInks(g.parans, b.inks);
+      if (t === 'dark') {
+        if (inkedParans !== g.parans) sameBad.push('parans (Dark)');
+      } else {
+        inkedParans.features.forEach((f, i) => {
+          const was = g.parans.features[i].properties;
+          const want = was.planetA === 'Moon' ? MOON_LINE_DARK : was.color;
+          if (was.planetA === 'Moon') moonParans++;
+          if (f.properties.color !== want) sameBad.push(`paran ${was.planetA}: ${f.properties.color}, want ${want}`);
+        });
+      }
       if (withParanInks(starParans, b.inks) !== starParans) sameBad.push('star parans');
       if (withUniformInk(stars, b.inks.star) !== stars) sameBad.push('star lines');
       if (withMinorInks(minorL, b.inks) !== minorL) sameBad.push('minor lines');
       if (withMinorInks(minorZ, b.inks) !== minorZ) sameBad.push('minor zenith coins');
     }
-    checkAll(`1k ${t}: parans, star lines, star parans, catalog lines and coins come back as the same objects`, sameN, sameBad);
+    checkAll(`1k ${t}: star lines, star parans, catalog lines and coins come back as the same objects; planet parans take the map ink (${t === 'dark' ? 'unchanged on Dark' : 'the Moon’s slate'})`, sameN, sameBad);
+    if (t !== 'dark') check(`1k ${t}: … over parans that really include the Moon's`, moonParans > 0, `${moonParans}`);
   }
 }
 
@@ -1469,7 +1493,10 @@ const numbersIn = (expr: string) =>
   let n = 0;
   let moved = 0;
   for (const t of THEMES) {
-    for (const o of [{ 'lines.mode': 'ink' }, { 'lines.mode': 'ink', 'lines.ink': '#000000' }, { 'planet.Moon': '#111111' }] as Record<string, TokenValue>[]) {
+    // {} is the BUILT-IN palette: since 2026-10-08 the set's local space is inked under a
+    // built-in too, so Radar's reveal draws the Moon's local space in its slate on the light
+    // maps as the map does (lib/lineInks inkAllLines says why it wasn't before).
+    for (const o of [{}, { 'lines.mode': 'ink' }, { 'lines.mode': 'ink', 'lines.ink': '#000000' }, { 'planet.Moon': '#111111' }] as Record<string, TokenValue>[]) {
       const p = resolve2(t, o);
       const set = inkAllLines(raw, p.inks);
       const drawn = colours(withLineInks(raw.localSpace as PlanetFC, p.inks) as FeatureCollection);
@@ -1481,10 +1508,11 @@ const numbersIn = (expr: string) =>
       moved += colours(raw.localSpace).filter((c, i) => c !== drawn[i]).length;
     }
   }
-  checkAll("10a under a custom palette, the complete set's local space is in the colours the map draws it in", n, bad);
+  checkAll("10a under every built-in and custom palette, the complete set's local space is in the colours the map draws it in", n, bad);
   check('10b … over palettes that really do move it', moved > 0, `${moved}`);
+  // Where nothing recolours it (Dark, which has no swap) it is still the generator's own object.
   const same = THEMES.filter((t) => inkAllLines(raw, builtinPalette(t).inks).localSpace === raw.localSpace);
-  check('10c under each built-in, the complete set keeps the generator\'s own local space (the same object)', same.length === THEMES.length, same.join(', '));
+  check("10c on Dark (no swap) the set keeps the generator's own local space; on Glass and Earth the Moon's is inked", same.join() === 'dark', same.join(', '));
   const app = readFileSync(join(SRC, 'App.tsx'), 'utf8').replace(/\r\n/g, '\n');
   check("10d SOURCE: the drawn local space is withLineInks over its geometry, the function the set's custom path uses",
     /const localSpace = useMemo\(\(\) => withLineInks\(localSpaceGeom, inks\), \[localSpaceGeom, inks\]\);/.test(app));
@@ -1511,6 +1539,221 @@ const numbersIn = (expr: string) =>
   check('11c the build lowers it before it bakes spriteRef.current, the newest spec', /restylePendingRef\.current = false;/.test(build));
   const repaintEffect = /const repaintShownRef = useRef\(repaintShown\);\s*useEffect\(\(\) => \{([\s\S]*?)\}, \[mapStyle, mapPreview, repaintShown\]\);/.exec(src)?.[1] ?? '';
   check('11d the live repaint stands down while it is up', /restylePendingRef\.current\) return;/.test(repaintEffect));
+}
+
+// ── §12 Glass moved to Bright; Positron stays a map of its own (TWO PARTS, then IDENTITY) ────
+// Salvatore, 2026-10-08: Glass draws OSM Bright, so it no longer looks like the downstream theme
+// that drew Positron beside it. Positron stays as its own map id, for a palette designed on that
+// plain map to PIN — so such a palette must resolve exactly as Glass did there before the move.
+// The shape is CLAUDE.md's "test a frozen parameter by trying to move it": the live source (Glass's
+// own map and offline colours) has moved, and the pinned palette is required NOT to have.
+{
+  // Positron's offline colours: Glass's until 2026-10-08, held here as literals rather than read
+  // from WORLD_FALLBACK_COLORS.positron, so an edit to that table can't move the snapshot with it.
+  const POSITRON_FALLBACK = { ocean: 'hsl(205, 32%, 86%)', land: 'hsl(0, 0%, 96%)', line: 'hsl(210, 12%, 64%)' } as const;
+  const BRIGHT_URL = 'https://tiles.openfreemap.org/styles/bright';
+  const POSITRON_URL = 'https://tiles.openfreemap.org/styles/positron';
+  const glass = builtinPalette('glass');
+
+  // (a) What each map id loads — through the lookup Map.tsx makes (SOURCE TRIPWIRE below).
+  check('12a Glass\'s built-in draws OSM Bright (OpenFreeMap\'s), and the Positron id still loads Positron',
+    glass.map.basemap === 'glass' && BASEMAP_STYLE_URLS[glass.map.basemap] === BRIGHT_URL && BASEMAP_STYLE_URLS.positron === POSITRON_URL,
+    `${BASEMAP_STYLE_URLS[glass.map.basemap]}; ${BASEMAP_STYLE_URLS.positron}`);
+  const mapSrc = readFileSync(join(SRC, 'components/Map/Map.tsx'), 'utf8');
+  check('12a SOURCE: Map.tsx loads a served choice\'s own URL, so a Positron palette loads Positron whatever its base',
+    /BASEMAP_STYLE_URLS\[basemap === 'outline' \? theme : basemap\]/.test(mapSrc));
+  check('12a … and Positron is a choice a palette can make (the editor\'s options), Outline still last',
+    BASEMAP_CHOICES.includes('positron') && BASEMAP_CHOICES.at(-1) === 'outline' &&
+      canonList(tokenDef('map.basemap')!.options!) === canonList(BASEMAP_CHOICES));
+
+  // (b) TWO PARTS: base Glass with Positron pinned against the snapshot and against Glass's own
+  // tables (which the move did not touch: §1f holds the built-in to lib/theme field by field).
+  const pinned = resolve2('glass', { 'map.basemap': 'positron' });
+  // The map's own values, held to the snapshot rather than to Glass's built-in. The roads joined
+  // them the same day: Glass paints Bright's a grey (lib/theme BASEMAP_ROAD_PAINT), and Glass on
+  // Positron never painted roads at all — null, the style's own — so neither may a pinned palette.
+  const OWN_FALLBACK = new Set(['map.basemap', 'map.land', 'map.water', 'worldFallback.ocean', 'worldFallback.land', 'worldFallback.line', 'basemap.road']);
+  const pinBad: string[] = [];
+  let pinN = 0;
+  const want: Record<string, string | null> = {
+    'map.land': POSITRON_FALLBACK.land, 'map.water': POSITRON_FALLBACK.ocean,
+    'worldFallback.ocean': POSITRON_FALLBACK.ocean, 'worldFallback.land': POSITRON_FALLBACK.land, 'worldFallback.line': POSITRON_FALLBACK.line,
+    'basemap.road': null,
+  };
+  for (const [id, v] of Object.entries(want)) {
+    pinN += 1;
+    if (!sameTokenValue(pinned.values[id], v)) pinBad.push(`${id} ${JSON.stringify(pinned.values[id])} ≠ ${v}`);
+  }
+  for (const d of TOKENS) {
+    if (OWN_FALLBACK.has(d.id)) continue;
+    pinN += 1;
+    if (!sameTokenValue(pinned.values[d.id], glass.values[d.id])) pinBad.push(`${d.id} ${JSON.stringify(pinned.values[d.id])} ≠ Glass's ${JSON.stringify(glass.values[d.id])}`);
+  }
+  if (!deepEqual(pinned.map.worldFallback, POSITRON_FALLBACK)) pinBad.push(`MapStyle.worldFallback ${JSON.stringify(pinned.map.worldFallback)}`);
+  const { key: _pk, basemap: pb, worldFallback: _pw, basemapPaint: pbp, ...pinnedMap } = pinned.map;
+  const { key: _gk, basemap: _gb, worldFallback: _gw, basemapPaint: gbp, ...glassMap } = glass.map;
+  if (pb !== 'positron') pinBad.push(`MapStyle.basemap ${pb}`);
+  if (pbp.road !== null) pinBad.push(`MapStyle.basemapPaint.road ${pbp.road}: Positron's roads must stay the style's own`);
+  if (!deepEqual({ ...pbp, road: null }, { ...gbp, road: null })) pinBad.push('the rest of basemapPaint differs from Glass\'s');
+  if (!deepEqual(pinnedMap, glassMap)) pinBad.push('the rest of MapStyle differs from Glass\'s');
+  if (pinned.inks !== glass.inks) pinBad.push('inks are not Glass\'s own object');
+  if (spriteSpecFor(pinned) !== spriteSpecFor(glass)) pinBad.push('sprite spec is not Glass\'s own');
+  if (Object.keys(pinned.css).length || !deepEqual(pinned.attrs, glass.attrs)) pinBad.push(`css ${Object.keys(pinned.css).join(', ')} / attrs`);
+  checkAll('12b base Glass + Positron resolves every map token to Glass\'s pre-move values — land, water, offline colours and roads (the style\'s own) to the Positron snapshot, everything mapTableOf feeds to Glass\'s tables, inks and sprites Glass\'s own objects', pinN, pinBad);
+  // … and the live source DID move, so the agreement above is not the two parts agreeing by
+  // never having been apart.
+  const movedFrom = (['ocean', 'land', 'line'] as const).filter((k) => glass.map.worldFallback[k] !== POSITRON_FALLBACK[k]);
+  check('12b … while Glass\'s own land, water and coastline moved off the snapshot (to Bright\'s), so the two parts really were moved apart',
+    movedFrom.length === 3 && !sameTokenValue(glass.values['map.land'], pinned.values['map.land']), movedFrom.join(', '));
+  check('12b … and so did Glass\'s roads (painted grey on Bright), so the pinned null is held, not merely inherited',
+    typeof glass.map.basemapPaint.road === 'string' && glass.values['basemap.road'] !== pinned.values['basemap.road'],
+    `${glass.map.basemapPaint.road}`);
+  // On every base, Positron's offline colours are its own and its other map marks Glass's tables.
+  const everyBad: string[] = [];
+  for (const t of THEMES) {
+    const p = resolve2(t, { 'map.basemap': 'positron' });
+    if (!deepEqual(p.map.worldFallback, POSITRON_FALLBACK)) everyBad.push(`${t}: worldFallback ${JSON.stringify(p.map.worldFallback)}`);
+    if (p.map.basemap !== 'positron') everyBad.push(`${t}: basemap ${p.map.basemap}`);
+    for (const id of ['nightShade.color', 'geo.grid.line', 'marks.halo', 'marks.zenithDisc', 'eclipse.total', 'basemap.label', 'map.globeVoid']) {
+      if (!sameTokenValue(p.values[id], glass.values[id])) everyBad.push(`${t}: ${id} ${JSON.stringify(p.values[id])} is not Glass's ${JSON.stringify(glass.values[id])}`);
+    }
+    if (p.map.basemapPaint.road !== null) everyBad.push(`${t}: roads painted ${p.map.basemapPaint.road}`);
+  }
+  checkAll('12c on every base, Positron draws its own offline colours, its own roads and Glass\'s tuned map tables', THEMES.length * 10, everyBad);
+
+  // (c) The ferry routes (basemapStyle): hidden on every application of the toggles, whatever
+  // Roads says, and never restored by lifting the whole-basemap blank — over a stand-in map whose
+  // getStyle reflects every setLayoutProperty, as MapLibre's does.
+  type L = { id: string; type: string; source: string; 'source-layer'?: string; layout?: { visibility?: string } };
+  const layers: L[] = [
+    { id: 'background', type: 'background', source: '' },
+    { id: 'road_minor', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation' },
+    { id: 'ferry', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation' },
+    { id: 'waterway-river', type: 'line', source: 'openmaptiles', 'source-layer': 'waterway' },
+    { id: 'acg-lines-meridian', type: 'line', source: 'acg-lines' },
+  ];
+  const fake = {
+    getStyle: () => ({ version: 8, sources: { openmaptiles: { type: 'vector' }, 'acg-lines': { type: 'geojson' } }, layers }),
+    setLayoutProperty: (id: string, prop: string, v: string) => {
+      const l = layers.find((x) => x.id === id);
+      if (l && prop === 'visibility') l.layout = { ...l.layout, visibility: v };
+    },
+  } as unknown as Parameters<typeof applyDetailToggles>[0];
+  const vis = (id: string) => layers.find((l) => l.id === id)!.layout?.visibility ?? 'visible';
+  const ferryBad: string[] = [];
+  const step = (label: string, t: Parameters<typeof applyDetailToggles>[1], expect: Record<string, string>) => {
+    applyDetailToggles(fake, t);
+    for (const [id, v] of Object.entries(expect)) if (vis(id) !== v) ferryBad.push(`${label}: ${id} ${vis(id)}, want ${v}`);
+  };
+  const on = { showRoads: true, showRivers: true, showLabels: true };
+  // The blank FIRST, on a fresh style: the case where the ferry was still visible when recorded.
+  step('blank on a fresh style', { ...on, hideBasemap: true }, { ferry: 'none', road_minor: 'none', background: 'none' });
+  step('blank lifted', on, { ferry: 'none', road_minor: 'visible', 'waterway-river': 'visible', background: 'visible' });
+  step('roads off', { ...on, showRoads: false }, { ferry: 'none', road_minor: 'none' });
+  step('roads on', on, { ferry: 'none', road_minor: 'visible', 'acg-lines-meridian': 'visible' });
+  check('12d the ferry routes stay hidden through Roads on and off and through the whole-basemap blank and its lift, while the roads beside them follow Roads',
+    ferryBad.length === 0 && layers.find((l) => l.id === 'acg-lines-meridian')!.layout === undefined, ferryBad.slice(0, 4).join('; '));
+
+  // (d) Glass's roads, a quiet warm grey (Salvatore, 2026-10-08; lib/theme BASEMAP_ROAD_PAINT says
+  // why). IDENTITY on the built-ins and the map choice, then TWO PARTS: the palette's road slot
+  // against what applyBasemapPaint actually writes, over a stand-in map shaped like Bright.
+  const BRIGHT_LAND = '#f8f4f0';
+  const BRIGHT_BORDER = '#9e9cab';
+  const roadBad: string[] = [];
+  let roadN = 0;
+  for (const t of THEMES) {
+    roadN += 1;
+    const r = builtinPalette(t).map.basemapPaint.road;
+    if (t !== 'glass') {
+      if (r !== null) roadBad.push(`${t}: the built-in paints roads ${r} — Earth and Dark keep their style's own`);
+      continue;
+    }
+    const c = r ? parseColor(r) : null;
+    if (!c) {
+      roadBad.push(`glass: no road paint (${r})`);
+      continue;
+    }
+    // A grey: no colour of its own for a chart line to be confused with (channels within 24).
+    if (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) > 24) roadBad.push(`glass: ${r} is not a grey`);
+    // Present on Bright's land, and quieter there than Bright's own borders.
+    const onLand = contrastRatio(r!, BRIGHT_LAND);
+    if (onLand < 1.3 || onLand >= contrastRatio(BRIGHT_BORDER, BRIGHT_LAND)) roadBad.push(`glass: ${r} is ${onLand.toFixed(2)}:1 on the land`);
+  }
+  // Keyed by the map CHOSEN, whatever the base; a reader's own Roads colour wins on every map.
+  const roadOf = (base: Theme, o: Record<string, TokenValue>) => resolve2(base, o).map.basemapPaint.road;
+  const grey = builtinPalette('glass').map.basemapPaint.road;
+  for (const [label, got, want] of [
+    ['Earth on Glass\'s map', roadOf('vintage', { 'map.basemap': 'glass' }), grey],
+    ['Dark on Glass\'s map', roadOf('dark', { 'map.basemap': 'glass' }), grey],
+    ['Glass on Earth\'s map', roadOf('glass', { 'map.basemap': 'vintage' }), null],
+    ['Glass on Outline', roadOf('glass', { 'map.basemap': 'outline' }), null],
+    ['Glass with its own Roads', roadOf('glass', { 'basemap.road': '#336699' }), '#336699'],
+    ['Positron with its own Roads', roadOf('glass', { 'map.basemap': 'positron', 'basemap.road': '#336699' }), '#336699'],
+  ] as const) {
+    roadN += 1;
+    if (got !== want) roadBad.push(`${label}: ${got}, want ${want}`);
+  }
+  checkAll('12e Glass\'s built-in paints Bright\'s roads a quiet grey; Earth and Dark paint none; it follows the map chosen (never on Positron or Outline) and a reader\'s own Roads colour wins', roadN, roadBad);
+
+  type PL = { id: string; type: string; source?: string; sourceLayer?: string; paint: Record<string, unknown> };
+  const standIn = () => {
+    const ls: PL[] = [
+      { id: 'background', type: 'background', paint: { 'background-color': BRIGHT_LAND } },
+      { id: 'water', type: 'fill', source: 'openmaptiles', sourceLayer: 'water', paint: { 'fill-color': 'hsl(205,56%,73%)' } },
+      { id: 'highway-area', type: 'fill', source: 'openmaptiles', sourceLayer: 'transportation', paint: { 'fill-color': 'hsla(0,0%,89%,0.56)' } },
+      { id: 'highway-motorway-casing', type: 'line', source: 'openmaptiles', sourceLayer: 'transportation', paint: { 'line-color': '#e9ac77' } },
+      { id: 'highway-motorway', type: 'line', source: 'openmaptiles', sourceLayer: 'transportation', paint: { 'line-color': '#fc8' } },
+      { id: 'road_major_label', type: 'symbol', source: 'openmaptiles', sourceLayer: 'transportation_name', paint: { 'text-color': '#765' } },
+      { id: 'acg-lines-meridian', type: 'line', source: 'acg-lines', paint: { 'line-color': ['get', 'color'] } },
+    ];
+    const own = JSON.parse(JSON.stringify(ls)) as PL[];
+    const srcs: Record<string, { type: string }> = { openmaptiles: { type: 'vector' }, 'acg-lines': { type: 'geojson' } };
+    const find = (id: string) => ls.find((l) => l.id === id);
+    const map = {
+      getLayersOrder: () => ls.map((l) => l.id),
+      getLayer: find,
+      getSource: (id: string) => srcs[id],
+      getPaintProperty: (id: string, p: string) => find(id)?.paint[p],
+      setPaintProperty: (id: string, p: string, v: unknown) => {
+        const l = find(id);
+        if (!l) return;
+        if (v === null) delete l.paint[p];
+        else l.paint[p] = v;
+      },
+    } as unknown as Parameters<typeof applyBasemapPaint>[0];
+    // Each layer's colour now against the style's own, as [id, now, own] for the ones that differ.
+    const moved = () => ls.flatMap((l, i) => (deepEqual(l.paint, own[i].paint) ? [] : [l.id]));
+    const colourOf = (id: string) => {
+      const l = find(id)!;
+      return l.paint[l.type === 'fill' ? 'fill-color' : 'line-color'];
+    };
+    return { map, moved, colourOf };
+  };
+  const ROADS = ['highway-area', 'highway-motorway-casing', 'highway-motorway'];
+  const paintBad: string[] = [];
+  {
+    const s = standIn();
+    applyBasemapPaint(s.map, builtinPalette('glass').map.basemapPaint);
+    if (canonList(s.moved()) !== canonList(ROADS)) paintBad.push(`Glass moved ${s.moved().join(', ') || 'nothing'}, want exactly the road layers`);
+    for (const id of ROADS) if (s.colourOf(id) !== grey) paintBad.push(`Glass: ${id} is ${JSON.stringify(s.colourOf(id))}, want ${grey}`);
+    // A palette pinned to Positron, applied over it (the live switch): every road is its own again.
+    applyBasemapPaint(s.map, pinned.map.basemapPaint);
+    if (s.moved().length) paintBad.push(`Positron after Glass left ${s.moved().join(', ')} painted`);
+  }
+  for (const t of THEMES) {
+    if (t === 'glass') continue;
+    const s = standIn();
+    applyBasemapPaint(s.map, builtinPalette(t).map.basemapPaint);
+    // Dark's place-name lift has no layer here, so a built-in Earth or Dark must move nothing at all.
+    if (s.moved().length) paintBad.push(`${t}: the built-in moved ${s.moved().join(', ')}`);
+  }
+  {
+    const s = standIn();
+    applyBasemapPaint(s.map, pinned.map.basemapPaint);
+    if (s.moved().length) paintBad.push(`Positron on a fresh style moved ${s.moved().join(', ')}`);
+  }
+  check('12f TWO PARTS: applyBasemapPaint paints exactly Bright\'s road layers (lines and fills, not road names, water, land or the chart) with Glass\'s grey; a Positron palette puts them back and, like built-in Earth and Dark, paints none',
+    paintBad.length === 0, paintBad.slice(0, 4).join('; '));
 }
 
 // ── §0c (collected above) ──

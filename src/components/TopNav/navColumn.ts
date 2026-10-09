@@ -5,13 +5,16 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { getLeftDockWidth } from '../../lib/leftDock';
+import { getRightDockWidth } from '../../lib/rightDock';
 import { isTouchLayout } from '../../lib/touch';
 
 // The MAP COLUMN the top nav and its dropdowns have to stay inside: from the widest left dock
-// to the screen's right edge. Both kinds of dock count — the Reports dock RESERVES its column
-// (z 29) and the expanded chart sidebar OVERLAYS the map (z 30), but either one paints over the
-// nav (z 25), so anything of the nav's that slides left of the dock is simply gone. On the right
-// the +/- zoom control holds the corner the nav shares a row with.
+// to the widest right dock (the screen's edges with none). Both kinds of dock count — the
+// Reports dock RESERVES its column (z 29) and the expanded chart sidebar OVERLAYS the map
+// (z 30), but either one paints over the nav (z 25), so anything of the nav's that slides under
+// a dock is simply gone. On the right the +/- zoom control holds the corner the nav shares a row
+// with; a reserving right dock (lib/rightDock, 2026-10-08) shrinks the map frame the control
+// rides in, so the corner moves in with the column's right end and `zoomLeft` follows it.
 //
 // Read in JS rather than restated in CSS because the decisions that need it — whether the full
 // bar fits, where a clamped bar's ends land, whether an open menu runs off — all turn on widths
@@ -37,7 +40,8 @@ function zoomWidth(): number {
 export interface NavColumn {
   /** Viewport x where the map column starts — the widest left dock of either kind (0 with none). */
   left: number;
-  /** Viewport x where it ends: the screen's right edge. */
+  /** Viewport x where it ends: the widest right dock's left edge (the screen's right edge with
+   *  none). */
   right: number;
   /** The nav's own gutter from either end (TopNav.css reads `var(--edge, 10px)`). */
   edge: number;
@@ -54,7 +58,7 @@ function edgeVar(): number | null {
 
 export function navColumn(): NavColumn {
   const e = edgeVar();
-  const right = window.innerWidth;
+  const right = window.innerWidth - getRightDockWidth();
   return {
     left: getLeftDockWidth(),
     right,

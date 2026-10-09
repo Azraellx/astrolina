@@ -10,6 +10,7 @@ import {
   type ReactNode,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -29,8 +30,15 @@ import { LINE_TYPE_LABEL, type LineType } from '../../lib/astro/lines';
 import { overlayAuxBlocked } from '../../lib/astro/timeline';
 import type { OverlayMode } from '../../lib/astro/timeline';
 import { THEMES, type Theme, type ThemeChoice } from '../../lib/theme';
+import { builtinThemeEntitled, builtinThemeTier } from '../../lib/extensions/builtinThemeTiers';
 import { planetInk } from '../../lib/themePalette';
-import type { ThemeOptionExtension } from '../../lib/extensions/themeOptions';
+import {
+  readFallbackSpec,
+  themeOptionHasEditor,
+  useThemeOptionSpec,
+  type ThemeOptionExtension,
+} from '../../lib/extensions/themeOptions';
+import { deriveThemeState } from '../../lib/themeChoice';
 import type { MapProjectionMode } from '../../lib/projection';
 import { useViewLock } from '../../lib/extensions/viewLock';
 import { GEODETIC_HELD } from '../../lib/geodeticHold';
@@ -50,7 +58,7 @@ import { setDiscreet, useDiscreet } from '../../lib/discreet';
 import { watchSettled } from '../../lib/hudSettled';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import type { RulershipScheme } from '../../lib/astro/dignities';
-import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
+import { planTierFor, tierMet, tierLabel, tierOfEntitlement, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
 import { SpyIcon } from '../ui/SpyIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
@@ -173,28 +181,38 @@ interface SidebarProps {
    *  is that list, which is Advanced-only — hence the row's own gate below. */
   rulershipScheme: RulershipScheme;
   setRulershipScheme: (s: RulershipScheme) => void;
-  /** The DERIVED theme — the built-in the app is drawn in: a Custom theme's base while
-   *  Custom is chosen, else the built-in chosen. It marks the built-in rows, except while
-   *  Custom is LIVE, when the Custom row carries the mark instead. */
+  /** The DERIVED theme — the built-in the app is drawn in: the drawn spec's base while the
+   *  theme option is live, else the last built-in chosen (held included). It marks the
+   *  built-in rows, except while the option is LIVE, when its row carries the mark. */
   theme: Theme;
-  /** The STORED choice (App's builtinPref + customChosen): 'custom' whenever Custom is the
-   *  choice, live or held. Decides whether the Customize opener shows. */
+  /** The STORED choice (App's builtinPref + customChosen): 'custom' whenever the option is
+   *  the choice, live or held. Decides whether the Customize opener shows. */
   themePref: ThemeChoice;
-  /** App's setThemeSafe. It routes Custom without the entitlement to the upgrade flow,
-   *  seeds a copy of the current theme on a first pick, and refuses a re-pick of the marked
-   *  base while Custom is held — which the rows below also refuse, so nothing reaches it. */
+  /** App's setThemeSafe. It routes the option without the row's entitlement to the upgrade
+   *  flow, seeds a copy of the current theme on an editor-entitled first pick, and refuses a
+   *  re-pick of the marked built-in while the option is held — which the rows below also
+   *  refuse, so nothing reaches it. */
   setTheme: (t: ThemeChoice) => void;
-  /** The registered Custom option (lib/extensions/themeOptions), or null — always null in
-   *  the open core, whose list is then the three built-ins exactly as before. */
+  /** The registered theme option (lib/extensions/themeOptions), or null — always null in
+   *  the open core, whose list is then the three built-ins exactly as before. Its label,
+   *  tips and both rungs come from it; this file never names the option. */
   customOption: ThemeOptionExtension | null;
-  /** The reader may draw Custom: the option's entitlement (isEntitled), not the plan tier
-   *  — a reader with Advanced off resolves to a lower tier and keeps their theme. */
-  customEntitled: boolean;
-  /** Custom is chosen, entitled and has a spec: it is what is drawn. */
+  /** The reader may draw the option: its row's entitlement (isEntitled on `tier`), not the
+   *  plan tier — a reader with Advanced off resolves to a lower tier and keeps their theme. */
+  customOptionEntitled: boolean;
+  /** The reader may edit it: the editor's entitlement (isEntitled on `editorTier`). Without
+   *  it the option draws its fallback, and Customize is a teaser where the build nudges. */
+  customEditorEntitled: boolean;
+  /** The option is chosen, open to the reader and drawn: it carries the radio. */
   customLive: boolean;
-  /** Custom is chosen but can't be drawn. Its row stays, present but unavailable, and the
-   *  base carries the radio: a held choice marks the EFFECTIVE value (2026-10-06). */
+  /** The option is chosen but its row is closed to the reader (signed out). Its row stays,
+   *  present but unavailable, and the built-in drawn carries the radio: a held choice marks
+   *  the EFFECTIVE value (2026-10-06). */
   customHeld: boolean;
+  /** Live on the option's fallback while the reader's own version waits for the editor's
+   *  rung (lib/themeChoice editsHeld). The row works as ever; its tip says the version is
+   *  kept (2026-10-08). */
+  customEditsHeld: boolean;
   /** The theme editor window's open state — App's, transient, never persisted. */
   themeEditorOpen: boolean;
   onToggleThemeEditor: () => void;
@@ -493,39 +511,161 @@ function HintOption({
   );
 }
 
-// Appearance ▸ Theme's fourth row: a downstream build's Custom theme (lib/extensions/
-// themeOptions), in the built-in rows' own markup — radio, swatch, label — plus the
-// paid rung's badge and a hover tip, which the three built-ins don't carry.
+// Appearance ▸ Theme's built-in rows: radio + swatch + label, and a hover tip of one sentence on
+// what the theme looks like (settings.theme.<id>.hint, 2026-10-08 — the Prism row had one, the
+// three built-ins none). A row a build has TIERED (lib/extensions/builtinThemeTiers) also wears
+// its rung's badge, and below the rung its tip gains a note line — ADV for Glass and Dark in the Pro build (2026-10-08), so changing the theme is what an account
+// unlocks rather than Prism alone. Shown to a reader below the rung where the build's nudge
+// policy teases it (all four rows, swatches included: the previews are what a guest is
+// deciding on), and a press is an explicit ask, so it runs the build's upgrade flow through
+// App's setThemeSafe — the one writer, which refuses the pick itself, so no other route can
+// write a locked theme. Not dimmed: a teaser is not unavailable (the Prism row's rule).
+//
+// The row the reader is DRAWN in is never locked by its tier: it stays theirs (themeChoice
+// decideThemePick), so it draws as an ordinary marked row, and its tip's note says the one thing
+// that is true of it and of nothing else — that switching away is the move that can't be undone
+// without the rung.
+function BuiltinThemeOption({
+  theme,
+  label,
+  marked,
+  tier,
+  entitled,
+  badge,
+  onPick,
+}: {
+  theme: Theme;
+  label: string;
+  marked: boolean;
+  /** The row's rung on the plan ladder (lib/plan tierOfEntitlement of its declared tier). */
+  tier: PlanTier;
+  /** The reader's account reaches the row's rung (lib/extensions/builtinThemeTiers). */
+  entitled: boolean;
+  badge: string;
+  onPick: () => void;
+}) {
+  const { t } = useT();
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
+  // Below the rung, a second line under the description, as the Prism row's held note: why a
+  // press asks for the rung, or — on the row they're in — what leaving it costs.
+  const note = entitled ? undefined : marked ? t('settings.theme.keptNote') : t('settings.theme.lockedNote');
+  return (
+    <li>
+      <button
+        ref={ref}
+        type="button"
+        className={`theme-option ${marked ? 'active' : ''}`}
+        onClick={onPick}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <span className="radio">{marked ? '●' : '○'}</span>
+        <span className={`swatch swatch-${theme}`} />
+        <span className="label">{label}</span>
+        {badge && <span className={`navmenu-tier tier-${tier}`}>{badge}</span>}
+      </button>
+      <ChoiceTip
+        pos={pos}
+        title={label}
+        hint={t(`settings.theme.${theme}.hint`)}
+        note={note}
+        // The row wears its rung's badge; its tip carries the same tag, under the same badge
+        // policy, so the two always agree (the Prism row's rule).
+        advanced={tier === 'adv'}
+        gated={tier === 'gated'}
+      />
+    </li>
+  );
+}
+
+// Appearance ▸ Theme's fourth row: a downstream build's theme option (lib/extensions/
+// themeOptions), in the built-in rows' own markup — radio, swatch, label — plus its rung's
+// badge and a hover tip, which an untiered built-in doesn't carry. Its name is the option's
+// label(); the core never writes one.
 //
 // Its own component rather than TipToggle's `disabled`, because HELD is not that state.
-// A held Custom row is unavailable (dimmed, with the reason as the tip's note line and the
-// N/A badge), but the row IS the feature — pressing it is an explicit ask, so it keeps the
-// upgrade flow, as every gated teaser row does (lib/plan nudgeAction), where TipToggle's
+// A held row is unavailable (dimmed, with the reason as the tip's note line and the N/A
+// badge), but the row IS the feature — pressing it is an explicit ask, so it keeps the
+// upgrade flow, as every tier teaser row does (lib/plan nudgeAction), where TipToggle's
 // disabled would swallow the click. Nothing it does writes the stored choice: that only
-// happens through setTheme, and only for a reader who may draw Custom. (2026-10-06)
+// happens through setTheme, and only for a reader the row is open to. (2026-10-06)
+//
+// Tier-driven since 2026-10-08, when the row moved down a rung from the editor: the badge
+// and the tip's tag follow the rung the option DECLARES (its `tier`, through lib/plan
+// tierOfEntitlement) — ADV now, badged where the build's policy shows it, as the House
+// system and Zodiac menus are — rather than a hard-coded paid one. Its tip gains a second
+// note: a reader whose own version is held behind the fallback (editsHeld) is told so on the
+// row that is still theirs, which is not an unavailable state — the row works as ever.
 function CustomThemeOption({
   option,
+  tier,
+  optionEntitled,
+  editorEntitled,
   live,
   held,
+  editsHeld,
   badge,
   onPick,
 }: {
   option: ThemeOptionExtension;
+  /** The row's rung on the plan ladder: it picks the badge's class and the tip's tag. */
+  tier: PlanTier;
+  /** The two rungs, as App resolves them: they decide which spec the swatch shows. */
+  optionEntitled: boolean;
+  editorEntitled: boolean;
   /** The row is what is drawn — it carries the radio. */
   live: boolean;
-  /** Chosen but not available: dimmed, the base carries the radio, the tip says why. */
+  /** Chosen but the row's rung isn't reached: dimmed, the drawn built-in carries the
+   *  radio, the tip says why. */
   held: boolean;
-  /** The gated rung's compact badge, or '' when the build sets none or the badge policy
-   *  suppresses it. */
+  /** Live on the fallback while the reader's own version is held: the tip's note says so. */
+  editsHeld: boolean;
+  /** The rung's compact badge, or '' when the build sets none or the badge policy
+   *  suppresses it (ADV, in a build that shows it to guests only). */
   badge: string;
   onPick: () => void;
 }) {
   const { t } = useT();
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   const label = option.label();
-  // The core's own reason only if the option brings none — a held row must still say why
+  // The core's own reasons only if the option brings none — a held row must still say why
   // (CLAUDE.md row A), and the core cannot name the tier that brings it back.
-  const heldNote = held ? option.heldHint?.() || t('settings.theme.customHeld') : undefined;
+  // Below the row's rung and not chosen, the teaser's note is every locked theme row's
+  // (settings.theme.lockedNote, as the built-ins' rows carry it), so the option's own hint can
+  // describe the theme for every reader rather than say who it is open to (2026-10-08).
+  const note = held
+    ? option.heldHint?.() || t('settings.theme.customHeld')
+    : editsHeld
+      ? option.editsHeldHint?.() || t('settings.theme.customEditsHeld')
+      : !optionEntitled
+        ? t('settings.theme.lockedNote')
+        : undefined;
+  // The swatch shows what the row DRAWS — or, not chosen, what a pick would draw — rather than
+  // the stored spec, which a reader below the editor's rung isn't drawn (2026-10-08: a Pro
+  // reader turned Member saw their held theme's colours on a row drawing the fallback, and a
+  // fresh Member saw none). Which spec that is comes from lib/themeChoice, asked as if the
+  // option were chosen: `drawn` reads only the rungs and the reader's own spec — never the
+  // choice, the built-in or the palettes, which are placeholders here — so this row and the
+  // map App draws can't disagree about it. Both specs are re-read on every commit (useThemeOptionSpec) and
+  // identity-stable, so the swatch follows a commit without a subscription of its own.
+  const own = useThemeOptionSpec(option);
+  const fallback = useMemo(() => readFallbackSpec(option), [option]);
+  const drawnSpec = useMemo(() => {
+    const { drawn } = deriveThemeState({
+      builtinPref: 'vintage',
+      customChosen: true,
+      hasOption: true,
+      optionEntitled,
+      editorEntitled,
+      spec: own,
+      fallbackSpec: fallback,
+      specPalette: null,
+      fallbackPalette: null,
+    });
+    return drawn === 'own' ? own : drawn === 'fallback' ? fallback : null;
+  }, [optionEntitled, editorEntitled, own, fallback]);
   return (
     <li>
       <button
@@ -539,18 +679,24 @@ function CustomThemeOption({
         onBlur={hide}
       >
         <span className="radio">{live ? '●' : '○'}</span>
-        {option.swatch?.() ?? <span className="swatch swatch-custom" />}
-        <span className="label">{label}</span>
-        {badge && <span className="navmenu-tier tier-gated">{badge}</span>}
+        {option.swatch?.(drawnSpec) ?? <span className="swatch swatch-custom" />}
+        {/* The option's own mark before its name (themeOptions labelMark), inside the label so
+            the two read, and wrap, as one name. */}
+        <span className="label">
+          {option.labelMark?.()}
+          {label}
+        </span>
+        {badge && <span className={`navmenu-tier tier-${tier}`}>{badge}</span>}
       </button>
       <ChoiceTip
         pos={pos}
         title={label}
         hint={option.hint?.() ?? ''}
-        note={heldNote}
-        // The row wears the rung's badge; its tip carries the tag too, as every gated
-        // control's does.
-        gated
+        note={note}
+        // The row wears its rung's badge; its tip carries the same tag, under the same
+        // badge policy, so the two always agree.
+        advanced={tier === 'adv'}
+        gated={tier === 'gated'}
         unavailable={held}
       />
     </li>
@@ -1278,9 +1424,11 @@ export function Sidebar({
   themePref,
   setTheme,
   customOption,
-  customEntitled,
+  customOptionEntitled,
+  customEditorEntitled,
   customLive,
   customHeld,
+  customEditsHeld,
   themeEditorOpen,
   onToggleThemeEditor,
   basemapOutline,
@@ -1385,20 +1533,34 @@ export function Sidebar({
   // (2026-10-06)
   const outlineWhy = basemapOutline ? t('settings.theme.outlineUnavailable') : undefined;
 
-  // Appearance ▸ Theme, with a downstream Custom option (lib/extensions/themeOptions).
-  // Shown to a reader who may draw it, as a teaser where the build nudges the paid rung,
+  // Appearance ▸ Theme, with a downstream theme option (lib/extensions/themeOptions). Its two
+  // rungs as it declares them (2026-10-08): the ROW's, which decides who may draw it, and
+  // the EDITOR's, behind Customize — tier-driven, so the core never hard-codes which rung
+  // either sits on. The open core registers no option, so none of this renders there.
+  const customRowTier: PlanTier = customOption ? tierOfEntitlement(customOption.tier) : 'new';
+  // An option may come without an editor (a fixed theme): then there is no opener at all —
+  // not a teaser, since there is nothing behind it to reach (2026-10-08).
+  const customHasEditor = themeOptionHasEditor(customOption);
+  const customEditorTier: PlanTier =
+    customOption && customHasEditor ? tierOfEntitlement(customOption.editorTier) : 'new';
+  const tierBadgeOf = (tier: PlanTier) =>
+    tier !== 'new' && shouldShowTierBadge(tier) ? tierLabel(tier) : '';
+  // The row: shown to a reader who may draw it, as a teaser where the build nudges its rung,
   // and ALWAYS while it is held — a chosen theme the reader can't draw stays visible with
-  // its reason (row A), even for a guest, whom the teaser policy would otherwise hide it
-  // from. The open core registers no option, so none of this renders there.
+  // its reason (row A), even where the teaser policy would otherwise hide it.
   const showCustomTheme =
-    customOption != null && (customEntitled || customHeld || shouldShowNudge('gated'));
-  // The Customize opener, beneath the list while Custom is the STORED choice: the Aspect
-  // Lines opener's rules, visible once the reader may use it or as a teaser where the build
-  // nudges (hidden otherwise — a held guest gets the row and its reason, not an opener).
+    customOption != null &&
+    (customOptionEntitled || customHeld || shouldShowNudge(customRowTier));
+  // The Customize opener, beneath the list while the option is the STORED choice and drawn
+  // for this reader: the Aspect Lines opener's rules, visible once the reader may use it or
+  // as a teaser where the build nudges the editor's rung (hidden otherwise — a held guest
+  // gets the row and its reason, not an opener to a theme they can't draw).
   const showThemeEditorOpener =
     customOption != null &&
+    customHasEditor &&
     themePref === 'custom' &&
-    (customEntitled || shouldShowNudge('gated'));
+    customOptionEntitled &&
+    (customEditorEntitled || shouldShowNudge(customEditorTier));
 
   // TELL THE MAP when this panel arrives, changes size, and leaves. The map keeps its line labels
   // off every panel's rect (HUD_SELECTORS there lists `.sidebar`), cached until `astro:hud-moved`,
@@ -1458,75 +1620,87 @@ export function Sidebar({
           <h2>{t('settings.headings.theme')}</h2>
           <ul className="theme-list">
             {THEMES.map((th) => {
-              // The radio marks what is DRAWN. With no Custom theme live that is
+              // The radio marks what is DRAWN. With no theme option live that is
               // exactly `theme === th`, as it always was; while one is live its row
               // carries the mark and no built-in does, though `theme` is its base.
               const marked = !customLive && theme === th;
+              // A build's rung on this built-in (none in the open core: 'core', entitled).
+              const rowTier = tierOfEntitlement(builtinThemeTier(th));
+              const entitled = builtinThemeEntitled(th);
+              // Hidden below its rung unless the build teases it — but never the row the
+              // reader is drawn in, which stays theirs (BuiltinThemeOption says why).
+              if (!entitled && !marked && !shouldShowNudge(rowTier)) return null;
               return (
-                <li key={th}>
-                  <button
-                    type="button"
-                    className={`theme-option ${marked ? 'active' : ''}`}
-                    onClick={() => {
-                      // While Custom is HELD, the row marked is the base it is drawn
-                      // in — marked as the effective value, not because it was picked.
-                      // A re-pick would write that masked value over the stored choice
-                      // (CLAUDE.md rule 2; Discovery's menu did exactly this), so it is
-                      // refused here as App's setThemeSafe refuses it: inert in fact,
-                      // and a re-pick of the marked radio looks like a no-op anyway.
-                      if (customHeld && marked) return;
-                      setTheme(th);
-                    }}
-                  >
-                    <span className="radio">{marked ? '●' : '○'}</span>
-                    <span className={`swatch swatch-${th}`} />
-                    <span className="label">{labels.theme(th)}</span>
-                  </button>
-                </li>
+                <BuiltinThemeOption
+                  key={th}
+                  theme={th}
+                  label={labels.theme(th)}
+                  marked={marked}
+                  tier={rowTier}
+                  entitled={entitled}
+                  badge={tierBadgeOf(rowTier)}
+                  onPick={() => {
+                    // While the option is HELD, the row marked is the built-in the app
+                    // is drawn in — marked as the effective value, not as the choice.
+                    // A re-pick would write that masked value over the stored choice
+                    // (CLAUDE.md rule 2; Discovery's menu did exactly this), so it is
+                    // refused here as App's setThemeSafe refuses it: inert in fact,
+                    // and a re-pick of the marked radio looks like a no-op anyway.
+                    // A locked row needs no test here: setThemeSafe nudges it.
+                    if (customHeld && marked) return;
+                    setTheme(th);
+                  }}
+                />
               );
             })}
             {showCustomTheme && customOption && (
               <CustomThemeOption
                 option={customOption}
+                tier={customRowTier}
+                optionEntitled={customOptionEntitled}
+                editorEntitled={customEditorEntitled}
                 live={customLive}
                 held={customHeld}
-                badge={gatedBadge}
-                // Never a write without the entitlement: the teaser — and a held row,
-                // whose fix is the same — runs the build's upgrade flow instead.
-                onPick={() => (customEntitled ? setTheme('custom') : nudgeAction())}
+                editsHeld={customEditsHeld}
+                badge={tierBadgeOf(customRowTier)}
+                // Never a write without the row's entitlement: the teaser — and a held
+                // row, whose fix is the same — runs the build's upgrade flow instead.
+                onPick={() => (customOptionEntitled ? setTheme('custom') : nudgeAction())}
               />
             )}
-            {/* The Customize opener, in the Aspect Lines opener's exact form: a
-                gated-rung sub-row under the choice it belongs to, badged, a teaser
-                that keeps the upgrade flow where the reader can't use it. It toggles
-                the editor only while Custom is drawn; chosen with the entitlement
-                but no spec to edit, it is the same ask as picking Custom again, so
-                it re-seeds through setTheme rather than opening an empty editor.
-                On touch, OPENING the editor also dismisses this dock, as Minor
-                bodies ▸ More does below — done in App (toggleThemeEditor and
-                setThemeSafe), where the first pick's opening is decided. */}
+            {/* The Customize opener, in the Aspect Lines opener's exact form: a sub-row
+                on the editor's rung under the choice it belongs to, badged, a teaser that
+                keeps the upgrade flow where the reader can't use it. With the rung it
+                toggles the editor — App's toggleThemeEditor, which also seeds a copy of
+                what is on screen when the reader has no version of their own yet, rather
+                than opening an empty editor. Its key is Shift C (App), shown only where
+                it works: below the rung the key does nothing, so a pill would be a lie,
+                as Minor bodies ▸ More's '4' is dropped below its rung. On touch, OPENING
+                the editor also dismisses this dock, as Minor bodies ▸ More does below —
+                done in App (toggleThemeEditor and setThemeSafe), where the first pick's
+                opening is decided. */}
             {showThemeEditorOpener && (
               <TipToggle
-                className={`thud-select calc-menu-trigger theme-custom-open ${customLive && themeEditorOpen ? 'open' : ''}`}
+                className={`thud-select calc-menu-trigger theme-custom-open ${customEditorEntitled && customLive && themeEditorOpen ? 'open' : ''}`}
                 onClick={() => {
-                  if (customLive) {
-                    onToggleThemeEditor();
+                  if (!customEditorEntitled) {
+                    nudgeAction(); // tier-locked teaser → the account/upgrade flow
                     return;
                   }
-                  if (customEntitled) {
-                    setTheme('custom');
-                    return;
-                  }
-                  nudgeAction(); // tier-locked teaser → the account/upgrade flow
+                  onToggleThemeEditor();
                 }}
-                ariaPressed={customLive && themeEditorOpen}
+                ariaPressed={customEditorEntitled && customLive && themeEditorOpen}
                 title={t('settings.theme.customize')}
                 hint={t('settings.theme.customizeHint')}
-                gated
+                hotkey={customEditorEntitled ? 'Shift C' : undefined}
+                advanced={customEditorTier === 'adv'}
+                gated={customEditorTier === 'gated'}
               >
                 <span className="calc-menu-value">{t('settings.theme.customize')}</span>
-                {gatedBadge && (
-                  <span className="navmenu-tier tier-gated">{gatedBadge}</span>
+                {tierBadgeOf(customEditorTier) && (
+                  <span className={`navmenu-tier tier-${customEditorTier}`}>
+                    {tierBadgeOf(customEditorTier)}
+                  </span>
                 )}
               </TipToggle>
             )}
