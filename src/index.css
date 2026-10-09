@@ -352,6 +352,8 @@ span.astro-glyph {
   --wheel-face: initial;
   --wheel-retro: initial;
   --wheel-station: initial;
+  --wheel-glyph-ring: initial;
+  --map-pin-scale: initial;
 }
 
 :root[data-theme='vintage'] {

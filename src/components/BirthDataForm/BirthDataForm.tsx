@@ -500,13 +500,6 @@ export function BirthDataFields({
           )}
         </fieldset>
 
-        {/* Time zone, beside the time it modifies (Lina, 2026-10-06; it sat
-            under the birthplace): the zone in force for the entered date, by
-            name, with "Set manually" for the chooser — the coordinates' pattern.
-            Locked until a birthplace and date exist. A composite's zone is
-            fixed at UT. */}
-        <TimeZoneField zone={zone} hasPlace={!!selectedPlace} />
-
         {/* Both of a chart's places — the birthplace, and where its subject
             lives NOW (optional; unset means "the birthplace") — share this one
             search box. The caption row doubles as the switch, and the `key`
@@ -594,6 +587,15 @@ export function BirthDataFields({
             </>
           )}
         </div>
+
+        {/* Time zone, straight after the places and before the coordinates
+            (Salvatore, 2026-10-09 — it sat beside the time from 2026-10-06,
+            Lina's placement, and under the birthplace before that): the zone is
+            detected from the birthplace, so it reads after it. The zone in force
+            for the entered date, by name, with "Set manually" for the chooser —
+            the coordinates' pattern. Locked until a birthplace and date exist. A
+            composite's zone is fixed at UT. */}
+        <TimeZoneField zone={zone} hasPlace={!!selectedPlace} />
 
         {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default,
             in DMS with the longitude padded to three digits (2026-10-07: every

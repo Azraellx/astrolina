@@ -59,8 +59,8 @@ Maps & places
     https://openfreemap.org
   - OpenMapTiles — vector tile schema.
     https://openmaptiles.org
-  - OpenMapTiles styles — MapTiler Basic, OSM Bright, Dark Matter and
-    Positron, some adapted. Code BSD-3-Clause, design CC BY 4.0.
+  - OpenMapTiles styles — MapTiler Basic, OSM Bright, Dark Matter, Positron
+    and Fiord Color, some adapted. Code BSD-3-Clause, design CC BY 4.0.
     © MapTiler.com & OpenMapTiles contributors; © Mapbox; © CartoDB.
     The copy of MapTiler Basic redistributed in public/basemaps/ keeps its
     notice beside it (MAPTILER-BASIC-LICENSE.md).

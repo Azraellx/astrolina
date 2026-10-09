@@ -276,6 +276,20 @@ function rectsKey(rects: readonly AvoidRect[]): string {
 // A core marker's tap target (PIN_HIT / HOME_HIT) in map-container coordinates, projected from
 // where MapLibre itself places it; null when there is no marker or it is round the far side of
 // the globe (MapLibre hides it there, so there is nothing to keep clear of).
+/** A pin's tap target at the theme's pin size (lib/themePalette marks.pinScale, read from the root
+ *  as --map-pin-scale): the pin scales from its tip, so the target grows up and out from the point,
+ *  and the labels keep clear of the pin as drawn (2026-10-09). */
+function scaledHit(hit: { hw: number; up: number; down: number }): { hw: number; up: number; down: number } {
+  let s = 1;
+  try {
+    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--map-pin-scale'));
+    if (Number.isFinite(v) && v > 0) s = v;
+  } catch {
+    /* no computed style: the pin's own size */
+  }
+  return s === 1 ? hit : { hw: hit.hw * s, up: hit.up * s, down: hit.down * s };
+}
+
 function markerHitRect(
   map: maplibregl.Map,
   marker: maplibregl.Marker | null,
@@ -1072,6 +1086,30 @@ const ZENITH_SOURCE_BY_LAYER: Record<string, string> = {
   [MINOR_ZENITH_OV_LAYER]: 'minor-zenith-ov',
 };
 const ZENITH_HIT_TOLERANCE_PX = 4;
+
+// The stamps' hover (2026-10-09, Salvatore): the coin itself grows ×1.1 — the scale the app's
+// other hover lifts use — where a second, larger circle used to bloom out from behind it. A
+// symbol's icon-size is a LAYOUT property, which feature-state can't drive and which re-lays
+// the whole layer out when set, so the growth can't be the stamp's own. Instead each stamp
+// layer has a twin drawn at ×1.1 above every stamp, invisible until its feature is hovered,
+// when it fades in over the original in the same 150 ms (opacity is paint: GPU-smooth, no
+// re-layout). The twin is wholly opaque and a tenth larger, so it covers the stamp beneath; it
+// is never hit-tested (ZENITH_HIT_LAYERS stays the stamps), and it empties with its source.
+// [stamp layer, its source, its icon, the twin's hovered opacity]: an overlay's stamps rest
+// softer (0.85), so their lift stops short of full as their bloom did.
+// Every stamp's drawn size, zenith and nadir, natal and overlay, and the catalog coins at the
+// same: 0.85 of the baked sprite (Salvatore, 2026-10-09 — 15% smaller than it drew until then, as a
+// default). One number for all six layers, so a coin and a planet's stamp stay the same size.
+const STAMP_SIZE = 0.85;
+const STAMP_HOVER_SCALE = 1.1;
+const STAMP_LIFTS: readonly (readonly [string, string, ExpressionSpecification, number])[] = [
+  [MINOR_ZENITH_OV_LAYER, 'minor-zenith-ov', ['get', 'icon'] as unknown as ExpressionSpecification, 0.95],
+  [MINOR_ZENITH_LAYER, 'minor-zenith', ['get', 'icon'] as unknown as ExpressionSpecification, 1],
+  ['acg-nadir-ov-layer', 'acg-nadir-ov', ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification, 0.95],
+  ['acg-zenith-ov-layer', 'acg-zenith-ov', ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification, 0.95],
+  ['acg-nadir-layer', 'acg-nadir', ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification, 1],
+  ['acg-zenith-layer', 'acg-zenith', ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification, 1],
+];
 
 // Inline SVG for the eclipse-maximum DOM marker (set as the marker element's
 // innerHTML). Solar: a radiating corona / "ring of fire" — eight rays + a bright
@@ -1915,6 +1953,10 @@ interface MapProps {
    *  visible point — hugging the frame edge like the ACG edge badges — instead of
    *  on the ring around the origin, and drops the bearing degrees from its face. */
   lsEdgeLabels?: boolean;
+  /** The Local Space window's Degrees switch off (2026-10-09): the outgoing labels drop their
+   *  bearing, as the standard-labels mode does — blanked where the badges are computed, so their
+   *  measured widths and keep-clear boxes follow. */
+  lsHideDeg?: boolean;
   /** When true, click-drag on the map measures great-circle distance (and map
    *  panning is suspended for the duration). */
   measureActive?: boolean;
@@ -3150,7 +3192,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
   // ── Catalog minor-body zenith coins: each body's sub-point, on its MC line at
   // latitude = declination, as its baked coin (props.icon) at the planets' stamp size
   // (the coins are baked on the same canvas, disc and ring as the planet stamps, so
-  // icon-size 1 is the same on-map size). Added BELOW every planet stamp (overlay and
+  // one STAMP_SIZE is the same on-map size). Added BELOW every planet stamp (overlay and
   // natal, zenith and nadir, all added after this), so a planet wins where the two
   // coincide — the hit-test takes the topmost, so it wins the hover and click too.
   //
@@ -3166,32 +3208,13 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     ...LINE_SOURCE_OPTS,
     promoteId: 'body',
   });
-  // Hover-only bloom behind the coin — the planets' acg-zenith-disc treatment, exactly (its
-  // fill, the palette's zenith disc, bound like theirs).
-  map.addLayer(
-    bind({
-      id: 'minor-zenith-disc',
-      source: 'minor-zenith',
-      type: 'circle',
-      paint: {
-        'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
-        'circle-radius-transition': { duration: 150, delay: 0 },
-        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-        'circle-opacity-transition': { duration: 150, delay: 0 },
-        'circle-stroke-color': ['get', 'color'],
-        'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
-        'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-        'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
-      },
-    }),
-  );
   map.addLayer({
     id: MINOR_ZENITH_LAYER,
     source: 'minor-zenith',
     type: 'symbol',
     layout: {
       'icon-image': ['get', 'icon'],
-      'icon-size': 1,
+      'icon-size': STAMP_SIZE,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
     },
@@ -3206,24 +3229,6 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     ...LINE_SOURCE_OPTS,
     promoteId: 'body',
   });
-  map.addLayer(
-    bind({
-      id: 'minor-zenith-ov-disc',
-      source: 'minor-zenith-ov',
-      type: 'circle',
-      paint: {
-        'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
-        'circle-radius-transition': { duration: 150, delay: 0 },
-        'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
-        'circle-opacity-transition': { duration: 150, delay: 0 },
-        'circle-stroke-color': ['get', 'color'],
-        'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
-        'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
-        'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
-      },
-    }),
-    'minor-zenith-disc',
-  );
   // Its 0.85 is the palette's overlay catalog-mark opacity (bound), the same as its beads'.
   map.addLayer(
     bind({
@@ -3232,12 +3237,12 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       type: 'symbol',
       layout: {
         'icon-image': ['get', 'icon'],
-        'icon-size': 1,
+        'icon-size': STAMP_SIZE,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
     }),
-    'minor-zenith-disc',
+    MINOR_ZENITH_LAYER,
   );
 
   // ── Overlay zenith stamps: the same glyph discs as the natal zeniths below, but
@@ -3255,32 +3260,13 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     ...LINE_SOURCE_OPTS,
     promoteId: 'planet',
   });
-  map.addLayer(bind({
-    id: 'acg-zenith-ov-disc',
-    source: 'acg-zenith-ov',
-    type: 'circle',
-    paint: {
-      // Hover-only bloom (see the natal disc below): invisible at rest, it grows a
-      // softer ring out from behind the overlay stamp on hover. Capped at 0.85 to
-      // stay the derived (dashed-line) layer's lower weight. Its fill is the palette's
-      // zenith disc (bound).
-      'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
-      'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
-      'circle-opacity-transition': { duration: 150, delay: 0 },
-      'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
-      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
-      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
-    },
-  }));
   map.addLayer({
     id: 'acg-zenith-ov-layer',
     source: 'acg-zenith-ov',
     type: 'symbol',
     layout: {
       'icon-image': ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
-      'icon-size': 1,
+      'icon-size': STAMP_SIZE,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
     },
@@ -3307,7 +3293,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       type: 'symbol',
       layout: {
         'icon-image': ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
-        'icon-size': 1,
+        'icon-size': STAMP_SIZE,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
@@ -3316,7 +3302,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
         'icon-opacity-transition': { duration: 150, delay: 0 },
       },
     },
-    'acg-zenith-ov-disc',
+    'acg-zenith-ov-layer',
   );
 
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
@@ -3337,45 +3323,16 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     ...LINE_SOURCE_OPTS,
     promoteId: 'planet',
   });
-  // The disc + ring now live BAKED in the stamp sprite (acg-zenith-layer below), so
-  // each stamp draws as one overlap-stacking coin. This circle is the hover-grow
-  // ONLY: transparent at rest, on hover it blooms a larger ring out from BEHIND the
-  // stamp (drawn under the symbol layer) — mirroring the badge hover lift without
-  // re-introducing a separate always-on disc that split from its glyph. The rest
-  // radius is kept at the disc size so the bloom grows from the coin's edge. Its fill is the
-  // palette's zenith disc (bound) — the fill the stamp sprite bakes, so the bloom matches it.
-  map.addLayer(bind({
-    id: 'acg-zenith-disc',
-    source: 'acg-zenith',
-    type: 'circle',
-    paint: {
-      'circle-radius': [
-        'case',
-        ['boolean', ['feature-state', 'hover'], false],
-        18,
-        13,
-      ],
-      'circle-radius-transition': { duration: 150, delay: 0 },
-      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-      'circle-opacity-transition': { duration: 150, delay: 0 },
-      'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': [
-        'case',
-        ['boolean', ['feature-state', 'hover'], false],
-        2.75,
-        0,
-      ],
-      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
-      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
-    },
-  }));
+  // The disc + ring live BAKED in the stamp sprite (acg-zenith-layer below), so each stamp
+  // draws as one overlap-stacking coin. Its hover is the coin itself growing ×1.1 (the stamp
+  // lifts added after it), not a second circle blooming out from behind — see STAMP_LIFTS.
   map.addLayer({
     id: 'acg-zenith-layer',
     source: 'acg-zenith',
     type: 'symbol',
     layout: {
       'icon-image': ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
-      'icon-size': 1,
+      'icon-size': STAMP_SIZE,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
     },
@@ -3403,7 +3360,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       type: 'symbol',
       layout: {
         'icon-image': ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
-        'icon-size': 1,
+        'icon-size': STAMP_SIZE,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
@@ -3412,8 +3369,29 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
         'icon-opacity-transition': { duration: 150, delay: 0 },
       },
     },
-    'acg-zenith-disc',
+    'acg-zenith-layer',
   );
+
+  // The stamps' hover lifts (STAMP_LIFTS says why): one twin per stamp layer, above them all,
+  // so a hovered stamp also rises over its neighbours, as a hovered badge does. Added after the
+  // last stamp source exists (the natal nadirs, just above).
+  for (const [layer, source, icon, hovered] of STAMP_LIFTS) {
+    map.addLayer({
+      id: `${layer}-lift`,
+      source,
+      type: 'symbol',
+      layout: {
+        'icon-image': icon,
+        'icon-size': STAMP_SIZE * STAMP_HOVER_SCALE,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        'icon-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], hovered, 0],
+        'icon-opacity-transition': { duration: 150, delay: 0 },
+      },
+    });
+  }
 
   // The greatest-eclipse (solar) / sub-lunar (lunar) maximum point is drawn as a
   // STYLED DOM marker — a corona / eclipsed-moon icon with a finite ping — rather
@@ -4082,6 +4060,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lsLabelName = false,
   lsLineDeg = false,
   lsEdgeLabels = false,
+  lsHideDeg = false,
   measureActive,
   measureSnap,
   measureColor,
@@ -5260,6 +5239,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const hideLsArrowsRef = useRef(hideLsArrows);
   // Current LS label mode, read inside computeBadges (bound once, refs only).
   const lsEdgeLabelsRef = useRef(lsEdgeLabels);
+  const lsHideDegRef = useRef(lsHideDeg);
   // Transparent-mode flag + the latest projected origin — read inside computeBadges (per-frame
   // circle clip + rim badges) and captureFrame (clip the exported canvas), both bound once via refs.
   const lsTransparentRef = useRef(lsTransparent);
@@ -5322,6 +5302,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     detailRef.current = { showRoads, showRivers, showLabels, hideBasemap };
     hideLsArrowsRef.current = hideLsArrows;
     lsEdgeLabelsRef.current = lsEdgeLabels;
+    lsHideDegRef.current = lsHideDeg;
     lsTransparentRef.current = lsTransparent;
     eclipseTipRef.current = eclipseTip;
     geoReadoutRef.current = geoReadout;
@@ -5541,7 +5522,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         framing && lsTransparentRef.current
           ? []
           : [
-              markerHitRect(map, markerRef.current, PIN_HIT),
+              markerHitRect(map, markerRef.current, scaledHit(PIN_HIT)),
               markerHitRect(map, homeMarkerRef.current, HOME_HIT),
             ]
               .filter((r): r is AvoidRect => r !== null)
@@ -5792,8 +5773,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           planet: lp.planet,
           color: lp.color,
           out,
-          // Standard-labels mode blanks the bearing so the face matches the ACG badges.
-          azLabel: edgeMode ? '' : azLabel,
+          // Standard-labels mode blanks the bearing so the face matches the ACG badges; so does
+          // the Local Space window's Degrees switch, off.
+          azLabel: edgeMode || lsHideDegRef.current ? '' : azLabel,
           // The always-present bearing, for the transparent "Degrees" along-the-line label.
           bearing: azLabel,
         });
@@ -6996,7 +6978,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const zenithPopup = new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
-      offset: 22, // clear the stamp even at its enlarged hover size
+      offset: 18, // clear the stamp even at its hover size (STAMP_SIZE × STAMP_HOVER_SCALE, ~12 px radius)
       className: 'zenith-popup',
     });
     const clearZenith = () => {
@@ -8859,7 +8841,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!mapRef.current) return;
     computeBadgesRef.current();
     scheduleBadgesRef.current();
-  }, [lsEdgeLabels]);
+  }, [lsEdgeLabels, lsHideDeg]);
 
   useEffect(() => {
     const map = mapRef.current;

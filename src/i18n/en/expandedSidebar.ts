@@ -37,8 +37,21 @@ export const expandedSidebar = {
       cyclo: 'CCG',
     },
     // A relocated chart's birth moment stays the birthplace's own clock; "Born:" says
-    // whose moment it is once a second place sits under it.
+    // whose moment it is once a second place sits under it — or a ring's moment above it.
     born: 'Born:',
+    // A ring's moment, named where the header's label names something else: a composite
+    // outranks a ring it carries, and a bare date there would read as the composite's own.
+    ringLead: {
+      transits: 'Transits:',
+      progressed: 'Progressed:',
+      'tertiary-progressed': 'Tertiary progressed:',
+      'solar-arc': 'Solar arc:',
+      'primary-directions': 'Directions:',
+      eclipses: 'Eclipse:',
+      cyclo: 'CCG:',
+      solarReturn: 'Solar return:',
+      lunarReturn: 'Lunar return:',
+    },
     // The point a relocated chart is cast for — coordinates only, no zone: the clock
     // there is not an input to anything.
     relocatedTo: 'Relocated to:',
@@ -81,6 +94,9 @@ export const expandedSidebar = {
   // the chosen quadrant house system is undefined at this latitude (above the polar circles)
   // and Porphyry cusps are drawn instead — so the wheel never silently shows a different system.
   houseFallback: 'Porphyry cusps',
+  // The same notice in a narrow panel, where the full one meets the wheel's rim; the tip
+  // keeps the full name (2026-10-09).
+  houseFallbackShort: 'Porphyry',
   houseFallbackHint:
     'Above the polar circles, quadrant house systems like Placidus become undefined, so the wheel falls back to Porphyry — which trisects the arcs between the angles and stays well-defined at any latitude.',
 

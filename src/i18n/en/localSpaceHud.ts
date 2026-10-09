@@ -31,6 +31,11 @@ export const localSpaceHud = {
     title: 'Inbound lines',
     hint: 'The inbound continuation of each local-space line — the dashed half pointing to the body’s antipode, opposite its outgoing (solid) bearing. Toggle off to keep only the outgoing halves.',
   },
+  // The bearing printed on each outgoing label (2026-10-09). Off leaves LS and the glyph.
+  hideDegrees: {
+    title: 'Degrees',
+    hint: 'The bearing on each outgoing label, in degrees and minutes. Off leaves the labels with just LS and the glyph.',
+  },
   hideCompass: {
     title: 'Compass',
     hint: 'The local-horizon compass wheel that fades in at the origin once you zoom in.',

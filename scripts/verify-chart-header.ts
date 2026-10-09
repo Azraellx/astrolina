@@ -270,12 +270,66 @@ console.log('\n── 2. INTERNAL IDENTITY: "Born:" stays the birthplace clock, 
   check('no birth time: "birth time unknown, noon used" in place of the clock', lineText(tm).endsWith('birth time unknown, noon used'), lineText(tm));
   check('no birth time: no clock and no zone', !segOf(tm, 'clock') && !segOf(tm, 'zone'));
 
-  // The overlay's lines: its moment, then where it is cast.
+  // The overlay's lines. A RING (drawn around the chart) heads with its moment, unnamed —
+  // the label names it — and keeps the chart's own lines under it, "Born:" saying whose
+  // that moment is, with one place line for both (2026-10-09: the ring's lines alone left
+  // a bi-wheel's header without the birth moment of the chart it was drawn around). A
+  // PROMOTED overlay stands in for the chart, which is not drawn: its moment and where it
+  // is cast, alone, as before.
   const tr = model({ overlay: ov('transits') });
-  check('transits: the moment line, then the cast place (the birthplace)', same(tr.lines.slice(0, 2).map((l) => l.role), ['overlay-moment', 'overlay-place']), tr.lines.map((l) => l.role).join(' > '));
+  const trRoles = tr.lines.map((l) => l.role).join(' > ');
+  check('transits ring: its moment, then the chart\'s moment and birthplace', same(tr.lines.slice(0, 3).map((l) => l.role), ['overlay-moment', 'moment', 'birthplace']), trRoles);
+  check('transits ring: the ring\'s moment unnamed, the chart\'s led by "Born:"', !segOf(tr.lines[0], 'lead') && segOf(byRole(tr, 'moment')[0], 'lead')?.text === 'Born:', texts(tr).join(' | '));
+  check('transits ring: one place line, not a second for the ring', byRole(tr, 'overlay-place').length === 0 && byRole(tr, 'birthplace').length === 1, trRoles);
   const trPin = model({ overlay: ov('transits'), ...pinAt(TORONTO) });
-  check('transits, pinned: the cast place is the pin, without a lead', byRole(trPin, 'relocated').length === 1 && !segOf(byRole(trPin, 'relocated')[0], 'lead'));
-  check('transits: no natal moment line', byRole(tr, 'moment').length === 0);
+  const trPinRoles = trPin.lines.map((l) => l.role);
+  check(
+    'transits ring, pinned: "Relocated to:" after the birthplace',
+    byRole(trPin, 'relocated').length === 1 &&
+      segOf(byRole(trPin, 'relocated')[0], 'lead')?.text === 'Relocated to:' &&
+      trPinRoles.indexOf('relocated') === trPinRoles.indexOf('birthplace') + 1,
+    texts(trPin).join(' | '),
+  );
+  const sr = model({ overlay: ov('transits', { returnBody: 'solar' }) });
+  check('a return ring keeps the chart\'s lines too', byRole(sr, 'overlay-moment').length === 1 && byRole(sr, 'moment').length === 1, texts(sr).join(' | '));
+  const pro = model({ overlay: ov('transits', { promoted: true }) });
+  check('transits promoted: the moment line, then the cast place (the birthplace)', same(pro.lines.slice(0, 2).map((l) => l.role), ['overlay-moment', 'overlay-place']), pro.lines.map((l) => l.role).join(' > '));
+  const proPin = model({ overlay: ov('transits', { promoted: true }), ...pinAt(TORONTO) });
+  check('transits promoted, pinned: the cast place is the pin, without a lead', byRole(proPin, 'relocated').length === 1 && !segOf(byRole(proPin, 'relocated')[0], 'lead'));
+  check('transits promoted: no natal moment line', byRole(pro, 'moment').length === 0);
+
+  // The reserved rows (HeaderView.spareLines): a relocation never changes the header's
+  // height. Each state un-relocated — its lines plus its spare rows — against the same state
+  // relocated, for the header and for the Dual layout's first-wheel view. A state that
+  // reserves nothing must gain nothing; and the states that do gain a line must reserve it,
+  // so the list cannot pass with no reservation anywhere.
+  const heightStates: { name: string; over: Partial<ChartHeaderInput> }[] = [
+    { name: 'natal', over: {} },
+    { name: 'Davison', over: { chart: DAVISON } },
+    { name: 'composite', over: { chart: COMPOSITE } },
+    { name: 'composite under a transits ring', over: { chart: COMPOSITE, overlay: ov('transits') } },
+    { name: 'transits ring', over: { overlay: ov('transits') } },
+    { name: 'transits promoted', over: { overlay: ov('transits', { promoted: true }) } },
+    { name: 'solar return ring', over: { overlay: ov('transits', { returnBody: 'solar' }) } },
+    { name: 'Davison under a transits ring', over: { chart: DAVISON, overlay: ov('transits') } },
+    { name: 'synastry', over: { overlay: ov('synastry', { partner: SHAE }) } },
+    { name: 'geodetic', over: { lineSystem: 'geodetic' } },
+    { name: 'geodetic composite', over: { chart: COMPOSITE, lineSystem: 'geodetic' } },
+    { name: 'geodetic, a promoted overlay', over: { lineSystem: 'geodetic', overlay: ov('transits', { promoted: true }) } },
+  ];
+  const heightOf = (v: { lines: HeaderLine[]; spareLines?: number }) => v.lines.length + (v.spareLines ?? 0);
+  every('a relocation keeps the header\'s height (lines + spare rows)', heightStates, ({ name, over }) => {
+    const home = model(over);
+    const moved = model({ ...over, ...pinAt(TORONTO) });
+    if (moved.spareLines) return `${name}: relocated, yet still reserving ${moved.spareLines}`;
+    if (heightOf(home) !== heightOf(moved)) return `${name}: ${heightOf(home)} rows home, ${heightOf(moved)} relocated`;
+    if (heightOf(home.chartView) !== heightOf(moved.chartView)) return `${name} (Dual first wheel): ${heightOf(home.chartView)} vs ${heightOf(moved.chartView)}`;
+    return null;
+  });
+  check(
+    '…and the states that gain a line reserve one (natal, a ring, geodetic)',
+    ['natal', 'transits ring', 'geodetic'].every((n) => (model(heightStates.find((h) => h.name === n)!.over).spareLines ?? 0) === 1),
+  );
 }
 
 // ── 3. INTERNAL IDENTITY: a composite has no moment ─────────────────────────
@@ -290,8 +344,25 @@ console.log('\n── 3. INTERNAL IDENTITY: the composite states its parents and
     { name: 'composite, geodetic', m: model({ chart: COMPOSITE, lineSystem: 'geodetic' }) },
     { name: 'composite, the Dual first wheel', m: { ...model({ chart: COMPOSITE, overlay: ov('transits') }), lines: model({ chart: COMPOSITE, overlay: ov('transits') }).chartView.lines } as ChartHeaderModel },
   ];
-  every('no moment line on a composite', states, ({ name, m }) =>
-    byRole(m, 'moment').length || byRole(m, 'overlay-moment').length ? `${name}: ${texts(m).join(' | ')}` : null,
+  // Its ring's moment may show (2026-10-09), but only NAMED ("Transits: …"): a bare date
+  // and clock on a composite would read as the composite's own moment.
+  every('no moment line on a composite — a ring\'s only, and named', states, ({ name, m }) =>
+    byRole(m, 'moment').length || byRole(m, 'overlay-moment').some((l) => segOf(l, 'lead')?.text !== 'Transits:')
+      ? `${name}: ${texts(m).join(' | ')}`
+      : null,
+  );
+  const compRing = model({ chart: COMPOSITE, overlay: ov('transits') });
+  const compRingRoles = compRing.lines.map((l) => l.role);
+  check(
+    'composite under a transits ring: the ring\'s moment, named, after the midpoint',
+    byRole(compRing, 'overlay-moment').length === 1 && compRingRoles.indexOf('overlay-moment') === compRingRoles.indexOf('midpoint') + 1,
+    texts(compRing).join(' | '),
+  );
+  const compRingPin = model({ chart: COMPOSITE, overlay: ov('transits'), ...pinAt(TORONTO) });
+  check(
+    'composite under a ring, pinned: "Cast for:" — the ring relocates, the composite does not',
+    segOf(byRole(compRingPin, 'relocated')[0], 'lead')?.text === 'Cast for:' && !compRingPin.labelParts.includes('RELOCATED'),
+    `${compRingPin.labelParts.join(' · ')} — ${texts(compRingPin).join(' | ')}`,
   );
   // And the stored minute — the synthesized frame anchor — is printed nowhere.
   const anchor = `${String(COMPOSITE.hour).padStart(2, '0')}:${String(COMPOSITE.minute).padStart(2, '0')}`;
@@ -533,20 +604,37 @@ console.log('\n── 8. GOLDEN: the spec\'s examples, as printed ──');
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), reloc.join(' | '));
   const torontoChart: StoredChart = { ...JIM, birthplace: { ...TORONTO }, sourceRating: undefined };
-  const tr = model({ chart: torontoChart, overlay: ov('transits') });
+  // Lina's transits example is the PROMOTED overlay's header since 2026-10-09: a ring's
+  // keeps the chart's own lines under its moment (the two checks after these).
+  const tr = model({ chart: torontoChart, overlay: ov('transits', { promoted: true }) });
   // Cast at the chart's own birthplace, which the header prints in DMS. Lina's example
   // shows Toronto to the minute — the form a RELOCATED place takes (the next check).
-  check('transits', label(tr) === 'TRANSITS · 1 August 2026' && same(texts(tr), [
+  check('transits promoted', label(tr) === 'TRANSITS · 1 August 2026' && same(texts(tr), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     `Toronto, Ontario, Canada · ${fmtCoordPair(TORONTO.lat, TORONTO.lng)}`,
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), texts(tr).join(' | '));
-  const trPin = model({ overlay: ov('transits'), ...pinAt(TORONTO), chart: { ...JIM, sourceRating: undefined } });
-  check('transits, relocated to Toronto', label(trPin) === 'TRANSITS · 1 August 2026 · RELOCATED' && same(texts(trPin), [
+  const trPin = model({ overlay: ov('transits', { promoted: true }), ...pinAt(TORONTO), chart: { ...JIM, sourceRating: undefined } });
+  check('transits promoted, relocated to Toronto', label(trPin) === 'TRANSITS · 1 August 2026 · RELOCATED' && same(texts(trPin), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     'Toronto, Ontario, Canada · 43°N39\' 079°W23\'',
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), texts(trPin).join(' | '));
+  const ring = model({ chart: torontoChart, overlay: ov('transits') });
+  check('a transits ring', label(ring) === 'TRANSITS · 1 August 2026' && same(texts(ring), [
+    '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
+    'Born: 5 June 1941, Thu · 09:30 EDT (UTC−04:00)',
+    `Toronto, Ontario, Canada · ${fmtCoordPair(TORONTO.lat, TORONTO.lng)}`,
+    'Geocentric · Tropical · Whole Sign · True Node',
+  ]), texts(ring).join(' | '));
+  const ringPin = model({ overlay: ov('transits'), ...pinAt(TORONTO), chart: { ...JIM, sourceRating: undefined } });
+  check('a transits ring, relocated to Toronto', label(ringPin) === 'TRANSITS · 1 August 2026 · RELOCATED' && same(texts(ringPin), [
+    '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
+    'Born: 5 June 1941, Thu · 09:30 EDT (UTC−04:00)',
+    'Yonkers, New York, United States · 40°N55\'52" 073°W53\'56"',
+    'Relocated to: Toronto, Ontario, Canada · 43°N39\' 079°W23\'',
+    'Geocentric · Tropical · Whole Sign · True Node',
+  ]), texts(ringPin).join(' | '));
   const comp = texts(model({ chart: COMPOSITE }));
   check('composite: the parents', comp[0] === 'Jim Lewis · 5 June 1941 · 09:30 EDT (UTC−04:00)' && comp[2] === 'Shae · 12 November 1972 · 14:20 CST (UTC−06:00)', `${comp[0]} | ${comp[2]}`);
   check('composite: the midpoint', comp[4] === `Geographic midpoint: ${fmtCoordPairDM(COMPOSITE.birthplace.lat, COMPOSITE.birthplace.lng)}`, comp[4]);

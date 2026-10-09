@@ -76,9 +76,9 @@ export function applyTheme(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
-/** A served vector map: each built-in theme's own, and Positron, which no built-in draws since
- *  2026-10-08 (below) but a palette can still choose (themePalette BasemapChoice). */
-export type ServedMap = Theme | 'positron';
+/** A served vector map: each built-in theme's own, and two no built-in draws but a palette can
+ *  choose (themePalette BasemapChoice): Positron (Glass's until 2026-10-08, below) and Fiord. */
+export type ServedMap = Theme | 'positron' | 'fiord';
 
 // GLASS MOVED TO OSM BRIGHT (Salvatore, 2026-10-08), so the four themes look distinct: Glass
 // and the Prism theme a downstream build adds (its colour-blind look) both drew Positron, pale
@@ -95,6 +95,10 @@ export const BASEMAP_STYLE_URLS: Record<ServedMap, string> = {
   glass: 'https://tiles.openfreemap.org/styles/bright',
   // The plain light-grey map, Glass's until 2026-10-08.
   positron: 'https://tiles.openfreemap.org/styles/positron',
+  // Fiord (2026-10-09): OpenFreeMap's fork of OpenMapTiles' Fiord Color, a slate-blue night map
+  // (BSD-3-Clause code, CC BY 4.0 design, credited in CreditsModal). Same schema, fonts and sprite
+  // as the rest. A downstream build's dark-panelled look draws it; no built-in does.
+  fiord: 'https://tiles.openfreemap.org/styles/fiord',
   dark: 'https://tiles.openfreemap.org/styles/dark',
   // Vintage uses a self-hosted MapTiler-Basic style (BSD-3-Clause) retiled onto
   // OpenFreeMap's free OpenMapTiles vector tiles. See public/basemaps/README.md.
@@ -114,6 +118,8 @@ export const WORLD_FALLBACK_COLORS: Record<ServedMap, { ocean: string; land: str
   vintage: { ocean: 'hsl(205, 42%, 80%)', land: 'hsl(47, 26%, 86%)', line: 'hsl(34, 16%, 56%)' },
   glass: { ocean: 'hsl(203, 45%, 80%)', land: 'hsl(32, 40%, 95%)', line: 'hsl(205, 20%, 56%)' },
   positron: { ocean: 'hsl(205, 32%, 86%)', land: 'hsl(0, 0%, 96%)', line: 'hsl(210, 12%, 64%)' },
+  // Fiord's own land (#45516e) and water (#38435c), and a coastline a step lighter than both.
+  fiord: { ocean: '#38435c', land: '#45516e', line: 'hsl(222, 18%, 52%)' },
   dark: { ocean: 'hsl(210, 26%, 15%)', land: 'hsl(210, 12%, 23%)', line: 'hsl(210, 12%, 44%)' },
 };
 
@@ -160,6 +166,7 @@ export const LABEL_CONTRAST: Record<
 export const BASEMAP_ROAD_PAINT: Record<ServedMap, string | null> = {
   glass: '#cfc7bc',
   positron: null,
+  fiord: null,
   dark: null,
   vintage: null,
 };

@@ -540,6 +540,14 @@ html[data-mapstate='natal-pinned'] .sidebar {
 .theme-list .theme-custom-open {
   margin-top: 6px;
 }
+/* …and the same precedence trap on the width (2026-10-09): .calc-menu-trigger's `width: 100%`,
+   later in the file at the same specificity, beat both openers' `calc(100% - 16px)`, so each kept
+   its 8px left inset at FULL width and ran 8px past the rows' right edge, close against the panel's.
+   Two classes restore the inset on both sides, as both openers always meant. */
+.calc-menu-trigger.theme-custom-open,
+.calc-menu-trigger.aspect-hud-open {
+  width: calc(100% - 16px);
+}
 
 /* The orb-zone StepperFields stack as full-width rows (their own top margins
    provide the rhythm). */

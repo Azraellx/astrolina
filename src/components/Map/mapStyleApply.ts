@@ -83,8 +83,9 @@ const ANGLE_ARROW_LAYERS = [
   'minor-lines-ov-arrows-asc',
   'minor-lines-ov-arrows-dsc',
 ] as const;
-// The coins' hover bloom behind every zenith stamp and catalog coin.
-const ZENITH_DISC_LAYERS = ['minor-zenith-disc', 'minor-zenith-ov-disc', 'acg-zenith-ov-disc', 'acg-zenith-disc'] as const;
+// (The coins' hover bloom — four circle layers, ZENITH_DISC_LAYERS — went on 2026-10-09: a
+// hovered stamp now grows ×1.1 through a twin drawn from its own baked sprite, Map.tsx
+// STAMP_LIFTS, which carries the palette's disc and inks inside the image.)
 const GEO_GRID_LINE_LAYERS = ['geo-grid-mc-layer', 'geo-grid-asc-layer'] as const;
 
 /** The table. In the order the layers are stacked, for whoever reads it beside Map.tsx. */
@@ -175,7 +176,6 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
 
   paint('acg-ls-cross-layer', 'circle-stroke-color', (s) => s.crossingStroke),
 
-  ...each(ZENITH_DISC_LAYERS, (l) => [paint(l, 'circle-color', (s) => s.zenithDisc)]),
   paint('minor-zenith-ov-layer', 'icon-opacity', (s) => s.minor.overlayMarkOpacity),
 
   paint('measure-points', 'circle-stroke-color', (s) => s.halo),
@@ -334,7 +334,6 @@ export const PREVIEW_INK_BINDINGS: readonly PreviewInkBinding[] = Object.freeze(
   inkRow('acg-lines-horizon', 'line-color', 'planet'),
   inkRow('acg-lines-arrows-asc', 'text-color', 'planet'),
   inkRow('acg-lines-arrows-dsc', 'text-color', 'planet'),
-  inkRow('acg-zenith-disc', 'circle-stroke-color', 'planet'),
   inkRow('local-space-layer-out', 'line-color', 'planet'),
   inkRow('local-space-layer-in', 'line-color', 'planet'),
   inkRow('local-space-arrows-out', 'text-color', 'planet'),
@@ -345,13 +344,11 @@ export const PREVIEW_INK_BINDINGS: readonly PreviewInkBinding[] = Object.freeze(
   inkRow('minor-lines-layer', 'line-color', 'minor'),
   inkRow('minor-lines-arrows-asc', 'text-color', 'minor'),
   inkRow('minor-lines-arrows-dsc', 'text-color', 'minor'),
-  inkRow('minor-zenith-disc', 'circle-stroke-color', 'minor'),
   inkRow('minor-parans-layer', 'line-color', 'minor'),
   inkRow('acg-lines-ov-meridian', 'line-color', 'overlay'),
   inkRow('acg-lines-ov-horizon', 'line-color', 'overlay'),
   inkRow('acg-lines-ov-arrows-asc', 'text-color', 'overlay'),
   inkRow('acg-lines-ov-arrows-dsc', 'text-color', 'overlay'),
-  inkRow('acg-zenith-ov-disc', 'circle-stroke-color', 'planet'),
   inkRow('local-space-ov-layer', 'line-color', 'overlay'),
   inkRow('local-space-ov-arrows-out', 'text-color', 'overlay'),
   inkRow('local-space-ov-arrows-in', 'text-color', 'overlay'),
@@ -360,7 +357,6 @@ export const PREVIEW_INK_BINDINGS: readonly PreviewInkBinding[] = Object.freeze(
   inkRow('minor-lines-ov-horizon', 'line-color', 'minor'),
   inkRow('minor-lines-ov-arrows-asc', 'text-color', 'minor'),
   inkRow('minor-lines-ov-arrows-dsc', 'text-color', 'minor'),
-  inkRow('minor-zenith-ov-disc', 'circle-stroke-color', 'minor'),
   inkRow('minor-parans-ov-layer', 'line-color', 'minor'),
 ]);
 

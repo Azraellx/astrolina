@@ -62,7 +62,7 @@ These are the known gaps. The ones with a plan say so; the rest are deliberate s
 - **NASA JPL Small-Body Database**, the orbit class of each minor planet; dwarf-planet status as designated by the **IAU**.
 - **GeoNames** city data, **CC-BY 4.0**.
 - **OpenStreetMap / Nominatim**, the geocoding fallback, © OpenStreetMap contributors (**ODbL**); requests are proxied and cached through a Cloudflare Pages Function.
-- **OpenFreeMap** basemap vector tiles (OpenMapTiles schema, OpenStreetMap data, **ODbL**). The map styles are OpenMapTiles' **MapTiler Basic**, **OSM Bright**, **Dark Matter** and **Positron**, some adapted: **BSD-3-Clause** (code) and **CC-BY 4.0** (design), © MapTiler.com & OpenMapTiles contributors, © Mapbox, © CartoDB.
+- **OpenFreeMap** basemap vector tiles (OpenMapTiles schema, OpenStreetMap data, **ODbL**). The map styles are OpenMapTiles' **MapTiler Basic**, **OSM Bright**, **Dark Matter**, **Positron** and **Fiord Color**, some adapted: **BSD-3-Clause** (code) and **CC-BY 4.0** (design), © MapTiler.com & OpenMapTiles contributors, © Mapbox, © CartoDB.
 - **Natural Earth** country boundaries (via the `world-atlas` package), public domain.
 - **Noto Sans Symbols** astrological glyphs, **SIL Open Font License 1.1**.
 

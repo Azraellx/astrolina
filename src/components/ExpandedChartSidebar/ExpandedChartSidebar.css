@@ -1342,6 +1342,9 @@
 /* --- Section 3: wheel + aspect toggles --- */
 
 .es-section-wheel {
+  /* Named, so the corner notices can ask how wide the wheel's column is without catching
+     the statement's unnamed queries. */
+  container: es-wheel / inline-size;
   position: relative;
   flex-shrink: 0;
   display: flex;
@@ -1731,6 +1734,20 @@
   margin-top: 2px;
   font-size: 10px;
   color: var(--text-muted);
+}
+/* "Porphyry cusps" meets the wheel's rim in a narrow panel (about 565 px and under — the
+   wheel grows with the column, its corners don't keep pace with fixed-size text), so it
+   drops to "Porphyry" there; the tip still names it in full. (2026-10-09) */
+.es-house-fallback-short {
+  display: none;
+}
+@container es-wheel (max-width: 540px) {
+  .es-house-fallback-full {
+    display: none;
+  }
+  .es-house-fallback-short {
+    display: inline;
+  }
 }
 /* Fallback notice with an (i) whose hover .ui-tip explains the Porphyry fallback. Block-level
    (so it sits UNDER the wheel-state title, not beside it) but sized to its content, with the

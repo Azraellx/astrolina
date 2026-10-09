@@ -975,6 +975,9 @@
   pointer-events: auto;
   cursor: pointer;
   transform-origin: 50% 92%; /* pivot near the tip so hover / drop scale from the point */
+  /* A theme's pin size (lib/themePalette marks.pinScale), from the same pivot. The individual
+     `scale` property multiplies with the drop and hover transforms rather than replacing them. */
+  scale: var(--map-pin-scale, 1);
   filter: drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, 0.5));
   transition: transform 0.15s ease, filter 0.15s ease;
   animation: map-pin-drop 0.34s cubic-bezier(0.22, 1.2, 0.4, 1);

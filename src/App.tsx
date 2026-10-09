@@ -322,6 +322,7 @@ import {
   loadLsOrigin,
   loadLsHideInbound,
   loadLsHideCompass,
+  loadLsHideDegrees,
   loadCaptureHiddenOverlays,
   loadLsTransparent,
   loadLsLabelName,
@@ -360,6 +361,7 @@ import {
   saveLsOrigin,
   saveLsHideInbound,
   saveLsHideCompass,
+  saveLsHideDegrees,
   saveCaptureHiddenOverlays,
   saveLsTransparent,
   saveLsLabelName,
@@ -3295,6 +3297,8 @@ export default function App() {
   useEffect(() => saveLsHideInbound(hideLsInbound), [hideLsInbound]);
   const [hideLsCompass, setHideLsCompass] = useState(loadLsHideCompass);
   useEffect(() => saveLsHideCompass(hideLsCompass), [hideLsCompass]);
+  const [hideLsDegrees, setHideLsDegrees] = useState(loadLsHideDegrees);
+  useEffect(() => saveLsHideDegrees(hideLsDegrees), [hideLsDegrees]);
   // The Local Space window's CAPTURE section: a single "Transparent Mode" preset (a
   // gated-tier surface, lib/plan). Where it's applied to the Map, it's gated on the Local
   // Space window being OPEN, the Capture tool being ARMED, and the plan reaching the GATED
@@ -7604,6 +7608,7 @@ export default function App() {
         localSpaceCross={spotlightActive ? EMPTY_FC : effLocalSpaceCross}
         localSpaceOrigin={spotlightActive ? null : effLocalSpaceOrigin}
         hideCompass={hideLsCompass}
+        lsHideDeg={hideLsDegrees}
         // Transparent (Local Space) — one gated preset driving all three export treatments
         // (hide basemap + hide arrows + standard labels). lsTransparent also strips the details
         // view + overlays + caption band (see its definition + the frame props below).
@@ -8137,6 +8142,8 @@ export default function App() {
           setHideLsInbound={setHideLsInbound}
           hideLsCompass={hideLsCompass}
           setHideLsCompass={setHideLsCompass}
+          hideLsDegrees={hideLsDegrees}
+          setHideLsDegrees={setHideLsDegrees}
           localSpaceOrigin={localSpaceOrigin}
         />
       )}

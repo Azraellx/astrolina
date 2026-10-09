@@ -42,6 +42,9 @@ interface LocalSpaceHudProps {
   setHideLsInbound: (v: boolean) => void;
   hideLsCompass: boolean;
   setHideLsCompass: (v: boolean) => void;
+  /** The bearing on each outgoing label (the Degrees switch, 2026-10-09). */
+  hideLsDegrees: boolean;
+  setHideLsDegrees: (v: boolean) => void;
   /** The point the local-space lines radiate from (pin or birthplace); null when
    *  there's nothing to anchor to — disables "Fly to origin". */
   localSpaceOrigin: { lat: number; lng: number } | null;
@@ -159,6 +162,8 @@ export function LocalSpaceHud({
   setHideLsInbound,
   hideLsCompass,
   setHideLsCompass,
+  hideLsDegrees,
+  setHideLsDegrees,
   localSpaceOrigin,
   held = false,
   onOpenCalc,
@@ -344,6 +349,16 @@ export function LocalSpaceHud({
         >
           <EyeIcon open={!hideLsInbound} className="location-ls-eye" size={14} />
           <span className="location-ls-name">{t('localSpaceHud.hideInbound.title')}</span>
+        </LsTipButton>
+        <LsTipButton
+          className={`location-ls-toggle ${!hideLsDegrees ? 'on' : 'off'}`}
+          onClick={() => setHideLsDegrees(!hideLsDegrees)}
+          ariaPressed={!hideLsDegrees}
+          title={t('localSpaceHud.hideDegrees.title')}
+          hint={t('localSpaceHud.hideDegrees.hint')}
+        >
+          <EyeIcon open={!hideLsDegrees} className="location-ls-eye" size={14} />
+          <span className="location-ls-name">{t('localSpaceHud.hideDegrees.title')}</span>
         </LsTipButton>
         <LsTipButton
           className={`location-ls-toggle ${!hideLsCompass ? 'on' : 'off'}`}

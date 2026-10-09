@@ -158,6 +158,11 @@ export interface ChartHeaderInput {
 export interface HeaderView {
   labelParts: string[];
   lines: HeaderLine[];
+  /** Blank rows the renderer reserves after the lines: the ones a relocation WOULD add
+   *  (its cast line), while the chart is not relocated — so placing a pin, or the hover
+   *  crossing the map, never pushes the sections below down a row (2026-10-09). Absent
+   *  where relocating adds nothing, as on an overlay, whose place line is always there. */
+  spareLines?: number;
 }
 
 /** The overlay's moment in pieces, for the wheel's right-corner caption. */
@@ -336,9 +341,9 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   // coordinates to the minute, no zone — its clock is not an input. A place the reader
   // chose, so never masked. "Cast for:" on a geodetic map, where the frame is the
   // place's own rather than a natal frame moved there.
-  const relocatedLine = (withLead: boolean) =>
+  const relocatedLine = (withLead: boolean, leadKey: 'castFor' | 'relocatedTo' = geo ? 'castFor' : 'relocatedTo') =>
     line('relocated', [
-      withLead ? lead(geo ? 'castFor' : 'relocatedTo') : null,
+      withLead ? lead(leadKey) : null,
       castLabel ? seg('place', castLabel, 'none', ' ') : null,
       seg('coords', fmtCoordPairDM(cast.lat, cast.lng), 'none', castLabel ? SEP : ' '),
     ]);
@@ -368,8 +373,9 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   // A chart's own lines, by what the chart is — the panel's chart (relocating with the
   // active point) or a synastry partner's (`reloc` false: the Dual header adds its own
   // "Cast for" line). A relationship partner is stated as the panel would state it, so
-  // a composite partner gets no moment line either.
-  const chartLinesOf = (c: StoredChart, reloc: boolean): HeaderLine[] => {
+  // a composite partner gets no moment line either. `born` leads a natal moment with
+  // "Born:" — relocated, or under a ring whose own moment heads the lines.
+  const chartLinesOf = (c: StoredChart, reloc: boolean, born = reloc): HeaderLine[] => {
     if (c.composite) {
       const { a, b } = c.composite;
       const out = [
@@ -400,10 +406,14 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
       return out;
     }
     return reloc
-      ? [natalMoment(c, true, c.tzUncertain), birthplaceLine(c), relocatedLine(true)]
-      : [natalMoment(c, false, c.tzUncertain), birthplaceLine(c)];
+      ? [natalMoment(c, born, c.tzUncertain), birthplaceLine(c), relocatedLine(true)]
+      : [natalMoment(c, born, c.tzUncertain), birthplaceLine(c)];
   };
   const chartLines = () => chartLinesOf(chart, relocated);
+  // The rows a relocation would add to chartLines(), held as blank space while there is
+  // none (HeaderView.spareLines). Counted rather than assumed: a composite's angles do not
+  // relocate, so off a geodetic map it adds nothing.
+  const spare = relocated ? 0 : chartLinesOf(chart, true).length - chartLinesOf(chart, false).length;
 
   // Where an overlay is cast when no point is chosen: the chart's own place — the
   // birthplace, or a relationship chart's geographic midpoint.
@@ -418,17 +428,31 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   // A return's date is the subject's (a solar return falls on the birthday).
   const ovMask: Segment['mask'] = isReturn ? 'subject' : 'none';
   const ovLongDate = ovClock ? plainDate(ovClock.wall.year, ovClock.wall.month, ovClock.wall.day) : '';
-  const overlayLines = (): HeaderLine[] => {
-    if (!ovClock) return [];
+  // The overlay's moment line; `named` leads it with the overlay's name, for a header
+  // whose label names something else (a composite carrying a ring).
+  const overlayMomentLine = (named = false): HeaderLine | null => {
+    if (!ovClock || !ov || ov.kind === 'synastry') return null;
     const { wall, zone } = ovClock;
-    return [
-      line('overlay-moment', [
-        seg('date', fmt.dateWithWeekday(wall.year, wall.month, wall.day), ovMask),
-        ...clockSegs(wall.hour, wall.minute, zone, ovMask, false),
-      ]),
-      relocated ? relocatedLine(geo) : chartPlaceLine(),
-    ];
+    const name = isReturn
+      ? t(`expandedSidebar.header.ringLead.${ov.returnBody === 'solar' ? 'solarReturn' : 'lunarReturn'}`)
+      : t(`expandedSidebar.header.ringLead.${ov.kind}`);
+    return line('overlay-moment', [
+      named ? seg('lead', name, 'none') : null,
+      seg('date', fmt.dateWithWeekday(wall.year, wall.month, wall.day), ovMask, ' '),
+      ...clockSegs(wall.hour, wall.minute, zone, ovMask, false),
+    ]);
   };
+  const overlayLines = (): HeaderLine[] => {
+    const moment = overlayMomentLine();
+    if (!moment) return [];
+    return [moment, relocated ? relocatedLine(geo) : chartPlaceLine()];
+  };
+  // A RING: the overlay drawn around the chart rather than in its place (not promoted).
+  // The chart is still the inner wheel — and what the tables below it describe — so the
+  // header keeps its lines and adds the ring's moment, rather than trading one chart's
+  // statement for the other's (2026-10-09; the overlay's lines alone left a bi-wheel's
+  // header without the birth moment of the chart it was drawn around).
+  const ring = !!ov && !ov.promoted && ov.kind !== 'synastry' && !!ovClock;
   const overlayMoment = (): OverlayMoment | null => {
     if (!ovClock) return null;
     const [clock, zone] = clockSegs(ovClock.wall.hour, ovClock.wall.minute, ovClock.zone, ovMask, false);
@@ -508,6 +532,9 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
 
   let labelParts: string[];
   let lines: HeaderLine[];
+  // Every state that states the chart's own lines reserves their spare rows; the two that
+  // state the overlay's do not.
+  let spareLines = spare;
   switch (state) {
     case 'no-chart':
       labelParts = [];
@@ -517,18 +544,36 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
       // A promoted overlay's bodies are the wheel's, so its moment heads the lines;
       // otherwise the chart's own. The GE angles and the planets line follow the place.
       labelParts = chartLabel();
+      if (ov?.promoted && ovClock) spareLines = 0;
       lines = [...(ov?.promoted && ovClock ? overlayLines() : chartLines()), geoMarker, ...tail()];
       break;
     case 'composite':
       labelParts = chartLabel();
-      lines = [...chartLines(), ...tail()];
+      if (ring) {
+        // The composite outranks its ring in the label, so the ring's moment is NAMED
+        // ("Transits: …") — a bare date and clock here would read as the composite's own
+        // moment, which it does not have (section 3 of verify-chart-header). Relocated, the
+        // ring is cast for the point though the composite's angles are not: "Cast for:".
+        lines = [...chartLines(), overlayMomentLine(true)!, ...(relocated ? [relocatedLine(true, 'castFor')] : []), ...tail()];
+        spareLines = relocated ? 0 : 1;
+      } else {
+        lines = [...chartLines(), ...tail()];
+      }
       break;
     case 'return':
     case 'overlay':
       // "· RELOCATED" follows the state: the overlay's angles relocate even on a
       // composite (only the composite's own do not).
       labelParts = [...overlayLabel(), ...relocSuffix];
-      lines = [...overlayLines(), ...tail()];
+      if (ring) {
+        // The label names the ring and its date, so its moment heads the lines unnamed;
+        // the chart's own follow, "Born:" saying whose that moment is. One place line
+        // serves both: the ring is cast where the chart is.
+        lines = [overlayMomentLine()!, ...chartLinesOf(chart, relocated, true), ...tail()];
+      } else {
+        lines = [...overlayLines(), ...tail()];
+        spareLines = 0;
+      }
       break;
     case 'synastry':
       labelParts = [...overlayLabel(), ...relocSuffix];
@@ -542,6 +587,7 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   const chartView: HeaderView = {
     labelParts: input.noChart ? [] : chartLabel(),
     lines: [...chartLines(), ...(geo ? [geoMarker] : []), ...tail()],
+    ...(spare ? { spareLines: spare } : {}),
   };
   let overlayView: ChartHeaderModel['overlayView'] = null;
   if (ov) {
@@ -559,6 +605,7 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
     state,
     labelParts,
     lines,
+    ...(spareLines ? { spareLines } : {}),
     chartView,
     overlayView,
     labelHasOverlayDate: state === 'overlay' || (state === 'return' && ov?.returnBody === 'lunar'),

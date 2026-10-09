@@ -116,6 +116,12 @@ export interface TokenCss {
   /** Declared by no stylesheet: components consume it as `var(name, <canonical>)`. These
    *  are CANONICAL_RESET_VARS, which the report paper resets to `initial`. */
   readonly fallback?: true;
+  /** 'enum' only: each option as the CSS the stylesheet reads (on → '1', off → '0'), for a
+   *  switch a rule consumes as a number. (2026-10-09, the wheel's glyph rings.) */
+  readonly values?: Readonly<Record<string, string>>;
+  /** 'number' only: the value written as itself, unitless, for a rule that reads it as a scale or
+   *  inside calc(). (2026-10-09, the map pins' size.) */
+  readonly number?: true;
 }
 
 /** What a rule may ask beyond token values. Every call is tracked as a read. */
@@ -179,7 +185,7 @@ export interface AppearanceAttrs {
  *  a downstream build names the option however its editor does. A SYNCED VALUE like every token
  *  option, so it is never repurposed: 'glass' means "Glass's map", and followed Glass to Bright. */
 export type BasemapChoice = ServedMap | 'outline';
-export const BASEMAP_CHOICES: readonly BasemapChoice[] = ['vintage', 'glass', 'dark', 'positron', 'outline'];
+export const BASEMAP_CHOICES: readonly BasemapChoice[] = ['vintage', 'glass', 'dark', 'positron', 'fiord', 'outline'];
 
 /** Everything the map's own layers need from a palette, with every width FINAL (the line
  *  weight already applied). A built-in theme's equals the constants Map.tsx drew before the
@@ -839,7 +845,7 @@ const mirror = (t: Theme, name: string): string => UI_CSS_MIRROR[t][name] ?? '';
 const mirrorHex = (t: Theme, name: string): string => toHex(mirror(t, name));
 const str = (v: TokenValue): string => (typeof v === 'string' ? v : '');
 const isTheme = (v: unknown): v is Theme => v === 'vintage' || v === 'glass' || v === 'dark';
-const isServedMap = (v: unknown): v is ServedMap => isTheme(v) || v === 'positron';
+const isServedMap = (v: unknown): v is ServedMap => isTheme(v) || v === 'positron' || v === 'fiord';
 
 /** The table a map token reads its built-in from: the chosen basemap's, or for the Outline
  *  map the light or dark table its land tone calls for. Reads map.land only for Outline.
@@ -852,6 +858,9 @@ function mapTableOf(get: TokenGetter, base: Theme): Theme {
     return isLightColor(str(get('map.land'))) ? (base === 'dark' ? 'glass' : base) : 'dark';
   }
   if (choice === 'positron') return 'glass';
+  // Fiord is a night map: Dark's tables (its place-name lift, halos, the light inks) are the ones
+  // tuned for a dark ground (2026-10-09). Its land, water and coastline are its own.
+  if (choice === 'fiord') return 'dark';
   return isTheme(choice) ? choice : base;
 }
 /** The WORLD_FALLBACK_COLORS entry a palette's land, water and coastline follow: the served map
@@ -859,7 +868,7 @@ function mapTableOf(get: TokenGetter, base: Theme): Theme {
  *  what mapTableOf reads. */
 function fallbackTableOf(get: TokenGetter, base: Theme): ServedMap {
   const choice = get('map.basemap');
-  return choice === 'positron' ? choice : mapTableOf(get, base);
+  return choice === 'positron' || choice === 'fiord' ? choice : mapTableOf(get, base);
 }
 const MAP_TABLE_DEPS = ['map.basemap', 'map.land'] as const;
 
@@ -1680,6 +1689,19 @@ add({
     (t) => (t === 'dark' ? 'off' : 'on'),
   ),
 });
+// The size of the map's teardrop pins (2026-10-09) — the placed pin and saved pins alike: a saved
+// pin BECOMES the placed one when chosen (one teardrop per coordinate), so scaling only one kind
+// would make a pin change size as it is picked. Scaled from the tip, so the point stays exactly on
+// its place. Read by Map.css and the saved-pin layer as `scale: var(--map-pin-scale, 1)`.
+add({
+  id: 'marks.pinScale',
+  kind: 'number',
+  group: 'mapSurface',
+  tier: 'detail',
+  range: { min: 0.75, max: 1.5, step: 0.05 },
+  builtin: () => 1,
+  css: { name: '--map-pin-scale', fallback: true, number: true },
+});
 add({
   id: 'marks.eclipseHalo',
   kind: 'color',
@@ -1763,6 +1785,20 @@ add({
   tier: 'detail',
   options: ['map', 'own', 'ink'],
   builtin: () => 'map',
+});
+// The circle drawn around each body's glyph on the chart wheel (2026-10-09): On, as it always was,
+// or Off — the glyph alone on the wheel, its ring and the disc behind it both gone (on a
+// see-through face the disc read as a circle of its own). Read by WheelSvg.css as the disc's
+// stroke- and fill-opacity, and reset to On on report paper, which keeps its print look whatever
+// the theme (a fallback property).
+add({
+  id: 'wheel.glyphRing',
+  kind: 'enum',
+  group: 'wheel',
+  tier: 'detail',
+  options: ON_OFF,
+  builtin: () => 'on',
+  css: { name: '--wheel-glyph-ring', fallback: true, values: { on: '1', off: '0' } },
 });
 add({
   id: 'wheel.glyphInk',
@@ -2209,6 +2245,16 @@ function cssOf(values: Values, B: Readonly<Values>): Record<string, string> {
     const value = values[d.id];
     const sheet = c.alias ? values[c.alias] : B[d.id];
     if (sameTokenValue(value, sheet)) continue;
+    // A switch or a number the stylesheet reads as such: written as its CSS, never as a colour.
+    if (c.values || c.number) {
+      const css = c.values
+        ? c.values[String(value)]
+        : typeof value === 'number' && Number.isFinite(value)
+          ? String(value)
+          : undefined;
+      out[c.name] = css ?? 'initial';
+      continue;
+    }
     if (typeof value !== 'string' || !value) {
       // "Not set here" over a stylesheet that does set it: `initial` makes var() fall back.
       out[c.name] = 'initial';

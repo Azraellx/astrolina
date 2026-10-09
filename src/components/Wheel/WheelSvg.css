@@ -57,6 +57,12 @@
 
 .wheel-svg .planet-disc-fill {
   fill: var(--wheel-face, rgba(var(--bg-panel), 0.94));
+  /* The circle around each glyph — its ring and the disc it rims: a theme's Rings around glyphs ▸
+     Off writes 0 (lib/themePalette wheel.glyphRing) and the glyph stands alone. The disc goes too
+     because on a see-through face (the minimap's) it read as a circle of its own. Opacity rather
+     than stroke and fill, because the planets set their stroke inline. */
+  stroke-opacity: var(--wheel-glyph-ring, 1);
+  fill-opacity: var(--wheel-glyph-ring, 1);
 }
 
 .wheel-svg .angle {

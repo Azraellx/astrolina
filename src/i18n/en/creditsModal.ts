@@ -53,7 +53,7 @@ export const creditsModal = {
     openstreetmap: 'Base map data (also credited on the map itself).',
     openfreemap: 'Free vector tiles, label fonts, and sprites.',
     // The four styles are proper names and stay as written; "some adapted" is CC BY's notice of change.
-    mapStyles: 'MapTiler Basic, OSM Bright, Dark Matter and Positron, some adapted. © MapTiler.com & OpenMapTiles contributors; © Mapbox; © CartoDB.',
+    mapStyles: 'MapTiler Basic, OSM Bright, Dark Matter, Positron and Fiord Color, some adapted. © MapTiler.com & OpenMapTiles contributors; © Mapbox; © CartoDB.',
     geonames: 'Offline place-name search and city lookup.',
     photon: 'Online place and address search; data © OpenStreetMap contributors.',
     swisseph: 'Planetary positions (JPL DE441). © Astrodienst AG, via @swisseph/browser.',

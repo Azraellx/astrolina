@@ -2487,6 +2487,13 @@ export function ExpandedChartSidebar({
           <div className="es-statement">
             {labelRow(headerView.labelParts)}
             {renderLines(headerView.lines, 'h')}
+            {/* The rows a relocation would add, held blank so a pin or the hover never
+                moves the sections below (lib/chartHeader HeaderView.spareLines). */}
+            {Array.from({ length: headerView.spareLines ?? 0 }, (_, i) => (
+              <div key={`spare${i}`} className="es-hl es-hl-spare" aria-hidden="true">
+                {'\u00a0'}
+              </div>
+            ))}
           </div>
         )}
 
@@ -2638,7 +2645,9 @@ export function ExpandedChartSidebar({
                       hint={t('expandedSidebar.houseFallbackHint')}
                       tapReveal
                     >
-                      {t('expandedSidebar.houseFallback')}
+                      {/* Both forms; the panel's width picks one (CSS, .es-section-wheel). */}
+                      <span className="es-house-fallback-full">{t('expandedSidebar.houseFallback')}</span>
+                      <span className="es-house-fallback-short">{t('expandedSidebar.houseFallbackShort')}</span>
                       <svg
                         className="es-info-icon"
                         viewBox="0 0 24 24"

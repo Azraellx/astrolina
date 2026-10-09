@@ -509,6 +509,16 @@ export function saveLsHideCompass(v: boolean) {
   localStorage.setItem(LS_HIDE_COMPASS_KEY, v ? '1' : '0');
 }
 
+// The Local Space window's Degrees switch (2026-10-09): whether each outgoing label prints its
+// bearing. On by default (absent = shown), as the labels always were.
+const LS_HIDE_DEGREES_KEY = 'astro:ls-hide-degrees:v1';
+export function loadLsHideDegrees(): boolean {
+  return localStorage.getItem(LS_HIDE_DEGREES_KEY) === '1';
+}
+export function saveLsHideDegrees(v: boolean) {
+  localStorage.setItem(LS_HIDE_DEGREES_KEY, v ? '1' : '0');
+}
+
 // The Local Space window's CAPTURE section: one "Transparent Mode" toggle that shapes the
 // framed export. A gated-tier surface (lib/plan), visible and applied only while the Capture
 // tool is armed (App gates it on the window being open, the frame being up AND the plan

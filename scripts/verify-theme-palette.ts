@@ -609,7 +609,11 @@ function declarations(body: string): Map<string, string> {
     if (!c?.fallback) continue;
     const vals = THEMES.map((t) => d.builtin(t));
     const same = vals.every((v) => sameTokenValue(v, vals[0]));
-    const v = same && typeof vals[0] === 'string' ? vals[0] : null;
+    // The built-in AS the CSS the engine writes: an enum through its values (on → '1'), a number
+    // as itself (2026-10-09) — so a stylesheet's literal is held to what cssOf would write.
+    const asCss = (x: unknown): string | null =>
+      c.values ? (c.values[String(x)] ?? null) : c.number ? (typeof x === 'number' ? String(x) : null) : typeof x === 'string' ? x : null;
+    const v = same ? asCss(vals[0]) : null;
     canon.set(c.name, v);
     if (c.rgbPair) canon.set(`${c.name}-rgb`, v);
   }
