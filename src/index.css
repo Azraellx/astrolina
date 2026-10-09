@@ -266,6 +266,18 @@ span.astro-glyph {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+/* …except the map overlay track and everything in it (MapOverlayHost), which follow the camera
+   frame by frame. The rule above hands EVERY element a 0.01ms transition, and an element that
+   declares none transitions `all` by default — so the transform the host writes synchronously
+   inside each move event became a transition whose first painted frame is the OLD value, and
+   every overlay (saved pins, journal markers) trailed the map by a frame while it moved
+   (2026-10-09: saved pins not sticking on Plain, whose Motion is Reduced). No transitions at all
+   here, which is what reduced motion asks of them anyway; MapLibre's own markers declare an
+   opacity-only transition, so their per-frame transform was never caught. */
+:root[data-fx-motion='reduced'] .map-overlay-track,
+:root[data-fx-motion='reduced'] .map-overlay-track * {
+  transition: none !important;
+}
 /* Map.css's reduced-motion block for the camera arrival: the ping rests on its ring, and
    the chip — whose whole job is to fade away — is held visible instead. */
 :root[data-fx-motion='reduced'] .arrival-mark.is-arrived .arrival-mark-ping {
