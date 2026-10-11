@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useTouchLayout } from '../../lib/touch';
+import { useT } from '../../i18n';
 import './Sidebar.css';
 
 // A small tab on the right edge (touch only) that toggles the settings dock — a quick
@@ -13,13 +14,14 @@ import './Sidebar.css';
 // header ×. Hides itself off touch.
 export function SettingsNub({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const touch = useTouchLayout();
+  const { t } = useT();
   if (!touch) return null;
   return (
     <button
       type="button"
       className={`settings-nub${open ? ' is-open' : ''}`}
       onClick={onToggle}
-      aria-label={open ? 'Close settings' : 'Open settings'}
+      aria-label={t(open ? 'settings.dock.close' : 'settings.dock.open')}
       aria-expanded={open}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

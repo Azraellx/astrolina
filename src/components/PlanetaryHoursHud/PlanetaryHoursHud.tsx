@@ -268,15 +268,21 @@ export function PlanetaryHoursHud({
           <span className="ph-hero-title">
             {t('skyTimes.planetary.hourName', { hour: bodyName(hour.ruler) })}
           </span>
+          {/* Each line is words and live figures together (the minutes left tick down
+              while the window is open), so it stays translatable — as ONE string: the
+              phrases used to sit as three runs side by side, and a page translator's
+              rewrite of a run React then updates is frozen on screen. (2026-10-09) */}
           <span className="ph-hero-sub">
-            {t(hour.night ? 'skyTimes.planetary.hourOfNight' : 'skyTimes.planetary.hourOfDay', { n })}
-            {' · '}
-            {t('skyTimes.planetary.until', { end: clock(hour.end) })}
+            {[
+              t(hour.night ? 'skyTimes.planetary.hourOfNight' : 'skyTimes.planetary.hourOfDay', { n }),
+              t('skyTimes.planetary.until', { end: clock(hour.end) }),
+            ].join(' · ')}
           </span>
           <span className="ph-hero-sub">
-            {t(sliding ? 'skyTimes.planetary.slideAt' : 'skyTimes.planetary.nowAt', { time: at })}
-            {' · '}
-            {t('skyTimes.planetary.minLeft', { m: left })}
+            {[
+              t(sliding ? 'skyTimes.planetary.slideAt' : 'skyTimes.planetary.nowAt', { time: at }),
+              t('skyTimes.planetary.minLeft', { m: left }),
+            ].join(' · ')}
             {/* The day the hour belongs to is named under the hero — by the day
                 line when it's the listed day, by the note when it's a neighbour. */}
           </span>
@@ -343,9 +349,16 @@ export function PlanetaryHoursHud({
     if (!days || !now?.ok) return null;
     const edge = CHALDEAN_ORDER.some((p) => !nextHourOf(days, p, instantMs));
     if (!focus) {
+      // In the same ellipsizing span as a planet's line: bare in the flex row, a prompt
+      // longer than the window ("Wähle oben einen Planeten, um seine Stunden zu markieren.")
+      // was cut mid-word at the window's edge, with no mark that anything was missing. The
+      // title carries it whole.
+      const prompt = t('skyTimes.planetary.focus.prompt');
       return (
         <div className={`ph-focus is-prompt${edge ? ' is-edge' : ''}`}>
-          {t('skyTimes.planetary.focus.prompt')}
+          <span className="ph-focus-text" title={prompt}>
+            {prompt}
+          </span>
         </div>
       );
     }
@@ -389,7 +402,9 @@ export function PlanetaryHoursHud({
     >
       {glyph(h.ruler, 13)}
       <span className="ph-cell-name">{bodyName(h.ruler)}</span>
-      <span className="ph-cell-time">{clock(h.start)}</span>
+      <span className="ph-cell-time" translate="no">
+        {clock(h.start)}
+      </span>
     </span>
   );
 
@@ -525,8 +540,20 @@ export function PlanetaryHoursHud({
         closeHint={t('skyTimes.planetary.hud.closeHint')}
       />
       <div className="location-ls">
+        {/* A place name and a date: data, not copy, so not offered to a page translator. */}
+        {/* The place gives way, never the date: one ellipsis over the whole line cut the
+            date first, as the line's end ("… · 10 de outubro de 2…"), though it is the
+            half that says which day the hours below belong to. The title holds the line. */}
         {hasPoint && (placeLabel || dayLabel) && (
-          <div className="ph-where">{[placeLabel, dayLabel].filter(Boolean).join(' · ')}</div>
+          <div
+            className="ph-where"
+            translate="no"
+            title={[placeLabel, dayLabel].filter(Boolean).join(' · ')}
+          >
+            {placeLabel && <span className="ph-where-place">{placeLabel}</span>}
+            {placeLabel && dayLabel && <span className="ph-where-sep"> · </span>}
+            {dayLabel && <span className="ph-where-day">{dayLabel}</span>}
+          </div>
         )}
         {body}
       </div>

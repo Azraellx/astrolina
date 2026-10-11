@@ -36,7 +36,7 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
       <div className="cbg-corner" />
       {BALANCE_MODALITIES.map((m) => (
         <div className="cbg-head cbg-col-head" key={`h-${m}`}>
-          <span className="astro-glyph cbg-head-glyph" style={{ color: modalityInk(m) }}>
+          <span className="astro-glyph cbg-head-glyph" translate="no" style={{ color: modalityInk(m) }}>
             {MODALITY_GLYPHS[m]}
           </span>
           {/* The modality glyphs aren't widely recognised (unlike the element triangles), so spell
@@ -50,7 +50,7 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
       {BALANCE_ELEMENTS.map((e, ei) => (
         <Fragment key={`row-${e}`}>
           <div className="cbg-head cbg-row-head">
-            <span className="astro-glyph cbg-head-glyph" style={{ color: elementInk(e) }}>
+            <span className="astro-glyph cbg-head-glyph" translate="no" style={{ color: elementInk(e) }}>
               {ELEMENT_GLYPHS[e]}
             </span>
           </div>
@@ -59,7 +59,7 @@ export function CaptureBalanceGrid({ grid }: { grid: BalanceGrid }) {
               {grid[ei][mi].map((name: PlanetName) => (
                 <span
                   key={name}
-                  className="astro-glyph cbg-body"
+                  className="astro-glyph cbg-body" translate="no"
                   style={{ color: planetInk(name) }}
                 >
                   {PLANET_GLYPHS[name]}

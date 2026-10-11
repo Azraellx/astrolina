@@ -11,6 +11,7 @@ import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { getReservedRightInset } from '../../lib/rightDock';
 import { HoverTip, TipButton } from '../ui/HoverTip';
+import { iconPhrase } from '../ui/iconPhrase';
 import { useHoverTip } from '../ui/useHoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { TapIcon } from '../ui/TapIcon';
@@ -107,37 +108,45 @@ function RulerIcon() {
 }
 
 // Each gesture's hotkey-pill content: an optional leading word, the cursor icon, and an
-// optional trailing word (words are i18n keys). e.g. shift-drag → "Shift 🖱 Drag".
+// optional trailing word (words are i18n keys). e.g. shift-drag → "Shift 🖱 Drag". A gesture
+// whose words sit on BOTH sides of the icon is one catalog phrase instead (phraseKey, with
+// {icon} where the picture goes — missions.pill), so a language can order its words; the
+// before/after keys it also names are what the phrase replaced, kept for reference by the eye.
 const GESTURES: Record<
   MissionGesture,
-  { beforeKey?: MsgKey; icon?: boolean; afterKey?: MsgKey }
+  { beforeKey?: MsgKey; icon?: boolean; afterKey?: MsgKey; phraseKey?: MsgKey }
 > = {
   double: {
     beforeKey: 'missions.gesture.double',
     icon: true,
     afterKey: 'missions.gesture.click',
+    phraseKey: 'missions.pill.double',
   },
   right: {
     beforeKey: 'missions.gesture.right',
     icon: true,
     afterKey: 'missions.gesture.click',
+    phraseKey: 'missions.pill.right',
   },
   hold: {
     beforeKey: 'missions.gesture.hold',
     icon: true,
     afterKey: 'missions.gesture.drag',
+    phraseKey: 'missions.pill.hold',
   },
-  shift: { beforeKey: 'missions.gesture.hold', afterKey: 'missions.gesture.shift' },
+  shift: { beforeKey: 'missions.gesture.hold', afterKey: 'missions.gesture.shift', phraseKey: 'missions.pill.holdShift' },
   click: { icon: true, afterKey: 'missions.gesture.click' },
   'shift-drag': {
     beforeKey: 'missions.gesture.shift',
     icon: true,
     afterKey: 'missions.gesture.drag',
+    phraseKey: 'missions.pill.shiftDrag',
   },
   'right-drag': {
     beforeKey: 'missions.gesture.right',
     icon: true,
     afterKey: 'missions.gesture.drag',
+    phraseKey: 'missions.pill.rightDrag',
   },
   // Touch variants — same shape; the icon renders as the finger TapIcon (chosen at
   // render time by `touch`). e.g. "Double-tap 👆", "Long-press 👆", "Tap 👆 Snap".
@@ -147,7 +156,7 @@ const GESTURES: Record<
   'two-finger': { beforeKey: 'missions.gesture.twoFinger', icon: true },
   tap: { beforeKey: 'missions.gesture.tap', icon: true },
   pinch: { beforeKey: 'missions.gesture.pinch', icon: true },
-  'snap-toggle': { beforeKey: 'missions.gesture.tap', icon: true, afterKey: 'missions.gesture.snap' },
+  'snap-toggle': { beforeKey: 'missions.gesture.tap', icon: true, afterKey: 'missions.gesture.snap', phraseKey: 'missions.pill.tapSnap' },
 };
 
 interface MissionGuideProps {
@@ -332,14 +341,23 @@ export function MissionGuide({
                 <span className="ui-tip-hotkey mg-gesture">
                   {/* Each word is its own span so the flex gap spaces them even when
                       there's no icon between (e.g. "Hold Shift"). */}
-                  {g.beforeKey && <span>{t(g.beforeKey)}</span>}
-                  {g.icon &&
-                    (touch ? (
-                      <TouchIcon className="mg-click-icon" />
-                    ) : (
-                      <DesktopIcon className="mg-click-icon" />
-                    ))}
-                  {g.afterKey && <span>{t(g.afterKey)}</span>}
+                  {g.phraseKey ? (
+                    iconPhrase(
+                      t(g.phraseKey),
+                      !g.icon ? null : touch ? <TouchIcon className="mg-click-icon" /> : <DesktopIcon className="mg-click-icon" />,
+                    )
+                  ) : (
+                    <>
+                      {g.beforeKey && <span>{t(g.beforeKey)}</span>}
+                      {g.icon &&
+                        (touch ? (
+                          <TouchIcon className="mg-click-icon" />
+                        ) : (
+                          <DesktopIcon className="mg-click-icon" />
+                        ))}
+                      {g.afterKey && <span>{t(g.afterKey)}</span>}
+                    </>
+                  )}
                 </span>{' '}
                 {renderLabel(t(labelKey), t)}
               </span>

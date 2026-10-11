@@ -199,13 +199,23 @@ export function CaptureExtras({
   }, [orientation, onMeasure, wheelSize, data.view]);
 
   // `trunc`: a geodetic angle (CaptureExtraAngle.trunc). (2026-10-02)
+  //
+  // The figure follows the cursor while the frame is armed, so under a browser's page
+  // translator it must not be loose text beside the glyph: React patches each text node in
+  // place, and a translator has swapped those out, so the figure would freeze. So the degree
+  // and its glyph sit in one span kept out of the translator (a value and a symbol), and the
+  // sign's name, which a reader may want translated, is its own one-string span. Same
+  // characters, same spacing, as the single run it replaces. (2026-10-09)
   const sign = (lon: number, trunc = false) => {
     const z = trunc ? truncZodiac(lon, 'min') : null;
     const { signIdx, degMin } = z ? { signIdx: z.signIdx, degMin: z.text } : lonToZodiac(lon);
     return (
       <span className="cx-lon">
-        {degMin} <span className="astro-glyph cx-sign">{SIGN_GLYPHS[signIdx]}</span>{' '}
-        {labels.sign(signIdx)}
+        <span translate="no">
+          {`${degMin} `}
+          <span className="astro-glyph cx-sign">{SIGN_GLYPHS[signIdx]}</span>
+        </span>
+        <span>{` ${labels.sign(signIdx)}`}</span>
       </span>
     );
   };
@@ -217,8 +227,9 @@ export function CaptureExtras({
     const half = listRanges?.get(p.name);
     if (half === undefined) return null;
     const { lo, hi } = lonRange(p.lon, half);
+    // Pure figures and glyphs, kept out of a page translator (sign()'s note). (2026-10-09)
     return (
-      <span className="cx-lon">
+      <span className="cx-lon" translate="no">
         {lo.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[lo.signIdx]}</span>
         {'–'}
         {hi.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[hi.signIdx]}</span>
@@ -270,13 +281,15 @@ export function CaptureExtras({
               (2026-10-02) */}
           {data.planets.map((p) => (
             <div className="cx-row" key={`p-${p.name}`}>
-              <span className="cx-glyph astro-glyph" style={{ color: planetInk(p.name) }}>
+              <span className="cx-glyph astro-glyph" translate="no" style={{ color: planetInk(p.name) }}>
                 {PLANET_GLYPHS[p.name]}
               </span>
               <span className="cx-name">
                 {labels.planet(p.name)}
                 {data.bodyNotes?.has(p.name) && (
-                  <span className="cx-ge-tag">{t('expandedSidebar.geodetic.ge')}</span>
+                  <span className="cx-ge-tag" translate="no">
+                    {t('expandedSidebar.geodetic.ge')}
+                  </span>
                 )}
               </span>
               {data.maskAngleText && POINTS.includes(p.name) ? (
@@ -296,7 +309,11 @@ export function CaptureExtras({
               <span className="cx-glyph">
                 <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} />
               </span>
-              <span className="cx-name">{m.label}</span>
+              {/* A catalog name, shown as the catalog spells it — kept out of a page
+                  translator, like the angle codes below. (2026-10-09) */}
+              <span className="cx-name" translate="no">
+                {m.label}
+              </span>
               {sign(m.lon)}
             </div>
           ))}
@@ -305,7 +322,7 @@ export function CaptureExtras({
               (2026-10-02) */}
           {data.angles.map((a) => (
             <div className="cx-row" key={`a-${a.code}`}>
-              <span className="cx-glyph cx-code" style={{ color: a.color }}>
+              <span className="cx-glyph cx-code" style={{ color: a.color }} translate="no">
                 {ANGLE_LABEL[a.code]}
               </span>
               <span className="cx-name">{a.name}</span>
@@ -318,14 +335,16 @@ export function CaptureExtras({
           ))}
           {data.balance.map((seg) => (
             <div className="cx-row cx-brow" key={`b-${seg.key}`}>
-              <span className="cx-glyph astro-glyph">{seg.glyph}</span>
+              <span className="cx-glyph astro-glyph" translate="no">{seg.glyph}</span>
               <span className="cx-name">{seg.label}</span>
-              <span className="cx-count">({seg.bodies.length})</span>
+              {/* One string, and a figure: a chart switch with the frame up rewrites it, and as
+                  three text nodes a page translator's swap would freeze it. (2026-10-09) */}
+              <span className="cx-count" translate="no">{`(${seg.bodies.length})`}</span>
               <span className="cx-bodies">
                 {seg.bodies.map((name) => (
                   <span
                     key={name}
-                    className="astro-glyph cx-body"
+                    className="astro-glyph cx-body" translate="no"
                     style={{ color: planetInk(name) }}
                   >
                     {PLANET_GLYPHS[name]}

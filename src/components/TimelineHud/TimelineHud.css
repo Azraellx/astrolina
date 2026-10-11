@@ -521,11 +521,26 @@
   flex-wrap: wrap;
   justify-content: center;
   row-gap: 5px;
+  /* …but a flex-shrink:0 item is always its full max-content width, so the wrap above
+     never fired: the line ran off a phone instead (by 41px in English, 59px in Spanish).
+     Capping the box is what lets it wrap. The cap is the ROW's padding box (100% is its
+     content box; + its 12px side padding each way), not the content box: a control that
+     fits inside the bar keeps the overhang into the padding it always had, so only a
+     line that would leave the bar wraps. */
+  max-width: calc(100% + 24px);
 }
 /* Content-sized like the Scale picker so the selected option always shows in full;
    the min-width floor keeps it from jumping narrow on short options. */
 .thud-setting .calc-menu {
   display: inline-flex;
+}
+/* A single option name longer than the whole line (only an extreme translation) gives
+   way inside its trigger — .calc-menu-value already ellipsizes, and the open menu shows
+   the name whole — rather than pushing the trigger past the bar's edge. */
+.thud-setting .calc-menu,
+.thud-setting .thud-prog-method,
+.thud-setting .calc-menu-trigger {
+  max-width: 100%;
 }
 /* The progressed calculation menu while the angles are held natal: dimmed, because it is
    naming a method that isn't being applied. Still fully interactive (picking one turns
@@ -571,6 +586,14 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  /* Wraps between its items once it would leave the bar, capped like .thud-setting above
+     (the row's padding box, so the English legend keeps its slight overhang into the
+     padding on a phone, unwrapped). Without the cap a longer language ran the centred row
+     off both sides of a phone, the label's first letters and the Tr item's last cut off. */
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 4px;
+  max-width: calc(100% + 24px);
 }
 .thud-cyclo-item {
   display: inline-flex;
@@ -1303,6 +1326,21 @@
   .thud-row {
     flex-wrap: wrap;
     justify-content: center;
+  }
+}
+
+/* A phone-width bar always takes the main row on two lines, and which control shares
+   the transport's line decides whether two are enough. The date group (date · Now · zone)
+   was second, so it took the second line beside the Scale picker — 356px of a 360px line
+   in English, and in every longer language (a date like "10 de out. de 2026", "Jetzt",
+   "МАСШТАБ") the picker dropped to a THIRD line, 40px more bar over the windows above it.
+   Scale beside the transport (the step amount it sets is right there) and the date group
+   on a line of its own fit two lines in every catalog. Below 520px only: there the row
+   can never fit one line (≥509px of controls), so the order only ever changes which line
+   a control is on, never the order along one line. */
+@media (max-width: 520px) {
+  .thud-row > .thud-datewrap {
+    order: 1;
   }
 }
 

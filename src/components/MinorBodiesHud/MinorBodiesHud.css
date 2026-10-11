@@ -132,6 +132,12 @@
   gap: 8px;
   min-height: 22px;
   padding: 0 2px;
+  /* When the chips and the switch don't fit side by side (a longer language: the
+     row ran 34px past the 282px column and the window's overflow hid the switch),
+     the switch drops to a line of its own, still right-aligned by its auto margin.
+     Where they fit, nothing moves. */
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 .mbh-hideall {
   flex-shrink: 0;

@@ -6,6 +6,7 @@
 
 import type { PlanetName } from '../../lib/ephemeris';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 
 // Astrological planet glyph drawn from the bundled 'Noto Sans Symbols' font (via
 // the `.astro-glyph` class). Two render modes, matching the call sites:
@@ -35,6 +36,10 @@ import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 // Exported so any other symbol drawn in a wheel disc (the catalog minor bodies'
 // coins, MinorMarkSvg) is lifted by this figure rather than a restatement of it.
 export const GLYPH_LIFT = 0.1;
+
+// Both modes carry translate="no" (2026-10-09; ui/glyphify's SVG_NO_TRANSLATE says why).
+// Marking the glyph itself, rather than relying on every caller's container, keeps it out
+// of a page translator wherever a glyph is dropped.
 
 // The exceptions, and only where the eye can see them. ⊗ is a CIRCLE INSIDE A
 // CIRCLE once it is drawn in a disc, and nothing shows a few pixels of offset like
@@ -85,6 +90,7 @@ export function PlanetGlyph({
         style={color ? { fill: color } : undefined}
         textAnchor="middle"
         dominantBaseline="central"
+        {...SVG_NO_TRANSLATE}
       >
         {char}
       </text>
@@ -92,7 +98,11 @@ export function PlanetGlyph({
   }
 
   return (
-    <span className={cls} style={{ fontSize: size, ...(color ? { color } : null) }}>
+    <span
+      className={cls}
+      style={{ fontSize: size, ...(color ? { color } : null) }}
+      translate="no"
+    >
       {char}
     </span>
   );

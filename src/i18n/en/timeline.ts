@@ -6,9 +6,10 @@
 
 // Timeline / overlay HUD (TimelineHud.tsx) plus the overlay caption templates that
 // lib/astro/timeline.ts builds (buildOverlay receives t and resolves labelFull/measure
-// from here). Unit symbols (min/h/d/mo), transport glyphs (‹ › ▶ ❚❚), UTC (and the zone
-// labels lib/atlas/zoneName prints), and the 2-letter overlay prefixes stay
-// language-neutral.
+// from here). Transport glyphs (‹ › ▶ ❚❚), UTC (and the zone labels lib/atlas/zoneName
+// prints), and the 2-letter overlay prefixes stay language-neutral. The step box's unit
+// symbols (min/h/d/mo) moved here on 2026-10-09 (stepSymbol): an abbreviation is a word
+// in another script, and some languages write a different one after a plural count.
 export const timeline = {
   // Name shown on the draggable nub for each time-overlay mode (Primary is shortened
   // here vs the top-bar menu's "Primary Directions").
@@ -98,14 +99,30 @@ export const timeline = {
     year: '1 month',
   },
   // Full step-unit words for the transport tooltips (the compact step box keeps the
-  // min/h/d/mo symbol). Keyed by the step's BASE unit; the count picks one/other.
+  // min/h/d/mo symbol). Keyed by the step's BASE unit; {n} is the step count and picks the
+  // form. English's rule is "exactly 1 is singular" — so `=1`, not `one`, which would make a
+  // typed −1 read "−1 minute" where it has always read "−1 minutes". A language with more
+  // forms gives them (Russian one/few/many: минута / минуты / минут). Only the word: the
+  // number is printed beside it by the tooltip. (2026-10-09 — these were one/other leaves
+  // picked by `n === 1` in code, which no language with more than two forms could follow.)
   stepWords: {
-    minute: { one: 'minute', other: 'minutes' },
-    hour: { one: 'hour', other: 'hours' },
-    day: { one: 'day', other: 'days' },
-    week: { one: 'week', other: 'weeks' },
-    month: { one: 'month', other: 'months' },
-    year: { one: 'year', other: 'years' },
+    minute: '{n, plural, =1 {minute} other {minutes}}',
+    hour: '{n, plural, =1 {hour} other {hours}}',
+    day: '{n, plural, =1 {day} other {days}}',
+    week: '{n, plural, =1 {week} other {weeks}}',
+    month: '{n, plural, =1 {month} other {months}}',
+    year: '{n, plural, =1 {year} other {years}}',
+  },
+  // The compact unit symbol after the step box's number ("10 min", "6 h"). Keyed by the
+  // step's BASE unit, which is one of these four (no step is counted in weeks or years).
+  // {n} is the number in the box, so a language whose abbreviation changes after a plural
+  // count can give the forms; English writes the same symbol for every count. Keep each
+  // short: the box beside it is a few characters wide. (2026-10-09)
+  stepSymbol: {
+    minute: '{n, plural, other {min}}',
+    hour: '{n, plural, other {h}}',
+    day: '{n, plural, other {d}}',
+    month: '{n, plural, other {mo}}',
   },
 
   transport: {
@@ -115,8 +132,22 @@ export const timeline = {
     stepForwardAria: 'Step forward',
     play: 'Play',
     pause: 'Pause',
-    stepAmount: 'Step amount, in {unit}',
-    stepAmountAria: 'Step amount in {unit}',
+    // The step box's tip and accessible name, one WHOLE phrase per unit (the step's base unit:
+    // minute, hour, day or month). "in minutes" puts the unit's noun in a form no plural
+    // category gives (Russian «в минутах»), so the unit is part of the phrase, not slotted in.
+    // (2026-10-09 — it was "in {unit}" filled with the step word for a count of 2.)
+    stepAmountIn: {
+      minute: 'Step amount, in minutes',
+      hour: 'Step amount, in hours',
+      day: 'Step amount, in days',
+      month: 'Step amount, in months',
+    },
+    stepAmountInAria: {
+      minute: 'Step amount in minutes',
+      hour: 'Step amount in hours',
+      day: 'Step amount in days',
+      month: 'Step amount in months',
+    },
   },
 
   ruler: { aria: 'Scrub date' },

@@ -7,7 +7,9 @@
 // The shared place-search field (components/ui/PlaceSearchField). Only the
 // field's OWN states live here: the built-in scope's chip, the empty result and
 // the generic failure. Placeholders and labels come from each host, and any
-// search scope a downstream build registers brings its own strings.
+// search scope a downstream build registers brings its own strings. Since
+// 2026-10-09 the field reads these itself, in every React root, wherever a host
+// passes no wording of its own (it kept an English copy of them until then).
 export const placeSearch = {
   scopeLabel: 'Place',
   noMatches: 'No matches.',

@@ -14,6 +14,7 @@ import {
 } from '../Wheel/WheelSvg';
 import { relaxRing } from '../../lib/ringLayout';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 import type { EclipticPosition, PlanetName } from '../../lib/ephemeris';
 import { planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
@@ -152,11 +153,14 @@ export function LocalSpaceCompass({
   const svg = (
     <svg
       // wheel-svg + interactive borrow the zodiac wheel's planet-mark styling (disc
-      // fill, hit target, hover lift) so the marks match exactly.
-      className="local-space-compass wheel-svg interactive"
+      // fill, hit target, hover lift) so the marks match exactly. Kept out of a page
+      // translator as the zodiac wheel is (WheelSvg's root says why): its text is cardinal
+      // letters, glyphs and live azimuths. (2026-10-09)
+      className="local-space-compass wheel-svg interactive notranslate"
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
+      {...SVG_NO_TRANSLATE}
     >
       {/* The dial's face, the zodiac wheel's own (.wheel-face, WheelSvg.css): unpainted
           unless a Custom theme gives the wheels a solid background — and then this dial

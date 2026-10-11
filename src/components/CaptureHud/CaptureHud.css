@@ -173,14 +173,19 @@
   gap: 7px;
   margin-top: 4px;
 }
+/* Equal cells while every label's longest word fits one (all English ones); a word that
+   doesn't takes the cell it needs and the others give way, rather than ellipsizing. Russian
+   "Копировать" is 68px in a 72px cell's 62px of room, and cut to "Копиров…" it was the
+   one word on two of the three buttons. min-content is the longest word, so a label that
+   can wrap ("Copy link") still wraps, as below. */
 .capture-hud-actions[data-actions='2'],
 .capture-hud-actions[data-actions='4'] {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(min-content, 1fr));
 }
 .capture-hud-actions[data-actions='3'],
 .capture-hud-actions[data-actions='5'],
 .capture-hud-actions[data-actions='6'] {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(min-content, 1fr));
 }
 .capture-hud-btn {
   min-width: 0;
@@ -192,11 +197,17 @@
   justify-content: center;
   text-align: center;
 }
+/* A label wider than its cell breaks onto a second line instead of ellipsizing — the
+   desktop window's three 72px cells cut a longer language's "Copy link" to "Copiar e…".
+   The grid stretches every button in the row to the tallest, so the cells stay even.
+   Labels that fit (all English ones) stay on one line, unchanged. Only a single word
+   wider than the whole cell still ellipsizes; the button's tip names it in full. (Not
+   hyphens:auto — the greedy breaker would split "Copiar en-lace" to fill the line.) */
 .capture-hud-btn > span {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* One-shot "it worked" nudge when an action confirms (Copy → Copied!, link
@@ -392,7 +403,10 @@
    button comes out about the same size. */
 .capture-hud.is-phone-sheet .capture-hud-pair {
   display: grid;
-  grid-template-columns: 2fr 3fr;
+  /* …unless a subject label can't fit its share on one line ("Карта мира", "Натальная
+     карта" broke over two lines in 65px buttons): then Subject takes the width its labels
+     need and Frame's short ratios give way. Where both fit (English), exactly 2fr 3fr. */
+  grid-template-columns: minmax(max-content, 2fr) minmax(max-content, 3fr);
   gap: 10px;
 }
 .capture-hud.is-phone-sheet .capture-hud-group {

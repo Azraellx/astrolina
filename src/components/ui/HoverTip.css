@@ -88,10 +88,24 @@
   gap: 6px;
 }
 
-/* Keep tip titles on one line (so e.g. "Zoom in" + its hotkey never wrap; the
-   card just grows to fit). */
+/* A title stays on one line while it fits the card — the card is max-content wide, so
+   "Zoom in" + its hotkey never wrap — and wraps only once it is wider than the card's cap
+   (tipWidth.ts), instead of running out of the card with its hotkey pill drawn over the
+   map: "Horoskop wechseln, bearbeiten oder hinzufügen [A]" is 274px against the 218px a
+   240px card holds. nowrap made the card "grow to fit" only until the cap; past it the title
+   simply escaped. Balanced, so a wrapped title reads as two even lines; break-word only for
+   a single word wider than the card. Every English title fits, so none of them moves. */
 .hover-tip .ui-tip-title {
-  white-space: nowrap;
+  min-width: 0;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+/* The pill keeps its own width when the title beside it wraps. */
+.ui-tip-headline > .ui-tip-hotkey,
+.ui-tip-headline > .ui-hover,
+.ui-tip-headline > .ui-tip-adv,
+.ui-tip-headline > .ui-tip-gated {
+  flex-shrink: 0;
 }
 
 /* A title with no hint beneath it isn't bolded — there's nothing to set it apart

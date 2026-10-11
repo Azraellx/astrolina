@@ -95,7 +95,23 @@ export const topNav = {
     // gesture pills — DEVICE-AWARE (click↔tap, zoom magnifying-glass↔pinch) via TopNav's ToolHintText;
     // the "·" is a plain separator. {escExit}/{rightExit} append a "· … to exit" tail shown only where
     // there's a keyboard/mouse (hidden on a bare touch device — no Esc / right button).
+    //
+    // Translator note (2026-10-09), for the three *ToolbarHint strings: each {token} must appear
+    // exactly once, spelled exactly as here. A gesture token may move to wherever the sentence needs
+    // it — the renderer finds it anywhere — but {escExit}/{rightExit} draw their own leading " · ",
+    // so they stay at the very end with no space before them.
+    // Measure-tool readout while the pointer has not yet dragged.
     toolbarHint: '{click} and {drag} on the map to measure{rightExit}',
+    // The measure readout's two distances: {n} is the number, already formatted for the
+    // language (decimal mark, digit grouping). Unit abbreviations, kilometres and miles.
+    measureKm: '{n} km',
+    measureMi: '{n} mi',
+    // The touch-only switch beside the measure readout that locks the dragged endpoint onto
+    // the nearest chart line (desktop holds Shift instead). One short word: it sits in the
+    // bar beside the readout.
+    snap: 'Snap',
+    // The Snap switch's tooltip, spelling out what the one word does.
+    snapTip: 'Snap the endpoint to chart lines (or hold Shift)',
     slideItem: 'Slide',
     slideHint:
       'Slide the world under the fixed natal lines — advances time to show how parans build through the day. Works in flat or globe view.',
@@ -105,6 +121,7 @@ export const topNav = {
     // the lines belongs to slideHint above and is not repeated here.
     slideUnavailable:
       'Slide needs the natal lines drawn. Unavailable while Natal Lines is off (Advanced ▸ Lines, Shift+N), Other Lines has cleared them, or an overlay stands in for the chart.',
+    // Slide-tool readout while the sky is still at the chart moment (see the token note above).
     slideToolbarHint: '{pan} to slide the world under the fixed lines',
     // The slide control cluster (secondary bar): nudges, event steps, reset, and
     // the readout chips' hover tips.
@@ -121,18 +138,24 @@ export const topNav = {
     captureItem: 'Capture',
     captureHint:
       'Frame the map and export it as a PNG — pick an aspect ratio, choose what to include, then download or copy.',
+    // Capture-tool readout (see the token note above).
     captureToolbarHint: '{pan} and {zoom} to compose inside the frame{escExit}',
     // Words inside the readout gesture pills (the device-appropriate icon is added by the renderer).
-    // esc/right/toExit build the desktop-only "· Esc / Right-click to exit" tail.
+    // esc/rightClick/toExit build the desktop-only "· Esc / Right-click to exit" tail.
+    // The three two-word gestures are ONE phrase each, with {icon} where the gesture's picture
+    // sits: write the gesture's name in your language's own order and keep {icon} exactly once
+    // where the picture reads naturally (Spanish might write "Clic {icon} derecho"). They were
+    // separate words glued round the icon in English order until 2026-10-09.
     hintKey: {
       click: 'Click',
       tap: 'Tap',
-      double: 'Double',
+      doubleClick: 'Double {icon} Click',
+      doubleTap: 'Double {icon} Tap',
       drag: 'Drag',
       pan: 'Pan',
       zoom: 'Zoom',
       esc: 'Esc',
-      right: 'Right',
+      rightClick: 'Right {icon} Click',
       toExit: 'to exit',
     },
   },

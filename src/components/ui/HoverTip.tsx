@@ -22,9 +22,7 @@ import {
 import { glyphify } from './glyphify';
 import { tipMaxWidthStyle } from './tipWidth';
 import { tierLabel, tierName, shouldShowTierBadge, type PlanTier } from '../../lib/plan';
-import { en } from '../../i18n';
-import { useOptionalT } from '../../i18n/I18nProvider';
-import { interpolate } from '../../i18n/t';
+import { useT } from '../../i18n';
 import './HoverTip.css';
 
 // The shared .ui-tip card (chrome from index.css), portaled to <body> so no
@@ -95,14 +93,17 @@ export function HoverTip({
           hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>
         )}
       </span>
-      {/* String hints get their astro symbols re-rendered in the glyph font. */}
+      {/* String hints get their astro symbols re-rendered in the glyph font. That makes
+          a hint several runs, so a string hint is keyed by its text: one that changes
+          while the card is up remounts rather than patching runs a page translator has
+          replaced (2026-10-09). */}
       {hasHint && (
-        <span className="ui-tip-sub">
+        <span className="ui-tip-sub" key={typeof hint === 'string' ? `h:${hint}` : 'h'}>
           {typeof hint === 'string' ? glyphify(hint) : hint}
         </span>
       )}
       {hasNote && (
-        <span className="ui-tip-sub ui-tip-note">
+        <span className="ui-tip-sub ui-tip-note" key={typeof note === 'string' ? `n:${note}` : 'n'}>
           {typeof note === 'string' ? glyphify(note) : note}
         </span>
       )}
@@ -135,8 +136,8 @@ type TipButtonProps = {
    *  the tip, with the reason ("{feature} is a {tier} feature.") as its last line — and
    *  on touch a tap reveals the tip instead of acting. For on/off controls only; a button
    *  or row whose whole job is to open the feature keeps running the build's upgrade flow
-   *  (lib/plan's nudgeAction). Safe in a plugin's own React root: outside the i18n
-   *  provider the reason is written in English. */
+   *  (lib/plan's nudgeAction). Safe in a plugin's own React root: the i18n runtime needs
+   *  no provider, so the reason is in the reader's language there too. */
   locked?: TipLock;
   children?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
@@ -225,35 +226,34 @@ const LOCKED_HOLD_MS = 2400;
 // A tier's name as a word in a sentence. A build installs its plan names in badge
 // capitals because pills draw them, so a name that arrives all-caps is written in
 // sentence case ("PRO" → "Pro"); anything else is used exactly as installed.
-function tierWord(tier: PlanTier): string {
+//
+// Both case changes follow the reader's language (2026-10-09). A build installs the names
+// from its own catalog, so under Turkish they are Turkish capitals, and the default
+// mapping lowercases them wrongly — "I" to "i" where Turkish needs "ı", "İ" to "i" plus a
+// stray combining dot. English is unchanged: 'en' has no special casing rules.
+function tierWord(tier: PlanTier, lang: string): string {
   const name = tierName(tier) || tierLabel(tier);
-  return name && name === name.toUpperCase()
-    ? name.charAt(0) + name.slice(1).toLowerCase()
+  return name && name === name.toLocaleUpperCase(lang)
+    ? name.charAt(0) + name.slice(1).toLocaleLowerCase(lang)
     : name;
 }
 
-// The locked switch's reason line, without requiring the i18n provider. TipButton is shared
-// ui that plugins mount in React roots of their own, outside <I18nProvider>, where useT()
-// throws — and nothing in TipButton needed the provider before `locked` existed, so the first
-// plugin to pass `locked` from its own root would have blanked that root. Inside the provider
-// the line follows the reader's locale; outside it, it is the English base catalog, as
-// PlaceSearchField's own fallbacks are.
+// The locked switch's reason line. TipButton is shared ui that plugins mount in React roots of
+// their own, which until 2026-10-09 sat outside <I18nProvider> — useT() threw there, so this
+// read the English base catalog directly whenever it found no provider. The i18n runtime is a
+// module-level store now, which every root reads alike, so the line follows the
+// reader's language wherever the switch is mounted and the English fallback is gone with the
+// reason for it.
 //
 // One sentence shape for every locked switch — "{feature} is a {tier} feature." — the same
 // one a build's locked scope chips use, so a reader meets one wording for one situation
 // (Salvatore, 2026-10-02; seam L73). It states the fact and stops: no pointer to the plans.
 function useLockedReason({ tier, feature }: TipLock): string {
-  const t = useOptionalT()?.t;
-  const word = tierWord(tier);
-  if (t) {
-    return word
-      ? t('common.locked.feature', { feature, tier: word })
-      : t('common.locked.featureAnyTier', { feature });
-  }
-  const lines = en.common.locked;
+  const { t, lang } = useT();
+  const word = tierWord(tier, lang);
   return word
-    ? interpolate(lines.feature, { feature, tier: word })
-    : interpolate(lines.featureAnyTier, { feature });
+    ? t('common.locked.feature', { feature, tier: word })
+    : t('common.locked.featureAnyTier', { feature });
 }
 
 // The locked form of TipButton (see its `locked`). Why a switch and not the upgrade

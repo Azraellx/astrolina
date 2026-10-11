@@ -4,14 +4,14 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-// Pure, framework-agnostic catalog helpers. resolvePath walks a dot-path into the
-// active catalog; interpolate substitutes {name} tokens. Both are consumed by the
-// I18nProvider's t(); kept here so they can be unit-tested without React.
-import type { Messages, TVars } from './types';
+// Pure, framework-agnostic catalog helpers. resolvePath walks a dot-path into a
+// catalog; interpolate substitutes {name} tokens. Both are consumed by the runtime's
+// t() (runtime.ts); kept here so they can be unit-tested without React.
+import type { TVars } from './types';
 
 // Walk a dot-path ('a.b.c') into the catalog and return the string leaf, or undefined
 // if the path is missing or lands on a non-string node.
-export function resolvePath(catalog: Messages, key: string): string | undefined {
+export function resolvePath(catalog: object, key: string): string | undefined {
   let node: unknown = catalog;
   for (const part of key.split('.')) {
     if (node !== null && typeof node === 'object' && part in node) {

@@ -24,14 +24,19 @@ interface ZodiacRangeProps {
 
 export function ZodiacRange({ lon, halfDeg, size = 12, className }: ZodiacRangeProps) {
   const { lo, hi } = lonRange(lon, halfDeg);
+  // Figures and glyphs only, redrawn as the body moves: not offered to a page translator,
+  // whose rewrite of one run React would then write into unseen. (2026-10-09)
   return (
     <span
       className={className ? `zodiac-range ${className}` : 'zodiac-range'}
       style={{ whiteSpace: 'nowrap' }}
+      translate="no"
     >
-      {lo.deg}°<ZodiacGlyph sign={lo.signIdx} size={size} />
+      {`${lo.deg}°`}
+      <ZodiacGlyph sign={lo.signIdx} size={size} />
       {'–'}
-      {hi.deg}°<ZodiacGlyph sign={hi.signIdx} size={size} />
+      {`${hi.deg}°`}
+      <ZodiacGlyph sign={hi.signIdx} size={size} />
     </span>
   );
 }

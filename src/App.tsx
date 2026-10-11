@@ -99,6 +99,16 @@ import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
 import { AutoFlipNotice } from './components/AutoFlipNotice/AutoFlipNotice';
 import { useAutoFlipNotice } from './lib/useAutoFlipNotice';
+import {
+  clearHeldLanguage,
+  detectedLanguageRecorded,
+  heldLanguageRecorded,
+  recordDetectedLanguage,
+  recordHeldLanguage,
+} from './lib/autoFlipNotice';
+// The browser-translation offer and the language boot detected (2026-10-09).
+import { TranslateOffer } from './components/TranslateOffer/TranslateOffer';
+import { detectedAtBoot, isTranslated } from './i18n/runtime';
 // The geodetic review hold — one boolean, masking a preference rather than
 // rewriting it. See lib/geodeticHold for the whole of it and how to lift it.
 import { GEODETIC_HELD } from './lib/geodeticHold';
@@ -697,7 +707,9 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 }));
 
 export default function App() {
-  const { t, labels, fmt } = useT();
+  // `locale`, `pref` and `machineHold` are for the language-held notice alone (its effect, beside
+  // the language-detected one, says why). (2026-10-10)
+  const { t, labels, fmt, lang, locale, pref: localePref, machineHold } = useT();
   // Discreet mode's masks. Used for what is on SCREEN; anything being produced
   // deliberately — a capture caption, an export, a share link — keeps the real
   // values, since hiding those from the person who asked for them would be a
@@ -1014,14 +1026,66 @@ export default function App() {
   const skyFamiliesOff = noTime || skyHeld;
   // Acknowledgement for settings this app moves on the user's behalf (lib/autoFlipNotice).
   // Declared up here, ahead of the setters that announce. `announce` is called from event
-  // handlers — with one documented exception, the theme option's two holds, which arrive with
-  // no gesture to hang them on (see the held-notice effect beside saveTheme below).
+  // handlers — with two documented exceptions, each arriving with no gesture to hang it on:
+  // the theme option's two holds (the held-notice effect beside saveTheme below), the
+  // language boot detected and the device language boot found held (the two effects just
+  // below; the second added 2026-10-10).
   const {
     pending: autoFlipKind,
     announce: announceFlip,
     dismiss: dismissAutoFlip,
   } = useAutoFlipNotice();
   const [autoFlipSuppress, setAutoFlipSuppress] = useState(false);
+  // 'language-detected' (2026-10-09): a returning reader's app came up in their browser's
+  // language rather than English, because a translation into it has shipped (i18n/runtime
+  // detectedAtBoot). Boot is not a gesture, so this is an effect. It announces only for an
+  // install used before and only once that language is on screen — `lang` is the dependency,
+  // so a catalog that arrives after boot's wait still gets its notice.
+  //   • Each LANGUAGE is said once: the last one spoken for is recorded, and a boot finding the
+  //     same one says nothing — while a later switch to another (a second language of the
+  //     reader's shipping) is a new change and is said too.
+  //   • Only in the new language's own words: until the card's two strings are translated it
+  //     waits, without recording, so the boot whose catalog carries them is the one that speaks
+  //     — never an English card over a translated app that then counts as said.
+  //   • On a FIRST visit there is nothing to report (the app was never in English for them):
+  //     the language is recorded silently, so their second visit — an install with state by
+  //     then — isn't taken for a returning reader's first. (2026-10-09, after review.)
+  useEffect(() => {
+    const detected = detectedAtBoot();
+    if (!detected) return;
+    if (!isTranslated('autoFlip.language-detected.title') || !isTranslated('autoFlip.language-detected.body')) return;
+    if (detectedLanguageRecorded() === detected.locale) return;
+    recordDetectedLanguage(detected.locale);
+    announceFlip('language-detected', detected.existingInstall);
+  }, [lang, announceFlip]);
+  // 'language-held' (2026-10-10): the reader's stored device language can't be shown on this
+  // device — no translator here and nothing it translated before, or its model to download
+  // again (i18n/runtime `machineHold`) — so the app opened in the detected language or English.
+  // Boot found that, not a gesture, so this is an effect, keyed on the hold itself and on `lang`.
+  //   • Each HELD LANGUAGE is said once: the hold spoken for is recorded, and a boot finding the
+  //     same hold says nothing; a different held language is a new fact and is said.
+  //   • In the words of the language actually shown, as 'language-detected' is: until both of the
+  //     card's strings are translated in it, it waits without recording.
+  //   • Not while a registered surface owns the viewport: the card is parked then and announce
+  //     consumes nothing, so recording first would mark said a hold nobody was told about. The
+  //     next boot tells it instead.
+  //   • When the hold ENDS, the record goes, so a later hold of the same language is told again
+  //     rather than taken as already said. Ended means evidence, not absence: the reader chose
+  //     another language, or the held one is on screen. A hold not yet known — a boot whose
+  //     device check is still out — is neither, and clears nothing.
+  // The record is bookkeeping (lib/autoFlipNotice), never a preference; clearHeldLanguage removes it.
+  useEffect(() => {
+    const recorded = heldLanguageRecorded();
+    if (!machineHold) {
+      if (recorded && ((localePref !== null && localePref !== recorded) || locale === recorded)) clearHeldLanguage();
+      return;
+    }
+    if (recorded === machineHold.id) return;
+    if (!isTranslated('autoFlip.language-held.title') || !isTranslated('autoFlip.language-held.body')) return;
+    if (getViewLock()) return;
+    recordHeldLanguage(machineHold.id);
+    announceFlip('language-held', true);
+  }, [machineHold, localePref, locale, lang, announceFlip]);
   // The EFFECTIVE visible set every consumer reads (wheel, tables, line filters,
   // extensions, sky band). The Part of Fortune is a zodiacal-frame point: In
   // Mundo it has no map line (its lines exist In-Zodiaco/geodetic only), so
@@ -3692,9 +3756,7 @@ export default function App() {
     const zone = timelineZoneAt(current, slidMs);
     const wall = wallClockAt(slidMs, zone);
     // The date, with the year only when the spin left the chart's own year.
-    const date = `${wall.day} ${fmt.monthAbbr(wall.month)}${
-      wall.year !== current.year ? ` ${wall.year}` : ''
-    }`;
+    const date = fmt.date(wall.year, wall.month, wall.day, wall.year !== current.year ? 'medium' : 'dayMonth');
     return {
       thetaDeg: dtHours * SIDEREAL_DEG_PER_HOUR,
       dtHours,
@@ -4066,6 +4128,11 @@ export default function App() {
     };
     // The head row, a builder for a row's time cells, and one for a value that
     // is not a time (it spans both clock columns).
+    //
+    // The heads and the time cells are zone codes, clock readings and short dates — no
+    // words — so they carry translate="no" and a browser's page translator leaves them be;
+    // so does the duration, a figure. The row labels, the "Moon below horizon" cell and the
+    // magnitude line are words and stay translatable. (2026-10-09)
     const clockCells = (cols: ClockColumn[]) => {
       const refs = cols.map((c) => c.read(maxJd));
       const two = cols.length > 1;
@@ -4077,7 +4144,7 @@ export default function App() {
             const day = sameDay(refs[i], { year: eclY, month: eclM, day: eclD })
               ? ''
               : ` · ${eclipseShortDate(refs[i], fmt)}`;
-            return `<dd class="eclipse-card-zone ${utcClass(c)}">${c.head}${day}</dd>`;
+            return `<dd class="eclipse-card-zone ${utcClass(c)}" translate="no">${c.head}${day}</dd>`;
           })
           .join('');
       // A time on another day than its column's head carries that day; one read
@@ -4097,14 +4164,14 @@ export default function App() {
               ? `<span class="eclipse-card-day">${tags.join(' ')}</span>`
               : '';
             const cls = utcClass(c);
-            return `<dd${cls ? ` class="${cls}"` : ''}>${at.hms}${tag}</dd>`;
+            return `<dd${cls ? ` class="${cls}"` : ''} translate="no">${at.hms}${tag}</dd>`;
           })
           .join('');
-      const value = (text: string, dim = false) => {
+      const value = (text: string, dim = false, figure = false) => {
         const cls = [two ? 'eclipse-card-span' : '', dim ? 'eclipse-card-dim' : '']
           .filter(Boolean)
           .join(' ');
-        return `<dd${cls ? ` class="${cls}"` : ''}>${text}</dd>`;
+        return `<dd${cls ? ` class="${cls}"` : ''}${figure ? ' translate="no"' : ''}>${text}</dd>`;
       };
       return { head, times, value, two };
     };
@@ -4186,6 +4253,8 @@ export default function App() {
         c.centralDurationSec !== null
           ? `<dt>${t('map.eclipseCard.duration')}</dt>${cells.value(
               formatEclipseDuration(c.centralDurationSec),
+              false,
+              true,
             )}`
           : '',
       ].join('');
@@ -4193,7 +4262,7 @@ export default function App() {
         rows,
         cells.two,
         t('map.eclipseCard.maxValue', {
-          mag: formatEclipseMagnitude(c.max.magnitude),
+          mag: formatEclipseMagnitude(c.max.magnitude, fmt),
           obsc: `${Math.round(c.max.obscuration * 100)}%`,
         }),
       );
@@ -4319,6 +4388,7 @@ export default function App() {
         effTransitFrame,
         progressionType,
         t,
+        fmt,
       );
     }
     return buildOverlay(
@@ -4333,6 +4403,7 @@ export default function App() {
       effTransitFrame,
       progressionType,
       t,
+      fmt,
     );
     // ephemerisEpoch resamples the overlay instant too when the deferred
     // asteroid file arrives (it isn't read by buildOverlay itself).
@@ -4352,6 +4423,9 @@ export default function App() {
     resolvedEclipse,
     eclipsesMod,
     t,
+    // Passed explicitly though buildOverlay defaults to the same snapshot, so the readouts'
+    // decimal mark ("Alter 85,3") visibly comes from the screen language, like `t`. (2026-10-10)
+    fmt,
     ephemerisEpoch,
   ]);
 
@@ -5170,7 +5244,9 @@ export default function App() {
     const name = overlayReturn
       ? t(`timeline.returns.${overlayReturn}.chartName` as 'timeline.returns.solar.chartName')
       : t(`captureHud.calcOverlay.${kind as Exclude<typeof kind, 'synastry' | 'eclipses'>}`);
-    const date = new Intl.DateTimeFormat('en', {
+    // In the active language's own short date (Intl, on `lang`) — English reads exactly as it
+    // did when this was pinned to 'en'. (2026-10-09)
+    const date = new Intl.DateTimeFormat(lang, {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
@@ -5181,7 +5257,7 @@ export default function App() {
     return masked
       ? `${name} · ${identity.date(date)} · ${identity.time('')}`
       : `${name} · ${date} · ${formatZoneClock(wall.hour, wall.minute, zone)}`;
-  }, [overlayLayer, overlayMs, captionPlace, overlayReturn, identity, t]);
+  }, [overlayLayer, overlayMs, captionPlace, overlayReturn, identity, t, lang]);
 
   // The formatted value of every caption field, computed once. The caption joins the
   // ENABLED ones (below) and the download filename reuses the same values, so the two can
@@ -5211,8 +5287,11 @@ export default function App() {
       name: identity.on
         ? identity.name(current.name)
         : displayName(current.name),
+      // The date and time in the active language's own forms (Intl, on `lang`; English is
+      // unchanged from when these were pinned to 'en'). The filename below slugs the same
+      // value, keeping only its Latin letters and digits. (2026-10-09)
       date: noMoment ? '' : identity.date(
-        new Intl.DateTimeFormat('en', {
+        new Intl.DateTimeFormat(lang, {
           day: 'numeric',
           month: 'short',
           year: 'numeric',
@@ -5220,7 +5299,7 @@ export default function App() {
         }).format(dt),
       ),
       time: noMoment ? '' : identity.time(
-        new Intl.DateTimeFormat('en', {
+        new Intl.DateTimeFormat(lang, {
           hour: '2-digit',
           minute: '2-digit',
           hourCycle: 'h23',
@@ -5247,7 +5326,7 @@ export default function App() {
         ? `${captureCalcText} · ${captureOverlayText}`
         : captureCalcText,
     };
-  }, [current, captionPlace, captureCalcText, captureOverlayText, identity]);
+  }, [current, captionPlace, captureCalcText, captureOverlayText, identity, lang]);
   // Caption fields — only the enabled ones, in display order. The footer joins them into one
   // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
   // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
@@ -8492,15 +8571,19 @@ export default function App() {
                 })
               : undefined
           }
-          // …shown visually as a synastry icon + the name, in place of the words.
+          // …shown visually as a synastry icon + the name, in place of the words. The name is
+          // the reader's own, so it sits in a span kept out of a page translator; the label
+          // beside it stays translatable. (2026-10-09)
           heading={
             pickingPartner ? (
               <span className="cm-comparison-title">
                 {t('chartManager.comparisonLabel')}
                 <SynastryIcon />
-                {identity.on
-                  ? identity.name(current?.name ?? '')
-                  : displayName(current?.name ?? '')}
+                <span translate="no">
+                  {identity.on
+                    ? identity.name(current?.name ?? '')
+                    : displayName(current?.name ?? '')}
+                </span>
               </span>
             ) : undefined
           }
@@ -8550,6 +8633,14 @@ export default function App() {
           }}
         />
       )}
+      {/* The offer of our own translation while a browser's page translator is at work
+          (components/TranslateOffer). Always mounted, because mounting is what keeps the
+          bridge watching (i18n/pageTranslation starts with its first subscriber, and a pick
+          made under a translator relies on it to reload); `parked` only keeps the card out of
+          sight — while a surface owns the viewport, like every floating window, and while an
+          auto-flip notice is up, since the two share a spot and one card at a time is the
+          rule here. (2026-10-09) */}
+      <TranslateOffer parked={viewParked || autoFlipKind !== null} />
       {/* The guides reference (View ▸ Guides) takes precedence over an onboarding pop-up,
           so only one card shows at a time; closing it lets any unfinished onboarding guide
           resurface on the next gesture. In reference mode the pager flips through the met

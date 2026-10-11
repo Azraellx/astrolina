@@ -42,6 +42,23 @@ export const missions = {
     pinch: 'Pinch',
     snap: 'Snap',
   },
+  // The pills whose gesture is more than one word round the icon, each ONE phrase with {icon}
+  // where the cursor or finger picture sits: write the gesture's name in your language's order
+  // and keep {icon} exactly once (Spanish might write "Clic {icon} derecho"). They were the words
+  // above glued round the icon in English order until 2026-10-09; the single-word pills still use
+  // those words. The English must read like those pairs: "Double [icon] Click".
+  pill: {
+    double: 'Double {icon} Click',
+    right: 'Right {icon} Click',
+    hold: 'Hold {icon} Drag',
+    shiftDrag: 'Shift {icon} Drag',
+    rightDrag: 'Right {icon} Drag',
+    tapSnap: 'Tap {icon} Snap',
+    // "Hold Shift": this pill draws no picture — here {icon} only keeps the two words apart as
+    // on the other pills. Keep it once, between the words, in your language's order (German
+    // "Umschalt {icon} gedrückt halten", 2026-10-10).
+    holdShift: 'Hold {icon} Shift',
+  },
 
   mapBasics: {
     // "{pin}" is rendered as the map-pin icon.

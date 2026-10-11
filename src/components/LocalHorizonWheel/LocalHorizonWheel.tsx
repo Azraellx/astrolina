@@ -40,7 +40,10 @@ export function LocalHorizonWheel({
 }: Props) {
   return (
     <div
-      className="local-horizon-wheel"
+      // Kept out of a page translator as the chart wheels are (WheelSvg's root says why):
+      // everything on the dial is a cardinal letter or an azimuth. (2026-10-09)
+      className="local-horizon-wheel notranslate"
+      translate="no"
       style={{
         left: cx,
         top: cy,

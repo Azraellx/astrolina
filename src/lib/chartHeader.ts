@@ -315,7 +315,7 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
           seg('clock', `${pad2(hour)}:${pad2(minute)}`, mask),
           mask === 'subject' && id.on ? null : seg('zone', formatZoneLabel(zone), mask, ' '),
         ];
-  const plainDate = (y: number, m: number, d: number) => `${d} ${fmt.monthName(m)} ${y}`;
+  const plainDate = (y: number, m: number, d: number) => fmt.date(y, m, d, 'long');
   const lead = (key: 'born' | 'relocatedTo' | 'castFor' | 'midpoint' | 'derivedFrom') =>
     seg('lead', t(`expandedSidebar.header.${key}`), 'none');
 

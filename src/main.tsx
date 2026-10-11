@@ -8,8 +8,19 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { I18nProvider } from './i18n'
+import { I18nProvider, initI18n, installTranslateGuard } from './i18n'
 import { initEphemeris } from './lib/ephemeris'
+
+// First, before anything renders: a browser translating the page must not be able to blank
+// it (i18n/translateGuard.ts says why it is unconditional). Idempotent — a host build that
+// installed it already loses nothing.
+installTranslateGuard()
+
+// The reader's language loads alongside the engine and is awaited just before the first
+// render, so the app comes up in it rather than flashing English. It never rejects, and a
+// catalog that stalls gives up to English on its own (i18n/runtime.ts), so the loading
+// screen below is unchanged.
+const i18nReady = initI18n()
 
 // The index.html inline script starts the progress bar at page load (so it moves
 // during the JS-bundle download too) and exposes window.__load. Here we drive the
@@ -125,6 +136,9 @@ try {
   throw err
 }
 
+// Almost always settled already: a catalog chunk is far smaller than the engine.
+await i18nReady
+
 window.clearTimeout(slowTimer)
 load.busy = false
 load.done = true
@@ -140,3 +154,9 @@ createRoot(document.getElementById('root')!).render(
     </I18nProvider>
   </StrictMode>,
 )
+
+// The fake page translator (i18n/fakeTranslate.ts), a development test tool: behind the DEV
+// constant so a production build drops the chunk entirely.
+if (import.meta.env.DEV && location.search.includes('fake-translate')) {
+  void import('./i18n/fakeTranslate').then((m) => m.maybeStartFakeTranslate())
+}

@@ -82,6 +82,63 @@ export const settings = {
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
+  // The Language menu's second section (2026-10-10): languages this app does NOT ship, translated
+  // from the English on the reader's own device by its built-in translator, as they use the app
+  // (i18n/machineMenu). Every string here describes that honestly and names no browser, company
+  // or product — the feature is "on this device", which is all a reader needs to know and all
+  // that stays true across the browsers that offer it. Each row is the language's own name,
+  // never translated; these are its heading, its tips and the lines under the menu.
+  machine: {
+    // The heading over the languages the reader's own device translates by machine, as opposed
+    // to the ones above it, which ship with the app. Keep it short: it heads a narrow menu.
+    // (2026-10-10: renamed from "Translated on this device", which readers could not tell apart
+    // from the section above it; sectionHint now carries the difference.)
+    section: 'Auto-translated',
+    // The tooltip on that heading (its (i)), 2026-10-10. "above": the
+    // languages listed over this heading, which ship with the app as complete translations;
+    // "below": the ones under it, which the reader's own device translates by machine. Names no
+    // browser or company. What picking one involves (a download, wording that may be imprecise)
+    // is each row's own tip, below.
+    sectionHint:
+      'The languages above come with AstroLina. The languages below will be translated automatically on this device.',
+    // A row's tip, in the usual case. "as you use the app": text is translated when it is first
+    // needed, so some of it is English for a moment.
+    hint: 'Translated from English on this device, as you use the app. Some wording may be off.',
+    // A row's tip when the device must first download the translation model (the first time).
+    downloadHint: 'Translated from English on this device. The first time, the translation model is downloaded to it.',
+    // The tip of the language on screen when part of it is still English because the model has to
+    // be downloaded again, which only the reader's own tap may start.
+    partialHint: 'Part of the app is still in English. Choose it again to finish downloading the translation to this device.',
+    // The tip of the reader's chosen device language that is on hold for the same reason, with
+    // nothing translated yet to show: the app is in its usual language until they tap.
+    heldDownloadHint: 'Your choice, on hold until the translation is downloaded to this device again. Choose it to download it.',
+    // Why the reader's chosen device language is greyed: this device can't translate (its
+    // translator switched off or gone) and has nothing translated to show. "kept": the choice is
+    // held, not cleared,
+    // and returns by itself where translating is possible (CLAUDE.md rule 2).
+    heldHint: 'This device can’t translate into this language right now. Your choice is kept, and comes back when it can.',
+    // Why the language on screen is greyed: shown from what was translated earlier, with no
+    // translator now; new text stays English.
+    cacheHint: 'Shown from what this device translated before. It can’t translate here any more, so new text stays in English.',
+    // The line under the menu while the model downloads. {language} is the language's own name;
+    // {percent} a whole number, 0–100.
+    downloading: 'Downloading {language} to this device… {percent}%',
+    // The line under the menu while the text on screen is being translated, before the switch.
+    translating: 'Translating into {language}…',
+    // The line under the menu when the device could not set the language up.
+    failed: '{language} couldn’t be set up on this device.',
+    // Under the menu for as long as a device language is on screen. Says what the reader is
+    // reading and the two things they may notice; never names who made the translator.
+    disclosure:
+      'Machine-translated on this device. Some wording may be off; anything not yet translated shows in English.',
+  },
+  // Accessible names for the two touch-only controls that show and hide the whole
+  // settings dock: the edge tab beside it (SettingsNub) and the × in its corner. Read
+  // aloud by screen readers, never shown. (2026-10-09)
+  dock: {
+    open: 'Open settings',
+    close: 'Close settings',
+  },
   userRate: { label: 'Degrees per year' },
   parans: {
     title: 'Parans',
@@ -395,7 +452,10 @@ export const settings = {
   nodeType: {
     true: {
       label: 'True Node',
-      hint: 'True (osculating) node follows the Moon’s instantaneous orbit; oscillates ±~1.5° around the mean and can briefly turn direct (desktop-tool default).',
+      // "(the default)" states this app's own default and nothing else. It said "(desktop-tool
+      // default)" until 2026-10-09 — an unnamed comparison with other software, which CLAUDE.md
+      // rules out however it is worded.
+      hint: 'True (osculating) node follows the Moon’s instantaneous orbit; oscillates ±~1.5° around the mean and can briefly turn direct (the default).',
     },
     mean: {
       label: 'Mean Node',
@@ -601,6 +661,10 @@ export const settings = {
       south: 'Southern',
       duration: 'Max duration',
       width: 'Path width',
+      // The Path width row's value: {n} is the width of the central path in
+      // kilometres, a whole number. The unit is the translatable half — some
+      // scripts write it differently ("км"). (2026-10-09)
+      widthValue: '{n} km',
       // Lunar rows: how deep the Moon dips into each shadow, in Moon diameters.
       umbralMag: 'Umbral magnitude',
       penumbralMag: 'Penumbral magnitude',

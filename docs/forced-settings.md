@@ -76,10 +76,37 @@ there the whole time it is held, and every way out is something you did.
 | A minor planet or hypothetical point you switched on in the Minor bodies window isn't drawn | While Advanced is off, or at a date outside what that body can be computed for — the chart's own date, one the map has been moved to, an overlay's date, or either parent's for a composite. For a minor planet that is its own ephemeris file's years (about 1500–2100 for most); for a hypothetical point, the planets' | **Held.** It stays on your list, switched on. At an out-of-range date the body's own row in the window says so — naming the overlay when only one side of the map is out of range — and a row out of range on every side is greyed; while Advanced is off the window itself is unavailable, and the dimmed button that opens it says your list is kept. Back when the condition ends |
 | *Parans with the planets*, in the Minor bodies window, is unavailable and draws nothing | While the map's own parans are off — or held, on a geodetic map, or while a transit, progressed, directed or Cyclocartography chart stands in for the birth chart (the Natal Chart hidden), since those overlays draw no parans of their own | **Held.** Greyed with the reason and the setting to change; nothing is written, and your choice comes back with the parans |
 | The overlay frame reads *Return angles* | While a celestial map is on a return you jumped to | **Held**, announced, and marked by a chip. Back when you leave the return |
+| The app opens in your browser's language instead of English | When AstroLina gains a translation into the language your browser asks for, if you have never chosen a language yourself | **Nothing is written or held.** With no choice of yours to keep, the app follows your browser's language wherever it has a translation for it, and now it has one. Said once for each language it opens in, with where to choose: Settings ▸ Appearance ▸ Language. A language you pick there stays from then on |
+| The app opens in its usual language instead of the one you chose under *Auto-translated* | When this device can't translate into it right now — it has no translator, or the translation has to be downloaded to it again — and nothing it translated for you before is stored | **Held.** Your choice stays as you made it, and the app opens in your browser's language where AstroLina has a translation for it, otherwise English. The language stays in the menu: greyed with the reason, or — when only the download is missing — ready to choose, which downloads it again. Said once for each language held, with where to choose: Settings ▸ Appearance ▸ Language |
+| The app opens in English instead of a language you chose | While the translations are held back for their release | **Held.** Nothing is written; your choice comes back as you left it when they are released |
 
-Every announcement carries a *Don't show me again* tick. Turning one off suppresses
-that message everywhere it would appear, including from a different starting point —
-having understood the rule once is enough.
+Every announcement that would otherwise repeat carries a *Don't show me again* tick.
+Turning one off suppresses that message everywhere it would appear, including from a
+different starting point — having understood the rule once is enough.
+
+*While the translations are held back for their release (the last of the three language rows),
+the app opens in English and the other two don't arise. The next two paragraphs describe the
+languages as they work once the translations are released.*
+
+The language is the one row here that follows something outside the app. Until you
+choose a language, AstroLina opens in the first language your browser asks for that it
+has a translation into, and in English otherwise. So the day a translation into your
+language arrives, the app can open in it without your having touched anything — the
+whole interface changes, with nothing on your side to account for it. That is why it is
+announced — once for each language it changes to, in that language — and why the announcement names where the choice
+lives rather than pointing at it: the settings panel is usually shut when the app starts.
+If this is your first visit there is nothing to announce: the app was never in English
+for you.
+
+A language from the Language menu's *Auto-translated* section is a choice like any other, and
+it is kept like any other. It is translated from English by your device itself, as you use the app,
+and what it has translated is stored on the device, so the next visit opens in it at once.
+If the device later can't translate — its translator switched off or gone, or the
+translation removed from it — the app shows what was translated before, with anything new
+in English. Where nothing was stored, there is nothing to show in that language: the app
+opens in its usual language, your choice waits, and the app says so once, because the whole
+interface is then in a language you didn't choose. It comes back by itself once the device
+can translate into it again; choosing any other language ends the wait.
 
 One thing on this page is not a setting at all, and belongs here anyway because it
 looks like the same kind of surprise. A tool that works out an unknown birth time can

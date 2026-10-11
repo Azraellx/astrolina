@@ -258,7 +258,7 @@ export function DateTimeFields<V extends PartialMoment>({
             max={yearMax}
             pad={4}
             width="62px"
-            placeholder="YYYY"
+            placeholder={t('chartForm.boxHint.year')}
             outOfRangeHint={yearHint}
             rangeHint={yearRangeHint}
             ariaLabel={t('chartForm.year')}
@@ -271,7 +271,7 @@ export function DateTimeFields<V extends PartialMoment>({
             max={12}
             pad={2}
             width="48px"
-            placeholder="MM"
+            placeholder={t('chartForm.boxHint.month')}
             ariaLabel={t('chartForm.month')}
             onChange={(m) => patch({ month: m, day: clampDay(day, year, m) })}
           />
@@ -282,7 +282,7 @@ export function DateTimeFields<V extends PartialMoment>({
             max={dayMax}
             pad={2}
             width="40px"
-            placeholder="DD"
+            placeholder={t('chartForm.boxHint.day')}
             ariaLabel={t('chartForm.day')}
             onChange={(d) => patch({ day: d })}
           />
@@ -308,7 +308,7 @@ export function DateTimeFields<V extends PartialMoment>({
             max={23}
             pad={2}
             width="40px"
-            placeholder="HH"
+            placeholder={t('chartForm.boxHint.hour')}
             ariaLabel={t('chartForm.hour')}
             ariaDescribedBy={timeDescribedBy}
             onClear={timeClearable ? () => patch({ hour: null }) : undefined}
@@ -321,7 +321,7 @@ export function DateTimeFields<V extends PartialMoment>({
             max={59}
             pad={2}
             width="48px"
-            placeholder="MM"
+            placeholder={t('chartForm.boxHint.minute')}
             ariaLabel={t('chartForm.minute')}
             ariaDescribedBy={timeDescribedBy}
             onClear={timeClearable ? () => patch({ minute: null }) : undefined}

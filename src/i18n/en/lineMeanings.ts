@@ -168,6 +168,11 @@ export const lineMeanings = {
   // Aspect lines: frame + per-kind flavor, then the pointer back to the
   // conjunction line's meaning.
   aspect: {
+    // {aspect} is the aspect's name from your own catalog (expandedSidebar.aspect.*.name),
+    // which the code lower-cases before inserting it, because English writes it lower-case
+    // mid-sentence (2026-10-09). If your language must keep it capitalised here (German
+    // capitalises nouns), flag it rather than working around it in the wording: the code
+    // needs a change for your language.
     frame: '{planet} {aspect} the {angle} along this line.',
     kind: {
       trine: 'A trine works smoothly: the planet supports this angle with little effort.',
@@ -266,7 +271,7 @@ export const lineMeanings = {
 
   // Closest-approach row at the bottom of every card: how near the line passes to the pin (or
   // the natal location by default). {icon} is the inline pin glyph; the "NN km / NN mi" value
-  // is appended after the label in lineCard.ts.
+  // follows it through map.lineCard.distance, which lineCard.ts fills.
   distance: {
     fromPin: 'Closest distance to {icon} pin:',
     fromNatal: 'Closest distance to natal:',

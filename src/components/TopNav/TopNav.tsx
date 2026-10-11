@@ -35,6 +35,7 @@ import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
+import { iconPhrase } from '../ui/iconPhrase';
 import { useHoverTip } from '../ui/useHoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { DragIcon } from '../ui/DragIcon';
@@ -42,7 +43,7 @@ import { TapIcon } from '../ui/TapIcon';
 import { PinchIcon } from '../ui/PinchIcon';
 import { ZoomIcon } from '../ui/ZoomIcon';
 import { useT } from '../../i18n';
-import type { TFn } from '../../i18n';
+import type { Formatters, TFn } from '../../i18n';
 import { useTouchLayout, useNarrowNav, isNarrowNav } from '../../lib/touch';
 import { useIdentity } from '../../lib/discreet';
 import {
@@ -97,9 +98,7 @@ function hintPill(token: string, t: TFn, touch: boolean): ReactNode | null {
     case '{doubleClick}':
       return (
         <HintKey>
-          <span>{t('topNav.tools.hintKey.double')}</span>
-          {clickIcon}
-          <span>{clickWord}</span>
+          {iconPhrase(t(touch ? 'topNav.tools.hintKey.doubleTap' : 'topNav.tools.hintKey.doubleClick'), clickIcon)}
         </HintKey>
       );
     case '{drag}':
@@ -143,9 +142,7 @@ function hintPill(token: string, t: TFn, touch: boolean): ReactNode | null {
         <span className="topnav-hint-exit">
           {' · '}
           <HintKey>
-            <span>{t('topNav.tools.hintKey.right')}</span>
-            <ClickIcon className="topnav-hint-icon" />
-            <span>{t('topNav.tools.hintKey.click')}</span>
+            {iconPhrase(t('topNav.tools.hintKey.rightClick'), <ClickIcon className="topnav-hint-icon" />)}
           </HintKey>{' '}
           {t('topNav.tools.hintKey.toExit')}
         </span>
@@ -156,15 +153,19 @@ function hintPill(token: string, t: TFn, touch: boolean): ReactNode | null {
 }
 // Render a tool readout into the shared .topnav-toolbar-hint chrome: a tokenised string becomes text
 // with device-aware pills swapped in for each {token}; a ready-made node (a plugin could pass one)
-// renders as-is.
+// renders as-is. The split finds a token wherever it sits, so a translation is free to move one to
+// where its sentence needs it (the catalog's translator note says so, 2026-10-09).
 function ToolHintText({ text }: { text: ReactNode }) {
   const { t } = useT();
   const touch = useTouchLayout();
   if (typeof text !== 'string') {
     return <span className="topnav-toolbar-hint">{text}</span>;
   }
+  // Keyed by its text: a readout that changes (a plugin tool's live one, or a switch of
+  // tool) remounts as a whole instead of patching runs a page translator may have
+  // replaced, which React would write into unseen or fail to remove. (2026-10-09)
   return (
-    <span className="topnav-toolbar-hint">
+    <span className="topnav-toolbar-hint" key={text}>
       {text.split(/(\{\w+\})/).map((part, i) => (
         <Fragment key={i}>{hintPill(part, t, touch) ?? part}</Fragment>
       ))}
@@ -282,33 +283,57 @@ function pad2(n: number): string {
 
 // "40.713°N, 74.006°W" — a measure endpoint as signed-hemisphere decimals. The
 // longitude is resolved to its canonical meridian first, so an endpoint picked on
-// a repeated world copy reads as the real meridian, not its ±360° wrap.
-function fmtLatLng(p: { lat: number; lng: number }): string {
+// a repeated world copy reads as the real meridian, not its ±360° wrap. The figures
+// are coordinate notation and stay as they are; the hemisphere letters are the
+// language's (common.cardinal), as format.ts has them for every coordinate.
+function fmtLatLng(p: { lat: number; lng: number }, t: TFn): string {
   const lngDeg = canonicalLng(p.lng);
-  const lat = `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'}`;
-  const lng = `${Math.abs(lngDeg).toFixed(3)}°${lngDeg >= 0 ? 'E' : 'W'}`;
+  const lat = `${Math.abs(p.lat).toFixed(3)}°${t(p.lat >= 0 ? 'common.cardinal.north' : 'common.cardinal.south')}`;
+  const lng = `${Math.abs(lngDeg).toFixed(3)}°${t(lngDeg >= 0 ? 'common.cardinal.east' : 'common.cardinal.west')}`;
   return `${lat}, ${lng}`;
 }
 
-// "12°34′ · 1395 km · 867 mi" — central angle (deg·min) then both distance units.
-function fmtMeasure(m: MeasureInfo): string {
+// "12°34′ · 1,395 km · 867 mi" — central angle (deg·min) then both distance units.
+// In a translated language the distances take that language's decimal mark and grouping
+// (fmt.num), and the units are catalogued with them.
+//
+// English keeps exactly what it always printed, which is NOT fmt.num's 'en': the decimal
+// under 100 came from toFixed (always a point), and the grouping above it from the
+// browser's own toLocaleString — so an English reader on a German browser has been seeing
+// "1.395 km", and 'en' would quietly change it to "1,395 km". Whether English should follow
+// the app's language or the browser's is a separate decision; this change only makes the
+// translated languages possible, so it leaves English where it was (2026-10-09).
+//
+// In a translated language the decimal is still ROUNDED by toFixed and only then written by
+// fmt.num. The two round a tie differently — toFixed rounds the binary value (0.15 is
+// 0.1499…, so "0.1"), Intl the shortest decimal ("0.2") — and handing Intl the raw distance
+// moved the readout by a tenth on those ties. A toFixed result is its own shortest decimal,
+// so Intl then only changes the mark. (2026-10-09)
+function fmtMeasure(m: MeasureInfo, t: TFn, fmt: Formatters, lang: string): string {
   let deg = Math.floor(m.angleDeg);
   let min = Math.round((m.angleDeg - deg) * 60);
   if (min === 60) {
     min = 0;
     deg += 1;
   }
-  const km = m.km < 100 ? m.km.toFixed(1) : Math.round(m.km).toLocaleString();
-  const mi =
-    m.miles < 100 ? m.miles.toFixed(1) : Math.round(m.miles).toLocaleString();
-  return `${deg}°${pad2(min)}′ · ${km} km · ${mi} mi`;
+  const dist = (v: number) =>
+    lang === 'en'
+      ? v < 100
+        ? v.toFixed(1)
+        : Math.round(v).toLocaleString()
+      : v < 100
+        ? fmt.num(Number(v.toFixed(1)), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+        : fmt.num(Math.round(v));
+  const km = t('topNav.tools.measureKm', { n: dist(m.km) });
+  const mi = t('topNav.tools.measureMi', { n: dist(m.miles) });
+  return `${deg}°${pad2(min)}′ · ${km} · ${mi}`;
 }
 
 // "+48.2° E" — the Slide spin as a signed rotation about the pole (with hemisphere).
 // De-emphasized beside the elapsed-time chip: time is what astrologers reason in.
-function fmtSlideAngle(s: SlideInfo): string {
+function fmtSlideAngle(s: SlideInfo, t: TFn): string {
   const sign = s.thetaDeg >= 0 ? '+' : '−';
-  const dir = s.thetaDeg >= 0 ? 'E' : 'W';
+  const dir = t(s.thetaDeg >= 0 ? 'common.cardinal.east' : 'common.cardinal.west');
   return `${sign}${Math.abs(s.thetaDeg).toFixed(1)}° ${dir}`;
 }
 
@@ -869,7 +894,7 @@ export function TopNav({
   activeOverlayExt,
   onSelectOverlayExt,
 }: TopNavProps) {
-  const { t } = useT();
+  const { t, fmt, lang } = useT();
   // The Overlay trigger reads as active for either a core mode or an extension overlay.
   const overlayActive = overlayMode !== 'off' || activeOverlayExt != null;
 
@@ -970,14 +995,19 @@ export function TopNav({
   // sets `fadeLocation` only when the resolved label differs from the text already
   // shown). Keying the span by the text replays the fade on that change; same-text
   // resolves and plain hover swaps stay instant.
-  const locationContent =
-    fadeLocation && locationText ? (
-      <span className="topnav-location-fade" key={locationText}>
-        {locationText}
-      </span>
-    ) : (
-      locationText
-    );
+  //
+  // Always one span, fading or not: it used to alternate between that span and a bare
+  // text run, and a page translator holding the bare run is what React then fails to
+  // remove. The place name is the reader's data rather than copy, so the text box that
+  // holds it carries translate="no" (below). (2026-10-09)
+  const locationContent = (
+    <span
+      className={fadeLocation && locationText ? 'topnav-location-fade' : undefined}
+      key={fadeLocation && locationText ? locationText : 'steady'}
+    >
+      {locationText}
+    </span>
+  );
 
   // The nav's layout pass — four jobs, one measurement, because each feeds the next:
   //
@@ -1671,14 +1701,16 @@ export function TopNav({
           {measuring ? (
             <>
               {measure ? (
-                <div className="topnav-measure">
+                // Pure values that change on every pointer move: not offered to a page
+                // translator, whose rewritten runs React would then write into blind.
+                <div className="topnav-measure" translate="no">
                   <span className="topnav-measure-endpoints">
                     <span className="topnav-dot" />
-                    {fmtLatLng(measure.start)}
+                    {fmtLatLng(measure.start, t)}
                     <span className="topnav-measure-arrow">→</span>
-                    {fmtLatLng(measure.end)}
+                    {fmtLatLng(measure.end, t)}
                   </span>
-                  <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
+                  <span className="topnav-measure-dist">{fmtMeasure(measure, t, fmt, lang)}</span>
                 </div>
               ) : (
                 <ToolHintText text={t('topNav.tools.toolbarHint')} />
@@ -1692,10 +1724,10 @@ export function TopNav({
                   className={`topnav-snap${measureSnap ? ' on' : ''}`}
                   onClick={() => setMeasureSnap?.(!measureSnap)}
                   aria-pressed={measureSnap}
-                  title="Snap the endpoint to chart lines (or hold Shift)"
+                  title={t('topNav.tools.snapTip')}
                 >
                   <span className="topnav-snap-dot" />
-                  Snap
+                  {t('topNav.tools.snap')}
                 </button>
               )}
             </>
@@ -1740,9 +1772,13 @@ export function TopNav({
                 {slide.dtHours === 0 ? (
                   <ToolHintText text={t('topNav.tools.slideToolbarHint')} />
                 ) : (
+                  // The three readings move with every frame of the spin. Each is a
+                  // pure value and one string, so neither a page translator's rewrite
+                  // nor a split text run can freeze it (2026-10-09).
                   <>
                     <TipSpan
                       className="topnav-slide-chip"
+                      translate="no"
                       placement="bottom"
                       tip={t('topNav.tools.slideElapsedTip')}
                     >
@@ -1750,17 +1786,19 @@ export function TopNav({
                     </TipSpan>
                     <TipSpan
                       className="topnav-slide-clock"
+                      translate="no"
                       placement="bottom"
                       tip={t('topNav.tools.slideClockTip')}
                     >
-                      {slide.clock} · {slide.date}
+                      {`${slide.clock} · ${slide.date}`}
                     </TipSpan>
                     <TipSpan
                       className="topnav-slide-angle"
+                      translate="no"
                       placement="bottom"
                       tip={t('topNav.tools.slideAngleTip')}
                     >
-                      {fmtSlideAngle(slide)}
+                      {fmtSlideAngle(slide, t)}
                     </TipSpan>
                   </>
                 )}
@@ -1821,7 +1859,7 @@ export function TopNav({
               hotkey="Space"
             >
               <span className="topnav-dot" />
-              <span className="topnav-location-text">
+              <span className="topnav-location-text" translate="no">
                 {locationContent}
               </span>
             </TipButton>
@@ -1829,10 +1867,10 @@ export function TopNav({
             <TipSpan
               className="topnav-location"
               placement="bottom"
-              tip={locationText}
+              tip={locationText && <span translate="no">{locationText}</span>}
             >
               <span className="topnav-dot" />
-              <span className="topnav-location-text">
+              <span className="topnav-location-text" translate="no">
                 {locationContent}
               </span>
             </TipSpan>

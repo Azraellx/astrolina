@@ -18,6 +18,9 @@
 // eclipse mode first opens. Anything the panel calls at runtime has to live
 // outside it, or the import would drag the whole chunk into the main bundle.
 import type { Formatters } from '../../i18n';
+// The Node-safe half of the i18n module, for formatEclipseMagnitude's default (verify-zone-name
+// imports this file under Node). Already in the main bundle, so nothing new rides along.
+import { getI18n } from '../../i18n/runtime';
 import { formatZoneLabel, placeZoneAt, type ZoneName } from '../atlas/zoneName';
 
 const UNIX_EPOCH_JD = 2440587.5;
@@ -153,20 +156,25 @@ export function formatEclipseDuration(
  * one read against each other directly — and a ten-thousandth of the diameter is
  * nothing an observer sees. The reason is public on calculation-methods.md
  * ("Eclipse times at a place").
+ *
+ * Written with the language's decimal mark (fmt.fixed: "1,057" in German, English
+ * unchanged). `fmt` defaults to the language on screen, so the click card and the panel
+ * keep agreeing whether or not a caller passes it. (2026-10-10)
  */
-export function formatEclipseMagnitude(magnitude: number): string {
-  return magnitude.toFixed(3);
+export function formatEclipseMagnitude(magnitude: number, fmt: Formatters = getI18n().fmt): string {
+  return fmt.fixed(magnitude, 3);
 }
 
 /** "8 April 2024" from a catalog id ("2024-04-08") — the eclipse's own date, in
- *  the long form both the panel and the click card use. */
+ *  the long form both the panel and the click card use. Written the language's way
+ *  (fmt.date), which in English is the form above. */
 export function eclipseLongDate(id: string, fmt: Formatters): string {
   const [y, m, d] = id.split('-').map(Number);
-  return `${d} ${fmt.monthName(m)} ${y}`;
+  return fmt.date(y, m, d, 'long');
 }
 
 /** "13 Mar" — the short date a clock column adds when a time falls on a
  *  different day from the one the column is read against. */
 export function eclipseShortDate(c: EclipseClock, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthAbbr(c.month)}`;
+  return fmt.date(c.year, c.month, c.day, 'dayMonth');
 }

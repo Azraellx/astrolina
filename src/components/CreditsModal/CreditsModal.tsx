@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react';
 import { useT } from '../../i18n';
 import { TipButton } from '../ui/HoverTip';
 import { InfoIcon } from '../ui/InfoIcon';
+import { BindingLanguageArea } from '../ui/BindingLanguageNote';
+import { brandLang } from '../ui/brandLang';
 import { getCreditsFooter, getCreditsItems } from '../../lib/extensions/creditsFooter';
 import type { CreditsNoticeActions } from '../../lib/extensions/creditsFooter';
 import './CreditsModal.css';
@@ -281,6 +283,81 @@ function ThanksDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+// The licence and attribution rows and the footer's attribution, as a component of their own
+// (2026-10-10) so that their text is read INSIDE the BindingLanguageArea the dialog wraps them
+// in. Strings the dialog resolved at its top would reach the area already in the reader's
+// language: an English scope only reaches what reads through the hooks within it. Exported for
+// the runtime suite's static render (scripts/verify-i18n-runtime.ts §7).
+export function CreditsLicences() {
+  const { t, tAny } = useT();
+  return (
+    <>
+      {/* Two columns that may break BETWEEN ROWS, not only between groups. Whole groups
+          couldn't balance: with a build's registered rows the four groups ran 2/5/5/5
+          rows, so one column ended a third of the dialog short of the other. A heading
+          stays with its first row (CreditsModal.css). */}
+      <div className="credits-groups">
+      {CREDIT_GROUPS.map((group) => (
+        <section key={group.titleKey} className="credits-group">
+          {/* Uppercased by CSS: the brand is marked English so Turkish casing can't dot its i. */}
+          <h3>{brandLang(t(`creditsModal.groups.${group.titleKey}`))}</h3>
+          <ul>
+            {group.items.map((item) => (
+              <li key={item.name}>
+                <span className="credits-line">
+                  {item.href ? (
+                    <a href={item.href} target="_blank" rel="noopener noreferrer">
+                      {item.name}
+                    </a>
+                  ) : (
+                    <span className="credits-name">{item.name}</span>
+                  )}
+                  <span className="credits-license">{item.license}</span>
+                </span>
+                <span className="credits-note">{t(`creditsModal.notes.${item.noteKey}`)}</span>
+              </li>
+            ))}
+            {/* Rows a downstream build registered for this group (data/deps it
+                bundles that the open core doesn't ship) — same chrome. Read from the
+                catalog by key where the row names one, so it follows the area's English
+                like the rows above; otherwise its pre-localized strings, which keep the
+                reader's language. Empty in the open core. */}
+            {getCreditsItems(group.titleKey).map((item) => {
+              const name = item.nameKey ? tAny(item.nameKey) : item.name;
+              return (
+                <li key={`registered-${item.name}`}>
+                  <span className="credits-line">
+                    {item.href ? (
+                      <a href={item.href} target="_blank" rel="noopener noreferrer">
+                        {name}
+                      </a>
+                    ) : (
+                      <span className="credits-name">{name}</span>
+                    )}
+                    <span className="credits-license">{item.license}</span>
+                  </span>
+                  <span className="credits-note">{item.noteKey ? tAny(item.noteKey) : item.note}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      </div>
+
+      <footer>
+        ©&nbsp;2026{' '}
+        <a href="https://astrolina.org" target="_blank" rel="noopener noreferrer">
+          astrolina.org
+        </a>
+        {t('creditsModal.footer')}
+        {/* Optional downstream footer content (e.g. Privacy / Terms links); empty in core. */}
+        {getCreditsFooter().render?.()}
+      </footer>
+    </>
+  );
+}
+
 // A scrollable dialog of secondary copyright / license disclosures, plus
 // AstroLina's own copyright. Reuses the shared .modal-backdrop chrome.
 export function CreditsModal({
@@ -368,62 +445,18 @@ export function CreditsModal({
           )}
         </p>
 
-        {/* Two columns that may break BETWEEN ROWS, not only between groups. Whole groups
-            couldn't balance: with a build's registered rows the four groups ran 2/5/5/5
-            rows, so one column ended a third of the dialog short of the other. A heading
-            stays with its first row (CreditsModal.css). */}
-        <div className="credits-groups">
-        {CREDIT_GROUPS.map((group) => (
-          <section key={group.titleKey} className="credits-group">
-            <h3>{t(`creditsModal.groups.${group.titleKey}`)}</h3>
-            <ul>
-              {group.items.map((item) => (
-                <li key={item.name}>
-                  <span className="credits-line">
-                    {item.href ? (
-                      <a href={item.href} target="_blank" rel="noopener noreferrer">
-                        {item.name}
-                      </a>
-                    ) : (
-                      <span className="credits-name">{item.name}</span>
-                    )}
-                    <span className="credits-license">{item.license}</span>
-                  </span>
-                  <span className="credits-note">{t(`creditsModal.notes.${item.noteKey}`)}</span>
-                </li>
-              ))}
-              {/* Rows a downstream build registered for this group (data/deps it
-                  bundles that the open core doesn't ship) — same chrome; strings
-                  arrive pre-localized. Empty in the open core. */}
-              {getCreditsItems(group.titleKey).map((item) => (
-                <li key={`registered-${item.name}`}>
-                  <span className="credits-line">
-                    {item.href ? (
-                      <a href={item.href} target="_blank" rel="noopener noreferrer">
-                        {item.name}
-                      </a>
-                    ) : (
-                      <span className="credits-name">{item.name}</span>
-                    )}
-                    <span className="credits-license">{item.license}</span>
-                  </span>
-                  <span className="credits-note">{item.note}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-        </div>
-
-        <footer>
-          ©&nbsp;2026{' '}
-          <a href="https://astrolina.org" target="_blank" rel="noopener noreferrer">
-            astrolina.org
-          </a>
-          {t('creditsModal.footer')}
-          {/* Optional downstream footer content (e.g. Privacy / Terms links); empty in core. */}
-          {getCreditsFooter().render?.()}
-        </footer>
+        {/* The licence and attribution statements — every row's note, and the footer's own
+            attribution — sit in a BindingLanguageArea: a one-line notice above them in the
+            reader's language, and their English shown in place on request
+            (BindingLanguageNote, 2026-10-10). A build may override several of these lines with
+            its own licence wording; it reads through the same hooks, so the toggle reaches it
+            too. The AGPL itself, linked from the repository,
+            is English already. In English the area adds nothing. The text is read by
+            CreditsLicences, INSIDE the area: the `t` above is taken outside it, so a string
+            resolved with it here would stay in the reader's language under the toggle. */}
+        <BindingLanguageArea>
+          <CreditsLicences />
+        </BindingLanguageArea>
         </div>
       </div>
     </div>

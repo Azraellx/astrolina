@@ -57,6 +57,13 @@ export interface CreditsGroupItem {
   href?: string;
   license: string;
   note: string;
+  /** Catalog keys for `name` and `note` in a build's own registered namespace, read with
+   *  `tAny` as the dialog draws (2026-10-10). The dialog's licence rows sit in an area that can
+   *  show their English in place (BindingLanguageArea), and a string localized before the
+   *  render can't follow it; a key can. Given, the key wins; `name` and `note` stay the
+   *  fallback and the row's identity. */
+  nameKey?: string;
+  noteKey?: string;
 }
 
 const groupItems: CreditsGroupItem[] = [];

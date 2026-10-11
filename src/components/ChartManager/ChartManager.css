@@ -420,6 +420,14 @@
   color: var(--text-muted);
   margin-bottom: 12px;
 }
+/* The chart's name is the reader's own text, in whatever language they wrote it — and the
+   uppercase above casts it with the PAGE's: under Turkish (and Azeri) i → İ, so "Jim Lewis"
+   came out "JİM LEWİS". Where the page's casing differs from the default that way, the name
+   is shown as typed; everywhere else it is uppercased as before. */
+.cm-form-head-name:lang(tr),
+.cm-form-head-name:lang(az) {
+  text-transform: none;
+}
 
 /* ── Folders ────────────────────────────────────────────────────────────────
    Folder rows and chart rows share the one scrolling list, told apart by depth

@@ -2,6 +2,73 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- The page's language, declared before anything else runs (2026-10-09). A browser decides
+         whether to offer translating the page from the language the page declares as it loads,
+         so declaring it once the bundle has run (i18n/runtime.ts does, after the engine) is too
+         late: a Spanish reader in our Spanish catalog would already have been offered a machine
+         translation of it. And CSS casing needs it from the first paint — Turkish uppercase
+         gives İ only under lang="tr".
+
+         It resolves the language exactly as the runtime does: the stored choice
+         (astro:locale:v2) if it is an available language, else the browser's first language
+         that is, else English; then the tag that language is declared as. AVAILABLE and
+         DECLARED are copies, because nothing can be imported here: AVAILABLE is
+         SUPPORTED_LOCALES (i18n/catalog.ts — the languages.ts entries marked available) and
+         DECLARED is DECLARED_LANG (i18n/runtime.ts). Enabling a language means adding it to
+         AVAILABLE too; `npm run verify:lang-boot` fails until the copies agree, and runs this
+         script against the runtime to prove the two resolve alike. Both are written as JSON
+         so that check can read them. It reads storage and never writes it.
+
+         While the new languages are held for their release (i18n/languageHold.ts, 2026-10-10),
+         HELD narrows AVAILABLE to English unless this device holds the hold's unlock key, so the
+         page is declared English from the first paint, as the runtime will declare it. HELD is a
+         copy of HELD_BASE and the key a copy of UNLOCK_KEY; verify:lang-boot fails until both
+         equal them. Lifting the hold deletes HELD and its test from both copies. -->
+    <script id="lang-boot">
+      (function () {
+        var AVAILABLE = ["en", "es", "pt", "tr", "de", "ru"];
+        var DECLARED = {"pt": "pt-BR"};
+        // The release hold (i18n/languageHold.ts): held, and not unlocked on this device, English
+        // is the only language, narrowed here before anything below reads the list. Unreadable
+        // storage reads as locked, as it does in the runtime.
+        var HELD = true;
+        if (HELD) {
+          var unlocked = false;
+          try {
+            unlocked = localStorage.getItem('astro:languages-unlock:v1') === '1';
+          } catch (e) {}
+          if (!unlocked) AVAILABLE = ["en"];
+        }
+        var pick = null;
+        // Whether this device had used the app before anything after this script runs - an existing
+        // install, for the language-detected notice (i18n/runtime.ts hasOtherState). Taken here
+        // because a module may write a key of its own while it loads, which made every first visit
+        // look like a return (2026-10-09). Reads storage, never writes it.
+        try {
+          var had = false;
+          for (var k = 0; k < localStorage.length && !had; k++) {
+            var key = localStorage.key(k);
+            if (key && key.indexOf('astro:') === 0 && key !== 'astro:locale:v2') had = true;
+          }
+          window.__astroHadState = had;
+        } catch (e) {}
+        try {
+          var stored = localStorage.getItem('astro:locale:v2');
+          if (stored && AVAILABLE.indexOf(stored) >= 0) pick = stored;
+        } catch (e) {}
+        if (!pick) {
+          try {
+            var langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+            for (var i = 0; i < langs.length && !pick; i++) {
+              var base = String(langs[i] || '').toLowerCase().split('-')[0];
+              if (AVAILABLE.indexOf(base) >= 0) pick = base;
+            }
+          } catch (e) {}
+        }
+        if (!pick) pick = 'en';
+        document.documentElement.lang = Object.prototype.hasOwnProperty.call(DECLARED, pick) ? DECLARED[pick] : pick;
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon/icon.svg" />
     <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
@@ -165,7 +232,7 @@
     <div id="root">
       <div id="loading-screen">
         <div class="ls-orb"></div>
-        <div class="ls-title">AstroLina</div>
+        <div class="ls-title" lang="en">AstroLina</div>
         <div class="ls-track"><div class="ls-bar" id="ls-bar"></div></div>
         <div class="ls-status" id="ls-status">Loading…</div>
       </div>

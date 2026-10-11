@@ -25,7 +25,7 @@ import {
 } from '../../lib/astro/glyphChars';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
-import { useT } from '../../i18n';
+import { foldForSearch, useT } from '../../i18n';
 import type { Formatters, TFn } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -203,15 +203,16 @@ export function EclipseHud({
           dateText,
           kindText,
           sarosText: t('eclipseHud.saros', { n: row.saros }),
-          searchText:
-            `${row.id} ${dateText} ${bodyText} ${kindText} saros ${row.saros}`.toLowerCase(),
+          searchText: foldForSearch(
+            `${row.id} ${dateText} ${bodyText} ${kindText} saros ${row.saros}`,
+          ),
         };
       }),
     [catalog, t, fmt],
   );
   const deferredQuery = useDeferredValue(query);
   const filtered = useMemo(() => {
-    const q = deferredQuery.trim().toLowerCase();
+    const q = foldForSearch(deferredQuery.trim());
     return displayRows.filter((d) => {
       if (bodyFilter !== 'all' && d.row.body !== bodyFilter) return false;
       if (typeFilter !== 'all' && d.row.kind !== typeFilter) return false;
@@ -246,10 +247,13 @@ export function EclipseHud({
       <div className="eclipse-hud-nub" {...handleProps}>
         <span className="hud-grip" aria-hidden="true" />
         <span className="eclipse-hud-nub-label">{t('eclipseHud.title')}</span>
+        {/* Keyed by the eclipse: its date, glyph and type are several runs side by
+            side, and stepping to another eclipse remounts them rather than patching
+            runs a page translator may have replaced. (2026-10-09) */}
         {!showBody && selected && (
-          <span className="eclipse-hud-nub-sel">
+          <span className="eclipse-hud-nub-sel" key={selected.id}>
             {fmtRowDate(selected.id, fmt)} ·{' '}
-            <span className="astro-glyph" aria-hidden="true">
+            <span className="astro-glyph" translate="no" aria-hidden="true">
               {bodyGlyph(selected.body)}
             </span>{' '}
             {kindLabel(t, selected.kind)}
@@ -333,9 +337,11 @@ export function EclipseHud({
                 {selected && (
                   <span className="eclipse-hud-label">
                     <span className="eclipse-hud-name-row">
-                      <span className="eclipse-hud-name">
+                      {/* Keyed by the eclipse, as the nub's line is: ‹ › step it while
+                          it is on screen. */}
+                      <span className="eclipse-hud-name" key={selected.id}>
                         {fmtRowDate(selected.id, fmt)} ·{' '}
-                        <span className="astro-glyph" aria-hidden="true">
+                        <span className="astro-glyph" translate="no" aria-hidden="true">
                           {bodyGlyph(selected.body)}
                         </span>{' '}
                         {kindLabel(t, selected.kind)}
@@ -425,7 +431,7 @@ export function EclipseHud({
                         >
                           <span className="eclipse-hud-row-name">{d.dateText}</span>
                           <span className="eclipse-hud-row-meta">
-                            <span className="astro-glyph" aria-hidden="true">
+                            <span className="astro-glyph" translate="no" aria-hidden="true">
                               {bodyGlyph(d.row.body)}
                             </span>{' '}
                             {d.kindText} · {d.sarosText}
@@ -503,7 +509,7 @@ export function EclipseHud({
                       const c = jdToCivil(details.maxJd);
                       const p = (n: number) => String(n).padStart(2, '0');
                       return t('settings.eclipses.details.maximumValue', {
-                        date: `${c.day} ${fmt.monthName(c.month)} ${c.year}`,
+                        date: fmt.date(c.year, c.month, c.day, 'long'),
                         time: `${p(c.hour)}:${p(c.minute)}`,
                       });
                     })()}
@@ -511,24 +517,33 @@ export function EclipseHud({
                 </div>
                 <div>
                   <dt>{t('settings.eclipses.details.type')}</dt>
+                  {/* One string, not three runs: the words change with the eclipse
+                      while the panel is open, and a single string is what React can
+                      replace whole after a page translator rewrites it. (2026-10-09) */}
                   <dd>
-                    {t(`settings.eclipses.body.${details.row.body}`)}
-                    {' · '}
-                    {t(`settings.eclipses.kind.${details.row.kind}`)}
-                    {details.row.body === 'solar' &&
-                      details.row.kind !== 'partial' &&
-                      ` · ${t(
-                        details.row.central
-                          ? 'settings.eclipses.details.central'
-                          : 'settings.eclipses.details.nonCentral',
-                      )}`}
+                    {[
+                      t(`settings.eclipses.body.${details.row.body}`),
+                      t(`settings.eclipses.kind.${details.row.kind}`),
+                      details.row.body === 'solar' && details.row.kind !== 'partial'
+                        ? t(
+                            details.row.central
+                              ? 'settings.eclipses.details.central'
+                              : 'settings.eclipses.details.nonCentral',
+                          )
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </dd>
                 </div>
                 <div>
                   <dt>{t('settings.eclipses.details.sunPosition')}</dt>
+                  {/* A degree and a sign glyph, in several runs: a value, not offered
+                      to a page translator. The sign's name is in the tip. */}
                   <dd
                     ref={signRef}
                     className="eclipse-hud-degree"
+                    translate="no"
                     onMouseEnter={showSign}
                     onMouseLeave={hideSign}
                   >
@@ -538,23 +553,25 @@ export function EclipseHud({
                 {details.row.body === 'solar' ? (
                   <div>
                     <dt>{t('settings.eclipses.details.magnitude')}</dt>
-                    <dd>{formatEclipseMagnitude(details.row.magnitude)}</dd>
+                    <dd>{formatEclipseMagnitude(details.row.magnitude, fmt)}</dd>
                   </div>
                 ) : (
                   <>
                     <div>
                       <dt>{t('settings.eclipses.details.umbralMag')}</dt>
-                      <dd>{formatEclipseMagnitude(details.row.umbMag)}</dd>
+                      <dd>{formatEclipseMagnitude(details.row.umbMag, fmt)}</dd>
                     </div>
                     <div>
                       <dt>{t('settings.eclipses.details.penumbralMag')}</dt>
-                      <dd>{formatEclipseMagnitude(details.row.penMag)}</dd>
+                      <dd>{formatEclipseMagnitude(details.row.penMag, fmt)}</dd>
                     </div>
                   </>
                 )}
                 <div>
                   <dt>{t('settings.eclipses.details.gamma')}</dt>
-                  <dd>{details.row.gamma.toFixed(4)}</dd>
+                  {/* The catalog's four decimals, in the language's decimal mark (English
+                      unchanged: fmt.fixed is toFixed there). (2026-10-10) */}
+                  <dd>{fmt.fixed(details.row.gamma, 4)}</dd>
                 </div>
                 <div>
                   <dt>{t('settings.eclipses.details.hemisphere')}</dt>
@@ -585,7 +602,9 @@ export function EclipseHud({
                     {details.row.widthKm !== null && (
                       <div>
                         <dt>{t('settings.eclipses.details.width')}</dt>
-                        <dd>{details.row.widthKm} km</dd>
+                        <dd translate="no">
+                          {t('settings.eclipses.details.widthValue', { n: details.row.widthKm })}
+                        </dd>
                       </div>
                     )}
                   </>
@@ -624,7 +643,7 @@ export function EclipseHud({
                   <ul className="eclipse-hud-contacts">
                     {contacts.map((c) => (
                       <li key={`${c.aspect}-${c.planet ?? c.angle}`}>
-                        <span className="astro-glyph eclipse-hud-contact-asp">
+                        <span className="astro-glyph eclipse-hud-contact-asp" translate="no">
                           {ASPECT_GLYPHS[c.aspect]}
                         </span>
                         {/* "[aspect glyph] Conjunct [planet glyph] Venus": the aspect word
@@ -645,9 +664,10 @@ export function EclipseHud({
                             ? labels.planet(c.planet)
                             : t(`settings.eclipses.contacts.${c.angle!}`)}
                         </span>
-                        <span className="eclipse-hud-contact-orb">
-                          {Math.floor(c.orb)}°
-                          {String(Math.round((c.orb % 1) * 60)).padStart(2, '0')}′
+                        {/* The orb, as one string: a contact keyed by aspect and body can
+                            stay on screen while ‹ › change its orb. */}
+                        <span className="eclipse-hud-contact-orb" translate="no">
+                          {`${Math.floor(c.orb)}°${String(Math.round((c.orb % 1) * 60)).padStart(2, '0')}′`}
                         </span>
                       </li>
                     ))}

@@ -32,12 +32,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Place · date on one line, and where they don't fit it is the PLACE that ellipsizes: the
+   date names the day the hours below belong to, and as the line's end it was the part cut
+   ("… · 10 de outubro de 2…"). The separator keeps its two spaces (pre), so a line that
+   fits reads exactly as the single string did. */
 .ph-where {
+  display: flex;
   font-size: 11px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ph-where-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ph-where-sep,
+.ph-where-day {
+  flex: none;
+}
+.ph-where-sep {
+  white-space: pre;
 }
 
 .ph-empty {

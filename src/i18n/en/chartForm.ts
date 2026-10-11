@@ -25,6 +25,17 @@ export const chartForm = {
   },
   hour: 'Hour',
   minute: 'Minute',
+  // The greyed hints inside the empty date and time boxes, one per box: the letters a
+  // reader of this language uses for a date pattern (German writes JJJJ/TT, Spanish
+  // AAAA). Keep each as short as the English — the boxes are sized for 4 and 2
+  // characters (2026-10-09).
+  boxHint: {
+    year: 'YYYY',
+    month: 'MM',
+    day: 'DD',
+    hour: 'HH',
+    minute: 'MM',
+  },
   timeZone: 'Time zone',
   // Shown above the (disabled) moment fields when editing a composite chart.
   compositeMoment:

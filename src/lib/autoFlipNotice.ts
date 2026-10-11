@@ -24,6 +24,11 @@
 //   - A setting genuinely REWRITTEN because an action required it would be
 //     announced here too, one-way on purpose: silently undoing it later would move
 //     the map again, out of nowhere, which is the same failure one step removed.
+//   - (2026-10-09) A DERIVED value can also move with no gesture at all, because
+//     what it derives from changed outside the app: the language a reader who never
+//     chose one is shown follows their browser's, and moves when a translation into
+//     it ships. Nothing is written or held there, but the whole app changed under the
+//     reader, so it is said here too ('language-detected').
 //
 // No kind reports a rewrite now. The last two — 'line-system' (the line system set
 // to Celestial to open Local Space, Slide or a tool needing sidereal time) and
@@ -96,7 +101,35 @@ export type AutoFlipKind =
    *  says — would be false. Same setting, different fact, so a different kind with its own
    *  dismissal (CLAUDE.md rule 3; 'overlay-frame-held' says why ids are never shared).
    *  (2026-10-08) */
-  | 'theme-edits-held';
+  | 'theme-edits-held'
+  /** The app opened in the reader's BROWSER language rather than in English, because a
+   *  translation into it has shipped since their last visit (i18n/runtime detectedAtBoot).
+   *  Nothing was written and nothing is held: a reader who never chose a language has always
+   *  had the app follow their browser's where it could, and it now can. But the whole app
+   *  changed language under a returning reader with no gesture of theirs to attribute it to,
+   *  which is rule 3's case exactly — so it is said, once, and the card says where to choose.
+   *  (2026-10-09)
+   *
+   *  A flip, not a third non-flip notice (see 'line-projection'): the setting the reader
+   *  sees — the language on screen — moved on their behalf. Only its cause is outside the
+   *  app. Announced only for an install that had been used before (a first visit was never
+   *  in English, so nothing moved for it: App books the kind as seen there instead, so a
+   *  first-time reader isn't told on their second visit), and only once the new language is
+   *  actually on screen. */
+  | 'language-detected'
+  /** The reader's chosen language is one translated on their own device (`mt:fr`, the Language
+   *  menu's device section, headed "Auto-translated"), and this device can't show it: no translator
+   *  here and nothing translated before, or the model gone and only a tap may fetch it again
+   *  (i18n/runtime `machineHold`). HELD under rule 2 — the choice stays stored, the app opens in
+   *  the detected language or English, and the menu's row stays visible, greyed with its reason
+   *  — so the whole app is in another language than the one chosen, with no gesture of the
+   *  reader's to account for it. Said once for each held language (heldLanguageRecorded, below).
+   *  (2026-10-10)
+   *
+   *  Its own kind, not 'language-detected' with another sentence: that one reports a language
+   *  the reader never chose arriving; this one a language they did choose waiting. Same setting,
+   *  different fact (CLAUDE.md rule 3). */
+  | 'language-held';
 
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one
  *  edit and can't half-land. */
@@ -181,6 +214,30 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     tone: 'warn',
     once: false,
   },
+  // No target: the Language menu sits at the foot of Appearance, in a panel that is usually
+  // shut at boot — the one moment this fires — so the card keeps the neutral spot and its copy
+  // names the route instead (i18n/en/autoFlip). Warn, because the app changed something the
+  // reader didn't. NOT once-only: languages ship one after another, and a reader whose browser
+  // asks for two of them changes language twice without choosing either time — the second
+  // change is as unattributable as the first. What stops a repeat is the record of WHICH
+  // language was last announced (detectedLanguageRecorded, below), so each change is said once
+  // and a boot that finds the same language says nothing. (2026-10-09, after review: it was
+  // once-per-install, which silenced the second switch.)
+  'language-detected': {
+    targets: [],
+    tone: 'warn',
+    once: false,
+  },
+  // No target, for 'language-detected''s reason: the Language menu (where the greyed row and its
+  // reason are) is in a panel shut at boot, the moment this fires; the copy names the route.
+  // Warn: the language on screen is not the one chosen. Not once-only: a reader may choose a
+  // second device language that is held later; the record of WHICH held language was last
+  // announced (heldLanguageRecorded) stops a repeat at every boot of the same hold. (2026-10-10)
+  'language-held': {
+    targets: [],
+    tone: 'warn',
+    once: false,
+  },
 };
 
 const STORAGE_KEY = 'astro:auto-flip-seen:v1';
@@ -205,5 +262,61 @@ export function saveSuppressedFlips(suppressed: Record<string, boolean>): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(suppressed));
   } catch {
     // Ignore persistence failures (private mode, quota, etc.).
+  }
+}
+
+// The language the 'language-detected' notice last spoke for — announced to a returning
+// reader, or recorded silently on a first visit (which was never in English, so there was no
+// change to report). Bookkeeping, never a preference: it says what was already SAID, and the
+// next boot announces only a language different from it. (2026-10-09)
+const DETECTED_KEY = 'astro:language-detected:v1';
+
+export function detectedLanguageRecorded(): string | null {
+  try {
+    return localStorage.getItem(DETECTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function recordDetectedLanguage(locale: string): void {
+  try {
+    localStorage.setItem(DETECTED_KEY, locale);
+  } catch {
+    // Storage blocked: the notice may repeat on the next boot, which beats never saying it.
+  }
+}
+
+// The held device language the 'language-held' notice last spoke for ('mt:fr'). Bookkeeping like
+// the key above, never a preference, and written only when the notice is shown — never on mount:
+// it says what was already SAID, so the same hold isn't announced again at every boot, while a
+// different held language is. (2026-10-10)
+const HELD_KEY = 'astro:language-held:v1';
+
+export function heldLanguageRecorded(): string | null {
+  try {
+    return localStorage.getItem(HELD_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function recordHeldLanguage(id: string): void {
+  try {
+    localStorage.setItem(HELD_KEY, id);
+  } catch {
+    // Storage blocked: the notice may repeat on the next boot, which beats never saying it.
+  }
+}
+
+// The hold the record spoke for has ENDED (the reader chose another language, or the held one is
+// on screen), so the record goes: a later hold of the same language is a new fact and is told
+// again, not taken as already said. Removed rather than written empty, so an install whose hold
+// has passed carries no trace of it. (2026-10-10)
+export function clearHeldLanguage(): void {
+  try {
+    localStorage.removeItem(HELD_KEY);
+  } catch {
+    // Storage blocked: nothing was recorded either, so there is nothing to clear.
   }
 }

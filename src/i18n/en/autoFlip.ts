@@ -5,11 +5,12 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The auto-flip notice — shown when an action moved a setting the user hadn't asked
-// about. Every kind left here reports a HOLD, or explains a default; none reports a
-// rewrite since the line-system switch was retired (2026-10-02, lib/autoFlipNotice says
-// more). Short on purpose: the full reasoning belongs on the setting's own hover
-// tip, which is still there tomorrow, whereas this card is gone in two seconds. Say
-// what moved and the one fact that makes it follow, then stop.
+// about. Every kind left here reports a HOLD, explains a default, or (language-detected,
+// 2026-10-09) reports a derived value that moved on its own; none reports a rewrite since
+// the line-system switch was retired (2026-10-02, lib/autoFlipNotice says more). Short on
+// purpose: the full reasoning belongs on the setting's own hover tip, which is still there
+// tomorrow, whereas this card is gone in two seconds. Say what moved and the one fact that
+// makes it follow, then stop.
 //
 // Where the control LIVES is a separate question, and the answer depends on whether the
 // card can point at it. When a kind's target is on screen the card anchors beside it and
@@ -130,5 +131,47 @@ export const autoFlip = {
   'theme-edits-held': {
     title: 'Your own version is on hold',
     body: 'Your own version of this theme isn’t available right now, so its standard version is drawn instead. Nothing is cleared: yours comes back as you left it once it’s available again.',
+  },
+  // A returning reader's app has just opened in their browser's language instead of English,
+  // because a translation into it shipped since their last visit (lib/autoFlipNotice says
+  // when). Said once, in the NEW language — this pair is only ever read in a translation,
+  // never in English, so the English here is a source, not a screen. "English" in the body
+  // does mean English: the language the app used to open in, and the one most readers will
+  // want the way back to.
+  //
+  // It keeps the location clause the header describes: the Language menu sits at the foot of
+  // Appearance, in a panel that is shut at boot when this fires, so the card can't point at it
+  // and the route is the only way back. {route} IS that route — "Settings ▸ Appearance ▸
+  // Language" — built by the card from the three labels the screen itself renders
+  // (topNav.view.settings, settings.sections.appearance, settings.headings.language), so it
+  // reads exactly as the screen does in every language and under any build's override. Keep
+  // {route} once, where the sentence names the place to go; never spell the route out.
+  // (2026-10-09 — it was typed into the sentence, which only translators could keep true.)
+  //
+  // It says nothing about a setting being held or cleared, unlike its neighbours, because
+  // none was: the reader never chose a language, and the app has always followed their
+  // browser's where it could. No name of a language in the title either — "your browser's
+  // language" is the fact that explains the change.
+  'language-detected': {
+    title: 'Now in your browser’s language',
+    body: 'AstroLina now has a translation in the language your browser asks for, and opens in it. To go back to English, or choose another language, use {route}.',
+  },
+  // The reader chose a language that is translated on their own device (the Language menu's
+  // device section, headed "Auto-translated"), and this device can't do that now and has nothing
+  // translated to show — its translator switched off or gone, or the model removed — so the app has opened
+  // in its usual language instead (lib/autoFlipNotice, 2026-10-10). A HOLD, like its neighbours,
+  // and it ends the same way they do: the choice is kept, not cleared.
+  //
+  // Read in the language the app fell back to — the reader's browser language where AstroLina
+  // ships it, or English — so it can't say which of the two; "its usual language" covers both.
+  // It keeps the location clause, as 'language-detected' does and for the same reason: the menu
+  // is in a panel that is shut at boot, when this fires. {route} is that route, built from the
+  // screen's own labels — keep it once, where the sentence names the place to go.
+  //
+  // Names no browser and no translator: "translated on this device" is the whole explanation a
+  // reader needs, and it stays true wherever the feature exists.
+  'language-held': {
+    title: 'Your chosen language is on hold',
+    body: 'The language you chose is translated on this device, which isn’t possible here right now, so the app is shown in its usual language. Your choice is kept, not cleared. To choose another language, use {route}.',
   },
 } as const;

@@ -7,8 +7,10 @@
 import {
   Fragment,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -72,7 +74,18 @@ import { HoverTip } from '../ui/HoverTip';
 import { tipMaxWidthStyle } from '../ui/tipWidth';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
-import type { Locale } from '../../i18n';
+import type { LocaleId } from '../../i18n';
+import { isHeldRepick } from '../../i18n/runtime';
+import {
+  MACHINE_CANDIDATES,
+  chooseMachineLanguage,
+  machineTierOffered,
+  clearMachinePick,
+  machineAutonym,
+  refreshMachineAvailability,
+  translatorApi,
+  useMachineMenu,
+} from '../../i18n/machineMenu';
 import { useTouchLayout } from '../../lib/touch';
 import './Sidebar.css';
 
@@ -759,12 +772,53 @@ export function InfoTip({
   );
 }
 
+/** The border-box width a HintMenu panel needs to show its widest OPTION row on one line.
+ *  The rows go to max-content for one forced layout and are restored before anything
+ *  paints. Read from computed widths, not getBoundingClientRect: the panel opens with a
+ *  scale pop (ui-pop), and a scaled box measures short. Only the option rows count — a
+ *  header or note is prose meant to wrap, and would widen every menu to the window.
+ *  (2026-10-10) */
+function optionRowsWidth(panel: HTMLElement): number {
+  const rows = Array.from(panel.querySelectorAll<HTMLElement>('.navmenu-item'));
+  if (rows.length === 0) return 0;
+  // Unwrapped rows can make the list shorter for that one layout, which would clamp a
+  // scrolled list's position; it is put back with the rows.
+  const scrolled = panel.scrollTop;
+  for (const row of rows) row.style.width = 'max-content';
+  let widest = 0;
+  for (const row of rows) widest = Math.max(widest, parseFloat(getComputedStyle(row).width) || 0);
+  for (const row of rows) row.style.width = '';
+  if (panel.scrollTop !== scrolled) panel.scrollTop = scrolled;
+  const cs = getComputedStyle(panel);
+  const px = (v: string) => parseFloat(v) || 0;
+  const borders = px(cs.borderLeftWidth) + px(cs.borderRightWidth);
+  // A classic scrollbar, where the list scrolls; an overlay scrollbar (a phone's) takes none.
+  const scrollbar = Math.max(0, panel.offsetWidth - panel.clientWidth - Math.round(borders));
+  return widest + borders + px(cs.paddingLeft) + px(cs.paddingRight) + scrollbar;
+}
+
 // A dropdown for the Calc settings that mirrors the top-nav "Overlay" menu: a
 // full-width trigger showing the current value, opening a panel of option rows.
 // The panel is portaled to <body> so the sidebar's overflow can't clip it, and —
 // unlike a native <select> — each row reveals its explanation as a hover .ui-tip.
 // Exported so the timeline-bar scale picker reuses the same dropdown styling as the
 // Calc settings (rather than a separate native <select>).
+//
+// The options as runs: the loose rows before the first `section`, then one run per section
+// heading with the rows under it. Keyed by the run's first row, which is stable across renders.
+function sectionRuns<O extends { value: string; section?: string; sectionHint?: string }>(
+  options: readonly O[],
+): { key: string; section?: string; sectionHint?: string; rows: O[] }[] {
+  const runs: { key: string; section?: string; sectionHint?: string; rows: O[] }[] = [];
+  for (const o of options) {
+    const last = runs[runs.length - 1];
+    if (o.section !== undefined || !last) {
+      runs.push({ key: o.value, section: o.section, sectionHint: o.sectionHint, rows: [o] });
+    } else last.rows.push(o);
+  }
+  return runs;
+}
+
 export function HintMenu<V extends string>({
   value,
   onChange,
@@ -775,6 +829,8 @@ export function HintMenu<V extends string>({
   locked,
   triggerTip,
   listMaxHeight,
+  listMaxViewport,
+  onOpen,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -793,6 +849,15 @@ export function HintMenu<V extends string>({
      *  row — where a long list falls into kinds (the chart form's time zones:
      *  the ways in, then the named zones; 2026-10-05). */
     section?: string;
+    /** With `section`: what sets that section apart from the rows around it, shown in a tip on
+     *  an (i) after the heading (the Language menu's "Auto-translated", 2026-10-10). Headings
+     *  without one are unchanged. */
+    sectionHint?: string;
+    /** The label is a name that must reach the reader as written — a language's own
+     *  name in the Language menu — so it carries translate="no" wherever it shows (the
+     *  row, its tip, and the closed trigger while it is the value), and a page
+     *  translator leaves it alone. Its hint stays translatable. (2026-10-09) */
+    noTranslate?: boolean;
   }[];
   /** A line above the options naming the question they answer. Static text, not a
    *  selectable row — use it where the option labels alone don't say what is being
@@ -823,6 +888,14 @@ export function HintMenu<V extends string>({
    *  a native select and scrolls. Without one the list is capped only by the
    *  window, as before. */
   listMaxHeight?: number;
+  /** The same cap as a fraction of the window's height, re-read on every resize, for a list
+   *  that should scroll rather than run the full height of the window (the Language menu: half,
+   *  2026-10-10). The tighter of the two caps wins. */
+  listMaxViewport?: number;
+  /** Called each time the panel opens — for a menu whose rows are worth re-checking at that
+   *  moment (the Language menu asks the device which languages it can translate into;
+   *  2026-10-10). */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -848,14 +921,21 @@ export function HintMenu<V extends string>({
 
   useLayoutEffect(() => {
     if (!open) return;
+    // The widest option row (optionRowsWidth), re-measured whenever the panel's size or the
+    // window's changes; a scroll re-pins with the last measure, since scrolling the sidebar
+    // can't change a row's width. (2026-10-10)
+    let rowsWidth = 0;
     // The panel re-measures and re-places below before the browser paints, so a
     // reopen never shows a stale position even though `box` keeps its last value.
-    const place = () => {
+    const place = (remeasure: boolean) => {
       const r = triggerRef.current?.getBoundingClientRect();
       if (!r) return;
       const margin = 8; // keep this clear of the viewport edges
       const gap = 6; // gap between the trigger and the panel
       const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      // Before the height is read below — the measure puts every row back as it found it.
+      if (remeasure && panelRef.current) rowsWidth = optionRowsWidth(panelRef.current);
       // The panel is mounted (hidden) before this layout effect runs, so its real
       // height is available on the very first open. Measure the FULL outer height:
       // scrollHeight is content + padding but EXCLUDES the border, and the panel is
@@ -868,12 +948,29 @@ export function HintMenu<V extends string>({
         ? el.scrollHeight + (el.offsetHeight - el.clientHeight) + 1
         : 240;
       // Never taller than the viewport (minus margins), nor than the caller's
-      // cap; it scrolls past that.
-      const height = Math.min(panelH, vh - margin * 2, listMaxHeight ?? Infinity);
-      // Rows wider than the trigger widen the panel rightward from its left edge;
-      // past the window's right margin they wrap instead (a phone-width form,
-      // whose trigger already spans the width).
-      const maxWidth = Math.max(r.width, window.innerWidth - r.left - margin);
+      // caps; it scrolls past that.
+      const height = Math.min(
+        panelH,
+        vh - margin * 2,
+        listMaxHeight ?? Infinity,
+        listMaxViewport ? Math.floor(vh * listMaxViewport) : Infinity,
+      );
+      // Rows wider than the trigger widen the panel rightward from its left edge, up to
+      // the window's right margin. Every menu whose rows fit there opens exactly so.
+      let left = r.left;
+      let maxWidth = Math.max(r.width, vw - r.left - margin);
+      // A row that would still wrap may widen the panel further, to the widest row, up to
+      // the window less both margins, sliding left to stay on screen. On a phone the
+      // sidebar column is ~171px and "Siderisch · Fagan/Bradley" wrapped to two lines
+      // against the window's edge. Only when that gains room: a phone-width form whose
+      // trigger already spans the width keeps wrapping as before. The pixel of slack
+      // absorbs the scrollbar's whole-pixel rounding in the measure, so a row that fits
+      // today never moves its panel. (2026-10-10)
+      const room = vw - margin * 2;
+      if (rowsWidth > maxWidth + 1 && room > maxWidth) {
+        maxWidth = Math.min(Math.ceil(rowsWidth) + 1, room);
+        left = Math.max(margin, Math.min(r.left, vw - margin - maxWidth));
+      }
       const spaceBelow = vh - r.bottom - gap - margin;
       const spaceAbove = r.top - gap - margin;
       let top: number;
@@ -890,20 +987,21 @@ export function HintMenu<V extends string>({
       // ping-pong with its own re-render.
       setBox((prev) =>
         prev &&
-        prev.left === r.left &&
+        prev.left === left &&
         prev.width === r.width &&
         prev.top === top &&
         prev.maxHeight === height &&
         prev.maxWidth === maxWidth
           ? prev
-          : { left: r.left, width: r.width, top, maxHeight: height, maxWidth },
+          : { left, width: r.width, top, maxHeight: height, maxWidth },
       );
     };
-    place();
+    const replace = () => place(true);
+    replace();
     // Re-measure if the panel's own size settles after mount (e.g. fallback fonts
     // for non-Latin labels loading in).
     const panel = panelRef.current;
-    const ro = panel ? new ResizeObserver(place) : null;
+    const ro = panel ? new ResizeObserver(replace) : null;
     if (panel) ro?.observe(panel);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -924,20 +1022,20 @@ export function HintMenu<V extends string>({
     // made the panel visibly jump and the scrollbar flicker.
     const onScroll = (e: Event) => {
       if (panel && e.target instanceof Node && panel.contains(e.target)) return;
-      place();
+      place(false);
     };
     window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', place);
+    window.addEventListener('resize', replace);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey, true);
     return () => {
       ro?.disconnect();
       window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', place);
+      window.removeEventListener('resize', replace);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [open, listMaxHeight]);
+  }, [open, listMaxHeight, listMaxViewport]);
 
   // A list long enough to scroll opens on the chosen row, centred, as a native
   // select does — not at the top, a scroll away from what is chosen. Once per
@@ -971,7 +1069,8 @@ export function HintMenu<V extends string>({
             nudgeAction(); // tier-locked teaser → the account/upgrade flow
             return;
           }
-          setOpen((v) => !v);
+          if (!open) onOpen?.();
+          setOpen(!open);
         }}
         onMouseEnter={() => {
           if (triggerTip && !open) tipShow();
@@ -986,11 +1085,15 @@ export function HintMenu<V extends string>({
       >
         <span className="calc-menu-value">
           {current?.glyph && (
-            <span className="astro-glyph hintmenu-glyph" aria-hidden="true">
+            <span className="astro-glyph hintmenu-glyph" translate="no" aria-hidden="true">
               {current.glyph}
             </span>
           )}
-          {current?.label ?? ''}
+          {/* The label in a box of its own: it changes on every pick while the trigger
+              is on screen, and beside the optional glyph it was a bare text run — the
+              shape a page translator's rewrite freezes. Alone in a span it is one
+              string, which React replaces whole. (2026-10-09) */}
+          <span translate={current?.noTranslate ? 'no' : undefined}>{current?.label ?? ''}</span>
         </span>
         {/* The nav menus' tier badge, on the trigger — nothing for the baseline
             tier, or a gated tier whose downstream label is unset. */}
@@ -1035,15 +1138,21 @@ export function HintMenu<V extends string>({
                 the arc is being applied to — which is exactly what one shared menu used
                 to make them do. */}
             {header && <span className="navmenu-header">{header}</span>}
-            {options.map((o) => (
-              <Fragment key={o.value}>
-                {o.section && <span className="navmenu-header is-section">{o.section}</span>}
+            {/* A section is one block: its heading and its rows together, set off by a tint,
+                with the heading pinned while its rows scroll under it. As a bare line between
+                two runs of rows, a heading read as a divider, and which side it named was a
+                guess (the Language menu's on-device section, 2026-10-10). The rows before the
+                first heading stay loose, as before. */}
+            {sectionRuns(options).map((run) => {
+              const rows = run.rows.map((o) => (
                 <HintMenuItem
+                  key={o.value}
                   label={o.label}
                   hint={o.hint}
                   glyph={o.glyph}
                   disabled={o.disabled}
                   disabledHint={o.disabledHint}
+                  noTranslate={o.noTranslate}
                   selected={o.value === value}
                   onSelect={() => {
                     if (o.disabled) return;
@@ -1051,13 +1160,118 @@ export function HintMenu<V extends string>({
                     setOpen(false);
                   }}
                 />
-              </Fragment>
-            ))}
+              ));
+              return run.section === undefined ? (
+                <Fragment key={run.key}>{rows}</Fragment>
+              ) : (
+                <HintMenuSection key={run.key} label={run.section} hint={run.sectionHint}>
+                  {rows}
+                </HintMenuSection>
+              );
+            })}
             {note && <span className="navmenu-hint">{note}</span>}
           </div>,
           document.body,
         )}
     </div>
+  );
+}
+
+// One section block of a HintMenu: its heading and its rows, as one tinted group. A heading
+// without a hint is exactly what it was — a visual label hidden from assistive tech, the group
+// named by aria-label. With a hint (2026-10-10) the heading is read as the group's label instead
+// (aria-labelledby), and carries an (i) — see HintMenuSectionHeading.
+function HintMenuSection({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  const labelId = useId();
+  return hint ? (
+    <div className="navmenu-section" role="group" aria-labelledby={labelId}>
+      <HintMenuSectionHeading labelId={labelId} label={label} hint={hint} />
+      {children}
+    </div>
+  ) : (
+    <div className="navmenu-section" role="group" aria-label={label}>
+      <span className="navmenu-header is-section" aria-hidden="true">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+// A section heading that says what sets its section apart, in a tip on an (i) right after its
+// words (the Language menu's "Auto-translated": which languages ship and which the device
+// translates, which the heading alone left readers unable to tell; 2026-10-10). The settings
+// panel's info tip (InfoTip: the .orb-info mark, the same ChoiceTip card and its width rule), as a
+// button inside the pinned heading, so it stays reachable while the rows scroll.
+//
+// The tip is anchored on the HEADING, not the icon, and opens to its left: the card then sits
+// where every row's tip does, beside the panel at that row's height, instead of over the heading
+// it explains. Touch binds to the heading too (tapReveal), so a tap anywhere on that short line
+// opens the tip and a second tap closes it — the icon alone is a 12px target. Hover and focus
+// stay on the icon. Nothing here selects a row or closes the menu: a press inside the panel is
+// not an outside press, the heading is not an option, and the kernel swallows a tap's click.
+function HintMenuSectionHeading({
+  labelId,
+  label,
+  hint,
+}: {
+  labelId: string;
+  label: string;
+  hint: string;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>('left', { tapReveal: true });
+  // Touch is the heading's kernel alone (2026-10-10). The kernel opens and closes on the heading,
+  // but the icon's own hover and focus handlers sit on a smaller element, so a tap reached them
+  // too: the mouse a tap emulates leaving the icon, or the icon losing the focus a tap gave it,
+  // hid a tip the kernel still counted open — after closing it from the icon, a tap on the words
+  // took two more to show it. So the icon hears hover only from a real pointer, and a press on the
+  // heading moves no focus (Android focuses a tapped button); keyboard focus is untouched.
+  const fromPointer = (fn: () => void) => (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'touch') fn();
+  };
+  return (
+    <span
+      ref={ref}
+      className="navmenu-header is-section"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <span id={labelId}>{label}</span>
+      {/* Named by the explanation itself: the card is aria-hidden, like every tip card, so the
+          button's name is how a screen reader hears it. */}
+      <button
+        type="button"
+        className="orb-info navmenu-section-info"
+        aria-label={hint}
+        onPointerEnter={fromPointer(show)}
+        onPointerLeave={fromPointer(hide)}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6" />
+          <path d="M12 7.5v.5" />
+        </svg>
+      </button>
+      <ChoiceTip pos={pos} title={label} hint={hint} />
+    </span>
   );
 }
 
@@ -1070,12 +1284,15 @@ function HintMenuItem({
   onSelect,
   disabled = false,
   disabledHint,
+  noTranslate = false,
 }: {
   label: string;
   hint: string;
   glyph?: string;
   selected: boolean;
   onSelect: () => void;
+  /** See HintMenu's option `noTranslate`. */
+  noTranslate?: boolean;
   /** A listed-but-unavailable option: grayed, non-selecting, but still shows its tip
    *  on hover (so we use aria-disabled, not the native `disabled` attribute, which
    *  would suppress the pointer events the tip needs). */
@@ -1101,21 +1318,155 @@ function HintMenuItem({
     >
       <span className="navmenu-marker">{selected ? '●' : '○'}</span>
       {glyph && (
-        <span className="astro-glyph hintmenu-glyph" aria-hidden="true">
+        <span className="astro-glyph hintmenu-glyph" translate="no" aria-hidden="true">
           {glyph}
         </span>
       )}
-      <span>{label}</span>
+      <span translate={noTranslate ? 'no' : undefined}>{label}</span>
       {hint && (
         <ChoiceTip
           pos={pos}
-          title={label}
+          title={noTranslate ? <span translate="no">{label}</span> : label}
           hint={hint}
           note={disabled ? disabledHint : undefined}
           unavailable={disabled && !!disabledHint}
         />
       )}
     </button>
+  );
+}
+
+// Appearance ▸ Language. The languages this app ships first, each by its own name, which a page
+// translator must leave as written — "Deutsch" rendered as "German" is no use to the reader
+// looking for it (noTranslate); the ones without a shipped catalog are greyed with a tip.
+//
+// Then, where the device can translate, a section "Auto-translated" (2026-10-10,
+// i18n/machineMenu): languages this app doesn't ship, translated from English on the reader's own
+// device. Its heading carries an (i) whose tip says what sets the two sections apart (renamed from
+// "Translated on this device" the same day, which readers couldn't tell from the section above
+// it); what choosing a row involves stays in each row's own tip.
+//
+// A component of its own so that mounting it IS the Language section opening: the device is asked
+// which languages it can translate into then, and again whenever the menu opens — never at boot. A row is listed only when the device can do it, except the reader's own device choice,
+// which always is: held (no translator here and nothing cached — CLAUDE.md rule 2), it stays
+// visible, greyed, with its reason, while the language actually shown carries the mark, as a held
+// choice does everywhere. Choosing a row starts its translator INSIDE the click (machineMenu says
+// why); the line under the menu shows the download and the translating, and once a device language
+// is on screen, the disclosure that it is machine-translated.
+//
+// While the release hold stands (i18n/languageHold.ts, 2026-10-10) the shipped rows grey
+// themselves — languages.ts masks their `available`, and they read "Coming soon" as they did
+// before the catalogs shipped — and the device section is not offered at all (machineTierOffered):
+// no heading, no candidates, and no row kept for a stored `mt:` choice, which the runtime masks to
+// English in silence. The marked row is then English, standing in for the reader's choice, and a
+// click on it stores nothing (runtime.ts setLocale refuses writes while held).
+function LanguageMenu() {
+  const { t, locale, pref, machineHold, setLocale } = useT();
+  const machine = useMachineMenu();
+  const deviceOffered = machineTierOffered();
+  const deviceCanTranslate = deviceOffered && translatorApi() !== null;
+  useEffect(() => {
+    void refreshMachineAvailability();
+  }, []);
+
+  const shipped = LANGUAGES.map((lang) => ({
+    value: lang.code,
+    label: lang.autonym,
+    hint: lang.available ? '' : t('settings.languageUnavailable'),
+    disabled: !lang.available,
+    noTranslate: true,
+  }));
+
+  const shownLang = locale.startsWith('mt:') ? locale.slice(3) : null;
+  const prefLang = pref?.startsWith('mt:') ? pref.slice(3) : null;
+  const listed = new Set<string>();
+  if (deviceCanTranslate) {
+    for (const c of MACHINE_CANDIDATES) {
+      const a = machine.availability[c.lang];
+      if (a && a !== 'unavailable') listed.add(c.lang);
+    }
+  }
+  if (deviceOffered && shownLang) listed.add(shownLang);
+  if (deviceOffered && prefLang) listed.add(prefLang);
+  const ordered = [
+    ...MACHINE_CANDIDATES.map((c) => c.lang).filter((l) => listed.has(l)),
+    ...[...listed].filter((l) => !MACHINE_CANDIDATES.some((c) => c.lang === l)),
+  ];
+  const device = ordered.map((lang, i) => {
+    const held = machineHold?.lang === lang ? machineHold : null;
+    const mode = machine.session?.lang === lang && shownLang === lang ? machine.session.mode : null;
+    const availability = machine.availability[lang];
+    let hint: string = t('settings.machine.hint');
+    let disabledHint: string | undefined;
+    if (held?.reason === 'needs-download') {
+      hint = t('settings.machine.heldDownloadHint'); // a tap downloads it: the row stays live
+    } else if (held) {
+      disabledHint = t('settings.machine.heldHint');
+    } else if (mode === 'partial') {
+      hint = t('settings.machine.partialHint');
+    } else if (mode === 'cache' || (shownLang === lang && !deviceCanTranslate)) {
+      disabledHint = t('settings.machine.cacheHint');
+    } else if (availability === 'downloadable' || availability === 'downloading') {
+      hint = t('settings.machine.downloadHint');
+    }
+    return {
+      value: `mt:${lang}`,
+      label: machineAutonym(lang),
+      hint,
+      disabled: disabledHint !== undefined,
+      disabledHint,
+      noTranslate: true,
+      section: i === 0 ? t('settings.machine.section') : undefined,
+      sectionHint: i === 0 ? t('settings.machine.sectionHint') : undefined,
+    };
+  });
+
+  const pick = machine.pick;
+  const pickLanguage = pick ? machineAutonym(pick.lang) : '';
+  // A language the device reported 'available' has nothing to download: its pick opens already
+  // translating and ignores progress events (machineMenu chooseMachineLanguage owns that, so the
+  // line never flashes "Downloading… 0%" for a download that isn't happening). (2026-10-10)
+  const phase = pick?.phase;
+  const status = !pick
+    ? null
+    : phase === 'download'
+      ? t('settings.machine.downloading', { language: pickLanguage, percent: Math.round((pick.loaded ?? 0) * 100) })
+      : phase === 'translate'
+        ? t('settings.machine.translating', { language: pickLanguage })
+        : t('settings.machine.failed', { language: pickLanguage });
+
+  return (
+    <>
+      <HintMenu<string>
+        value={locale}
+        onChange={(code) => {
+          // While a device language is held, the marked row is the language standing in for
+          // it — a derived value — and this menu reports a re-pick of the marked row like any
+          // other. Storing it would overwrite the reader's real choice with its stand-in, so
+          // that one click is refused (CLAUDE.md rule 2, 2026-10-10); every other row is a
+          // real choice and goes through.
+          if (isHeldRepick(code)) return;
+          if (code.startsWith('mt:')) chooseMachineLanguage(code.slice(3));
+          else void setLocale(code as LocaleId);
+        }}
+        onOpen={() => {
+          clearMachinePick();
+          void refreshMachineAvailability();
+        }}
+        // Half the window at most (2026-10-10): with the device section the list runs to some
+        // thirty rows, and filled the window top to bottom. It scrolls instead, opening on the
+        // marked row.
+        listMaxViewport={0.5}
+        options={[...shipped, ...device]}
+      />
+      {/* One string child each: the progress line rewrites itself while it is on screen. */}
+      {status && (
+        <p className="language-note" role="status">
+          {status}
+        </p>
+      )}
+      {shownLang && <p className="language-note">{t('settings.machine.disclosure')}</p>}
+    </>
   );
 }
 
@@ -1139,9 +1490,15 @@ export function UnitToggle({
   return (
     <span className="orb-unit-toggle" role="group" aria-label={label}>
       {(['km', 'mi'] as const).map((u) => (
+        // lang="en" on each segment: "km"/"mi" are English unit symbols, and the CSS
+        // uppercases them by the element's language — under Turkish "mi" became "Mİ" (a
+        // dotted capital I). Marked English they read "KM"/"MI" in every language, and a
+        // screen reader voices the symbols as English. On the segments, not the group, so
+        // the group's translated aria-label keeps the page's language. (2026-10-10)
         <button
           key={u}
           type="button"
+          lang="en"
           className={`orb-unit-opt${unit === u ? ' on' : ''}`}
           aria-pressed={unit === u}
           onClick={() => onChange(u)}
@@ -1203,7 +1560,7 @@ export function StepperField({
       ) : (
         <label className="calc-user-rate-label" htmlFor={id}>
           {glyph && (
-            <span className="astro-glyph orb-field-glyph" aria-hidden="true">
+            <span className="astro-glyph orb-field-glyph" translate="no" aria-hidden="true">
               {glyph}
             </span>
           )}
@@ -1446,7 +1803,7 @@ export function Sidebar({
   closing,
   onSlideOutEnd,
 }: SidebarProps) {
-  const { t, labels, locale, setLocale } = useT();
+  const { t, labels } = useT();
   const discreet = useDiscreet();
   const touch = useTouchLayout();
   // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
@@ -1460,14 +1817,6 @@ export function Sidebar({
     value,
     label: labels.houseSystem(value),
     hint: labels.houseSystemHint(value),
-  }));
-  // The Language dropdown lists the top astrology-community languages; only the ones
-  // with a catalog (English today) are selectable — the rest are grayed with a tip.
-  const languageOptions = LANGUAGES.map((lang) => ({
-    value: lang.code,
-    label: lang.autonym,
-    hint: lang.available ? '' : t('settings.languageUnavailable'),
-    disabled: !lang.available,
   }));
   const toggleSection = (s: SidebarSection) =>
     setOpenSection(openSection === s ? null : s);
@@ -1599,7 +1948,7 @@ export function Sidebar({
       }}
     >
       {touch && (
-        <button type="button" className="sidebar-close" onClick={() => onClose?.()} aria-label="Close settings">
+        <button type="button" className="sidebar-close" onClick={() => onClose?.()} aria-label={t('settings.dock.close')}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
@@ -1820,11 +2169,7 @@ export function Sidebar({
 
           {/* Language sits last, below the map-facing detail + projection controls. */}
           <h2>{t('settings.headings.language')}</h2>
-          <HintMenu<string>
-            value={locale}
-            onChange={(code) => setLocale(code as Locale)}
-            options={languageOptions}
-          />
+          <LanguageMenu />
         </div>
       )}
 

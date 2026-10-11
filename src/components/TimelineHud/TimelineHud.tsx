@@ -42,6 +42,7 @@ import { ClickIcon } from '../ui/ClickIcon';
 import { HintMenu, InfoTip, StepperField } from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { useT } from '../../i18n';
+import type { Formatters } from '../../i18n';
 import './TimelineHud.css';
 
 // Active map location state, shared with the map edge-glow — drives the HUD
@@ -219,18 +220,20 @@ const RULER_PX: Record<TimeUnit, number> = {
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-// `label` is the compact symbol shown in the step box; `unit` is the base unit's full
-// key, used for the spelled-out word in the transport tooltips (timeline.stepWords.*).
+// `unit` is the base unit's key: it picks the compact symbol shown in the step box
+// (timeline.stepSymbol.*, given the box's count since 2026-10-09 — it was a literal
+// 'min'/'h'/'d'/'mo' here) and the spelled-out word in the transport tooltips
+// (timeline.stepWords.*).
 const STEP_UNIT: Record<
   TimeUnit,
-  { count: number; baseMs: number; label: string; unit: TimeUnit }
+  { count: number; baseMs: number; unit: 'minute' | 'hour' | 'day' | 'month' }
 > = {
-  minute: { count: 1, baseMs: MIN_MS, label: 'min', unit: 'minute' },
-  hour: { count: 10, baseMs: MIN_MS, label: 'min', unit: 'minute' },
-  day: { count: 6, baseMs: HOUR_MS, label: 'h', unit: 'hour' },
-  week: { count: 1, baseMs: DAY_MS, label: 'd', unit: 'day' },
-  month: { count: 5, baseMs: DAY_MS, label: 'd', unit: 'day' },
-  year: { count: 1, baseMs: 30 * DAY_MS, label: 'mo', unit: 'month' },
+  minute: { count: 1, baseMs: MIN_MS, unit: 'minute' },
+  hour: { count: 10, baseMs: MIN_MS, unit: 'minute' },
+  day: { count: 6, baseMs: HOUR_MS, unit: 'hour' },
+  week: { count: 1, baseMs: DAY_MS, unit: 'day' },
+  month: { count: 5, baseMs: DAY_MS, unit: 'day' },
+  year: { count: 1, baseMs: 30 * DAY_MS, unit: 'month' },
 };
 
 const YEAR_MS = 365.2425 * 86_400_000;
@@ -240,20 +243,95 @@ function pad2(n: number): string {
 }
 
 // Label for a major (labeled) notch, formatted to suit the granularity. Month names
-// come from the active locale (fmt.monthAbbr), passed in since this isn't a component.
-function fmtTick(
-  ms: number,
-  unit: TimeUnit,
-  monthAbbr: (month1to12: number) => string,
-): string {
+// come from the active locale (fmt), passed in since this isn't a component. A day
+// notch is a date, so the language writes it (fmt.date's 'dayMonth': "14 Mar" in
+// English, the day and month in that language's order elsewhere); the month notch's
+// "Mar ’90" is a compact ruler mark rather than a date anyone writes, and keeps its
+// shape. (2026-10-09)
+function fmtTick(ms: number, unit: TimeUnit, fmt: Formatters): string {
   const d = new Date(ms);
   if (unit === 'minute')
     return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   if (unit === 'hour') return `${pad2(d.getUTCHours())}:00`;
   if (unit === 'year') return String(d.getUTCFullYear());
   if (unit === 'month')
-    return `${monthAbbr(d.getUTCMonth() + 1)} ’${String(d.getUTCFullYear()).slice(2)}`;
-  return `${d.getUTCDate()} ${monthAbbr(d.getUTCMonth() + 1)}`;
+    return `${fmt.monthAbbr(d.getUTCMonth() + 1)} ’${String(d.getUTCFullYear()).slice(2)}`;
+  return fmt.date(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 'dayMonth');
+}
+
+// The date button's readout split for its two fixed-width boxes (.thud-date-day and
+// -mon; see the comment where it is built). The language's formatter decides the order
+// — English and most of Europe lead with the day, other languages with the year — so
+// nothing here assumes a shape. The month is the stretch of the text that differs
+// between this date and the same day of every other month that has one (a 31st is only
+// compared with the months that have a 31st, or the date would roll over); the day is
+// the run of digits, outside it, that reads as the day. Either may not be found (a
+// language that writes the month as a number, say), and that piece then goes unboxed:
+// the readout loses only its steadiness while scrubbing, never a character. In English
+// the pieces are "14", " ", "Mar", " 1990" — the readout's DOM before 2026-10-09, span
+// for span.
+//
+// The bar re-renders on every drag frame and playback tick, and the date seldom changes
+// between two of them, so the last answer is kept (keyed on the formatter, which changes
+// with the language, and the date). A cache rather than useMemo: this component leaves its
+// memoising to the React Compiler, which a manual memo here makes bail (see tzPlace).
+type DatePiece = { text: string; box?: 'day' | 'mon' };
+let lastDatePieces: { fmt: Formatters; key: string; pieces: DatePiece[] } | null = null;
+function datePieces(fmt: Formatters, y: number, m: number, d: number): DatePiece[] {
+  const key = `${y}-${m}-${d}`;
+  if (lastDatePieces?.fmt === fmt && lastDatePieces.key === key) return lastDatePieces.pieces;
+  const pieces = splitDate(fmt, y, m, d);
+  lastDatePieces = { fmt, key, pieces };
+  return pieces;
+}
+function splitDate(fmt: Formatters, y: number, m: number, d: number): DatePiece[] {
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const daysIn = (k: number) => (k === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(k) ? 30 : 31);
+  const own = fmt.date(y, m, d, 'medium');
+  let lo = own.length;
+  let hi = own.length;
+  for (let k = 1; k <= 12; k++) {
+    if (k === m || daysIn(k) < d) continue;
+    const other = fmt.date(y, k, d, 'medium');
+    let p = 0;
+    while (p < own.length && own[p] === other[p]) p++;
+    let s = 0;
+    while (s < own.length - p && own[own.length - 1 - s] === other[other.length - 1 - s]) s++;
+    lo = Math.min(lo, p);
+    hi = Math.min(hi, s);
+  }
+  let monStart = lo;
+  let monEnd = own.length - hi;
+  // A trailing mark every month shares ("mar." in Portuguese) stays with its month,
+  // rather than sitting half the box's slack away from it.
+  while (monEnd < own.length && !/[\s\d]/.test(own[monEnd])) monEnd++;
+  if (monEnd <= monStart) monStart = monEnd = -1;
+
+  const pieces: DatePiece[] = [];
+  const day = String(d);
+  let dayBoxed = false;
+  // Plain text, with the day boxed in it the first time a whole digit run reads as it.
+  const pushText = (seg: string) => {
+    if (!dayBoxed) {
+      for (const run of seg.matchAll(/\d+/g)) {
+        if (run[0] !== day || run.index === undefined) continue;
+        if (run.index > 0) pieces.push({ text: seg.slice(0, run.index) });
+        pieces.push({ text: day, box: 'day' });
+        dayBoxed = true;
+        seg = seg.slice(run.index + day.length);
+        break;
+      }
+    }
+    if (seg) pieces.push({ text: seg });
+  };
+  if (monStart < 0) {
+    pushText(own);
+  } else {
+    pushText(own.slice(0, monStart));
+    pieces.push({ text: own.slice(monStart, monEnd), box: 'mon' });
+    pushText(own.slice(monEnd));
+  }
+  return pieces;
 }
 
 // A compass-style ruler scrubber: a fixed center needle with a grid of notches
@@ -314,7 +392,7 @@ function TimeRuler({
     ticks.push({
       x,
       isMajor,
-      label: isMajor ? fmtTick(tickValue, unit, fmt.monthAbbr) : null,
+      label: isMajor ? fmtTick(tickValue, unit, fmt) : null,
     });
   }
 
@@ -356,7 +434,13 @@ function TimeRuler({
           className={`thud-tick ${t.isMajor ? 'major' : ''}`}
           style={{ left: `${t.x}px` }}
         >
-          {t.label && <span className="thud-tick-label">{t.label}</span>}
+          {/* A pure value that scrolls past on every drag frame: a page translator
+              that rewrote it would be overwritten again at once, so it isn't offered. */}
+          {t.label && (
+            <span className="thud-tick-label" translate="no">
+              {t.label}
+            </span>
+          )}
         </div>
       ))}
       <div className="thud-needle" />
@@ -561,10 +645,22 @@ export function TimelineHud({
   // BOTH its edges by half a character under the cursor. It gets a two-digit box
   // rather than a zero-pad, so the reading stays "5 Jun" while the geometry stays
   // "15 Jun" — see .thud-date-day, exact because the readout is tabular-nums.
+  //
+  // The date itself is the language's (fmt.date 'medium', then the clock), and datePieces
+  // finds the day and the month in whatever order that language writes them, so the boxes
+  // hold in every language — in English the text and its spans are what they always were.
+  // The button carries translate="no": the readout changes every playback tick, and a page
+  // translator's rewrite of a run that React then writes into is frozen on screen. (2026-10-09)
   const disp = wallClockAt(targetDate, tzZone);
-  const dateDay = disp.day;
-  const dateMon = fmt.monthAbbr(disp.month);
-  const dateRest = ` ${disp.year}, ${pad2(disp.hour)}:${pad2(disp.minute)}`;
+  const dateParts = datePieces(fmt, disp.year, disp.month, disp.day);
+  const clockText = `, ${pad2(disp.hour)}:${pad2(disp.minute)}`;
+  // The clock joins the last run of plain text rather than following it as a run of its
+  // own, so the English readout keeps its one trailing text node (" 1990, 12:00").
+  const lastPart = dateParts[dateParts.length - 1];
+  const dateReadout: DatePiece[] =
+    lastPart && !lastPart.box
+      ? [...dateParts.slice(0, -1), { text: lastPart.text + clockText }]
+      : [...dateParts, { text: clockText }];
   // The bar shows the zone's ABBREVIATION alone — "EDT" — and its tip carries the rest:
   // the shared format's "EDT (UTC−04:00)" as the headline and, in the hint, whose clock it
   // is. The full "EDT (UTC−04:00) · Toronto" made the shrink-to-fit bar too wide and read
@@ -594,7 +690,7 @@ export function TimelineHud({
   const holdDate = (() => {
     if (!returnHold) return null;
     const d = new Date(returnHold.ms + offsetMs);
-    return `${d.getUTCDate()} ${fmt.monthAbbr(d.getUTCMonth() + 1)} ${d.getUTCFullYear()}`;
+    return fmt.date(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 'medium');
   })();
 
   // Step increment: defaults to the scale's mini-notch (count × baseMs), but the
@@ -621,9 +717,10 @@ export function TimelineHud({
   // — its state is already clear from the date field.
   const readout = overlayMeasure;
   // The spelled-out base unit for the transport tooltips ("Step forward 5 days" /
-  // "1 month"), pluralized by the count — the compact step box keeps the symbol.
+  // "1 month"), pluralized by the count — the compact step box keeps the symbol. The catalog
+  // picks the form (an ICU plural), so a language with more than two forms can give them.
   const stepWord = (n: number) =>
-    t(`timeline.stepWords.${stepBase.unit}.${n === 1 ? 'one' : 'other'}`);
+    t(`timeline.stepWords.${stepBase.unit}` as 'timeline.stepWords.minute', { n });
   const modeLabel =
     overlayMode in NUB_LABEL_KEY
       ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
@@ -682,7 +779,7 @@ export function TimelineHud({
         tip={t(`timeline.returns.${body}.snap`)}
         hint={reframeHint}
       >
-        <span className="astro-glyph" aria-hidden="true">
+        <span className="astro-glyph" translate="no" aria-hidden="true">
           {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
         </span>
         {t(`timeline.returns.${body}.name`)}
@@ -909,17 +1006,23 @@ export function TimelineHud({
             one day off the return the chip is named for. */}
         {returnHold && (
           <span className="thud-return-chip">
+            {/* Keyed by the body: a solar hold that becomes a lunar one remounts its
+                words rather than patching a text run a page translator may have
+                replaced. The date beside them is a pure value, not offered to one. */}
             <TipSpan
+              key={returnHold.body}
               className="thud-return-chip-name"
               placement="top"
               tip={t('timeline.returns.chip.tip')}
               hint={t('timeline.returns.chip.hint')}
             >
-              <span className="astro-glyph" aria-hidden="true">
+              <span className="astro-glyph" translate="no" aria-hidden="true">
                 {PLANET_GLYPHS[returnHold.body === 'solar' ? 'Sun' : 'Moon']}
               </span>
               {t(`timeline.returns.chip.${returnHold.body}`)}
-              <span className="thud-return-chip-date">{holdDate}</span>
+              <span className="thud-return-chip-date" translate="no">
+                {holdDate}
+              </span>
             </TipSpan>
             {/* stopPropagation on pointerdown: the nub around this is the bar's drag
                 handle, so without it a click on the ✕ starts a drag (the same reason the
@@ -1060,7 +1163,7 @@ export function TimelineHud({
           <TipSpan
             className="thud-stepsize"
             placement="top"
-            tip={t('timeline.transport.stepAmount', { unit: stepWord(2) })}
+            tip={t(`timeline.transport.stepAmountIn.${stepBase.unit}`)}
           >
             <input
               type="number"
@@ -1069,9 +1172,11 @@ export function TimelineHud({
               step={1}
               value={Number.isFinite(stepCount) ? stepCount : ''}
               onChange={(e) => setStepCount(e.target.valueAsNumber)}
-              aria-label={t('timeline.transport.stepAmountAria', { unit: stepWord(2) })}
+              aria-label={t(`timeline.transport.stepAmountInAria.${stepBase.unit}`)}
             />
-            <span className="thud-stepunit">{stepBase.label}</span>
+            <span className="thud-stepunit">
+              {t(`timeline.stepSymbol.${stepBase.unit}`, { n: stepCount })}
+            </span>
           </TipSpan>
         </div>
 
@@ -1089,10 +1194,17 @@ export function TimelineHud({
             }}
             placement="top"
             tip={t('timeline.datePicker.open')}
+            translate="no"
           >
-            <span className="thud-date-day">{dateDay}</span>{' '}
-            <span className="thud-date-mon">{dateMon}</span>
-            {dateRest}
+            {dateReadout.map((p, i) =>
+              p.box ? (
+                <span key={i} className={`thud-date-${p.box}`}>
+                  {p.text}
+                </span>
+              ) : (
+                p.text
+              ),
+            )}
           </TipButton>
           <TipButton
             type="button"
@@ -1107,8 +1219,11 @@ export function TimelineHud({
               or "(UTC)" with no chart) and its hint says whose clock it is, naming the
               birthplace — a headline doesn't wrap, so a long place name stays in the hint.
               Tap-revealed on touch: the label has no action of its own. */}
+          {/* A zone abbreviation or offset: a value, not a word to translate, and it
+              swaps between the stacked abbreviations and a bare offset mid-scrub. */}
           <TipSpan
             className="thud-utc"
+            translate="no"
             placement="top"
             tapReveal
             aria-label={withPlace(tzLabel)}

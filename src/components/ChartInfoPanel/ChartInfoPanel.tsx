@@ -16,6 +16,9 @@ const SIGNS = [
   'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis',
 ];
 
+// The longitudes and the angle codes are notation, so they carry translate="no" below; the
+// planet names stay translatable. (2026-10-09 — the panel is mounted nowhere today, and its
+// three-letter sign codes are English that never reached the catalog.)
 function fmtLon(lonRad: number): string {
   const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
   const sign = SIGNS[Math.floor(lonDeg / 30)];
@@ -71,7 +74,7 @@ export function ChartInfoPanel({
                   <PlanetGlyph planet={p.name} size={14} />
                 </span>
                 <span className="cip-name">{labels.planet(p.name)}</span>
-                <span className="cip-lon">{fmtLon(p.lon)}</span>
+                <span className="cip-lon" translate="no">{fmtLon(p.lon)}</span>
               </li>
             ))}
           </ul>
@@ -79,20 +82,20 @@ export function ChartInfoPanel({
           <h3>{t('chartInfoPanel.angles')}</h3>
           <ul className="cip-list cip-angles">
             <li>
-              <span className="cip-name">As</span>
-              <span className="cip-lon">{fmtLon(angles.asc)}</span>
+              <span className="cip-name" translate="no">As</span>
+              <span className="cip-lon" translate="no">{fmtLon(angles.asc)}</span>
             </li>
             <li>
-              <span className="cip-name">MC</span>
-              <span className="cip-lon">{fmtLon(angles.mc)}</span>
+              <span className="cip-name" translate="no">MC</span>
+              <span className="cip-lon" translate="no">{fmtLon(angles.mc)}</span>
             </li>
             <li>
-              <span className="cip-name">Ds</span>
-              <span className="cip-lon">{fmtLon(angles.dsc)}</span>
+              <span className="cip-name" translate="no">Ds</span>
+              <span className="cip-lon" translate="no">{fmtLon(angles.dsc)}</span>
             </li>
             <li>
-              <span className="cip-name">IC</span>
-              <span className="cip-lon">{fmtLon(angles.ic)}</span>
+              <span className="cip-name" translate="no">IC</span>
+              <span className="cip-lon" translate="no">{fmtLon(angles.ic)}</span>
             </li>
           </ul>
 

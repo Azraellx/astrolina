@@ -17,6 +17,12 @@ export const expandedSidebar = {
   // a date beside one is not ("TRANSITS · 1 August 2026"). (2026-10-07)
   header: {
     natal: 'NATAL CHART',
+    // A state the WHEEL is in, added after whatever label names it — a chart (NATAL CHART ·
+    // RELOCATED, DAVISON · RELOCATED) or an overlay with its date (TRANSITS · 1 August 2026 ·
+    // RELOCATED; lib/chartHeader). So it follows nouns of different genders and numbers: in a
+    // language whose adjectives agree, use a form that reads right after all of them — one that
+    // needs no agreement, or one agreeing with the implied "chart" — never one matched to a
+    // single label. (Translator note, 2026-10-09.)
     relocated: 'RELOCATED',
     geodetic: 'GEODETIC CHART',
     composite: 'COMPOSITE (MIDPOINTS)',

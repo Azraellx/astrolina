@@ -21,11 +21,18 @@
   background: rgba(var(--tint), 0.06);
 }
 
+/* Equal halves while both labels fit (every English pair); a label that doesn't fit its half
+   takes the width it needs and its neighbour gives way, rather than being cut — the half was
+   the thing to move, not the word ("Himmelsbezogen" read "Himmelsbe…" in an 81px half, and
+   "Геодезическая" "Геодезичес…"). The side padding is 4px, not 6px, so the longest pair so far
+   (German, 95 + 64px) still fits the sidebar's 162px with no ellipsis at all; the label is
+   centred, so in a half wider than its label the narrower padding moves nothing. The ellipsis
+   below stays only as the last resort. */
 .split-select-seg {
   flex: 1 1 0;
-  min-width: 0; /* let a long label ellipsize rather than widen its half */
+  min-width: max-content;
   height: 24px;
-  padding: 0 6px;
+  padding: 0 4px;
   border: none;
   border-radius: 999px;
   background: transparent;

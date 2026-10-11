@@ -38,6 +38,7 @@ import {
 } from '../../lib/aspectPrefs';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 import { ZodiacRange } from '../ZodiacGlyph/ZodiacRange';
 import { MinorMark, MinorMarkSvg } from '../MinorMark/MinorMark';
 import './WheelSvg.css';
@@ -232,6 +233,13 @@ export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
   const offset = tip.r + 9;
   const top = placement === 'below' ? tip.y + offset : tip.y - offset;
   const left = Math.min(Math.max(tip.x, TIP_HALF + 4), size - TIP_HALF - 4);
+  // The tag stays mounted while the pointer moves from one mark to the next, and its title
+  // and sub are runs of text beside glyph elements, which React patches node by node. Under a
+  // browser's page translator those nodes have been swapped out, so a patched tag would keep
+  // naming the first mark hovered. Keyed by the anchor and title, the two spans are replaced
+  // instead whenever the tag moves to another mark (or the mark moves, as it does while the
+  // time plays). (2026-10-09)
+  const k = `${tip.x},${tip.y},${tip.title}`;
   return (
     <div
       className="wheel-tip ui-tip-box ui-tip"
@@ -239,6 +247,7 @@ export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
       style={{ left, top, maxWidth: TIP_MAX }}
     >
       <span
+        key={`t:${k}`}
         className="ui-tip-title wheel-tip-title"
         style={tip.titleColor ? { color: tip.titleColor } : undefined}
       >
@@ -246,7 +255,11 @@ export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
         {tip.title}
         {tip.suffix}
       </span>
-      {tip.sub && <span className="ui-tip-sub">{tip.sub}</span>}
+      {tip.sub && (
+        <span key={`s:${k}`} className="ui-tip-sub">
+          {tip.sub}
+        </span>
+      )}
     </div>
   );
 }
@@ -1355,12 +1368,18 @@ export function WheelSvg({
     );
   };
 
+  // The whole drawing is kept out of a browser's page translator (2026-10-09): every text
+  // node in it is a glyph, an angle code or a degree, and the degrees change as the chart
+  // moves — a translator's <font> swap would freeze them. The attribute and the class
+  // both, because some translators honour only the class. The words a reader needs (sign
+  // and body names, the hints) live in WheelTip, outside the <svg>, and stay translatable.
   const svg = (
     <svg
-      className={`wheel-svg${interactive ? ' interactive' : ''}`}
+      className={`wheel-svg notranslate${interactive ? ' interactive' : ''}`}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
+      {...SVG_NO_TRANSLATE}
     >
       {/* The wheel's face: the whole disc out to the rim, drawn first so everything sits
           on it. Unpainted unless a Custom theme gives the wheel a solid background

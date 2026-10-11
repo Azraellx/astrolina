@@ -430,9 +430,14 @@ export function SkyBand({
     const noonMs = dayStart + MS_DAY / 2;
     const wall = new Date(noonMs + offsetHoursAt(zone, noonMs) * 3_600_000);
     // Phones abbreviate the month: the pager can't shrink, so a full "December"
-    // would crush the place label beside it in the context row.
-    const month = (phone ? fmt.monthAbbr : fmt.monthName)(wall.getUTCMonth() + 1);
-    return `${wall.getUTCDate()} ${month} ${wall.getUTCFullYear()}`;
+    // would crush the place label beside it in the context row. Written the language's
+    // way (fmt.date) — "14 Mar 1990" / "14 March 1990" in English, as before.
+    return fmt.date(
+      wall.getUTCFullYear(),
+      wall.getUTCMonth() + 1,
+      wall.getUTCDate(),
+      phone ? 'medium' : 'long',
+    );
   }, [dayStart, zone, fmt, phone]);
   // The shown day's zone, read at its local noon as the day label and the picker are —
   // named in the one zone format, "EDT (UTC−04:00)" (2026-10-07): the abbreviation says
@@ -483,7 +488,7 @@ export function SkyBand({
       {KINDS.map((k) => (
         <span key={k} className="sky-band-card-row">
           <span className="sky-band-card-kind">{kindLabel(k)}</span>
-          <span>{timesText(d, k)}</span>
+          <span translate="no">{timesText(d, k)}</span>
         </span>
       ))}
       {d.circumpolar && (
@@ -507,7 +512,7 @@ export function SkyBand({
         {KINDS.map((k) => (
           <span key={k} className="sky-band-time">
             <span className="sky-band-time-kind">{kindLabel(k)}</span>
-            <span>{timesText(d, k)}</span>
+            <span translate="no">{timesText(d, k)}</span>
           </span>
         ))}
       </span>
@@ -547,7 +552,11 @@ export function SkyBand({
             <PlanetGlyph planet={day.ruler} size={13} color={chipInk(day.ruler)} />
             <span className="sky-band-ph-sep" aria-hidden="true" />
             <PlanetGlyph planet={hour.ruler} size={13} color={chipInk(hour.ruler)} />
-            <span className="sky-band-ph-until">→ {end}</span>
+            {/* A clock that turns over with the hour: one string, and a value rather
+                than a word, so not offered to a page translator (2026-10-09). */}
+            <span className="sky-band-ph-until" translate="no">
+              {`→ ${end}`}
+            </span>
           </>
         ),
       };
@@ -763,12 +772,14 @@ export function SkyBand({
                   className={`sky-band-tbl-cell${dim ? ' is-dim' : ''}`}
                   placement="top"
                   tapReveal
+                  // The cell is a clock, redrawn as the day pages: not offered to a page
+                  // translator. Its tip mixes words and the clock, so it stays
+                  // translatable, as one string (2026-10-09).
+                  translate="no"
                   tip={
                     <span className="sky-band-tip">
                       {tipGlyph(d.body)}
-                      <span>
-                        {bodyName(d.body)} · {kindLabel(k)} · {time}
-                      </span>
+                      <span>{`${bodyName(d.body)} · ${kindLabel(k)} · ${time}`}</span>
                     </span>
                   }
                   hint={note}
@@ -792,9 +803,7 @@ export function SkyBand({
               tip={
                 <span className="sky-band-tip">
                   {tipGlyph('Fortune')}
-                  <span>
-                    {bodyName('Fortune')} · {kindLabel(k)} · —
-                  </span>
+                  <span>{`${bodyName('Fortune')} · ${kindLabel(k)} · —`}</span>
                 </span>
               }
               hint={t('skyTimes.fortuneNote')}
@@ -908,9 +917,13 @@ export function SkyBand({
           {/* RIGHT — the context column: place, day pager, zone, track toggle.
               (The close ✕ sits outside, on the band's far right edge.) */}
           <div className="sky-band-side">
+            {/* The place name, the shown day and its zone are data and values, not
+                copy: a page translator leaves them as written (2026-10-09). */}
             {placeLabel && (
               <div className="sky-band-side-row">
-                <span className="sky-band-place">{placeLabel}</span>
+                <span className="sky-band-place" translate="no">
+                  {placeLabel}
+                </span>
               </div>
             )}
             {/* The day pager. While Slide is armed the shown day is the slid one
@@ -951,6 +964,7 @@ export function SkyBand({
                 tip={t(sliding ? 'skyTimes.slide.pickTip' : 'skyTimes.pickDate')}
                 hint={t(sliding ? 'skyTimes.slide.pickHint' : 'skyTimes.pickDateHint')}
                 onClick={() => setPickerOpen(true)}
+                translate="no"
               >
                 {dayLabel}
               </TipButton>
@@ -1026,7 +1040,7 @@ export function SkyBand({
                   })}
                 >
                   <ClockIcon className="sky-band-zone-icon" size={12} />
-                  <span>{formatZoneLabel(dayZone)}</span>
+                  <span translate="no">{formatZoneLabel(dayZone)}</span>
                 </TipSpan>
               )}
               {/* "Time Stamp": read the sky at a chosen spot, marked by the map beacon.

@@ -1,0 +1,102 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only
+   Licensed under the GNU AGPL v3.0 with an additional attribution term under
+   AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept. */
+
+/* The translate offer (TranslateOffer.tsx, 2026-10-09). A sibling of the auto-flip notice
+   and deliberately dressed like one — same panel, same cool-blue edge, same layer (z 50,
+   above the HUDs, below the real modals) and the same neutral spot — because it is the same
+   kind of thing: the app speaking up about something the reader didn't ask about. No
+   backdrop and no focus grab, for the same reason that card has none: the page behind it is
+   what the reader came for. App never shows the two at once.
+
+   Restated rather than shared with AutoFlipNotice.css: that sheet's rules are named for that
+   card and carry its anchoring, which this one never does. If the notice's chrome moves,
+   move this with it, or the two stop reading as one voice. */
+.translate-offer {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
+  border: 1px solid rgba(var(--cool-rgb), 0.4);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text-strong);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, calc(0.4 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
+  font-family: inherit;
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .translate-offer {
+    animation: none;
+  }
+}
+
+.tro-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+/* The circled i, not the triangle: nothing has changed — the card is only offering. */
+.tro-icon {
+  flex-shrink: 0;
+  color: rgb(var(--cool-rgb));
+}
+
+.tro-note {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The refusal on the left in the muted voice, the offer on the right in the accent — the
+   notice's OK button, so the action that does something looks like the one that does on
+   every card. A label in a longer language wraps rather than pushing the card wider. */
+.tro-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tro-dismiss,
+.tro-use {
+  padding: 4px 14px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.tro-dismiss {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+}
+.tro-dismiss:hover {
+  color: var(--text-strong);
+}
+.tro-use {
+  margin-left: auto;
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.12);
+  color: var(--accent-brand);
+}
+.tro-use:hover {
+  background: rgba(var(--accent-brand-rgb), 0.2);
+}
+.tro-dismiss:disabled,
+.tro-use:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

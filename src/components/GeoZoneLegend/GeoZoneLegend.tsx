@@ -156,7 +156,7 @@ export function GeoZoneLegend({
           )
         }
       >
-        <span className="astro-glyph">{glyph}</span>
+        <span className="astro-glyph" translate="no">{glyph}</span>
       </TipButton>
     );
   };

@@ -111,6 +111,15 @@ export const map = {
     moonrise: 'Moonrise',
     moonset: 'Moonset',
   },
+  // The pinned click-card on a map line (its reading lives in lineMeanings).
+  lineCard: {
+    // The card's closest-approach row: how near the line passes to the reference point.
+    // {label} is lineMeanings.distance.fromPin / .fromNatal, already ending in its colon
+    // ("Closest distance to natal:"); {km} and {mi} are whole numbers, the same distance in
+    // kilometres and in miles. Both units are always shown; write their abbreviations and
+    // the order as the language does. (2026-10-09)
+    distance: '{label} {km} km / {mi} mi',
+  },
   // Zenith stamp hover popup. {planet} is the planet display name.
   zenithTitle: '{planet} zenith',
   zenithSub: 'where {planet} is directly overhead',

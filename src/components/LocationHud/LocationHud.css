@@ -327,9 +327,15 @@
 .location-ls-seg-row {
   display: flex;
   gap: 4px;
+  /* Only reached when the labels can't share the row even unevenly (below). */
+  flex-wrap: wrap;
 }
+/* Equal halves while every label fits its half (English: unchanged); a label that
+   doesn't takes the width it needs on one line and its neighbour gives way, rather
+   than breaking onto a second line that makes this row taller than the pin row
+   above it ("Lugar de nacimiento" in a 95px half). */
 .location-ls-seg-row .location-ls-seg-btn {
-  min-width: 0;
+  min-width: max-content;
 }
 .location-ls-seg-btn {
   display: inline-flex;

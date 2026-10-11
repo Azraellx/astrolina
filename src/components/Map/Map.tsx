@@ -165,7 +165,7 @@ import { LINE_TYPE_LABEL, OPPOSITE_ANGLE } from '../../lib/astro/lines';
 import type { PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
-import type { TFn } from '../../i18n';
+import type { MsgKey, TFn } from '../../i18n';
 import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { CreditsModal } from '../CreditsModal/CreditsModal';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -1361,6 +1361,14 @@ const LINE_HIT_LAYERS = [
 ];
 const LINE_HIT_TOLERANCE_PX = 3;
 
+// MapLibre's +/− and compass buttons, and the catalog key each is named by. The names are
+// resolved where they are shown, never stored: the controls outlive a change of language.
+const NAV_CTRL_TIPS: readonly { sel: string; key: MsgKey; hotkey?: string }[] = [
+  { sel: '.maplibregl-ctrl-zoom-in', key: 'map.ctrl.zoomIn', hotkey: '+' },
+  { sel: '.maplibregl-ctrl-zoom-out', key: 'map.ctrl.zoomOut', hotkey: '−' },
+  { sel: '.maplibregl-ctrl-compass', key: 'map.ctrl.resetBearing' },
+];
+
 // A fingertip is not a cursor. The reaches above are sized for a mouse, which lands where
 // it's aimed; a tap lands somewhere under a pad about 7–10 mm across, and the browser
 // reports one point of it. A paran line is drawn 0.7 px wide, so at 3 px a tap had to fall
@@ -1385,11 +1393,16 @@ function hitReach(touch: boolean): { line: number; zenith: number; cross: number
 // `color` goes into a style attribute, so it may be a var() — planetInk(), for the glyphs below
 // that name a body without a line colour of their own to hand (lib/themePalette: the body's
 // canonical tint for a built-in theme, the palette's glyph ink under a Custom one).
+//
+// In these tips the glyphs, the codes (AS, MC, an overlay's Tr, LS), the star and place names and
+// the degrees carry translate="no"; the words around them stay open to a browser's page
+// translator. Codes and symbols are not words — a translator that took "MC" or "Tr" for one
+// would print nonsense — and a proper name is shown as it is spelled (2026-10-09).
 function glyphHtml(planet: PlanetName, color: string): string {
-  return `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${PLANET_GLYPHS[planet]}</span>`;
+  return `<span class="astro-glyph cross-tip-glyph" style="color:${color}" translate="no">${PLANET_GLYPHS[planet]}</span>`;
 }
 function tagHtml(t: string): string {
-  return `<span class="cross-tip-tag">${t}</span>`;
+  return `<span class="cross-tip-tag" translate="no">${t}</span>`;
 }
 
 // Poleward of this latitude a rising/setting line can crest (the horizon
@@ -1469,7 +1482,7 @@ function lineLabelHtml(
         props.branch as LineType,
       );
       const aspHtml = (a: AspectKind) =>
-        `<span class="astro-glyph cross-tip-glyph">${ASPECT_GLYPHS[a]}</span>`;
+        `<span class="astro-glyph cross-tip-glyph" translate="no">${ASPECT_GLYPHS[a]}</span>`;
       const aspectWord = t(`expandedSidebar.aspect.${aspect}.name`);
       row =
         pre +
@@ -1484,8 +1497,8 @@ function lineLabelHtml(
     // planet rows (star names are proper nouns, shown as-is).
     row =
       pre +
-      `<span class="cross-tip-glyph" style="color:${props.color}">★</span>` +
-      `${props.star} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+      `<span class="cross-tip-glyph" style="color:${props.color}" translate="no">★</span>` +
+      `<span translate="no">${props.star}</span> ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId.startsWith('minor-lines')) {
     // Catalog minor body: its mark (own symbol, else the shared diamond — as its map
     // coin draws it) in the line colour, then "Eros (433)" and the angle, like the
@@ -1542,7 +1555,10 @@ function lineLabelHtml(
             : kind === 'lunar-horizon'
               ? t('map.eclipse.horizon', { phase: props.label as string })
               : t('map.eclipse.isoline', { pct: props.label as string });
-    row = tagHtml(props.dateLabel as string) + what;
+    // In the tag's dress but not behind tagHtml's translate="no": the identity is a date and
+    // a kind ("8 April 2024 · Total"), words a reader translating the page wants translated
+    // here as they are in the eclipse panel.
+    row = `<span class="cross-tip-tag">${props.dateLabel as string}</span>` + what;
   }
   if (!row) return null;
   // Rising/setting curves hovered inside a polar circle get a one-line caveat:
@@ -3928,6 +3944,8 @@ function fitCaptureWheel(
 // AGPL 7(b) watermark default). Brand/source only: NEVER the chart's birth data, which the
 // user never sees in metadata. tEXt values are Latin-1 (the "·" is U+00B7, in range); the XMP
 // packet (UTF-8) is what Google / Adobe / Pinterest read.
+// File metadata, deliberately English in every language (2026-10-09): it is provenance for
+// indexers, not copy a reader is shown, and tEXt's Latin-1 could not carry most scripts anyway.
 const CAPTURE_PNG_META = {
   Title: 'Astrocartography map · AstroLina',
   Author: 'AstroLina',
@@ -5139,7 +5157,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const onHomeClickRef = useRef(onHomeClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // The translator, for computeBadges (bound once, refs only): a catalog chip's words decide its
-  // size, so they are resolved where it is placed (minorChipText).
+  // size, so they are resolved where it is placed (minorChipText). The nav controls' tips read it
+  // too, from listeners bound once per map (NAV_CTRL_TIPS).
   const tRef = useRef(t);
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
@@ -6449,21 +6468,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // +/− hotkey callouts. Drop the native `title`, keep `aria-label` as the
     // accessible name; every listener is torn down with the map in this cleanup.
     const ctrlRoot = map.getContainer();
-    const ctrlTipDefs: { sel: string; label: string; hotkey?: string }[] = [
-      { sel: '.maplibregl-ctrl-zoom-in', label: t('map.ctrl.zoomIn'), hotkey: '+' },
-      { sel: '.maplibregl-ctrl-zoom-out', label: t('map.ctrl.zoomOut'), hotkey: '−' },
-      { sel: '.maplibregl-ctrl-compass', label: t('map.ctrl.resetBearing') },
-    ];
     const ctrlTipCleanups: (() => void)[] = [];
-    for (const def of ctrlTipDefs) {
+    for (const def of NAV_CTRL_TIPS) {
       const el = ctrlRoot.querySelector(def.sel);
       if (!(el instanceof HTMLElement)) continue;
       el.removeAttribute('title');
-      el.setAttribute('aria-label', def.label);
+      el.setAttribute('aria-label', t(def.key));
+      // The label is read when the tip opens, through the live translator: this effect runs
+      // once per map, so a label resolved here would stay in the language the map was built
+      // in. The aria-labels follow a language change from their own effect (below).
       const show = () =>
         setCtrlTip({
           pos: tipPosFor(el.getBoundingClientRect(), 'left'),
-          title: def.label,
+          title: tRef.current(def.key),
           hotkey: def.hotkey,
         });
       const { cleanup } = bindTouchTip(el, show, () => setCtrlTip(null), {
@@ -6488,6 +6505,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }),
       'bottom-right',
     );
+    // The attribution line is kept out of a browser's page translator (2026-10-09). It is
+    // names and licences — OpenStreetMap, the basemap's sources, our own wordmark — and, more
+    // to the point, the capture tool owns its markup while a frame is armed: a MutationObserver
+    // (below, beside attribDataRef) re-applies the line on every change inside it, so a
+    // translator rewriting the text would be rewritten back, and the two would trade
+    // mutations for as long as the frame stayed up. Set on the control's own container, which
+    // MapLibre keeps across a style swap (only the inner markup is rebuilt), and as the class
+    // too, which some translators honour instead of the attribute.
+    const attribEl = ctrlRoot.querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+    attribEl?.setAttribute('translate', 'no');
+    attribEl?.classList.add('notranslate');
     const onCreditsClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && t.closest('.acg-credits-btn')) {
@@ -6825,13 +6853,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       mapRef.current = null;
     };
     // Mount-once: create the map a single time, tear it down only on unmount, so the
-    // dep array stays empty. `t` (used once for the nav-control tip labels) is
-    // intentionally excluded so a locale change never recreates the map; the badge
+    // dep array stays empty. `t` (used once for the nav controls' first aria-labels) is
+    // intentionally excluded so a locale change never recreates the map — the tips read the
+    // live translator through tRef, and the effect below re-labels the controls; the badge
     // callbacks are reached through refs for the same reason — and so dev hot-reload,
     // where Fast Refresh reassigns their identities, can't tear down and rebuild the
     // whole map. Prod is unaffected: both callbacks already had stable identity there.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The nav controls' accessible names follow a language change. They are MapLibre's DOM, named
+  // once when the map is built (above); a switch of language rebuilds nothing there, so without
+  // this a screen reader would keep hearing the language the page opened in. (2026-10-09)
+  useEffect(() => {
+    const root = mapRef.current?.getContainer();
+    if (!root) return;
+    for (const def of NAV_CTRL_TIPS) root.querySelector(def.sel)?.setAttribute('aria-label', t(def.key));
+  }, [t]);
 
   const basemap = mapStyle.basemap;
   useEffect(() => {
@@ -7012,9 +7050,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const lsName = labels.planet(cross.lsPlanet) ?? cross.lsPlanet;
       const acgName = labels.planet(cross.acgPlanet) ?? cross.acgPlanet;
       // Stacked, like the line badges: "LS <glyph> Mars" / "×" / "Ds <glyph> Venus".
+      // The code and the glyph kept out of a page translator, as in every map tip (glyphHtml).
       const row = (tag: string, glyph: string, color: string, name: string) =>
-        `<span class="cross-tip-row"><span class="cross-tip-tag">${tag}</span>` +
-        `<span class="astro-glyph cross-tip-glyph" style="color:${color}">${glyph}</span>${name}</span>`;
+        `<span class="cross-tip-row"><span class="cross-tip-tag" translate="no">${tag}</span>` +
+        `<span class="astro-glyph cross-tip-glyph" style="color:${color}" translate="no">${glyph}</span>${name}</span>`;
       crossPopup
         .setLngLat([cross.lng, cross.lat])
         .setHTML(
@@ -7110,8 +7149,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       geoHtml = null;
       geoPopup.remove();
     };
+    // Each angle is a code and a degree — all of it kept out of a page translator (glyphHtml says
+    // why). The head too: a place's own name or its coordinates, and the GE code — no words.
+    // The polar caution below is a sentence, and stays translatable. (2026-10-09)
     const geoAngle = (label: string, z: TruncZodiac) =>
-      `<span class="geo-readout-angle">${label} ${String(z.deg).padStart(2, '0')}°` +
+      `<span class="geo-readout-angle" translate="no">${label} ${String(z.deg).padStart(2, '0')}°` +
       `<span class="astro-glyph">${SIGN_GLYPHS[z.signIdx]}</span>${String(z.min).padStart(2, '0')}'</span>`;
     const showGeo = (r: GeoReadout, at: maplibregl.LngLat) => {
       const head = r.place
@@ -7123,7 +7165,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Past the polar circle the map's own polar caution: some degrees never rise there, and
       // the Ascendant can jump half the zodiac between neighbouring places.
       const html =
-        `<div class="ui-tip geo-readout"><span class="ui-tip-title">${head}</span>` +
+        `<div class="ui-tip geo-readout"><span class="ui-tip-title" translate="no">${head}</span>` +
         `<span class="geo-readout-angles">${angles}</span>` +
         (r.polar ? `<span class="ui-tip-sub geo-readout-caution">${t('map.polarNote')}</span>` : '') +
         `</div>`;
@@ -7179,7 +7221,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // string here that isn't ours); a planet stamp through the enum labels.
       const base =
         zen.kind === 'minor' ? minorNameHtml(zen.props, t) : (labels.planet(zen.planet) ?? zen.planet);
-      const name = tag ? `${tag} ${base}` : base;
+      // The tag is a code, kept out of a page translator as on every map tip (glyphHtml); a
+      // bare span, so it sits in the sentence exactly as the plain text did.
+      const name = tag ? `<span translate="no">${tag}</span> ${base}` : base;
       // Nadir stamps name themselves "underfoot"; zeniths "overhead".
       const titleKey = zen.nadir ? 'map.nadirTitle' : 'map.zenithTitle';
       const subKey = zen.nadir ? 'map.nadirSub' : 'map.zenithSub';
@@ -9185,6 +9229,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       chip.className = 'arrival-mark-label';
       // textContent, never innerHTML — this string comes from a search provider.
       chip.textContent = label;
+      // A place's own name, shown as spelled: kept out of a page translator. (2026-10-09)
+      chip.setAttribute('translate', 'no');
       el.appendChild(chip);
     }
     // The ping fires on ARRIVAL, not on the pick: a flight's duration scales with
@@ -9432,6 +9478,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
         aria-hidden="true"
       >
+        {/* Every chip's codes (an overlay's Tr, AS, MC, LS), marks, catalog names and degrees carry
+            translate="no" (2026-10-09): they are not words, and a chip is placed by its measured
+            size (the data-bface cache), which a page translator rewriting its text would leave
+            wrong. The one word a chip can carry — a planet's name, on the transparent export's
+            Local Space labels — stays translatable. Glyphs carry it from PlanetGlyph/ZodiacGlyph. */}
         {/* The ACG / aspect / node edge badges label the non-LS lines — hidden in the transparent
             LS-only export (those lines are emptied at the source), so their labels go too. */}
         {!chartSubject && !lsTransparent && badges.map((b) => {
@@ -9504,12 +9555,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             // in the gap rather than through a glyph. The overlay tag (e.g. "Tr") still
             // leads, as on every other overlay badge.
             <>
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.lineType]}</span>
               <span className="acg-badge-sep" aria-hidden="true" />
               <PlanetGlyph planet="SouthNode" size={11} color={text} />
-              <span className="acg-badge-code">
+              <span className="acg-badge-code" translate="no">
                 {ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]]}
               </span>
             </>
@@ -9518,23 +9569,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
               <PlanetGlyph planet={b.planetB} size={11} color={text} />
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.lineType]}</span>
             </>
           ) : aspectFace ? (
             // Aspect line: glyph, aspect symbol, the line's true angle ("Su □ Ds").
             // The symbol uses the bundled glyph font, like the planet glyph beside it.
             <>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="astro-glyph acg-badge-code">
+              <span className="astro-glyph acg-badge-code" translate="no">
                 {ASPECT_GLYPHS[aspectFace.aspect]}
               </span>
-              <span className="acg-badge-code">{ANGLE_CODE[aspectFace.angle]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[aspectFace.angle]}</span>
             </>
           ) : (
             <>
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.lineType]}</span>
             </>
           );
           // The key its measured size is cached under (chipSizesRef); `z` is where it stacks
@@ -9585,17 +9636,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           const zen = b.overlay ? zenithByOverlayMinor[b.body] : zenithByMinor[b.body];
           const inner = (
             <>
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
-              <span className={mark.cls ? `astro-glyph ${mark.cls}` : 'astro-glyph'}>{mark.char}</span>
+              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
+              <span className={mark.cls ? `astro-glyph ${mark.cls}` : 'astro-glyph'} translate="no">
+                {mark.char}
+              </span>
               {b.label ? (
                 <>
-                  <span>{b.label}</span>
-                  {b.tail && <span className="acg-badge-num">{b.tail}</span>}
+                  <span translate="no">{b.label}</span>
+                  {b.tail && <span className="acg-badge-num" translate="no">{b.tail}</span>}
                 </>
               ) : (
-                <span>{b.tail}</span>
+                <span translate="no">{b.tail}</span>
               )}
-              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.lineType]}</span>
             </>
           );
           const style = { ...badgePos(b.x, b.y), background: b.color, color: text, zIndex: b.z };
@@ -9644,6 +9697,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span
                 className={mark.cls ? `astro-glyph ${mark.cls}` : 'astro-glyph'}
                 style={{ color: b.minorColor }}
+                translate="no"
               >
                 {mark.char}
               </span>
@@ -9671,13 +9725,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               {/* An overlay's tag goes on BOTH bodies: both are the overlay's (a paran never
                   pairs across frames). One tag in front read as "transiting ♀ × natal ♆" — a
                   transit-to-natal paran, which is never drawn (2026-10-06). */}
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               {side('A', b.planetA)}
-              <span className="acg-badge-code">{ANGLE_CODE[b.angleA]}</span>
-              <span className="paran-badge-x">×</span>
-              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleA]}</span>
+              <span className="paran-badge-x" translate="no">×</span>
+              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               {side('B', b.planetB)}
-              <span className="acg-badge-code">{ANGLE_CODE[b.angleB]}</span>
+              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleB]}</span>
             </TipButton>
           );
         })}
@@ -9737,13 +9791,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               placement="top"
               tip={t('map.flyToLocalSpaceOrigin')}
             >
-              {!lsTransparent && <span className="acg-badge-prefix">LS</span>}
+              {!lsTransparent && <span className="acg-badge-prefix" translate="no">LS</span>}
               <PlanetGlyph planet={b.planet} size={lgBadge ? 17 : 11} color={text} />
               {/* Transparent "Label Name": the planet's name after the glyph (e.g. "♂ Mars"). */}
               {lsLabelName && (
                 <span className="ls-badge-name">{labels.planet(b.planet)}</span>
               )}
-              {b.out && b.azLabel && <span className="ls-deg">{b.azLabel}</span>}
+              {b.out && b.azLabel && <span className="ls-deg" translate="no">{b.azLabel}</span>}
             </TipButton>
           );
         })}
@@ -9757,6 +9811,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 key={`${b.key}-deg`}
                 className="ls-line-deg"
                 style={{ ...badgePos(b.degX, b.degY), color: b.color, zIndex: LS_CHIP_Z }}
+                translate="no"
               >
                 {b.bearing}
               </span>
@@ -9883,9 +9938,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           Transparent mode) drops it entirely for a clean see-through export.
           One line, or two (rarely three) where the fields don't fit (the caption-fit
           effect) — each line its own element, so the export rasteriser can't re-wrap them
-          differently. `is-two-line` means more than one. */}
+          differently. `is-two-line` means more than one.
+          Kept out of a browser's page translator, with the top-left caption and the marks below
+          (2026-10-09): the caption-fit effect breaks and caps the fields from the strings
+          themselves, measured before they are drawn, so a translator rewriting the text after
+          would draw a caption the fit never measured — clipped, or spilling under the mark —
+          into the exported file. What the caption says is the chart's own name and place, its
+          figures, and the app's own wording of the settings, which a shipped language already
+          translates. The watermark is a wordmark. */}
       {frameActive && !noCaption && (
-        <div className="capture-footer" aria-hidden="true">
+        <div className="capture-footer" aria-hidden="true" translate="no">
           <div
             ref={captionRef}
             className={`capture-caption${captionRows.length > 1 ? ' is-two-line' : ''}`}
@@ -9917,7 +9979,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           instead — each enabled field on its own line, over the map (no band) with a halo for
           legibility. Real DOM inside the frame, so captureFrame rasterises it WYSIWYG. */}
       {frameActive && lsTransparent && frameCaptionLines.length > 0 && (
-        <div className="capture-caption-tl" aria-hidden="true">
+        <div className="capture-caption-tl" aria-hidden="true" translate="no">
           {frameCaptionLines.map((line, i) => (
             <div key={i} className="capture-caption-tl-line">
               {line}
@@ -9930,7 +9992,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           mark — which carries the attribution. Same brand seam + classes as the footer watermark, so
           the export's onclone recolours it and its font is awaited the same way. */}
       {frameActive && lsTransparent && (
-        <span className="capture-watermark capture-watermark-transparent" aria-hidden="true">
+        <span
+          className="capture-watermark capture-watermark-transparent"
+          aria-hidden="true"
+          translate="no"
+        >
           {getCaptureBrand().render()}
         </span>
       )}

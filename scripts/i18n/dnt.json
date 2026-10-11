@@ -1,0 +1,471 @@
+{
+  "_about": [
+    "Do-not-translate terms: what must reach every language exactly as it is in English.",
+    "The full list behind 'What not to translate' in docs/translations.md, which gives the kinds of term (2026-10-10): a new term goes here only, a new kind of term there as well.",
+    "A term is checked only where the English contains it, and the translation must then carry",
+    "it at least as many times. kind 'exact' matches the text (whole words where it starts or",
+    "ends with a letter); kind 'code' matches a standalone token. context 'strict' is for codes",
+    "that are also ordinary words (As, Leo, Can, Me…): those count only beside a slash or",
+    "directly before an angle code ('Su/Mo', 'Ju MC'), never in a sentence. 'pattern' replaces",
+    "the literal term with a regular expression.",
+    "locales: a language's own established spelling of the term, where its astrologers write one (the house-system eponyms in Cyrillic for Russian, Porfirio in Spanish; 2026-10-09). There the translation carries that spelling instead, matched as a stem so a language that declines names may."
+  ],
+  "terms": [
+    {
+      "term": "MC",
+      "kind": "code",
+      "note": "Angle code (Midheaven). Universal; never translated or re-cased."
+    },
+    {
+      "term": "IC",
+      "kind": "code",
+      "note": "Angle code (Imum Coeli)."
+    },
+    {
+      "term": "AS",
+      "kind": "code",
+      "note": "Angle code (Ascendant), as the line labels and the wheel print it."
+    },
+    {
+      "term": "DS",
+      "kind": "code",
+      "note": "Angle code (Descendant)."
+    },
+    {
+      "term": "ASC",
+      "kind": "code",
+      "note": "Angle code (Ascendant), long form."
+    },
+    {
+      "term": "DSC",
+      "kind": "code",
+      "note": "Angle code (Descendant), long form."
+    },
+    {
+      "term": "Vx",
+      "kind": "code",
+      "note": "Vertex code, in the wheel's casing."
+    },
+    {
+      "term": "Avx",
+      "kind": "code",
+      "note": "Anti-Vertex code, in the wheel's casing."
+    },
+    {
+      "term": "As",
+      "kind": "code",
+      "context": "strict",
+      "note": "Angle code (Ascendant) in the As/MC/Ds/IC notation. Also an English word, so strict."
+    },
+    {
+      "term": "Ds",
+      "kind": "code",
+      "context": "strict",
+      "note": "Angle code (Descendant) in the As/MC/Ds/IC notation."
+    },
+    {
+      "term": "Su",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Sun), as in 'Su/Mo MC'."
+    },
+    {
+      "term": "Mo",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Moon)."
+    },
+    {
+      "term": "Me",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Mercury)."
+    },
+    {
+      "term": "Ve",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Venus)."
+    },
+    {
+      "term": "Ma",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Mars)."
+    },
+    {
+      "term": "Ju",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Jupiter)."
+    },
+    {
+      "term": "Sa",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Saturn)."
+    },
+    {
+      "term": "Ur",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Uranus)."
+    },
+    {
+      "term": "Ne",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Neptune)."
+    },
+    {
+      "term": "Pl",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter planet code (Pluto)."
+    },
+    {
+      "term": "NN",
+      "kind": "code",
+      "note": "2-letter point code (North Node)."
+    },
+    {
+      "term": "SN",
+      "kind": "code",
+      "note": "2-letter point code (South Node)."
+    },
+    {
+      "term": "Li",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter point code (Lilith)."
+    },
+    {
+      "term": "Ch",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter body code (Chiron)."
+    },
+    {
+      "term": "Cr",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter body code (Ceres)."
+    },
+    {
+      "term": "Pa",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter body code (Pallas)."
+    },
+    {
+      "term": "Jn",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter body code (Juno)."
+    },
+    {
+      "term": "Vs",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter body code (Vesta)."
+    },
+    {
+      "term": "Fo",
+      "kind": "code",
+      "context": "strict",
+      "note": "2-letter point code (Part of Fortune)."
+    },
+    {
+      "term": "Ari",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Aries). The spelled-out sign NAMES are translated; the codes are not."
+    },
+    {
+      "term": "Tau",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Taurus)."
+    },
+    {
+      "term": "Gem",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Gemini)."
+    },
+    {
+      "term": "Can",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Cancer)."
+    },
+    {
+      "term": "Leo",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Leo) — also the sign's English name, which IS translated."
+    },
+    {
+      "term": "Vir",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Virgo)."
+    },
+    {
+      "term": "Lib",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Libra)."
+    },
+    {
+      "term": "Sco",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Scorpio)."
+    },
+    {
+      "term": "Sag",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Sagittarius)."
+    },
+    {
+      "term": "Cap",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Capricorn)."
+    },
+    {
+      "term": "Aqu",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Aquarius)."
+    },
+    {
+      "term": "Pis",
+      "kind": "code",
+      "context": "strict",
+      "note": "3-letter sign code (Pisces)."
+    },
+    {
+      "term": "In Mundo",
+      "kind": "exact",
+      "note": "Latin convention label; stays Latin in every language."
+    },
+    {
+      "term": "In Zodiaco",
+      "kind": "exact",
+      "note": "Latin convention label; stays Latin in every language."
+    },
+    {
+      "term": "Placidus",
+      "kind": "exact",
+      "note": "House-system eponym.",
+      "locales": {
+        "ru": "Плацидус"
+      }
+    },
+    {
+      "term": "Koch",
+      "kind": "exact",
+      "note": "House-system eponym.",
+      "locales": {
+        "ru": "Кох"
+      }
+    },
+    {
+      "term": "Regiomontanus",
+      "kind": "exact",
+      "note": "House-system eponym.",
+      "locales": {
+        "ru": "Региомонтан"
+      }
+    },
+    {
+      "term": "Campanus",
+      "kind": "exact",
+      "note": "House-system eponym.",
+      "locales": {
+        "ru": "Кампанус"
+      }
+    },
+    {
+      "term": "Porphyry",
+      "kind": "exact",
+      "note": "House-system eponym, kept in its English spelling.",
+      "locales": {
+        "es": "Porfirio",
+        "de": "Porphyrios",
+        "ru": "Порфирий"
+      }
+    },
+    {
+      "term": "Alcabitus",
+      "kind": "exact",
+      "note": "House-system eponym, spelled as the app spells it.",
+      "locales": {
+        "de": "Alcabitius",
+        "ru": "Алькабитиус"
+      }
+    },
+    {
+      "term": "Morinus",
+      "kind": "exact",
+      "note": "House-system eponym.",
+      "locales": {
+        "ru": "Морин"
+      }
+    },
+    {
+      "term": "AstroLina",
+      "kind": "exact",
+      "note": "The product's name."
+    },
+    {
+      "term": "© AstroLina",
+      "kind": "exact",
+      "pattern": "©\\s*\\d{4}\\s+AstroLina",
+      "note": "The attribution AGPL section 7(b) requires to be kept: '© <year> AstroLina' survives in every language, symbol, year and name."
+    },
+    {
+      "term": "©",
+      "kind": "exact",
+      "note": "A copyright notice keeps its symbol."
+    },
+    {
+      "term": "Swiss Ephemeris",
+      "kind": "exact",
+      "note": "Library name."
+    },
+    {
+      "term": "@swisseph/browser",
+      "kind": "exact",
+      "note": "Package name."
+    },
+    {
+      "term": "Astrodienst",
+      "kind": "exact",
+      "note": "Company name (the ephemeris licensor)."
+    },
+    {
+      "term": "AGPL-3.0",
+      "kind": "exact",
+      "note": "Licence identifier."
+    },
+    {
+      "term": "AGPL",
+      "kind": "exact",
+      "note": "Licence name."
+    },
+    {
+      "term": "GNU Affero General Public License v3.0",
+      "kind": "exact",
+      "note": "The licence's legal title."
+    },
+    {
+      "term": "MIT",
+      "kind": "exact",
+      "note": "Licence name."
+    },
+    {
+      "term": "JPL",
+      "kind": "exact",
+      "note": "Institution (the ephemeris source)."
+    },
+    {
+      "term": "DE441",
+      "kind": "exact",
+      "note": "Ephemeris designation."
+    },
+    {
+      "term": "NASA",
+      "kind": "exact",
+      "note": "Institution."
+    },
+    {
+      "term": "GSFC",
+      "kind": "exact",
+      "note": "Institution (NASA Goddard)."
+    },
+    {
+      "term": "Horizons",
+      "kind": "exact",
+      "note": "Name of the reference ephemeris service."
+    },
+    {
+      "term": "Fred Espenak",
+      "kind": "exact",
+      "note": "Person credited for the eclipse predictions."
+    },
+    {
+      "term": "Jean Meeus",
+      "kind": "exact",
+      "note": "Person credited for the eclipse predictions."
+    },
+    {
+      "term": "OpenStreetMap",
+      "kind": "exact",
+      "note": "Data source credited by licence."
+    },
+    {
+      "term": "OpenMapTiles",
+      "kind": "exact",
+      "note": "Data source credited by licence."
+    },
+    {
+      "term": "MapTiler",
+      "kind": "exact",
+      "note": "Map style source credited by licence."
+    },
+    {
+      "term": "Mapbox",
+      "kind": "exact",
+      "note": "Credited by licence."
+    },
+    {
+      "term": "CartoDB",
+      "kind": "exact",
+      "note": "Credited by licence."
+    },
+    {
+      "term": "MapLibre",
+      "kind": "exact",
+      "note": "Library name."
+    },
+    {
+      "term": "Noto",
+      "kind": "exact",
+      "note": "Font project credited by licence."
+    },
+    {
+      "term": "Unicode",
+      "kind": "exact",
+      "note": "Organisation credited by licence."
+    },
+    {
+      "term": "circle-flags",
+      "kind": "exact",
+      "note": "Artwork set credited by licence."
+    },
+    {
+      "term": "GitHub",
+      "kind": "exact",
+      "note": "Service name."
+    },
+    {
+      "term": "Stripe",
+      "kind": "exact",
+      "note": "Payment processor's name."
+    },
+    {
+      "term": "git.astrolina.org",
+      "kind": "exact",
+      "note": "Address."
+    },
+    {
+      "term": "astrolina.org",
+      "kind": "exact",
+      "note": "Address."
+    }
+  ]
+}

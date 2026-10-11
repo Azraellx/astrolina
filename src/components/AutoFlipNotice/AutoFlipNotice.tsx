@@ -54,6 +54,14 @@ export function AutoFlipNotice({
   const cardRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const { tone, once } = AUTO_FLIP_META[kind];
+  // 'language-detected' names the route back to the Language menu; it is built here from the
+  // three labels the screen renders, so every step reads exactly as the reader will see it in
+  // their language (i18n/en/autoFlip says why). 'language-held' names the same route, for the
+  // same reason (2026-10-10). No other kind fills a placeholder. (2026-10-09)
+  const bodyVars =
+    kind === 'language-detected' || kind === 'language-held'
+      ? { route: [t('topNav.view.settings'), t('settings.sections.appearance'), t('settings.headings.language')].join(' ▸ ') }
+      : undefined;
 
   // Find the controls this notice is about, park the card clear of them, and mark them.
   // In a LAYOUT effect so the move happens before paint — measuring in a passive effect
@@ -155,7 +163,7 @@ export function AutoFlipNotice({
         )}
         {t(`autoFlip.${kind}.title`)}
       </p>
-      <p className="afn-body">{t(`autoFlip.${kind}.body`)}</p>
+      <p className="afn-body">{t(`autoFlip.${kind}.body`, bodyVars)}</p>
       <div className="afn-actions">
         {/* A once-only kind has already booked itself as seen by the time it is on
             screen, so the tick would be a control that changes nothing — worse than

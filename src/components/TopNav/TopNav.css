@@ -123,6 +123,20 @@
   max-width: calc(100vw - 2 * var(--edge, 8px) - 24px);
   line-height: 1.75;
 }
+/* A portrait phone's zoom buttons stand right under the nav (Map.css), level with this bar,
+   and the bar is centred on the screen, so the viewport cap above let a longer hint run the
+   bar over them: "Касание — сканировать · Двойное касание — сканировать снова" spanned the
+   full 390px and hid + and −. While they are on screen the cap clears their column on BOTH
+   sides (a centred bar can only clear one side by clearing both): the 40px button and its
+   edge inset, 5px of air, and the bar's own 18px side padding. A hint that fits (every
+   English tool hint the zoom shares the screen with) is untouched; a longer one wraps.
+   Capture is exempt: framing stands the zoom buttons down (Map.css .framed), so its hint
+   keeps the whole width. */
+@media (pointer: coarse) and (max-width: 600px) {
+  :root:not([data-capturing]) .topnav-toolbar-hint {
+    max-width: calc(100vw - 2 * (var(--edge, 3px) + 45px) - 36px);
+  }
+}
 /* A yellow hotkey/gesture pill inside the readout — the shared .ui-tip-hotkey chip (steady brand
    accent) laid out inline with its cursor / 4-way icon. Self-contained layout (doesn't lean on
    .mg-gesture's rule); the .mg-gesture CLASS is still set on it, only to earn the touch-visibility
@@ -895,12 +909,42 @@ button.topnav-status:hover {
   letter-spacing: 0.02em;
   color: var(--text-muted);
 }
-/* The same heading partway down a list (HintMenu's `section`), set off from the
-   rows above it as well as the ones it heads. */
+/* A section partway down a list (HintMenu's `section`): its heading and its rows are ONE
+   tinted block, so which rows the heading names is never a guess. As a line between two runs
+   of rows it read as a divider (2026-10-10). The heading stays pinned at the block's top while
+   its rows scroll under it, on its own paint: the block's tint laid over the panel's solid
+   colour, so a row passing beneath never shows through. */
+.navmenu-section {
+  --navmenu-section-tint: rgba(var(--tint), 0.08);
+  margin-top: 6px;
+  border-radius: 7px;
+  background: var(--navmenu-section-tint);
+}
 .navmenu-header.is-section {
-  margin-top: 5px;
-  border-top: 1px solid rgba(var(--tint), 0.12);
-  padding-top: 8px;
+  position: sticky;
+  top: -5px; /* the panel's top padding: pinned flush with its edge */
+  z-index: 1;
+  margin-bottom: 2px;
+  padding: 8px 8px 6px;
+  border-radius: 7px 7px 0 0;
+  border-bottom: 1px solid rgba(var(--tint), 0.14);
+  background: linear-gradient(var(--navmenu-section-tint), var(--navmenu-section-tint)), rgb(var(--bg-menu));
+  color: var(--text);
+}
+/* A section heading's (i) (HintMenu's `sectionHint`, 2026-10-10): the settings panel's .orb-info
+   mark (Sidebar.css) as a bare button, right after the heading's words and inside the pinned
+   heading, so it stays in reach while the rows scroll under it. */
+.navmenu-section-info {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-left: 5px;
+  vertical-align: -2px;
+  font: inherit;
+}
+.navmenu-section-info:focus-visible {
+  color: var(--text-strong);
 }
 
 /* ── Compact nav, beside a dock (measured) ─────────────────────────────────────

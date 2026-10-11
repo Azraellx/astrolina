@@ -9,8 +9,9 @@
 // under ./en/, so each component owns its own slice. Language-neutral content (glyphs,
 // abbreviations like MC/IC/As/Ds, 3-letter sign codes, proper nouns, license ids) is
 // intentionally NOT in this catalog. `{name}` tokens are interpolated at runtime;
-// `{n, plural, …}` uses Intl.PluralRules. A future locale mirrors this shape and is
-// checked with `… satisfies Messages`.
+// `{n, plural, …}` uses Intl.PluralRules. Another locale mirrors this shape as a generated
+// `… satisfies LocaleTree` catalog, which `npm run check:i18n` holds against it (types.ts
+// says why it is not `satisfies Messages`).
 //
 // To add a feature namespace: create ./en/<name>.ts (`export const <name> = {…} as const`)
 // and add it to the import + composition below. (InfoBar has no fragment — it reuses the
@@ -45,6 +46,8 @@ import { captureHud } from './en/captureHud';
 import { synastryHud } from './en/synastryHud';
 import { wheel } from './en/wheel';
 import { minorBodies } from './en/minorBodies';
+import { translateOffer } from './en/translateOffer';
+import { bindingLanguage } from './en/bindingLanguage';
 
 export const en = {
   common,
@@ -77,4 +80,6 @@ export const en = {
   synastryHud,
   wheel,
   minorBodies,
+  translateOffer,
+  bindingLanguage,
 } as const;

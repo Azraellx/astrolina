@@ -24,7 +24,7 @@ import './SynastryHud.css';
 // birth clock, in the zone it was read in, named only where the name gives exactly the
 // stored offset (2026-10-07; it was a bare "09:30" with no zone at all).
 function fmtDate(c: StoredChart, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthName(c.month)} ${c.year} · ${formatZoneClock(c.hour, c.minute, zoneNameForChart(c))}`;
+  return `${fmt.date(c.year, c.month, c.day, 'long')} · ${formatZoneClock(c.hour, c.minute, zoneNameForChart(c))}`;
 }
 
 // Just the city from a "City, Region, Country" birthplace label — matching how the

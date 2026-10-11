@@ -49,19 +49,25 @@ interface ChartSwitcherProps {
   flash?: ChartQuickFlash | null;
 }
 
-// "14 March 1990" — full birth date for the bar's chart label.
+// "14 March 1990" — full birth date for the bar's chart label, written the language's way.
 function fmtBirthDate(c: StoredChart, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthName(c.month)} ${c.year}`;
+  return fmt.date(c.year, c.month, c.day, 'long');
 }
 
 // First + last initials — the ultra-compact portrait top bar shows these (with the tag icon)
 // over just the birth year, since the full name + date don't fit the narrow bar.
-function initials(name: string): string {
+//
+// Capitalised in the reader's language (2026-10-09): plain toUpperCase() gives "I" for a
+// Turkish "i", where Turkish writes "İ" — so "ilker yılmaz" read "IY". The name's own
+// language is unknown; the reader's is the best guess, and it is what CSS capitals on the
+// same page already follow (<html lang>). English output is unchanged: 'en' has no special
+// casing rules.
+function initials(name: string, lang: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '';
   const lead = parts[0]?.charAt(0) ?? '';
   const tail = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) ?? '' : '';
-  return (lead + tail).toUpperCase();
+  return (lead + tail).toLocaleUpperCase(lang);
 }
 
 export function ChartSwitcher({
@@ -74,7 +80,7 @@ export function ChartSwitcher({
   compact = false,
   flash = null,
 }: ChartSwitcherProps) {
-  const { t, fmt } = useT();
+  const { t, fmt, lang } = useT();
   // While discreet mode is on, the switcher shows structure and not identity —
   // it sits in the top bar, permanently visible, so it leaks first otherwise.
   const id = useIdentity();
@@ -133,9 +139,12 @@ export function ChartSwitcher({
     if (compact && menuOpen && menuRef.current && !isNarrowNav()) fitToNavColumn(menuRef.current);
   }, [compact, menuOpen]);
 
+  // The birth date and place: one string (they change together on a chart switch), in a
+  // .meta that carries translate="no" — a date and a place name are the chart's data,
+  // not copy for a page translator to rewrite. (2026-10-09)
   const fullMeta = current ? (
     <>
-      {id.date(fmtBirthDate(current, fmt))} · {id.text(current.birthplace.label.split(',')[0])}
+      {`${id.date(fmtBirthDate(current, fmt))} · ${id.text(current.birthplace.label.split(',')[0])}`}
       {current.tzUncertain && <span className="uncertain">⚠</span>}
     </>
   ) : null;
@@ -144,12 +153,15 @@ export function ChartSwitcher({
   // yellow key chip so the key name reads like the menu badges. The wrapper
   // class lets the whole line hide on keyboard-less touch (see the CSS) —
   // hiding only the chip, like HoverTip does, would leave a broken sentence.
-  const [tabHintPre, tabHintPost] = t('chartSwitcher.tabHint').split('{key}');
+  // The token may sit anywhere in a translation (start, middle or end); the split
+  // takes the text on either side of its first occurrence, and a line that lost it
+  // keeps all its words, unchipped, rather than dropping any. (2026-10-09)
+  const [tabHintPre, ...tabHintRest] = t('chartSwitcher.tabHint').split('{key}');
   const tabHint = (
     <span className="switcher-tab-hint">
       {tabHintPre}
-      <span className="ui-tip-hotkey">Tab</span>
-      {tabHintPost}
+      {tabHintRest.length > 0 && <span className="ui-tip-hotkey">Tab</span>}
+      {tabHintRest.join('')}
     </span>
   );
 
@@ -177,7 +189,11 @@ export function ChartSwitcher({
       >
         <span className="label">
           <span className="name-row">
-            <strong>
+            {/* The chart's name is the reader's data, so it isn't offered to a page
+                translator (the "no chart" line is copy and still is). Keyed by the
+                chart, so a switch remounts the name instead of patching its text in
+                place. (2026-10-09) */}
+            <strong key={current?.id ?? 'none'} translate={current ? 'no' : undefined}>
               {current ? (
                 <>
                   <TagIcon tag={chartTag(current)} className="tag-icon" />
@@ -196,7 +212,7 @@ export function ChartSwitcher({
                         {id.on ? id.name(current.name) : displayName(current.name)}
                       </span>
                       <span className="switcher-short">
-                        {id.on ? id.name(current.name) : initials(current.name)}
+                        {id.on ? id.name(current.name) : initials(current.name, lang)}
                       </span>
                     </>
                   ) : id.on ? (
@@ -230,7 +246,7 @@ export function ChartSwitcher({
             )}
           </span>
           {current && (
-            <span className="meta">
+            <span className="meta" translate="no">
               {compact ? (
                 <>
                   <span className="switcher-full">{fullMeta}</span>
@@ -272,7 +288,9 @@ export function ChartSwitcher({
                     setOpen(false);
                   }}
                 >
-                  <span className="chart-name">
+                  {/* A row's name, date and place are the chart's data: not offered to a
+                      page translator. */}
+                  <span className="chart-name" translate="no">
                     {/* Quick-swap feedback: the arrow marks the row just landed on. */}
                     {flash && i === flash.index && (
                       <span className="qs-arrow" aria-hidden="true">
@@ -294,9 +312,8 @@ export function ChartSwitcher({
                             : NAME_SOFT_LIMIT,
                         )}
                   </span>
-                  <span className="chart-meta">
-                    {id.date(fmtBirthDate(c, fmt))} ·{' '}
-                    {id.text(c.birthplace.label.split(',')[0])}
+                  <span className="chart-meta" translate="no">
+                    {`${id.date(fmtBirthDate(c, fmt))} · ${id.text(c.birthplace.label.split(',')[0])}`}
                   </span>
                 </button>
                 {/* In-row actions, inside the same row pill (the li carries the

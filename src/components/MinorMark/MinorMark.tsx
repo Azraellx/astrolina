@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { GLYPH_LIFT } from '../PlanetGlyph/PlanetGlyph';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 import { MINOR_DIAMOND_IN_COIN, minorDiamondPath, minorHollowPath } from '../../lib/minorBodies/mark';
 import './MinorMark.css';
 
@@ -51,6 +52,9 @@ export function MinorMark({
         className={className ? `astro-glyph ${className}` : 'astro-glyph'}
         style={size === undefined ? { color } : { color, fontSize: size }}
         aria-hidden="true"
+        // A symbol, kept out of a page translator as every glyph is (ui/glyphify's
+        // SVG_NO_TRANSLATE says why). (2026-10-09)
+        translate="no"
       >
         {glyph}
       </span>
@@ -96,6 +100,7 @@ export function MinorMarkSvg({
         fill={color}
         textAnchor="middle"
         dominantBaseline="central"
+        {...SVG_NO_TRANSLATE}
       >
         {glyph}
       </text>

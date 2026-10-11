@@ -16,6 +16,11 @@
 // a list, an export — draws from the same single interpretation source instead
 // of scraping this card's HTML.
 import type { TFn } from '../i18n';
+// The active language, for the one case change a reading makes (the aspect word, below).
+// From the runtime module itself rather than the i18n index: it is the half that runs under
+// Node without React, as the verify harness that calls lineReading() does.
+import { getI18n } from '../i18n/runtime';
+import { lowerForSentence } from '../i18n/casing';
 import type { PlanetName } from './ephemeris';
 // Every angle a reading PRINTS goes through LINE_TYPE_LABEL (AS, MC, DS, IC; 2026-10-02),
 // the funnel the map's labels and badges use, so a card or report never spells the same
@@ -54,8 +59,11 @@ const BESPOKE: ReadonlySet<PlanetName> = new Set<PlanetName>(BESPOKE_PLANETS);
 // bundled star set and this key set are maintained together.
 type StarName = keyof typeof import('../i18n/en/lineMeanings').lineMeanings.starThemes;
 
+// Every mark this card prints — a body's glyph, an aspect symbol, the star, a catalog body's
+// diamond — carries translate="no", so a browser's page translator leaves the symbols alone and
+// translates only the reading around them (2026-10-09; the map's tips do the same).
 const glyph = (planet: PlanetName, color: unknown) =>
-  `<span class="astro-glyph line-card-glyph" style="color:${typeof color === 'string' ? color : 'inherit'}">${PLANET_GLYPHS[planet]}</span>`;
+  `<span class="astro-glyph line-card-glyph" style="color:${typeof color === 'string' ? color : 'inherit'}" translate="no">${PLANET_GLYPHS[planet]}</span>`;
 
 // ── Catalog minor bodies ──────────────────────────────────────────────────────
 // A catalog line (lib/astro/minorLines) is `kind: 'minor'` and carries `number` +
@@ -122,7 +130,7 @@ export function minorNameHtml(props: Record<string, unknown>, t: TFn): string {
 export function minorMarkHtml(props: Record<string, unknown>, className: string): string {
   const { char, cls } = minorMarkText(minorNumberProp(props));
   const color = typeof props.color === 'string' ? props.color : 'inherit';
-  return `<span class="astro-glyph ${className}${cls ? ` ${cls}` : ''}" style="color:${color}">${char}</span>`;
+  return `<span class="astro-glyph ${className}${cls ? ` ${cls}` : ''}" style="color:${color}" translate="no">${char}</span>`;
 }
 
 /**
@@ -257,7 +265,11 @@ export function lineReading(
       );
       const name = t(`planets.${planet}.name`);
       const aspectName = t(`expandedSidebar.aspect.${aspect}.name`);
-      const aspectWord = aspectName.toLowerCase();
+      // Lower-cased into the sentence in the reader's language (2026-10-09): the default
+      // mapping lowercases a Turkish "I" to "i" where Turkish writes "ı". `t` is the active
+      // catalog's lookup, so the active language is the language of the word. English is
+      // unchanged — 'en' has no special casing rules — and German keeps its noun's capital.
+      const aspectWord = lowerForSentence(aspectName, getI18n().lang);
       const shown = angleLabel(aspAngle);
       return {
         // Plain-text title ("Venus Trine MC"); the card re-composes its own with
@@ -350,7 +362,9 @@ function distanceLine(dist: LineCardDistance, t: TFn): string {
     dist.type === 'pin'
       ? t('lineMeanings.distance.fromPin', { icon: PIN_ICON_SVG })
       : t('lineMeanings.distance.fromNatal');
-  return `<span class="ui-tip-sub line-card-distance">${label} ${km} km / ${mi} mi</span>`;
+  // The label, the figures and their units in one template (map.lineCard.distance), so a
+  // language can write its own unit abbreviations and order. (2026-10-09)
+  return `<span class="ui-tip-sub line-card-distance">${t('map.lineCard.distance', { label, km, mi })}</span>`;
 }
 
 /**
@@ -416,7 +430,7 @@ export function buildLineCard(
     // Star titles carry a plain star mark (no body glyph exists for a star).
     const title =
       layerId === 'star-lines-layer'
-        ? `<span class="line-card-glyph" style="color:${typeof props.color === 'string' ? props.color : 'inherit'}">★</span>` +
+        ? `<span class="line-card-glyph" style="color:${typeof props.color === 'string' ? props.color : 'inherit'}" translate="no">★</span>` +
           reading.title
         : reading.title;
     return card(title, reading.body, [footer]);
@@ -462,7 +476,7 @@ export function buildLineCard(
             planet: name,
             // Glyph + spelled-out word ("✶ Sextile"), matching the map hover tip —
             // the bare glyph alone read cryptically in the card heading.
-            aspect: `<span class="astro-glyph">${ASPECT_GLYPHS[aspect]}</span> ${aspectName}`,
+            aspect: `<span class="astro-glyph" translate="no">${ASPECT_GLYPHS[aspect]}</span> ${aspectName}`,
             angle: angleLabel(aspAngle),
           }),
         reading.body,

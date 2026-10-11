@@ -73,9 +73,13 @@ function AngleRow({
   const id = useIdentity();
   const f = fmtAngle(lonRad);
   const { ref, pos, show, hide } = useHoverTip<HTMLLIElement>('right');
+  // The row is an angle code and figures that follow the pointer: nothing in it is a
+  // word, so it isn't offered to a page translator, and the degree is one string. The
+  // sign's NAME lives in the tip, which is portaled out of the row and stays
+  // translatable. (2026-10-09)
   if (masked) {
     return (
-      <li>
+      <li translate="no">
         <span className="angle-label">{label}</span>
         <span className="angle-deg">{id.text('00°')}</span>
         <span className="angle-sign" />
@@ -84,9 +88,9 @@ function AngleRow({
     );
   }
   return (
-    <li ref={ref} onMouseEnter={show} onMouseLeave={hide}>
+    <li ref={ref} onMouseEnter={show} onMouseLeave={hide} translate="no">
       <span className="angle-label">{label}</span>
-      <span className="angle-deg">{f.deg}°</span>
+      <span className="angle-deg">{`${f.deg}°`}</span>
       <span className="angle-sign">
         <ZodiacGlyph sign={f.signIdx} size={12} />
       </span>
@@ -144,22 +148,24 @@ export function CoordReadout({
       {location && (
         <div className="coord-location">
           <span className="coord-location-dot" />
-          <span className="coord-location-text">
-            {blankPlace ? (
-              id.text(location)
-            ) : fadeLocation ? (
-              <span className="coord-location-fade" key={location}>
-                {location}
-              </span>
-            ) : (
-              location
-            )}
+          {/* A place name is the reader's data, not copy, so it isn't offered to a page
+              translator. And it is always one keyed span, fading or not: it used to
+              alternate between that span and a bare text run, which is the shape React
+              cannot clean up once a translator has replaced the run. (2026-10-09) */}
+          <span className="coord-location-text" translate="no">
+            <span
+              className={fadeLocation && !blankPlace ? 'coord-location-fade' : undefined}
+              key={fadeLocation && !blankPlace ? location : 'steady'}
+            >
+              {blankPlace ? id.text(location) : location}
+            </span>
           </span>
         </div>
       )}
 
       {point && (
-        <div className="coord-line cursor">
+        // Live coordinates under the pointer: figures and hemisphere letters only.
+        <div className="coord-line cursor" translate="no">
           <span className="lat">{blankPlace ? id.text('00°00′N') : fmtLat(point.lat)}</span>
           <span className="lng">{blankPlace ? id.text('000°00′E') : fmtLng(point.lng)}</span>
         </div>

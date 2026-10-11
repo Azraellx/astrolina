@@ -6,13 +6,17 @@
 
 // The auto-flip notice queue-of-one. Mirrors useMissions' shape: state here, the
 // card is a pure renderer, and every call happens in an event handler rather than
-// an effect, so there are no cascading renders to reason about — with ONE documented
-// exception: the theme option's holds arrive with no gesture to hang them on (a plan that
-// lapsed while the reader was away), so App announces them from a single effect, one
-// lib/themeChoice heldNoticeStep per kind deciding when. Two kinds, two facts: 'theme-held'
-// (2026-10-06 — the option itself is closed to this reader, drawn as a built-in) and
-// 'theme-edits-held' (2026-10-08 — the option still draws, but the reader's own edits wait
-// while it shows the downstream build's fallback).
+// an effect, so there are no cascading renders to reason about — with TWO documented
+// exceptions, each a notice that arrives with no gesture to hang it on:
+//   • the theme option's holds (a plan that lapsed while the reader was away): App announces
+//     them from a single effect, one lib/themeChoice heldNoticeStep per kind deciding when.
+//     Two kinds, two facts: 'theme-held' (2026-10-06 — the option itself is closed to this
+//     reader, drawn as a built-in) and 'theme-edits-held' (2026-10-08 — the option still
+//     draws, but the reader's own edits wait while it shows the downstream build's fallback);
+//   • 'language-detected' (2026-10-09): boot opened the app in the browser's language for a
+//     returning reader, which no handler saw happen. App announces it from an effect keyed on
+//     the language, so it fires once the detected catalog is actually on screen
+//     (i18n/runtime detectedAtBoot).
 import { useCallback, useState } from 'react';
 import {
   AUTO_FLIP_META,
@@ -53,9 +57,9 @@ export function useAutoFlipNotice(): AutoFlipApi {
     // time they're never told. It fires on the next occurrence instead.
     if (getViewLock()) return;
     // A once-only kind books itself as seen the moment it shows: it is explaining
-    // something the reader hasn't asked about yet, so it gets one turn whether or not
-    // they think to tick the box. The tick stays on the card anyway — for these it
-    // just agrees with what already happened.
+    // something the reader hasn't asked about yet, so it gets exactly one turn. That is
+    // also why the card offers no "Don't show me again" tick for these: it would change
+    // nothing (components/AutoFlipNotice).
     if (AUTO_FLIP_META[kind].once) {
       saveSuppressedFlips({ ...loadSuppressedFlips(), [kind]: true });
     }

@@ -16,10 +16,11 @@
 // — so a finer-grained search reaches every surface at once instead of being
 // bolted onto a few. With nothing registered the chip row doesn't render.
 //
-// Strings arrive as props: this field is mounted by extension windows that live
-// in their own React roots, OUTSIDE the i18n provider, so it can't call useT()
-// itself. Hosts inside the tree pass t(...) values; hosts outside pass their own
-// copy, and the handful of internal states fall back to the English below.
+// Strings arrive as props where a host has its own wording; the handful of the
+// field's internal states fall back to the catalog's placeSearch.* in the reader's
+// language. (Until 2026-10-09 that fallback was a copy of the English, because
+// extension windows mount this in React roots of their own, where useT() threw
+// for want of a provider. The i18n runtime needs none now, so every root reads it.)
 
 import {
   useCallback,
@@ -40,6 +41,7 @@ import {
   type PlaceSearchHit,
   type PlaceSearchProvider,
 } from '../../lib/extensions/placeSearchProviders';
+import { useT } from '../../i18n';
 import './PlaceSearchField.css';
 
 /** The built-in offline scope's id — hosts read it off {@link onPick}. */
@@ -91,14 +93,6 @@ export interface PlaceSearchStrings {
   /** Fallback reveal wording for a paged group with no `moreLabel`. */
   more: string;
 }
-
-const EN: PlaceSearchStrings = {
-  scopeLabel: 'Place',
-  noMatches: 'No matches.',
-  failed: 'Couldn’t run that search. Try again.',
-  scopeAria: 'Search scope',
-  more: 'Show more',
-};
 
 export interface PlaceSearchFieldProps {
   onPick: (hit: PlaceSearchHit, scopeId: string) => void;
@@ -283,7 +277,15 @@ export function PlaceSearchField({
   children,
   strings,
 }: PlaceSearchFieldProps) {
-  const S = { ...EN, ...strings };
+  const { t } = useT();
+  const S: PlaceSearchStrings = {
+    scopeLabel: t('placeSearch.scopeLabel'),
+    noMatches: t('placeSearch.noMatches'),
+    failed: t('placeSearch.failed'),
+    scopeAria: t('placeSearch.scopeAria'),
+    more: t('placeSearch.more'),
+    ...strings,
+  };
   const [query, setQuery] = useState(initialQuery ?? '');
   const [scopeId, setScopeId] = useState(BUILTIN_SCOPE_ID);
   const [results, setResults] = useState<PlaceSearchHit[]>([]);
@@ -784,12 +786,21 @@ export function PlaceSearchField({
                               {it.mark.glyph}
                             </span>
                           ) : null}
+                          {/* A standing row's label and whereabouts are place names
+                              and the reader's own saves — data, not copy — so a page
+                              translator leaves them as written. The tag is copy. */}
                           <span className="psf-row-body">
                             <span className="psf-row-main">
-                              <span className="psf-row-label">{row.main}</span>
+                              <span className="psf-row-label" translate="no">
+                                {row.main}
+                              </span>
                               {it.tag && <span className="psf-row-tag">{it.tag}</span>}
                             </span>
-                            {row.sub && <span className="psf-row-sub">{row.sub}</span>}
+                            {row.sub && (
+                              <span className="psf-row-sub" translate="no">
+                                {row.sub}
+                              </span>
+                            )}
                           </span>
                         </button>
                         {/* In-row actions, INSIDE the same row pill (the li
@@ -900,14 +911,23 @@ export function PlaceSearchField({
                   onClick={() => pickRow(navIdx, () => take(r))}
                   onMouseEnter={() => setActiveIdx(navIdx)}
                 >
+                  {/* A hit's name and whereabouts are place names, not copy: a page
+                      translator leaves them as written (a town called Reading is not
+                      a verb). Its kind tag is copy and stays translatable. */}
                   <span className="psf-row-body">
                     <span className="psf-row-main">
-                      <span className="psf-row-label">{main}</span>
+                      <span className="psf-row-label" translate="no">
+                        {main}
+                      </span>
                       {kindLabel && r.kind && (
                         <span className={`psf-kind psf-kind-${r.kind}`}>{kindLabel(r.kind)}</span>
                       )}
                     </span>
-                    {sub && <span className="psf-row-sub">{sub}</span>}
+                    {sub && (
+                      <span className="psf-row-sub" translate="no">
+                        {sub}
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>

@@ -49,7 +49,10 @@ import {
   type MinorLineProps,
   type MinorZenithProps,
 } from './minorLines';
-import type { TFn } from '../../i18n';
+import type { Formatters, TFn } from '../../i18n';
+// The Node-safe half of the i18n module (no React), as lineCard.ts reads it: buildOverlay runs
+// under the verify harnesses too.
+import { getI18n } from '../../i18n/runtime';
 
 export type OverlayMode =
   | 'off'
@@ -671,6 +674,11 @@ export function buildOverlay(
   transitFrame: TransitFrame = 'relative-to-natal',
   progressionType: ProgressionType = 'secondary',
   t: TFn,
+  // Writes the readouts' decimals ("Alter 85,3" in German; English unchanged). Defaults to
+  // the language on screen, which is the language of the `t` the map passes. A caller that
+  // passes another language's `t` (a document's) AND shows `measure` or `labelFull` passes
+  // that language's formatters with it, so the words and the decimal mark agree. (2026-10-10)
+  fmt: Formatters = getI18n().fmt,
 ): OverlayLayer | null {
   // The overlay's instant, formatted once for any caption that wants the date/time on its
   // own (the expanded wheel shows it beside the overlay name). Synastry has no instant.
@@ -777,12 +785,12 @@ export function buildOverlay(
       return {
         kind: mode,
         moment,
-        measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
+        measure: t('timeline.measure.progressedAge', { years: fmt.fixed(c.years, 1) }),
         labelFull: t(
           isTertiary
             ? 'timeline.labelFull.tertiary-progressed'
             : 'timeline.labelFull.progressed',
-          { years: c.years.toFixed(1) },
+          { years: fmt.fixed(c.years, 1) },
         ),
         jd: progJD,
         positions: getPlanetPositions(progJD, nodeType),
@@ -816,9 +824,9 @@ export function buildOverlay(
         kind: mode,
         moment,
         // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
-        measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
+        measure: `${fmt.fixed((arc * 180) / Math.PI, 1)}°`,
         labelFull: t('timeline.labelFull.solar-arc', {
-          deg: ((arc * 180) / Math.PI).toFixed(1),
+          deg: fmt.fixed((arc * 180) / Math.PI, 1),
         }),
         jd: c.birthJD,
         positions,
@@ -847,7 +855,7 @@ export function buildOverlay(
         primaryArcPlan(primaryRate, userPrimaryRate, c, nodeType),
         epochMsToJD(targetDate),
       );
-      const arcDeg = ((arc * 180) / Math.PI).toFixed(1);
+      const arcDeg = fmt.fixed((arc * 180) / Math.PI, 1);
       return {
         kind: mode,
         moment,
@@ -886,7 +894,7 @@ export function buildOverlay(
       return {
         kind: mode,
         moment,
-        measure: t('timeline.measure.progressedAge', { years: c.years.toFixed(1) }),
+        measure: t('timeline.measure.progressedAge', { years: fmt.fixed(c.years, 1) }),
         labelFull: t('timeline.labelFull.cyclo', {
           datetime: fmtDateTimeUTC(targetDate),
         }),

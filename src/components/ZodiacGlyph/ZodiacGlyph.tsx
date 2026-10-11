@@ -5,6 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { SIGN_GLYPHS } from '../../lib/astro/glyphChars';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 
 // Zodiac sign glyph drawn from the bundled 'Noto Sans Symbols' font (via the
 // `.astro-glyph` class). Same two render modes as PlanetGlyph: an inline <span>
@@ -17,6 +18,9 @@ import { SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 // in a presentation attribute. No stylesheet sets `fill` on a sign glyph, so nothing the
 // attribute used to lose to is now outranked. Without `color` it is still the attribute's
 // currentColor, exactly as before.
+//
+// translate="no" in both modes, for PlanetGlyph's reason (2026-10-09; ui/glyphify's
+// SVG_NO_TRANSLATE says it in full).
 interface ZodiacGlyphProps {
   sign: number;
   size?: number;
@@ -48,6 +52,7 @@ export function ZodiacGlyph({
         style={color ? { fill: color } : undefined}
         textAnchor="middle"
         dominantBaseline="central"
+        {...SVG_NO_TRANSLATE}
       >
         {char}
       </text>
@@ -55,7 +60,11 @@ export function ZodiacGlyph({
   }
 
   return (
-    <span className={cls} style={{ fontSize: size, ...(color ? { color } : null) }}>
+    <span
+      className={cls}
+      style={{ fontSize: size, ...(color ? { color } : null) }}
+      translate="no"
+    >
       {char}
     </span>
   );

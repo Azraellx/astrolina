@@ -21,6 +21,7 @@ import {
   type HoverTip,
 } from '../Wheel/WheelSvg';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { SVG_NO_TRANSLATE } from '../ui/glyphify';
 import type { EclipticPosition, PlanetName } from '../../lib/ephemeris';
 import { planetInk } from '../../lib/themePalette';
 import { useT } from '../../i18n';
@@ -312,11 +313,14 @@ export function LocalSpaceWheel({
   const svg = (
     <svg
       // wheel-svg + interactive borrow the zodiac wheel's planet-mark styling
-      // (disc fill, hit target, hover lift) so the marks match exactly.
-      className={`local-space-wheel wheel-svg interactive${dragging ? ' lsw-dragging' : ''}`}
+      // (disc fill, hit target, hover lift) so the marks match exactly. Kept out of a page
+      // translator as the zodiac wheel is (WheelSvg's root says why): its text is cardinal
+      // letters, glyphs and azimuths that move as the globe turns. (2026-10-09)
+      className={`local-space-wheel wheel-svg interactive notranslate${dragging ? ' lsw-dragging' : ''}`}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
+      {...SVG_NO_TRANSLATE}
       role="img"
       aria-label={t('expandedSidebar.localSpace.dragHint')}
       onPointerDown={onPointerDown}

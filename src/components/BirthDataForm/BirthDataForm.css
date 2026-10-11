@@ -1053,6 +1053,11 @@
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+  /* When Import and the actions can't share the line (a longer language on a phone),
+     the actions take a line of their own — right-aligned by the auto margin below —
+     instead of the submit button breaking its label over two lines. Where they fit
+     (English) the auto margin and space-between place them identically. */
+  flex-wrap: wrap;
 }
 
 /* The folder picker sits beside the submit button, so this side is a row now. */
@@ -1066,6 +1071,7 @@
 .birth-form footer .footer-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
 .birth-form button.secondary,

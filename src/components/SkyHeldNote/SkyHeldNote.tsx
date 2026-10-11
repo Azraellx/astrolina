@@ -15,9 +15,7 @@
 // the reason reads as one of that panel's notes. Only the fix is styled here. Neutral,
 // not warning-toned — nothing is wrong, the map is simply one that doesn't turn.
 import { useId } from 'react';
-import { en, type MsgKey } from '../../i18n';
-import { useOptionalT } from '../../i18n/I18nProvider';
-import { resolvePath } from '../../i18n/t';
+import { useT, type MsgKey } from '../../i18n';
 import { TipSpan } from '../ui/HoverTip';
 import './SkyHeldNote.css';
 
@@ -44,13 +42,10 @@ const SHORT: Record<SkyHeldKind, MsgKey> = {
   forNow: 'settings.inert.skyHeldForNow',
 };
 
-// useT() throws outside <I18nProvider>, and a plugin can mount this in a React root
-// of its own — so outside the provider the strings come from the English base
-// catalog, as HoverTip's locked switch does.
-function useHeldT(): (key: MsgKey) => string {
-  const ctx = useOptionalT();
-  return ctx ? (key) => ctx.t(key) : (key) => resolvePath(en, key) ?? key;
-}
+// A plugin can mount this in a React root of its own. Until 2026-10-09 useT() threw there
+// (it read a provider's context), so this fell back to the English base catalog outside
+// one; the i18n runtime is a module-level store now and every root reads the reader's
+// language from it, so plain useT() serves them all.
 
 export function SkyHeldNote({
   onFix,
@@ -71,7 +66,7 @@ export function SkyHeldNote({
   /** Which sentence to say — see {@link SkyHeldKind}. Default 'sky'. */
   kind?: SkyHeldKind;
 }) {
-  const t = useHeldT();
+  const { t } = useT();
   const fixId = useId();
   const cls = className ? ` ${className}` : '';
 

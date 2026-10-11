@@ -164,8 +164,12 @@
   font-weight: 700;
 }
 
+/* pretty: a label that runs to a second line doesn't leave one word alone on it — the
+   longer languages wrap labels English keeps on one ("…провести / линию", "…ещё раз —
+   / выйти"). A label that fits one line is untouched. */
 .mg-label {
   flex: 1;
+  text-wrap: pretty;
 }
 
 /* The gesture hotkey pill ("Double 🖱" / "Right 🖱") reuses the shared .ui-tip-hotkey

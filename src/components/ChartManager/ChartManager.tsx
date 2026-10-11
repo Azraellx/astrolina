@@ -51,12 +51,13 @@ import { SpyIcon } from '../ui/SpyIcon';
 import { TagIcon } from '../ui/TagIcon';
 import { getChartsSection } from '../../lib/extensions/chartsSection';
 import { useTouchLayout } from '../../lib/touch';
-import { useT } from '../../i18n';
+import { foldForSearch, useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import './ChartManager.css';
 
+// "14 Mar 1990" — a row's birth date, written the language's way.
 function fmtBirth(c: StoredChart, fmt: Formatters): string {
-  return `${c.day} ${fmt.monthAbbr(c.month)} ${c.year}`;
+  return fmt.date(c.year, c.month, c.day, 'medium');
 }
 
 // The tag-filter chips shown under the search box; 'all' clears the filter.
@@ -220,7 +221,7 @@ export function ChartManager({
     };
   }, []);
 
-  const q = query.trim().toLowerCase();
+  const q = foldForSearch(query.trim());
   const filtering = q !== '' || tagFilter !== 'all';
 
   const visible = useMemo(() => {
@@ -231,9 +232,9 @@ export function ChartManager({
     if (q)
       result = result.filter(
         (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.birthplace.label.toLowerCase().includes(q) ||
-          chartFolder(c).toLowerCase().includes(q),
+          foldForSearch(c.name).includes(q) ||
+          foldForSearch(c.birthplace.label).includes(q) ||
+          foldForSearch(chartFolder(c)).includes(q),
       );
     return result;
   }, [charts, q, tagFilter, excludeId]);
@@ -612,7 +613,10 @@ export function ChartManager({
                       onClick={() => editNew(query.trim())}
                     >
                       <span className="cm-add-plus">＋</span>
-                      {t('chartManager.addQuery', { name: query.trim() })}
+                      {/* Rewritten on every keystroke, so the sentence is a single string
+                          in a box of its own (a flex item either way): React can then
+                          replace it whole even after a page translator has rewritten it. */}
+                      <span>{t('chartManager.addQuery', { name: query.trim() })}</span>
                     </button>
                   </li>
                 )}
@@ -670,8 +674,12 @@ export function ChartManager({
                               aria-expanded={isOpen(node.path)}
                             >
                               <Caret open={isOpen(node.path)} />
-                              <span className="cm-folder-name">{id.text(node.name)}</span>
-                              <span className="cm-folder-count">({node.totalCount})</span>
+                              <span className="cm-folder-name" translate="no">
+                                {id.text(node.name)}
+                              </span>
+                              <span className="cm-folder-count" translate="no">
+                                {`(${node.totalCount})`}
+                              </span>
                             </button>
                             {confirmFolder === node.path ? (
                               <div className="cm-row-actions is-confirm">
@@ -783,13 +791,15 @@ export function ChartManager({
                             }
                       }
                     >
+                      {/* The name, date, place and folder are the reader's data, not
+                          copy: none of it is offered to a page translator. (2026-10-09) */}
                       <button type="button" className="cm-row" onClick={() => onSelect(c.id)}>
-                        <span className="cm-row-name">
+                        <span className="cm-row-name" translate="no">
                           <TagIcon tag={chartTag(c)} className="tag-icon" />
                           {timeUnknown(c) && <TagIcon tag="unknown" className="tag-icon" />}
                           {id.on ? id.name(c.name) : displayName(c.name)}
                         </span>
-                        <span className="cm-row-meta">
+                        <span className="cm-row-meta" translate="no">
                           {id.date(fmtBirth(c, fmt))} ·{' '}
                           {id.text(c.birthplace.label.split(',')[0])}
                           {item.crumb && (
@@ -876,7 +886,9 @@ export function ChartManager({
           )}
           {ctxMenu?.kind === 'folder' && (
             <ContextMenu at={ctxMenu} onClose={() => setCtxMenu(null)}>
-              <div className="cm-move-head">{id.text(folderName(ctxMenu.path))}</div>
+              <div className="cm-move-head" translate="no">
+                {id.text(folderName(ctxMenu.path))}
+              </div>
               <button
                 type="button"
                 className="cm-move-item is-new"
@@ -894,13 +906,23 @@ export function ChartManager({
 
           {/* Right: add / edit the birth details. */}
           <div className="cm-form-pane">
-            {editing && (
-              <div className="cm-form-head">
-                {t('chartManager.editingHeader', {
-                  name: id.on ? id.name(editing.name) : displayName(editing.name),
-                })}
-              </div>
-            )}
+            {/* The name in its own span, so the head's uppercase can leave it as typed where
+                the page's casing is not the name's (ChartManager.css .cm-form-head-name). The
+                phrase is split at its {name} slot, so each language keeps its own word order. */}
+            {editing &&
+              (() => {
+                const name = id.on ? id.name(editing.name) : displayName(editing.name);
+                const [before, after = ''] = t('chartManager.editingHeader', {
+                  name: '\u0000',
+                }).split('\u0000');
+                return (
+                  <div className="cm-form-head">
+                    {before}
+                    <span className="cm-form-head-name">{name}</span>
+                    {after}
+                  </div>
+                );
+              })()}
             <BirthDataFields
               key={formKey}
               initial={editing}
@@ -1031,6 +1053,8 @@ function MoveMenuBody({
           className={`cm-move-item ${path === current ? 'is-current' : ''}`}
           style={{ '--depth': path.split('/').length - 1 } as CSSProperties}
           onClick={() => onPick(path)}
+          // A folder's name is the reader's own, not copy to translate.
+          translate="no"
         >
           {folderName(path)}
         </button>

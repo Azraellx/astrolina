@@ -172,9 +172,13 @@ function Longitude({
     if (dd === 30) { dd = 0; signIdx = (signIdx + 1) % 12; }
     dms = `${dd}°${pad2(mm)}'${pad2(ss)}"`;
   }
+  // The figure is a value that moves with every overlay tick, sitting beside the sign's
+  // name: boxed on its own and not offered to a page translator, while the name (a word,
+  // in its own span already) stays translatable. Bare, the figure was a text run between
+  // siblings, the shape a translator's rewrite freezes. (2026-10-09)
   return (
     <>
-      {dms}{' '}
+      <span translate="no">{dms}</span>{' '}
       <span className="es-lon-sign">
         <ZodiacGlyph sign={signIdx} size={12} />{' '}
         <span className="es-lon-sign-name">{labels.sign(signIdx)}</span>
@@ -200,10 +204,14 @@ function SignLon({ lon, trunc = false }: { lon: number; trunc?: boolean }) {
     d = z.deg;
     m = z.min;
   }
+  // Figures and a glyph that change while the table is open (an overlay's playback): one
+  // box, not offered to a page translator. (2026-10-09)
   return (
-    <>
-      {d}°<ZodiacGlyph sign={signIdx} size={11} />{pad2(m)}&#39;
-    </>
+    <span translate="no">
+      {`${d}°`}
+      <ZodiacGlyph sign={signIdx} size={11} />
+      {`${pad2(m)}'`}
+    </span>
   );
 }
 
@@ -635,7 +643,7 @@ function AspectGlyph({ type, color }: { type: string; color: string }) {
       color={color}
       title={
         <span className="es-tip-title">
-          <span className="astro-glyph" style={{ color }}>{glyph}</span>
+          <span className="astro-glyph" translate="no" style={{ color }}>{glyph}</span>
           {known
             ? `${t(`expandedSidebar.aspect.${type}.name` as 'expandedSidebar.aspect.conjunction.name')} (${
                 ASPECT_ANGLES[type] ?? t('expandedSidebar.aspect.byDeclination')
@@ -1021,12 +1029,12 @@ function BalanceRow({
         tapReveal
         tip={
           <span className="es-tip-title">
-            <span className="astro-glyph">{seg.glyph}</span> {seg.label}
+            <span className="astro-glyph" translate="no">{seg.glyph}</span> {seg.label}
           </span>
         }
         hint={seg.hint}
       >
-        <span className="astro-glyph es-balance-cat-glyph">{seg.glyph}</span>
+        <span className="astro-glyph es-balance-cat-glyph" translate="no">{seg.glyph}</span>
         <span className="es-balance-name">
           {seg.label} <span className="es-balance-num">({count})</span>
         </span>
@@ -1137,7 +1145,7 @@ export function ExpandedChartSidebar({
   onDeleteChart,
   chartFlash = null,
 }: ExpandedChartSidebarProps) {
-  const { t, fmt, labels } = useT();
+  const { t, fmt, labels, lang } = useT();
   // Discreet mode's masks — this header carries the chart's birth moment and, in
   // the plain natal state, its birthplace, which is the whole of what the mode
   // exists to blank. The wheel and every position below it stay as they are.
@@ -1387,6 +1395,8 @@ export function ExpandedChartSidebar({
   // "Name · details" lives in the timeline bar); the rest after the separator drops.
   // Cyclo is special-cased to "CCG": its name "Cyclo·carto·graphy" contains middots,
   // so the generic split would truncate it to "Cyclo".
+  // In a translation the split degrades safely: a label whose translator dropped the
+  // separator comes through whole, and one that kept it is cut where English is (2026-10-09).
   // A solar or lunar return is transits at one particular instant, so the overlay
   // still calls itself "Transits" everywhere it is a MODE. Here it is naming a
   // CHART, and the chart an astrologer has in front of them at that moment is the
@@ -2067,6 +2077,10 @@ export function ExpandedChartSidebar({
       hint: t(`expandedSidebar.modalityDesc.${m}`),
       bodies: modalityBodies[m],
     }));
+    // The dignity tips' headlines capitalise the inline word in the reader's language
+    // (2026-10-09): plain toUpperCase() turns a Turkish "i" into "I", not "İ". English is
+    // unchanged — 'en' has no special casing rules.
+    const capital = (s: string) => s.charAt(0).toLocaleUpperCase(lang) + s.slice(1);
     return (
       <>
         <div className="es-balance-groups">
@@ -2094,7 +2108,7 @@ export function ExpandedChartSidebar({
                     className={`es-dignity es-dignity-${d.dignity}`}
                     placement="top"
                     tapReveal
-                    tip={term.charAt(0).toUpperCase() + term.slice(1)}
+                    tip={capital(term)}
                     hint={t(`expandedSidebar.dignityDesc.${d.dignity}`)}
                   >
                     {term}
@@ -2110,7 +2124,7 @@ export function ExpandedChartSidebar({
                       className="es-dignity-from"
                       placement="top"
                       tapReveal
-                      tip={from.charAt(0).toUpperCase() + from.slice(1)}
+                      tip={capital(from)}
                       hint={t(`expandedSidebar.dignityFromDesc.${d.from}`)}
                     >
                       {`(${from})`}
@@ -2210,10 +2224,16 @@ export function ExpandedChartSidebar({
                   : s.kind === 'place' || s.kind === 'name' || s.kind === 'text'
                     ? `es-hl-${s.kind}`
                     : 'es-hl-fig';
+            // A lead ("Born:") and a sentence are copy; every other segment is the
+            // chart's data — its name, a place, a date, a clock, a zone, coordinates —
+            // and isn't offered to a page translator. (2026-10-09)
+            const copy = s.kind === 'lead' || s.kind === 'text';
             return (
               <Fragment key={j}>
                 {sep && <span className="es-hl-sep">{sep}</span>}
-                <span className={cls}>{s.text}</span>
+                <span className={cls} translate={copy ? undefined : 'no'}>
+                  {s.text}
+                </span>
               </Fragment>
             );
           })}
@@ -2273,8 +2293,9 @@ export function ExpandedChartSidebar({
       const z = truncZodiac(lon, 'min');
       return (
         <>
-          {pad2(z.deg)}°<ZodiacGlyph sign={z.signIdx} size={11} />
-          {pad2(z.min)}&#39;
+          {`${pad2(z.deg)}°`}
+          <ZodiacGlyph sign={z.signIdx} size={11} />
+          {`${pad2(z.min)}'`}
         </>
       );
     };
@@ -2295,9 +2316,11 @@ export function ExpandedChartSidebar({
         <span className="es-geo-ge">
           <span className="es-geo-ge-tag">{t('expandedSidebar.geodetic.ge')}</span>
           {' · '}
-          {t('map.geoReadout.as')} <span className="es-geo-val">{ge(angles.asc)}</span>
+          {/* The two figures are values that move with the pin: not offered to a page
+              translator (2026-10-09). */}
+          {t('map.geoReadout.as')} <span className="es-geo-val" translate="no">{ge(angles.asc)}</span>
           {' · '}
-          {t('map.geoReadout.mc')} <span className="es-geo-val">{ge(angles.mc)}</span>
+          {t('map.geoReadout.mc')} <span className="es-geo-val" translate="no">{ge(angles.mc)}</span>
         </span>
         {planetsLine && <span className="es-geo-planets">{planetsLine}</span>}
       </div>
@@ -2685,11 +2708,16 @@ export function ExpandedChartSidebar({
                   {cornerMoment ? (
                     // Date (only where the title beside it lacks one) over the clock in
                     // the cast place's zone — a line each, so neither runs into the wheel.
+                    // Values that move with every playback tick (the clock a text run
+                    // beside the zone's span): not offered to a page translator. The
+                    // partner's name below is their data. (2026-10-09)
                     <>
                       {cornerDated && (
-                        <span className="es-overlay-moment">{cornerMoment.date.text}</span>
+                        <span className="es-overlay-moment" translate="no">
+                          {cornerMoment.date.text}
+                        </span>
                       )}
-                      <span className="es-overlay-moment">
+                      <span className="es-overlay-moment" translate="no">
                         {cornerMoment.clock.text}
                         {cornerMoment.zone && (
                           <span className="es-meta-tz">{`\u00a0${cornerMoment.zone.text}`}</span>
@@ -2698,7 +2726,9 @@ export function ExpandedChartSidebar({
                     </>
                   ) : (
                     overlaySubject && (
-                      <span className="es-overlay-moment es-overlay-subject">{overlaySubject}</span>
+                      <span className="es-overlay-moment es-overlay-subject" translate="no">
+                        {overlaySubject}
+                      </span>
                     )
                   )}
                   <span className="es-overlay-caption es-overlay-dashed">
@@ -2758,7 +2788,10 @@ export function ExpandedChartSidebar({
                                 name has at the top of the panel. */}
                             {overlaySubject && (
                               <div className="es-meta">
-                                <span className="es-meta-when es-overlay-chart-name">
+                                <span
+                                  className="es-meta-when es-overlay-chart-name"
+                                  translate="no"
+                                >
                                   {overlaySubject}
                                 </span>
                               </div>
@@ -3049,11 +3082,15 @@ export function ExpandedChartSidebar({
               size={12}
               className="asp-planet"
             />
+            {/* The aspect's catalogued NAME — this was the raw type key, capitalised by CSS,
+                which no translation could reach (2026-10-09). Same in English. */}
             <span className="asp-type">
-              {a.type}
+              {t(`expandedSidebar.aspect.${a.type}.name` as 'expandedSidebar.aspect.conjunction.name')}
               {typeExtra}
             </span>
-            <span className="asp-orb">
+            {/* The orb moves with the overlay while a shift marker comes and goes
+                beside it: a value, not offered to a page translator (2026-10-09). */}
+            <span className="asp-orb" translate="no">
               {fmtOrb(a.orb)}
               {orbExtra}
             </span>
@@ -3355,9 +3392,9 @@ export function ExpandedChartSidebar({
                               className={
                                 r.delta < 0 ? 'es-orb-tighter' : 'es-orb-wider'
                               }
+                              translate="no"
                             >
-                              {r.delta < 0 ? '−' : '+'}
-                              {fmtOrb(Math.abs(r.delta))}
+                              {`${r.delta < 0 ? '−' : '+'}${fmtOrb(Math.abs(r.delta))}`}
                             </span>
                           )}
                         </td>
@@ -3560,7 +3597,9 @@ export function ExpandedChartSidebar({
                             className="asp-planet asp-planet-overlay"
                             suffix={t('expandedSidebar.overlaySuffix')}
                           />
-                          <span className="asp-type">{a.type}</span>
+                          <span className="asp-type">
+                            {t(`expandedSidebar.aspect.${a.type}.name` as 'expandedSidebar.aspect.conjunction.name')}
+                          </span>
                           <span className="asp-orb">{fmtOrb(a.orb)}</span>
                         </li>
                       ))}
@@ -3618,7 +3657,9 @@ export function ExpandedChartSidebar({
                     size={12}
                     className="asp-planet"
                   />
-                  <span className="asp-type">{a.type}</span>
+                  <span className="asp-type">
+                    {t(`expandedSidebar.aspect.${a.type}.name` as 'expandedSidebar.aspect.conjunction.name')}
+                  </span>
                   <span className="asp-orb">{fmtOrb(a.orb)}</span>
                 </li>
               ))}

@@ -26,15 +26,31 @@ import type { ReactNode } from 'react';
 // MINOR_MARK / MINOR_HOLLOW_MARK), for copy that explains them. U+25C6 is also the
 // Mutable modality glyph; no clash, since this picks a font, not a meaning, and both
 // uses draw the subset's one outline.
-const GLYPH_RUN =
+//
+// Exported for the dev pseudo-locale (i18n/pseudo.ts), which must keep exactly these runs
+// intact — one pattern, so the two cannot drift apart. (2026-10-09)
+export const GLYPH_RUN =
   /((?:[☉-☍☽☿♀-♆♈-♓⚳-⚹⊗□△◆◇⯓⯙-⯜⯰-⯲\u{1F77B}-\u{1F77F}]︎?)+)/u;
 
+/**
+ * `translate="no"` for an SVG element, by spread (2026-10-09). Every glyph, and the root of
+ * every wheel, is kept out of a browser's page translator — a symbol is not a word, and a
+ * translator that reaches one swaps its text node for a <font> of its own, after which React,
+ * still holding the original node, can neither update it nor remove it cleanly. `translate`
+ * is an HTML global attribute, so React's SVG prop types leave it out; the DOM takes it as the
+ * same attribute either way. Lives here, beside the HTML glyph runs, so every mark spells it
+ * one way.
+ */
+export const SVG_NO_TRANSLATE = { translate: 'no' } as const;
+
+// Each glyph run carries translate="no" for SVG_NO_TRANSLATE's reason; the words around it
+// stay translatable.
 export function glyphify(text: string): ReactNode {
   const parts = text.split(GLYPH_RUN);
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <span key={i} className="astro-glyph">
+      <span key={i} className="astro-glyph" translate="no">
         {part}
       </span>
     ) : (

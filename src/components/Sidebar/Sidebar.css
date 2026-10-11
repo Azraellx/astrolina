@@ -404,6 +404,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   color: var(--text-strong);
 }
 
+/* A plain radio + label choice (HintOption: Part of Fortune, and the rest) whose label is
+   longer than the sidebar is wide wraps — losslessly; the column can't widen — and the
+   radio then sits on the label's FIRST line, as in any list of options, instead of
+   floating between the two ("Según la secta (día/noche)"). On a one-line label first-
+   baseline and centre land on the same pixels (measured), so nothing else moves. The
+   Theme rows (radio + swatch + label) keep centring: a swatch has no baseline. */
+.theme-option:has(> .radio + .label:last-child) {
+  align-items: first baseline;
+}
+
 .sidebar h2 {
   font-size: 11px;
   font-weight: 600;
@@ -423,10 +433,22 @@ html[data-mapstate='natal-pinned'] .sidebar {
   margin: 0;
 }
 
+/* minmax(0, 1fr), not 1fr: a bare 1fr track never goes below its widest cell's min-content,
+   so one long name ("Glückspunkt", "Şans Noktası") widened its column, ran the grid ~14px
+   into the sidebar's padding and broke the line-up with the grids above and below. Held to
+   equal halves, the name ellipsizes in its cell (.planet-toggle .name) and the toggle's tip
+   carries it whole. Names that fit (all English ones) are untouched. */
 .sidebar .planet-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px 6px;
+}
+/* A name at the end of its cell may run into the cell's right padding before it gives way:
+   "Südknoten" is 0.1px wider than its share and would otherwise end "Südknot…". A name that
+   fits starts where it always did, so nothing that fits moves. (Not on the "More" cell,
+   whose name has a count after it.) */
+.sidebar .planet-grid .planet-toggle .name:last-child {
+  margin-right: -3px;
 }
 
 .sidebar .technique-list {
@@ -1027,6 +1049,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The lines under the Language menu (2026-10-10): a device translation's download and
+   translating progress, and — while one is on screen — the disclosure that it is
+   machine-translated. Small and quiet: read once, not acted on. */
+.language-note {
+  margin: 6px 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 .calc-menu-trigger.open {

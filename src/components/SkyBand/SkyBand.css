@@ -555,16 +555,32 @@
   flex: 1 1 auto;
   justify-content: flex-start;
 }
+/* On a portrait phone the controls leave the place a sliver at best ("Yo…"): it was squeezed
+   to nothing while the row overflowed, and once the row fits (the Time Stamp word went, below)
+   it surfaced as a two-letter stub. Below 480px the place stays out, as it effectively always
+   was; a landscape phone has the room to show it. */
+@media (max-width: 480px) {
+  .sky-band.is-phone .sky-band-side-row:has(.sky-band-place) {
+    display: none;
+  }
+}
 /* Portrait is tight: the zone keeps its clock icon (a tap reveals the full zone) and the
    track + table toggles keep their eyes — the text labels go, CLIPPED rather than
-   display:none so every control keeps its accessible name. */
+   display:none so every control keeps its accessible name.
+   The Time Stamp toggle joins them (2026-10-10) and keeps its cursor mark: its word was the
+   one label left in the row, and the row ran out of its 352px box — by 8px in English,
+   ~42px in Russian and Portuguese ("ОТМЕТКА ВРЕМЕНИ", "MARCA DE HORÁRIO" against "TIME
+   STAMP") — centred, so the overflow landed on both ends: the previous-day ‹ went fully
+   off the screen's left edge, untappable, and a registered track's eye slid under the ✕. */
 .sky-band.is-phone .sky-band-zone,
 .sky-band.is-phone .sky-band-track-toggle,
+.sky-band.is-phone .sky-band-follow-toggle,
 .sky-band.is-phone .sky-band-detail-toggle {
   position: relative;
 }
 .sky-band.is-phone .sky-band-zone > span,
 .sky-band.is-phone .sky-band-track-toggle > span,
+.sky-band.is-phone .sky-band-follow-toggle > span,
 .sky-band.is-phone .sky-band-detail-toggle > span {
   position: absolute;
   width: 1px;

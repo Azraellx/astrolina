@@ -1,0 +1,73 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ *
+ * The binding-language notice (BindingLanguageNote.tsx, 2026-10-10): one compact line —
+ * mark, sentence, toggle — that has to fit a 320 px panel in every shipped language. The mark
+ * takes a gutter of its own so a sentence that wraps keeps a clean left edge; the toggle is
+ * inline in the sentence's run, not a flex item, so on a narrow panel it wraps onto the next
+ * line with the words instead of squeezing them (the same reasoning as SkyHeldNote's fix).
+ * No outer margin: the host spaces it (a gapped column needs none; block flow passes a class).
+ */
+
+.binding-language-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The mark carries the tone so the sentence can stay plain — the auto-flip notice's rule. The
+   cool blue that notice wears: the colour a reader already knows as the app telling them
+   something, not something going wrong, and redefined by every theme (a Custom theme's palette
+   writes it too), so it reads on light and dark panels alike. Nudged down so the circle sits
+   centred on the first line's x-height. */
+.binding-language-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: rgb(var(--cool-rgb));
+}
+
+.binding-language-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A small bordered inline action, the house form of a fix inside a sentence (.sky-held-fix).
+   nowrap so the label never splits across lines; it moves to the next line whole. */
+.binding-language-toggle {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--tint), 0.2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.binding-language-toggle:hover,
+.binding-language-toggle:focus-visible {
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  color: var(--accent-brand);
+}
+
+/* The text the line is about, laid out as if the area weren't there: no box of its own, so its
+   children stay direct children of the host's flex column, grid or multi-column flow. It carries
+   `lang` while the English shows, and is there in English too (2026-10-10), so that a change of
+   language never changes the area's shape and remounts what is in it. Boxes only: a host's
+   `parent > child`, `+` or `:first-child` selector does not see through it, in any language. */
+.binding-language-content {
+  display: contents;
+}

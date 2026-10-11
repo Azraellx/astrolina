@@ -187,7 +187,7 @@ export function AspectLinesHud({
             <span className="location-ls-name">
               {t(`aspectLinesHud.${key}.title`)}
               {glyphs && (
-                <span className="astro-glyph al-filter-glyphs" aria-hidden="true">
+                <span className="astro-glyph al-filter-glyphs" translate="no" aria-hidden="true">
                   {glyphs}
                 </span>
               )}

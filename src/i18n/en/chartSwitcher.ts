@@ -9,6 +9,8 @@ export const chartSwitcher = {
   noChart: 'No chart selected',
   tip: 'Switch, edit, or add a chart',
   // {key} renders as the yellow Tab key pill in the trigger's hover tip.
+  // Translator note (2026-10-09): {key} must appear exactly once, spelled exactly so. It
+  // may move to wherever the sentence needs the key's name — the pill is drawn there.
   tabHint: '{key} swaps to your previous chart — keep tapping to cycle the recent five.',
   empty: 'No saved charts yet.',
   searchAdd: 'Search + Add Name',
