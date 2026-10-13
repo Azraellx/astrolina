@@ -50,7 +50,10 @@
      which is why two things now keep a window from opening into an open menu there: windows
      start docked at the bottom on a phone (useMovableHud's phoneHome), and a View row closes the
      menu as it opens a window on a narrow or touch layout (TopNav.tsx). Stays below the
-     expanded sidebar (30), modals (100), and hover tips (1000). */
+     expanded sidebar (30), modals (100), and hover tips (1000). One window does hang right under
+     the nav on a phone — kept up beside a surface that owns the viewport (useMovableHud's
+     `phoneTop`) — so while a nav menu is OPEN the stack rises above the windows (the rule after
+     this block). */
   z-index: 25;
   /* The stack is content-sized to the WIDEST bar (the main bar), so the narrower, centred tool
      readout below it leaves transparent stack area on either side. At z-25 that empty area sits
@@ -62,6 +65,12 @@
   align-items: center;
   gap: 8px;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* An open nav menu above every window and overlay bar (27/26): its rows are trapped in this
+   stack's context, so a window under the nav (a phone's, beside a viewport owner) covered them.
+   Closed, the windows stay on top, grips grabbable, as above. (2026-10-13) */
+.topnav-stack:has(.navmenu-panel, .switcher-menu, [aria-expanded='true']) {
+  z-index: 28;
 }
 
 /* Both bars are static within the stack — undo .timeline-hud's absolute docking,

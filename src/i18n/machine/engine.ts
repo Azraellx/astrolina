@@ -54,7 +54,6 @@
 // language never carries them. A translator's exception counts toward the five in a row like any
 // other — it is one translator — and is stored nowhere.
 import { GLYPH_RUN } from '../../components/ui/glyphify';
-import { LANGUAGES_HELD } from '../languageHold';
 import { composeEnglish, isMachineExcluded, isMarkerPath, onRegistryChange } from '../registry';
 import { PLURAL_RE, samePlaceholders } from '../plural';
 import {
@@ -951,7 +950,7 @@ export async function resumeMachine(id: MachineLocale): Promise<void> {
  * of the keys asked for — and only what neither had goes to the translator, queued behind what
  * the catalog has on screen and, for 'now', ahead of the sweep. With no translator (a language
  * served from its cache, or a translator that broke) the answer is what the store had. Refused
- * while the languages are held or the screen is not in a device language; never rejects.
+ * while the screen is not in a device language; never rejects.
  */
 export async function translateFree(
   items: readonly OnDeviceItem[],
@@ -959,7 +958,7 @@ export async function translateFree(
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   const locale = getI18n().locale;
-  if (LANGUAGES_HELD || !locale.startsWith('mt:') || opts.signal?.aborted) return results;
+  if (!locale.startsWith('mt:') || opts.signal?.aborted) return results;
   // One entry per key: the first passage given for it.
   const byKey = new Map<string, OnDeviceItem>();
   for (const it of items) {

@@ -1,0 +1,96 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only
+   Licensed under the GNU AGPL v3.0 with an additional attribution term under
+   AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept. */
+
+/* The translations' notice as a card (LanguageNoticeCard.tsx, 2026-10-13). Dressed as the
+   auto-flip notice and the translate offer are — same panel, same cool-blue edge, same layer and
+   the same neutral spot — because it is the same voice, and App never shows two of them at once.
+   Restated rather than shared, as the translate offer's sheet is: move this with them if their
+   chrome moves. */
+.language-notice-card {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(var(--bg-panel), max(0.96, var(--fx-opaque)));
+  border: 1px solid rgba(var(--cool-rgb), 0.4);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text-strong);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, calc(0.4 * var(--fx-shadow)));
+  backdrop-filter: blur(calc(6px * var(--fx-blur)));
+  font-family: inherit;
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .language-notice-card {
+    animation: none;
+  }
+}
+
+/* Why the app is in this language, when it is the browser's: context, in the quieter voice. */
+.lnc-detected {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The notice itself, as the Language menu shows it. */
+.lnc-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+
+/* The switch on the left in the muted voice, the acceptance on the right in the accent, as the
+   translate offer pairs its two. A label in a longer language wraps rather than widening the card. */
+.lnc-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.lnc-english,
+.lnc-ok {
+  padding: 4px 14px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.lnc-english {
+  border: 1px solid rgba(var(--tint), 0.16);
+  background: transparent;
+  color: var(--text-muted);
+}
+.lnc-english:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.06);
+}
+.lnc-ok {
+  margin-left: auto;
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.12);
+  color: var(--accent-brand);
+}
+.lnc-ok:hover {
+  background: rgba(var(--accent-brand-rgb), 0.2);
+}
+.lnc-english:disabled,
+.lnc-ok:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

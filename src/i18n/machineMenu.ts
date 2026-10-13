@@ -15,7 +15,6 @@
 // "on this device", which is what it is.
 import { useSyncExternalStore } from 'react';
 import { isShippedLocale } from './catalog';
-import { LANGUAGES_HELD } from './languageHold';
 import { currentMachineSession, getI18n, setMachineSession } from './runtime';
 import type { MachineLocale } from './types';
 
@@ -81,15 +80,6 @@ export const MACHINE_CANDIDATES: readonly { lang: string; autonym: string }[] = 
   { lang: 'hi', autonym: 'हिन्दी' },
 ].filter((c) => !isShippedLocale(c.lang));
 
-/** Whether the Language menu offers the on-device section at all. False while the release hold
- *  stands (languageHold.ts, 2026-10-10): the section is then ABSENT, not greyed — a dimmed
- *  section would announce a tier nobody has been told about — and with it every row a stored
- *  `mt:` choice would have kept listed. One answer, read by the menu and by verify-i18n-runtime's
- *  held section, so the two can't come to disagree about it. */
-export function machineTierOffered(): boolean {
-  return !LANGUAGES_HELD;
-}
-
 /** A candidate's own name, or its tag where it isn't listed (a stored choice from elsewhere). */
 export function machineAutonym(lang: string): string {
   return MACHINE_CANDIDATES.find((c) => c.lang === lang)?.autonym ?? lang;
@@ -140,8 +130,6 @@ let checking: Promise<void> | null = null;
  *  opens and when its menu does — never at boot: a reader who never opens it costs the device
  *  nothing. Writes nothing anywhere. */
 export function refreshMachineAvailability(): Promise<void> {
-  // Under the release hold the device isn't asked at all: there is no section to fill.
-  if (!machineTierOffered()) return Promise.resolve();
   const api = translatorApi();
   if (!api) return Promise.resolve();
   if (checking) return checking;
@@ -176,9 +164,6 @@ let pending: { lang: string; ctrl: AbortController } | null = null;
  * as the work in progress, so a pick made anywhere stops it).
  */
 export function chooseMachineLanguage(lang: string): Promise<void> {
-  // Refused under the release hold, before the translator is touched or the engine's chunk is
-  // fetched: the menu offers no such row then, and this keeps any other route from starting one.
-  if (!machineTierOffered()) return Promise.resolve();
   const api = translatorApi();
   if (!api) return Promise.resolve();
   const id = `mt:${lang}` as MachineLocale;

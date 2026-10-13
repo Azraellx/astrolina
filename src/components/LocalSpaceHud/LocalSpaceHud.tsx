@@ -26,6 +26,12 @@ import '../LocationHud/LocationHud.css';
 
 // Its own saved position (independent of the Teleport window).
 const POS_KEY = 'astro:localspace-pos:v1';
+
+/** The bottom of the nav and the readout rows under it — where a window `phoneUnderNav` hangs. */
+function navBottom(): number | null {
+  const nav = document.querySelector<HTMLElement>('.topnav-stack')?.getBoundingClientRect();
+  return nav && nav.height > 0 ? nav.bottom : null;
+}
 // "Fly to origin" lands at the map's CLOSE_ZOOM — the compass is full-size there, and
 // it's the threshold that surfaces the map's "Zoom out" button, so you arrive already
 // "zoomed in" to the local horizon.
@@ -60,16 +66,31 @@ interface LocalSpaceHudProps {
    *  viewport (lib/extensions/viewLock `keepsLocalSpace`), where the map it would fly is hidden
    *  under that surface and the jump would show nothing. (2026-10-12) */
   hideFly?: boolean;
-  /** Open folded to its header — for a window a viewport owner keeps up on a PHONE, where the
-   *  open window would cover the owner's own controls along the bottom; the reader unfolds it
-   *  (the header's eye) to move the origin. Read as the window mounts, and again when it turns
-   *  true on a window already open — the owner arriving while it was up. (2026-10-12) */
-  startCollapsed?: boolean;
+  /** On a phone, hang from the nav (and any readout row under it) instead of standing on the
+   *  bottom chrome — for a window kept up beside a viewport owner whose own bar runs along the
+   *  bottom, where the usual bottom-sheet home lands on that bar. Live: the window returns to the
+   *  sheet when it turns false (useMovableHud `phoneTop`). (2026-10-13) */
+  phoneUnderNav?: boolean;
+  /** With `phoneUnderNav`: the y the hung window ends above — the owner's own bar's top — so on
+   *  a short phone it is capped to the room left and scrolls, rather than running over that bar
+   *  (useMovableHud `phoneTopFloor`). (2026-10-13) */
+  phoneFloor?: () => number | null;
   /** The held reason's fix: open Settings ▸ Calculation, where the line system is. */
   onOpenCalc?: () => void;
   /** The title in place of the window's own — for a window kept up beside a viewport owner,
    *  naming what it works with there (lib/extensions/viewLock `keepsLocalSpace`). (2026-10-12) */
   title?: string;
+  /** The origin's place row, for a window kept up beside an owner that offers one
+   *  (lib/extensions/viewLock `keepsLocalSpace.place`): the place under `heading`, and a Change
+   *  that hands a picked place to `onPick`. Home's own editor stands down while it shows a set
+   *  Home, so the window carries one place row. (2026-10-13) */
+  originPlace?: {
+    heading: string;
+    value: { label: string; lat: number; lng: number } | null;
+    onPick: (place: { label: string; lat: number; lng: number }) => void;
+    /** Change's tip, shown while the origin isn't the pin (ViewLock.keepsLocalSpace.place). */
+    changeTip?: { title: string; hint: string };
+  };
 }
 
 // The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
@@ -183,10 +204,12 @@ export function LocalSpaceHud({
   localSpaceOrigin,
   held = false,
   hideFly = false,
-  startCollapsed = false,
   closeHint,
   onOpenCalc,
   title,
+  originPlace,
+  phoneUnderNav = false,
+  phoneFloor,
 }: LocalSpaceHudProps) {
   const { t } = useT();
   // The active chart's home place, edited inline while it is the origin.
@@ -194,14 +217,9 @@ export function LocalSpaceHud({
   const discreet = useDiscreet();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
   // screen clutter — WITHOUT closing the tool (close it from the top nav / hotkey). Local UI state.
-  const [collapsed, setCollapsed] = useState(startCollapsed);
-  // …and fold again when startCollapsed turns true on a window already open (adjusting state to a
-  // prop during render, React's pattern for it, rather than an effect a frame later).
-  const [startedCollapsed, setStartedCollapsed] = useState(startCollapsed);
-  if (startCollapsed !== startedCollapsed) {
-    setStartedCollapsed(startCollapsed);
-    if (startCollapsed) setCollapsed(true);
-  }
+  // Always opens unfolded — beside a viewport owner on a phone too, where it was briefly folded
+  // to clear the owner's bar: the window is how the origin moves there. (2026-10-13)
+  const [collapsed, setCollapsed] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -210,6 +228,8 @@ export function LocalSpaceHud({
     // below the top bar — offset a touch from the Teleport window so the two don't
     // open exactly stacked.
     initial: () => ({ x: Math.round(effectiveCenterX() - 140), y: 144 }),
+    phoneTop: phoneUnderNav ? navBottom : undefined,
+    phoneTopFloor: phoneUnderNav ? phoneFloor : undefined,
   });
   const shellClass = `timeline-hud location-hud local-space-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`;
   const shellStyle = pos
@@ -247,6 +267,39 @@ export function LocalSpaceHud({
       {header}
 
       <div className="location-ls">
+        {/* The origin's place, for an owner that offers it: where the origin is, and a Change
+            that goes somewhere else (the owner's onPick). Same editor as Home's, without Clear.
+            First in the window, above the origin buttons: it is what the window is about while
+            the owner has the view — where the lines stand now. (2026-10-13) */}
+        {originPlace && (
+          <div className="location-ls-anchor-editor location-ls-origin-place">
+            <ChartHomeEditor
+              value={originPlace.value}
+              onChange={(p) => {
+                if (p) originPlace.onPick(p);
+              }}
+              label={originPlace.heading}
+              clearable={false}
+              // No maskValue: the value arrives masked where it IS the birthplace or Home
+              // (identity layer), and a pinned spot is where the reader is working (lib/discreet).
+              changeTip={lsOrigin !== 'pin' ? originPlace.changeTip : undefined}
+              strings={{
+                unset: '',
+                set: t('chartForm.homeChange'),
+                change: t('chartForm.homeChange'),
+                cancel: t('chartForm.homeCancel'),
+                placeholder: t('teleportHud.placeholder'),
+                searchAria: t('teleportHud.searchAria'),
+              }}
+              searchStrings={{
+                scopeLabel: t('placeSearch.scopeLabel'),
+                noMatches: t('placeSearch.noMatches'),
+                failed: t('placeSearch.failed'),
+                scopeAria: t('placeSearch.scopeAria'),
+              }}
+            />
+          </div>
+        )}
         {/* Top row: the square "Fly to origin" action (icon-only — the tip + aria-label
             carry its name) sits LEFT of the origin segmented control, spanning the
             stacked pair's full height so it reads as the window's primary action.
@@ -328,8 +381,10 @@ export function LocalSpaceHud({
           </div>
         </div>
         {/* Home's editor, inline while home IS the origin — set or change it
-            here rather than going back to the chart form. */}
-        {lsOrigin === 'home' && (
+            here rather than going back to the chart form. (Not beside the origin's place row
+            once Home is set: that row already names it, and two place rows read as two
+            places.) */}
+        {lsOrigin === 'home' && !(originPlace && chartHome) && (
           <div className="location-ls-anchor-editor">
             {!chartHome && <p className="location-ls-note">{t('localSpaceHud.lsOrigin.homeUnset')}</p>}
             <ChartHomeEditor

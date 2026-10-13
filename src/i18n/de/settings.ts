@@ -51,6 +51,15 @@ export const settings = {
     hint: 'Das zugrunde liegende Geburtshoroskop. Ausgeblendet tritt das Overlay an seine Stelle und übernimmt Linien, Horoskopzeichnung und Anzeigen des Horoskops.',
   },
   languageUnavailable: 'Demnächst verfügbar.',
+  languageNotice: {
+    body: 'Die Übersetzungen sind in Bearbeitung, werden noch geprüft und können Fehler enthalten; sie werden als Hilfe für dich bereitgestellt.',
+    ok: 'Verstanden',
+    cancel: 'Abbrechen',
+  },
+  languageNoticeCard: {
+    detected: 'AstroLina öffnet sich in der Sprache deines Browsers. Um eine andere zu wählen, öffne {route}.',
+    useEnglish: '{language} verwenden',
+  },
   machine: {
     section: 'Automatisch übersetzt',
     sectionHint: 'Die Sprachen oben sind in AstroLina enthalten. Die Sprachen unten werden auf diesem Gerät automatisch übersetzt.',

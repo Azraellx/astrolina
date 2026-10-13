@@ -30,25 +30,12 @@
 // Enabling a language: add it to AVAILABLE in index.html's lang-boot script as well as
 // flipping `available` in languages.ts. §2 fails until both say the same.
 //
-// The release hold (src/i18n/languageHold.ts, 2026-10-10): the script carries two more copies,
-// `var HELD` (the hold's HELD_BASE) and the per-device unlock key it reads, and narrows AVAILABLE
-// to English while held and not unlocked. §2 holds both copies to languageHold.ts; §3 runs the
-// script held, unlocked and lifted. This suite's own module graph resolves UNLOCKED (the first
-// import below), because §3–§5 pick languages and need them stored; a held runtime is checked in
-// verify-i18n-runtime §8, and held cases here compare the script with the runtime given the held
-// list — English alone, which that section requires SUPPORTED_LOCALES to be under the hold.
-//
 // One divergence is deliberate and not checked: in a DEVELOPMENT build a stored 'qps' (the
 // pseudo-locale) is honoured by the runtime and not by the script, which knows only shipped
 // languages. The runtime corrects <html lang> as it boots, and no production page can hold it.
-
-// FIRST, before anything that reaches src/i18n: the hold resolves as its module is evaluated
-// (harness/languagesUnlocked.ts says why this has to come first).
-import { releaseLanguagesUnlock } from './harness/languagesUnlocked';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { SUPPORTED_LOCALES } from '../src/i18n/catalog';
-import { LANGUAGES_HELD, __bootScriptCopies } from '../src/i18n/languageHold';
 import {
   DECLARED_LANG,
   __testing,
@@ -87,22 +74,11 @@ function finish(): never {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-// The planted unlock has done its one job; it goes before any check, which meet the bare harness.
-releaseLanguagesUnlock();
-check('this run resolved the language hold UNLOCKED (the runtime below stores a pick)', LANGUAGES_HELD === false,
-  'harness/languagesUnlocked.ts plants a copy of the unlock key — compare it with languageHold.ts');
-
 // The harness runs this from vendor/core (npm's cwd); import.meta.url is the bundle's, not ours.
 const HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const OPEN_TAG = '<script id="lang-boot">';
 const AVAILABLE_RE = /var AVAILABLE = (\[[^\]]*\]);/;
 const DECLARED_RE = /var DECLARED = (\{[^}]*\});/;
-// The release hold's two copies (languageHold.ts, 2026-10-10), matched in the exact shape the
-// script writes them, so a reworded test fails here rather than going unread.
-const HELD_RE = /var HELD = (true|false);/;
-const UNLOCK_RE = /unlocked = localStorage\.getItem\('([^']*)'\) === '1';/;
-/** What SUPPORTED_LOCALES is under the hold (verify-i18n-runtime §8 requires it). */
-const HELD_AVAILABLE: ShippedLocale[] = ['en'];
 
 // ── §1 the script is there, and first ────────────────────────────────────────
 section('§1 index.html carries the boot script, ahead of every other script — INTERNAL IDENTITY');
@@ -142,12 +118,6 @@ let declared: Record<string, string> = {};
     JSON.stringify(got) === JSON.stringify(want), `script ${JSON.stringify(got)} vs runtime ${JSON.stringify(want)}`);
   every('…each AVAILABLE code is in SUPPORTED_LOCALES', available, (c) => ((SUPPORTED_LOCALES as readonly string[]).includes(c) ? null : `${c} is not available in the runtime`));
   every('…each SUPPORTED_LOCALES code is in AVAILABLE', SUPPORTED_LOCALES, (c) => (available.includes(c) ? null : `${c} is missing from the script`));
-  const held = HELD_RE.exec(BODY);
-  const unlock = UNLOCK_RE.exec(BODY);
-  check('HELD is written as a boolean literal, and equals languageHold.ts’ HELD_BASE',
-    held !== null && (held[1] === 'true') === __bootScriptCopies.HELD_BASE, held ? `script ${held[1]} vs HELD_BASE ${__bootScriptCopies.HELD_BASE}` : 'no `var HELD = true|false;`');
-  check('…and the unlock key the script reads is languageHold.ts’ UNLOCK_KEY',
-    unlock !== null && unlock[1] === __bootScriptCopies.UNLOCK_KEY, unlock ? `script ${unlock[1]} vs ${__bootScriptCopies.UNLOCK_KEY}` : 'no unlock read found');
   const keys = [...new Set([...Object.keys(declared), ...Object.keys(DECLARED_LANG)])];
   every('DECLARED equals the runtime’s DECLARED_LANG, entry by entry', keys, (k) => {
     const s = declared[k];
@@ -155,6 +125,8 @@ let declared: Record<string, string> = {};
     return s === r ? null : `${k}: script ${JSON.stringify(s)} vs runtime ${JSON.stringify(r)}`;
   });
 }
+
+const LINK_KEY = 'astro:locale-link:v1';
 
 // ── A fake page for the script, and the same storage and browser for the runtime ─
 interface Env {
@@ -164,16 +136,12 @@ interface Env {
   others?: string[];
   languages?: string[];
   language?: string;
-  /** Stands in for AVAILABLE / SUPPORTED_LOCALES — the opened languages, before any hold. */
+  /** The address's query string (`?lang=es`), for a link into the app; '' when absent. */
+  search?: string;
+  /** What astro:locale-link:v1 holds: the language an earlier link asked for, as boot remembered it. */
+  linked?: string;
+  /** Stands in for AVAILABLE / SUPPORTED_LOCALES. */
   available?: ShippedLocale[];
-  /** The release hold, as this page meets it (default 'unlocked', the world the runtime here is in):
-   *    'unlocked' — HELD as written, and the unlock key in the script's storage (`unlock`, '1');
-   *    'held'     — HELD as written, no unlock (or `unlock` set to anything but '1'); the runtime
-   *                 is given the held list;
-   *    'lifted'   — `var HELD = false`, the day the hold goes; nothing unlocked. */
-  hold?: 'unlocked' | 'held' | 'lifted';
-  /** The unlock key's value in the script's storage; defaults to '1' when unlocked. */
-  unlock?: string;
 }
 
 class FakeStorage {
@@ -216,30 +184,25 @@ class FakeStorage {
   }
 }
 
-function storageFor(env: Env, extra: [string, string][] = []): FakeStorage {
+function storageFor(env: Env): FakeStorage {
   const entries: [string, string][] = [];
   if (env.stored != null && env.stored !== 'THROW') entries.push(['astro:locale:v2', env.stored]);
+  if (env.linked != null) entries.push(['astro:locale-link:v1', env.linked]);
   for (const k of env.others ?? []) entries.push([k, '1']);
-  return new FakeStorage(env.stored === 'THROW', [...entries, ...extra]);
+  return new FakeStorage(env.stored === 'THROW', entries);
 }
 
 function navigatorFor(env: Env): { languages?: string[]; language?: string } {
   return { languages: env.languages, language: env.language ?? env.languages?.[0] };
 }
 
-/** Runs the script's own body, with AVAILABLE swapped for `env.available` when given, and the
- *  hold as `env.hold` says. The unlock key goes in the SCRIPT's storage only: the runtime here
- *  resolved its hold once, at load, and an extra astro: key would change §4's install test. */
+/** Runs the script's own body, with AVAILABLE swapped for `env.available` when given. */
 function runBoot(env: Env): { lang: string; writes: string[] } {
   if (env.available && !AVAILABLE_RE.test(BODY)) throw new Error('could not inject AVAILABLE into the boot script');
-  if (env.hold === 'lifted' && !HELD_RE.test(BODY)) throw new Error('could not lift HELD in the boot script');
-  let body = env.available ? BODY.replace(AVAILABLE_RE, `var AVAILABLE = ${JSON.stringify(env.available)};`) : BODY;
-  if (env.hold === 'lifted') body = body.replace(HELD_RE, 'var HELD = false;');
-  const hold = env.hold ?? 'unlocked';
-  const unlock = env.unlock ?? (hold === 'unlocked' ? '1' : undefined);
-  const storage = storageFor(env, unlock === undefined ? [] : [[__bootScriptCopies.UNLOCK_KEY, unlock]]);
+  const body = env.available ? BODY.replace(AVAILABLE_RE, `var AVAILABLE = ${JSON.stringify(env.available)};`) : BODY;
+  const storage = storageFor(env);
   const doc = { documentElement: { lang: '(unset)' } };
-  new Function('localStorage', 'navigator', 'document', body)(storage, navigatorFor(env), doc);
+  new Function('localStorage', 'navigator', 'document', 'location', body)(storage, navigatorFor(env), doc, { search: env.search ?? '' });
   return { lang: doc.documentElement.lang, writes: storage.writes };
 }
 
@@ -248,8 +211,9 @@ async function runRuntime(env: Env): Promise<{ lang: string | null; writes: stri
   const storage = storageFor(env);
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: navigatorFor(env) });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { search: env.search ?? '' } });
   __testing.reset();
-  __testing.setAvailable(env.hold === 'held' ? HELD_AVAILABLE : (env.available ?? null));
+  __testing.setAvailable(env.available ?? null);
   await initI18n();
   return { lang: lastWrittenLang(), writes: [...storage.writes], storage };
 }
@@ -259,6 +223,9 @@ section('§3 the script, run on a fake page, declares what the runtime declares 
 interface Case extends Env {
   name: string;
   want: string;
+  /** The language the runtime's boot should remember from the address (it writes nothing else, and
+   *  nothing at all when the key already holds it). */
+  remembers?: string;
 }
 const CASES: Case[] = [
   { name: 'stored "es" not available → falls to detection', stored: 'es', available: ['en', 'de'], languages: ['de-AT', 'en'], want: 'de' },
@@ -268,34 +235,55 @@ const CASES: Case[] = [
   { name: 'stored "pt", available → declared pt-BR', stored: 'pt', available: ['en', 'pt'], languages: ['de'], want: 'pt-BR' },
   { name: 'a stored available choice beats the browser', stored: 'es', available: ['en', 'es', 'de'], languages: ['de-DE'], want: 'es' },
   { name: 'stored "en" beats an available browser language', stored: 'en', available: ['en', 'es'], languages: ['es'], want: 'en' },
-  // Lifted, not unlocked: storage that can't be read can't hold an unlock either (the held case
-  // below is the same storage under the hold).
-  { name: 'storage that throws → detection', stored: 'THROW', available: ['en', 'es'], languages: ['es'], want: 'es', hold: 'lifted' },
+  { name: 'storage that throws → detection', stored: 'THROW', available: ['en', 'es'], languages: ['es'], want: 'es' },
   { name: 'no languages list → navigator.language', available: ['en', 'es'], languages: [], language: 'es-419', want: 'es' },
   { name: 'the browser’s FIRST available language, not its first language', available: ['en', 'tr', 'ru'], languages: ['fr-FR', 'ru-RU', 'tr'], want: 'ru' },
   { name: 'nothing matches → English', available: ['en', 'es'], languages: ['fr-FR', 'ja'], want: 'en' },
   { name: 'no navigator languages at all → English', available: ['en', 'es'], want: 'en' },
   { name: 'a held device-translation choice (mt:fr) → detection', stored: 'mt:fr', available: ['en', 'es'], languages: ['es'], want: 'es' },
   { name: 'the pseudo-locale is never honoured here → detection', stored: 'qps', available: ['en', 'es'], languages: ['en-GB'], want: 'en' },
+  // A link's language (?lang=, 2026-10-13): under a stored choice, over the browser's.
+  { name: 'a link’s language beats the browser’s', search: '?lang=de', available: ['en', 'es', 'de'], languages: ['es-ES'], want: 'de', remembers: 'de' },
+  { name: 'a stored choice beats a link’s language', stored: 'es', search: '?lang=de', available: ['en', 'es', 'de'], languages: ['de'], want: 'es' },
+  { name: 'a link asking for English is honoured over a shipped browser language', search: '?lang=en', available: ['en', 'es'], languages: ['es'], want: 'en', remembers: 'en' },
+  { name: 'a link’s regional tag, in any case → its base, declared pt-BR', search: '?lang=PT-br', available: ['en', 'pt'], languages: ['en'], want: 'pt-BR', remembers: 'pt' },
+  { name: 'lang among other parameters', search: '?x=1&lang=tr&y=2', available: ['en', 'tr'], languages: ['en'], want: 'tr', remembers: 'tr' },
+  { name: 'a link language that isn’t available → the browser’s', search: '?lang=fr', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'a link language not yet opened here → the browser’s', search: '?lang=ru', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'an escape that doesn’t decode → the browser’s', search: '?lang=%E0%A4%A', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'a parameter that merely ends in lang is not one', search: '?xlang=de&language=de', available: ['en', 'de'], languages: ['en'], want: 'en' },
+  { name: 'an empty lang → the browser’s', search: '?lang=', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'a link language over a held device choice', stored: 'mt:fr', search: '?lang=de', available: ['en', 'de'], languages: ['en'], want: 'de' },
+  // The link remembered from an earlier visit (astro:locale-link:v1, 2026-10-13).
+  { name: 'a remembered link’s language beats the browser’s', linked: 'de', available: ['en', 'es', 'de'], languages: ['es-ES'], want: 'de' },
+  { name: 'a stored choice beats a remembered link', stored: 'es', linked: 'de', available: ['en', 'es', 'de'], languages: ['de'], want: 'es' },
+  { name: 'the address beats a remembered link, and replaces it', search: '?lang=ru', linked: 'de', available: ['en', 'de', 'ru'], languages: ['en'], want: 'ru', remembers: 'ru' },
+  { name: 'the address agreeing with the remembered link writes nothing', search: '?lang=de', linked: 'de', available: ['en', 'de'], languages: ['en'], want: 'de' },
+  { name: 'a remembered link that doesn’t ship → the browser’s', linked: 'xx', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'a remembered link not yet opened here → the browser’s', linked: 'ru', available: ['en', 'es'], languages: ['es'], want: 'es' },
+  { name: 'a remembered link under a held device choice', stored: 'mt:fr', linked: 'de', available: ['en', 'de'], languages: ['en'], want: 'de' },
+  { name: 'storage that throws: the address still holds for the visit', stored: 'THROW', search: '?lang=de', available: ['en', 'de'], languages: ['en'], want: 'de' },
   // The real list, as shipped: no injection, and the runtime on its own SUPPORTED_LOCALES.
   { name: 'the shipped AVAILABLE list, unmodified, with a Spanish browser', languages: ['es-ES'], want: SUPPORTED_LOCALES.includes('es') ? (DECLARED_LANG.es ?? 'es') : 'en' },
-  // The release hold (2026-10-10), on the shipped list and on every language opened.
-  { name: 'HELD: a stored "es" and a German browser → English', hold: 'held', stored: 'es', languages: ['de-DE', 'en'], want: 'en' },
-  { name: 'HELD: every language opened, a Spanish browser → still English', hold: 'held', available: ['en', 'es', 'pt', 'tr', 'de', 'ru'], languages: ['es-ES'], want: 'en' },
-  { name: 'HELD: an unlock key that is not "1" unlocks nothing', hold: 'held', unlock: '0', stored: 'es', languages: ['es'], want: 'en' },
-  { name: 'HELD with storage that throws → locked, English', hold: 'held', stored: 'THROW', available: ['en', 'es'], languages: ['es'], want: 'en' },
-  { name: 'unlocked on this device: a stored "es" and a German browser → es, as with no hold', stored: 'es', languages: ['de-DE', 'en'], want: SUPPORTED_LOCALES.includes('es') ? 'es' : 'en' },
-  { name: 'the hold lifted (HELD false), nothing unlocked: the full list, as unlocked', hold: 'lifted', stored: 'es', languages: ['de-DE', 'en'], want: SUPPORTED_LOCALES.includes('es') ? 'es' : 'en' },
+  { name: 'the shipped AVAILABLE list: a stored "es" beats a German browser', stored: 'es', languages: ['de-DE', 'en'], want: SUPPORTED_LOCALES.includes('es') ? 'es' : 'en' },
 ];
 {
-  const results: { c: Case; boot: { lang: string; writes: string[] }; rt: { lang: string | null; writes: string[] } }[] = [];
+  const results: { c: Case; boot: { lang: string; writes: string[] }; rt: { lang: string | null; writes: string[]; storage: FakeStorage } }[] = [];
   for (const c of CASES) results.push({ c, boot: runBoot(c), rt: await runRuntime(c) });
   every('the script declares the expected tag', results, ({ c, boot }) => (boot.lang === c.want ? null : `${c.name}: got ${boot.lang}, want ${c.want}`));
   every('…and the runtime, booted on the same storage and browser, declares the same', results, ({ c, boot, rt }) =>
     rt.lang === boot.lang ? null : `${c.name}: script ${boot.lang}, runtime ${rt.lang}`,
   );
   every('the script never writes storage', results, ({ c, boot }) => (boot.writes.length === 0 ? null : `${c.name}: ${boot.writes.join(', ')}`));
-  every('…nor does the runtime’s boot (detection is never stored)', results, ({ c, rt }) => (rt.writes.length === 0 ? null : `${c.name}: ${rt.writes.join(', ')}`));
+  every('…nor does the runtime’s boot, but for the address’s language, under its own key, for a reader with no choice', results, ({ c, rt }) => {
+    const want = c.remembers ? [`set ${LINK_KEY}`] : [];
+    return JSON.stringify(rt.writes) === JSON.stringify(want) ? null : `${c.name}: wrote [${rt.writes.join(', ')}], want [${want.join(', ')}]`;
+  });
+  every('…and what it remembers is the address’s language', results.filter(({ c }) => c.remembers), ({ c, rt }) =>
+    rt.storage.getItem(LINK_KEY) === c.remembers && rt.storage.getItem('astro:locale:v2') === (c.stored ?? null)
+      ? null
+      : `${c.name}: link ${rt.storage.getItem(LINK_KEY)}, choice ${rt.storage.getItem('astro:locale:v2')}`,
+  );
 }
 
 // ── §4 the language-detected classification — INTERNAL IDENTITY ─────────────
@@ -329,6 +317,40 @@ section('§4 boot’s language-detected classification — INTERNAL IDENTITY');
 
   await runRuntime({ ...spanish, stored: 'THROW' });
   check('unreadable storage reports nothing (no evidence either way)', detectedAtBoot() === null, JSON.stringify(detectedAtBoot()));
+
+  // Where the language came from (2026-10-13): the browser, or a link's ?lang=.
+  check('a browser language is classified as the browser’s', (await runRuntime(spanish), detectedAtBoot()?.via === 'browser'), JSON.stringify(detectedAtBoot()));
+  await runRuntime({ available: ['en', 'es', 'de'], languages: ['en-US'], search: '?lang=de', others: ['astro:show-roads:v1'] });
+  const linked = detectedAtBoot();
+  check('a link’s language: detected, via the link, existing install as it stands', linked?.locale === 'de' && linked.via === 'link' && linked.existingInstall === true, JSON.stringify(linked));
+  await runRuntime({ available: ['en', 'es', 'de'], languages: ['de-DE'], search: '?lang=de' });
+  check('a link agreeing with the browser is still the link (the reader came by it knowingly)', detectedAtBoot()?.via === 'link', JSON.stringify(detectedAtBoot()));
+  await runRuntime({ available: ['en', 'es', 'de'], languages: ['es-ES'], search: '?lang=xx' });
+  check('a link the app can’t honour leaves it to the browser', detectedAtBoot()?.locale === 'es' && detectedAtBoot()?.via === 'browser', JSON.stringify(detectedAtBoot()));
+  await runRuntime({ available: ['en', 'es'], languages: ['es-ES'], search: '?lang=en', others: ['astro:show-roads:v1'] });
+  check('a link to English is no change to report', detectedAtBoot() === null, JSON.stringify(detectedAtBoot()));
+  {
+    const { storage: s } = await runRuntime({ available: ['en', 'es', 'de'], languages: ['en'], search: '?lang=de' });
+    check('a link’s language is remembered under its own key, never as the choice',
+      s.writes.join(', ') === `set ${LINK_KEY}` && s.getItem(LINK_KEY) === 'de' && s.getItem('astro:locale:v2') === null, s.writes.join(', '));
+    check('…and remembering it doesn’t make a first visit look like a return', detectedAtBoot()?.existingInstall === false, JSON.stringify(detectedAtBoot()));
+    // A held pick shows the language the app would show without one: the link's, here.
+    await getI18n().setLocale('ru');
+    check('a pick that can’t be shown falls to the link’s language, not the browser’s', getI18n().locale === 'de' && getI18n().pref === 'ru', `${getI18n().locale} / ${getI18n().pref}`);
+    check('…and a pick leaves the remembered link alone (the choice outranks it from now on)', s.getItem(LINK_KEY) === 'de' && s.getItem('astro:locale:v2') === 'ru');
+  }
+  {
+    const { storage: s } = await runRuntime({ available: ['en', 'es', 'de'], languages: ['es-ES'], linked: 'de', others: ['astro:show-roads:v1'] });
+    const later = detectedAtBoot();
+    check('a later visit without the address opens in the remembered link’s language, as a link', later?.locale === 'de' && later.via === 'link' && later.existingInstall === true, JSON.stringify(later));
+    check('…writing nothing', s.writes.length === 0, s.writes.join(', '));
+  }
+  await runRuntime({ available: ['en', 'es', 'de'], languages: ['de'], stored: 'es', linked: 'de' });
+  check('a stored choice: the remembered link is no detection', getI18n().locale === 'es' && detectedAtBoot() === null, `${getI18n().locale} / ${JSON.stringify(detectedAtBoot())}`);
+  {
+    const { storage: s } = await runRuntime({ available: ['en', 'es', 'de'], languages: ['en'], stored: 'mt:fr', search: '?lang=es' });
+    check('a held device choice: the address’s language shows, and is not remembered (the reader has a choice)', getI18n().locale === 'es' && s.getItem(LINK_KEY) === null, `${getI18n().locale} / ${s.getItem(LINK_KEY)}`);
+  }
 
   // A pick ends the question, and the after-pick hook runs only when the language moved.
   const { storage } = await runRuntime({ ...spanish, others: ['astro:show-roads:v1'] });

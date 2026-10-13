@@ -274,6 +274,20 @@ export interface MovableHudOptions {
    *  Whatever moves the ceiling must announce it with `astro:hud-moved` (it is a surface that
    *  moved), which is what re-homes a sheet; the hook can't see it move otherwise. */
   phoneCeiling?: () => number | null;
+  /** For a phone window whose bottom-sheet home would land on chrome a surface keeps along the
+   *  bottom of the screen while it is up (a view that owns the viewport, with its own bar): the
+   *  viewport y the home HANGS from instead — centred, its top edge PHONE_GAP below it — or null
+   *  for the usual bottom sheet. Read live at every re-home, on the same triggers as the sheet
+   *  (`astro:hud-moved` among them, which the nav dispatches when a readout row under it comes,
+   *  goes or grows), so the window follows that edge and drops back to the sheet when it ends. A
+   *  window the reader has dragged stays where they put it, as from the sheet. */
+  phoneTop?: () => number | null;
+  /** With `phoneTop`: the viewport y the hung window must end above besides the bottom chrome —
+   *  the surface's own bar — or null for none. The room between the two is handed back as
+   *  `phoneRoom` (and `--hud-phone-room`) for the window's CSS to cap its height by and scroll
+   *  inside: a landscape phone has no room under the nav for a whole window, and uncapped it ran
+   *  down over that bar. Read live, as `phoneTop` is. */
+  phoneTopFloor?: () => number | null;
   /** For a window that widens by itself and keeps the wider frame on screen with a
    *  shift of its own, derived at render (the Minor bodies window's list column):
    *  the width the hook's OWN re-clamps (mount, resize, a docked panel's column)
@@ -353,6 +367,15 @@ export function useMovableHud(
   useLayoutEffect(() => {
     ceilingRef.current = phoneCeiling;
   }, [phoneCeiling]);
+  // `phoneTop` and its floor, through refs for the same reason.
+  const topRef = useRef(opts.phoneTop);
+  const floorRef = useRef(opts.phoneTopFloor);
+  const phoneTop = opts.phoneTop;
+  const phoneTopFloor = opts.phoneTopFloor;
+  useLayoutEffect(() => {
+    topRef.current = phoneTop;
+    floorRef.current = phoneTopFloor;
+  }, [phoneTop, phoneTopFloor]);
   const [phoneRoom, setPhoneRoom] = useState<number | null>(null);
   const [draggedOffHome, setDraggedOffHome] = useState(false);
   const putRoom = useCallback((el: HTMLElement, room: number | null) => {
@@ -371,6 +394,14 @@ export function useMovableHud(
   const placeSheet = useCallback(
     (el: HTMLElement, w: number) => {
       const x = Math.round(effectiveCenterX() - w / 2);
+      // Hung from a top edge (`phoneTop`) rather than stood on the chrome below — capped to the
+      // room down to that chrome or the surface's own floor, whichever is higher.
+      const top = topRef.current?.() ?? null;
+      if (top !== null) {
+        const bottom = Math.min(phoneFloor(x, w), floorRef.current?.() ?? Infinity);
+        putRoom(el, Math.max(0, Math.floor(bottom - PHONE_GAP - (top + PHONE_GAP))));
+        return { x, y: Math.round(top + PHONE_GAP), h: el.getBoundingClientRect().height };
+      }
       const floor = phoneFloor(x, w);
       const ceiling = ceilingRef.current?.() ?? null;
       putRoom(
@@ -458,6 +489,10 @@ export function useMovableHud(
   // show is pulled on screen without a visible jump.
   const docked = pos === null;
   const clampWidth = opts.clampWidth;
+  // Whether a phone home hangs from above: re-binding on its change re-homes the window in the
+  // same commit as whatever turned it on or off (a surface arriving or leaving), rather than at
+  // the next incidental trigger (found in review, 2026-10-13).
+  const hangs = opts.phoneTop != null;
   useLayoutEffect(() => {
     if (docked) return;
     const onResize = () => {
@@ -515,7 +550,7 @@ export function useMovableHud(
       unsubscribeBottom();
       ro?.disconnect();
     };
-  }, [docked, barRef, clampWidth, placeSheet]);
+  }, [docked, barRef, clampWidth, placeSheet, hangs]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return; // primary button only
@@ -566,8 +601,18 @@ export function useMovableHud(
     const el = barRef.current;
     if (!el) return;
     // Dragged off its home, a sheet no longer answers to the room under its ceiling: drop the
-    // cap now the finger is off it — never mid-drag, where the window would grow under it.
-    putRoom(el, null);
+    // cap now the finger is off it — never mid-drag, where the window would grow under it. A
+    // window hung from above (`phoneTop`) with a floor keeps a cap instead — the room from where
+    // it was put down to that floor — or a nudge let it grow back over the surface's bar (found
+    // in review, 2026-10-13).
+    const hungFloor = phoneSheet() && topRef.current?.() != null ? (floorRef.current?.() ?? null) : null;
+    if (hungFloor !== null) {
+      const r = el.getBoundingClientRect();
+      const bottom = Math.min(phoneFloor(r.left, r.width), hungFloor);
+      putRoom(el, Math.max(0, Math.floor(bottom - PHONE_GAP - r.top)));
+    } else {
+      putRoom(el, null);
+    }
     if (d.fromHome) setDraggedOffHome(true);
     if (opts.floating) {
       save(d.moved); // free-floating windows stay put — no dock/snap

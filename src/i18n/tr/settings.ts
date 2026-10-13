@@ -51,6 +51,15 @@ export const settings = {
     hint: 'Alttaki doğum haritası. Gizlediğinizde katman onun yerine geçer — haritanın çizgilerini, çarkını ve göstergelerini devralır.',
   },
   languageUnavailable: 'Yakında.',
+  languageNotice: {
+    body: 'Çeviriler devam eden bir çalışmadır, hâlâ incelenmektedir ve hata içerebilir; size kolaylık olması için sunulmaktadır.',
+    ok: 'Anladım',
+    cancel: 'İptal',
+  },
+  languageNoticeCard: {
+    detected: 'AstroLina tarayıcınızın dilinde açılır. Başka bir dil seçmek için şu yolu kullanın: {route}.',
+    useEnglish: '{language} kullan',
+  },
   machine: {
     section: 'Otomatik çeviri',
     sectionHint: 'Yukarıdaki diller AstroLina ile birlikte gelir. Aşağıdaki diller bu cihazda otomatik olarak çevrilecek.',

@@ -51,6 +51,15 @@ export const settings = {
     hint: 'La carta natal de base. Ocúltala y la capa ocupa su lugar: asume las líneas, la rueda y los datos de la carta.',
   },
   languageUnavailable: 'Próximamente.',
+  languageNotice: {
+    body: 'Las traducciones son un trabajo en curso, siguen en revisión y pueden contener errores; se proporcionan para tu comodidad.',
+    ok: 'Entendido',
+    cancel: 'Cancelar',
+  },
+  languageNoticeCard: {
+    detected: 'AstroLina se abre en el idioma de tu navegador. Para elegir otro, ve a {route}.',
+    useEnglish: 'Usar {language}',
+  },
   machine: {
     section: 'Traducción automática',
     sectionHint: 'Los idiomas de arriba vienen con AstroLina. Los idiomas de abajo se traducirán automáticamente en este dispositivo.',

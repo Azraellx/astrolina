@@ -22,19 +22,8 @@
 //
 // Every loop fails on an empty set, and every "falls back" check is paired with one that requires
 // something to get THROUGH — a validator that rejected everything would pass the first alone.
-//
-// The tier is held from readers with the languages (src/i18n/languageHold.ts, 2026-10-10). This
-// suite tests the tier itself, so it runs UNLOCKED; verify-i18n-runtime §8 checks it held. Its own
-// §8 (2026-10-10) re-runs this bundle held, in a child process, for the one thing a build adds to
-// the tier — its own text through translateOnDevice — which must be refused there too.
-
-// FIRST, before anything that reaches src/i18n: the hold resolves as its module is evaluated
-// (harness/languagesUnlocked.ts says why this has to come first).
-import { HELD_RUN, releaseLanguagesUnlock } from './harness/languagesUnlocked';
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { GLYPH_RUN } from '../src/components/ui/glyphify';
 import { applyPlurals, placeholderNames, PLURAL_RE, PLURAL_SOURCE, samePlaceholders } from '../src/i18n/plural';
 import { composeEnglish, isMarkerPath, registerMessages, __resetRegistryForTest } from '../src/i18n/registry';
@@ -87,7 +76,6 @@ import {
   ownText,
   PUBLISH_EVERY_MS,
   runPick,
-  translateFree,
   translateTemplate,
   __resetEngineForTest,
   __sessionForTest,
@@ -107,7 +95,6 @@ import {
   type TranslatorLike,
 } from '../src/i18n/machineMenu';
 import type { LocaleId, MessagePack, TVars } from '../src/i18n/types';
-import { LANGUAGES_HELD } from '../src/i18n/languageHold';
 
 
 let failures = 0;
@@ -145,16 +132,6 @@ function finish(): never {
   console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
   process.exit(failures === 0 ? 0 : 1);
 }
-
-// The planted unlock has done its one job; it goes before any check, which meet the bare harness.
-releaseLanguagesUnlock();
-if (HELD_RUN) {
-  // The child §8 starts: only the held section, against the module graph `--held` produced.
-  await heldSection();
-  finish();
-}
-check('this run resolved the language hold UNLOCKED, so the tier below is the one a reader gets once the hold lifts', LANGUAGES_HELD === false,
-  'harness/languagesUnlocked.ts plants a copy of the unlock key — compare it with languageHold.ts');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const count = (s: string, ch: string) => s.split(ch).length - 1;
@@ -1369,79 +1346,4 @@ section('§7 a build’s own text: masked, checked, cached, scheduled, abortable
   removeTranslator();
 }
 
-// ── §8 the release hold — INTERNAL IDENTITY, in a child process ─────────────
-// languageHold.ts resolves the hold once, as its module loads, so a held module graph can't be had
-// in this process. This same bundle runs again with `--held` (the harness then plants nothing), and
-// the child runs heldSection() alone. Its lines are shown here, indented; its exit status is one
-// check. verify-i18n-runtime §8 holds the rest of the tier to the hold; this is a build's own text.
-// Goes with the hold, as that one does: once HELD_BASE is false the child can't resolve held.
-section('§8 the release hold refuses a build’s own text — the held run, in a child process (INTERNAL IDENTITY)');
-{
-  const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--held'], { cwd: process.cwd(), encoding: 'utf8' });
-  const out = `${child.stdout ?? ''}${child.stderr ?? ''}`.trimEnd();
-  for (const line of out.split(/\r?\n/)) console.log(`   | ${line}`);
-  const ran = (out.match(/^(PASS|FAIL) {2}/gm) ?? []).length;
-  check('the held run passes every check', child.status === 0, child.error ? String(child.error) : `exit ${child.status}`);
-  check('…and made some (a held run that checked nothing would pass vacuously)', ran >= 4, `${ran} check line(s)`);
-}
-
 finish();
-
-// The held section — run only in the child (`--held`). A stored device language and a translator
-// that records every touch; then the store FORCED into the device language through the runtime's
-// test seam (no reader can get there while held), so the hold is the only thing left to refuse.
-async function heldSection(): Promise<void> {
-  section('§8 (held) a build’s own text is refused while the languages are held — INTERNAL IDENTITY');
-  check('this module graph resolved the hold HELD (nothing planted)', LANGUAGES_HELD === true);
-  const store = new Map<string, string>();
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, String(v)),
-      removeItem: (k: string) => void store.delete(k),
-    },
-  });
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { languages: ['en-US'], language: 'en-US' } });
-  const touched: string[] = [];
-  const factory: TranslatorFactory = {
-    availability: async (o) => {
-      touched.push(`availability ${o.targetLanguage}`);
-      return 'available';
-    },
-    create: async (o) => {
-      touched.push(`create ${o.targetLanguage}`);
-      return {
-        translate: async (s: string) => {
-          touched.push(`translate ${s}`);
-          return s;
-        },
-      };
-    },
-  };
-  Object.defineProperty(globalThis, 'self', { configurable: true, value: globalThis });
-  Object.defineProperty(globalThis, 'Translator', { configurable: true, writable: true, value: factory });
-  // The store holds this very passage's translation, so an empty answer below is the hold's
-  // refusal and not an empty store — the engine would otherwise answer from it, translator or not.
-  const item: OnDeviceItem[] = [{ cacheKey: 'zz:held', text: 'A passage of a build’s own.' }];
-  const seeded = memoryBackend();
-  await seeded.putAll([{ lang: 'fr', key: 'zz:held', rec: { h: entryHash(ENGINE_VERSION, item[0].text), v: 'TENU (cache)', at: 1 }, free: true }]);
-  __setMachineCacheForTest(new MachineCache(seeded));
-  check('the store holds the passage’s translation (so a refusal below is the hold’s)', (await seeded.loadFree('fr', ['zz:held'])).get('zz:held')?.v === 'TENU (cache)');
-  __testing.reset();
-  store.set('astro:locale:v2', 'mt:fr');
-  await initI18n();
-  const got = await translateOnDevice(item);
-  check('a stored device language under the hold: English on screen, canTranslateOnDevice() false, nothing translated, the translator untouched',
-    getI18n().locale === 'en' && !canTranslateOnDevice() && got.size === 0 && touched.length === 0, touched.join(', '));
-  await __testing.activate('mt:fr');
-  const forced = await translateOnDevice(item);
-  check('…and with the store forced into the device language, the hold alone still refuses: false, nothing, untouched',
-    getI18n().locale === 'mt:fr' && !canTranslateOnDevice() && forced.size === 0 && touched.length === 0, `${getI18n().locale} ${touched.join(', ')}`);
-  const direct = await translateFree(item);
-  check('…as does the engine itself, asked directly', direct.size === 0 && touched.length === 0, touched.join(', '));
-  delete (globalThis as { Translator?: unknown }).Translator;
-  delete (globalThis as { self?: unknown }).self;
-  __setMachineCacheForTest(null);
-  __testing.reset();
-}

@@ -26,21 +26,7 @@
 //                        code contradicts itself.
 //
 // Every loop below fails on an empty set: a check over nothing is not a pass.
-//
-// The release hold (src/i18n/languageHold.ts, 2026-10-10). §1–§7 test the languages themselves,
-// so they run UNLOCKED, as a device with the hold lifted does — the import just below plants the
-// unlock before the hold resolves. §8 runs this same bundle again in a child process with
-// `--held`, for a module graph resolved under the hold, and moves every source the hold masks
-// while requiring what the reader gets not to move.
-
-// FIRST, before anything that reaches src/i18n: the hold resolves as its module is evaluated
-// (harness/languagesUnlocked.ts says why this has to come first).
-import { HELD_RUN, releaseLanguagesUnlock } from './harness/languagesUnlocked';
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { createElement } from 'react';
 import { DateTime, Info } from 'luxon';
@@ -49,13 +35,11 @@ import { makeFormatters, type DateStyle } from '../src/i18n/format';
 import { applyPlurals, parseForms, placeholderNames, PLURAL_RE } from '../src/i18n/plural';
 import { pseudoize } from '../src/i18n/pseudo';
 import { interpolate, resolvePath } from '../src/i18n/t';
-import { __setCoreCatalogForTest, loadedCoreCatalog, SUPPORTED_LOCALES } from '../src/i18n/catalog';
+import { __setCoreCatalogForTest } from '../src/i18n/catalog';
 import { composeCatalog, composeEnglish, registerMessages, __resetRegistryForTest } from '../src/i18n/registry';
 import {
   __testing,
-  currentMachineSession,
   DECLARED_LANG,
-  detectedAtBoot,
   documentI18n,
   englishSnapshot,
   getI18n,
@@ -73,15 +57,7 @@ import { BindingLanguageArea } from '../src/components/ui/BindingLanguageNote';
 import { CreditsLicences, CreditsModal } from '../src/components/CreditsModal/CreditsModal';
 import { registerCreditsItems } from '../src/lib/extensions/creditsFooter';
 import { LANGUAGES } from '../src/i18n/languages';
-import { LANGUAGES_HELD } from '../src/i18n/languageHold';
-import {
-  chooseMachineLanguage,
-  getMachineMenu,
-  machineTierOffered,
-  refreshMachineAvailability,
-  type TranslatorFactory,
-} from '../src/i18n/machineMenu';
-import type { LocaleTree, MessagePack, ShippedLocale, TVars } from '../src/i18n/types';
+import type { LocaleTree, MessagePack, TVars } from '../src/i18n/types';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -115,17 +91,6 @@ function finish(): never {
   console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
   process.exit(failures === 0 ? 0 : 1);
 }
-
-// The planted unlock has done its one job — the hold resolved unlocked as its module loaded — so it
-// goes before any check runs, and each meets the bare harness it always has.
-releaseLanguagesUnlock();
-if (HELD_RUN) {
-  // The child §8 starts: only the held section, against the module graph `--held` produced.
-  await heldSection();
-  finish();
-}
-check('this run resolved the language hold UNLOCKED, so §1–§7 test the languages themselves', LANGUAGES_HELD === false,
-  'harness/languagesUnlocked.ts plants a copy of the unlock key — compare it with languageHold.ts');
 
 // ── §1 fmt.date, English — BYTE-IDENTICAL ────────────────────────────────────
 // The old shapes, as the components assembled them from the month/weekday helpers.
@@ -903,127 +868,4 @@ section('§7 the English scope — INTERNAL IDENTITY, and the hooks wired to it 
   __testing.reset();
 }
 
-// ── §8 the release hold — INTERNAL IDENTITY, in a child process ─────────────
-// languageHold.ts resolves the hold once, as its module loads, so a held module graph can't be had
-// in this process: it loaded unlocked for §1–§7. This same bundle runs again with `--held` — the
-// harness then plants nothing — and the child runs heldSection() alone. Its lines are shown here,
-// indented, and its exit status is one check.
-section('§8 the release hold — the held run, in a child process (INTERNAL IDENTITY)');
-{
-  const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--held'], { cwd: process.cwd(), encoding: 'utf8' });
-  const out = `${child.stdout ?? ''}${child.stderr ?? ''}`.trimEnd();
-  for (const line of out.split(/\r?\n/)) console.log(`   | ${line}`);
-  const ran = (out.match(/^(PASS|FAIL) {2}/gm) ?? []).length;
-  check('the held run passes every check', child.status === 0, child.error ? String(child.error) : `exit ${child.status}`);
-  check('…and made some (a held run that checked nothing would pass vacuously)', ran >= 10, `${ran} check line(s)`);
-}
-
 finish();
-
-// The held section itself — run only in the child (`--held`), whose module graph resolved the hold.
-// Each check MOVES a source the hold masks — a stored choice, a browser language, a pick, a stored
-// device language, the device's own translator — and requires what the reader gets NOT to move,
-// while the stored choice and the language shown are required to DISAGREE: a hold that agreed with
-// its source would be indistinguishable from no hold at all. Against a build with HELD_BASE false,
-// every one of these fails (confirmed 2026-10-10, then restored).
-async function heldSection(): Promise<void> {
-  section('§8 (held) the release hold masks the languages without writing — INTERNAL IDENTITY');
-  check('this module graph resolved the hold HELD (nothing planted)', LANGUAGES_HELD === true);
-
-  const FIVE: ShippedLocale[] = ['es', 'pt', 'tr', 'de', 'ru'];
-  every('the five shipped languages read unavailable, greyed by the hold (as "Coming soon" in the menu)', FIVE, (code) => {
-    const row = LANGUAGES.find((l) => l.code === code);
-    if (!row) return `${code}: no row in languages.ts`;
-    if (row.available) return `${code}: available`;
-    return row.held ? null : `${code}: unavailable but not marked held`;
-  });
-  check('English stays open, and is the only language the runtime may be in — so the translate offer has nothing to offer',
-    LANGUAGES.find((l) => l.code === 'en')?.available === true && JSON.stringify(SUPPORTED_LOCALES) === '["en"]', JSON.stringify(SUPPORTED_LOCALES));
-
-  const store = new Map<string, string>();
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, String(v)),
-      removeItem: (k: string) => void store.delete(k),
-    },
-  });
-  const setLanguages = (langs: string[]) =>
-    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { languages: langs, language: langs[0] } });
-
-  // A stored Spanish choice, and a browser asking for German.
-  __testing.reset();
-  store.set('astro:locale:v2', 'es');
-  setLanguages(['de-DE', 'en']);
-  await initI18n();
-  const s = getI18n();
-  check('a stored "es" and a German browser: the app is in English, and declares it', s.locale === 'en' && lastWrittenLang() === 'en', `${s.locale} / ${lastWrittenLang()}`);
-  check('…while storage still says "es": the stored choice and the language shown DISAGREE',
-    store.get('astro:locale:v2') === 'es' && s.pref === 'es' && s.pref !== s.locale, `stored ${store.get('astro:locale:v2')}, pref ${s.pref}, shown ${s.locale}`);
-  every('…and no held language’s catalog was fetched', FIVE, (code) => (loadedCoreCatalog(code) === null ? null : `${code} loaded`));
-
-  // The menu marks English, the stand-in; a click on any row is a setLocale.
-  await getI18n().setLocale('de');
-  check('setLocale("de") under the hold stores nothing — storage still says "es" — and shows English',
-    store.get('astro:locale:v2') === 'es' && getI18n().locale === 'en' && getI18n().pref === 'es', `stored ${store.get('astro:locale:v2')}, shown ${getI18n().locale}`);
-  await getI18n().setLocale('en');
-  check('…nor does a pick of the marked row, English: the stand-in never overwrites the choice',
-    store.get('astro:locale:v2') === 'es' && getI18n().pref === 'es', `stored ${store.get('astro:locale:v2')}`);
-
-  // A returning install that never chose, its browser asking for German.
-  __testing.reset();
-  store.clear();
-  store.set('astro:show-roads:v1', '1');
-  setLanguages(['de-DE']);
-  await initI18n();
-  check('no stored choice and a German browser on a returning install: English, and no language-detected notice to give',
-    getI18n().locale === 'en' && detectedAtBoot() === null, `${getI18n().locale} / ${JSON.stringify(detectedAtBoot())}`);
-  check('…and boot wrote nothing', store.size === 1 && !store.has('astro:locale:v2'), [...store.keys()].join(', '));
-
-  // The on-device tier, with a translator on the device that records every touch.
-  const touched: string[] = [];
-  const factory: TranslatorFactory = {
-    availability: async (o) => {
-      touched.push(`availability ${o.targetLanguage}`);
-      return 'available';
-    },
-    create: (o) => {
-      touched.push(`create ${o.targetLanguage}`);
-      return Promise.reject(new Error('the held tier must not create a translator'));
-    },
-  };
-  Object.defineProperty(globalThis, 'self', { configurable: true, value: globalThis });
-  Object.defineProperty(globalThis, 'Translator', { configurable: true, writable: true, value: factory });
-  __testing.reset();
-  store.clear();
-  store.set('astro:locale:v2', 'mt:fr');
-  setLanguages(['en-US']);
-  await initI18n();
-  const m = getI18n();
-  check('a stored device language ("mt:fr"): the app is in English, the choice kept in storage',
-    m.locale === 'en' && m.pref === 'mt:fr' && store.get('astro:locale:v2') === 'mt:fr', `${m.locale} / ${m.pref} / ${store.get('astro:locale:v2')}`);
-  check('…masked in SILENCE: no hold reason, so no language-held notice', m.machineHold === null, JSON.stringify(m.machineHold));
-  await refreshMachineAvailability();
-  await chooseMachineLanguage('fr');
-  check('the device is never asked, and no device language can be started: the translator untouched, the menu state empty',
-    touched.length === 0 && getMachineMenu().pick === null && Object.keys(getMachineMenu().availability).length === 0 && currentMachineSession() === null,
-    touched.join(', ') || JSON.stringify(getMachineMenu()));
-  check('…and storage untouched by the attempt', store.get('astro:locale:v2') === 'mt:fr' && store.size === 1, [...store.entries()].join('; '));
-  check('the menu is told to offer no device section at all', machineTierOffered() === false);
-  {
-    // The menu's own derivation, from its source: every device row hangs off that one answer.
-    const sidebar = readFileSync(resolve(process.cwd(), 'src/components/Sidebar/Sidebar.tsx'), 'utf8');
-    const start = sidebar.indexOf('function LanguageMenu(');
-    const menu = sidebar.slice(start, sidebar.indexOf('onChange={', start));
-    check('…and the Language menu lists device rows only through it (candidates, the language shown, the stored choice)',
-      start >= 0 &&
-        /const deviceOffered = machineTierOffered\(\);/.test(menu) &&
-        /const deviceCanTranslate = deviceOffered && translatorApi\(\) !== null;/.test(menu) &&
-        /if \(deviceOffered && shownLang\) listed\.add\(shownLang\);/.test(menu) &&
-        /if \(deviceOffered && prefLang\) listed\.add\(prefLang\);/.test(menu));
-  }
-  delete (globalThis as { Translator?: unknown }).Translator;
-  delete (globalThis as { self?: unknown }).self;
-  __testing.reset();
-}

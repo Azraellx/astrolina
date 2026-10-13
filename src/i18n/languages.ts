@@ -22,11 +22,6 @@
 //      changes its copy too.
 // SUPPORTED_LOCALES (catalog.ts), detection, persistence, lazy loading and the re-render all
 // follow from the flag — nothing else needs touching.
-//
-// While the release hold stands (languageHold.ts, 2026-10-10), a language opened here still reads
-// unavailable: the block at the foot of this file masks it, and it opens with the others when the
-// hold lifts. Opening one meanwhile is the same four steps; it is held like the rest.
-import { LANGUAGES_HELD } from './languageHold';
 
 export interface LanguageOption {
   /** BCP-47 base code; a `ShippedLocale` (types.ts), or 'qps' for the dev pseudo-locale. */
@@ -35,13 +30,8 @@ export interface LanguageOption {
    *  locale — language names are conventionally not translated. */
   autonym: string;
   /** True once a catalog exists, is registered (locales.ts) and has passed the human gate (step
-   *  3 above) — and the release hold (languageHold.ts) is not masking it. What every consumer
-   *  reads. */
+   *  3 above). What every consumer reads. */
   available: boolean;
-  /** True on a row the release hold has greyed: opened below, and unavailable only while the hold
-   *  stands. verify:lang-boot reads it to tell the boot script's full list from the held one;
-   *  nothing in the app needs it, since a held row is drawn exactly as a row not yet opened. */
-  held?: boolean;
 }
 
 // English first (the default); the rest follow as "coming soon" until their catalogs ship.
@@ -68,21 +58,3 @@ export const LANGUAGES: LanguageOption[] = [
     ? [{ code: 'qps', autonym: 'Pseudo-locale (dev)', available: true }]
     : []),
 ];
-
-// THE RELEASE HOLD (languageHold.ts, 2026-10-10). While it stands, every language opened above
-// except English is greyed again — `available` false, `held` true — so the menu shows it with the
-// "Coming soon" tip it had before its catalog shipped, and SUPPORTED_LOCALES, detection, a stored
-// choice, the translate offer and the language-detected notice all follow, as the header says they
-// do from this one flag. Masked here, after the list, rather than row by row: the rows keep the
-// human gate as it was set (the translation pipeline reads the list as written, for the autonyms),
-// and lifting the hold is deleting this block. Nothing is written by it — a stored choice of a
-// held language is masked by the runtime, not cleared (CLAUDE.md rule 2). The dev pseudo-locale
-// is not held: it is a tool, not a language.
-if (LANGUAGES_HELD) {
-  for (const lang of LANGUAGES) {
-    if (lang.available && lang.code !== 'en' && lang.code !== 'qps') {
-      lang.available = false;
-      lang.held = true;
-    }
-  }
-}

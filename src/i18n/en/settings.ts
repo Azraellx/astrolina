@@ -82,6 +82,36 @@ export const settings = {
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
+  // The notice in the Language menu's own dropdown the first time it is opened, before the list of
+  // languages, until the reader presses its first button (2026-10-13). It says what every
+  // translation is worth: still being reviewed, wrong in places, offered as a convenience. The
+  // dropdown is narrow, so keep the sentence one sentence.
+  // @i18n-review — legal: what a translation is offered as.
+  languageNotice: {
+    body: 'Translations are a work in progress, still under review, and may contain errors; they’re provided for your convenience.',
+    // Accepts the notice — it never shows again on this device — and goes on to the list of
+    // languages. A button: keep it short.
+    ok: 'Understood',
+    // Closes the dropdown without accepting; the notice shows again next time. A button: keep it
+    // short.
+    cancel: 'Cancel',
+  },
+  // The same notice as a small card over the app (2026-10-13), for a reader whose app is in a
+  // translation they didn't reach through the Language menu — most often because it opened in
+  // their browser's language. The card shows languageNotice.body and languageNotice.ok (above) with
+  // these two. Read only in a translation, never in English.
+  languageNoticeCard: {
+    // A line above the notice, shown only when the app opened in the browser's language because the
+    // reader never chose one. {route} is the way to the Language menu as the screen labels it
+    // ("Settings ▸ Appearance ▸ Language"), filled in by the card: keep it once, where the sentence
+    // names the place to go, and never spell the route out.
+    detected: 'AstroLina opens in your browser’s language. To choose another, use {route}.',
+    // The button that switches the app to English. {language} is "English", written as the
+    // Language menu lists it and inserted as written: capitalised, never translated, declined or
+    // inflected — it is the word an English reader looks for. So phrase the button so the name can
+    // stand as it is after the verb. A button: keep it short.
+    useEnglish: 'Use {language}',
+  },
   // The Language menu's second section (2026-10-10): languages this app does NOT ship, translated
   // from the English on the reader's own device by its built-in translator, as they use the app
   // (i18n/machineMenu). Every string here describes that honestly and names no browser, company

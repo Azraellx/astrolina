@@ -253,6 +253,27 @@
 .local-space-hud .location-ls {
   border-top: none;
 }
+/* Handed a room on a phone (useMovableHud's `phoneTopFloor`: hung under the nav beside a surface
+   with its own bar along the bottom), the window keeps to it — the same cap every window has
+   against a short screen (TimelineHud.css, which scrolls the window), tightened to the room. The
+   variable is set on the window synchronously by the hook, so the height it measures is already
+   the capped one. Unset, the screen's cap alone, as before. (2026-10-13) */
+.timeline-hud.location-hud.local-space-hud {
+  max-height: min(calc(100dvh - 72px), max(120px, var(--hud-phone-room, 100dvh)));
+  /* The header stays put and the body scrolls under it, as the Capture and Planetary hours
+     windows do — the shell's own scroll (TimelineHud.css) would take the grip and the ✕ with it.
+     Never capped below the header and a row (120 px), however little room a phone leaves. */
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+.timeline-hud.location-hud.local-space-hud > .location-header {
+  flex: none;
+}
+.timeline-hud.location-hud.local-space-hud > .location-ls {
+  min-height: 0;
+  overflow-y: auto;
+}
 
 .location-ls-head {
   padding: 2px 4px 4px;

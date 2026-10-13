@@ -22,7 +22,9 @@
 import { useState, type ReactNode } from 'react';
 import type { ChartHome } from '../../lib/chartLibrary';
 import { maskText } from '../../lib/discreet';
+import { HoverTip } from './HoverTip';
 import { PlaceSearchField, type PlaceSearchStrings } from './PlaceSearchField';
+import { useHoverTip } from './useHoverTip';
 import './ChartHomeEditor.css';
 
 export interface ChartHomeStrings {
@@ -46,7 +48,9 @@ const EN: ChartHomeStrings = {
 };
 
 interface ChartHomeEditorProps {
-  value: ChartHome | null;
+  /** The place shown — a chart's Home, or any place with a name and coordinates (only those are
+   *  read). */
+  value: Pick<ChartHome, 'label' | 'lat' | 'lng'> | null;
   onChange: (home: { label: string; lat: number; lng: number } | null) => void;
   /** Optional row prefix (an icon, a field label) before the value. */
   label?: ReactNode;
@@ -61,6 +65,12 @@ interface ChartHomeEditorProps {
    *  a working window, where where-someone-lives is exactly what the mode is for. Only
    *  the value blanks — set, change and clear all keep working. */
   maskValue?: boolean;
+  /** Offer Clear. On by default; off for a place that is always somewhere (a viewport owner's
+   *  origin row in the Local Space window), where only Change makes sense. (2026-10-13) */
+  clearable?: boolean;
+  /** A tip on Change (Set), for a host whose pick does more than the value shows — disclosed on
+   *  the trigger. Absent, no tip. */
+  changeTip?: { title: string; hint: string };
 }
 
 export function ChartHomeEditor({
@@ -71,6 +81,8 @@ export function ChartHomeEditor({
   strings,
   searchStrings,
   maskValue,
+  clearable = true,
+  changeTip,
 }: ChartHomeEditorProps) {
   const S = { ...EN, ...strings };
   const [picking, setPicking] = useState(false);
@@ -79,17 +91,27 @@ export function ChartHomeEditor({
     <div className={`che${className ? ` ${className}` : ''}`}>
       <p className="che-row">
         {label && <span className="che-label">{label}</span>}
-        <span className={`che-value${value ? '' : ' che-value-unset'}`}>
+        {/* A place name is the reader's own data: kept from page translators. */}
+        <span
+          className={`che-value${value ? '' : ' che-value-unset'}`}
+          translate={value ? 'no' : undefined}
+        >
           {value ? (maskValue ? maskText(value.label) : value.label) : S.unset}
         </span>
-        {value && !picking && (
+        {clearable && value && !picking && (
           <button type="button" className="che-btn" onClick={() => onChange(null)}>
             {S.clear}
           </button>
         )}
-        <button type="button" className="che-btn" onClick={() => setPicking((v) => !v)}>
-          {picking ? S.cancel : value ? S.change : S.set}
-        </button>
+        {changeTip && !picking ? (
+          <TipButton tip={changeTip} onClick={() => setPicking(true)}>
+            {value ? S.change : S.set}
+          </TipButton>
+        ) : (
+          <button type="button" className="che-btn" onClick={() => setPicking((v) => !v)}>
+            {picking ? S.cancel : value ? S.change : S.set}
+          </button>
+        )}
       </p>
       {picking && (
         <PlaceSearchField
@@ -107,5 +129,39 @@ export function ChartHomeEditor({
         />
       )}
     </div>
+  );
+}
+
+// Change with its tip — its own component so the tip's touch handling binds only where a host
+// asked for a tip, and the editor's plain buttons elsewhere behave as they always have.
+function TipButton({
+  tip,
+  onClick,
+  children,
+}: {
+  tip: { title: string; hint: string };
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top');
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="che-btn"
+        onClick={() => {
+          hide();
+          onClick();
+        }}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        {children}
+      </button>
+      <HoverTip pos={pos} placement="top" title={tip.title} hint={tip.hint} />
+    </>
   );
 }

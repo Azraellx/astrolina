@@ -26,15 +26,9 @@
 // composed catalog. A stored `mt:` choice the device can't show (no translator, nothing cached)
 // is HELD under rule 2: kept as chosen, with the reason on the snapshot (`machineHold`), while
 // the app shows the detected language or English.
-//
-// The release hold (languageHold.ts, 2026-10-10) reaches this file in two places, and both are
-// rule 2 rather than a rewrite: setLocale stores nothing while it stands, and a stored `mt:`
-// choice is masked to English without loading the on-device module. The shipped languages need
-// nothing here — they read unavailable in languages.ts, and availability is all this file asks.
 import { isShippedLocale, SUPPORTED_LOCALES } from './catalog';
 import { makeEnumLabels, type EnumLabels } from './enums';
 import { makeFormatters, type Formatters } from './format';
-import { LANGUAGES_HELD } from './languageHold';
 import { LANGUAGES } from './languages';
 import { applyPlurals, samePlaceholders } from './plural';
 import { pseudoize } from './pseudo';
@@ -57,6 +51,9 @@ import type { LocaleId, MachineLocale, ShippedLocale, TFn, TVars } from './types
 // Written only by setLocale, i.e. by the reader's own pick in the menu; detection and boot
 // never write it.
 const LOCALE_KEY = 'astro:locale:v2';
+// The language the last link into the app asked for (linkLanguage, below) — never the reader's
+// choice, which is LOCALE_KEY alone.
+const LINK_KEY = 'astro:locale-link:v1';
 
 // How long boot waits for a non-English catalog before showing the app in English. The
 // chunk is small and usually cached; this only bounds a stalled connection. A catalog that
@@ -125,10 +122,15 @@ interface Active extends Composed {
   id: EffectiveLocale;
 }
 
-/** What boot found when the reader had never chosen a language and their browser's language
- *  ships: the language it opened in, and whether this install had been used before. */
+/** What boot found when the reader had never chosen a language and the app opened in a language
+ *  other than English all the same: the language, where it came from, and whether this install
+ *  had been used before. */
 export interface BootDetection {
   locale: ShippedLocale;
+  /** 'browser': the first language the browser asks for that ships. 'link': the language a link
+   *  asked for (`?lang=`, linkLanguage below), on this visit or an earlier one — a link the reader
+   *  followed from a page in that language, so nothing about it needs explaining. */
+  via: 'browser' | 'link';
   /** True when the install already held other `astro:` state at boot — a reader whose app
    *  had been opening in English, because their language did not ship yet. False on a first
    *  visit, where the detected language is simply the one the app has always been in. */
@@ -144,6 +146,8 @@ let inFlight: EffectiveLocale | null = null;
 let lastLang: string | null = null;
 let availableOverride: readonly ShippedLocale[] | null = null;
 let bootDetected: BootDetection | null = null;
+let linkTag: string | null | undefined;
+let linkedRaw: string | null | undefined;
 let afterPick: (() => void) | null = null;
 const listeners = new Set<() => void>();
 const requested = new Set<string>();
@@ -211,8 +215,67 @@ function detect(): ShippedLocale {
   return 'en';
 }
 
+// The language a link into the app asks for: `?lang=es` in the address, as a page in that language
+// links here (2026-10-13). It ranks under the reader's own choice and over their browser's: a reader
+// who has chosen keeps their choice, and one who hasn't is shown the language of the page they came
+// from rather than a guess. Base tag, case-insensitive ('pt-BR' → 'pt'), and only a language that
+// ships here; anything else is ignored. Read once, at first use. index.html's boot script reads it
+// the same way (verify:lang-boot holds them to it).
+//
+// It sticks (Salvatore, the same day): boot remembers it under LINK_KEY for a reader with no choice
+// (initI18n), and later visits without one in the address open in it too — the address's own still
+// first, so a newer link replaces it. Remembered beside the choice, never AS it: the reader's choice
+// stays empty, so their first pick (the Language menu, Use English on the notice card, the translate
+// offer) outranks it from then on, and the menu still marks the language shown, as for any language
+// they didn't pick. Nothing announces it: the reader came by the link knowingly, and the app opens
+// in the language it opened in last time.
+function addressLanguage(): ShippedLocale | null {
+  if (linkTag === undefined) {
+    linkTag = null;
+    try {
+      const search = (globalThis as { location?: { search?: unknown } }).location?.search;
+      const m = typeof search === 'string' ? /[?&]lang=([^&#]*)/.exec(search) : null;
+      if (m) linkTag = decodeURIComponent(m[1]).toLowerCase().split('-')[0];
+    } catch {
+      // No address (the verify harness), or an escape that doesn't decode: no link language.
+    }
+  }
+  return linkTag && isShippedLocale(linkTag) && (availableLocales() as readonly string[]).includes(linkTag)
+    ? linkTag
+    : null;
+}
+
+// The language the last link asked for, as boot remembered it (LINK_KEY) — read once, like the
+// choice; only a language that ships here counts.
+function rememberedLanguage(): ShippedLocale | null {
+  if (linkedRaw === undefined) {
+    try {
+      linkedRaw = localStorage.getItem(LINK_KEY);
+    } catch {
+      linkedRaw = null;
+    }
+  }
+  return linkedRaw && isShippedLocale(linkedRaw) && (availableLocales() as readonly string[]).includes(linkedRaw)
+    ? linkedRaw
+    : null;
+}
+
+function rememberLink(id: ShippedLocale): void {
+  linkedRaw = id;
+  try {
+    if (localStorage.getItem(LINK_KEY) !== id) localStorage.setItem(LINK_KEY, id);
+  } catch {
+    // Storage blocked: the link still holds while the address carries it.
+  }
+}
+
+/** A link's language: the address's, else the one the last link asked for. */
+function linkLanguage(): ShippedLocale | null {
+  return addressLanguage() ?? rememberedLanguage();
+}
+
 function effectiveFor(id: LocaleId | null): EffectiveLocale {
-  return id && isAvailable(id) ? id : detect();
+  return id && isAvailable(id) ? id : (linkLanguage() ?? detect());
 }
 
 function readPref(): LocaleId | null {
@@ -375,16 +438,8 @@ function setLocale(id: LocaleId): Promise<void> {
   if (leaving) machineSession = null;
   if (machineHeld && machineHeld.id !== id) machineHeld = null;
   const before = current().id;
-  // Nothing is stored while the release hold stands (languageHold.ts, 2026-10-10). The menu marks
-  // the language SHOWN — English, standing in for whatever the reader had chosen — and reports a
-  // click on it like any other, so storing here would overwrite a stored 'es' with its
-  // stand-in (CLAUDE.md rule 2: a control that shows a derived value refuses writes while the mask
-  // is up). The switch itself still runs, for this page: under the hold it can only land on
-  // English, or on the pseudo-locale in a development build.
-  if (!LANGUAGES_HELD) {
-    pref = id;
-    writePref(id);
-  }
+  pref = id;
+  writePref(id);
   const switching = switchTo(effectiveFor(id));
   // Stopped only once the switch is DECIDED — switchTo has named its target (targetLocale) —
   // and still synchronously, inside the pick: the engine's stop reads where the store is going to
@@ -708,12 +763,6 @@ export function isHeldRepick(code: string): boolean {
 // language's cache in (and its translator, where the device has one ready). The module is a lazy
 // chunk; nothing of it loads for a reader who never chose such a language.
 function resumeMachine(id: MachineLocale): Promise<void> {
-  // Not while the release hold stands (languageHold.ts, 2026-10-10): the module is never fetched,
-  // and the choice is masked to English SILENTLY — no holdMachine, so no reason on the snapshot
-  // and no language-held notice. That notice says the device can't translate any more; a release
-  // hold is not that, and telling the reader it was would be a reason that isn't true. The stored
-  // choice is left as it is, and comes back when the hold lifts.
-  if (LANGUAGES_HELD) return Promise.resolve();
   return import('./machine/engine')
     .then((m) => {
       // Undefined when a host's vite:preloadError handler swallowed a failed fetch.
@@ -746,8 +795,8 @@ export function lastWrittenLang(): string | null {
   return lastLang;
 }
 
-/** The language boot DETECTED — the reader never chose one, their browser asks for one that
- *  ships, and it is the language on screen now — or null. Null as well once the reader picks a
+/** The language boot DETECTED — the reader never chose one, their browser (or the address, `via`)
+ *  asks for one that ships, and it is the language on screen now — or null. Null as well once the reader picks a
  *  language (that ends the question), and while the detected catalog has not arrived (the app
  *  is still in English, so nothing has changed yet). The language-detected notice reads it
  *  (App, lib/autoFlipNotice): only `existingInstall` is a change to announce, since a first
@@ -779,15 +828,21 @@ export function initI18n(): Promise<void> {
       // device can't show it, the module holds it (holdMachine) and the line below resolves to
       // the detected language. A cache that arrives after the wait still swaps in (publishMachine).
       if (pref !== null && isMachineLocale(pref)) await Promise.race([resumeMachine(pref), wait]);
-      // A reader who never chose, landing on a language their browser asks for: recorded for
-      // the language-detected notice (detectedAtBoot, above). Classified here, at boot, because
-      // whether the install had been used before can only be read before this session writes.
+      // A reader who never chose, landing on a language their browser or the address asks for:
+      // recorded for the language-detected notice (detectedAtBoot, above). Classified here, at
+      // boot, because whether the install had been used before can only be read before this
+      // session writes.
       const empty = prefKeyEmpty();
       const detected = effectiveFor(pref);
       bootDetected =
         pref === null && empty === true && isShippedLocale(detected) && detected !== 'en'
-          ? { locale: detected, existingInstall: hasOtherState() }
+          ? { locale: detected, via: linkLanguage() === detected ? 'link' : 'browser', existingInstall: hasOtherState() }
           : null;
+      // The address's language, remembered for later visits (linkLanguage says why) — only for a
+      // reader with no choice of their own, and only after the line above has read whether this
+      // install had been used before, which a key written here would otherwise answer for it.
+      const asked = addressLanguage();
+      if (pref === null && asked !== null) rememberLink(asked);
       const done = switchTo(detected);
       await Promise.race([done, wait]);
       clearTimeout(timer);
@@ -820,6 +875,8 @@ export const __testing = {
     lastLang = null;
     availableOverride = null;
     bootDetected = null;
+    linkTag = undefined;
+    linkedRaw = undefined;
     afterPick = null;
     requested.clear();
     namespacesRead.clear();

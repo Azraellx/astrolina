@@ -5,8 +5,10 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import {
+  useCallback,
   Fragment,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useEffect,
@@ -76,10 +78,12 @@ import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { LocaleId } from '../../i18n';
 import { isHeldRepick } from '../../i18n/runtime';
+import { BindingLanguageArea } from '../ui/BindingLanguageNote';
+import { getLanguageMenuFooter } from '../../lib/extensions/languageMenu';
+import { acceptLanguageNotice, useLanguageNoticeAccepted } from '../../i18n/languageNotice';
 import {
   MACHINE_CANDIDATES,
   chooseMachineLanguage,
-  machineTierOffered,
   clearMachinePick,
   machineAutonym,
   refreshMachineAvailability,
@@ -819,6 +823,13 @@ function sectionRuns<O extends { value: string; section?: string; sectionHint?: 
   return runs;
 }
 
+/** The room below its trigger (px) a scrolling menu opens into rather than flipping above it:
+ *  about six rows — less is too cramped to scroll in. */
+const SCROLL_ROOM_MIN = 160;
+/** The width (px) a HintMenu's notice asks for, to be read as a short paragraph rather than a
+ *  column of words: it widens the panel as a wide row does, sliding left to stay on screen. */
+const NOTICE_W = 250;
+
 export function HintMenu<V extends string>({
   value,
   onChange,
@@ -831,6 +842,7 @@ export function HintMenu<V extends string>({
   listMaxHeight,
   listMaxViewport,
   onOpen,
+  notice,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -896,8 +908,17 @@ export function HintMenu<V extends string>({
    *  moment (the Language menu asks the device which languages it can translate into;
    *  2026-10-10). */
   onOpen?: () => void;
+  /** A notice shown in the options' place when the menu opens, for as long as the caller passes
+   *  one — something to read before choosing (the Language menu's, until the reader accepts it;
+   *  2026-10-13). It is handed `answer`: true goes on to the options (and `onOpen` runs then),
+   *  false closes the menu, as Escape and a press outside it do. Its first `[data-autofocus]`
+   *  element takes the focus once the panel is placed. */
+  notice?: (answer: (accepted: boolean) => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // What the open panel shows: the caller's notice first, when it has one, then the options.
+  const [showingNotice, setShowingNotice] = useState(false);
+  const noticeOpen = open && showingNotice && !!notice;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // The optional trigger tip's anchor shares the trigger element (merged ref below).
@@ -916,6 +937,9 @@ export function HintMenu<V extends string>({
     top: number;
     maxHeight: number;
     maxWidth: number;
+    /** Placed for the notice rather than the options — the options scroll to the marked row only
+     *  once a box has been placed for THEM (below). */
+    forNotice: boolean;
   } | null>(null);
   const current = options.find((o) => o.value === value);
 
@@ -934,8 +958,9 @@ export function HintMenu<V extends string>({
       const gap = 6; // gap between the trigger and the panel
       const vh = window.innerHeight;
       const vw = window.innerWidth;
-      // Before the height is read below — the measure puts every row back as it found it.
-      if (remeasure && panelRef.current) rowsWidth = optionRowsWidth(panelRef.current);
+      // Before the height is read below — the measure puts every row back as it found it. A notice
+      // has no rows: it asks for a reading width instead, by the same path a wide row takes.
+      if (remeasure && panelRef.current) rowsWidth = noticeOpen ? NOTICE_W : optionRowsWidth(panelRef.current);
       // The panel is mounted (hidden) before this layout effect runs, so its real
       // height is available on the very first open. Measure the FULL outer height:
       // scrollHeight is content + padding but EXCLUDES the border, and the panel is
@@ -949,7 +974,7 @@ export function HintMenu<V extends string>({
         : 240;
       // Never taller than the viewport (minus margins), nor than the caller's
       // caps; it scrolls past that.
-      const height = Math.min(
+      let height = Math.min(
         panelH,
         vh - margin * 2,
         listMaxHeight ?? Infinity,
@@ -973,6 +998,13 @@ export function HintMenu<V extends string>({
       }
       const spaceBelow = vh - r.bottom - gap - margin;
       const spaceAbove = r.top - gap - margin;
+      // A list that scrolls anyway (a caller's cap) opens BELOW its trigger, as the menus that
+      // fit there do, shortened to the room there — so long as that room holds a useful run of
+      // rows (SCROLL_ROOM_MIN). Flipping it above whenever it was taller than the room below put
+      // the one long list low in its column (Language) above its trigger, the only menu that
+      // opened upward. (2026-10-13)
+      const scrolls = !noticeOpen && (listMaxHeight !== undefined || listMaxViewport !== undefined);
+      if (scrolls && height > spaceBelow && spaceBelow >= SCROLL_ROOM_MIN) height = spaceBelow;
       let top: number;
       if (height <= spaceBelow) {
         top = r.bottom + gap; // fits below the trigger
@@ -991,9 +1023,10 @@ export function HintMenu<V extends string>({
         prev.width === r.width &&
         prev.top === top &&
         prev.maxHeight === height &&
-        prev.maxWidth === maxWidth
+        prev.maxWidth === maxWidth &&
+        prev.forNotice === noticeOpen
           ? prev
-          : { left, width: r.width, top, maxHeight: height, maxWidth },
+          : { left, width: r.width, top, maxHeight: height, maxWidth, forNotice: noticeOpen },
       );
     };
     const replace = () => place(true);
@@ -1003,6 +1036,10 @@ export function HintMenu<V extends string>({
     const panel = panelRef.current;
     const ro = panel ? new ResizeObserver(replace) : null;
     if (panel) ro?.observe(panel);
+    // A notice's content can grow past the height the panel was placed at (its English toggle
+    // swaps the text), and a panel pinned at its maxHeight doesn't change size then: watch the
+    // content itself.
+    if (panel && noticeOpen && panel.firstElementChild) ro?.observe(panel.firstElementChild);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
@@ -1015,6 +1052,8 @@ export function HintMenu<V extends string>({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
+      // The notice holds the focus; give it back to the trigger, as its own buttons do.
+      if (noticeOpen) triggerRef.current?.focus();
       setOpen(false);
     };
     // Re-pin to the trigger when the SIDEBAR (page) scrolls, but ignore scrolling
@@ -1035,7 +1074,54 @@ export function HintMenu<V extends string>({
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [open, listMaxHeight, listMaxViewport]);
+  }, [open, listMaxHeight, listMaxViewport, noticeOpen]);
+
+  const noticeId = useId();
+  // Tab stays inside the open notice — from its last control round to its first, and back.
+  const keepTabInside = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab') return;
+    const all = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'),
+    );
+    if (!all.length) return;
+    const first = all[0];
+    const last = all[all.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+  // The notice's answer: on to the options, or closed — the focus back on the trigger either way.
+  const answerNotice = useCallback(
+    (accepted: boolean) => {
+      triggerRef.current?.focus();
+      if (!accepted) {
+        setOpen(false);
+        return;
+      }
+      setShowingNotice(false);
+      onOpen?.();
+    },
+    [onOpen],
+  );
+
+  // The notice's own button takes the focus once the panel is placed (a hidden panel can't hold
+  // it), so the keyboard reader is where the question is.
+  const noticeFocused = useRef(false);
+  useEffect(() => {
+    if (!noticeOpen) {
+      noticeFocused.current = false;
+      return;
+    }
+    // Once per opening: every re-place (a scroll, the English toggle) hands over a new box, and
+    // taking the focus back each time would put a keyboard reader on Understood mid-reading.
+    if (!box || noticeFocused.current) return;
+    noticeFocused.current = true;
+    panelRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+  }, [noticeOpen, box]);
 
   // A list long enough to scroll opens on the chosen row, centred, as a native
   // select does — not at the top, a scroll away from what is chosen. Once per
@@ -1047,12 +1133,13 @@ export function HintMenu<V extends string>({
       scrolledOpen.current = false;
       return;
     }
-    if (!box || scrolledOpen.current) return;
+    // Not while a notice stands in the options' place: they scroll when they arrive.
+    if (!box || box.forNotice || scrolledOpen.current || noticeOpen) return;
     scrolledOpen.current = true;
     const panel = panelRef.current;
     const on = panel?.querySelector<HTMLElement>('.navmenu-item.on');
     if (panel && on) panel.scrollTop = on.offsetTop - (panel.clientHeight - on.offsetHeight) / 2;
-  }, [open, box]);
+  }, [open, box, noticeOpen]);
 
   return (
     <div className="calc-menu">
@@ -1069,7 +1156,10 @@ export function HintMenu<V extends string>({
             nudgeAction(); // tier-locked teaser → the account/upgrade flow
             return;
           }
-          if (!open) onOpen?.();
+          if (!open) {
+            setShowingNotice(!!notice);
+            if (!notice) onOpen?.();
+          }
           setOpen(!open);
         }}
         onMouseEnter={() => {
@@ -1080,7 +1170,7 @@ export function HintMenu<V extends string>({
           if (triggerTip && !open) tipShow();
         }}
         onBlur={tipHide}
-        aria-haspopup="listbox"
+        aria-haspopup={notice ? 'dialog' : 'listbox'}
         aria-expanded={open}
       >
         <span className="calc-menu-value">
@@ -1117,8 +1207,10 @@ export function HintMenu<V extends string>({
         createPortal(
           <div
             ref={panelRef}
-            className="navmenu-panel"
-            role="listbox"
+            className={`navmenu-panel${noticeOpen ? ' is-notice' : ''}`}
+            role={noticeOpen ? 'dialog' : 'listbox'}
+            aria-describedby={noticeOpen ? noticeId : undefined}
+            onKeyDown={noticeOpen ? keepTabInside : undefined}
             style={{
               position: 'fixed',
               left: box?.left ?? 0,
@@ -1133,17 +1225,22 @@ export function HintMenu<V extends string>({
               visibility: box ? 'visible' : 'hidden',
             }}
           >
+            {noticeOpen && (
+              <div id={noticeId}>
+                <HintMenuNotice render={notice} answer={answerNotice} />
+              </div>
+            )}
             {/* The QUESTION the options answer, above them. Worth its own line where a
                 list of four calculations would otherwise leave the reader to infer what
                 the arc is being applied to — which is exactly what one shared menu used
                 to make them do. */}
-            {header && <span className="navmenu-header">{header}</span>}
+            {!noticeOpen && header && <span className="navmenu-header">{header}</span>}
             {/* A section is one block: its heading and its rows together, set off by a tint,
                 with the heading pinned while its rows scroll under it. As a bare line between
                 two runs of rows, a heading read as a divider, and which side it named was a
                 guess (the Language menu's on-device section, 2026-10-10). The rows before the
                 first heading stay loose, as before. */}
-            {sectionRuns(options).map((run) => {
+            {!noticeOpen && sectionRuns(options).map((run) => {
               const rows = run.rows.map((o) => (
                 <HintMenuItem
                   key={o.value}
@@ -1169,12 +1266,24 @@ export function HintMenu<V extends string>({
                 </HintMenuSection>
               );
             })}
-            {note && <span className="navmenu-hint">{note}</span>}
+            {!noticeOpen && note && <span className="navmenu-hint">{note}</span>}
           </div>,
           document.body,
         )}
     </div>
   );
+}
+
+// A HintMenu's notice, rendered by its caller's function with the menu's answer handed in — a
+// component of its own so that call happens in ITS render, with the answer an ordinary prop.
+function HintMenuNotice({
+  render,
+  answer,
+}: {
+  render: (answer: (accepted: boolean) => void) => ReactNode;
+  answer: (accepted: boolean) => void;
+}) {
+  return <>{render(answer)}</>;
 }
 
 // One section block of a HintMenu: its heading and its rows, as one tinted group. A heading
@@ -1336,6 +1445,39 @@ function HintMenuItem({
   );
 }
 
+// The Language menu's first-open notice (2026-10-13): one sentence on what the translations are —
+// still under review, wrong in places, offered as a convenience — and two buttons, shown in the
+// menu's own panel (HintMenu `notice`) when it opens, until the reader presses Understood. That
+// answer is stored (i18n/languageNotice), and only that one: Cancel, Escape or a press outside
+// closes the menu and leaves the notice for next time. It is the same answer the notice's card
+// takes (components/LanguageNoticeCard), so accepted in either it shows in neither. Its copy is
+// legal in kind (settings.languageNotice is tagged `@i18n-review`), so it is read inside a
+// binding-language area, through the hooks, which is what lets the area's toggle swap in the English.
+function LanguageNotice({ onAnswer }: { onAnswer: (accepted: boolean) => void }) {
+  return (
+    <BindingLanguageArea>
+      <LanguageNoticeText onAnswer={onAnswer} />
+    </BindingLanguageArea>
+  );
+}
+
+function LanguageNoticeText({ onAnswer }: { onAnswer: (accepted: boolean) => void }) {
+  const { t } = useT();
+  return (
+    <div className="language-notice">
+      <p className="language-notice-body">{t('settings.languageNotice.body')}</p>
+      <div className="language-notice-actions">
+        <button type="button" className="language-notice-cancel" onClick={() => onAnswer(false)}>
+          {t('settings.languageNotice.cancel')}
+        </button>
+        <button type="button" className="language-notice-ok" data-autofocus onClick={() => onAnswer(true)}>
+          {t('settings.languageNotice.ok')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Appearance ▸ Language. The languages this app ships first, each by its own name, which a page
 // translator must leave as written — "Deutsch" rendered as "German" is no use to the reader
 // looking for it (noTranslate); the ones without a shipped catalog are greyed with a tip.
@@ -1354,17 +1496,15 @@ function HintMenuItem({
 // why); the line under the menu shows the download and the translating, and once a device language
 // is on screen, the disclosure that it is machine-translated.
 //
-// While the release hold stands (i18n/languageHold.ts, 2026-10-10) the shipped rows grey
-// themselves — languages.ts masks their `available`, and they read "Coming soon" as they did
-// before the catalogs shipped — and the device section is not offered at all (machineTierOffered):
-// no heading, no candidates, and no row kept for a stored `mt:` choice, which the runtime masks to
-// English in silence. The marked row is then English, standing in for the reader's choice, and a
-// click on it stores nothing (runtime.ts setLocale refuses writes while held).
+// Opened for the first time, it shows what the translations are worth before the list, until the
+// reader accepts that (LanguageNotice, above). (The languages were held back from release from
+// 2026-10-10 to 2026-10-13, greyed here with the device section absent.)
 function LanguageMenu() {
   const { t, locale, pref, machineHold, setLocale } = useT();
+  const languageFooter = getLanguageMenuFooter();
+  const noticeAccepted = useLanguageNoticeAccepted();
   const machine = useMachineMenu();
-  const deviceOffered = machineTierOffered();
-  const deviceCanTranslate = deviceOffered && translatorApi() !== null;
+  const deviceCanTranslate = translatorApi() !== null;
   useEffect(() => {
     void refreshMachineAvailability();
   }, []);
@@ -1386,8 +1526,8 @@ function LanguageMenu() {
       if (a && a !== 'unavailable') listed.add(c.lang);
     }
   }
-  if (deviceOffered && shownLang) listed.add(shownLang);
-  if (deviceOffered && prefLang) listed.add(prefLang);
+  if (shownLang) listed.add(shownLang);
+  if (prefLang) listed.add(prefLang);
   const ordered = [
     ...MACHINE_CANDIDATES.map((c) => c.lang).filter((l) => listed.has(l)),
     ...[...listed].filter((l) => !MACHINE_CANDIDATES.some((c) => c.lang === l)),
@@ -1453,10 +1593,24 @@ function LanguageMenu() {
           clearMachinePick();
           void refreshMachineAvailability();
         }}
-        // Half the window at most (2026-10-10): with the device section the list runs to some
-        // thirty rows, and filled the window top to bottom. It scrolls instead, opening on the
-        // marked row.
-        listMaxViewport={0.5}
+        // A third of the window, about (2026-10-13; half until then, 2026-10-10): with the device
+        // section the list runs to some thirty rows, and filled the window top to bottom. It
+        // scrolls instead, opening on the marked row.
+        listMaxViewport={0.35}
+        // What the translations are, before the first choice among them — until the reader
+        // accepts it, here or on its card (i18n/languageNotice).
+        notice={
+          noticeAccepted
+            ? undefined
+            : (answer) => (
+                <LanguageNotice
+                  onAnswer={(ok) => {
+                    if (ok) acceptLanguageNotice();
+                    answer(ok);
+                  }}
+                />
+              )
+        }
         options={[...shipped, ...device]}
       />
       {/* One string child each: the progress line rewrites itself while it is on screen. */}
@@ -1466,6 +1620,8 @@ function LanguageMenu() {
         </p>
       )}
       {shownLang && <p className="language-note">{t('settings.machine.disclosure')}</p>}
+      {/* A build's own line under the menu (lib/extensions/languageMenu), last. */}
+      {languageFooter?.()}
     </>
   );
 }

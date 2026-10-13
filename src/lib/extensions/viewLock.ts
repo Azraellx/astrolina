@@ -47,6 +47,25 @@ export interface ViewLock {
     /** The window's title meanwhile, naming the owner beside it — say what the window is
      *  working with. Absent, the window's own. (2026-10-12) */
     title?: string;
+    /** A place row in the window meanwhile, for an owner that stands at the origin and moves
+     *  with it: the origin's place name (as the host resolves it — the pin's looked-up place,
+     *  coordinates until it resolves, the birthplace's or Home's own name) under `label`, with a
+     *  Change that searches for a place and hands it to `onPick` — no Clear, an origin is always
+     *  somewhere. The owner decides what a picked place does. Absent, no row. (2026-10-13) */
+    place?: {
+      label: string;
+      onPick: (place: { label: string; lat: number; lng: number }) => void;
+      /** Change's tip, for an owner whose pick makes the pin the origin: shown only while the
+       *  origin is NOT the pin, which is when a pick moves the origin setting as well as the
+       *  place — a disclosure on a pick that changes nothing else would be a warning about a
+       *  no-op. */
+      changeTip?: { title: string; hint: string };
+    };
+    /** On a phone, where the window hangs under the nav meanwhile: the viewport y it must end
+     *  above — the owner's own bar's top edge, read live — or null. The window is capped to the
+     *  room left and scrolls, where a short phone (one on its side) has no room for all of it.
+     *  (2026-10-13) */
+    floor?: () => number | null;
   };
 }
 

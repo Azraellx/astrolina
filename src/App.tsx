@@ -108,6 +108,8 @@ import {
 } from './lib/autoFlipNotice';
 // The browser-translation offer and the language boot detected (2026-10-09).
 import { TranslateOffer } from './components/TranslateOffer/TranslateOffer';
+import { LanguageNoticeCard } from './components/LanguageNoticeCard/LanguageNoticeCard';
+import { useLanguageNoticeAccepted } from './i18n/languageNotice';
 import { detectedAtBoot, isTranslated } from './i18n/runtime';
 // The geodetic review hold — one boolean, masking a preference rather than
 // rewriting it. See lib/geodeticHold for the whole of it and how to lift it.
@@ -140,7 +142,7 @@ import {
   zoneNameForChart,
 } from './lib/atlas/zoneName';
 import { castClockAt } from './lib/chartHeader';
-import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
+import { useReverseGeocodeCell } from './lib/atlas/useReverseGeocode';
 import { useNearestCity, useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { useCountryOf } from './lib/atlas/useCountryOf';
 import {
@@ -1051,14 +1053,27 @@ export default function App() {
   //   • On a FIRST visit there is nothing to report (the app was never in English for them):
   //     the language is recorded silently, so their second visit — an install with state by
   //     then — isn't taken for a returning reader's first. (2026-10-09, after review.)
+  //   • Not while the translations' notice is unanswered (2026-10-13): its card is up then, and
+  //     says this as well (components/LanguageNoticeCard), recording the language as told — so a
+  //     reader isn't met by two cards about one change, and this one stays quiet after.
+  //   • Never for a language a link asked for (`via: 'link'`, 2026-10-13), on this visit or a
+  //     remembered earlier one: the reader followed a link from a page in it, so nothing changed
+  //     that they can't account for. It is recorded all the same, so a later visit that finds it
+  //     from the browser instead doesn't announce a change that wasn't one.
+  const languageNoticeAccepted = useLanguageNoticeAccepted();
   useEffect(() => {
     const detected = detectedAtBoot();
     if (!detected) return;
+    if (detected.via === 'link') {
+      if (detectedLanguageRecorded() !== detected.locale) recordDetectedLanguage(detected.locale);
+      return;
+    }
+    if (!languageNoticeAccepted) return;
     if (!isTranslated('autoFlip.language-detected.title') || !isTranslated('autoFlip.language-detected.body')) return;
     if (detectedLanguageRecorded() === detected.locale) return;
     recordDetectedLanguage(detected.locale);
     announceFlip('language-detected', detected.existingInstall);
-  }, [lang, announceFlip]);
+  }, [lang, announceFlip, languageNoticeAccepted]);
   // 'language-held' (2026-10-10): the reader's stored device language can't be shown on this
   // device — no translator here and nothing it translated before, or its model to download
   // again (i18n/runtime `machineHold`) — so the app opened in the detected language or English.
@@ -3897,6 +3912,14 @@ export default function App() {
   // (skyHeld). Everything that means "local space is ON" reads this, never the raw flag,
   // so the flag stays as the reader left it. (2026-10-02)
   const lsActive = showLocalSpace && !skyHeld;
+  // The Local Space VIEW as the expanded sidebar reads it — its local-space pair of dials and
+  // the aspect list's Compare columns: open by the reader, or kept up beside a viewport owner
+  // that works from it (ViewLock.keepsLocalSpace), where the window shows (lsWindowOpen) and the
+  // sidebar's local-space panels belong with it. Derived, never written (CLAUDE.md rule 2). The
+  // map's own local-space drawing (lsActive) keeps reading the stored flag: the map under such
+  // an owner is hidden, and draws nothing extra. (2026-10-13)
+  const lsViewOn = lsKeptByLock ? advancedWheel : showLocalSpace;
+  const lsPanelsOn = lsViewOn && !skyHeld;
   const localSpaceGeom = useMemo(
     () => (lsActive ? filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound) : EMPTY_FC),
     [allLocalSpace, visiblePlanets, lsActive, hideLsInbound],
@@ -5171,7 +5194,45 @@ export default function App() {
   //  The top-nav readout is suppressed while a map tool is active (see `locationLabel`),
   //  but the pin's own reverse-geocode keeps resolving so the Coordinates window can
   //  still name a placed pin mid-measure.
-  const pinnedLabel = useReverseGeocode(isNatalPin ? null : pinned, detailZoom);
+  const { label: pinnedLabel, current: pinnedLabelCurrent } = useReverseGeocodeCell(
+    isNatalPin ? null : pinned,
+    detailZoom,
+  );
+  // The place last picked in the Local Space window's place row (below), kept so the row names
+  // the place the reader chose rather than the town the pin's lookup finds around it. Transient:
+  // it names the pin only while the pin is still where that pick put it.
+  const [lsPickedPlace, setLsPickedPlace] = useState<{
+    label: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  // The Local Space origin's place, for the window's place row under an owner that offers one
+  // (ViewLock.keepsLocalSpace.place), and where it is: a pin's picked name while it stands where
+  // the pick put it, else its looked-up place — its coordinates until the lookup for THIS point
+  // settles, never the sticky name of the point before it; the birthplace's or Home's own name.
+  const lsOriginPlace = useMemo(() => {
+    const r = localSpaceOriginResolved;
+    if (!r) return null;
+    const { point, kind } = r;
+    const coords = `${fmtLat(point.lat)}, ${fmtLng(point.lng)}`;
+    const picked =
+      lsPickedPlace &&
+      Math.abs(lsPickedPlace.lat - point.lat) < 1e-7 &&
+      Math.abs(lsPickedPlace.lng - point.lng) < 1e-7
+        ? lsPickedPlace.label
+        : null;
+    const label =
+      kind === 'pin'
+        ? isNatalPin && current
+          ? identity.text(current.birthplace.label)
+          : (picked ?? (pinnedLabelCurrent ? pinnedLabel : null) ?? coords)
+        : kind === 'home' && current?.home
+          ? identity.text(current.home.label)
+          : kind === 'birthplace' && current
+            ? identity.text(current.birthplace.label)
+            : coords;
+    return { label, lat: point.lat, lng: point.lng };
+  }, [localSpaceOriginResolved, isNatalPin, current, pinnedLabel, pinnedLabelCurrent, lsPickedPlace, identity]);
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useCountryOf(hover);
   // The sky band's place label while follow-the-cursor is on: the offline
@@ -8310,10 +8371,25 @@ export default function App() {
           onClose={closeLsWindow}
           closeHint={viewLock?.keepsLocalSpace?.closeHint}
           title={viewLock?.keepsLocalSpace?.title}
+          originPlace={
+            viewLock?.keepsLocalSpace?.place
+              ? {
+                  heading: viewLock.keepsLocalSpace.place.label,
+                  value: lsOriginPlace,
+                  changeTip: viewLock.keepsLocalSpace.place.changeTip,
+                  onPick: (p) => {
+                    setLsPickedPlace(p);
+                    viewLock.keepsLocalSpace?.place?.onPick(p);
+                  },
+                }
+              : undefined
+          }
           hideFly={lsKeptByLock}
-          // …and on a phone it opens folded: the open window would sit on the owner's own bar
-          // along the bottom. The header's eye unfolds it. (2026-10-12)
-          startCollapsed={lsKeptByLock && isPhone()}
+          // …and on a phone it hangs under the nav rather than standing on the bottom chrome,
+          // where the owner's own bar runs. Open, as everywhere: it is how the origin moves
+          // there. (2026-10-13)
+          phoneUnderNav={lsKeptByLock}
+          phoneFloor={viewLock?.keepsLocalSpace?.floor}
           // On a geodetic map the window stays, with its header, and shows the hold's
           // reason and fix in place of its content (lib/skyHold, 2026-10-02).
           held={skyHeld}
@@ -8599,15 +8675,15 @@ export default function App() {
           // showing the overlay's bodies at another moment — no coherent frame
           // to compare). This one condition is the entire gate.
           localSpaceCoords={
-            lsActive && !promoteOverlay && gatedTierMet ? localSpaceCoords : null
+            lsPanelsOn && !promoteOverlay && gatedTierMet ? localSpaceCoords : null
           }
           natalLocalSpaceCoords={
-            lsActive && !promoteOverlay && gatedTierMet
+            lsPanelsOn && !promoteOverlay && gatedTierMet
               ? natalLocalSpaceCoords
               : null
           }
           relocatedLocalSpaceCoords={
-            lsActive && !promoteOverlay && gatedTierMet
+            lsPanelsOn && !promoteOverlay && gatedTierMet
               ? relocatedLocalSpaceCoords
               : null
           }
@@ -8617,11 +8693,11 @@ export default function App() {
           // Read off the view's OPEN flag, not lsActive: on a geodetic map the slot says
           // the hold instead, but the tier still decides which local-space controls
           // exist to be held (the aspect list's Compare switch). (2026-10-05)
-          localSpaceGated={showLocalSpace && !promoteOverlay && !gatedTierMet}
+          localSpaceGated={lsViewOn && !promoteOverlay && !gatedTierMet}
           // The view is open but HELD on a geodetic map: the slot the dials would take
           // shows the hold's reason and its fix instead (lib/skyHold). Same promoted-overlay
           // exclusion as the dials themselves. (2026-10-02)
-          localSpaceHeld={showLocalSpace && skyHeld && !promoteOverlay}
+          localSpaceHeld={lsViewOn && skyHeld && !promoteOverlay}
           onOpenCalc={() => openSettingsSection('calc')}
           localSpaceRelocated={localSpaceRelocated}
           aspectOrbs={effAspectOrbs}
@@ -8747,6 +8823,10 @@ export default function App() {
           auto-flip notice is up, since the two share a spot and one card at a time is the
           rule here. (2026-10-09) */}
       <TranslateOffer parked={viewParked || autoFlipKind !== null} />
+      {/* The translations' notice, as a card for a translation reached without the Language menu
+          (components/LanguageNoticeCard, 2026-10-13). Parked like the offer above, which it never
+          shows beside: it keeps out of the way of a page translator, the offer's moment. */}
+      <LanguageNoticeCard parked={viewParked || autoFlipKind !== null} />
       {/* The guides reference (View ▸ Guides) takes precedence over an onboarding pop-up,
           so only one card shows at a time; closing it lets any unfinished onboarding guide
           resurface on the next gesture. In reference mode the pager flips through the met

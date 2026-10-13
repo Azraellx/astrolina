@@ -347,18 +347,27 @@ export function isMarkerPath(path: string): boolean {
   return reg ? markerTest(reg.en.markers)(path) : false;
 }
 
-/** True when a registered pack asks the on-device tier to leave `path` in English
- *  (`machineExclude`, types.ts): text with legal weight, and data. A pattern covers its own
- *  path and everything beneath it. Any pack may name any path — its own namespaces, or a core
- *  leaf it overrides (a build's licence statements are overrides) — since the build is the one
- *  that knows which of its words carry legal weight. The core itself excludes nothing. */
+/** The core's OWN copy with legal weight, left in English by the on-device tier in any build:
+ *  the subtrees its catalog tags `@i18n-review` (i18n/en). By hand, beside the tag — the runtime
+ *  never sees comments — and held to the tags by a build's catalog check, which fails on a tagged
+ *  core path this doesn't cover. (2026-10-13: the Language menu's notice on what a translation is
+ *  worth, the first such copy in the core.) */
+export const CORE_MACHINE_EXCLUDE: readonly string[] = ['settings.languageNotice'];
+
+/** True when the core (CORE_MACHINE_EXCLUDE) or a registered pack asks the on-device tier to
+ *  leave `path` in English (`machineExclude`, types.ts): text with legal weight, and data. A
+ *  pattern covers its own path and everything beneath it. Any pack may name any path — its own
+ *  namespaces, or a core leaf it overrides (a build's licence statements are overrides) — since
+ *  the build is the one that knows which of its words carry legal weight. */
 export function isMachineExcluded(path: string): boolean {
   const parts = path.split('.');
-  return registrations.some((reg) =>
-    (reg.en.machineExclude ?? []).some((p) => {
-      const seg = p.split('.');
-      return seg.length <= parts.length && seg.every((s, i) => s === '*' || s === parts[i]);
-    }),
+  const covers = (p: string) => {
+    const seg = p.split('.');
+    return seg.length <= parts.length && seg.every((s, i) => s === '*' || s === parts[i]);
+  };
+  return (
+    CORE_MACHINE_EXCLUDE.some(covers) ||
+    registrations.some((reg) => (reg.en.machineExclude ?? []).some(covers))
   );
 }
 

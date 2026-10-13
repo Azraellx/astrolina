@@ -18,10 +18,9 @@
 // screen, by which time the engine is already loaded (it is what put the language there). A
 // reader who never chooses a device language fetches nothing more because a build calls this.
 //
-// Refused — an empty answer, the translator untouched, the engine not fetched — while the
-// languages are held for release (languageHold.ts), and whenever the language on screen is not a
-// device translation: a shipped language has translators of its own, and English needs none.
-import { LANGUAGES_HELD } from '../languageHold';
+// Refused — an empty answer, the translator untouched, the engine not fetched — whenever the
+// language on screen is not a device translation: a shipped language has translators of its own,
+// and English needs none.
 import { getI18n } from '../runtime';
 
 /** One passage for the device to translate. `cacheKey` is the caller's, namespaced by it
@@ -43,13 +42,12 @@ export interface OnDeviceOptions {
   priority?: 'now' | 'background';
 }
 
-/** True while the language on screen is a device translation and the languages are not held.
- *  By then the device has a translator for it, or a cache serving it (otherwise the choice would
- *  be held, and the screen in another language). That says the device CAN be asked, not what it
- *  will give: a cache-only language answers only what was translated before, so a caller decides
- *  what to show from what translateOnDevice returns — an empty map is a possible answer. */
+/** True while the language on screen is a device translation. By then the device has a
+ *  translator for it, or a cache serving it (otherwise the choice would be held, and the screen in
+ *  another language). That says the device CAN be asked, not what it will give: a cache-only
+ *  language answers only what was translated before, so a caller decides what to show from what
+ *  translateOnDevice returns — an empty map is a possible answer. */
 export function canTranslateOnDevice(): boolean {
-  if (LANGUAGES_HELD) return false;
   return getI18n().locale.startsWith('mt:');
 }
 

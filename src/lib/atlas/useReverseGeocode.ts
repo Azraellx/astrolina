@@ -80,20 +80,36 @@ export function useReverseGeocode(
   point: Pt | null,
   allowNetwork: boolean,
 ): string | null {
-  const [label, setLabel] = useState<string | null>(null);
+  return useReverseGeocodeCell(point, allowNetwork).label;
+}
+
+/**
+ * {@link useReverseGeocode}, also saying whether the label is FOR the point given: `current` is
+ * false while a moved point's lookup is still pending and the sticky label still names the
+ * previous one. A readout that sits beside the point's own view (and so mustn't name the place
+ * just left) shows something else until it turns true. One lookup either way — this is the hook.
+ */
+export function useReverseGeocodeCell(
+  point: Pt | null,
+  allowNetwork: boolean,
+): { label: string | null; current: boolean } {
+  const [state, setState] = useState<{ key: string | null; label: string | null }>({
+    key: null,
+    label: null,
+  });
   const key = point ? cellKey(point.lat, point.lng) : null;
 
   useEffect(() => {
     if (!key || !point) {
       // No active point — clear once the cursor has actually left (deferred so
       // it isn't a synchronous effect setState, and cancelled on quick re-entry).
-      const t = setTimeout(() => setLabel(null), 0);
+      const t = setTimeout(() => setState({ key: null, label: null }), 0);
       return () => clearTimeout(t);
     }
     const ctrl = new AbortController();
     const timers: ReturnType<typeof setTimeout>[] = [];
     const show = (v: string | null) => {
-      if (!ctrl.signal.aborted) setLabel(v);
+      if (!ctrl.signal.aborted) setState({ key, label: v });
     };
 
     // Upgrade a nearest-centroid label to the boundary-accurate one. `delayMs` is
@@ -182,5 +198,5 @@ export function useReverseGeocode(
     };
   }, [key, point, allowNetwork]);
 
-  return label;
+  return { label: state.label, current: state.key === key };
 }

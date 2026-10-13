@@ -41,10 +41,6 @@ export { en } from './en';
 export { SUPPORTED_LOCALES } from './catalog';
 export { foldForSearch, lowerForSentence, lowerFirstForSentence } from './casing';
 export { LANGUAGES, type LanguageOption } from './languages';
-// The release hold on the new languages (2026-10-10): the flag every gate reads, and the
-// per-device override a build's own tooling may set. languageHold.ts says what it holds and how
-// it goes.
-export { LANGUAGES_HELD, isLanguagesUnlocked, setLanguagesUnlocked } from './languageHold';
 export type {
   Locale,
   ShippedLocale,

@@ -51,6 +51,15 @@ export const settings = {
     hint: 'O mapa natal subjacente. Oculte-o e a sobreposição toma o seu lugar — assumindo as linhas, a roda e os dados do mapa.',
   },
   languageUnavailable: 'Em breve.',
+  languageNotice: {
+    body: 'As traduções são um trabalho em andamento, ainda em revisão, e podem conter erros; são fornecidas para sua conveniência.',
+    ok: 'Entendido',
+    cancel: 'Cancelar',
+  },
+  languageNoticeCard: {
+    detected: 'A AstroLina abre no idioma do seu navegador. Para escolher outro, acesse {route}.',
+    useEnglish: 'Usar {language}',
+  },
   machine: {
     section: 'Tradução automática',
     sectionHint: 'Os idiomas acima vêm com a AstroLina. Os idiomas abaixo serão traduzidos automaticamente neste dispositivo.',

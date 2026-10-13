@@ -9,23 +9,6 @@ what anyone writing a component needs to know.
 The rule everything below serves: **a missing or invalid translation shows English for that key.**
 English copy changes often, and translations follow it; they never hold it up.
 
-## Held for release
-
-The shipped languages (Spanish, Brazilian Portuguese, Turkish, German and Russian) and the
-on-device tier (the menu's *Auto-translated* section) are currently switched off pending their
-release, by one switch: `HELD_BASE` in `src/i18n/languageHold.ts` (since 2026-10-10). While it is
-on, the Language menu lists the five greyed as *Coming soon* and leaves the on-device section out;
-detection, the boot script and the translate offer settle on English; and nothing is written — a
-language already stored is kept, and comes back when the hold lifts. Nothing is deleted or stubbed,
-and the catalogs are kept current meanwhile, so lifting the hold is one change.
-
-A self-hosted build that wants the languages now sets `HELD_BASE` to `false`, and `var HELD` in the
-`lang-boot` script in `index.html` with it: the script carries a copy, and `npm run verify:lang-boot`
-fails until the two agree. Two sets of checks then fail, as they should, because they test the hold
-itself and go with it: the held cases of `npm run verify:lang-boot` (§3) and the held section of
-`npm run verify:i18n-runtime` (§8). The rest of this note describes the languages as they
-work with the hold off.
-
 ## How it works
 
 - Every user-facing string is a key in the English catalog under `src/i18n/en/`, one file per
@@ -35,11 +18,26 @@ work with the hold off.
   `t('common.close')`. A key that doesn't exist is a compile error at the call site. Code outside
   React reads the same store with `tStatic(key)` at call time, never at module load — a value read at
   import is frozen in whatever language was active then.
-- The language comes from the stored choice if there is one, otherwise from the browser's preferred
-  languages — and then only a language whose catalog ships. Detection never writes anything; only the
-  reader's own choice is stored (`astro:locale:v2`). When detection lands on a newly shipped language
+- The language comes from the stored choice if there is one, otherwise from the address — a link
+  into the app can ask for one with `?lang=es` (base tag, any case) — otherwise from the language the
+  last such link asked for, otherwise from the browser's preferred languages; and only ever a
+  language whose catalog ships. A link's language sticks: for a reader with no choice, boot remembers
+  it under its own key (`astro:locale-link:v1`), never as the choice, so visits without the link open
+  in it too, a newer link replaces it, and the reader's first pick outranks it from then on. The
+  app's own share links are built without `?lang=`. Browser detection never writes anything; the
+  reader's own choice is stored only by their pick (`astro:locale:v2`). When detection lands on a newly shipped language
   for a returning reader who had been seeing English, the app says so once, in that language, with
   where to choose another ([forced-settings.md](forced-settings.md) describes it).
+- A one-sentence notice says what the translations are worth: a work in progress, still under
+  review, offered for convenience. It stands before the Language menu's list the first time the menu
+  opens. A reader who is shown a translation without having opened the menu (the browser's language
+  at boot, a link's `?lang=`, the translate offer) gets it as a card instead, with a button that switches to English
+  (`src/components/LanguageNoticeCard/`). One Understood covers both; only that press is stored
+  (`astro:language-notice-accepted:v1`, `src/i18n/languageNotice.ts`), and an unanswered card comes
+  back on the next visit. While the card is unanswered it also carries the announcement above —
+  which language the app opened in, and where to choose another — so a returning reader is not met
+  by two cards about one change. A link's language is not announced: the reader followed a link
+  from a page in it. Its sentence has legal weight (*Text with legal weight*).
 - For each key the runtime uses the active language's string, then English, then the key itself. A
   translation whose `{placeholders}` differ from the English is treated as missing, so a broken
   translation can't print a raw `{name}` or drop a value.
@@ -88,7 +86,7 @@ it, and must open a comment line):
 | Tag | Meaning |
 |---|---|
 | `// @i18n-skip` | Data, not copy — never translated (a format sample, a code, an id). |
-| `// @i18n-review` | Text with legal weight: translated and shipped like any other string, shown inside a `BindingLanguageArea` (see *Text with legal weight*), and kept out of the on-device tier — the runtime never sees comments, so a build lists these paths in its pack's `machineExclude` (see *On-device translation*). |
+| `// @i18n-review` | Text with legal weight: translated and shipped like any other string, shown inside a `BindingLanguageArea` (see *Text with legal weight*), and kept out of the on-device tier — the runtime never sees comments, so a build lists these paths in its pack's `machineExclude`, and the core lists its own in `CORE_MACHINE_EXCLUDE` (see *On-device translation*). |
 | `// @i18n-verbatim` | Wording to translate faithfully and completely, without house-style edits. |
 | `// @i18n-max N` | A hard length limit, in characters. |
 
@@ -165,7 +163,8 @@ a `parent > child`, `+` or `:first-child` selector across the wrapper no longer 
 does not keep its text away from the on-device tier: text that must stay English there is excluded
 by path (`machineExclude`, under *On-device translation*).
 
-The credits dialog's licence and attribution notes are the core's own use of it. A build may wrap
+The credits dialog's licence and attribution notes are the core's own use of it, with the
+translations' notice (`settings.languageNotice`), in the Language menu and on its card. A build may wrap
 its own text in an area the same way; its own namespaces follow the button only if its reader goes
 through those hooks during render. A row a build registers in the credits dialog follows the button
 when it names catalog keys (`nameKey`, `noteKey` in `src/lib/extensions/creditsFooter.ts`), and
@@ -198,10 +197,10 @@ into no-ops instead of crashes. It is a safety net; the rule above is the fix.
 
 `index.html` carries a small inline script, the first script in `<head>`, that sets `<html lang>`
 before anything else runs. It resolves the language exactly as the runtime does — the stored choice
-if it is an available language, otherwise the browser's first available language, otherwise English —
-and declares it as the tag the runtime uses (`pt-BR` for Portuguese). While the release hold is on
-(*Held for release*), its `var HELD` narrows that list to English first, as the runtime does. It
-reads storage and never writes it.
+if it is an available language, otherwise the address's `?lang=` if that is, otherwise the language
+the last link asked for if that is, otherwise the browser's first available language, otherwise
+English — and declares it as the tag the runtime uses (`pt-BR`
+for Portuguese). It reads storage and the address and never writes either.
 
 It exists because a browser decides whether to offer translating a page from the language the page
 declares as it loads. Declared later, by the app once its bundle has run, it is too late: a reader
@@ -212,7 +211,8 @@ The script can't import anything, so it carries its own copies of the available 
 the declared tags. **Enabling a language means adding it to the script's `AVAILABLE` list as well as
 flipping its `available` flag.** `npm run verify:lang-boot` fails until the copies equal the
 runtime's (`SUPPORTED_LOCALES` and `DECLARED_LANG`), and runs the script and the runtime on the same
-stored choice and browser languages to show they declare the same thing.
+stored choice, address, remembered link and browser languages to show they declare the same
+thing.
 
 ## When the browser translates anyway
 
@@ -315,7 +315,8 @@ The work lives in `src/i18n/machine/`, a chunk loaded only when such a language 
 
 What the tier never translates: text a build marks as having legal weight, or as data — a pack's
 `machineExclude` paths (`src/i18n/types.ts`), the runtime counterpart of `@i18n-review` and
-`@i18n-skip`, since the runtime never sees comments. A build's documents (files and prints) are
+`@i18n-skip`, since the runtime never sees comments — and the core's own such text, listed by hand in
+`CORE_MACHINE_EXCLUDE` (`src/i18n/registry.ts`) beside the tags in its catalog. A build's documents (files and prints) are
 written in a shipped language or English, never in a device translation: `documentI18n()` gives a
 document writer the right one.
 
