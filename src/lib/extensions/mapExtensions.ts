@@ -35,6 +35,8 @@ import type {
 import type { ZodiacMode } from '../astro/ayanamsa';
 import type { MinorRow } from '../minorBodies/status';
 import type { MapInks } from '../lineInks';
+import type { Theme } from '../theme';
+import type { MapStyle } from '../themePalette';
 
 /** The COMPLETE line set — every planet, line type, and family (natal angular + aspects +
  *  midpoints + parans + star lines + local space, and the active overlay's equivalents) — with the
@@ -314,6 +316,26 @@ export interface MapExtensionContext {
    *  `inks.minorOf(n)`, a body's map line `inks.planet[p]`, the fixed stars `inks.star`. For
    *  a built-in theme every value is the table's own. (2026-10-06) */
   inks: MapInks;
+  /** The basemap as the map draws it, so a second map an extension runs can show the same
+   *  ground: `styleUrl` the served vector style it loads (lib/theme BASEMAP_STYLE_URLS, for
+   *  the map the palette chose), null for the Outline map, which loads none — a coastline
+   *  sheet has no streets or buildings to show; `theme` the base theme; `paint` the palette's
+   *  paint over the served style, for components/Map/basemapStyle applyBasemapPaint; and
+   *  `detail` the reader's Roads, Rivers and Labels switches, for its applyDetailToggles (that
+   *  function's DetailToggles less the whole-basemap blank, which is a capture treatment of
+   *  this map alone, and typed here so this module stays free of component types).
+   *
+   *  On the map's own channel: while a Custom theme's editor is open it follows commits at
+   *  the map's pace, never the editor's input-rate preview. The URL is the ONLINE answer —
+   *  with no connection the map draws its offline outline instead, and a second map learns
+   *  that by trying. Read only: the switches are the Details section's to change. Optional:
+   *  read absent as unknown. (2026-10-11) */
+  basemap?: {
+    styleUrl: string | null;
+    theme: Theme;
+    paint: MapStyle['basemapPaint'];
+    detail: { showRoads: boolean; showRivers: boolean; showLabels: boolean };
+  };
   angleLines: FeatureCollection;
   parans: FeatureCollection;
   /** Fixed-star × planet parans (the Brady-school list). Computed but never drawn
@@ -325,6 +347,25 @@ export interface MapExtensionContext {
   /** Effective drawn local-space lines (great circles from the chart's origin), with any active
    *  line spotlight already applied. Empty unless the Local Space view is on. */
   localSpace: FeatureCollection;
+  /** The point the chart's local-space lines radiate from, RESOLVED: the origin the reader
+   *  chose — the placed pin, the chart's home, or a registered anchor
+   *  (lib/extensions/localSpaceAnchors) — or the birthplace whenever that choice has nothing
+   *  to give (no pin placed, no home set, an anchor unset). `kind` names the one that
+   *  ANSWERED — 'pin', 'home', 'birthplace' or the anchor's id — so a pin chosen with none
+   *  placed reads 'birthplace'. Derived, never stored; null only with no chart.
+   *
+   *  Always the origin of {@link collectAllLines}' `localSpace`, and of {@link localSpace}
+   *  whenever that is the chart's own set — but not while an overlay is promoted to stand in
+   *  for the chart: {@link localSpace} then carries the overlay's own, cast from the overlay's
+   *  origin (the chart's birthplace, or a synastry partner's). A consumer pairing this point
+   *  with a set of lines takes the complete set's while one is promoted.
+   *
+   *  Named rather than read off a line's first coordinate, which exists only while there are
+   *  lines and can't say which origin it is. Present whether or not the Local Space view is
+   *  on, and on a timeless chart or a geodetic map ({@link skyHeld}), where there are no lines
+   *  to go with it — so ask the lines, not this, whether anything is drawn. Optional: read
+   *  absent as unknown. (2026-10-11) */
+  localSpaceOrigin?: { lat: number; lng: number; kind: string } | null;
   /** Effective drawn fixed-star lines (star MC/IC/ASC/DSC) — distinct from the report-only
    *  `starParans` above, which never draw as map lines. Empty unless the Fixed Stars layer is on. */
   starLines: FeatureCollection;
@@ -352,6 +393,21 @@ export interface MapExtensionContext {
   setTargetDate: (epochMs: number) => void;
   /** Switch the active time-overlay mode (e.g. start a transits overlay). */
   setOverlayMode: (mode: OverlayMode) => void;
+  /** The Local Space window's three display switches, as the reader set them — `inbound`
+   *  (the reciprocal half of each line), `compass` (the compass at the origin) and `degrees`
+   *  (each line's bearing on its label) — so a surface drawing local space its own way can
+   *  follow the same choices rather than keep copies of them. Read-only: the switches stay
+   *  the window's own controls (CLAUDE.md rule 1). OPTIONAL; absent reads as all shown.
+   *  (2026-10-12) */
+  localSpaceDisplay?: { inbound: boolean; compass: boolean; degrees: boolean };
+  /** Set the Local Space origin choice — the write half of the Local Space window's origin
+   *  buttons (from the pin, the birthplace or Home), for a surface whose own gesture asks for
+   *  it: one that places the pin and stands at the origin, where a pin placed while the origin
+   *  is elsewhere would change nothing on its screen. Returns whether the choice moved, so the
+   *  caller says so when it did and only then — a setting moved from outside its own control
+   *  is announced by whoever moved it (CLAUDE.md rules 1 and 3). OPTIONAL; absent on a core
+   *  that predates it. (2026-10-12) */
+  setLocalSpaceOrigin?: (origin: 'pin' | 'birthplace' | 'home') => boolean;
   /** The ids of the HUD extensions currently OPEN — the read half of {@link openExtension},
    *  so a map overlay can draw only while its companion window is open (a feature whose
    *  on-map layer follows its View-menu window's open/closed state). */

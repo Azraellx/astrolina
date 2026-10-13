@@ -1153,7 +1153,23 @@ const ARRIVAL_MARK_SVG =
  *  a camera, not a place.) The house sits exactly where a pin's centre dot and
  *  its optional emblem sit, and `evenodd` cuts the door out of the silhouette —
  *  one filled path, which is also all the capture compositor can redraw. */
-const HOME_MARK_SVG =
+/** The placed pin's markup (styled by .map-pin and its parts in Map.css): the app's teardrop,
+ *  its centre dot, and the optional emblem slot over the head — hidden until an adornment
+ *  provides a URL (lib/extensions/pinAdornment). Exported, with HOME_MARK_SVG, so a second map
+ *  that stands the same markers draws them from the same source. */
+export const PIN_MARK_HTML =
+  '<span class="map-pin-glow"></span>' +
+  '<svg class="map-pin-body" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path class="map-pin-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
+  '<circle class="map-pin-dot" cx="12" cy="10" r="3"/>' +
+  '<circle class="map-pin-emblem-ring" cx="12" cy="10" r="5.9"/>' +
+  // Drawn at 2× and statically halved in CSS: rasterized at the DRAWN size,
+  // so animated upscales (the celebration pop, the body bounce) stay inside
+  // the raster's headroom and the emblem never blurs mid-animation.
+  '<image class="map-pin-emblem" x="1" y="-1" width="22" height="22" preserveAspectRatio="xMidYMid slice"/>' +
+  '</svg>';
+
+export const HOME_MARK_SVG =
   '<svg class="map-home-body" viewBox="0 0 24 24" aria-hidden="true">' +
   '<path class="map-home-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
   '<path class="map-home-glyph" fill-rule="evenodd" ' +
@@ -8908,17 +8924,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // The trailing ring + image pair is the (optional) emblem slot over the head
       // circle — hidden until an adornment provides a URL (lib/extensions/pinAdornment);
       // inside the SVG so it inherits the body's hover/drop motion and shadow for free.
-      el.innerHTML =
-        '<span class="map-pin-glow"></span>' +
-        '<svg class="map-pin-body" viewBox="0 0 24 24" aria-hidden="true">' +
-        '<path class="map-pin-shape" d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>' +
-        '<circle class="map-pin-dot" cx="12" cy="10" r="3"/>' +
-        '<circle class="map-pin-emblem-ring" cx="12" cy="10" r="5.9"/>' +
-        // Drawn at 2× and statically halved in CSS: rasterized at the DRAWN size,
-        // so animated upscales (the celebration pop, the body bounce) stay inside
-        // the raster's headroom and the emblem never blurs mid-animation.
-        '<image class="map-pin-emblem" x="1" y="-1" width="22" height="22" preserveAspectRatio="xMidYMid slice"/>' +
-        '</svg>';
+      el.innerHTML = PIN_MARK_HTML;
       // Right-click the pin to remove it (matches the map's right-click-to-remove).
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();

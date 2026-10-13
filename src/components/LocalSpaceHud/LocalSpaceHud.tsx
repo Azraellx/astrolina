@@ -34,6 +34,10 @@ const FLY_TO_ORIGIN_ZOOM = CLOSE_ZOOM;
 interface LocalSpaceHudProps {
   /** Close the view entirely (turn Local Space off) — wired to the header's X. */
   onClose: () => void;
+  /** The ✕'s hover-tip line in place of the window's own — for a window kept up beside a viewport
+   *  owner, whose ✕ closes that owner too and has to say so (lib/extensions/viewLock
+   *  `keepsLocalSpace`). (2026-10-12) */
+  closeHint?: string;
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
   onFlyTo: (lat: number, lng: number, zoom?: number) => void;
   lsOrigin: LsOriginPref;
@@ -52,8 +56,20 @@ interface LocalSpaceHudProps {
    *  close still work — and shows the hold's reason with its fix in place of its content.
    *  Absent reads as not held. (2026-10-02) */
   held?: boolean;
+  /** Leave out the "Fly to origin" button — for a window kept up beside a surface that owns the
+   *  viewport (lib/extensions/viewLock `keepsLocalSpace`), where the map it would fly is hidden
+   *  under that surface and the jump would show nothing. (2026-10-12) */
+  hideFly?: boolean;
+  /** Open folded to its header — for a window a viewport owner keeps up on a PHONE, where the
+   *  open window would cover the owner's own controls along the bottom; the reader unfolds it
+   *  (the header's eye) to move the origin. Read as the window mounts, and again when it turns
+   *  true on a window already open — the owner arriving while it was up. (2026-10-12) */
+  startCollapsed?: boolean;
   /** The held reason's fix: open Settings ▸ Calculation, where the line system is. */
   onOpenCalc?: () => void;
+  /** The title in place of the window's own — for a window kept up beside a viewport owner,
+   *  naming what it works with there (lib/extensions/viewLock `keepsLocalSpace`). (2026-10-12) */
+  title?: string;
 }
 
 // The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
@@ -166,7 +182,11 @@ export function LocalSpaceHud({
   setHideLsDegrees,
   localSpaceOrigin,
   held = false,
+  hideFly = false,
+  startCollapsed = false,
+  closeHint,
   onOpenCalc,
+  title,
 }: LocalSpaceHudProps) {
   const { t } = useT();
   // The active chart's home place, edited inline while it is the origin.
@@ -174,7 +194,14 @@ export function LocalSpaceHud({
   const discreet = useDiscreet();
   // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
   // screen clutter — WITHOUT closing the tool (close it from the top nav / hotkey). Local UI state.
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(startCollapsed);
+  // …and fold again when startCollapsed turns true on a window already open (adjusting state to a
+  // prop during render, React's pattern for it, rather than an effect a frame later).
+  const [startedCollapsed, setStartedCollapsed] = useState(startCollapsed);
+  if (startCollapsed !== startedCollapsed) {
+    setStartedCollapsed(startCollapsed);
+    if (startCollapsed) setCollapsed(true);
+  }
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -190,14 +217,14 @@ export function LocalSpaceHud({
     : undefined;
   const header = (
     <HudHeader
-      title={t('localSpaceHud.title')}
+      title={title ?? t('localSpaceHud.title')}
       handleProps={handleProps}
       dragging={dragging}
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed((v) => !v)}
       onClose={onClose}
       closeLabel={t('localSpaceHud.closeAria')}
-      closeHint={t('localSpaceHud.closeHint')}
+      closeHint={closeHint ?? t('localSpaceHud.closeHint')}
     />
   );
   // HELD on a geodetic map (lib/skyHold): the same window — its place, its collapse and
@@ -226,26 +253,28 @@ export function LocalSpaceHud({
             The origin buttons keep their shape: where the lines radiate from,
             segmented (two options) rather than a dropdown — reads at a glance. */}
         <div className="location-ls-top">
-          <LsTipButton
-            className="location-ls-fly location-ls-fly-square"
-            onClick={() => {
-              if (localSpaceOrigin)
-                onFlyTo(localSpaceOrigin.lat, localSpaceOrigin.lng, FLY_TO_ORIGIN_ZOOM);
-            }}
-            disabled={!localSpaceOrigin}
-            ariaLabel={t('localSpaceHud.flyToOrigin.title')}
-            title={t('localSpaceHud.flyToOrigin.title')}
-            hint={t('localSpaceHud.flyToOrigin.hint')}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="7" />
-              <path d="M12 1v3" />
-              <path d="M12 20v3" />
-              <path d="M1 12h3" />
-              <path d="M20 12h3" />
-              <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-            </svg>
-          </LsTipButton>
+          {!hideFly && (
+            <LsTipButton
+              className="location-ls-fly location-ls-fly-square"
+              onClick={() => {
+                if (localSpaceOrigin)
+                  onFlyTo(localSpaceOrigin.lat, localSpaceOrigin.lng, FLY_TO_ORIGIN_ZOOM);
+              }}
+              disabled={!localSpaceOrigin}
+              ariaLabel={t('localSpaceHud.flyToOrigin.title')}
+              title={t('localSpaceHud.flyToOrigin.title')}
+              hint={t('localSpaceHud.flyToOrigin.hint')}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="7" />
+                <path d="M12 1v3" />
+                <path d="M12 20v3" />
+                <path d="M1 12h3" />
+                <path d="M20 12h3" />
+                <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+              </svg>
+            </LsTipButton>
+          )}
           <div className="location-ls-seg" role="group">
             <LsTipButton
               className={`location-ls-seg-btn location-ls-seg-pin ${lsOrigin === 'pin' ? 'active' : ''}`}

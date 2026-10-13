@@ -55,6 +55,21 @@
 .location-hud.is-collapsed .held-hud-body {
   display: none;
 }
+/* The card's fix is its one action, so it stands as a button on its own line, clear of the
+   sentence, rather than the inline chip the cramped hosts keep (2026-10-12: at 10.5 px it sat
+   tight under the text). The held Sky Times band keeps the chip — its strip has no height to
+   spare. */
+.held-hud .sky-held-fix {
+  display: block;
+  width: fit-content;
+  margin: 10px 0 0;
+  padding: 5px 12px;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
 
 /* SkyBandHeld: the reason centred in the band's empty-state slot. The band reserves a
    taller strip while held on a desktop (App's band height), so a sentence that wraps

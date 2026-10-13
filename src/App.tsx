@@ -420,6 +420,7 @@ import {
 import { toggleDiscreet, useIdentity } from './lib/discreet';
 import { fmtLat, fmtLng } from './lib/coordFormat';
 import {
+  BASEMAP_STYLE_URLS,
   loadCustomChosen,
   loadTheme,
   minorLineColor,
@@ -1637,6 +1638,25 @@ export default function App() {
   // derived overlay, because the lock masks two overlays too (below).
   const viewLock = useViewLock();
   const viewParked = viewLock !== null;
+  // An owner that carries no overlay at all parks EVERY one (ViewLock.overlaysReason): a
+  // surface that shows the chart's own moment and nothing else. Same treatment as the two
+  // below, widened — masked, never written. (2026-10-12)
+  const overlaysParked = viewLock?.overlaysReason != null;
+  // An owner that works FROM the Local Space window (ViewLock.keepsLocalSpace — one standing at
+  // the origin the window moves) keeps it up beside it: not parked, and SHOWN for as long as
+  // the lock holds. A standing state, so derived and never written (CLAUDE.md rule 2): the stored
+  // `showLocalSpace` is untouched, so when the owner closes by any other route the window is back
+  // as the reader left it. Its ✕ closes BOTH — the view (its own control, stored as always) and
+  // the owner (the lock's onClose), and its tip says so (the lock's closeHint). A ✕ that closed
+  // the window alone was a dead end: with the View menu parked and L standing down nothing could
+  // bring it back, and the owner can't be used without it. Only where the window could be opened
+  // at all: Advanced on. (2026-10-12)
+  const lsKeptByLock = viewLock?.keepsLocalSpace != null;
+  const lsWindowOpen = lsKeptByLock ? advancedWheel : showLocalSpace && !viewParked;
+  const closeLsWindow = useCallback(() => {
+    setShowLocalSpaceSafe(false);
+    getViewLock()?.keepsLocalSpace?.onClose();
+  }, [setShowLocalSpaceSafe]);
 
   // The STORED overlay technique. Consumers read the derived `overlayMode` below.
   // Restored raw — the conditions that can make a technique unreadable are all
@@ -1664,8 +1684,10 @@ export default function App() {
   // when it clears. That used to be a WRITE, by the owner on mount — which, once a held
   // tool (lib/skyHold) could stay open without mounting, turned the reader's switch back
   // to Celestial into a silent loss of an overlay picked meanwhile. The lock is a standing
-  // state like the others, so it masks too. (2026-10-05)
+  // state like the others, so it masks too. (2026-10-05) And an owner that carries none parks
+  // them all (`overlaysParked`), on the same terms. (2026-10-12)
   const overlayMode: OverlayMode =
+    overlaysParked ||
     overlayBlockedFor(current, lineSystem)(overlayModePref) ||
     (!advancedWheel && ADVANCED_OVERLAY_MODES.has(overlayModePref)) ||
     (viewParked && VIEW_LOCK_PARKED_OVERLAYS.has(overlayModePref))
@@ -2522,6 +2544,9 @@ export default function App() {
         case 's': if (advancedWheel && !getViewLock()) setShowSkyTimesSafe(!showSkyTimes); break;
         case 'l': if (advancedWheel && !getViewLock()) setShowLocalSpaceSafe(!showLocalSpace); break;
         case 'o': {
+          // An owner that parks every overlay (ViewLock.overlaysReason) stands this down, as
+          // its Overlay menu is disabled: a step would write a choice nothing can show.
+          if (getViewLock()?.overlaysReason != null) break;
           // Cycling into a core mode supersedes any active extension overlay.
           setActiveOverlayExt(null);
           // Overlays a viewport owner can't carry are skipped while one holds
@@ -2539,7 +2564,9 @@ export default function App() {
         }
         // 'o' / 'n' are the hotkey twins of the Overlay menu rows, so they end a returns
         // borrow exactly as selectOverlay does (they predate it and set the pref direct).
-        case 'n': setActiveOverlayExt(null); setReturnBorrow(null); setOverlayModePref('off'); break;
+        // Both stand down while every overlay is parked: 'n' would otherwise discard the masked
+        // choice the reader gets back when the owner closes.
+        case 'n': if (getViewLock()?.overlaysReason != null) break; setActiveOverlayExt(null); setReturnBorrow(null); setOverlayModePref('off'); break;
         case 'm': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide arms it through armSlide,
         // which refuses on a geodetic map (and disarming always works).
@@ -3397,14 +3424,22 @@ export default function App() {
     lsAnchor ? lsAnchor.subscribe : subscribeNoAnchor,
     lsAnchor ? lsAnchor.get : getNoAnchor,
   );
-  const localSpaceOrigin = useMemo<Point | null>(() => {
-    if (lsOrigin === 'pin' && pinned) return pinned;
+  // Resolved together with WHICH origin answered (`kind`), so the extension context can
+  // name it rather than leave a plugin to infer it from the lines (2026-10-11). One chain,
+  // so the name can't drift from the point; `point` is the same reference the chain always
+  // returned (the pin, the home, the anchor's snapshot, the birthplace), so everything
+  // keyed on localSpaceOrigin below recomputes exactly when it did.
+  const localSpaceOriginResolved = useMemo<{ point: Point; kind: string } | null>(() => {
+    if (lsOrigin === 'pin' && pinned) return { point: pinned, kind: 'pin' };
     // Home: where the chart's subject lives now — a field on the chart, so it
     // travels with the person rather than the session.
-    if (lsOrigin === 'home' && current?.home) return current.home;
+    if (lsOrigin === 'home' && current?.home) return { point: current.home, kind: 'home' };
+    // A registered anchor answers under its own id (lsAnchor is the selected origin's).
+    if (lsAnchorPoint) return { point: lsAnchorPoint, kind: lsOrigin };
     // Any origin with nothing to give falls through to the birthplace.
-    return lsAnchorPoint ?? (current ? current.birthplace : null);
+    return current ? { point: current.birthplace, kind: 'birthplace' } : null;
   }, [lsOrigin, pinned, lsAnchorPoint, current]);
+  const localSpaceOrigin = localSpaceOriginResolved?.point ?? null;
   // Fly-to helper shared by Teleport, Local Space's "fly to origin", and the transparent-export
   // toggle: hop the camera and stash the jump so it can be undone (Teleport window / Backspace).
   // `duration` (ms) is optional — omitted keeps MapLibre's default flyTo curve.
@@ -6806,13 +6841,15 @@ export default function App() {
     if (activeOverlayExt) localStorage.setItem(OVERLAY_EXT_KEY, activeOverlayExt);
     else localStorage.removeItem(OVERLAY_EXT_KEY);
   }, [activeOverlayExt]);
-  // The active overlay extension object (if any is selected and still registered).
+  // The active overlay extension object (if any is selected and still registered). Masked
+  // while a viewport owner parks every overlay, as `overlayMode` is — the stored id is kept.
+  const shownOverlayExt = overlaysParked ? null : activeOverlayExt;
   const activeOverlayExtension = useMemo(
     () =>
-      activeOverlayExt
-        ? (getOverlayExtensions().find((e) => e.id === activeOverlayExt) ?? null)
+      shownOverlayExt
+        ? (getOverlayExtensions().find((e) => e.id === shownOverlayExt) ?? null)
         : null,
-    [activeOverlayExt],
+    [shownOverlayExt],
   );
 
   // A stable fly-to that reads the map ref lazily, so the snapshot below holds no
@@ -7460,6 +7497,54 @@ export default function App() {
     [themeEditorShown, themeOpt, themeEditorCtx],
   );
 
+  // What a SECOND map needs to stand where this one does (2026-10-11): the resolved
+  // local-space origin, named, and the basemap as this map draws it. Each memoized on its
+  // own inputs, so both keep their identity through the hover's re-renders and a consumer
+  // can key an effect on either. Nothing in core reads them.
+  const extLocalSpaceOrigin = useMemo(
+    () =>
+      localSpaceOriginResolved
+        ? {
+            lat: localSpaceOriginResolved.point.lat,
+            lng: localSpaceOriginResolved.point.lng,
+            kind: localSpaceOriginResolved.kind,
+          }
+        : null,
+    [localSpaceOriginResolved],
+  );
+  // The Local Space window's three display switches, as a surface drawing local space its own
+  // way reads them (its inbound halves, its compass, the degrees under each body). Read-
+  // only — the window stays their only control. (2026-10-12)
+  // The write half of the Local Space window's origin choice, for an extension whose own gesture
+  // asks for it (MapExtensionContext.setLocalSpaceOrigin). Through a ref so the context's
+  // identity doesn't follow the choice, and so it can say at once whether the choice moved —
+  // written by the setter itself and synced after commit, as advancedRef is.
+  const lsOriginRef = useRef(lsOrigin);
+  useEffect(() => {
+    lsOriginRef.current = lsOrigin;
+  }, [lsOrigin]);
+  const extSetLocalSpaceOrigin = useCallback((origin: 'pin' | 'birthplace' | 'home') => {
+    if (lsOriginRef.current === origin) return false;
+    lsOriginRef.current = origin;
+    setLsOrigin(origin);
+    return true;
+  }, []);
+  const extLocalSpaceDisplay = useMemo(
+    () => ({ inbound: !hideLsInbound, compass: !hideLsCompass, degrees: !hideLsDegrees }),
+    [hideLsInbound, hideLsCompass, hideLsDegrees],
+  );
+  const extBasemap = useMemo(
+    () => ({
+      // Outline loads no style at all (Map.tsx styleKind), so null says so — not the base
+      // theme's URL, which Map.tsx keeps for Outline only for its way-back-online probes.
+      styleUrl: mapStyle.basemap === 'outline' ? null : BASEMAP_STYLE_URLS[mapStyle.basemap],
+      theme: mapTheme,
+      paint: mapStyle.basemapPaint,
+      detail: { showRoads, showRivers, showLabels },
+    }),
+    [mapStyle.basemap, mapStyle.basemapPaint, mapTheme, showRoads, showRivers, showLabels],
+  );
+
   // The read-only snapshot + actions handed to each open HUD extension.
   const extensionCtx = useMemo<MapExtensionContext>(
     () => ({
@@ -7518,6 +7603,9 @@ export default function App() {
       overlayLines: effOverlayLines,
       overlayParans: effOverlayParans,
       localSpace: effLocalSpace,
+      // The point allLocalSpace (collectAllLines' localSpace) radiates from, and which
+      // origin it is — effLocalSpace's too, unless an overlay is promoted. (2026-10-11)
+      localSpaceOrigin: extLocalSpaceOrigin,
       starLines: effStarLines,
       overlayLocalSpace: effOverlayLocalSpace,
       minorLines: effMinorLines,
@@ -7529,6 +7617,9 @@ export default function App() {
       // linesStamp and collectAllLines key on, so a panel colouring its own rows (a catalog
       // body by ctx.inks.minorOf(n)) agrees with the set it reads them beside.
       inks: inksCommitted,
+      // The ground the map is drawn on, on the map's own channel (mapStyle), so a second
+      // map shows the reader's basemap, theme paint and Details switches. (2026-10-11)
+      basemap: extBasemap,
       flyTo: extFlyTo,
       markArrival,
       // The borrow-ending setter, so a panel's "jump to this date" leaves the return
@@ -7538,6 +7629,8 @@ export default function App() {
       // drives a core overlay mode also clears any active extension overlay — preserving
       // the Overlay menu's single-select invariant.
       setOverlayMode: selectOverlay,
+      localSpaceDisplay: extLocalSpaceDisplay,
+      setLocalSpaceOrigin: extSetLocalSpaceOrigin,
       openExtensionIds: openExtensions,
       openExtension: openExtensionById,
       openTool: openToolById,
@@ -7597,6 +7690,10 @@ export default function App() {
       minorRowsEff,
       minorParansOn,
       inksCommitted,
+      extLocalSpaceOrigin,
+      extBasemap,
+      extLocalSpaceDisplay,
+      extSetLocalSpaceOrigin,
       extFlyTo,
       selectOverlay,
       openExtensions,
@@ -8005,7 +8102,7 @@ export default function App() {
         onToggleTool={toggleTool}
         // The EFFECTIVE line system, for what a geodetic map holds (lib/skyHold).
         lineSystem={lineSystem}
-        activeOverlayExt={activeOverlayExt}
+        activeOverlayExt={shownOverlayExt}
         onSelectOverlayExt={selectOverlayExt}
       />
       {/* The zone-shading legend, bottom-right above the active-systems chip: only while the
@@ -8205,9 +8302,18 @@ export default function App() {
           onClose={() => setShowSkyTimes(false)}
         />
       ))}
-      {showLocalSpace && !viewParked && (
+      {lsWindowOpen && (
         <LocalSpaceHud
-          onClose={() => setShowLocalSpaceSafe(false)}
+          // Kept up beside a viewport owner (ViewLock.keepsLocalSpace) the ✕ closes the owner too,
+          // and says so; and there is no fly-to-origin, the map that jump would fly being hidden
+          // under the owner. (2026-10-12)
+          onClose={closeLsWindow}
+          closeHint={viewLock?.keepsLocalSpace?.closeHint}
+          title={viewLock?.keepsLocalSpace?.title}
+          hideFly={lsKeptByLock}
+          // …and on a phone it opens folded: the open window would sit on the owner's own bar
+          // along the bottom. The header's eye unfolds it. (2026-10-12)
+          startCollapsed={lsKeptByLock && isPhone()}
           // On a geodetic map the window stays, with its header, and shows the hold's
           // reason and fix in place of its content (lib/skyHold, 2026-10-02).
           held={skyHeld}

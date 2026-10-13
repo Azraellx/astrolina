@@ -38,6 +38,10 @@ export interface SplitSelectOption<V extends string> {
    *  there is one, and saying what survives the wait where there is not. */
   disabled?: boolean;
   disabledHint?: string;
+  /** A small mark before the label — the device an option needs, say. Decorative (hidden from
+   *  screen readers): the label and the tip carry the meaning. Keep it about a letter's height,
+   *  and check the narrowest sidebar, since it widens its half. */
+  icon?: ReactNode;
 }
 
 export function SplitSelect<V extends string>({
@@ -100,6 +104,11 @@ export function SplitSelect<V extends string>({
           {/* The label is its own element so an unavailable half can be struck
               through on hover — the strike is drawn on the LABEL, not the button
               (see the rule in SplitSelect.css). */}
+          {o.icon && (
+            <span className="split-select-icon" aria-hidden="true">
+              {o.icon}
+            </span>
+          )}
           <span className="split-select-label">{o.label}</span>
         </TipButton>
       ))}

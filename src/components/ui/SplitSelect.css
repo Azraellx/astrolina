@@ -51,6 +51,15 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* An option's mark before its label (SplitSelectOption.icon): sat on the text's baseline, in the
+   label's own colour, so it dims and lights with it. */
+.split-select-icon {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: -2px;
+  line-height: 0;
+}
+
 /* Background only, exactly as .theme-option:hover does it. Lifting the TEXT here
    was tried and rejected against the real render: it pushed the UNSELECTED half to
    the same weight as the live one beside it, which is the one thing this control

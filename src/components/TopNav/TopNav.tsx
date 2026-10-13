@@ -1525,6 +1525,10 @@ export function TopNav({
               tip={compact ? t('topNav.overlay.menuLabel') : undefined}
               active={overlayActive}
               className="navmenu-mapstate"
+              // An owner that carries no overlay at all (ViewLock.overlaysReason) parks every
+              // one: the whole menu disables with its reason, as the View menu does with the
+              // lock's. The rows' masked choice comes back when the owner closes. (2026-10-12)
+              disabledTip={viewLock?.overlaysReason}
             >
               {(close) => (
                 <>
