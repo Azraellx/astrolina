@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   getMapExtensions,
   isAvailable,
@@ -6212,7 +6212,15 @@ export default function App() {
           }, 200);
         }
       }
-      if (!pinned && !resizingRef.current) setHover({ lat, lng });
+      // A transition (2026-10-15): nothing in App is memoized, so each hover frame
+      // re-renders the whole tree, and as an urgent update it held up the paint of
+      // whatever the reader clicked next (map INP measured at 440 ms). Interruptible, it
+      // yields to that click. Every consumer still reads the one `hover` a commit carries,
+      // so the wheel, sidebar and readouts agree as before (CLAUDE.md rule 5). Only this
+      // write: the leave (the capture caption counts on it having committed), the pin,
+      // the resize pause and the chart switches stay urgent, and an urgent write rebases
+      // over a pending hover in order, so the state it ends on is unchanged.
+      if (!pinned && !resizingRef.current) startTransition(() => setHover({ lat, lng }));
     },
     [pinned],
   );

@@ -13,7 +13,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import maplibregl, {
   type ExpressionSpecification,
@@ -4044,6 +4046,92 @@ function canExport(src: CanvasImageSource): boolean {
   }
 }
 
+/** Whether the camera is in motion, held OUTSIDE Map's React state (2026-10-15). It was a
+ *  `useState` until then, and every movestart re-rendered all of Map for it — inside the click
+ *  handler, wherever a click starts a flight (flyTo fires movestart synchronously), which is
+ *  where the map's INP was measured (440 ms). Three things read it: the edge-badge layer's
+ *  `.is-moving`, which the flag toggles on the element `attach` was given, and MapOverlayHost's
+ *  `moving` and the horizon dial's opacity, React props that re-render only their own subtree,
+ *  through MapMotion below. The flag is their one writer, so they cannot disagree.
+ *
+ *  The two directions are not symmetric. A start lands at once: fading the labels out needs
+ *  nothing from React. A stop is HELD for Map's next commit (`requestCommit`, then `land` from
+ *  Map's layout effect), which is the commit carrying the settle's re-anchored badges — the fade
+ *  back in runs on the compositor, so a class dropped before that commit would fade the labels in
+ *  at their pre-motion places for as long as Map takes to render. Held, they arrive repositioned,
+ *  as they did when this was state. A start before the stop lands cancels it.
+ *
+ *  And a start waits one microtask, so a stop in the same task cancels it outright. MapLibre's
+ *  resize() (its own trackResize observer, on every dock drag, window resize or rotation) and
+ *  a jumpTo fire movestart and moveend back to back, synchronously; as state, the two batched to
+ *  no change at all. Applied at once, the start would fade the labels, markers and dial out and
+ *  hold the stop for Map's next render — a dip on every resize step. The microtask still runs
+ *  before the next paint, so a click that starts a flight fades them out in the same frame. */
+interface MotionFlag {
+  get: () => boolean;
+  subscribe: (cb: () => void) => () => void;
+  set: (moving: boolean) => void;
+  /** Map's layout effect: lands a held stop. */
+  land: () => void;
+  /** Callback ref for the edge-badge layer. */
+  attach: (el: HTMLElement | null) => void;
+}
+
+function createMotionFlag(requestCommit: () => void): MotionFlag {
+  let moving = false;
+  let stopHeld = false;
+  let startQueued = false;
+  let layer: HTMLElement | null = null;
+  const subs = new Set<() => void>();
+  const apply = (next: boolean) => {
+    moving = next;
+    layer?.classList.toggle('is-moving', next);
+    for (const cb of subs) cb();
+  };
+  return {
+    get: () => moving,
+    subscribe: (cb) => {
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
+    },
+    set: (next) => {
+      if (next) {
+        stopHeld = false;
+        if (moving || startQueued) return;
+        startQueued = true;
+        queueMicrotask(() => {
+          if (!startQueued) return;
+          startQueued = false;
+          apply(true);
+        });
+      } else if (startQueued) {
+        startQueued = false; // movestart and moveend in one task: nothing painted between them
+      } else if (moving && !stopHeld) {
+        stopHeld = true;
+        requestCommit();
+      }
+    },
+    land: () => {
+      if (!stopHeld) return;
+      stopHeld = false;
+      apply(false);
+    },
+    attach: (el) => {
+      layer = el;
+      el?.classList.toggle('is-moving', moving);
+    },
+  };
+}
+
+/** Renders `children(moving)` off the flag — the only part of the frame that re-renders when the
+ *  camera starts moving. */
+function MapMotion({ flag, children }: { flag: MotionFlag; children: (moving: boolean) => ReactNode }) {
+  const moving = useSyncExternalStore(flag.subscribe, flag.get, flag.get);
+  return <>{children(moving)}</>;
+}
+
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   angleLines,
@@ -4280,8 +4368,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           map.on('idle', finish);
         });
       }
-      // Two frames: one for React to commit `mapMoving = false` and drop `.is-moving`, one
-      // for the badge re-anchor riding the same commit. Then whatever is left of the fades,
+      // Two frames: one for React to commit the settle and drop `.is-moving` (MotionFlag lands
+      // its stop in that commit), one for the badge re-anchor riding the same commit. Then
+      // whatever is left of the fades,
       // measured from when the camera actually stopped — so a click landing a few
       // milliseconds after a drag ends waits out the remainder instead of shooting into a
       // half-faded layer.
@@ -5379,8 +5468,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [localSpaceBadges, setLocalSpaceBadges] = useState<LocalSpaceBadge[]>([]);
   // True while the map camera is animating (pan / zoom / flyTo). The edge labels fade
   // out while moving — anchored to the screen edges, they read as detached from their
-  // lines in motion — and fade back in, repositioned, once it settles.
-  const [mapMoving, setMapMoving] = useState(false);
+  // lines in motion — and fade back in, repositioned, once it settles. A flag, not state, so
+  // a movestart renders only MapMotion's subtrees, never Map (MotionFlag says why). A settle
+  // still takes one Map commit, as it did — `settleTick`, batched with the badges' re-anchor
+  // so the two land together — and the flag lands its stop in that commit's layout effect.
+  const [settleTick, setSettleTick] = useState(0);
+  const [mapMoving] = useState(() => createMotionFlag(() => setSettleTick((n) => n + 1)));
+  useLayoutEffect(() => {
+    mapMoving.land();
+  }, [settleTick, mapMoving]);
   // When the camera last came to rest. Read by captureFrame to wait out the motion fades;
   // stamped wherever motion ends, so every settle path feeds it.
   const lastSettleAtRef = useRef(0);
@@ -6745,7 +6841,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // click) isn't a drag, so it falls through and re-anchors normally.
     map.on('movestart', () => {
       if (slideDraggingRef.current) return;
-      setMapMoving(true);
+      mapMoving.set(true);
     });
     // Re-anchor the edge badges on every pan/zoom (throttled to one rAF/frame).
     map.on('move', () => {
@@ -6756,7 +6852,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (slideDraggingRef.current) return;
       computeBadgesRef.current();
       lastSettleAtRef.current = Date.now();
-      setMapMoving(false);
+      mapMoving.set(false);
     });
     // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
     // when it moves, so re-dodge the labels off its new rect right away rather
@@ -8502,7 +8598,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const markSpinning = () => {
       if (!secondaryHiddenRef.current) {
         secondaryHiddenRef.current = true;
-        setMapMoving(true);
+        mapMoving.set(true);
         spinPaint(spinDegRef.current, 'empty');
       }
       if (settleTimer) clearTimeout(settleTimer);
@@ -8512,7 +8608,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         spinPaint(spinDegRef.current, 'translate');
         computeBadgesRef.current();
         lastSettleAtRef.current = Date.now();
-        setMapMoving(false);
+        mapMoving.set(false);
       }, 140);
     };
 
@@ -8731,11 +8827,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (basePitch !== 0) map.setPitch(basePitch);
       pushData(map, dataRef.current, true, lsTransparentRef.current);
       spinDegRef.current = 0;
-      setMapMoving(false);
+      mapMoving.set(false);
       computeBadgesRef.current();
       onSlide?.(0);
     };
-  }, [slideActive, onSlide, onSlideCancel, spinPaint]);
+  }, [slideActive, onSlide, onSlideCancel, spinPaint, mapMoving]);
 
   // A 2D↔3D toggle MID-slide re-runs applyProjection, which re-enables dragRotate / touch
   // rotate+pitch in 3D — re-disable them while the slide owns the interaction. The slide
@@ -9479,9 +9575,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           FIRST in the frame, before the map container, on purpose: the placed pin (a MapLibre
           marker inside that container) stands on this layer's rung, z 8, and wins the tie by
           coming later in the DOM — the one way to put it over the labels without lifting it
-          over Galaxy (8) or the offer banner (9) as well. Map.css `.map-pin` has the ladder. */}
+          over Galaxy (8) or the offer banner (9) as well. Map.css `.map-pin` has the ladder.
+
+          `.is-moving` is the motion flag's to toggle (MotionFlag), so the className here stays
+          constant and React's reconciliation never touches the class. */}
       <div
-        className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
+        ref={mapMoving.attach}
+        className="acg-edge-badges"
         aria-hidden="true"
       >
         {/* Every chip's codes (an overlay's Tr, AS, MC, LS), marks, catalog names and degrees carry
@@ -9894,14 +9994,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           frame and re-projected on every camera move. Add-ons attach here with no edits to
           this file; rendered only when an overlay context is supplied. */}
       {overlayCtx && (
-        <MapOverlayHost
-          mapRef={mapRef}
-          ready={mapReady}
-          moving={mapMoving}
-          hiddenIds={hiddenOverlayIds}
-          ctx={overlayCtx}
-          onPlaced={onOverlayPlaced}
-        />
+        <MapMotion flag={mapMoving}>
+          {(moving) => (
+            <MapOverlayHost
+              mapRef={mapRef}
+              ready={mapReady}
+              moving={moving}
+              hiddenIds={hiddenOverlayIds}
+              ctx={overlayCtx}
+              onPlaced={onOverlayPlaced}
+            />
+          )}
+        </MapMotion>
       )}
       {!hideCompass && !chartSubject && compassP !== null && originScreen && (
         // The dial is placed at the origin's PROJECTED point, which is relative to the GL
@@ -9912,18 +10016,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // export's glyph pass draws from the live DOM, which has no z-order to respect —
         // a dial left mounted underneath would stamp its marks onto the card.
         <div className="local-horizon-layer">
-          <LocalHorizonWheel
-            cx={originScreen.x}
-            cy={originScreen.y}
-            size={HORIZON_WHEEL_SIZE}
-            scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
-            opacity={
-              mapMoving
-                ? 0
-                : COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)
-            }
-            bearing={originNorthDeg}
-          />
+          <MapMotion flag={mapMoving}>
+            {(moving) => (
+              <LocalHorizonWheel
+                cx={originScreen.x}
+                cy={originScreen.y}
+                size={HORIZON_WHEEL_SIZE}
+                scale={COMPASS_MIN_SCALE + (1 - COMPASS_MIN_SCALE) * compassP}
+                opacity={
+                  moving
+                    ? 0
+                    : COMPASS_MAX_OPACITY * Math.min(1, compassP / COMPASS_FADE_FRACTION)
+                }
+                bearing={originNorthDeg}
+              />
+            )}
+          </MapMotion>
         </div>
       )}
       {/* Capture "Extras" panel — opaque planet/angle positions; the map + edge badges

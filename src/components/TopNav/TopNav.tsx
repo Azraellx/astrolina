@@ -1065,16 +1065,32 @@ export function TopNav({
       if (value == null) el.style.removeProperty(name);
       else el.style.setProperty(name, value);
     };
+    // What the last full pass measured, for the ResizeObserver below to tell its own echo from a
+    // real change (2026-10-15): the four observed boxes as that pass read them, after its
+    // `--topnav-room` write had applied, and everything outside them it placed the bar against.
+    // Null after a pass that measured nothing (the phone layout, a full↔compact flip).
+    let measured: { boxes: Map<Element, readonly [number, number]>; frame: string } | null = null;
+    const frameKey = (col: ReturnType<typeof navColumn>, cb: DOMRect | undefined) =>
+      [
+        col.left,
+        col.right,
+        col.edge,
+        col.zoomLeft,
+        cb?.left,
+        cb?.width,
+        getReservedLeftInset(),
+        getRightDockWidth(),
+        getReservedRightInset(),
+      ].join();
+    const containingRect = () => (stack.offsetParent as HTMLElement | null)?.getBoundingClientRect();
     const layout = () => {
-      // 1. Natural width — with the compact class lifted for this one read if it's on.
       const isCompact = stack.classList.contains('topnav-compact');
-      if (isCompact) stack.classList.remove('topnav-compact');
-      const fullW = bar.offsetWidth;
-      if (isCompact) stack.classList.add('topnav-compact');
-
       if (narrow) {
         // The phone layout: full width, media-query driven, nothing measured — and no claim on
-        // the docks' width (the bar spans the screen here, not a column).
+        // the docks' width (the bar spans the screen here, not a column). Ahead of step 1, whose
+        // natural width it never used: lifting the class for it here was a forced layout for
+        // nothing (2026-10-15).
+        measured = null;
         if (isCompact) setCompact(false);
         publishMapColumnNeed(0);
         bar.style.transform = '';
@@ -1088,7 +1104,15 @@ export function TopNav({
         return;
       }
 
+      // 1. Natural width — with the compact class lifted for this one read if it's on.
+      if (isCompact) stack.classList.remove('topnav-compact');
+      const fullW = bar.offsetWidth;
+      // The column, read in the layout fullW just took and before the class goes back on
+      // (2026-10-15). It reads the root's `--edge` and the zoom control's width, which no class of
+      // the nav's touches, so it is the figure the old order read after the re-add — where it
+      // forced a layout of its own, wasted whenever step 1b then lifted `chart-expanded` too.
       const col = navColumn();
+      if (isCompact) stack.classList.add('topnav-compact');
 
       // 1b. The compact bar's ONE-ROW width, published as the column no dock may take
       // (lib/dockColumn; the Reports dock, the expanded sidebar and a right dock cap their
@@ -1106,14 +1130,23 @@ export function TopNav({
       // wrap for that chart. Summed from the row's parts, not read off the bar: the compact bar
       // is capped at --topnav-room and may be wrapped right now. Fractional widths, rounded up
       // on publish, so a column that fits exactly never wraps on a sub-pixel.
+      //
+      // The compact row's gap and side padding are kept from this read for the cap below, which
+      // runs only while compact (2026-10-15): both reads have the compact class on, and the one
+      // class that can differ between them, `chart-expanded`, sets only the row's columns — the
+      // compact row's gap and padding are its own rule's (TopNav.css), whichever form the
+      // sidebar leaves the name in. Null when this read is skipped, and the cap reads its own.
+      let rowGap: number | null = null;
+      let rowPad = 0;
       if (bar.offsetWidth > 0) {
         const hidName = stack.classList.contains('chart-expanded');
         if (!isCompact) stack.classList.add('topnav-compact');
         if (hidName) stack.classList.remove('chart-expanded');
         const rs = getComputedStyle(row);
         const g = parseFloat(rs.columnGap) || 0;
-        const chrome =
-          parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight) + (bar.offsetWidth - bar.clientWidth);
+        rowGap = g;
+        rowPad = parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight);
+        const chrome = rowPad + (bar.offsetWidth - bar.clientWidth);
         const w = (el: HTMLElement) => el.getBoundingClientRect().width;
         const oneRowW = w(left) + g + w(center) + g + w(right) + chrome;
         if (hidName) stack.classList.add('chart-expanded');
@@ -1130,6 +1163,7 @@ export function TopNav({
       if (wantCompact !== isCompact) {
         // The class flips on the re-render; this effect depends on `compact`, so it runs again
         // then — before paint — and places the bar in its new form.
+        measured = null;
         setCompact(wantCompact);
         return;
       }
@@ -1145,10 +1179,14 @@ export function TopNav({
       const colW = col.right - col.left - 2 * col.edge;
       let cap = room;
       if (isCompact) {
-        const rs = getComputedStyle(row);
-        const g = parseFloat(rs.columnGap) || 0;
-        const chrome =
-          parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight) + (bar.offsetWidth - bar.clientWidth);
+        let g = rowGap;
+        let pad = rowPad;
+        if (g == null) {
+          const rs = getComputedStyle(row);
+          g = parseFloat(rs.columnGap) || 0;
+          pad = parseFloat(rs.paddingLeft) + parseFloat(rs.paddingRight);
+        }
+        const chrome = pad + (bar.offsetWidth - bar.clientWidth);
         const twoRow =
           Math.max(left.offsetWidth + g + center.offsetWidth, right.offsetWidth) + chrome;
         cap = Math.min(colW, Math.max(room, Math.ceil(twoRow)));
@@ -1163,11 +1201,38 @@ export function TopNav({
       // own centring, dropping the control under a nav that fits. Capped, the pill sits a little
       // off-centre in a tight column instead. (Offsets don't see the transform, so the widths
       // read here are the unshifted ones whether or not a nudge is on.)
+      //
+      // Steps 2–4 take every read they need here, together, after the two writes above (which
+      // can re-wrap the bars) and before any write of their own (2026-10-15): the transform,
+      // `--topnav-left` and the root variables then go out with no layout read behind them, so
+      // the document-wide restyle the root variables cause waits for the frame instead of being
+      // forced in the middle of the pass. None of those writes moves what is read here. The
+      // transform is the bar's, and a descendant's transform moves neither the stack's box nor
+      // the containing block's; and `left` eases (0.32 s), so a new `--topnav-left` starts its
+      // transition from where the stack stands this instant — the box read now is the box the
+      // old order read after the write, which is what `--topnav-bottom` published.
       const bW = bar.offsetWidth;
       const sW = stack.offsetWidth;
+      const barR = bar.getBoundingClientRect();
+      const stackR = stack.getBoundingClientRect();
+      const leftR = left.getBoundingClientRect();
+      const rightR = right.getBoundingClientRect();
+      const cb = containingRect();
+      const cbLeft = cb?.left ?? 0;
+      const cbWidth = cb?.width ?? window.innerWidth;
+      measured = {
+        boxes: new Map<Element, readonly [number, number]>([
+          [bar, [barR.width, barR.height]],
+          [stack, [stackR.width, stackR.height]],
+          [left, [leftR.width, leftR.height]],
+          [right, [rightR.width, rightR.height]],
+        ]),
+        frame: frameKey(col, cb),
+      };
+
       let d = 0;
       if (!chartExpanded && !isCompact) {
-        d = (right.getBoundingClientRect().width - left.getBoundingClientRect().width) / 2;
+        d = (rightR.width - leftR.width) / 2;
         // Within the stack's own slack (a wider readout bar) the nudge widens nothing.
         const spare = Math.max(0, (sW - bW) / 2, room - (sW + bW) / 2);
         if (Math.abs(d) > spare) d = Math.sign(d) * spare;
@@ -1177,9 +1242,7 @@ export function TopNav({
       // 3. Placement. `left` is the stack's centre (translateX(-50%)), in its containing block's
       // coordinates; the column bounds are viewport x. The stack is as wide as its widest bar,
       // the main bar centred in it and then nudged by d, the readout bar centred and not.
-      const cb = (stack.offsetParent as HTMLElement | null)?.getBoundingClientRect();
-      const cbLeft = cb?.left ?? 0;
-      const cbWidth = cb?.width ?? window.innerWidth;
+      //
       // The CSS resting place (TopNav.css), restated: a quarter of each left dock's width added,
       // a quarter of each right dock's taken away — the map column's true centre.
       const c0 =
@@ -1197,10 +1260,11 @@ export function TopNav({
       setVar(stack, '--topnav-left', Math.abs(cx - c0) < 0.5 ? null : `${Math.round(cx - cbLeft)}px`);
 
       // 4. Publish. The target position, not the mid-transition one: the stack eases `left`
-      // over 0.32s and the zoom control eases its drop over the same curve.
+      // over 0.32s and the zoom control eases its drop over the same curve. Last, and nothing is
+      // read after it: a variable on the root restyles the whole document.
       setVar(root, '--topnav-width', `${bW}px`);
       setVar(root, '--topnav-right', `${Math.round(cx + halfR)}px`);
-      setVar(root, '--topnav-bottom', `${Math.round(stack.getBoundingClientRect().bottom)}px`);
+      setVar(root, '--topnav-bottom', `${Math.round(stackR.bottom)}px`);
     };
     // After every pass: TELL THE MAP once the nav has come to rest somewhere new — a re-centre
     // (`--topnav-left` or the CSS formula, eased over 0.32 s), the pill nudge (0.2 s), a
@@ -1237,8 +1301,8 @@ export function TopNav({
     // What changes the room or the bar: the window, a dock opening/closing/being dragged (either
     // kind, either side — subscribeLeftDock and subscribeRightDock fire for both kinds), and the
     // bar or the readout under it resizing (a name change, a tool's readout appearing). A resize
-    // the layout itself causes settles on the next pass: the natural width it measures doesn't
-    // change with the mode.
+    // the layout itself causes settles at once: the natural width it measures doesn't change with
+    // the mode, and the observer knows its echo (below).
     //
     // The window and the dock registry are read once a frame, not per event: a docked panel that
     // republishes from an effect retires itself in the cleanup first, so a listener called on
@@ -1255,7 +1319,31 @@ export function TopNav({
         });
       }
     };
-    const ro = new ResizeObserver(pass);
+    // Each resize runs a pass, synchronously — not deferred to a frame, which would paint the old
+    // placement first — EXCEPT its own echo (2026-10-15): the initial report every observe() makes,
+    // and a resize the last pass's own writes caused, both of which find every box at the size
+    // that pass measured and the column, containing block and docks where it left them. Running
+    // the pass again there is a full set of class flips and forced layouts to rewrite the values
+    // it just wrote. Any box that moved (or a browser without borderBoxSize) still runs one.
+    // "Same" is within half a layout unit (1/64 of a device pixel), which no real resize is and
+    // which covers the float noise between the observer's size and the pass's rect.
+    const sameBox = (e: ResizeObserverEntry) => {
+      const was = measured?.boxes.get(e.target);
+      const now = e.borderBoxSize?.[0];
+      const tol = 0.5 / (64 * (window.devicePixelRatio || 1));
+      return (
+        !!was &&
+        !!now &&
+        Math.abs(now.inlineSize - was[0]) < tol &&
+        Math.abs(now.blockSize - was[1]) < tol
+      );
+    };
+    const ro = new ResizeObserver((entries) => {
+      if (measured && entries.every(sameBox) && frameKey(navColumn(), containingRect()) === measured.frame) {
+        return;
+      }
+      pass();
+    });
     ro.observe(left);
     ro.observe(right);
     ro.observe(bar);
