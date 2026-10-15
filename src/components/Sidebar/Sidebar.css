@@ -362,6 +362,14 @@ html[data-mapstate='natal-pinned'] .sidebar {
   background: rgba(var(--accent-rgb), 0.1);
 }
 
+/* A tier-locked teaser option (HintOption's `locked` — Calculation ▸ Rulerships below the
+   ADV rung): dimmed, by Salvatore's ask (2026-10-14), where the nav's teaser rows keep
+   their full look. Only the dim: a press opens the account screen, so the pointer and the
+   hover stay, and it is not .ui-inert — nothing here is unavailable at every plan. */
+.theme-option.is-locked {
+  opacity: 0.55;
+}
+
 .theme-option .radio {
   color: var(--accent);
   font-size: 11px;

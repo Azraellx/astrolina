@@ -21,7 +21,7 @@ import { useDiscreet } from '../../lib/discreet';
 import { downloadBlob } from '../../lib/downloadBlob';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
 import { getMapOverlays, isOverlayEntitled } from '../../lib/extensions/mapOverlays';
-import { tierMet, shouldShowNudge, type PlanTier } from '../../lib/plan';
+import { nudgeAction, tierMet, shouldShowNudge, type PlanTier } from '../../lib/plan';
 import { useTouchLayout, usePhone, usePhonePortrait, isPhonePortrait } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip, TipButton } from '../ui/HoverTip';
@@ -490,18 +490,21 @@ export function CaptureHud({
   // The Transparent (Local Space) toggle belongs to the GATED rung (lib/plan): live for an
   // entitled user (with the gated tip tag), a locked teaser when the build nudges that rung,
   // hidden otherwise — the open core never reaches the gated rung, so it ships hidden there.
-  // The teaser explains in its tip when clicked or tapped and does NOT open the upgrade
-  // flow: it's a switch in the middle of composing an export, and a tap on a switch that
-  // won't flip asks why, not for the plans (TipButton's `locked`; seam L73, 2026-10-01).
+  // A click or tap on the teaser opens the account / upgrade flow, as the Activations and
+  // Paran Clock eyes do (Salvatore, 2026-10-14; seam L115) — whether or not Local Space is
+  // on, since turning it on wouldn't unlock it. From 2026-10-01 it explained in its tip
+  // instead (TipButton's `locked`; seam L73).
   // The eye reads the EFFECTIVE state (App gates the applied value the same way) so a
   // teased/stale pref never shows it active with nothing applied.
   const transparentUnlocked = tierMet(planTier, 'gated');
   const transparentNudge = !transparentUnlocked && shouldShowNudge('gated');
   const effTransparent = transparentUnlocked && transparentMode;
   const transparentClick = () => {
-    // Unreachable while locked (the locked TipButton never calls onClick); kept so a
-    // locked switch can't write the preference even if that wiring changes.
-    if (!transparentUnlocked) return;
+    // The locked press is the ask; it never writes the preference.
+    if (!transparentUnlocked) {
+      nudgeAction();
+      return;
+    }
     const next = !transparentMode;
     setTransparentMode(next);
     // Turning it on flies to the LS origin (compass full-size) so the always-on circle mask frames
@@ -807,35 +810,30 @@ export function CaptureHud({
             the line arrows, uses standard frame-edge labels and blanks the basemap for a
             see-through export. Its effect only applies with Local Space on, so it's shown
             SOFT-DISABLED (greyed, non-clickable, tip explains) until LS is active; hidden
-            below the gated rung unless the build nudges it. The shared TipButton rather
-            than this window's TipBtn, for its `locked` form: the teaser's reason line,
-            accessible description and tap-to-reveal live there, once, for every locked
-            switch. */}
+            below the gated rung unless the build nudges it, when a press opens the
+            account screen (seam L115). The shared TipButton, for the tip's gated tag. */}
         {!chartSubject && (transparentUnlocked || transparentNudge) && (
           <TipButton
             type="button"
             // `locked` carries the same gated tint as the Activations and Paran Clock eyes
-            // (CaptureHud.css), so the three locked switches look alike.
+            // (CaptureHud.css), so the three locked switches look alike. Never `disabled`
+            // as well: the locked press works with Local Space off.
             className={`location-ls-toggle capture-hud-transparent ${
               effTransparent ? 'on' : 'off'
-            }${localSpaceActive ? '' : ' disabled'}${transparentNudge ? ' locked' : ''}`}
+            }${localSpaceActive || transparentNudge ? '' : ' disabled'}${
+              transparentNudge ? ' locked' : ''
+            }`}
             placement="top"
-            locked={
-              transparentNudge
-                ? { tier: 'gated', feature: t('captureHud.transparent.title') }
-                : undefined
-            }
-            onClick={localSpaceActive ? transparentClick : undefined}
-            // Locked, it is not a toggle the reader can press (LockedTipButton makes it
-            // aria-disabled with the reason as its description), so it reports no pressed state —
-            // the same as the locked Activations and Paran Clock eyes.
+            onClick={localSpaceActive || transparentNudge ? transparentClick : undefined}
+            // Locked, it is not a toggle the reader can flip, so it reports no pressed
+            // state — the same as the locked Activations and Paran Clock eyes.
             aria-pressed={transparentNudge ? undefined : effTransparent}
-            aria-disabled={!localSpaceActive || undefined}
+            aria-disabled={(!localSpaceActive && !transparentNudge) || undefined}
             gated
             tip={t('captureHud.transparent.title')}
             // Locked, the description stands whether Local Space is on or not: "turn on Local
-            // Space first" is an instruction that can't unlock it, sitting over a reason line
-            // that says it stays off. needLs is for a switch the reader CAN flip — and not
+            // Space first" is an instruction that can't unlock it. needLs is for a switch the
+            // reader CAN flip — and not
             // for one whose Local Space is already open but HELD on a geodetic map (App's
             // localSpaceActive is false then): there "turn it on" would be untrue, so the
             // hold's own sentence says why instead. The stored preset is kept either way.

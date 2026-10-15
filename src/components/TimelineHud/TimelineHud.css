@@ -1265,8 +1265,8 @@
   opacity: 0.6;
 }
 /* Locked teaser (un-entitled but nudged): a gated tint, at full opacity so the premium cue
-   stays legible (overrides .off's dim). A click or tap shows why in its tip and does NOT open
-   the plans — it is a switch, and a switch explains in place (TipButton `locked`; seam L73). */
+   stays legible (overrides .off's dim). A click or tap opens the account flow, as Galaxy's
+   Tools row does (seam L115, 2026-10-14; it explained in place under seam L73 before). */
 .thud-drawer-toggle.locked {
   opacity: 1;
   color: var(--gated-ink);

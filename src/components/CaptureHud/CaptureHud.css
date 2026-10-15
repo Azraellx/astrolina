@@ -101,8 +101,8 @@
 }
 /* Locked teaser (un-entitled but nudged): the same gated tint as the Activations and Paran
    Clock eyes (TimelineHud.css / SkyBand.css `.locked`), at full opacity over .off's and
-   .disabled's dims, so the three locked switches look alike. A click or tap shows why in its
-   tip (TipButton `locked`; seam L73). The edge is an inset ring rather than a border, which
+   .disabled's dims, so the three locked switches look alike. A click or tap opens the account
+   flow, as theirs do (seam L115; it explained in its tip under L73 before). The edge is an inset ring rather than a border, which
    this borderless row would grow by a pixel. Its eye takes the tint too, as theirs do. */
 .location-ls-toggle.capture-hud-transparent.locked {
   opacity: 1;

@@ -51,7 +51,7 @@ import {
   isSkyBandTrackEntitled,
   type SkyBandTrackContext,
 } from '../../lib/extensions/skyBandTrack';
-import { shouldShowNudge } from '../../lib/plan';
+import { nudgeAction, shouldShowNudge } from '../../lib/plan';
 import { getIanaTimezone, offsetHoursAt } from '../../lib/atlas/timezone';
 import { formatZoneLabel, zoneNameAtInstant } from '../../lib/atlas/zoneName';
 import { usePhone } from '../../lib/touch';
@@ -615,7 +615,7 @@ export function SkyBand({
 
   // The registered track (a downstream build's expandable center). The track ITSELF is
   // entitled-only; its TOGGLE also shows as a locked teaser for a user the build nudges
-  // (trackNudge) — a click there explains in its tip instead of expanding.
+  // (trackNudge) — a click there opens the account flow instead of expanding (seam L115).
   const trackExt = getSkyBandTrack();
   const trackAvailable = !!trackExt && isSkyBandTrackEntitled(trackExt);
   const trackNudge =
@@ -1068,11 +1068,11 @@ export function SkyBand({
               </TipButton>
               {/* The track's eye-toggle: for an entitled user it expands the track; for a
                   nudged (un-entitled) user it's a locked teaser — shown off, gated-tagged,
-                  and a click or tap shows why in its tip instead of expanding. It does NOT
-                  open the account flow: it's a switch in a band the reader is reading, and
-                  a tap on a switch that won't flip asks why, not for the plans
-                  (TipButton's `locked`; seam L73, 2026-10-01). A gated track carries the
-                  gated-tier tag in its hover tip either way. */}
+                  and a click or tap opens the account flow instead of expanding, as the
+                  Tools menu's Galaxy does (Salvatore, 2026-10-14; seam L115). From
+                  2026-10-01 it explained in its tip instead (TipButton's `locked`; seam
+                  L73). A gated track carries the gated-tier tag in its hover tip either
+                  way. */}
               {(trackAvailable || trackNudge) && trackExt && (
                 <TipButton
                   type="button"
@@ -1084,11 +1084,9 @@ export function SkyBand({
                   gated={trackExt.tier === 'gated'}
                   tip={trackExt.label}
                   hint={trackShown ? trackExt.onHint : trackExt.offHint}
-                  // trackNudge already implies the gated rung (see its definition). The
-                  // reason names the track by its own label (e.g. "Paran Clock is a Pro
-                  // feature.").
-                  locked={trackNudge ? { tier: 'gated', feature: trackExt.label } : undefined}
-                  onClick={onToggleTrack}
+                  // The locked press is the ask: the build's account / upgrade flow, never
+                  // the toggle (seam L115). No hotkey to drop — the track has none.
+                  onClick={trackNudge ? nudgeAction : onToggleTrack}
                 >
                   <EyeIcon open={trackShown} className="sky-band-track-eye" size={13} />
                   <span>{trackExt.label}</span>

@@ -429,8 +429,8 @@
 }
 
 /* Locked teaser (un-entitled but nudged): a gated tint so it reads as a premium feature. A
-   click or tap shows why in its tip and does NOT open the plans — it is a switch, and a
-   switch explains in place (TipButton `locked`; seam L73). */
+   click or tap opens the account flow, as Galaxy's Tools row does (seam L115, 2026-10-14;
+   it explained in place under seam L73 before). */
 .sky-band-track-toggle.locked {
   color: var(--gated-ink);
   border-color: rgba(var(--gated-rgb), 0.4);

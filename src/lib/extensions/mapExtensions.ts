@@ -534,9 +534,9 @@ export interface MapExtension {
    *  (beside the Natal/Zenith toggles): available only while a timeline overlay
    *  is active (leaving those overlays closes it). Follows the same nudge policy
    *  as the View menu — a nudged un-entitled user sees it as a locked teaser,
-   *  everyone else un-nudged sees nothing. Unlike the View row, the teaser is a
-   *  switch, so a click explains in its tip rather than opening the upgrade flow
-   *  (seam L73). */
+   *  everyone else un-nudged sees nothing. Like the View row, a click on the teaser
+   *  opens the upgrade flow (seam L115, 2026-10-14; it explained in its tip under
+   *  seam L73 before). */
   surface?: 'view' | 'timeline-drawer';
   /** Where the extension's HUD sits (default 'map': a floating window over the
    *  map, parked while a registered surface owns the viewport — see

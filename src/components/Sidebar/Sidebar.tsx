@@ -498,6 +498,7 @@ function HintOption({
   hotkey,
   disabled,
   disabledHint,
+  locked,
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -511,16 +512,25 @@ function HintOption({
    *  setting to change. */
   disabled?: boolean;
   disabledHint?: string;
+  /** A tier-locked teaser: the rung this option needs, which the reader hasn't reached.
+   *  Dimmed (.is-locked), its tip tagged with the rung, and a press runs the build's
+   *  upgrade flow (lib/plan nudgeAction) instead of `onSelect`, so nothing is written.
+   *  NOT the unavailable state above: a plan reaches it, so it keeps its pointer and
+   *  takes no N/A badge. The mark still shows the stored choice. (2026-10-14) */
+  locked?: PlanTier;
 }) {
   return (
     <TipToggle
-      className={`theme-option ${selected ? 'active' : ''}`}
-      onClick={onSelect}
+      className={`theme-option ${selected ? 'active' : ''}${locked ? ' is-locked' : ''}`}
+      onClick={locked ? nudgeAction : onSelect}
       title={label}
       hint={hint}
-      hotkey={hotkey}
+      // A locked option's key would do nothing below the rung, so no pill for it.
+      hotkey={locked ? undefined : hotkey}
       disabled={disabled}
       disabledHint={disabledHint}
+      advanced={locked === 'adv'}
+      gated={locked === 'gated'}
     >
       <span className="radio">{selected ? '●' : '○'}</span>
       <span className="label">{label}</span>
@@ -2682,23 +2692,32 @@ export function Sidebar({
               Aquarius and Pisces beside the classical seven. An ordinary two-row
               list, like Lunar node above it — the capsule is reserved for elsewhere.
               It belongs on this tab because that is what it is — a school, like the
-              house system above it — but it does NOT tease the ADV rung the way
-              those two do. Its
-              only consumer is the essential-dignity list in the expanded wheel, which
-              isn't drawn below that rung at all, so a nudge here would advertise a
-              control whose effect the reader still couldn't see after taking it. The
-              stored preference is left alone either way; nothing masks it, because no
-              combination of settings makes a scheme invalid.
-              No ADV tag on the (i): the row only exists above the rung, so it would
-              state the obvious — the same reason the Advanced tab's Fortune (i) has
-              none, inverted. */}
-          {advUnlocked && (
+              house system above it — and it belongs to the ADV rung, as its only
+              consumer does: the essential-dignity list in the expanded wheel, which
+              isn't drawn below that rung at all.
+
+              Below the rung it TEASES where the build nudges that rung, rather than
+              hiding (Salvatore, 2026-10-14; until then it hid, on the argument that a
+              nudge advertised a control whose effect the reader couldn't see). The
+              heading wears the ADV badge, both rows dim, and a press on either runs the
+              upgrade flow (HintOption's `locked`) — the whole list is the locked
+              feature, so the badge sits on the heading rather than on one row: Modern is
+              the default, and an ADV mark on the marked row would read as a
+              contradiction. The mark shows the STORED choice, which is what the reader
+              will get once the rung is reached; nothing is written below it. Where the
+              build doesn't nudge (the open core), the list still exists only above the
+              rung, so no badge — it would state the obvious there. */}
+          {(advUnlocked || shouldShowNudge('adv')) && (
             <>
               <h2 className="info-heading">
                 {t('settings.headings.rulerships')}
+                {!advUnlocked && tierBadgeOf('adv') && (
+                  <span className="navmenu-tier tier-adv">{tierBadgeOf('adv')}</span>
+                )}
                 <InfoTip
                   title={t('settings.headings.rulerships')}
                   hint={t('settings.rulership.hint')}
+                  advanced={!advUnlocked}
                 />
               </h2>
               <ul className="theme-list">
@@ -2709,6 +2728,7 @@ export function Sidebar({
                     onSelect={() => setRulershipScheme(value)}
                     label={t(`settings.rulership.${value}.label`)}
                     hint={t(`settings.rulership.${value}.hint`)}
+                    locked={advUnlocked ? undefined : 'adv'}
                   />
                 ))}
               </ul>
