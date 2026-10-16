@@ -787,6 +787,10 @@ export default function App() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // My Charts opened by `astro:open-my-charts` (below) starts on the new chart's name rather
+  // than the search box: the reader was sent there to add a chart, not to find one. Read once,
+  // as the manager mounts; cleared wherever `creating` is.
+  const [creatingOnName, setCreatingOnName] = useState(false);
   // Open the regular chart browser to pick/add a synastry partner — the same
   // add/edit/select flow as the nav, with the active chart excluded and the choice
   // routed to the partner slot (vs. the normal flow driven by `creating`/`editingId`).
@@ -2670,9 +2674,13 @@ export default function App() {
   // Neutral seam: open My Charts — the same window the chart switcher's "Search + Add" and
   // the A key open. A downstream build's onboarding dispatches
   // `window.dispatchEvent(new Event('astro:open-my-charts'))` to take a new reader straight
-  // to where a birth chart goes in, rather than through the quick-switch menu first.
+  // to where a birth chart goes in, rather than through the quick-switch menu first — and
+  // with the cursor in the new chart's name, not the search box (2026-10-16).
   useEffect(() => {
-    const onOpenMyCharts = () => setCreating(true);
+    const onOpenMyCharts = () => {
+      setCreatingOnName(true);
+      setCreating(true);
+    };
     window.addEventListener('astro:open-my-charts', onOpenMyCharts);
     return () => window.removeEventListener('astro:open-my-charts', onOpenMyCharts);
   }, []);
@@ -6552,6 +6560,7 @@ export default function App() {
     }
     setEditingId(null);
     setCreating(false);
+    setCreatingOnName(false);
     setPickingPartner(false);
   };
 
@@ -6639,6 +6648,7 @@ export default function App() {
 
   const closeManager = () => {
     setCreating(false);
+    setCreatingOnName(false);
     setEditingId(null);
     setPickingPartner(false);
   };
@@ -8784,6 +8794,7 @@ export default function App() {
           }
           excludeId={pickingPartner ? (current?.id ?? null) : null}
           initialEditId={editingId}
+          startOnName={creatingOnName}
           onSelect={(id) => {
             if (pickingPartner) setPartnerId(id);
             else selectChart(id);

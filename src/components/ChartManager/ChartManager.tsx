@@ -94,6 +94,11 @@ interface ChartManagerProps {
   heading?: ReactNode;
   /** When set, opens with this chart loaded in the form for editing. */
   initialEditId?: string | null;
+  /** Open with the cursor in the new chart's name instead of the search box — for a reader
+   *  sent here to add a chart (App's `astro:open-my-charts`). On touch too, unlike the search
+   *  box's: typing a name is the next thing they do, so the keyboard is wanted. Applies to the
+   *  first form only; a form remounted by picking a chart takes no focus. */
+  startOnName?: boolean;
   /** A chart id to omit from the list — e.g. the active chart, which can't be its own
    *  synastry partner. */
   excludeId?: string | null;
@@ -129,6 +134,7 @@ export function ChartManager({
   title,
   heading,
   initialEditId,
+  startOnName = false,
   excludeId = null,
   onSelect,
   onSave,
@@ -537,7 +543,7 @@ export function ChartManager({
                   setConfirmId(null);
                 }}
                 placeholder={t('chartManager.searchPlaceholder')}
-                autoFocus={!touch}
+                autoFocus={!touch && !startOnName}
                 aria-label={t('chartManager.searchLabel')}
               />
               {query && (
@@ -927,6 +933,7 @@ export function ChartManager({
               key={formKey}
               initial={editing}
               nameSeed={editing ? undefined : seed}
+              autoFocusName={startOnName && formKey === 0 && !editing}
               folderOptions={allFolderPaths}
               folderSeed={editing ? undefined : activeFolder}
               submitLabel={editing ? t('chartManager.saveChanges') : t('chartManager.addChart')}

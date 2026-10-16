@@ -75,6 +75,9 @@ interface BirthDataFieldsProps {
   initial?: StoredChart | null;
   /** Initial name for a NEW chart (e.g. carried over from the search box). */
   nameSeed?: string;
+  /** Put the cursor in the name field on mount. Off by default: the form usually opens
+   *  beside a search box, which has the better claim. */
+  autoFocusName?: boolean;
   /** Submit-button label, e.g. "Add chart" / "Save changes". */
   submitLabel: string;
   onSubmit: (chart: StoredChart) => void;
@@ -93,6 +96,7 @@ interface BirthDataFieldsProps {
 export function BirthDataFields({
   initial,
   nameSeed,
+  autoFocusName = false,
   submitLabel,
   onSubmit,
   onImport,
@@ -437,6 +441,7 @@ export function BirthDataFields({
               maxLength={NAME_HARD_LIMIT}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('chartForm.namePlaceholder')}
+              autoFocus={autoFocusName}
             />
             {/* Count appears only as you near the cap, faint and right-aligned. */}
             {name.length >= NAME_SOFT_LIMIT && (

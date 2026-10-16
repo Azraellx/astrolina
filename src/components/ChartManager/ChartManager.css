@@ -736,11 +736,23 @@
     width: auto;
     border-right: none;
     border-bottom: 1px solid rgba(var(--tint), 0.08);
-    /* DEFINITE height (not max-height): the list <ul> is absolutely positioned so it adds no
-       intrinsic height, so a bare max-height would collapse this pane to just the search row.
-       A fixed slice gives the scrolling list real room; the form pane below takes the rest and
-       scrolls its own fields (overflow-y:auto), since both can't fit unscrolled in portrait. */
-    height: 32dvh;
+    /* Sized by what it holds — the search row, the filter chips (which may wrap) and the
+       list's own slice below — not by a share of the screen. The form pane below takes the
+       rest and scrolls its own fields (overflow-y:auto). */
     flex-shrink: 0;
+  }
+  /* About a chart and a half (2026-10-16, Salvatore): one whole row and the top of the next,
+     cut by the edge, so the list reads as scrollable without spending the form's room. It
+     was a third of the screen, which showed three or four rows over a form that had to
+     scroll. A chart row is 50 px plus its 1 px gap, under the list's 4 px top padding:
+     4 + 51 + 29. DEFINITE (not max-height): the <ul> is absolutely positioned and adds no
+     intrinsic height, so anything softer collapses the list to nothing. */
+  .cm-list-scroll {
+    flex: none;
+    height: 84px;
+  }
+  /* A shorter fade, so it falls on the half row and leaves the whole one crisp. */
+  .cm-list-fade {
+    height: 30px;
   }
 }
