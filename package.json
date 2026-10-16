@@ -37,6 +37,7 @@
     "verify:content": "node scripts/harness/run.mjs scripts/verify-content.ts",
     "verify:import": "node scripts/harness/run.mjs scripts/verify-import.ts",
     "verify:zone-entry": "node scripts/harness/run.mjs scripts/verify-zone-entry.ts",
+    "verify:share-link": "node scripts/harness/run.mjs scripts/verify-share-link.ts",
     "verify:zone-name": "node scripts/harness/run.mjs scripts/verify-zone-name.ts",
     "verify:chart-header": "node scripts/harness/run.mjs scripts/verify-chart-header.ts",
     "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",

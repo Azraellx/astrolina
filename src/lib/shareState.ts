@@ -5,7 +5,9 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Shareable chart links: the chart's birth data + the current map view, encoded
-// as a compact base64url token in a `#c=` URL fragment. The schema lives HERE —
+// as a compact base64url token in a `#c=` URL fragment. The birth data includes the
+// chart's source rating (since 2026-10-16), and never its notes: free text about the
+// record stays with the record. The schema lives HERE —
 // next to the state it serializes — because it drifts with the app's own model;
 // anything downstream should call these functions, never mint tokens itself.
 //
@@ -14,6 +16,7 @@
 // clamped, and ANY irregularity returns null — the app then just boots
 // normally. Nothing here is executed or interpolated as markup.
 import type { BirthData } from './birthData';
+import { SOURCE_RATINGS, type SourceRating } from './sourceRating';
 import {
   entrySeconds,
   MAX_ZONE_OFFSET_SECONDS,
@@ -35,8 +38,11 @@ export interface ShareState {
    *  keeps DST-aware timeline readouts, and `tzEntry` so it reopens in the
    *  sender's zone terms ("EST + daylight") rather than as a bare number.
    *  Composite charts are NOT shareable — their planets are parent midpoints,
-   *  which a bare moment can't recast. */
-  chart: BirthData & { tzIana?: string; tzEntry?: TzEntry };
+   *  which a bare moment can't recast. `sourceRating` rides along so the
+   *  recipient's copy says how far its time can be trusted, as the sender's does
+   *  (2026-10-16: until then a link dropped it, so a rectified or remembered time
+   *  arrived looking like a recorded one). */
+  chart: BirthData & { tzIana?: string; tzEntry?: TzEntry; sourceRating?: SourceRating };
   /** The camera at share time (absent → the default first-load framing). */
   view?: ShareView | null;
   /** The placed pin (absent → none). */
@@ -61,6 +67,7 @@ interface Wire {
   zi?: string; // tzIana
   ze?: WireEntry; // tzEntry — how tz was stated (lib/atlas/zoneEntry); never overrides tz
   tk?: 0; // present (0) ⇔ timeKnown === false; absent ⇔ known
+  sr?: SourceRating; // source rating (lib/sourceRating); absent ⇔ nobody has said
   pl: string; // birthplace label
   pa: number; // birthplace lat
   pg: number; // birthplace lng
@@ -70,7 +77,8 @@ interface Wire {
 
 // A TzEntry with short keys, in the same spirit as the rest of the wire. Added
 // 2026-10-02 as an OPTIONAL key of v1 rather than a v2: older decoders ignore
-// keys they do not know, so links minted now still open everywhere.
+// keys they do not know, so links minted now still open everywhere. `sr`, the
+// source rating, joined the same way on 2026-10-16.
 type WireEntry =
   | { m: 's'; s: number; d: DaylightCode; z?: string } // standard: std, daylight, zone id
   | { m: 'o'; s: number; b?: 'lmt' | 'ut'; t?: string }; // offset: seconds, basis, text
@@ -93,6 +101,18 @@ function fromWireEntry(w: unknown): TzEntry | undefined {
   if (o.m === 's') return sanitizeTzEntry({ mode: 'standard', std: o.s, daylight: o.d, zone: o.z });
   if (o.m === 'o') return sanitizeTzEntry({ mode: 'offset', seconds: o.s, basis: o.b, text: o.t });
   return undefined;
+}
+
+const KNOWN_RATINGS: ReadonlySet<string> = new Set(SOURCE_RATINGS);
+
+/** The chart a share link is made from. A rating vouches for the record's OWN time, so
+ *  while a time is being tried on (lib/birthData applyTimeHypothesis, which puts the
+ *  trial minute on the chart) the link carries the trial time without the rating:
+ *  sent with it, an AA would vouch for a guess. */
+export function shareChart<T extends { sourceRating?: SourceRating }>(chart: T, tryingTime: boolean): T {
+  if (!tryingTime || chart.sourceRating === undefined) return chart;
+  const { sourceRating: _dropped, ...rest } = chart;
+  return rest as T;
 }
 
 const round = (n: number, places: number) => {
@@ -131,6 +151,7 @@ export function encodeShareState(state: ShareState): string {
   if (c.tzIana) wire.zi = c.tzIana;
   if (c.tzEntry) wire.ze = toWireEntry(c.tzEntry);
   if (c.timeKnown === false) wire.tk = 0;
+  if (c.sourceRating && KNOWN_RATINGS.has(c.sourceRating)) wire.sr = c.sourceRating;
   if (state.view) {
     wire.vw = [round(state.view.lat, 3), round(state.view.lng, 3), round(state.view.zoom, 2)];
   }
@@ -195,6 +216,10 @@ export function decodeShareState(raw: string | null | undefined): ShareState | n
     const entry = w.ze !== undefined ? fromWireEntry(w.ze) : undefined;
     if (entry && entrySeconds(entry) === Math.round(w.tz * 3600)) chart.tzEntry = entry;
     if (w.tk === 0) chart.timeKnown = false;
+    // Like the entry, dropped rather than failing the link: only one of the seven
+    // codes is read, never fitted (normalizeRating is for files from elsewhere; a
+    // link of ours only ever writes one of the seven, so anything else is not ours).
+    if (typeof w.sr === 'string' && KNOWN_RATINGS.has(w.sr)) chart.sourceRating = w.sr;
 
     const state: ShareState = { chart };
     if (Array.isArray(w.vw) && w.vw.length === 3) {

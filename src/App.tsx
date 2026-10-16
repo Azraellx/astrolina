@@ -127,6 +127,7 @@ import {
   buildShareUrl,
   consumeShareParam,
   matchesSharedChart,
+  shareChart,
 } from './lib/shareState';
 import { planetRank, visibleAngleSpecs, buildCaptureBalance, buildBalanceGrid } from './lib/astro/format';
 import type {
@@ -457,6 +458,7 @@ import {
   decideEditorKey,
   decideThemePick,
   deriveThemeState,
+  handBackCandidate,
   heldNoticeMarkerKey,
   heldNoticeStep,
   themeEditorMounted,
@@ -1410,6 +1412,44 @@ export default function App() {
     if (next && !themeEditorOpen && isTouchLayout()) setShowSettings(false);
   }, [themeEditorOpen, customLive, customEditorEntitled, customChosen, themeOpt, setThemeSafe]);
   const closeThemeEditor = useCallback(() => setThemeEditorOpen(false), []);
+  // The editor's close can HAND THE CHOICE BACK to a built-in (2026-10-16). An option whose rule
+  // is that a spec with nothing of the reader's own is just the theme it copies (a downstream
+  // build's: lib/extensions/themeOptions handBackOnClose) leaves the reader, once they close the
+  // editor with no changes on a copy of Earth, Glass or Dark, on that built-in's own row rather
+  // than on a fourth row that draws exactly the same. Fired by the window going from open to
+  // closed, so a view lock's park (the window unmounts, `themeEditorOpen` stays true) is not a
+  // close, and a pick of a built-in, which closes the editor itself, has already cleared the
+  // choice. lib/themeChoice handBackCandidate decides; the spec is read FRESH, because the
+  // editor's unmount commits its last edit after this render was computed (React runs that
+  // cleanup before this effect).
+  //
+  // Not a silent write under CLAUDE.md rule 1. The theme list's choice is written by the editor
+  // of that list's own option, at the close of the reader's own customizing, and nothing on
+  // screen can move: the candidate's palette IS the built-in's (an identity, not a comparison).
+  // What the reader sees is the list's mark arriving on the row whose look is drawn. The
+  // option's close tip says so beforehand (rule 3's trigger end).
+  const themeEditorWasOpen = useRef(themeEditorOpen);
+  useEffect(() => {
+    const was = themeEditorWasOpen.current;
+    themeEditorWasOpen.current = themeEditorOpen;
+    if (!was || themeEditorOpen || !themeOpt) return;
+    const back = handBackCandidate(
+      { customChosen, customLive, editorEntitled: customEditorEntitled, drawn: customDrawn },
+      readThemeSpec(themeOpt),
+      builtinThemeEntitled,
+    );
+    if (!back) return;
+    let taken = false;
+    try {
+      taken = themeOpt.handBackOnClose?.(back) === true;
+    } catch {
+      taken = false; // the option's own failure keeps it chosen, drawn as it was
+    }
+    if (!taken) return;
+    setBuiltinPref(back);
+    setCustomChosen(false);
+    saveCustomChosen(false);
+  }, [themeEditorOpen, themeOpt, customChosen, customLive, customEditorEntitled, customDrawn]);
   // The rule's twin (2026-10-08): on a touch TABLET, OPENING the settings dock closes the
   // editor. There the editor is a dock on the right edge and the settings dock is the
   // full-height overlay on the same edge, so the two would stand one over the other — one
@@ -8528,12 +8568,15 @@ export default function App() {
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
           // Share link: the chart + this camera + the pin as a #c= URL. A composite
           // isn't shareable (its planets are parent midpoints, not a castable
-          // moment), so the button hides for one.
+          // moment), so the button hides for one. The chart's source rating goes
+          // with it, except while a time is being tried on: the link then carries
+          // the trial time, which the record's rating doesn't vouch for
+          // (lib/shareState shareChart).
           shareLink={
             current && !current.composite
               ? () =>
                   buildShareUrl({
-                    chart: current,
+                    chart: shareChart(current, provisionalTime),
                     view: mapRef.current?.getView() ?? null,
                     pin: pinned ? { lat: pinned.lat, lng: pinned.lng } : null,
                   })

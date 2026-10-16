@@ -156,6 +156,16 @@ export interface ThemeOptionExtension extends GatedExtension {
    *  a copy of `from`, its base, would move the theme on the click that was meant to keep
    *  it. (2026-10-08: `onScreen` is new, and optional for an option made before it.) */
   onChoose?(from: Theme, onScreen?: CustomThemeSpec): void;
+  /** The editor has CLOSED (its window shut, not parked by a view lock) with the option still
+   *  the live choice, and the reader's own spec now draws exactly built-in `builtin`: that base,
+   *  no overrides. The core checks this first, on a fresh read of the spec, so whatever the
+   *  editor committed on its way out counts. Return true to HAND THE CHOICE BACK: the core
+   *  selects the built-in's row, as a pick of it would, so nothing on screen changes; the option
+   *  may then let go of what it held for that spec, since it is no longer drawn. False, or no
+   *  method, keeps the option chosen, drawn exactly as the built-in. For an option whose rule is
+   *  that a spec with nothing of the reader's own is the choice of the theme it copies, not a
+   *  theme of theirs. Only for an editor-entitled reader. (2026-10-16) */
+  handBackOnClose?(builtin: Theme): boolean;
   /** The editor window's body. OPTIONAL (2026-10-08): an option registered without one is a
    *  fixed theme — every entitled reader is drawn `fallbackSpec()`, `getSpec()` is never read
    *  (a spec the reader can't reach is one they can't see, so nothing of theirs is drawn or

@@ -31,7 +31,7 @@
 // for an account has not thereby been told their own version is waiting for the editor.
 import type { Theme, ThemeChoice } from './theme';
 import type { CustomThemeSpec } from './extensions/themeOptions';
-import { builtinPalette, type ResolvedPalette } from './themePalette';
+import { builtinPalette, resolvePalette, type ResolvedPalette } from './themePalette';
 
 export interface ThemeChoiceInput {
   /** Stored: the last built-in theme picked (astro:theme:v1). */
@@ -189,6 +189,28 @@ export function decideThemePick(
   if (s.customHeld && next === s.theme) return { kind: 'refuse' };
   if (lock && !lock.entitled(next) && !(next === s.theme && !lock.customLive)) return { kind: 'nudge' };
   return { kind: 'builtin', theme: next, clearChosen: s.customChosen };
+}
+
+/**
+ * The editor's close (2026-10-16): the built-in the choice may be HANDED BACK to, or null. Asked
+ * only when the editor window shuts, never when a view lock parks it. A candidate needs:
+ *  · the option chosen, live, and drawn on the reader's OWN spec, with the editor's rung
+ *    reached (a fallback is the option's, not a copy of a built-in the reader made);
+ *  · that spec, read fresh at the close (`spec`), drawing EXACTLY its base's built-in. That
+ *    is an identity, not a comparison: resolvePalette returns builtinPalette itself for a
+ *    spec with no overrides, so a hand-back can't move a pixel;
+ *  · a built-in the reader's account reaches (`entitled`, lib/extensions/builtinThemeTiers),
+ *    because a hand-back to a teaser would draw what the reader can't pick.
+ * The option still has the last word (ThemeOptionExtension.handBackOnClose).
+ */
+export function handBackCandidate(
+  s: Pick<ThemeChoiceInput, 'customChosen' | 'editorEntitled'> & Pick<ThemeChoiceState, 'customLive' | 'drawn'>,
+  spec: CustomThemeSpec | null,
+  entitled: (t: Theme) => boolean,
+): Theme | null {
+  if (!s.customChosen || !s.customLive || !s.editorEntitled || s.drawn !== 'own' || !spec) return null;
+  if (resolvePalette(spec.base, spec.overrides) !== builtinPalette(spec.base)) return null;
+  return entitled(spec.base) ? spec.base : null;
 }
 
 /** The editor's key (App's Shift C), as one decision so it can be tested beside the picker:
