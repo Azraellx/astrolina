@@ -17,6 +17,7 @@ import { filterWithinKm } from './lib/lineProximity';
 import { getToolExtensions } from './lib/extensions/toolExtensions';
 import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 import { getViewLock, useViewLock } from './lib/extensions/viewLock';
+import { setPlaceSearchViewing } from './lib/extensions/placeSearchProviders';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
 // The theme-option seam (a downstream build's fourth theme): one slot, its row and its editor
@@ -2080,6 +2081,9 @@ export default function App() {
   const [detailZoom, setDetailZoom] = useState(false);
 
   const mapRef = useRef<MapHandle>(null);
+  // Every place search whose box has no point of its own ranks toward where the map
+  // is looking. Read through the ref when a search runs, so it is always the camera now.
+  useEffect(() => setPlaceSearchViewing(() => mapRef.current?.getViewing() ?? null), []);
 
   // The STORED built-in, never the derived theme — a live option draws its spec's base, and
   // persisting that would write a masked value over the reader's own (rule 2). Written on

@@ -549,6 +549,18 @@ export function BirthDataFields({
               (placeTarget === 'birth' ? selectedPlace?.label : home?.label) ?? ''
             }
             adoptQuery={placeTarget === 'birth' ? adoptedLabel : (home?.label ?? '')}
+            // What a search here ranks toward: the place this target last held. For
+            // the birthplace that is the coordinates, which typing over the box leaves
+            // alone, so picking a town and then typing its street keeps the town in
+            // view. Only a hint (`near`, not `bias`): the reader may be replacing
+            // that place with one anywhere else.
+            near={
+              placeTarget === 'birth'
+                ? summaryLat != null && summaryLng != null
+                  ? { lat: summaryLat, lng: summaryLng }
+                  : undefined
+                : (home ?? undefined)
+            }
             keepQueryOnPick
             autoFocus={placeTouched}
             onQueryChange={(q) => {

@@ -2181,6 +2181,10 @@ export interface MapHandle {
   /** The current camera (centre + zoom) — e.g. to encode into a share link.
    *  Null before the map exists. */
   getView: () => { lat: number; lng: number; zoom: number } | null;
+  /** Where the reader is looking: the centre of the map they can see, beside an
+   *  expanded sidebar rather than under it. Null with no map, or while the view
+   *  shows most of the world, where a centre means nothing. */
+  getViewing: () => { lat: number; lng: number } | null;
   /** Like flyTo, but first stashes the current view as the Location "go back"
    *  target (so a search jump can be undone). The method keeps its "teleport"
    *  name — it describes the camera mechanic, not the (renamed) view. Returns the
@@ -2246,19 +2250,29 @@ function flyWithSidebarOffset(
   // near-instant hop (the transparent-export toggle wants that; the normal fly stays leisurely).
   duration?: number,
 ) {
-  const esWidth =
-    parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
-    ) || 0;
-  const overlaid = Math.max(0, esWidth - leftInset);
   map.flyTo({
     center: [lng, lat],
     zoom,
-    offset: [overlaid / 4, 0],
+    offset: [sidebarOffsetX(leftInset), 0],
     essential: true,
     ...(duration !== undefined ? { duration } : {}),
   });
 }
+
+// How far right of the canvas centre a sidebar-aware flight leaves its target: a
+// quarter of the part of the expanded sidebar that overlays the map. Shared with
+// getViewing, which reads the camera back the same way the flight framed it.
+function sidebarOffsetX(leftInset: number): number {
+  const esWidth =
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
+    ) || 0;
+  return Math.max(0, esWidth - leftInset) / 4;
+}
+
+// Past this much longitude on screen the view is the world, not a region, and its
+// centre says nothing about where the reader is looking.
+const VIEWING_MAX_SPAN_DEG = 180;
 
 // Directional arrows chained ALONG a line — '→→→' that follow the line's bearing
 // (map rotation, keep-upright off so the true direction is preserved). The glyph
@@ -4267,6 +4281,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!map) return null;
       const c = map.getCenter();
       return { lat: c.lat, lng: c.lng, zoom: map.getZoom() };
+    },
+    getViewing: () => {
+      const map = mapRef.current;
+      if (!map) return null;
+      const b = map.getBounds();
+      if (b.getEast() - b.getWest() > VIEWING_MAX_SPAN_DEG) return null;
+      const canvas = map.getCanvas();
+      const p = map
+        .unproject([
+          canvas.clientWidth / 2 + sidebarOffsetX(leftInsetRef.current),
+          canvas.clientHeight / 2,
+        ])
+        .wrap();
+      return { lat: p.lat, lng: p.lng };
     },
     teleportTo: (lat: number, lng: number, zoom?: number, duration?: number) => {
       const map = mapRef.current;

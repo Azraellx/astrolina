@@ -36,6 +36,7 @@ import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
 import {
   getPlaceSearchLibrary,
   getPlaceSearchProviders,
+  getPlaceSearchViewing,
   PlaceSearchFailure,
   type PlaceSearchGate,
   type PlaceSearchHit,
@@ -100,6 +101,11 @@ export interface PlaceSearchFieldProps {
   ariaLabel: string;
   /** Bias results toward a point (the picked city, the pin, the current value). */
   bias?: { lat: number; lng: number };
+  /** A weaker point than `bias`, for a host whose place is only a hint (the
+   *  value the box last held, kept while it is typed over): scopes rank toward
+   *  it but never filter by it. With neither, a search ranks toward where the
+   *  map is looking (setPlaceSearchViewing). */
+  near?: { lat: number; lng: number };
   /** Restrict the BUILT-IN scope's precision classes (default: all of them). */
   kinds?: readonly PlaceKind[];
   /** Reach the online geocoder when the offline index doesn't fill the list
@@ -259,6 +265,7 @@ export function PlaceSearchField({
   placeholder,
   ariaLabel,
   bias,
+  near,
   kinds,
   onlineFallback = true,
   initialQuery,
@@ -366,6 +373,8 @@ export function PlaceSearchField({
 
   const biasLat = bias?.lat;
   const biasLng = bias?.lng;
+  const nearLat = near?.lat;
+  const nearLng = near?.lng;
 
   // Host-resolved values land in the box as settled answers. Tracking the last
   // adopted value (rather than syncing every render) leaves the user free to
@@ -398,8 +407,15 @@ export function PlaceSearchField({
     const timer = window.setTimeout(async () => {
       setSearching(true);
       try {
+        const hostBias =
+          biasLat !== undefined && biasLng !== undefined ? { lat: biasLat, lng: biasLng } : undefined;
+        const hostNear =
+          nearLat !== undefined && nearLng !== undefined ? { lat: nearLat, lng: nearLng } : undefined;
         const hits = await scope.search(q, {
-          bias: biasLat !== undefined && biasLng !== undefined ? { lat: biasLat, lng: biasLng } : undefined,
+          bias: hostBias,
+          // The map's view is read as the search runs, not tracked: a pan is not a
+          // reason to search again.
+          near: hostBias ? undefined : (hostNear ?? getPlaceSearchViewing()),
           limit,
           signal: ctrl.signal,
         });
@@ -426,7 +442,7 @@ export function PlaceSearchField({
     // `scope` is derived from the id; depending on the id keeps the effect from
     // re-firing on every render (the provider objects are rebuilt per render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, scopeId, biasLat, biasLng, limit, kindKey, onlineFallback, locked]);
+  }, [query, scopeId, biasLat, biasLng, nearLat, nearLng, limit, kindKey, onlineFallback, locked]);
 
   const changeQuery = (q: string) => {
     pickedRef.current = null;

@@ -40,6 +40,11 @@ export interface PlaceSearchHit {
 export interface PlaceSearchQuery {
   /** Bias results toward this point, when the host has a meaningful one. */
   bias?: { lat: number; lng: number };
+  /** A point to rank toward but never filter by, given only when there is no
+   *  `bias`: a place the box last held, or else where the map is looking. Weaker
+   *  evidence than a bias, since the reader may be searching for somewhere else
+   *  entirely. */
+  near?: { lat: number; lng: number };
   limit: number;
   /** Aborted when a newer query supersedes this one. */
   signal?: AbortSignal;
@@ -179,4 +184,29 @@ export function registerPlaceSearchProvider(p: PlaceSearchProvider): void {
 /** Every registered scope (empty in the open core). */
 export function getPlaceSearchProviders(): PlaceSearchProvider[] {
   return providers;
+}
+
+// ── Where the map is looking ────────────────────────────────────────────────
+// A field whose host has no point of its own (Teleport, a blank birthplace)
+// still sits in front of a map, and a scope that ranks by proximity does better
+// with that than with nothing: "181 elk st" with no point names an Elk Street
+// anywhere. The host that owns the camera installs the reader; fields read it
+// when a search runs, not as the map moves, so panning never re-runs a search.
+// It reaches scopes as PlaceSearchQuery.near, never as a bias.
+
+type ViewingReader = () => { lat: number; lng: number } | null;
+let viewingReader: ViewingReader | null = null;
+
+/** Install the camera reader (the app shell, once its map exists). Returns the
+ *  uninstaller, which only clears the slot if this reader still holds it. */
+export function setPlaceSearchViewing(read: ViewingReader): () => void {
+  viewingReader = read;
+  return () => {
+    if (viewingReader === read) viewingReader = null;
+  };
+}
+
+/** Where the map is looking now, or undefined with no map or no framed view. */
+export function getPlaceSearchViewing(): { lat: number; lng: number } | undefined {
+  return viewingReader?.() ?? undefined;
 }
