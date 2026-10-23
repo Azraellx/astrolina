@@ -445,5 +445,75 @@ const mcBranch = (fs: AspectFeature[], planet: PlanetName, aspect: string) =>
   }
 }
 
+// ── vlon: the virtual point's degree, published on the line (2026-10-20) ──────
+// The timeless bands centre an aspect or midpoint line's band on `vlon` (uncertaintyBands
+// bandFor; Lina, 20 Oct 2026, §12), so vlon must BE the degree whose angle line the feature is.
+// Two parts agree: in zodiaco, a plain BODY placed at vlon on the ecliptic and drawn by the
+// planet-line generator must reproduce the feature's geometry, vertex for vertex, as the angle
+// the feature really is (an aspect line's `branch`); in mundo, where the point keeps the body's
+// latitude, vlon must be the ecliptic longitude of the point the feature's own anchor names.
+// On a geodetic mapping and a celestial one, natal and midpoint-chart positions. Each check
+// counts what it compared and fails on none.
+{
+  const jd = 2447892.5;
+  const epsV = obliquity(jd);
+  const natal = getPlanetPositions(jd, 'mean');
+  const mappings = [
+    { name: 'geodetic', mer: meridianLngFor('geodetic', epsV, 0), eps: epsV, zod: projectOntoEcliptic(natal, jd), mun: natal },
+    { name: 'celestial', mer: meridianLngFor('celestial', epsV, 1.234), eps: epsV, zod: projectOntoEcliptic(natal, jd), mun: natal },
+    { name: 'midpoint chart', mer, eps, zod: flat, mun: mundo },
+  ];
+  for (const { name, mer: m, eps: e, zod, mun } of mappings) {
+    // zodiaco: a body at vlon draws the same line.
+    let n = 0;
+    let same = 0;
+    let worst = 0;
+    const lines = [
+      ...generateAspectLines(zod, m, 'zodiaco', e).features.map((f) => ({ f, angle: f.properties.branch })),
+      ...generateMidpointLines(zod, m, 'zodiaco', e).features.map((f) => ({ f, angle: f.properties.lineType })),
+    ];
+    for (const { f, angle } of lines) {
+      const { ra, dec } = eclipticToRaDec(f.properties.vlon * DEG2RAD, 0, e);
+      // The Vertex axis comes in two pieces per point, so the twin is whichever piece of that
+      // angle the feature is.
+      const twins = generateLines([{ name: f.properties.planet, ra, dec }], m).features.filter((g) => g.properties.lineType === angle);
+      n++;
+      const a = f.geometry.coordinates;
+      let d = Infinity;
+      for (const twin of twins) {
+        const b = twin.geometry.coordinates;
+        if (b.length !== a.length) continue;
+        let dt = 0;
+        for (let i = 0; i < a.length; i++) dt = Math.max(dt, Math.abs(a[i][0] - b[i][0]), Math.abs(a[i][1] - b[i][1]));
+        d = Math.min(d, dt);
+      }
+      worst = Math.max(worst, d);
+      if (d < 1e-6) same++;
+    }
+    check(
+      `${name}: zodiaco — a body at vlon draws each aspect and midpoint line, vertex for vertex (${n} lines)`,
+      n > 100 && same === n,
+      `${same}/${n}, worst ${worst.toExponential(1)}°`,
+    );
+    // mundo: vlon is the ecliptic longitude of the point the MC-branch anchor names (the anchor
+    // is that point's sub-point, its RA and declination on the celestial mapping's own terms,
+    // so it is read back here through the feature's mapping inverted at GMST 0 only).
+    if (name === 'midpoint chart') {
+      let mn = 0;
+      let mok = 0;
+      const muns = [
+        ...generateAspectLines(mun, m, 'mundo', e).features.filter((f) => f.properties.branch === 'MC'),
+        ...generateMidpointLines(mun, m, 'mundo', e).features.filter((f) => f.properties.lineType === 'MC'),
+      ];
+      for (const f of muns) {
+        mn++;
+        const lon = raDecToEclipticLon(f.properties.targetLng * DEG2RAD, f.properties.targetLat * DEG2RAD, e) * RAD2DEG;
+        if (angErr(lon, f.properties.vlon) < 1e-6) mok++;
+      }
+      check(`${name}: mundo — vlon is the ecliptic longitude of the line's own point (${mn} lines)`, mn > 50 && mok === mn, `${mok}/${mn}`);
+    }
+  }
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

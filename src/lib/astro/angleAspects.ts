@@ -128,6 +128,12 @@ export interface AspectLineProps extends LineProps {
    *  click-to-fly target, the analog of a planet badge's zenith. */
   targetLng: number;
   targetLat: number;
+  /** The generating virtual point's ecliptic longitude, degrees [0, 360): the
+   *  degree whose `branch` angle this line is (body ± aspect). Published so a
+   *  consumer asking where the line could lie reads the point the generator read
+   *  (CLAUDE.md rule 5) — the timeless bands centre on it (uncertaintyBands
+   *  bandFor; Lina, 20 Oct 2026, §12). (2026-10-20) */
+  vlon: number;
 }
 
 /** A midpoint-on-angle line. The inherited `planet` (and its color) is the
@@ -144,6 +150,10 @@ export interface MidpointLineProps extends LineProps {
    *  badges' click-to-fly target (see AspectLineProps.targetLng). */
   targetLng: number;
   targetLat: number;
+  /** The (near) midpoint's ecliptic longitude, degrees [0, 360) — the point whose
+   *  `lineType` angle this line is (its IC/DSC lines are the far midpoint's MC/ASC).
+   *  See AspectLineProps.vlon. (2026-10-20) */
+  vlon: number;
 }
 
 export type AngleOverlayLineProps = AspectLineProps | MidpointLineProps;
@@ -154,6 +164,9 @@ export type AngleOverlayLineProps = AspectLineProps | MidpointLineProps;
 function bodyLon(p: PlanetPosition, eps: number): number {
   return raDecToEclipticLon(p.ra, p.dec, eps);
 }
+
+// A virtual point's ecliptic longitude in degrees [0, 360), as `vlon` carries it.
+const lonDeg = (rad: number) => wrap2pi(rad) * RAD2DEG;
 
 // The shorter-arc midpoint of two angles (radians) — the conventional "near"
 // midpoint. The far midpoint needs no separate handling: the near point's
@@ -227,14 +240,18 @@ export function generateAspectLines(
       // the BODY by ±a in ecliptic longitude with its latitude retained (a
       // solar-arc-style shift); off the ecliptic the two signs are distinct
       // lines, so both are drawn (see the module header).
+      // Each point keeps the longitude it was built at (`lon`), which the lines publish as
+      // `vlon`: in mundo the same one shiftEclipticLongitude shifted (the body's longitude
+      // of record, else the round-trip).
       const points =
         coordSystem === 'zodiaco'
-          ? [eclipticToRaDec(wrap2pi(bodyLon(p, eps) + a), 0, eps)]
+          ? [{ ...eclipticToRaDec(wrap2pi(bodyLon(p, eps) + a), 0, eps), lon: bodyLon(p, eps) + a }]
           : [1, -1].map((sign) => {
               const vp = shiftEclipticLongitude(p, sign * a, eps);
-              return { ra: vp.ra, dec: vp.dec };
+              const lon = (p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps)) + sign * a;
+              return { ra: vp.ra, dec: vp.dec, lon };
             });
-      for (const { ra, dec } of points) {
+      for (const { ra, dec, lon } of points) {
         const v = virtualPointLines(p.name, ra, dec, meridianLng, opts);
         for (const f of v.features) {
           const own = f.properties.lineType;
@@ -252,6 +269,7 @@ export function generateAspectLines(
               kind: 'aspect',
               aspect: shown,
               ...lineTarget(own, v.subLng, v.subLat),
+              vlon: lonDeg(lon),
               label: `${PLANET_CODES[p.name]} ${ASPECT_GLYPHS[shown]} ${LINE_TYPE_LABEL[angle]}`,
             },
           });
@@ -290,10 +308,14 @@ export function generateMidpointLines(
       // Zodiacal: the classic λ-average, on the ecliptic. In mundo: the BODILY
       // midpoint — mean RA and mean declination of the two actual bodies (see
       // the module header for why this is not projected onto the ecliptic).
+      // The point's longitude rides along as `vlon`: the λ-average itself, or the bodily
+      // midpoint's own longitude.
+      const zLon = coordSystem === 'zodiaco' ? shortArcMid(bodyLon(A, eps), bodyLon(B, eps)) : 0;
       const { ra, dec } =
         coordSystem === 'zodiaco'
-          ? eclipticToRaDec(shortArcMid(bodyLon(A, eps), bodyLon(B, eps)), 0, eps)
+          ? eclipticToRaDec(zLon, 0, eps)
           : { ra: shortArcMid(A.ra, B.ra), dec: (A.dec + B.dec) / 2 };
+      const vlon = lonDeg(coordSystem === 'zodiaco' ? zLon : raDecToEclipticLon(ra, dec, eps));
       const v = virtualPointLines(A.name, ra, dec, meridianLng, opts);
       for (const f of v.features) {
         features.push({
@@ -304,6 +326,7 @@ export function generateMidpointLines(
             planetB: B.name,
             colorB: PLANET_COLORS[B.name],
             ...lineTarget(f.properties.lineType, v.subLng, v.subLat),
+            vlon,
             label: `${PLANET_CODES[A.name]}/${PLANET_CODES[B.name]} ${LINE_TYPE_LABEL[f.properties.lineType]}`,
           },
         });

@@ -72,15 +72,17 @@ function fmtDm(absDeg: number): { d: number; m: number } {
 
 export function fmtLatDM(latDeg: number): string {
   const { d, m } = fmtDm(Math.abs(latDeg));
-  // A rounding to 0°00′ has no hemisphere; name it N, as fmtLat does for 0.
-  const dir = latDeg >= 0 || (d === 0 && m === 0) ? 'N' : 'S';
+  // The letter is the coordinate's TRUE side, not the rounded value's: a point just south of
+  // the equator reads 0°S00' (Lina, 21 Oct 2026, §4 — the rounded value had printed it N).
+  const dir = latDeg >= 0 ? 'N' : 'S';
   return `${d}°${dir}${pad2(m)}'`;
 }
 
 export function fmtLngDM(lngDeg: number): string {
   const lng = canonicalLng(lngDeg);
   const { d, m } = fmtDm(Math.abs(lng));
-  const dir = lng >= 0 || (d === 0 && m === 0) ? 'E' : 'W';
+  // The true side, as fmtLatDM: a point just west of Greenwich reads 0°W00', not 0°E00'.
+  const dir = lng >= 0 ? 'E' : 'W';
   return `${d}°${dir}${pad2(m)}'`;
 }
 

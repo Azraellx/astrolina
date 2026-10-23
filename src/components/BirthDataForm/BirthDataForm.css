@@ -610,6 +610,14 @@
   letter-spacing: 0;
   z-index: 10;
 }
+/* The Lives now box lists IN the form rather than floating over it (2026-10-23): its standing
+   rows (the map pin, the reader's own places) would cover the ✓ line under the box, which is
+   where the stored home shows while the box is empty; and its hits keep the line under them
+   that points to the map pin, which a floating list would leave behind under the input. */
+.chartform-home .psf-hits,
+.chartform-home .psf-groups {
+  position: static;
+}
 
 /* Home's status line under the box: the picked place, with Clear pushed to
    the right edge (coord-edit-link brings the link look and the auto margin). */
@@ -1115,4 +1123,97 @@
 
 .birth-form button.primary:hover {
   background: var(--accent);
+}
+
+/* ── Event charts (2026-10-20) ────────────────────────────────────────────────
+   The Person | Event switch heads the form while event charts are on offer: the
+   shared SplitSelect capsule, sized to its two labels rather than the form's width
+   (a full-width capsule read as a second title bar). Its calendar mark takes the
+   label's colour inside the capsule, so it dims and lights with the half it is in
+   — the sea green is for the mark beside a chart's name, where it stands alone. */
+.birth-form .kind-switch {
+  align-self: flex-start;
+  width: auto;
+  min-width: 190px;
+}
+.birth-form .kind-switch .split-select-seg {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.birth-form .kind-switch .tag-glyph {
+  color: inherit;
+}
+@media (pointer: coarse) {
+  .birth-form .kind-switch .split-select-seg {
+    height: 34px;
+  }
+}
+
+/* An event's single place caption, where a person has the Birthplace / Lives now
+   tabs: drawn as the lit tab, but it is a heading, not a control. */
+.location-field-tab.is-caption {
+  cursor: default;
+}
+
+/* Now (and the panel that finds a moment, beside it) under the date: small pill
+   buttons in the tag toggle's family, wrapping on a narrow pane. */
+.moment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.moment-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.moment-action:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.24);
+  background: rgba(var(--tint), 0.08);
+}
+@media (pointer: coarse) {
+  .moment-action {
+    height: 40px;
+    padding: 0 14px;
+  }
+}
+
+/* "UT" after the minute box while an instant is shown with no place yet. */
+.moment-tz .moment-ut {
+  margin-left: 6px;
+}
+
+/* What the boxes show while they hold an instant, and (under the zone) why a moment
+   in the repeated autumn hour stated its zone: the same quiet remark as
+   .time-unknown-note, so the form's explanations read as one kind of line. */
+.instant-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.instant-note--zone {
+  margin-top: -6px;
 }

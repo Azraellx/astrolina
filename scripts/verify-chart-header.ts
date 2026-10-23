@@ -57,6 +57,7 @@ import { buildComposite, buildDavison } from '../src/lib/astro/relationship';
 import { NAME_HARD_LIMIT, NOTES_HARD_LIMIT, type StoredChart } from '../src/lib/chartLibrary';
 import type { TzEntry } from '../src/lib/atlas/zoneEntry';
 import { initEphemeris } from '../src/lib/ephemeris';
+import { presentedKind } from '../src/lib/eventCharts';
 
 await initEphemeris();
 
@@ -178,37 +179,39 @@ console.log('\n── 1. INTERNAL IDENTITY: the label, for every state and by pr
       input: { point: { lat: JIM.birthplace.lat, lng: JIM.birthplace.lng }, isNatalPin: true },
       want: ['NATAL CHART'],
     },
-    { name: 'transits ring', input: { overlay: ov('transits') }, want: ['TRANSITS', aug] },
-    { name: 'transits promoted', input: { overlay: ov('transits', { promoted: true }) }, want: ['TRANSITS', aug] },
-    { name: 'transits, pinned', input: { overlay: ov('transits'), ...pinAt(TORONTO) }, want: ['TRANSITS', aug, 'RELOCATED'] },
-    { name: 'secondary progressed', input: { overlay: ov('progressed') }, want: ['SECONDARY PROGRESSED', aug] },
-    { name: 'tertiary progressed', input: { overlay: ov('tertiary-progressed') }, want: ['TERTIARY PROGRESSED', aug] },
-    { name: 'solar arc', input: { overlay: ov('solar-arc') }, want: ['SOLAR ARC', aug] },
-    { name: 'primary directions', input: { overlay: ov('primary-directions') }, want: ['PRIMARY DIRECTIONS', aug] },
-    { name: 'eclipse chart', input: { overlay: ov('eclipses') }, want: ['ECLIPSE', aug] },
+    { name: 'transits ring', input: { overlay: ov('transits') }, want: ['TRANSITS'] },
+    { name: 'transits promoted', input: { overlay: ov('transits', { promoted: true }) }, want: ['TRANSITS'] },
+    { name: 'transits, pinned', input: { overlay: ov('transits'), ...pinAt(TORONTO) }, want: ['TRANSITS', 'RELOCATED'] },
+    { name: 'secondary progressed', input: { overlay: ov('progressed') }, want: ['SECONDARY PROGRESSED'] },
+    { name: 'tertiary progressed', input: { overlay: ov('tertiary-progressed') }, want: ['TERTIARY PROGRESSED'] },
+    { name: 'solar arc', input: { overlay: ov('solar-arc') }, want: ['SOLAR ARC'] },
+    { name: 'primary directions', input: { overlay: ov('primary-directions') }, want: ['PRIMARY DIRECTIONS'] },
+    { name: 'eclipse chart', input: { overlay: ov('eclipses') }, want: ['ECLIPSE'] },
     // A return outranks the transits it is a moment of.
     { name: 'solar return over transits', input: { overlay: ov('transits', { returnBody: 'solar' }) }, want: ['SOLAR RETURN 2026'] },
     { name: 'solar return promoted', input: { overlay: ov('transits', { returnBody: 'solar', promoted: true }) }, want: ['SOLAR RETURN 2026'] },
-    { name: 'lunar return', input: { overlay: ov('transits', { returnBody: 'lunar' }) }, want: ['LUNAR RETURN', aug] },
+    { name: 'lunar return', input: { overlay: ov('transits', { returnBody: 'lunar' }) }, want: ['LUNAR RETURN'] },
     { name: 'solar return, pinned', input: { overlay: ov('transits', { returnBody: 'solar' }), ...pinAt(TORONTO) }, want: ['SOLAR RETURN 2026', 'RELOCATED'] },
     // CCG never makes a wheel, so it names nothing.
     { name: 'CCG ring', input: { overlay: ov('cyclo') }, want: ['NATAL CHART'] },
-    { name: 'synastry', input: { overlay: ov('synastry', { partner: SHAE }) }, want: ['SYNASTRY'] },
-    { name: 'synastry, pinned', input: { overlay: ov('synastry', { partner: SHAE }), ...pinAt(TORONTO) }, want: ['SYNASTRY', 'RELOCATED'] },
+    // Two people on one wheel (Lina, 23 Oct 2026, H-3): the chart's kind and its person, never
+    // "SYNASTRY", and no RELOCATED — the "Relocated to:" line says it.
+    { name: 'synastry', input: { overlay: ov('synastry', { partner: SHAE }) }, want: ['NATAL CHART'] },
+    { name: 'synastry, pinned', input: { overlay: ov('synastry', { partner: SHAE }), ...pinAt(TORONTO) }, want: ['NATAL CHART'] },
     { name: 'davison', input: { chart: DAVISON }, want: ['DAVISON'] },
     { name: 'davison, pinned', input: { chart: DAVISON, ...pinAt(TORONTO) }, want: ['DAVISON', 'RELOCATED'] },
     { name: 'davison generated before parents were kept', input: { chart: { ...DAVISON, davison: undefined } }, want: ['DAVISON'] },
-    { name: 'davison with transits', input: { chart: DAVISON, overlay: ov('transits') }, want: ['TRANSITS', aug] },
+    { name: 'davison with transits', input: { chart: DAVISON, overlay: ov('transits') }, want: ['TRANSITS'] },
     { name: 'composite', input: { chart: COMPOSITE }, want: ['COMPOSITE (MIDPOINTS)'] },
     // The composite's own angles do not relocate, so no RELOCATED.
     { name: 'composite, pinned', input: { chart: COMPOSITE, ...pinAt(TORONTO) }, want: ['COMPOSITE (MIDPOINTS)'] },
     { name: 'composite over a transits ring', input: { chart: COMPOSITE, overlay: ov('transits') }, want: ['COMPOSITE (MIDPOINTS)'] },
     // …but a PROMOTED overlay is the only chart on the wheel, composite or not.
-    { name: 'composite, transits promoted', input: { chart: COMPOSITE, overlay: ov('transits', { promoted: true }) }, want: ['TRANSITS', aug] },
-    { name: 'geodetic', input: { lineSystem: 'geodetic' }, want: ['GEODETIC CHART'] },
-    { name: 'geodetic, pinned (no RELOCATED)', input: { lineSystem: 'geodetic', ...pinAt(TORONTO) }, want: ['GEODETIC CHART'] },
-    { name: 'geodetic over composite', input: { lineSystem: 'geodetic', chart: COMPOSITE }, want: ['GEODETIC CHART'] },
-    { name: 'geodetic over a promoted overlay', input: { lineSystem: 'geodetic', overlay: ov('transits', { promoted: true }) }, want: ['GEODETIC CHART'] },
+    { name: 'composite, transits promoted', input: { chart: COMPOSITE, overlay: ov('transits', { promoted: true }) }, want: ['TRANSITS'] },
+    { name: 'geodetic', input: { lineSystem: 'geodetic' }, want: ['GEODETIC CHART', 'NATAL'] },
+    { name: 'geodetic, pinned (no RELOCATED)', input: { lineSystem: 'geodetic', ...pinAt(TORONTO) }, want: ['GEODETIC CHART', 'NATAL'] },
+    { name: 'geodetic over composite', input: { lineSystem: 'geodetic', chart: COMPOSITE }, want: ['GEODETIC CHART', 'NATAL'] },
+    { name: 'geodetic over a promoted overlay', input: { lineSystem: 'geodetic', overlay: ov('transits', { promoted: true }) }, want: ['GEODETIC CHART', 'NATAL'] },
     { name: 'NO CHART (promoted CCG)', input: { noChart: true, overlay: ov('cyclo', { promoted: true }) }, want: [] },
     { name: 'no chart loaded', input: { chart: null }, want: [] },
   ];
@@ -219,7 +222,7 @@ console.log('\n── 1. INTERNAL IDENTITY: the label, for every state and by pr
   // The Dual layout's two wheels: the first is the chart alone, the second the overlay.
   const dual = model({ overlay: ov('transits'), ...pinAt(TORONTO) });
   check('Dual: the first wheel is the chart alone', same(dual.chartView.labelParts, ['NATAL CHART', 'RELOCATED']), label({ ...dual, labelParts: dual.chartView.labelParts }));
-  check('Dual: the second wheel is the overlay, cast for the same point', same(dual.overlayView?.labelParts, ['TRANSITS', '1 August 2026', 'RELOCATED']));
+  check('Dual: the second wheel is the overlay, cast for the same point', same(dual.overlayView?.labelParts, ['TRANSITS', 'RELOCATED']));
   check('a solar return label carries no date, so the corner caption adds it', model({ overlay: ov('transits', { returnBody: 'solar' }) }).labelHasOverlayDate === false);
   check('a transits label carries the date, so the corner caption does not repeat it', model({ overlay: ov('transits') }).labelHasOverlayDate === true);
 }
@@ -256,7 +259,8 @@ console.log('\n── 2. INTERNAL IDENTITY: "Born:" stays the birthplace clock, 
   // Geodetic: "Cast for:" instead, and the GE block after the place lines.
   const geo = model({ lineSystem: 'geodetic', ...pinAt(TORONTO) });
   const roles = geo.lines.map((l) => l.role);
-  check('geodetic, pinned: "Cast for:" rather than "Relocated to:"', segOf(byRole(geo, 'relocated')[0], 'lead')?.text === 'Cast for:');
+  // "Relocated to:" is the one term on both line systems since 21 Oct 2026 (Lina, §5).
+  check('geodetic, pinned: "Relocated to:", as on a celestial map', segOf(byRole(geo, 'relocated')[0], 'lead')?.text === 'Relocated to:');
   check(
     'geodetic: the GE block follows the place lines and precedes rating and settings',
     roles.indexOf('geo') === roles.indexOf('relocated') + 1 && roles.indexOf('geo') < roles.indexOf('rodden') && roles.at(-1) === 'settings',
@@ -360,8 +364,8 @@ console.log('\n── 3. INTERNAL IDENTITY: the composite states its parents and
   );
   const compRingPin = model({ chart: COMPOSITE, overlay: ov('transits'), ...pinAt(TORONTO) });
   check(
-    'composite under a ring, pinned: "Cast for:" — the ring relocates, the composite does not',
-    segOf(byRole(compRingPin, 'relocated')[0], 'lead')?.text === 'Cast for:' && !compRingPin.labelParts.includes('RELOCATED'),
+    'composite under a ring, pinned: "Relocated to:" (never "Cast for", H-3) — the ring relocates, the composite does not',
+    segOf(byRole(compRingPin, 'relocated')[0], 'lead')?.text === 'Relocated to:' && !compRingPin.labelParts.includes('RELOCATED'),
     `${compRingPin.labelParts.join(' · ')} — ${texts(compRingPin).join(' | ')}`,
   );
   // And the stored minute — the synthesized frame anchor — is printed nowhere.
@@ -379,7 +383,7 @@ console.log('\n── 3. INTERNAL IDENTITY: the composite states its parents and
   const [mid] = byRole(c, 'midpoint');
   check('"Geographic midpoint:" with the stored midpoint to the minute', segOf(mid, 'lead')?.text === 'Geographic midpoint:' && segOf(mid, 'coords')?.text === fmtCoordPairDM(COMPOSITE.birthplace.lat, COMPOSITE.birthplace.lng), mid ? lineText(mid) : 'missing');
   check('composite, pinned on a celestial map: no relocated line', byRole(model({ chart: COMPOSITE, ...pinAt(TORONTO) }), 'relocated').length === 0);
-  check('composite, pinned on a geodetic map: "Cast for:"', segOf(byRole(model({ chart: COMPOSITE, lineSystem: 'geodetic', ...pinAt(TORONTO) }), 'relocated')[0], 'lead')?.text === 'Cast for:');
+  check('composite, pinned on a geodetic map: "Relocated to:" (§5)', segOf(byRole(model({ chart: COMPOSITE, lineSystem: 'geodetic', ...pinAt(TORONTO) }), 'relocated')[0], 'lead')?.text === 'Relocated to:');
   // A timeless parent: its noon placeholder is not printed as a recorded time.
   const timelessComp = stamp(buildComposite({ ...JIM, timeKnown: false, hour: 12, minute: 0 }, SHAE), 'c_comp2');
   const [p0] = byRole(model({ chart: timelessComp }), 'parent');
@@ -467,7 +471,7 @@ console.log('\n── 5. INTERNAL IDENTITY: Discreet masks every subject segment
       });
     }
     // Labels: a lunar return's date is masked; nothing else in a label is the subject's.
-    if (name === 'lunar return' && masked.labelParts[1] !== MASK_DATE) leaks.push(`${name}: label date ${masked.labelParts[1]}`);
+    if (name === 'lunar return' && masked.labelParts.length !== 1) leaks.push(`${name}: label ${masked.labelParts.join(' · ')}`);
   }
   const subject = pairs.filter((p) => p.plain.mask === 'subject');
   every('every subject segment is masked', subject, ({ where, plain, masked }) => {
@@ -536,7 +540,7 @@ console.log('\n── 6. OUTSIDE AGREEMENT: the overlay\'s moment against the tz
     if (segOf(line, 'date')?.text !== wantDate) return `${p.label} ${new Date(ms).toISOString()}: date ${segOf(line, 'date')?.text} ≠ ${wantDate}`;
     if (segOf(line, 'clock')?.text !== wantClock) return `${p.label} ${new Date(ms).toISOString()}: clock ${segOf(line, 'clock')?.text} ≠ ${wantClock}`;
     if (gotZoneSec !== Math.round(local.offset * 60)) return `${p.label}: offset ${gotZoneSec} ≠ ${local.offset * 60}`;
-    if (m.labelParts[1] !== wantLabelDate) return `${p.label}: label date ${m.labelParts[1]} ≠ ${wantLabelDate}`;
+    void wantLabelDate; // the label carries no date since 21 Oct 2026 (§5); the line's date is checked above
     return null;
   });
   every('…and its zone is placeZoneAt\'s at that instant, in the shared format', rows, ({ p, ms }) => {
@@ -609,26 +613,26 @@ console.log('\n── 8. GOLDEN: the spec\'s examples, as printed ──');
   const tr = model({ chart: torontoChart, overlay: ov('transits', { promoted: true }) });
   // Cast at the chart's own birthplace, which the header prints in DMS. Lina's example
   // shows Toronto to the minute — the form a RELOCATED place takes (the next check).
-  check('transits promoted', label(tr) === 'TRANSITS · 1 August 2026' && same(texts(tr), [
+  check('transits promoted', label(tr) === 'TRANSITS' && same(texts(tr), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     `Toronto, Ontario, Canada · ${fmtCoordPair(TORONTO.lat, TORONTO.lng)}`,
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), texts(tr).join(' | '));
   const trPin = model({ overlay: ov('transits', { promoted: true }), ...pinAt(TORONTO), chart: { ...JIM, sourceRating: undefined } });
-  check('transits promoted, relocated to Toronto', label(trPin) === 'TRANSITS · 1 August 2026 · RELOCATED' && same(texts(trPin), [
+  check('transits promoted, relocated to Toronto', label(trPin) === 'TRANSITS · RELOCATED' && same(texts(trPin), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     'Toronto, Ontario, Canada · 43°N39\' 079°W23\'',
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), texts(trPin).join(' | '));
   const ring = model({ chart: torontoChart, overlay: ov('transits') });
-  check('a transits ring', label(ring) === 'TRANSITS · 1 August 2026' && same(texts(ring), [
+  check('a transits ring', label(ring) === 'TRANSITS' && same(texts(ring), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     'Born: 5 June 1941, Thu · 09:30 EDT (UTC−04:00)',
     `Toronto, Ontario, Canada · ${fmtCoordPair(TORONTO.lat, TORONTO.lng)}`,
     'Geocentric · Tropical · Whole Sign · True Node',
   ]), texts(ring).join(' | '));
   const ringPin = model({ overlay: ov('transits'), ...pinAt(TORONTO), chart: { ...JIM, sourceRating: undefined } });
-  check('a transits ring, relocated to Toronto', label(ringPin) === 'TRANSITS · 1 August 2026 · RELOCATED' && same(texts(ringPin), [
+  check('a transits ring, relocated to Toronto', label(ringPin) === 'TRANSITS · RELOCATED' && same(texts(ringPin), [
     '1 August 2026, Sat · 12:13 EDT (UTC−04:00)',
     'Born: 5 June 1941, Thu · 09:30 EDT (UTC−04:00)',
     'Yonkers, New York, United States · 40°N55\'52" 073°W53\'56"',
@@ -674,6 +678,189 @@ console.log('\n── 9. INTERNAL IDENTITY: the parents a relationship chart kee
     return n <= 4096 ? null : `${name}: ${n}`;
   });
   console.log(`      (worst cases: ${worst.map(({ name, chart }) => `${name} ${JSON.stringify(chart).length}`).join(', ')})`);
+}
+
+// ── Event charts and the sky alone (2026-10-20) ─────────────────────────────
+//
+// An event chart is stated as one — EVENT CHART on a celestial map, "Event:" for its
+// moment, its own words for an unknown time — but only as the app PRESENTS it: the
+// caller passes lib/eventCharts presentedKind, which reads a person while the geodetic
+// hold is up. And No chart with the sky drawn is the 'sky' state, stated from the
+// overlay alone.
+
+console.log('\n── Event charts: INTERNAL IDENTITY of the label and the lead, on both sides of the hold ──');
+
+{
+  const EVENT: StoredChart = { ...JIM, id: 'c_ev', name: 'Aries Ingress 2026', kind: 'event' };
+  const asPresented = (held: boolean, over: Partial<ChartHeaderInput> = {}) =>
+    model({ chart: EVENT, event: presentedKind(EVENT, held) === 'event', ...over });
+  check('an event chart reads EVENT CHART', label(asPresented(false)) === 'EVENT CHART', label(asPresented(false)));
+  check('  …and the SAME record reads NATAL CHART while held — the two required to disagree',
+    label(asPresented(true)) === 'NATAL CHART' && label(asPresented(true)) !== label(asPresented(false)),
+    `${label(asPresented(true))} / ${label(asPresented(false))}`);
+  check('  pinned elsewhere: EVENT CHART · RELOCATED',
+    label(asPresented(false, pinAt(TORONTO))) === 'EVENT CHART · RELOCATED', label(asPresented(false, pinAt(TORONTO))));
+  check('  on a geodetic map: GEODETIC CHART · EVENT for the event, · NATAL for the person (§5)',
+    label(asPresented(false, { lineSystem: 'geodetic' })) === 'GEODETIC CHART · EVENT' &&
+      label(model({ lineSystem: 'geodetic' })) === 'GEODETIC CHART · NATAL');
+  check('  a ring over it is named by the ring, as over a person',
+    label(asPresented(false, { overlay: ov('transits') })) === 'TRANSITS');
+  check('  a composite stays a composite whatever `event` says',
+    label(model({ chart: COMPOSITE, event: true })) === 'COMPOSITE (MIDPOINTS)', label(model({ chart: COMPOSITE, event: true })));
+
+  // The lead: "Event:" where a person's moment reads "Born:" — relocated, and under a ring.
+  const leadOf = (m: ChartHeaderModel) => segOf(byRole(m, 'moment')[0], 'lead')?.text;
+  const leads: [string, ChartHeaderModel, string][] = [
+    ['an event, relocated', asPresented(false, pinAt(TORONTO)), 'Event:'],
+    ['an event under a transits ring', asPresented(false, { overlay: ov('transits') }), 'Event:'],
+    ['a person, relocated', model(pinAt(TORONTO)), 'Born:'],
+    ['the event while held, relocated', asPresented(true, pinAt(TORONTO)), 'Born:'],
+  ];
+  every('the moment’s lead names whose moment it is', leads, ([name, m, want]) =>
+    leadOf(m) === want ? null : `${name}: ${String(leadOf(m))}`);
+  check('  an event with nothing beside it has no lead, as a person has none', leadOf(asPresented(false)) === undefined);
+
+  // An unknown time, in each kind's words — and the same placeholder noon under both.
+  const timeless = { ...EVENT, hour: 12, minute: 0, timeKnown: false };
+  const textOf = (m: ChartHeaderModel) => lineText(byRole(m, 'moment')[0]);
+  const ev = textOf(model({ chart: timeless, event: true }));
+  const pe = textOf(model({ chart: timeless, event: false }));
+  check('a timeless event says "time unknown", a timeless person "birth time unknown"',
+    ev.endsWith(t('expandedSidebar.timeUnknownNoonEvent')) && pe.endsWith(t('expandedSidebar.timeUnknownNoon')) && ev !== pe,
+    `${ev} / ${pe}`);
+  check('  the date before it is the same date either way', ev.split(' · ')[0] === pe.split(' · ')[0], `${ev} / ${pe}`);
+}
+
+console.log('\n── No chart: the sky state, OUTSIDE AGREEMENT on its clock and INTERNAL IDENTITY of its rows ──');
+
+{
+  const sky = (over: Partial<ChartHeaderInput> = {}) =>
+    model({ chart: null, overlay: ov('transits', { promoted: true }), ...over });
+  const noPoint = sky();
+  check('No chart with transits drawn is the sky state', noPoint.state === 'sky', noPoint.state);
+  check('  labelled by the overlay and its UT date', label(noPoint) === 'TRANSITS', label(noPoint));
+  // Without a place the moment reads in UT, to the minute luxon gives for the instant.
+  const utWall = DateTime.fromMillis(AUG1, { zone: 'UTC' });
+  const utClock = segOf(byRole(noPoint, 'overlay-moment')[0], 'clock')?.text;
+  check('  no place: the moment is read in UT', utClock === utWall.toFormat('HH:mm'), `${utClock} vs ${utWall.toFormat('HH:mm')}`);
+  check('  …with the hint line in the row a place would take, and no cast line',
+    byRole(noPoint, 'hint').length === 1 && lineText(byRole(noPoint, 'hint')[0]) === t('expandedSidebar.header.skyNoPlace') &&
+      byRole(noPoint, 'relocated').length === 0, texts(noPoint).join(' | '));
+
+  const pinned = sky(pinAt(TORONTO));
+  const torontoWall = DateTime.fromMillis(AUG1, { zone: getIanaTimezone(TORONTO.lat, TORONTO.lng) });
+  const torontoClock = segOf(byRole(pinned, 'overlay-moment')[0], 'clock')?.text;
+  check('a place: the moment is read on the place’s clock (the tz database agrees)',
+    pinned.state === 'sky' && torontoClock === torontoWall.toFormat('HH:mm') && torontoClock !== utClock,
+    `${torontoClock} vs ${torontoWall.toFormat('HH:mm')}`);
+  // The drawing's own place: no lead, the pin beside it (Lina, 21 Oct 2026, §4).
+  check('  …with a place line naming it, no lead, and no hint',
+    !segOf(byRole(pinned, 'relocated')[0], 'lead') &&
+      lineText(byRole(pinned, 'relocated')[0]).includes(TORONTO.label) && byRole(pinned, 'hint').length === 0,
+    texts(pinned).join(' | '));
+  check('  pinning a place swaps one row for another, so nothing below moves',
+    pinned.lines.length === noPoint.lines.length, `${pinned.lines.length} vs ${noPoint.lines.length}`);
+  check('  Discreet mode leaves the reader’s own place readable (there is no subject to mask)',
+    lineText(byRole(sky({ ...pinAt(TORONTO), discreet: true }), 'relocated')[0]).includes(TORONTO.label));
+
+  const settings = (m: ChartHeaderModel) => lineText(byRole(m, 'settings')[0]);
+  check('the settings line drops the houses when the wheel draws none',
+    !settings(sky({ houses: null })).includes(t('settings.houseSystem.whole.label')) &&
+      settings(sky()).includes(t('settings.houseSystem.whole.label')),
+    `${settings(sky({ houses: null }))} / ${settings(sky())}`);
+  check('on a geodetic map the geodetic rows have their marker', byRole(sky({ lineSystem: 'geodetic' }), 'geo').length === 1);
+  check('the eclipse chart is a sky state too', sky({ overlay: ov('eclipses', { promoted: true }) }).state === 'sky');
+  check('  …and the Dual layout has no first wheel to head', sky().chartView.lines.length === 0 && sky().overlayView === null);
+
+  const none: [string, Partial<ChartHeaderInput>][] = [
+    ['no overlay', { overlay: null }],
+    ['an overlay not drawn as the wheel', { overlay: ov('transits') }],
+    ['synastry (a person, not a moment)', { overlay: ov('synastry', { promoted: true, partner: SHAE }) }],
+    ['CCG (no single chart)', { overlay: ov('cyclo', { promoted: true }) }],
+  ];
+  every('with nothing drawn as the wheel, a null chart stays "none"', none, ([name, over]) => {
+    const m = model({ chart: null, ...over });
+    return m.state === 'none' && m.lines.length === 0 ? null : `${name}: ${m.state}`;
+  });
+}
+
+// ── H-3. OUTSIDE AGREEMENT: Lina's synastry headers (23 Oct 2026), line for line ─────────
+
+console.log('\n── H-3. OUTSIDE AGREEMENT: the synastry headers Lina wrote out, line for line ──');
+
+{
+  // Her fixtures: two charts recorded in Toronto a second of arc apart.
+  const LINA: StoredChart = {
+    id: 'c_lina', createdAt: 0, name: 'Lina',
+    year: 1963, month: 9, day: 22, hour: 22, minute: 48,
+    tzOffset: -4, tzIana: 'America/Toronto',
+    birthplace: { label: 'Toronto, Ontario, Canada', lat: 43 + 42 / 60 + 22 / 3600, lng: -(79 + 23 / 60 + 56 / 3600) },
+  };
+  const JIM_T: StoredChart = {
+    id: 'c_jim_t', createdAt: 0, name: 'Jim',
+    year: 1959, month: 9, day: 7, hour: 20, minute: 51,
+    tzOffset: -4, tzIana: 'America/Toronto',
+    birthplace: { label: 'Toronto, Ontario, Canada', lat: 43 + 42 / 60 + 23 / 3600, lng: -(79 + 23 / 60 + 55 / 3600) },
+  };
+  const syn = (over: Partial<ChartHeaderInput> = {}) =>
+    model({ chart: LINA, overlay: ov('synastry', { partner: JIM_T }), ...over });
+  const block = (v: { labelParts: string[]; labelName?: string; lines: HeaderLine[] } | null | undefined) =>
+    v ? [[...v.labelParts, ...(v.labelName ? [v.labelName] : [])].join(' · '), ...v.lines.map((l) => (l.role === 'geo' ? '[GE + houses]' : lineText(l)))] : [];
+  const cel = syn();
+  const want = {
+    inner: [
+      'NATAL CHART · Lina',
+      'Born: 22 September 1963, Sun · 22:48 EDT (UTC−04:00)',
+      'Toronto, Ontario, Canada · 43°N42\'22" 079°W23\'56"',
+      'Geocentric · Tropical · Whole Sign · True Node',
+    ],
+    outer: [
+      'NATAL CHART · Jim',
+      'Born: 7 September 1959, Mon · 20:51 EDT (UTC−04:00)',
+      'Toronto, Ontario, Canada · 43°N42\'23" 079°W23\'55"',
+    ],
+  };
+  check('celestial: the inner block is her example (no place chosen: no Relocated line)', same(block(cel.chartView), want.inner), block(cel.chartView).join(' | '));
+  check('celestial: the outer block is her example — the partner\'s own record, no houses or technique line', same(block(cel.overlayView), want.outer), block(cel.overlayView).join(' | '));
+  check('the panel header names the chart\'s person too', cel.labelName === 'Lina' && same(cel.labelParts, ['NATAL CHART']));
+  const geo = syn({ lineSystem: 'geodetic' });
+  check(
+    'geodetic: GEODETIC CHART · NATAL · Lina, the GE and houses lines under her block only',
+    same(block(geo.chartView), ['GEODETIC CHART · NATAL · Lina', want.inner[1], want.inner[2], '[GE + houses]', want.inner[3]]),
+    block(geo.chartView).join(' | '),
+  );
+  check('geodetic: GEODETIC CHART · NATAL · Jim, his record alone', same(block(geo.overlayView), ['GEODETIC CHART · NATAL · Jim', want.outer[1], want.outer[2]]), block(geo.overlayView).join(' | '));
+  // A place chosen elsewhere: both wheels are cast there, so both carry the line, alike.
+  const LONDON = { lat: 51.5074, lng: -0.1278, label: 'London, England, United Kingdom' };
+  for (const sys of ['celestial', 'geodetic'] as const) {
+    const m = syn({ lineSystem: sys, ...pinAt(LONDON) });
+    const a = byRole(m.chartView, 'relocated').map(lineText);
+    const b = byRole(m.overlayView!, 'relocated').map(lineText);
+    check(`${sys}, pinned in London: "Relocated to:" under both, the same place`, a.length === 1 && same(a, b) && a[0] === `Relocated to: ${LONDON.label} · ${fmtCoordPairDM(LONDON.lat, LONDON.lng)}`, `${a.join()} / ${b.join()}`);
+    check(`${sys}, pinned in London: the partner's line carries the "both wheels" tip`, byRole(m.overlayView!, 'relocated')[0]?.castTip === true);
+  }
+  // A partner born elsewhere is cast at the chart's place: their line names it, masked as the
+  // chart subject's own birthplace in Discreet.
+  const far = model({ overlay: ov('synastry', { partner: SHAE }) });
+  const [fl] = byRole(far.overlayView!, 'relocated');
+  check('a partner born elsewhere, no place chosen: "Relocated to:" the chart\'s birthplace', !!fl && segOf(fl, 'place')?.text === JIM.birthplace.label, fl ? lineText(fl) : 'missing');
+  const farMasked = model({ overlay: ov('synastry', { partner: SHAE }), discreet: true });
+  const [fm] = byRole(farMasked.overlayView!, 'relocated');
+  check('…masked in Discreet, place and coordinates', !!fm && segOf(fm, 'place')?.text !== JIM.birthplace.label && segOf(fm, 'coords')?.mask === 'subject');
+  check('…and the names in the titles are masked too', farMasked.overlayView?.labelName !== 'Shae' && farMasked.chartView.labelName !== 'Jim Lewis');
+  // "CAST FOR" appears nowhere — every state, every view.
+  const views: { lines: HeaderLine[] }[] = [];
+  for (const over of [
+    {}, pinAt(TORONTO), { lineSystem: 'geodetic' as const, ...pinAt(TORONTO) },
+    { chart: COMPOSITE, overlay: ov('transits'), ...pinAt(TORONTO) },
+    { chart: COMPOSITE, lineSystem: 'geodetic' as const, ...pinAt(TORONTO) },
+    { overlay: ov('synastry', { partner: COMPOSITE }), lineSystem: 'geodetic' as const, ...pinAt(TORONTO) },
+    { overlay: ov('synastry', { partner: SHAE }), ...pinAt(TORONTO) },
+  ]) {
+    const m = model(over);
+    views.push(m, m.chartView, ...(m.overlayView ? [m.overlayView] : []));
+  }
+  every('"Cast for" appears in no line of any view', views, (v) => (texts(v).some((x) => /cast for/i.test(x)) ? texts(v).join(' | ') : null));
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);

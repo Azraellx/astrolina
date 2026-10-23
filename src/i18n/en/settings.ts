@@ -41,6 +41,10 @@ export const settings = {
     angles: 'Angles',
     lines: 'Lines',
     lineSystem: 'Line system',
+    // These two are no longer visible headings (Salvatore, 2026-10-20): the In Mundo / In
+    // Zodiaco pair and the geodetic grid's switches sit directly under Line system without a
+    // title. Each is now its list's accessible name, read aloud by a screen reader as the
+    // group is entered.
     lineProjection: 'Line projection',
     geoGrid: 'Geodetic grid',
     lunarNode: 'Lunar node',
@@ -355,7 +359,8 @@ export const settings = {
     },
   },
 
-  // Calculation ▸ Geodetic grid: the zodiac laid on the Earth (lib/astro/geodeticGrid), drawn
+  // The geodetic grid's switches in Calculation, just under Line system with no title of their
+  // own (since 2026-10-20): the zodiac laid on the Earth (lib/astro/geodeticGrid), drawn
   // only on a geodetic map. Each hint stays under the tip cap (180, components/ui/tipWidth.ts).
   // The Ascendant hint does not say the sign "runs east" of its curve: inside the polar circles
   // that is not true at nearly half the crossings, and the zone a place is in is defined by
@@ -373,9 +378,15 @@ export const settings = {
       title: 'Zone shading',
       hint: 'Fills the twelve MC zones: element as colour, modality as shade (Cardinal darkest, Mutable lightest). The legend on the map shows one element or modality alone.',
     },
-    presentation: {
-      title: 'Presentation',
-      hint: 'Raises the zone shading from faint to strong, for showing the zones to someone else.',
+    // Zone shading's opacity, in percent: a number field with up and down arrows, indented
+    // under Zone shading (2026-10-20; it replaced the Bold shading switch). The label is shown
+    // followed by " (%)", like the "Parans (km)" field, in an inset row whose label slot
+    // holds about ten letters before the " (%)": keep it to one short word.
+    opacity: {
+      // @i18n-max 10
+      label: 'Opacity',
+      // The field's accessible name, read by screen readers in place of the short label.
+      aria: 'Zone shading opacity, in percent',
     },
   },
 
@@ -399,7 +410,7 @@ export const settings = {
   // relocation treats it, and which frames can place it — so the Points filter row
   // needs no (i) of its own (it marks itself inert instead; see inert.fortuneMundo).
   fortuneFormula: {
-    hint: 'The Part of Fortune is a calculated Lot of vitality and worldly ease — a point on the ecliptic, not a body in the sky, so only a zodiacal frame can place it: its map lines need Line projection set to In Zodiaco (or the Geodetic line system). Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
+    hint: 'The Part of Fortune is a calculated Lot of vitality and worldly ease — a point on the ecliptic, not a body in the sky, so only a zodiacal frame can place it: its map lines need In Zodiaco, under Line system in Calculation (or the Geodetic line system). Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
     sect: {
       label: 'Sect-based (day/night)',
       hint: 'Day births use Ascendant + Moon − Sun; night births flip to Ascendant + Sun − Moon. The traditional convention.',
@@ -438,11 +449,23 @@ export const settings = {
       'A Lot is a point on the ecliptic with no position in the sky, so In Mundo has nowhere to place it. To see this line, set the projection to In Zodiaco (Calculation).',
     fortuneAdvanced:
       'The Part of Fortune is an Advanced reading — turn Advanced on to use it.',
-    // Opens on "The Geodetic line system", not "Geodetic maps…", which reads first as
-    // the plural noun every other hold sentence uses ("on geodetic maps"). Under the
-    // tip cap (180): it rides as the note under the segment's own hint. (2026-10-02)
+    // The Points row's Fortune on a chart with no birth time (either map): not computed at all.
+    // Lina's sentence (21 Oct 2026, §2.4), also on the methods page.
+    // @i18n-verbatim
+    fortuneNoTime:
+      'Not shown on a chart with no birth time: the Part of Fortune is built from the Moon, whose degree is uncertain, and from the sect of the birth, day or night, which needs the hour.',
+    // The Geodetic half of Line system, greyed while a sidereal zodiac is set. Under the tip cap
+    // (180): it rides as the note under the segment's own hint. (2026-10-02) Since 21 Oct 2026 the
+    // reason is Lina's own sentence (§4, "Sidereal + Geodetic"), then the fix and the reassurance.
+    // @i18n-verbatim
     geodeticSidereal:
-      'The Geodetic line system maps the TROPICAL zodiac onto Earth’s longitudes, so it has no sidereal version. Set the zodiac to Tropical (Advanced) to use it; your choice is kept.',
+      'Geodetic maps lay the tropical zodiac on the Earth; a sidereal zodiac has no agreed geodetic convention. Set the zodiac to Tropical (Advanced) to use it; your choice is kept.',
+    // The other half (Lina, 22 Oct 2026, §4): the zodiac menu's sidereal rows, greyed while Geodetic
+    // is the line system — the conflict is prevented at whichever control is touched second. Her
+    // sentence. A hover tip: under 180 characters.
+    // @i18n-verbatim
+    siderealGeodetic:
+      'Unavailable on geodetic maps: the geodetic grid is tropical by definition. Switch to Celestial to read in a sidereal zodiac.',
     // The HOLD, and a different fact from the line above it: that one names a
     // setting to change, this one has none to name. So it says what it is and what
     // survives it, and — like the Activations block — says it is coming back rather
@@ -477,6 +500,14 @@ export const settings = {
     paransHeld: PARANS_HELD,
     // …and with the fix beside it, for a tip with no button next to it (2026-10-02).
     paransHeldFull: `${PARANS_HELD} ${SKY_HELD_FIX}`,
+    // The reason a control needs a CHART and there is none: the reader picked "No chart"
+    // (the sky alone) in the chart menu, or the library is empty. ONE sentence, reused word
+    // for word wherever a technique is greyed for that reason: the Overlay menu's
+    // progressions, directions, Cyclo and Synastry rows, and the timeline and window
+    // controls that read a birth moment. "Pick or add" because an empty library has nothing
+    // to pick. "The chart menu" is the chart name's dropdown at the top of the screen. A
+    // hover tip: keep it short (under 180 characters). (2026-10-20)
+    needsChart: 'Needs a chart. Pick or add one from the chart menu in the top bar.',
   },
 
   nodeType: {
@@ -706,6 +737,10 @@ export const settings = {
       heading: 'Natal Contacts',
       // Under the heading when the eclipse degree strikes nothing in the chart.
       none: 'No contacts within 3° — this eclipse passes the chart quietly.',
+      // Under the heading when NO chart is selected (No chart, the sky alone, or an empty
+      // library; 2026-10-20): there is no chart for the eclipse degree to strike. "The chart
+      // menu" is the chart name's dropdown at the top of the screen.
+      noChart: 'No chart selected. Pick one from the chart menu to see what this eclipse strikes in it.',
       aspect: {
         conjunction: 'conjunct',
         square: 'square',

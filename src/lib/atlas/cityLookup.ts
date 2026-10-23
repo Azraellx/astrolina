@@ -97,6 +97,13 @@ const toResult = (r: Row): GeocodeResult => ({
 // stay separate.
 const SAME_PLACE_KM = 4;
 
+// The rows scripts/build-cities.mjs adds by hand (its ADDITIONS list): sections of a city that a
+// reader needs named in their own right (Greenwich, 2026-10-22; on the Prime Meridian itself since
+// 23 Oct, Lina's G-1). Such a row carries a district's population, below the towns around it, so the
+// same-place rule would hand its spot to a bigger neighbour — Eltham, at Greenwich. When one is
+// itself the NEAREST row, it wins.
+export const HAND_ADDED_GIDS: ReadonlySet<number> = new Set([2647937]);
+
 /**
  * Reverse: the nearest bundled city to (lat, lng) as a "City, Region, Country"
  * result, or null when no city >= 15k population lies within `maxKm`. The
@@ -113,6 +120,7 @@ export function nearestCity(
   const ids = around(getIndex(), lng, lat, 24, maxKm);
   if (!ids.length) return null;
   const r0 = rows[ids[0]];
+  if (HAND_ADDED_GIDS.has(r0[7])) return toResult(r0);
   const cutoff = distance(lng, lat, r0[3], r0[2]) + SAME_PLACE_KM;
   let best = r0;
   for (let k = 1; k < ids.length; k++) {
@@ -156,6 +164,9 @@ export interface PlaceResult extends GeocodeResult {
   kind: PlaceKind;
   /** A map zoom that frames this place: the more precise the place, the tighter. */
   zoom: number;
+  /** A hand addition (HAND_ADDED_GIDS): a point placed exactly, not a centroid — Greenwich on the
+   *  Prime Meridian at 51°29′00″N (Lina, 23 Oct 2026, G-1). Absent on every other row. */
+  exact?: boolean;
 }
 
 // Precision → zoom. Countries/regions are broad (wide view); cities are precise,
@@ -213,6 +224,7 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     lng: number;
     pop: number;
     prefix: boolean;
+    exact?: boolean;
   }[] = [];
 
   for (let i = 0; i < N; i++) {
@@ -221,7 +233,7 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     const pre = f.startsWith(q) || (alt !== 0 && alt.startsWith(q));
     if (!pre && !f.includes(q) && !(alt !== 0 && alt.includes(q))) continue;
     const r = rows[i];
-    cands.push({ kind: 'city', label: labelFor(r), lat: r[2], lng: r[3], pop: r[6], prefix: pre });
+    cands.push({ kind: 'city', label: labelFor(r), lat: r[2], lng: r[3], pop: r[6], prefix: pre, exact: HAND_ADDED_GIDS.has(r[7]) });
   }
   for (const c of countryEntries!) {
     const pre = c.folded.startsWith(q);
@@ -256,5 +268,6 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     lng: c.lng,
     kind: c.kind,
     zoom: zoomFor(c.kind, c.pop),
+    ...(c.exact ? { exact: true } : {}),
   }));
 }

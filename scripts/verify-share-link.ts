@@ -101,5 +101,33 @@ console.log('\n── 3. INTERNAL IDENTITY: a time being tried on travels withou
   check('no rating to drop: the same object back', shareChart(base, true) === base);
 }
 
+console.log('\n── 4. INTERNAL IDENTITY: an event chart arrives as one, and a person exactly as before ──');
+{
+  // 2026-10-20: the chart's kind rides as the optional `k`, like `sr` — older decoders
+  // ignore it, and a link from before it existed opens as the person it always was.
+  const event = { ...base, kind: 'event' as const };
+  const eventToken = encodeShareState({ chart: event });
+  const back = decodeShareState(eventToken)?.chart;
+  check('an event round-trips as an event, written as k: "e"',
+    back?.kind === 'event' && wireOf(eventToken).k === 'e', JSON.stringify(wireOf(eventToken)));
+  const personWire = wireOf(encodeShareState({ chart: base }));
+  check('a person writes no k, and decodes with no kind',
+    !('k' in personWire) && roundTrip(base)?.kind === undefined && !('kind' in (roundTrip(base) ?? {})));
+  // Moved: the same chart, its kind flipped and nothing else, differs in k and in nothing else.
+  const eventWire = wireOf(eventToken);
+  const { k, ...rest } = eventWire;
+  check('  flipping the kind moves k and nothing else in the token',
+    k === 'e' && JSON.stringify(rest) === JSON.stringify(personWire),
+    `${JSON.stringify(rest)} vs ${JSON.stringify(personWire)}`);
+  const good = wireOf(encodeShareState({ chart: base }));
+  const bad: unknown[] = ['E', 'event', 'p', '', 1, 0, null, ['e'], { k: 'e' }];
+  every('an unknown k is ignored: the chart opens, as a person', bad, (kv) => {
+    const c = decodeShareState(tokenOf({ ...good, k: kv }))?.chart;
+    return c && c.kind === undefined && c.hour === 9 && c.name === 'Share Test' ? null : `${JSON.stringify(kv)} → ${JSON.stringify(c ?? null)}`;
+  });
+  const old = decodeShareState(tokenOf(good))?.chart;
+  check('a link from before the kind (no k) opens as a person, as it always did', !!old && old.kind === undefined);
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
 process.exit(failures === 0 ? 0 : 1);

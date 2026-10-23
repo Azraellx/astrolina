@@ -4,6 +4,8 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
+import type { WheelHouses } from '../../lib/chartHeader';
+import { isRanged, type BodyRange } from '../../lib/astro/timeless';
 import {
   Fragment,
   useEffect,
@@ -32,17 +34,16 @@ import { isPhone, isTouchLayout, usePhone } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
-import { fmtCoordPairDM } from '../../lib/coordFormat';
 import {
   chartHeaderModel,
   type HeaderLine,
   type HeaderOverlay,
-  type OverlayMoment,
 } from '../../lib/chartHeader';
 import { useIdentity } from '../../lib/discreet';
 import { planTierFor, tierName } from '../../lib/plan';
 import { getProfileSection } from '../../lib/extensions/profileSection';
 import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
+import type { ChartSwitcherSky } from '../TopNav/TopNav';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { ZodiacRange } from '../ZodiacGlyph/ZodiacRange';
@@ -59,7 +60,6 @@ import {
   type Aspect,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
-import { NoChartWheel } from '../Wheel/NoChartWheel';
 import {
   LocalSpaceWheel,
   useLocalSpaceView,
@@ -87,6 +87,8 @@ import {
   visibleAngleSpecs,
   type AngleCode,
 } from '../../lib/astro/format';
+// The geodetic angle line, one formatter for this panel and the map's readout (2026-10-20).
+import { geoAnglesParts, geoAnglesSegments } from '../../lib/astro/geoReadoutText';
 import { publishLeftDock, retireLeftDock } from '../../lib/leftDock';
 import {
   dockWidthFor,
@@ -246,6 +248,11 @@ export interface SidebarHeaderInfo {
   /** The EFFECTIVE zodiac. */
   zodiac: ZodiacMode;
   nodeType: NodeType;
+  /** The chart is an event chart as the app PRESENTS it (lib/eventCharts presentedKind, so
+   *  false while the geodetic hold presents every chart as a person): the statement says
+   *  EVENT CHART and "Event:", and the geodetic and no-time lines are worded for an event.
+   *  Absent → a person. (2026-10-20) */
+  event?: boolean;
 }
 
 interface ExpandedChartSidebarProps {
@@ -271,14 +278,17 @@ interface ExpandedChartSidebarProps {
   houseSystem?: HouseSystem;
   /** A line per natal body saying where its figure comes from — today only the Part of
    *  Fortune on a geodetic map, "From the geodetic Ascendant". The natal wheels print
-   *  it in the body's tip (WheelSvg bodyNotes), and the positions list tags the row GE
-   *  with it as the tag's tip. (2026-10-02) */
+   *  it in the body's tip (WheelSvg bodyNotes), the one place it is said since the
+   *  positions list's GE mark went (Lina, 20 Oct 2026, §6). (2026-10-02) */
   bodyNotes?: ReadonlyMap<PlanetName, string> | null;
-  /** Natal bodies known only to a span, with its half-width in degrees — a chart with no
-   *  birth time (lib/astro/timeless): the Moon, and on a geodetic map the Part of Fortune.
-   *  The natal wheels draw the span (WheelSvg ranges), and the positions list and table
-   *  print it (2°♉–18°♉) where they would print the degree to the minute. (2026-10-02) */
-  ranges?: ReadonlyMap<PlanetName, number> | null;
+  /** A chart with no birth time's bodies with their motion over the birth date (lib/astro/
+   *  timeless, Lina's one range rule of 22 Oct 2026). The natal wheels draw a RANGED body's
+   *  range (WheelSvg ranges), and the positions list and table print it (2°♉–18°♉) where they
+   *  would print the degree to the minute; its aspects carry the birth-hour tag. (2026-10-02) */
+  ranges?: ReadonlyMap<PlanetName, BodyRange> | null;
+  /** The overlay's bodies with theirs (WheelSvg overlayRanges): a progression of such a chart,
+   *  printed the same way in the overlay's wheel, ring and table. */
+  overlayRanges?: ReadonlyMap<PlanetName, BodyRange> | null;
   planets: EclipticPosition[];
   /** The wheel's own chart's catalog minor bodies (lib/minorBodies/wheel): placed on
    *  that wheel, and listed in the positions table after the built-in bodies in the
@@ -311,6 +321,9 @@ interface ExpandedChartSidebarProps {
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
   overlayKind?: string | null;
+  /** What the overlay's wheel is built from, for its houses line (lib/chartHeader WheelHouses;
+   *  Lina, 22 Oct 2026, §3.2). Null for none (no overlay, Cyclocartography). */
+  overlayHouses?: WheelHouses | null;
   /** The synastry partner's own record while their wheel rides beside the chart
    *  (null otherwise, and null while the overlay is promoted). The Dual layout's
    *  second header introduces the partner from it the way the panel header
@@ -414,6 +427,16 @@ interface ExpandedChartSidebarProps {
   onDeleteChart: (id: string) => void;
   /** Tab quick-swap feedback for the panel's switcher (null when idle). */
   chartFlash?: ChartQuickFlash | null;
+  /** The chart menu's sections and No chart row — the top bar's bundle (TopNav
+   *  ChartSwitcherSky). Absent → today's single list. (2026-10-20) */
+  switcherSky?: ChartSwitcherSky;
+  /** No chart in force (App's skyAlone, 2026-10-20). The panel opens on it — its header holds
+   *  the chart menu, the way back to a chart — and with no sky overlay to wheel, the empty
+   *  wheel says how to get one (expandedSidebar.skyEmpty). */
+  skyAlone?: boolean;
+  /** Whether that line applies (App's skyWheelHint): not while Transits or Eclipses is
+   *  already chosen, which it would send the reader to choose again. */
+  skyHint?: boolean;
 }
 
 /** No catalog minor bodies — one stable reference for the prop's default. */
@@ -1088,6 +1111,23 @@ const ASPECT_TOGGLES: {
   { key: 'conjunction', tipKey: 'conjunction', cssClass: 'conj' },
 ];
 
+/** The overlay kinds the geodetic houses line names (expandedSidebar.geodetic.positions). */
+
+// The bodies the Balance tallies count: the Sun, the Moon and the eight planets (Lina,
+// 22 Oct 2026). Each tally then adds up to ten.
+const BALANCE_BODIES: ReadonlySet<string> = new Set([
+  'Sun',
+  'Moon',
+  'Mercury',
+  'Venus',
+  'Mars',
+  'Jupiter',
+  'Saturn',
+  'Uranus',
+  'Neptune',
+  'Pluto',
+]);
+
 export function ExpandedChartSidebar({
   chart,
   charts,
@@ -1100,6 +1140,7 @@ export function ExpandedChartSidebar({
   houseSystem,
   bodyNotes = null,
   ranges = null,
+  overlayRanges = null,
   planets,
   minorBodies = NO_MINOR,
   minorReserve = false,
@@ -1111,6 +1152,7 @@ export function ExpandedChartSidebar({
   overlayLabel,
   header,
   overlayKind,
+  overlayHouses = null,
   overlayPartner = null,
   overlayReturn,
   promotedLabel,
@@ -1144,6 +1186,9 @@ export function ExpandedChartSidebar({
   onEditChart,
   onDeleteChart,
   chartFlash = null,
+  switcherSky,
+  skyAlone = false,
+  skyHint = false,
 }: ExpandedChartSidebarProps) {
   const { t, fmt, labels, lang } = useT();
   // Discreet mode's masks — this header carries the chart's birth moment and, in
@@ -1264,8 +1309,13 @@ export function ExpandedChartSidebar({
   // where the wheel goes — a header scrolled out of view, the Dual layout's second wheel
   // under it — and the same chart's wheel then says the same thing in both line
   // systems. (2026-10-02)
+  //
+  // A chart's note only: the sky alone with no point is planets-only too, and its header's hint
+  // line says why (lib/chartHeader 'sky'); there is no birth time to be unknown. An event chart
+  // says "Time unknown". (2026-10-20)
   const timeUnknownShown =
-    planetsOnly && (!angles || (!!angles.geodetic && !promotedLabel));
+    !!chart && planetsOnly && (!angles || (!!angles.geodetic && !promotedLabel));
+  const isEvent = !!header.event;
   // The panel header's geodetic data block (see geoLines) follows the frame itself
   // (`angles.geodetic`), so a state with no frame (NO CHART) never names a place it is
   // cast for. (2026-10-02) The label and the lines above it follow the DERIVED line
@@ -1380,6 +1430,8 @@ export function ExpandedChartSidebar({
         lineSystem,
         overlay: header.overlay,
         noChart,
+        // The kind as presented (EVENT CHART, "Event:"). (2026-10-20)
+        event: header.event,
         // The houses the wheel draws: in the frame's own system, Porphyry where that one
         // is undefined at the place — and none where there are no angles.
         houses: angles && houseSystem ? { system: houseSystem, fallback: !!angles.fallback } : null,
@@ -1409,38 +1461,6 @@ export function ExpandedChartSidebar({
         ? 'CCG'
         : overlayLabel.split('·')[0].trim()
     : null;
-  // Synastry's second chart is a PERSON, not a moment: it has no instant at all
-  // (timeline.ts leaves `moment` null for it), so the slot every other overlay
-  // fills with its date is where the partner's name goes. Taken off the label's
-  // detail half — "Synastry · Jane Doe" — from the FIRST middot only, so a name
-  // that contains one survives whole.
-  //
-  // MASKED HERE, once, rather than at the two places it renders (the bi-wheel's
-  // corner caption and the dual header). The name arrives already baked into
-  // `overlayLabel` — lib/astro/timeline builds "Synastry · {name}" from
-  // `partner.name` raw — so this derivation is the only point between the
-  // timeline and the screen where Discreet can catch it. It was not caught, and
-  // the panel printed a partner's real name in the one mode whose whole purpose
-  // is hiding who a chart is, while the SynastryHud and the chart switcher two
-  // inches away masked the same string (2026-08-24).
-  //
-  // Emptiness is tested BEFORE masking, not after: maskName('') returns three
-  // dots rather than '', so `id.name(raw) || null` can never be null and an
-  // overlay label with an empty detail half would grow a phantom name line.
-  const overlaySubjectRaw =
-    overlayKind === 'synastry' && overlayLabel && overlayLabel.includes('·')
-      ? overlayLabel.slice(overlayLabel.indexOf('·') + 1).trim()
-      : '';
-  const overlaySubject = overlaySubjectRaw ? id.name(overlaySubjectRaw) : null;
-  // The overlay's moment beside its name over the wheel, so it reads even without the
-  // timeline bar or the header in view: the clock in the cast place's zone, as the
-  // header's line prints it, with the date first wherever the corner title beside it
-  // does not already carry it (a solar return's year, a composite's or a geodetic
-  // chart's label). Synastry has no moment; its partner's name takes the slot.
-  // (2026-10-07)
-  const cornerMoment: OverlayMoment | null = headerModel.overlayView?.moment ?? null;
-  const cornerDated = !!cornerMoment && !headerModel.labelHasOverlayDate;
-
   // Built from the current prop rather than an updater callback: the set lives with the
   // caller now, and one pill click per commit needs no queued form.
   const toggleAspect = (cat: AspectCategory) => {
@@ -1605,8 +1625,12 @@ export function ExpandedChartSidebar({
   // so ordering the overlay by declination does not disturb the chart above it).
   // The catalog minor bodies and their horizon figures come last and default to
   // none: each chart passes its own (the overlay's are placed by its rule, at its
-  // instant). The source notes (bodyNotes) and the spans (ranges) come after them, and
-  // are the natal wheel's only.
+  // instant). The spans (ranges) come after them, and are the natal wheel's only.
+  //
+  // No source mark on a row (2026-10-20). The Part of Fortune on a geodetic map, built from
+  // the place's Ascendant, was tagged GE beside its name here, with its note as the tag's
+  // tip; Lina (20 Oct reply, §6) asked for the mark to go. The note stays where it was
+  // always said in full, the wheel's tip (WheelSvg bodyNotes).
   const positionsBlock = (
     bodies: EclipticPosition[],
     coords: Map<PlanetName, HorizontalCoords>,
@@ -1616,21 +1640,8 @@ export function ExpandedChartSidebar({
     onSortCol: (key: PosSortKey) => void,
     minors: readonly WheelMinorBody[] = NO_MINOR,
     mCoords: ReadonlyMap<number, { az: number; alt: number }> | null = null,
-    notes: ReadonlyMap<PlanetName, string> | null = null,
-    spans: ReadonlyMap<PlanetName, number> | null = null,
+    spans: ReadonlyMap<PlanetName, BodyRange> | null = null,
   ): ReactNode => {
-    // A body with a source note — the Part of Fortune on a geodetic map, built from the
-    // place's Ascendant — is tagged GE beside its name, with the note as the tag's tip,
-    // in the list and the table alike. The tag names a source, not a degree, so it stays
-    // where Discreet blanks the figure (maskPoint). (2026-10-02)
-    const noteTag = (name: PlanetName) => {
-      const note = notes?.get(name);
-      return note ? (
-        <TipGlyph className="es-ge-tag" title={<span className="es-tip-title">{note}</span>}>
-          {t('expandedSidebar.geodetic.ge')}
-        </TipGlyph>
-      ) : null;
-    };
     // Simple view: planets, then the catalog bodies, then angles in one row-by-row
     // two-column grid (even index → left, odd → right), so each group flows straight
     // on from the last. (Catalog bodies are an Advanced reading, so in practice they
@@ -1642,23 +1653,19 @@ export function ExpandedChartSidebar({
     const rows = [...planetItems, ...minorItems, ...angleItems];
     const leftCol = rows.filter((_, i) => i % 2 === 0);
     const rightCol = rows.filter((_, i) => i % 2 === 1);
-    // A body known only to a span — a chart with no birth time — prints the span where
-    // its degree would print to the minute (or the second), in the list and the table
-    // alike. A masked Lot stays masked: its span would give the masked Ascendant back to
-    // within a few degrees. (2026-10-02)
+    // A RANGED body — a chart with no birth time — prints its range where its degree would
+    // print to the minute (or the second), in the list and the table alike. A masked Lot stays
+    // masked: its range would give the masked Ascendant back to within a few degrees. (2026-10-02)
     const spanText = (p: EclipticPosition, size: number) => {
-      const half = spans?.get(p.name);
-      return half === undefined ? null : <ZodiacRange lon={p.lon} halfDeg={half} size={size} />;
+      const r = spans?.get(p.name);
+      return isRanged(r) ? <ZodiacRange lon={p.lon} range={r} size={size} /> : null;
     };
     const renderRow = (row: (typeof rows)[number]) =>
       row.kind === 'planet' ? (
         <li key={`p-${row.p.name}`}>
           <div className="es-row-main">
             <PlanetTipGlyph planet={row.p.name} size={13} />
-            <span className="es-name">
-              {labels.planet(row.p.name)}
-              {noteTag(row.p.name)}
-            </span>
+            <span className="es-name">{labels.planet(row.p.name)}</span>
             <span className="es-lon">
               {maskPoint(row.p.name)
                 ? id.text(advanced ? '00°00\'00"' : '00°00\'')
@@ -1766,7 +1773,6 @@ export function ExpandedChartSidebar({
             <PlanetTipGlyph planet={p.name} size={13} />
             <span className="es-name">{labels.planet(p.name)}</span>
             {motionBadge(p)}
-            {noteTag(p.name)}
           </td>
           <td className="es-adv-num es-adv-lon">
             {/* A masked Lot (maskPoint) loses only this cell: it has no equatorial or
@@ -2028,7 +2034,12 @@ export function ExpandedChartSidebar({
   // chart too, and "how is THAT chart weighted" had no answer in this panel
   // before 2026-08-24. A second copy would be a second place for an element
   // grouping to drift.
-  const balanceBlock = (bodies: EclipticPosition[]): ReactNode => {
+  const balanceBlock = (shown: EclipticPosition[]): ReactNode => {
+    // The Sun, the Moon and the eight planets ONLY (Lina, 22 Oct 2026): the tallies of the
+    // elements and of the modalities each add up to the ten, whatever points and minor bodies
+    // are switched on — the nodes, Lilith, Chiron and the asteroids are placed in the chart but
+    // not counted, as the catalog bodies never were. The dignities read the same ten.
+    const bodies = shown.filter((p) => BALANCE_BODIES.has(p.name));
     // Group the bodies by element and by modality (every body has exactly one of
     // each). We keep the bodies themselves, not just a count, so the balance can
     // be drawn as a constellation of their glyphs.
@@ -2139,11 +2150,9 @@ export function ExpandedChartSidebar({
     );
   };
 
-  // The point both wheels are cast for, and how its lines are coloured and
-  // masked — shared by the panel header's place lines and the partner header's
-  // "Cast for" line below, which name the same place and must say it alike.
-  const castPoint =
-    point ?? (chart ? { lat: chart.birthplace.lat, lng: chart.birthplace.lng } : null);
+  // How the place both wheels are cast for is coloured and masked — shared by the panel
+  // header's place lines and a synastry partner's "Relocated to:" line, which name the same
+  // place and must say it alike.
   const castState = isNatalPin
     ? 'natal-pinned'
     : pinned
@@ -2194,24 +2203,25 @@ export function ExpandedChartSidebar({
       if (l.role === 'geo') return <Fragment key={key}>{geoLines()}</Fragment>;
       const fixed = l.role === 'relocated' || l.role === 'overlay-moment' || l.role === 'overlay-place';
       const placeLine = l.role === 'birthplace' || l.role === 'overlay-place';
-      const stateCls = !own
-        ? placeLine
-          ? 'natal'
-          : ''
-        : l.role === 'relocated'
+      // A relocated line names the cast place, the same place for the chart and a partner, so it
+      // takes the cast state's colour either way.
+      const stateCls =
+        l.role === 'relocated'
           ? castState
-          : placeLine
-            ? isNatalPin
-              ? 'natal-pinned'
-              : 'natal'
-            : '';
+          : !own
+            ? placeLine
+              ? 'natal'
+              : ''
+            : placeLine
+              ? isNatalPin
+                ? 'natal-pinned'
+                : 'natal'
+              : '';
       const pin =
         own && ((l.role === 'relocated' && pinned) || (placeLine && isNatalPin));
-      return (
-        <div
-          key={key}
-          className={`es-hl es-hl-${l.role}${fixed ? ' es-hl-fixed' : ''}${stateCls ? ` ${stateCls}` : ''}`}
-        >
+      const cls = `es-hl es-hl-${l.role}${fixed ? ' es-hl-fixed' : ''}${stateCls ? ` ${stateCls}` : ''}`;
+      const body = (
+        <>
           {pin && PIN_ICON}
           {l.segs.map((s, j) => {
             const sep =
@@ -2250,162 +2260,174 @@ export function ExpandedChartSidebar({
               ⚠
             </TipGlyph>
           )}
+        </>
+      );
+      // A partner's "Relocated to:" line carries its own explanation: both wheels are cast for
+      // this one place, and choosing a point moves them (Salvatore, 2026-10-02 — the fallback to
+      // the chart's birthplace stays, so long as the reader is told they can cast elsewhere). The
+      // tip names no place, so Discreet has nothing to mask in it. Inert, so a tap reveals it.
+      return l.castTip ? (
+        <TipSpan
+          key={key}
+          className={`${cls} es-hl-tip`}
+          tabIndex={0}
+          tapReveal
+          tip={t('expandedSidebar.partnerHead.castForTip')}
+          hint={t('expandedSidebar.partnerHead.castForHint')}
+        >
+          {body}
+        </TipSpan>
+      ) : (
+        <div key={key} className={cls}>
+          {body}
         </div>
       );
     });
   // The state label, as a row of parts ("TRANSITS · 1 August 2026 · RELOCATED") in the
-  // header, and stacked one part per line in a wheel's corner, where 44% of the pane is
-  // too narrow for the whole label on one line.
-  const labelRow = (parts: string[]): ReactNode =>
-    parts.length > 0 && (
+  // header — each wheel's, the stacked layout's second one included (2026-10-22) — and, where two
+  // people share the wheel, the wheel's person after it ("NATAL CHART · Lina", H-3), the reader's
+  // own data, so kept from a page translator.
+  const labelRow = (parts: string[], name?: string): ReactNode =>
+    (parts.length > 0 || !!name) && (
       <div className="es-hl-label">
         {parts.map((p, i) => (
           <span key={i} className="es-hl-label-part">
             {p}
           </span>
         ))}
+        {name && (
+          <span className="es-hl-label-part es-hl-label-name" translate="no">
+            {name}
+          </span>
+        )}
       </div>
     );
-  const cornerTitle = (parts: string[]): ReactNode => (
-    <span className="es-wheel-title es-wheel-title-stack" style={{ color: 'var(--map-accent)' }}>
-      {parts.map((p, i) => (
-        <span key={i} className="es-wheel-title-part">
-          {p}
-        </span>
-      ))}
-    </span>
-  );
 
   // The rest of the geodetic data block, after the statement's place lines (the model's
-  // 'geo' marker, renderLines): the place's AS and MC, to the minute by the one truncation rule (truncZodiac) — the Coordinates
-  // box's figures, sign glyph between degrees and minutes as there, labelled as the
-  // grid's hover readout labels them (map.geoReadout) — and then where the wheel's
+  // 'geo' marker, renderLines): the place's AS and MC — the map readout's own line, laid out
+  // by the one formatter both surfaces use (lib/astro/geoReadoutText, Lina's "GE: AS … · MC …"
+  // since 2026-10-20: the two had drifted apart, the panel printing "GE · AS …"), to the
+  // minute by the one truncation rule (truncZodiac), the Coordinates box's figures with the
+  // sign glyph between degrees and minutes as there — and then where the wheel's
   // planets and houses come from. The house system named is the one the cusps
   // were computed in: Porphyry wherever the frame fell back to it (the corner's
   // houseFallback says why). Discreet blanks the two figures, sign and all, exactly
   // where it blanks the angle rows (maskGeAngles); the planets line names no place.
   // Panel header only — the Dual layout's second header repeats the place line, but
   // this describes the chart the panel is open on. (2026-10-02)
+  // The houses line (Lina, 21 Oct 2026, §5; every overlay wheel on both line systems since 22 Oct,
+  // §3.2; one rule since 23 Oct, H-2): "{positions} · houses: {system}, from the {angles}", the
+  // calculation in brackets after the word it moves — and no angle clause where the houses come from
+  // the wheel's own moment at the place ("Transit positions · houses: {system}"). The house system
+  // named is the one the wheel's cusps were computed in: Porphyry where its frame fell back to it.
+  const housesLine = (h: WheelHouses | null, frameAngles: RelocatedAngles | null | undefined): string | null => {
+    if (!h || !houseSystem || !frameAngles) return null;
+    const calc = h.calc
+      ? t(`expandedSidebar.houses.calc.${h.calc.key}` as 'expandedSidebar.houses.calc.ptolemy', { rate: h.calc.rate ?? 0 })
+      : null;
+    const word = (w: string, on: 'positions' | 'angles') =>
+      calc && h.calc?.on === on ? t('expandedSidebar.houses.withCalc', { word: w, calc }) : w;
+    const positions = word(t(`expandedSidebar.houses.positions.${h.positions}`), 'positions');
+    const system = labels.houseSystem(frameAngles.fallback ? 'porphyry' : houseSystem);
+    return h.angles
+      ? t('expandedSidebar.houses.line', {
+          positions,
+          system,
+          angles: word(t(`expandedSidebar.houses.angles.${h.angles}`), 'angles'),
+        })
+      : t('expandedSidebar.houses.lineOwn', { positions, system });
+  };
+  // The overlay wheel's line, from its own frame; and, on a celestial map, an event chart's own
+  // (a person's natal wheel has none there, per her table; on a geodetic map the chart's line is
+  // the geodetic block's, geoLines below).
+  const outerHousesLine = housesLine(overlayHouses, overlayAngles);
+  const chartHousesLine = !geoFrame && isEvent ? housesLine({ positions: 'event' }, angles) : null;
+  // Cyclocartography has no wheel of its own (it blends two moments): where the overlay's wheel
+  // would be, a short card says so and what gives one (Lina, 22 Oct 2026, §2.6) — under the natal
+  // wheel, or in its place with Natal hidden. One string child per line, for a page translator.
+  const cycloCard = (
+    <div className="es-cyclo-card">
+      <span className="es-cyclo-card-title">{t('expandedSidebar.cyclo.title')}</span>
+      <span className="es-cyclo-card-body">{t('expandedSidebar.cyclo.body')}</span>
+    </div>
+  );
   const geoLines = (): ReactNode => {
     if (!geoFrame || !angles) return null;
-    const ge = (lon: number): ReactNode => {
-      if (maskGeAngles) return id.text('00°00\'');
-      const z = truncZodiac(lon, 'min');
-      return (
-        <>
-          {`${pad2(z.deg)}°`}
-          <ZodiacGlyph sign={z.signIdx} size={11} />
-          {`${pad2(z.min)}'`}
-        </>
-      );
-    };
+    // The figures, each in a span kept out of a page translator: values that move with the pin
+    // (2026-10-09). The template's own text ("GE: AS ", " · MC ") is the catalog's, one string
+    // per segment. An Ascendant the frame can't give (at a pole) leaves the MC-only template.
+    const parts = geoAnglesParts(Number.isFinite(angles.asc) ? angles.asc : null, angles.mc);
+    const segments = geoAnglesSegments(parts, {
+      angles: t('map.geoReadout.angles'),
+      anglesMcOnly: t('map.geoReadout.anglesMcOnly'),
+    });
     const system = houseSystem
       ? labels.houseSystem(angles.fallback ? 'porphyry' : houseSystem)
       : null;
-    // Whose planets: a promoted overlay's bodies are another instant's, a composite's
-    // are the composite's own; otherwise they are the chart's natal positions.
+    // Whose planets: a promoted overlay's bodies are another instant's (the sky alone's too,
+    // which App names the same way), a composite's are the composite's own, an event chart's
+    // the event's; otherwise they are the chart's natal positions. (Event, 2026-10-20.)
     const planetsLine = !system
       ? null
       : promotedLabel
-        ? t('expandedSidebar.geodetic.planetsPromoted', { overlay: promotedLabel, system })
+        ? (outerHousesLine ?? t('expandedSidebar.geodetic.planetsPromoted', { overlay: promotedLabel, system }))
         : chart?.composite
           ? t('expandedSidebar.geodetic.planetsComposite', { system })
-          : t('expandedSidebar.geodetic.planets', { system });
+          : isEvent
+            ? t('expandedSidebar.geodetic.planetsEvent', { system })
+            : t('expandedSidebar.geodetic.planets', { system });
     return (
       <div className="es-geo-lines">
         <span className="es-geo-ge">
-          <span className="es-geo-ge-tag">{t('expandedSidebar.geodetic.ge')}</span>
-          {' · '}
-          {/* The two figures are values that move with the pin: not offered to a page
-              translator (2026-10-09). */}
-          {t('map.geoReadout.as')} <span className="es-geo-val" translate="no">{ge(angles.asc)}</span>
-          {' · '}
-          {t('map.geoReadout.mc')} <span className="es-geo-val" translate="no">{ge(angles.mc)}</span>
+          {segments.map((seg, i) =>
+            'slot' in seg ? (
+              <span key={i} className="es-geo-val" translate="no">
+                {maskGeAngles ? (
+                  id.text('00°00\'')
+                ) : (
+                  <>
+                    {`${seg.part.deg}°`}
+                    <ZodiacGlyph sign={seg.part.signIdx} size={11} />
+                    {`${seg.part.min}'`}
+                  </>
+                )}
+              </span>
+            ) : (
+              <span key={i}>{seg.text}</span>
+            ),
+          )}
         </span>
         {planetsLine && <span className="es-geo-planets">{planetsLine}</span>}
       </div>
     );
   };
 
-  // The Dual layout's header over a synastry PARTNER's wheel: under the partner's
-  // name (the line above, from overlaySubject), their own record in the panel header's
-  // form (lib/chartHeader's overlay view: their birth date and clock in THEIR zone,
-  // then their birthplace — or, for a relationship chart, what the panel header would
-  // say of it, which for a composite is no moment at all) — and then, set apart, the
-  // place their wheel is cast for.
+  // A synastry PARTNER's block (Lina, 23 Oct 2026, H-3), in the overlaid header and the stacked
+  // layout's second one alike: the model's lines (lib/chartHeader partnerLinesOf) — their "Born:"
+  // moment in THEIR zone, their birthplace, and "Relocated to:" where their wheel is cast elsewhere,
+  // which carries the tip saying both wheels are cast for one place. Their name is in the title.
   //
-  // That last line is the honest half. A partner's angles and houses are cast at
-  // the active point — pin, else hover, else the ACTIVE chart's birthplace — not
-  // at their own birthplace (docs/calculation-methods.md), so the header used to
-  // show that point in the birth-record styling, and "Amara / Vienna" read as
-  // Amara's birthplace when Vienna was Elena's (2026-09-30). Now the birth record
-  // is the partner's, and where the wheel is cast gets its own line, coloured like the panel header's place
-  // line — the same place, in the same colour — and shown only when it differs
-  // from the partner's birthplace.
+  // The honest half, kept from 2026-09-30: a partner's angles and houses are cast at the active
+  // point — pin, else hover, else the ACTIVE chart's birthplace — not at their own birthplace
+  // (docs/calculation-methods.md), so the cast place is a line of its own, never their record.
   //
-  // A COMPOSITE partner has no "cast for": its angles are the midpoints of its two
-  // parents' own angles and don't relocate (App's overlayAngles), so that line says
-  // that instead.
+  // A COMPOSITE partner on a celestial map has no cast place: its angles are the midpoints of its
+  // two parents' own angles and don't relocate (App's overlayAngles), so a line says that instead.
+  // On a geodetic map every wheel is cast in the place's own frame — App hands a composite partner
+  // `angles` like any other — and the model gives it the relocated line like any partner.
   //
-  // Except on a geodetic map (2026-10-02). There every wheel is cast in the place's
-  // own geodetic frame — App hands a composite partner `angles` like any other — so
-  // the midpoint line would be false of the wheel drawn under it. The FRAME decides,
-  // not the chart kind: a geodetic overlay frame takes the "Cast for" line, composite
-  // or not.
-  //
-  // Discreet mode masks every field of the record — it is a second person's birth
-  // data, which is what the mode exists for — inside the model, as the panel header's
-  // are (and the 2026-08-24 lesson above: mask where the value is rendered, all of it).
-  // The "Cast for" place follows the panel header's place-line rule (castBlank).
-  const partnerLines = (p: StoredChart): ReactNode => {
-    const bp = p.birthplace;
-    const wrapLng = (v: number) => ((((v + 180) % 360) + 360) % 360) - 180;
-    const midpointFrame = !!p.composite && !overlayAngles?.geodetic;
-    const castElsewhere =
-      !midpointFrame &&
-      !!castPoint &&
-      (Math.abs(castPoint.lat - bp.lat) > 1e-4 ||
-        Math.abs(wrapLng(castPoint.lng - bp.lng)) > 1e-4);
-    const castCoords = castPoint ? fmtCoordPairDM(castPoint.lat, castPoint.lng) : '';
-    // pointLabel can be momentarily empty while a hover geocode resolves; the
-    // coordinates stand in, so the line never blinks out (header geometry, as above).
-    const castPlace = castBlank
-      ? id.text(pointLabel || 'birthplace')
-      : pointLabel?.trim() || castCoords;
-    return (
-      <>
-        {renderLines(headerModel.overlayView?.lines ?? [], 'p', false)}
-        {midpointFrame ? (
-          <div className="es-cast-for">
-            <span className="es-cast-for-label">
-              {t('expandedSidebar.partnerHead.midpointAngles')}
-            </span>
-          </div>
-        ) : (
-          // The line carries its own explanation: both wheels are cast for this one
-          // place, and choosing a point moves them (Salvatore, 2026-10-02 — the
-          // fallback stays, so long as the reader is told they can cast elsewhere).
-          // It names no place, so Discreet mode has nothing to mask in it. Inert, so a
-          // tap reveals it; tabIndex lets keyboard focus reach it too. Mounted with
-          // the line, so the hint never shows without it.
-          castElsewhere && (
-            <TipSpan
-              className={`es-cast-for es-cast-for-tip ${castState}`}
-              tabIndex={0}
-              tapReveal
-              tip={t('expandedSidebar.partnerHead.castForTip')}
-              hint={t('expandedSidebar.partnerHead.castForHint')}
-            >
-              <span className="es-cast-for-label">
-                {t('expandedSidebar.partnerHead.castFor')}
-              </span>
-              <span className="es-cast-for-place">{castPlace}</span>
-            </TipSpan>
-          )
-        )}
-      </>
-    );
-  };
+  // Discreet mode masks every field of the record inside the model — it is a second person's birth
+  // data, which is what the mode exists for.
+  const partnerLines = (p: StoredChart, keyPrefix: string): ReactNode => (
+    <>
+      {renderLines(headerModel.overlayView?.lines ?? [], keyPrefix, false)}
+      {p.composite && !overlayAngles?.geodetic && (
+        <div className="es-cast-for">
+          <span className="es-cast-for-label">{t('expandedSidebar.partnerHead.midpointAngles')}</span>
+        </div>
+      )}
+    </>
+  );
 
   // The panel header shows the whole display's state — except in the Dual layout, where
   // the overlay is a second chart with a header of its own below the first wheel, and
@@ -2413,6 +2435,8 @@ export function ExpandedChartSidebar({
   // headers would print the overlay's moment twice and the chart's not at all.
   // (2026-10-07)
   const dualLayout = dualWheels && hasOverlay && !!frame;
+  // An overlaid bi-wheel (not Dual, not promoted): the header states each wheel in turn.
+  const ringBlocks = hasOverlay && !dualLayout && !promotedLabel && !!frame && headerModel.state !== 'sky';
   const headerView = dualLayout ? headerModel.chartView : headerModel;
 
   return (
@@ -2432,6 +2456,8 @@ export function ExpandedChartSidebar({
               onEdit={onEditChart}
               onDelete={onDeleteChart}
               flash={chartFlash}
+              {...switcherSky}
+              skyTitle={headerModel.state === 'sky' ? headerModel.labelParts.join(' · ') : null}
             />
           </div>
           <div className="es-header-actions">
@@ -2501,15 +2527,46 @@ export function ExpandedChartSidebar({
             </TipButton>
           </div>
         </div>
-        {chart && (
+        {(chart || headerModel.state === 'sky') && (
           // The chart's statement (lib/chartHeader): under the chart's name, the state
           // label, then the lines — the moment, the places, then the rating and the
           // chart-data settings. In the Dual layout it introduces the first wheel alone
           // (headerView). The plan tag above floats over this block's right edge, which
-          // the label row leaves clear. (2026-10-07)
+          // the label row leaves clear. (2026-10-07) With no chart, the sky's own statement
+          // while a sky overlay is the wheel's chart: its moment, where it is cast, and the
+          // chart-data settings (the 'sky' state, 2026-10-20).
           <div className="es-statement">
-            {labelRow(headerView.labelParts)}
-            {renderLines(headerView.lines, 'h')}
+            {ringBlocks && headerModel.overlayView ? (
+              // One header per wheel (Lina, 21 Oct 2026, §5): the inner wheel's statement, then
+              // the outer wheel's, each under its label; on a geodetic map the outer one carries
+              // its own houses line ("Progressed positions · houses: …").
+              <>
+                {labelRow(
+                  [t('expandedSidebar.header.innerWheel'), ...headerModel.chartView.labelParts],
+                  headerModel.chartView.labelName,
+                )}
+                {renderLines(headerModel.chartView.lines, 'hi')}
+                {chartHousesLine && <div className="es-hl es-houses-line">{chartHousesLine}</div>}
+                {labelRow(
+                  [t('expandedSidebar.header.outerWheel'), ...headerModel.overlayView.labelParts],
+                  headerModel.overlayView.labelName,
+                )}
+                {overlayPartner ? partnerLines(overlayPartner, 'ho') : renderLines(headerModel.overlayView.lines, 'ho')}
+                {outerHousesLine && <div className="es-hl es-houses-line">{outerHousesLine}</div>}
+              </>
+            ) : (
+              <>
+                {/* The sky's label is the title above (the switcher's skyTitle). */}
+                {headerModel.state !== 'sky' && labelRow(headerView.labelParts, headerView.labelName)}
+                {renderLines(headerView.lines, 'h')}
+                {/* On a celestial map the houses line is ours to add (a geodetic one carries it
+                    in its geodetic block): a promoted overlay's, or an event chart's. */}
+                {!geoFrame &&
+                  (promotedLabel ? outerHousesLine : chartHousesLine) && (
+                    <div className="es-hl es-houses-line">{promotedLabel ? outerHousesLine : chartHousesLine}</div>
+                  )}
+              </>
+            )}
             {/* The rows a relocation would add, held blank so a pin or the hover never
                 moves the sections below (lib/chartHeader HeaderView.spareLines). */}
             {Array.from({ length: headerView.spareLines ?? 0 }, (_, i) => (
@@ -2660,7 +2717,6 @@ export function ExpandedChartSidebar({
                   part per line; in Dual Wheels, the first wheel's (chartView). */}
               {frame && (
                 <div className="es-wheel-corner es-wheel-corner-left">
-                  {cornerTitle(showDual ? headerModel.chartView.labelParts : headerModel.labelParts)}
                   {frame.fallback && (
                     <TipSpan
                       className="es-house-fallback es-house-fallback-info"
@@ -2689,53 +2745,13 @@ export function ExpandedChartSidebar({
                   )}
                   {timeUnknownShown && (
                     <span className="es-house-fallback">
-                      {t('expandedSidebar.timeUnknownNote')}
+                      {t(isEvent ? 'expandedSidebar.timeUnknownNoteEvent' : 'expandedSidebar.timeUnknownNote')}
                     </span>
                   )}
                 </div>
               )}
-              {frame && overlayName && !showDual && (
-                <div
-                  // When the overlay moment is shown it stacks ABOVE the name as a
-                  // right-aligned column (es-overlay-corner); the corner is absolutely
-                  // positioned over the wheel, so this never adds sidebar height.
-                  // Synastry has no moment and puts its partner's name on that line
-                  // instead — same slot, so the layout is unchanged.
-                  className={`es-wheel-corner es-wheel-corner-right${
-                    cornerMoment || overlaySubject ? ' es-overlay-corner' : ''
-                  }`}
-                >
-                  {cornerMoment ? (
-                    // Date (only where the title beside it lacks one) over the clock in
-                    // the cast place's zone — a line each, so neither runs into the wheel.
-                    // Values that move with every playback tick (the clock a text run
-                    // beside the zone's span): not offered to a page translator. The
-                    // partner's name below is their data. (2026-10-09)
-                    <>
-                      {cornerDated && (
-                        <span className="es-overlay-moment" translate="no">
-                          {cornerMoment.date.text}
-                        </span>
-                      )}
-                      <span className="es-overlay-moment" translate="no">
-                        {cornerMoment.clock.text}
-                        {cornerMoment.zone && (
-                          <span className="es-meta-tz">{`\u00a0${cornerMoment.zone.text}`}</span>
-                        )}
-                      </span>
-                    </>
-                  ) : (
-                    overlaySubject && (
-                      <span className="es-overlay-moment es-overlay-subject" translate="no">
-                        {overlaySubject}
-                      </span>
-                    )
-                  )}
-                  <span className="es-overlay-caption es-overlay-dashed">
-                    {overlayName}
-                  </span>
-                </div>
-              )}
+              {/* No right-hand corner block since 21 Oct 2026 (Lina, §5): the overlay's date and
+                  technique are in its own header block above the wheel. */}
               <div
                 // The dual modifier stacks the pane's children in a column —
                 // needed whenever more than one wheel renders, so the horizon
@@ -2766,6 +2782,7 @@ export function ExpandedChartSidebar({
                         maskAngleText={maskGeAngles}
                         bodyNotes={bodyNotes}
                         ranges={ranges}
+                        overlayRanges={overlayRanges}
                       />
                       {/* The overlay wheel is introduced the way the natal one is:
                           the statement's own lines (lib/chartHeader's overlay view) —
@@ -2781,39 +2798,28 @@ export function ExpandedChartSidebar({
                           by name and record, with the cast-for place on a line apart
                           (partnerLines). (2026-10-07) */}
                       <div className="es-overlay-head">
-                        {overlayPartner ? (
-                          <>
-                            {/* A chart's name is the thing an astrologer reads first,
-                                so the partner's takes the weight the first chart's own
-                                name has at the top of the panel. */}
-                            {overlaySubject && (
-                              <div className="es-meta">
-                                <span
-                                  className="es-meta-when es-overlay-chart-name"
-                                  translate="no"
-                                >
-                                  {overlaySubject}
-                                </span>
-                              </div>
-                            )}
-                            {partnerLines(overlayPartner)}
-                          </>
-                        ) : (
-                          renderLines(headerModel.overlayView?.lines ?? [], 'o')
-                        )}
+                        {/* The second chart's own title line (Lina, 22 Oct 2026, §3.1): what the
+                            wheel is ("GEODETIC CHART · TRANSITS"), then its statement, then its
+                            houses line; no gold sub-title over the wheel. */}
+                        {headerModel.overlayView &&
+                          labelRow(headerModel.overlayView.labelParts, headerModel.overlayView.labelName)}
+                        {/* A partner's name is in the title line above ("NATAL CHART · Jim",
+                            Lina's H-3); their record follows it. */}
+                        {overlayPartner
+                          ? partnerLines(overlayPartner, 'p')
+                          : renderLines(headerModel.overlayView?.lines ?? [], 'o')}
+                        {outerHousesLine && <div className="es-hl es-houses-line">{outerHousesLine}</div>}
                       </div>
                       <div className="es-wheel-slot">
-                        {headerModel.overlayView && (
-                          <div className="es-wheel-corner es-wheel-corner-left">
-                            {cornerTitle(headerModel.overlayView.labelParts)}
-                          </div>
-                        )}
                         {/* The overlay chart's own catalog bodies, placed by its rule —
                             never the natal ones, which were sampled at the birth moment. */}
                         <WheelSvg
                           size={wheelSize}
                           angles={overlayAngles!}
                           planets={shownOverlay!}
+                          // A progression of a chart with no birth time: its own ring IS the
+                          // overlay, so the overlay's ranges print here (Lina, 22 Oct, §2.3).
+                          ranges={overlayRanges}
                           minorBodies={overlayMinorBodies}
                           detailed={true}
                           advanced={advanced}
@@ -2849,18 +2855,22 @@ export function ExpandedChartSidebar({
                         maskAngleText={maskGeAngles}
                         bodyNotes={bodyNotes}
                         ranges={ranges}
+                        overlayRanges={overlayRanges}
                       />
+                      {overlayKind === 'cyclo' && cycloCard}
                       {lsSlot}
                     </>
                   )
                 ) : noChart ? (
-                  // A promoted overlay with no coherent chart (CCG, Natal hidden) — an
-                  // empty wheel reading "NO CHART", sized to the pane.
-                  <NoChartWheel
-                    size={wheelSize}
-                    label={t('expandedSidebar.noChart')}
-                    note={t('expandedSidebar.noChartNote')}
-                  />
+                  // A promoted overlay with no coherent chart (CCG, Natal hidden): the wheel's
+                  // place carries the Cyclocartography card (Lina, 22 Oct 2026, §2.6).
+                  cycloCard
+                ) : skyAlone && skyHint ? (
+                  // No chart, and no sky overlay chosen to wheel: say how to get one, under
+                  // the usual line. One string child each, for a page translator. (2026-10-20)
+                  <div className="es-empty es-empty-sky">
+                    <span>{t('expandedSidebar.skyEmpty')}</span>
+                  </div>
                 ) : (
                   <div className="es-empty">{t('expandedSidebar.empty')}</div>
                 )}
@@ -2907,7 +2917,6 @@ export function ExpandedChartSidebar({
             (key) => setPosSort((s) => nextSort(s, key)),
             minorBodies,
             minorCoords,
-            bodyNotes,
             ranges,
           )}
           {/* The overlay's own positions, one press away. Same block, same
@@ -2940,6 +2949,7 @@ export function ExpandedChartSidebar({
                   (key) => setOvPosSort((s) => nextSort(s, key)),
                   overlayMinorBodies,
                   overlayMinorCoords,
+                  overlayRanges,
                 )}
             </div>
           )}
@@ -2954,9 +2964,10 @@ export function ExpandedChartSidebar({
           >
             {t('expandedSidebar.balanceHeading')}
           </TipHeading>
-          {/* The built-in bodies only. The catalog minor bodies are placed in the
-              chart but not counted: with them in, the tallies would measure how many
-              bodies are switched on rather than the chart (calculation-methods.md). */}
+          {/* The Sun, the Moon and the eight planets only (balanceBlock): every other
+              body is placed in the chart but not counted — with them in, the tallies would
+              measure how many bodies are switched on rather than the chart
+              (calculation-methods.md). */}
           {balanceBlock(shownPlanets)}
           {/* The SECOND chart's balance, one press away. Same block, same
               groupings, its own bodies — the overlay is a chart too, and "how is
@@ -3063,6 +3074,13 @@ export function ExpandedChartSidebar({
           );
         };
 
+        // A chart with no birth time: an aspect or contact with a RANGED body at either end
+        // depends on the birth hour, and its row says so (Lina, 21 Oct 2026, §2.5; every ranged
+        // body, natal or progressed, since 22 Oct). A transiting body is known and adds none.
+        const hourTag = (bound: boolean) =>
+          bound ? <span className="asp-hour-tag">{t('expandedSidebar.aspectHourBound')}</span> : null;
+        const rangedNatal = (n: string) => isRanged(ranges?.get(n as PlanetName));
+
         // One aspect's five cells; extras slot INTO the type / orb cells
         // (badges, orb-shift) so the row grid stays five columns.
         const cells = (
@@ -3087,6 +3105,7 @@ export function ExpandedChartSidebar({
             <span className="asp-type">
               {t(`expandedSidebar.aspect.${a.type}.name` as 'expandedSidebar.aspect.conjunction.name')}
               {typeExtra}
+              {hourTag(rangedNatal(a.a) || rangedNatal(a.b))}
             </span>
             {/* The orb moves with the overlay while a shift marker comes and goes
                 beside it: a value, not offered to a page translator (2026-10-09). */}
@@ -3659,6 +3678,9 @@ export function ExpandedChartSidebar({
                   />
                   <span className="asp-type">
                     {t(`expandedSidebar.aspect.${a.type}.name` as 'expandedSidebar.aspect.conjunction.name')}
+                    {(isRanged(ranges?.get(a.b as PlanetName)) || isRanged(overlayRanges?.get(a.a as PlanetName))) && (
+                      <span className="asp-hour-tag">{t('expandedSidebar.aspectHourBound')}</span>
+                    )}
                   </span>
                   <span className="asp-orb">{fmtOrb(a.orb)}</span>
                 </li>

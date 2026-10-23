@@ -41,6 +41,7 @@
     "verify:zone-name": "node scripts/harness/run.mjs scripts/verify-zone-name.ts",
     "verify:chart-header": "node scripts/harness/run.mjs scripts/verify-chart-header.ts",
     "verify:folders": "node scripts/harness/run.mjs scripts/verify-folders.ts",
+    "verify:event-charts": "node scripts/harness/run.mjs scripts/verify-event-charts.ts",
     "verify:minor-bodies": "node scripts/harness/run.mjs scripts/verify-minor-bodies.ts",
     "verify:theme-palette": "node scripts/harness/run.mjs scripts/verify-theme-palette.ts",
     "verify:dock-column": "node scripts/harness/run.mjs scripts/verify-dock-column.ts",

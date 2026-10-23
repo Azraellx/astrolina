@@ -67,6 +67,10 @@ export interface PlaceSearchSectionItem {
   /** In-row delete action (an ×), guarded by an inline two-step confirm —
    *  pressing it swaps the icons for `confirm` / `keep` buttons. */
   remove?: { label: string; confirm: string; keep: string; run: () => void };
+  /** The point this row stands for, when it is one. A registered standing row on the same spot
+   *  says more about it (a saved pin's name and flag), so it replaces this row; and the field's
+   *  `omitAt` leaves it out like any standing row. (2026-10-23) */
+  at?: { lat: number; lng: number };
   onPick: () => void;
 }
 
@@ -128,6 +132,12 @@ export interface PlaceSearchFieldProps {
    *  has a relationship with — see registerPlaceSearchLibrary). Off by default:
    *  a field that asks for a BIRTHPLACE shouldn't propose where you live now. */
   library?: boolean;
+  /** Leave out the standing rows at this point: the value the box already holds, which a pick
+   *  would only set again. (2026-10-23) */
+  omitAt?: { lat: number; lng: number } | null;
+  /** A quiet line under a search's answer (its hits, or none), for a host with another way in
+   *  when the place isn't found: the home pickers' map pin. (2026-10-23) */
+  missHint?: string;
   /** Keep the picked label in the input (a "current value" box) rather than clearing it. */
   keepQueryOnPick?: boolean;
   /** After a pick, re-select the kept label so the next keystroke starts fresh
@@ -246,6 +256,10 @@ const fold = (s: string) =>
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 
+// One spot, to about 11 m: how a standing row is matched to another on the same point, or to
+// the value the box holds. The same rounding the saved pins use for "the pin at this spot".
+const spotKey = (p: { lat: number; lng: number }) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`;
+
 // A row reads as a PLACE with its whereabouts under it, not as one long line
 // the eye has to parse to its first comma. Place names are what a person scans
 // for; the containing town, region and country only settle WHICH one is meant,
@@ -274,6 +288,8 @@ export function PlaceSearchField({
   onCancel,
   sections,
   library = false,
+  omitAt,
+  missHint,
   keepQueryOnPick = false,
   selectOnPick = false,
   stayOnPick = false,
@@ -507,6 +523,8 @@ export function PlaceSearchField({
   // popover; `pages` counts how many the user has asked for, per group.
   const visible = (g: PlaceSearchSection) =>
     g.pageSize ? g.items.slice(0, g.pageSize * (pages[g.id] ?? 1)) : g.items;
+  // The value the box holds is never offered back to it (`omitAt`).
+  const omitKey = omitAt ? spotKey(omitAt) : null;
   const librarySections: PlaceSearchSection[] =
     library && libraryGroups
       ? libraryGroups.map((g) => ({
@@ -514,26 +532,47 @@ export function PlaceSearchField({
           label: g.label,
           pageSize: g.pageSize,
           moreLabel: g.moreLabel,
-          items: g.entries.map((e) => ({
-            id: e.id,
-            label: e.label,
-            sub: e.sub,
-            tag: e.tag,
-            mark: e.mark,
-            edit: e.edit,
-            remove: e.remove,
-            onPick: () =>
-              take(
-                // `onMap` travels with the point, not with the group: whether the
-                // map already draws this spot is the contributor's fact about
-                // this row, and a host that marks arrivals needs it per pick.
-                { label: e.label, lat: e.lat, lng: e.lng, zoom: e.zoom, onMap: e.onMap },
-                LIBRARY_SCOPE_ID,
-              ),
-          })),
+          items: g.entries
+            .filter((e) => spotKey(e) !== omitKey)
+            .map((e) => ({
+              id: e.id,
+              label: e.label,
+              sub: e.sub,
+              tag: e.tag,
+              mark: e.mark,
+              edit: e.edit,
+              remove: e.remove,
+              at: { lat: e.lat, lng: e.lng },
+              onPick: () =>
+                take(
+                  // `onMap` travels with the point, not with the group: whether the
+                  // map already draws this spot is the contributor's fact about
+                  // this row, and a host that marks arrivals needs it per pick.
+                  {
+                    label: e.label,
+                    lat: e.lat,
+                    lng: e.lng,
+                    place: e.place,
+                    zoom: e.zoom,
+                    onMap: e.onMap,
+                  },
+                  LIBRARY_SCOPE_ID,
+                ),
+            })),
         }))
       : [];
-  const standing = [...librarySections, ...(sections ?? [])];
+  // A host row that names its point gives way to a registered row on the same spot (which says
+  // more about it), and to the value the box holds.
+  const librarySpots = new Set(
+    librarySections.flatMap((g) => g.items.map((it) => (it.at ? spotKey(it.at) : ''))),
+  );
+  const hostSections = (sections ?? []).map((g) => ({
+    ...g,
+    items: g.items.filter(
+      (it) => !it.at || (!librarySpots.has(spotKey(it.at)) && spotKey(it.at) !== omitKey),
+    ),
+  }));
+  const standing = [...librarySections, ...hostSections];
   // Once two characters are typed, the standing rows stop being a browsing
   // list and become search results of their own: filtered by name (against the
   // label, second line and tag alike), stripped of headings and paging, and
@@ -955,6 +994,10 @@ export function PlaceSearchField({
       {note && <p className="psf-note">{note}</p>}
       {empty && !note && !searching && groups.length === 0 && (
         <p className="psf-note">{S.noMatches}</p>
+      )}
+      {/* Under any answer, found or not: the hits can be the wrong places as easily as none. */}
+      {missHint && !searching && !locked && (results.length > 0 || empty || failed) && (
+        <p className="psf-note psf-miss">{missHint}</p>
       )}
       {children}
     </div>

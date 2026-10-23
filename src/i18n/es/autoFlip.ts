@@ -13,10 +13,6 @@ export const autoFlip = {
     title: 'Marco de la capa retenido en Ángulos de la revolución',
     body: 'Una carta de revolución es un momento propio, con sus propios ángulos, y el mapa se dibuja ahora respecto a ellos y no a los natales. El marco anterior queda en pausa, no se borra: vuelve al salir de la revolución, o de inmediato con la ✕ del chip.',
   },
-  'line-system-held': {
-    title: 'Geodésico está en pausa',
-    body: 'El sistema de líneas Geodésico proyecta el zodiaco tropical sobre las longitudes de la Tierra, así que no existe una versión sideral que dibujar. Tu elección queda en pausa, no se borra: pon de nuevo el zodiaco en Tropical y regresará.',
-  },
   'line-projection': {
     title: 'Estas líneas se dibujan In Mundo',
     body: 'Todo programa tiene que decidir dónde «está» un cuerpo antes de poder dibujar su línea. In Mundo lo sitúa donde se encuentra en el cielo, latitud incluida. In Zodiaco primero aplana esa latitud sobre la eclíptica.',
@@ -36,5 +32,9 @@ export const autoFlip = {
   'language-held': {
     title: 'El idioma que elegiste está en pausa',
     body: 'El idioma que elegiste se traduce en este dispositivo, lo que ahora mismo no es posible aquí, así que la aplicación se muestra en su idioma habitual. Tu elección se conserva, no se borra. Para elegir otro idioma, ve a {route}.',
+  },
+  'no-chart-held': {
+    title: 'En pausa sin carta seleccionada',
+    body: 'Las capas que hacen avanzar o comparan una carta, y la ventana Espacio local, esperan mientras no haya ninguna; los tránsitos se dibujan en el propio marco del momento. No se borra nada: elige una carta en el menú de cartas y volverán tal como las dejaste.',
   },
 } as const;

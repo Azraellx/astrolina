@@ -12,9 +12,12 @@ export const common = {
   edit: 'Изменить',
   delete: 'Удалить',
   keep: 'Оставить',
+  addExampleEvent: 'Добавить пример события',
+  addExampleEventHint: 'Добавить к вашим картам Aries Ingress 2026 — мартовское равноденствие, построенное для Гринвича. Больше ничего не меняется; удалить эту карту можно, как любую другую.',
   locationFallbackOcean: 'Океан',
   tzWarning: '⚠ Часовой пояс до 1970 года вне США/ЕС: сверьте летнее время по атласу',
   timeUnknownBanner: 'Время рождения неизвестно',
+  timeUnknownBannerEvent: 'Время неизвестно',
   provisionalTimeBanner: '⚠ Пробуется {time} — предварительно, не сохранено',
   locked: {
     feature: '{feature} — функция тарифа {tier}.',

@@ -91,6 +91,10 @@ interface LocalSpaceHudProps {
     /** Change's tip, shown while the origin isn't the pin (ViewLock.keepsLocalSpace.place). */
     changeTip?: { title: string; hint: string };
   };
+  /** The placed map pin, offered in Home's editor before anything is typed (ChartHomeEditor
+   *  `mapPin`): the way in for a home no search finds. Null with no pin, or the natal one.
+   *  (2026-10-23) */
+  homePin?: { lat: number; lng: number; label: string } | null;
 }
 
 // The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
@@ -210,6 +214,7 @@ export function LocalSpaceHud({
   originPlace,
   phoneUnderNav = false,
   phoneFloor,
+  homePin = null,
 }: LocalSpaceHudProps) {
   const { t } = useT();
   // The active chart's home place, edited inline while it is the origin.
@@ -394,6 +399,10 @@ export function LocalSpaceHud({
               // birthplace, and this is a working window rather than the chart form,
               // so discreet mode blanks it. Setting and changing it still work.
               maskValue={discreet}
+              // The map pin and the reader's own places, before anything is typed: the way in
+              // for a home no search finds (2026-10-23).
+              library
+              mapPin={homePin}
               strings={{
                 unset: t('chartForm.homeSameAsBirth'),
                 set: t('chartForm.homeSet'),
@@ -402,6 +411,8 @@ export function LocalSpaceHud({
                 clear: t('chartForm.homeClear'),
                 placeholder: t('chartForm.homePlaceholder'),
                 searchAria: t('chartForm.homeAria'),
+                mapPinTag: t('chartForm.homeMapPin'),
+                missHint: t('chartForm.homeMissHint'),
               }}
               searchStrings={{
                 scopeLabel: t('placeSearch.scopeLabel'),

@@ -209,9 +209,9 @@ export const settings = {
       title: 'Sombreado de zonas',
       hint: 'Rellena las doce zonas del MC: elemento como color, modalidad como tono (Cardinal, la más oscura; Mutable, la más clara). La leyenda del mapa aísla un elemento o una modalidad.',
     },
-    presentation: {
-      title: 'Presentación',
-      hint: 'Sube el sombreado de las zonas de tenue a intenso, para mostrárselas a otra persona.',
+    opacity: {
+      label: 'Opacidad',
+      aria: 'Opacidad del sombreado de zonas, en tanto por ciento',
     },
   },
   coordSystem: {
@@ -225,7 +225,7 @@ export const settings = {
     },
   },
   fortuneFormula: {
-    hint: 'La Parte de la Fortuna es una Parte calculada de vitalidad y bienestar mundano: un punto en la eclíptica, no un cuerpo en el cielo, así que solo un marco zodiacal puede situarla. Sus líneas en el mapa necesitan la Proyección de las líneas en In Zodiaco (o el sistema de líneas Geodésico). Al relocalizar el marcador del mapa se recalcula en la rueda de la carta para ese lugar, mientras que las líneas del mapa conservan tu Fortuna natal.',
+    hint: 'La Parte de la Fortuna es una Parte calculada de vitalidad y bienestar mundano: un punto en la eclíptica, no un cuerpo en el cielo, así que solo un marco zodiacal puede situarla. Sus líneas en el mapa necesitan In Zodiaco, debajo de Sistema de líneas en Cálculo (o el sistema de líneas Geodésico). Al relocalizar el marcador del mapa se recalcula en la rueda de la carta para ese lugar, mientras que las líneas del mapa conservan tu Fortuna natal.',
     sect: {
       label: 'Según la secta (día/noche)',
       hint: 'Nacimientos de día: Ascendente + Luna − Sol; de noche se invierte a Ascendente + Sol − Luna. La convención tradicional.',
@@ -249,7 +249,9 @@ export const settings = {
   inert: {
     fortuneMundo: 'Una Parte es un punto de la eclíptica sin posición en el cielo, así que In Mundo no tiene dónde situarla. Para ver esta línea, pon la proyección en In Zodiaco (Cálculo).',
     fortuneAdvanced: 'La Parte de la Fortuna es una lectura de Avanzado: activa Avanzado para usarla.',
-    geodeticSidereal: 'El sistema de líneas Geodésico lleva el zodiaco TROPICAL a las longitudes de la Tierra: no hay versión sideral. Elige Tropical (Avanzado) para usarlo; tu elección se conserva.',
+    fortuneNoTime: 'No se muestra en una carta sin hora de nacimiento: la Parte de la Fortuna se construye con la Luna, cuyo grado es incierto, y con la secta del nacimiento, de día o de noche, que necesita la hora.',
+    geodeticSidereal: 'Los mapas geodésicos llevan el zodiaco tropical a la Tierra; uno sideral no tiene convención geodésica acordada. Elige Tropical (Avanzado) para usarlos; tu elección se conserva.',
+    siderealGeodetic: 'No disponible en los mapas geodésicos: la cuadrícula geodésica es tropical por definición. Cambia a Celeste para leer en un zodiaco sideral.',
     geodeticHeld: 'Geodésico está en revisión mientras comprobamos cómo se dibuja: preferimos pausarlo a dibujar un mapa que no podamos respaldar. Tu elección se conserva, no se borra; vuelve pronto.',
     skyHeldWhy: 'No disponible en los mapas geodésicos, que no giran con el cielo.',
     skyHeldFix: 'Cambia el sistema de líneas a Celeste, en Cálculo, para usarlo.',
@@ -260,6 +262,7 @@ export const settings = {
     anglesHeld: 'En los mapas geodésicos, los ángulos de un lugar salen de sus coordenadas, así que no se mueven con el tiempo.',
     paransHeld: 'Los parans no se muestran en los mapas geodésicos.',
     paransHeldFull: 'Los parans no se muestran en los mapas geodésicos. Cambia el sistema de líneas a Celeste, en Cálculo, para usarlo.',
+    needsChart: 'Necesita una carta. Elige o agrega una en el menú de cartas de la barra superior.',
   },
   nodeType: {
     true: {
@@ -450,6 +453,7 @@ export const settings = {
     contacts: {
       heading: 'Contactos natales',
       none: 'Ningún contacto a menos de 3°: este eclipse pasa en silencio por la carta.',
+      noChart: 'Sin carta seleccionada. Elige una en el menú de cartas para ver qué toca este eclipse en ella.',
       aspect: {
         conjunction: 'en conjunción',
         square: 'en cuadratura',

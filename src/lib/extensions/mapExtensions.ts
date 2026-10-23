@@ -99,6 +99,10 @@ export interface AllLines {
    *  and read as false when absent: a consumer that builds its own AllLines (for a
    *  spotlight, say) holds nothing it didn't leave out itself. (2026-10-02) */
   skyHeld?: boolean;
+  /** The line system the set was built in: the map's, from {@link MapExtensionContext.collectAllLines};
+   *  the one asked for, from {@link MapExtensionContext.collectAllLinesFor}. OPTIONAL, and read as the
+   *  map's ({@link MapExtensionContext.lineSystem}) when absent. (2026-10-20) */
+  lineSystem?: LineSystem;
 }
 
 /** A point-and-radius "spotlight" on the linework — a neutral view treatment, not tied to any
@@ -152,10 +156,17 @@ export interface MapExtensionContext {
   targetDate: number;
   pinned: { lat: number; lng: number } | null;
   pinnedLabel: string | null;
+  /** Whether {@link pinnedLabel} names the pin where it stands now. False for a moment after the
+   *  pin moves, while the sticky label still names the point before it: a consumer that STORES
+   *  the name (a home set from the pin) waits for it or uses the coordinates. Absent reads as
+   *  true. (2026-10-23) */
+  pinnedLabelCurrent?: boolean;
   /** Set (or, with null, clear) the placed pin — the write half of {@link pinned}.
    *  Drives exactly the state the map's own place/remove gestures drive; the label
-   *  ({@link pinnedLabel}) re-resolves the same way it does for a hand-placed pin. */
-  placePin: (point: { lat: number; lng: number } | null) => void;
+   *  ({@link pinnedLabel}) re-resolves the same way it does for a hand-placed pin — unless
+   *  `label` is given: a pin placed FROM a named place (a saved pin) carries that name while
+   *  it stands there (2026-10-22). */
+  placePin: (point: { lat: number; lng: number } | null, label?: string) => void;
   visiblePlanets: ReadonlySet<PlanetName>;
   nodeType: NodeType;
   houseSystem: HouseSystem;
@@ -451,6 +462,30 @@ export interface MapExtensionContext {
    *  plays. Key caches / recompute effects on this (instead of on object identities) and read
    *  `targetDate` alongside it when the frame instant matters. */
   linesStamp: string;
+  /** The chart's complete line set in a line system the CALLER names — for a document that
+   *  records the line system it was made in and has to draw its lines in that one, whatever
+   *  the map is on now (Lina's ruling for Reports, 20 Oct 2026, §23; seam L119).
+   *
+   *  `ls` is the line system EFFECTIVE for the caller: derive it from the stored one first
+   *  (lib/lineSystem effectiveLineSystem — the review hold and a sidereal zodiac mask
+   *  Geodetic). A 'geodetic' asked for while the review hold is up is answered in Celestial
+   *  all the same, as the map would draw it, so a held device never builds a geodetic set;
+   *  the set's own {@link AllLines.lineSystem} says which it is.
+   *
+   *  When `ls` is the map's own ({@link lineSystem}) this IS {@link collectAllLines}() —
+   *  the same object, overlay families and all. Otherwise it is the chart's NATAL families
+   *  alone (every overlay slot null: an overlay is the live map's, not the document's),
+   *  built by the map's own rules for that system (lib/astro/allLines buildNatalLineSet) from
+   *  the chart's own sample — never a Slide's — and inked in {@link inks}, built lazily once
+   *  per input state and shared: treat it as immutable. Expensive as collectAllLines is; call
+   *  it on demand, keyed on {@link linesStampFor}. Optional: absent on a core that predates it.
+   *  (2026-10-20) */
+  collectAllLinesFor?: (ls: LineSystem) => AllLines;
+  /** {@link linesStamp} for the set {@link collectAllLinesFor} gives for `ls`: the map's own
+   *  stamp when `ls` is the map's system, otherwise a stamp of the stable inputs of that
+   *  natal-only set (it carries no overlay, so nothing about one). It changes exactly when that
+   *  set would. Optional, as collectAllLinesFor is. (2026-10-20) */
+  linesStampFor?: (ls: LineSystem) => string;
   /** Whether Advanced reading mode is on (the free rung that reveals the advanced
    *  views/overlays). Read it before opening an advanced-gated view, so the menus
    *  stay in step with what's on screen. */

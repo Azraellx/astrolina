@@ -68,9 +68,12 @@
 }
 /* An open nav menu above every window and overlay bar (27/26): its rows are trapped in this
    stack's context, so a window under the nav (a phone's, beside a viewport owner) covered them.
-   Closed, the windows stay on top, grips grabbable, as above. (2026-10-13) */
+   Closed, the windows stay on top, grips grabbable, as above. (2026-10-13) Above the plugin
+   HUDs (40) too, which 28 missed: an add-on window at its starting spot sat over the Overlay
+   and View rows and took their clicks (smoke, 2026-10-20). Still under the notice cards (50),
+   modals (100) and hover tips (1000). */
 .topnav-stack:has(.navmenu-panel, .switcher-menu, [aria-expanded='true']) {
-  z-index: 28;
+  z-index: 41;
 }
 
 /* Both bars are static within the stack — undo .timeline-hud's absolute docking,

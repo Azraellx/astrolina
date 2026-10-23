@@ -10,6 +10,25 @@ export const chartSwitcher = {
   noChart: 'Kein Horoskop ausgewählt',
   tip: 'Horoskop wechseln, bearbeiten oder hinzufügen',
   tabHint: '{key} wechselt zu deinem vorherigen Horoskop – mehrmals drücken, um die letzten fünf durchzugehen.',
+  tabHintSections: '{key} wechselt zu deinem vorherigen Horoskop in derselben Liste, Ereignisse oder Personen – mehrmals drücken, um sie durchzugehen.',
   empty: 'Noch keine gespeicherten Horoskope.',
   searchAdd: 'Suchen + Namen hinzufügen',
+  sky: {
+    name: 'Kein Horoskop',
+    tagline: 'nur der Himmel',
+    meta: '{overlay} · {date}',
+    metaOff: 'Nur der Himmel',
+    overlay: {
+      transits: 'Transite',
+      eclipses: 'Finsternis',
+    },
+    hint: 'Himmel ohne aktives Horoskop zeichnen: Transite und Finsternisse im Bezugsrahmen des Moments.',
+    hintMasks: '{count, plural, one {{held} braucht ein Horoskop und wartet, bis du eines wählst.} other {{held} brauchen ein Horoskop und warten, bis du eines wählst.}}',
+  },
+  section: {
+    events: 'Ereignisse',
+    people: 'Personen',
+    eventsEmpty: 'Noch keine Ereignishoroskope.',
+    peopleEmpty: 'Noch keine Personenhoroskope.',
+  },
 } as const;

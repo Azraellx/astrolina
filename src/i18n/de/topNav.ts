@@ -44,7 +44,7 @@ export const topNav = {
       cyclo: {
         label: 'Zyklokartografie',
         tipTitle: 'Zyklokartografie (CCG)',
-        desc: 'Jim Lewis’ Hybrid: sekundärprogressive persönliche Planeten mit den transitierenden Planeten ab Jupiter, auf einer Karte.',
+        desc: 'Sie verbindet die progressiven Planeten Sonne–Mars mit den transitierenden Planeten Jupiter–Pluto.',
       },
       synastry: {
         label: 'Synastrie',

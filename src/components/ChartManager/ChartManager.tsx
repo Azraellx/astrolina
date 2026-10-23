@@ -44,6 +44,8 @@ import {
   type FolderNode,
 } from '../../lib/chartFolders';
 import { timeUnknown } from '../../lib/birthData';
+import { hasExampleEvent, presentedKind, type ChartKindOf } from '../../lib/eventCharts';
+import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { setDiscreet, useIdentity } from '../../lib/discreet';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { TipButton } from '../ui/HoverTip';
@@ -62,13 +64,16 @@ function fmtBirth(c: StoredChart, fmt: Formatters): string {
 
 // The tag-filter chips shown under the search box; 'all' clears the filter.
 // 'unknown' filters by the DERIVED time-unknown mark (timeKnown === false), not
-// the stored tag — a chart can be starred AND time-unknown.
+// the stored tag — a chart can be starred AND time-unknown. 'event' (2026-10-20)
+// filters by the chart's PRESENTED kind (lib/eventCharts presentedKind), likewise
+// never a tag.
 const FILTER_CHIPS = [
   { value: 'all', labelKey: 'chartManager.filter.all' },
   { value: 'star', labelKey: 'chartManager.filter.starred' },
   { value: 'space', labelKey: 'chartManager.filter.space' },
   { value: 'unknown', labelKey: 'chartManager.filter.unknown' },
   { value: 'shared', labelKey: 'chartManager.filter.shared' },
+  { value: 'event', labelKey: 'chartManager.filter.events' },
 ] as const;
 
 /** How close to an edge of the list a drag has to be before it scrolls, and how
@@ -120,6 +125,25 @@ interface ChartManagerProps {
   /** Open the import flow (the manager then closes). */
   onImport: () => void;
   onClose: () => void;
+  /** Event charts are on offer (2026-10-20) — the geodetic hold is lifted on this
+   *  device: the Events chip, the event mark on rows, and the form's Person | Event
+   *  switch. Omitted (false), the manager is exactly what it was, every chart shown
+   *  as a person. */
+  eventsOn?: boolean;
+  /** Event charts are locked below the ADV rung but the build nudges (2026-10-21): the form
+   *  shows the Event half with its tier badge, and a press runs the upgrade flow. */
+  eventsTeaser?: boolean;
+  /** The kind a NEW chart's form opens on (the caller's derived default: Event on a
+   *  geodetic map). Passed through to the form. Omitted → Person. */
+  defaultKind?: ChartKindOf;
+  /** The EFFECTIVE zodiac, passed through to the form (a found ingress follows it).
+   *  Omitted → the form's tropical default. */
+  zodiac?: ZodiacMode;
+  /** Adds the example event chart (App's idempotent addExampleEvent; it selects
+   *  nothing). Offered under an empty Events filter; omitted, never offered. */
+  onAddExample?: () => void;
+  /** The placed map pin, passed through to the form's Lives now box (2026-10-23). */
+  mapPin?: { lat: number; lng: number; label: string } | null;
 }
 
 /**
@@ -142,8 +166,17 @@ export function ChartManager({
   onDelete,
   onImport,
   onClose,
+  eventsOn = false,
+  eventsTeaser = false,
+  defaultKind,
+  zodiac,
+  onAddExample,
+  mapPin,
 }: ChartManagerProps) {
   const { t, fmt } = useT();
+  // The hold presents every chart as a person; with events on, a chart is what it says.
+  const held = !eventsOn;
+  const isEventChart = (c: StoredChart) => presentedKind(c, held) === 'event';
   // On touch, don't autofocus the search box: it forces the keyboard up the moment My Charts
   // opens, but the user is usually tapping an existing name or the "add" button, not searching.
   // Desktop keeps the autofocus — a focused search box there is quick, non-intrusive access.
@@ -151,7 +184,7 @@ export function ChartManager({
   const id = useIdentity();
   const [query, setQuery] = useState('');
   // Tag filter for the list; 'all' shows everything. Independent of the search box.
-  const [tagFilter, setTagFilter] = useState<'all' | ChartTag | 'unknown'>('all');
+  const [tagFilter, setTagFilter] = useState<'all' | ChartTag | 'unknown' | 'event'>('all');
   // The chart loaded in the right-hand form (null = adding a new one).
   const [editing, setEditing] = useState<StoredChart | null>(
     () => charts.find((c) => c.id === initialEditId) ?? null,
@@ -234,6 +267,7 @@ export function ChartManager({
     let result = [...charts].sort((a, b) => chartRecency(b) - chartRecency(a));
     if (excludeId) result = result.filter((c) => c.id !== excludeId);
     if (tagFilter === 'unknown') result = result.filter((c) => timeUnknown(c));
+    else if (tagFilter === 'event') result = result.filter((c) => presentedKind(c, held) === 'event');
     else if (tagFilter !== 'all') result = result.filter((c) => chartTag(c) === tagFilter);
     if (q)
       result = result.filter(
@@ -243,7 +277,7 @@ export function ChartManager({
           foldForSearch(chartFolder(c)).includes(q),
       );
     return result;
-  }, [charts, q, tagFilter, excludeId]);
+  }, [charts, q, tagFilter, excludeId, held]);
 
   const tree = useMemo(() => buildFolderTree(visible, declared), [visible, declared]);
   const allFolderPaths = useMemo(
@@ -311,6 +345,10 @@ export function ChartManager({
   const hasSpace = useMemo(() => charts.some((c) => chartTag(c) === 'space'), [charts]);
   const hasUnknown = useMemo(() => charts.some((c) => timeUnknown(c)), [charts]);
   const hasShared = useMemo(() => charts.some((c) => chartTag(c) === 'shared'), [charts]);
+  // The Events chip is the exception (2026-10-20): it shows whenever event charts are on
+  // offer, with or without one in the library. A kind of chart the app offers is not a
+  // system mark waiting for an example — and an empty Events list is where the example
+  // event is offered (below).
 
   const editNew = (name: string) => {
     setEditing(null);
@@ -563,7 +601,8 @@ export function ChartManager({
                 (c) =>
                   (c.value !== 'space' || hasSpace) &&
                   (c.value !== 'unknown' || hasUnknown) &&
-                  (c.value !== 'shared' || hasShared),
+                  (c.value !== 'shared' || hasShared) &&
+                  (c.value !== 'event' || eventsOn),
               ).map(({ value, labelKey }) => (
                 <button
                   key={value}
@@ -606,11 +645,32 @@ export function ChartManager({
               onDrop={stopEdgeScroll}
             >
               <ul className="cm-list" ref={listRef}>
-                {items.length === 0 && !showAddRow && newFolderParent === null && (
-                  <li className="cm-list-empty">
-                    {charts.length === 0 ? t('chartManager.empty') : t('chartManager.noMatches')}
-                  </li>
-                )}
+                {items.length === 0 && !showAddRow && newFolderParent === null &&
+                  (tagFilter === 'event' && !q ? (
+                    // The Events filter with no event chart to show (2026-10-20): say
+                    // so, and offer the example — the same idempotent add the chart
+                    // menu's empty Events list offers, which selects nothing.
+                    <li className="cm-list-empty cm-list-empty--events">
+                      <span>{t('chartManager.eventsEmpty')}</span>
+                      {onAddExample && !hasExampleEvent(charts) && (
+                        <TipButton
+                          type="button"
+                          className="cm-add-example"
+                          onClick={onAddExample}
+                          placement="top"
+                          tip={t('common.addExampleEvent')}
+                          hint={t('common.addExampleEventHint')}
+                        >
+                          <TagIcon tag="event" />
+                          {t('common.addExampleEvent')}
+                        </TipButton>
+                      )}
+                    </li>
+                  ) : (
+                    <li className="cm-list-empty">
+                      {charts.length === 0 ? t('chartManager.empty') : t('chartManager.noMatches')}
+                    </li>
+                  ))}
                 {showAddRow && (
                   <li>
                     <button
@@ -802,6 +862,11 @@ export function ChartManager({
                       <button type="button" className="cm-row" onClick={() => onSelect(c.id)}>
                         <span className="cm-row-name" translate="no">
                           <TagIcon tag={chartTag(c)} className="tag-icon" />
+                          {/* An event chart's calendar (2026-10-20), named for a screen
+                              reader: nothing else on the row says what kind it is. */}
+                          {isEventChart(c) && (
+                            <TagIcon tag="event" className="tag-icon" label={t('chartManager.eventRowAria')} />
+                          )}
                           {timeUnknown(c) && <TagIcon tag="unknown" className="tag-icon" />}
                           {id.on ? id.name(c.name) : displayName(c.name)}
                         </span>
@@ -939,6 +1004,11 @@ export function ChartManager({
               submitLabel={editing ? t('chartManager.saveChanges') : t('chartManager.addChart')}
               onSubmit={handleSave}
               onImport={editing ? undefined : onImport}
+              eventsOn={eventsOn}
+              eventsTeaser={eventsTeaser}
+              defaultKind={defaultKind}
+              zodiac={zodiac}
+              mapPin={mapPin}
             />
           </div>
         </div>

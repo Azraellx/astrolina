@@ -327,13 +327,23 @@ export const NIGHT_SHADE_STYLE: Record<Theme, { color: string; opacity: number }
 // of the Ascendant zone under the cursor, filled in the same ink: a soft neutral lift that
 // reads over the zone shading in any element's colour, Presentation's included, without
 // taking a colour of its own. (2026-10-02)
+//
+// Two more since 2026-10-20 (Lina's 20 Oct reply, §4). `halo` rings the sign labels, which are
+// bold and larger at the band tops now, so they read over the zone shading, a coastline or a
+// line: the map's own ground, pushed a little away from the label ink — for now the values the
+// eclipse digits' halo already had (ECLIPSE_LABEL_HALO), which were tuned for exactly this,
+// dark ink on a pale map and the reverse, until the design pass settles them on screenshots.
+// `faint` is the share of `hover` each highlight keeps while the MC band AND the Ascendant zone
+// under the cursor are both lit (both grid layers on): each reads lighter, and where they
+// overlap the two washes stack into a darker patch — the place's own pair — with no third
+// colour to explain.
 export const GEO_GRID_STYLE: Record<
   Theme,
-  { line: string; opacity: number; width: number; label: string; hover: number }
+  { line: string; opacity: number; width: number; label: string; hover: number; halo: string; faint: number }
 > = {
-  glass: { line: '#2b3445', opacity: 0.38, width: 0.6, label: '#2b3445', hover: 0.1 },
-  dark: { line: '#d6dbe6', opacity: 0.3, width: 0.6, label: '#d6dbe6', hover: 0.12 },
-  vintage: { line: '#4a3a24', opacity: 0.4, width: 0.6, label: '#4a3a24', hover: 0.1 },
+  glass: { line: '#2b3445', opacity: 0.38, width: 0.6, label: '#2b3445', hover: 0.1, halo: 'rgba(255, 255, 255, 0.95)', faint: 0.6 },
+  dark: { line: '#d6dbe6', opacity: 0.3, width: 0.6, label: '#d6dbe6', hover: 0.12, halo: 'rgba(10, 10, 15, 0.95)', faint: 0.6 },
+  vintage: { line: '#4a3a24', opacity: 0.4, width: 0.6, label: '#4a3a24', hover: 0.1, halo: 'rgba(238, 230, 213, 0.95)', faint: 0.6 },
 };
 
 // The MC zone shading: element as hue (Fire vermillion, Earth blue-green, Air gold, Water

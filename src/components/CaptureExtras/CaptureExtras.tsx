@@ -28,6 +28,7 @@
 // existing capture glyph pass with no extra export code. The wheel SVG itself is colour-
 // styled via CSS vars, which html2canvas can't serialise, so captureFrame rasterises it
 // separately (see Map.tsx).
+import { isRanged, type BodyRange } from '../../lib/astro/timeless';
 import { useLayoutEffect, useRef } from 'react';
 import { useT } from '../../i18n';
 import {
@@ -93,12 +94,10 @@ export type CaptureFrameExtras =
       /** Bodies known only to a span, half-width in degrees — a chart with no birth time
        *  (lib/astro/timeless): their rows print the span (2°♉–18°♉), as the sidebar's do.
        *  (2026-10-02) */
-      ranges?: ReadonlyMap<PlanetName, number> | null;
-      /** The natal wheel's source notes (WheelSvg bodyNotes): the Part of Fortune on a
-       *  geodetic map, built from the place's Ascendant while the captured map's Fortune line
-       *  keeps the chart's own. A picture has no tips, so the row carries the sidebar's GE
-       *  mark alone, kept where Discreet blanks the figure. (2026-10-02) */
-      bodyNotes?: ReadonlyMap<PlanetName, string> | null;
+      ranges?: ReadonlyMap<PlanetName, BodyRange> | null;
+      // No source notes here since 2026-10-20: the list carried the sidebar's GE mark on the
+      // Part of Fortune's row (a picture has no tips), and Lina (20 Oct reply, §6) asked for
+      // the mark to go. A wheel capture still carries the note in its tip (bodyNotes below).
     }
   | {
       view: 'wheel';
@@ -141,7 +140,7 @@ export type CaptureFrameExtras =
        *  timeless chart's Moon drawn as its span, and the Part of Fortune on a geodetic map
        *  labelled with the Ascendant it was built from — as the sidebar's wheel draws them.
        *  (2026-10-02) */
-      ranges?: ReadonlyMap<PlanetName, number> | null;
+      ranges?: ReadonlyMap<PlanetName, BodyRange> | null;
       bodyNotes?: ReadonlyMap<PlanetName, string> | null;
     };
 
@@ -172,7 +171,7 @@ export function CaptureExtras({
   wheelSize,
   onMeasure,
 }: CaptureExtrasProps) {
-  const { t, labels } = useT();
+  const { labels } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Report the panel's measured size so the Map can inset the framed view to match.
@@ -224,9 +223,9 @@ export function CaptureExtras({
   // export's glyph pass restamps both. (2026-10-02)
   const listRanges = data.view === 'list' ? data.ranges : null;
   const span = (p: CaptureExtraPlanet) => {
-    const half = listRanges?.get(p.name);
-    if (half === undefined) return null;
-    const { lo, hi } = lonRange(p.lon, half);
+    const r = listRanges?.get(p.name);
+    if (!isRanged(r)) return null;
+    const { lo, hi } = lonRange(p.lon, r);
     // Pure figures and glyphs, kept out of a page translator (sign()'s note). (2026-10-09)
     return (
       <span className="cx-lon" translate="no">
@@ -259,6 +258,9 @@ export function CaptureExtras({
             minorBodies={data.minorBodies ?? null}
             detailed
             interactive
+            // No house focus on a wheel that is headed for an image: a tap leaves it up,
+            // and the export would carry the faded houses with it. (2026-10-23)
+            houseFocus={false}
             readouts
             advanced={data.advanced ?? false}
             planetsOnly={data.planetsOnly ?? false}
@@ -284,14 +286,7 @@ export function CaptureExtras({
               <span className="cx-glyph astro-glyph" translate="no" style={{ color: planetInk(p.name) }}>
                 {PLANET_GLYPHS[p.name]}
               </span>
-              <span className="cx-name">
-                {labels.planet(p.name)}
-                {data.bodyNotes?.has(p.name) && (
-                  <span className="cx-ge-tag" translate="no">
-                    {t('expandedSidebar.geodetic.ge')}
-                  </span>
-                )}
-              </span>
+              <span className="cx-name">{labels.planet(p.name)}</span>
               {data.maskAngleText && POINTS.includes(p.name) ? (
                 <span className="cx-lon">{maskText('00°00\'')}</span>
               ) : (

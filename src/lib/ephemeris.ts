@@ -553,11 +553,15 @@ export function eclipticToRaDec(
 
 // Geodetic angles: a place's own angles, read from its coordinates with no chart.
 
-// Mean obliquity at J2000.0 (23°26′21.448″), radians. Everything that reads a place's
-// geodetic angles with NO chart behind it — the grid, its hover readout and zone
-// membership — uses this. A surface fed by a chart uses that chart's obliquity(jd)
-// instead, so its seconds differ from the grid's: a 1941 chart moves Toronto's
-// Ascendant 18″ (verify-geodetic §6). (2026-10-02)
+// Mean obliquity at J2000.0 (23°26′21.448″), radians: the tilt of a geodetic map with NO
+// chart loaded. Lina's ruling, 20 Oct 2026 (§2): "Every geodetic surface uses the loaded
+// chart's true obliquity of date. With no chart loaded, every geodetic surface uses J2000.
+// One tilt on screen at a time." So this is no longer the grid's own tilt whatever the
+// chart: App derives one geoEps — the chart's obliquity(jd), or this with no chart — and
+// the grid, its readout and zones, the wheel, the Coordinates box and the overlay lines
+// all read it. Until 2026-10-20 the grid stayed at J2000 under a chart of another date,
+// which put a 1941 chart's Ascendant 18″ off the curve it was read against at Toronto
+// (verify-geodetic §6). (2026-10-20)
 export const EPS_J2000 = 23.4392911 * DEG2RAD;
 
 // Which zodiac-to-Earth convention maps a longitude to its Midheaven. Only the
@@ -736,13 +740,22 @@ export type LineSystem = 'celestial' | 'geodetic';
 // position's ra/dec are per-coordinate means, so inverting them would land on a
 // longitude other than the one the chart is defined by. The projected point IS
 // its own longitude of record, so `lon` rides along (idempotent).
+//
+// `frameEps` is the tilt the projected point is laid back on the equator at, and
+// defaults to the moment's own. A geodetic map passes its one tilt (App's geoEps;
+// Lina, 20 Oct 2026, §2) for an overlay's bodies, so a transit's line is mapped at the
+// same ε as the grid it is read against. The longitude is still read at the moment's
+// own ε — a body's degree is a fact about its moment, and that is the figure the wheel
+// prints; only where that degree lands on the Earth follows the map. (2026-10-20)
 export function projectOntoEcliptic(
   positions: PlanetPosition[],
   jd: number,
+  frameEps?: number,
 ): PlanetPosition[] {
-  const eps = obliquity(jd);
+  const own = obliquity(jd);
+  const eps = frameEps ?? own;
   return positions.map((p) => {
-    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps);
+    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, own);
     const { ra, dec } = eclipticToRaDec(lon, 0, eps);
     return { name: p.name, ra, dec, lon };
   });
@@ -751,14 +764,17 @@ export function projectOntoEcliptic(
 // The same In-Zodiaco / geodetic projection for catalog minor bodies, so their
 // lines follow the planets' frame exactly (a consumer answering a question about a
 // line must read the frame the line generator read). Kept beside the planets'
-// version on purpose: the two must never drift into different conventions.
+// version on purpose: the two must never drift into different conventions — and
+// `frameEps` means what it does there.
 export function projectMinorOntoEcliptic(
   positions: readonly MinorPosition[],
   jd: number,
+  frameEps?: number,
 ): MinorPosition[] {
-  const eps = obliquity(jd);
+  const own = obliquity(jd);
+  const eps = frameEps ?? own;
   return positions.map((p) => {
-    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps);
+    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, own);
     const { ra, dec } = eclipticToRaDec(lon, 0, eps);
     return { n: p.n, ra, dec, lon };
   });
@@ -1606,6 +1622,47 @@ export function directedAngles(
   };
 }
 
+// A moment whose TRUE obliquity of date is `eps` (radians): what geodeticFrame hands
+// Swiss's house routine when a frame is read at a tilt other than its own moment's. The
+// routine takes ε only from the moment, and our engine build exports no house call that
+// takes it directly, so the cusps of a J2000 frame are asked at a moment whose obliquity
+// is J2000's — the RAMC is passed separately (through the longitude), so nothing else
+// about that moment reaches them. (2026-10-20)
+//
+// How. The mean obliquity falls about 46.8″ a century; nutation swings the true one
+// about it by under 10″. So within 40 years either side of the moment whose MEAN
+// obliquity is eps the true one runs from above eps to below it (18.7″ of margin each
+// way), and bisection on that bracket finds a crossing — any crossing serves, since only
+// the ε reaches the cusps. Cached per ε: a chart, or J2000, asks for one at most.
+const OBLIQUITY_RATE_RAD_PER_DAY = (46.815 / 3600) * DEG2RAD / 36525;
+const HOUSE_MOMENT_SPAN_DAYS = 40 * 365.25;
+const houseMoments = new Map<number, number>();
+function houseMomentFor(eps: number, nearJd: number): number {
+  const cached = houseMoments.get(eps);
+  if (cached !== undefined) return cached;
+  const seed = 2451545.0 + (EPS_J2000 - eps) / OBLIQUITY_RATE_RAD_PER_DAY;
+  let lo = seed - HOUSE_MOMENT_SPAN_DAYS;
+  let hi = seed + HOUSE_MOMENT_SPAN_DAYS;
+  // Falling through the bracket: obliquity(lo) > eps > obliquity(hi). A tilt no moment
+  // near its mean crossing has (nothing the app asks for) keeps the moment's own cusps.
+  if (!(obliquity(lo) > eps && obliquity(hi) < eps)) return nearJd;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (mid === lo || mid === hi) break;
+    const f = obliquity(mid) - eps;
+    if (f === 0) {
+      lo = hi = mid;
+      break;
+    }
+    if (f > 0) lo = mid;
+    else hi = mid;
+  }
+  const jd = Math.abs(obliquity(lo) - eps) <= Math.abs(obliquity(hi) - eps) ? lo : hi;
+  if (houseMoments.size >= 8) houseMoments.clear();
+  houseMoments.set(eps, jd);
+  return jd;
+}
+
 /**
  * A chart's frame on a geodetic map: the place's own geodetic angles, and the
  * house cusps of the reader's system computed FROM them — the way a table of houses
@@ -1633,17 +1690,29 @@ export function directedAngles(
  *   Swiss builds its cusps from can be tens of degrees apart, so cusp 1 = AS fails;
  *   the gap passes 1″ only within ~1e-7° (about a centimetre of ground) of either
  *   point, so it is recorded here rather than guarded. (2026-10-02)
+ * - `eps`, when given, is the tilt the frame is read at instead of obliquity(jd): a
+ *   geodetic map's one tilt (Lina, 20 Oct 2026, §2), which with no chart loaded is
+ *   J2000 at whatever moment the wheel shows. The angles take it directly; the cusps
+ *   come from Swiss, whose house routine takes its ε from the moment, so they are
+ *   asked at houseMomentFor(eps, jd) — a moment whose true obliquity IS eps — with the
+ *   same RAMC. So cusp 1 = AS still holds to float noise at any tilt (verify-geodetic
+ *   §6), rather than a cusp read at one ε beside angles read at another. Omitted, it
+ *   is obliquity(jd), and the frame is the one it always was. (2026-10-20)
  */
 export function geodeticFrame(
   jd: number,
   latDeg: number,
   lngDeg: number,
   system: HouseSystem,
+  eps?: number,
 ): RelocatedAngles {
-  // obliquity(jd) is taken here, not passed in, so the angles and Swiss's cusps
-  // are computed against the same ε.
-  const g = geodeticAngles(lngDeg, latDeg, obliquity(jd));
-  const d = relocate(jd, latDeg, ((g.ramc - gmstRadians(jd)) * 180) / Math.PI, system);
+  // The angles and Swiss's cusps are computed against the same ε: obliquity(jd), or
+  // the given tilt at a moment whose obliquity it is.
+  const own = obliquity(jd);
+  const e = eps ?? own;
+  const hjd = e === own ? jd : houseMomentFor(e, jd);
+  const g = geodeticAngles(lngDeg, latDeg, e);
+  const d = relocate(hjd, latDeg, ((g.ramc - gmstRadians(hjd)) * 180) / Math.PI, system);
   const turned = Math.abs(Math.atan2(Math.sin(d.mc - g.mc), Math.cos(d.mc - g.mc))) > Math.PI / 2;
   const cusps = turned ? d.cusps.map((_, k) => d.cusps[(12 - k) % 12]) : d.cusps;
   return {

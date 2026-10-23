@@ -137,6 +137,98 @@
   text-align: center;
 }
 
+/* ── Events, People and No chart (2026-10-20) ──────────────────────────────────
+   While event charts are on offer the menu is the No chart row and two headed
+   lists. The WHOLE stack scrolls as one (the single list's own cap would give each
+   list a scrollbar of its own), so the lists inside it don't cap themselves. */
+.switcher-sections {
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+.switcher-sections ul {
+  max-height: none;
+  overflow: visible;
+}
+/* No chart sits apart from the lists under it: it selects no chart at all. */
+.switcher-sky {
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid rgba(var(--tint), 0.08);
+}
+/* One line, not a chart's two: it is a special row, not a chart, so it takes less
+   height than the rows under it (Salvatore, 2026-10-20). The tagline follows the name
+   as one phrase, "No chart · the sky alone", and gives way first when the menu is
+   narrow. */
+.switcher-sky .chart-row {
+  flex-direction: row;
+  align-items: baseline;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.switcher-sky .chart-name {
+  flex-shrink: 0;
+}
+.switcher-sky .chart-meta {
+  min-width: 0;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switcher-sky .chart-meta::before {
+  content: '·';
+  margin: 0 5px;
+}
+/* A section's heading. Capitals come from here, not the string, so each language's
+   casing rules apply (the Turkish dotted İ follows <html lang>). */
+.switcher-section-head {
+  padding: 7px 10px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.switcher-section + .switcher-section {
+  margin-top: 2px;
+}
+/* An empty section's line, left-aligned under its heading rather than centred like
+   the empty library's — it is one list of two, not the whole menu. */
+.switcher-section li.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 10px 8px;
+  text-align: left;
+}
+.switcher-add-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.4);
+  border-radius: 999px;
+  background: rgba(var(--accent-brand-rgb), 0.08);
+  color: var(--accent-brand);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.switcher-add-example:hover {
+  background: rgba(var(--accent-brand-rgb), 0.16);
+}
+.switcher-add-example .tag-glyph {
+  color: inherit;
+}
+@media (pointer: coarse) {
+  .switcher-add-example {
+    min-height: 36px;
+  }
+}
+
 .chart-row {
   flex: 1;
   min-width: 0;
@@ -335,5 +427,30 @@
   }
   .topnav .switcher-short {
     display: contents;
+  }
+  /* No chart has no short twin, so its name and sky line ("No chart" over "Transits · 20 Oct
+     2026") stand in the name's track, which on a phone is narrower than either in most
+     languages: about 30–70 px between 360 and 430 px wide. Right-aligned and uncapped, the label
+     overflowed the track's START, off the screen's left edge, and lost its first words. So the
+     track is filled and every box down to the two lines is capped to it: each line ellipsizes at
+     its END instead. A chart's initials over its year are narrower than any track, so they sit
+     exactly where they did. (2026-10-20) */
+  .topnav .topnav-chart {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .topnav .chart-switcher {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .topnav .switcher-trigger,
+  .topnav .switcher-trigger .label,
+  .topnav .switcher-trigger .name-row {
+    max-width: 100%;
+  }
+  /* A block, so its ellipsis draws (a flex container's text only clips). On the phone the line
+     holds one string, the year or the sky line, so the flex gap had nothing to space. */
+  .topnav .switcher-trigger .meta {
+    display: block;
   }
 }

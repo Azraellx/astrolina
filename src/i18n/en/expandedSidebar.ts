@@ -17,6 +17,18 @@ export const expandedSidebar = {
   // a date beside one is not ("TRANSITS · 1 August 2026"). (2026-10-07)
   header: {
     natal: 'NATAL CHART',
+    // The labels of an overlaid bi-wheel's two header blocks (Lina, 21 Oct 2026, §5), each
+    // followed by " · " and its chart's label ("Inner wheel · NATAL CHART").
+    innerWheel: 'Inner wheel',
+    outerWheel: 'Outer wheel',
+    // A geodetic chart's label names its kind after GEODETIC CHART: "GEODETIC CHART · NATAL"
+    // (§5); EVENT for an event chart. Shown in capitals as written.
+    natalKind: 'NATAL',
+    eventKind: 'EVENT',
+    // An event chart's label on a celestial map (2026-10-20): the chart of a moment in
+    // the world — an ingress, a founding — rather than of a birth. Upper case like the
+    // other state names. On a geodetic map the label is GEODETIC CHART for both kinds.
+    event: 'EVENT CHART',
     // A state the WHEEL is in, added after whatever label names it — a chart (NATAL CHART ·
     // RELOCATED, DAVISON · RELOCATED) or an overlay with its date (TRANSITS · 1 August 2026 ·
     // RELOCATED; lib/chartHeader). So it follows nouns of different genders and numbers: in a
@@ -27,7 +39,6 @@ export const expandedSidebar = {
     geodetic: 'GEODETIC CHART',
     composite: 'COMPOSITE (MIDPOINTS)',
     davison: 'DAVISON',
-    synastry: 'SYNASTRY',
     solarReturn: 'SOLAR RETURN {year}',
     lunarReturn: 'LUNAR RETURN',
     // The time overlays, as a chart: the wheel's overlay ring, or the chart a promoted
@@ -45,6 +56,13 @@ export const expandedSidebar = {
     // A relocated chart's birth moment stays the birthplace's own clock; "Born:" says
     // whose moment it is once a second place sits under it — or a ring's moment above it.
     born: 'Born:',
+    // The same lead on an event chart's moment (2026-10-20): the moment is the event's,
+    // not a birth.
+    eventLead: 'Event:',
+    // With No chart selected (2026-10-20) and no place pinned or hovered, the sky's
+    // wheel has planets but no angles: this line, under the overlay's moment, says how
+    // to get them.
+    skyNoPlace: 'Pin or hover a place to cast the angles there.',
     // A ring's moment, named where the header's label names something else: a composite
     // outranks a ring it carries, and a bare date there would read as the composite's own.
     ringLead: {
@@ -59,11 +77,9 @@ export const expandedSidebar = {
       lunarReturn: 'Lunar return:',
     },
     // The point a relocated chart is cast for — coordinates only, no zone: the clock
-    // there is not an input to anything.
+    // there is not an input to anything. The one term on both line systems, and for a synastry
+    // partner's wheel too (Lina, 23 Oct 2026, H-3: "Cast for" appears nowhere).
     relocatedTo: 'Relocated to:',
-    // The same line on a geodetic map, where the frame is the place's own rather than
-    // a natal frame moved there.
-    castFor: 'Cast for:',
     midpoint: 'Geographic midpoint:',
     // A Davison's parents, named only while the chart is still their midpoint.
     derivedFrom: 'Derived from:',
@@ -74,13 +90,26 @@ export const expandedSidebar = {
     geocentric: 'Geocentric',
   },
   empty: 'No chart selected',
-  // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
-  // is promoted with the natal chart hidden — there's nothing to draw.
-  noChart: 'NO CHART (CCG)',
-  // One-sentence reason shown (centred) under the empty-wheel label, so the empty
-  // state explains itself rather than just asserting there's nothing to draw.
-  noChartNote:
-    'Cyclocartography blends progressed inner planets with transiting outer planets, so there’s no single chart to draw.',
+  // Under "No chart selected" in the empty wheel, while No chart (the sky alone) is chosen and
+  // no overlay is drawing the sky (2026-10-20): how to get a wheel there. "Overlay menu" is the
+  // top bar's Overlay menu. One sentence, centred under the line above.
+  // Since 21 Oct 2026 the whole empty state, reason and fix, in Lina's words (§4).
+  // @i18n-verbatim
+  skyEmpty: 'No chart loaded. Turn on Transits or Eclipses to see the sky, or choose a chart.',
+  // A chart with no birth time: the tag after an aspect's name in the aspect list, and after a
+  // contact's, when either end is a body given as a range (Lina, 21 Oct 2026, §2.5; every such
+  // body since 22 Oct). Her wording; a short tag in a narrow row.
+  // @i18n-verbatim
+  aspectHourBound: 'depends on the birth hour',
+  // The card in the sidebar where the overlay's wheel would be, while Cyclocartography is drawn
+  // (Lina, 22 Oct 2026, §2.6: her suggestion, the wording ours): a short heading over the reason
+  // there is no wheel and what gives one. The groups are named, not characterised (Sun–Mars,
+  // Jupiter–Pluto: the bodies the technique takes from each). "Secondary progressed" and
+  // "Transits" are the Overlay menu's two entries.
+  cyclo: {
+    title: 'CYCLOCARTOGRAPHY · map lines only',
+    body: 'It blends progressed Sun–Mars with transiting Jupiter–Pluto, so there is no single chart to draw. For positions, turn on Secondary progressed or Transits.',
+  },
 
   dual: {
     // The Dual toggle in the header: pill label, hover tip title, and explanation.
@@ -115,6 +144,9 @@ export const expandedSidebar = {
   // the middle of a line. On the geodetic header from 2026-10-02; on every header,
   // and with no zone after it, since 2026-10-07.
   timeUnknownNoon: 'birth time unknown, noon used',
+  // The same two for an event chart with no time (2026-10-20): "time", not "birth time".
+  timeUnknownNoteEvent: 'Time unknown',
+  timeUnknownNoonEvent: 'time unknown, noon used',
 
   // The panel header's data block on a geodetic map, which says what the wheel is: the
   // chart's own planets inside a PLACE's geodetic angles and houses. After the
@@ -123,42 +155,97 @@ export const expandedSidebar = {
   // planets and the houses come from. {system} is the house system's own name, Porphyry
   // wherever the chosen one is undefined at the place's latitude (houseFallback says
   // why). (2026-10-02)
+  // The panel header's geodetic data block. Its angle line is the map readout's own
+  // (map.geoReadout.angles, since 2026-10-20), so the two surfaces print one format.
   geodetic: {
-    // Geodetic equivalents: the place's own angles. The Coordinates box heads its
-    // angles with the same two letters (coordReadout.geodetic).
-    ge: 'GE',
-    planets: 'Planets at natal positions · houses: {system}, from the geodetic angles',
+    // The houses line's one pattern (Lina, 21 Oct 2026, §5): "{Natal | Progressed | Transit |
+    // Eclipse | Event} positions · houses: {system}, from the geodetic angles". Her wording.
+    // @i18n-verbatim
+    planets: 'Natal positions · houses: {system}, from the geodetic angles',
     planetsComposite:
       'Planets at the composite’s positions · houses: {system}, from the geodetic angles',
     // A time overlay promoted to stand in for the chart (Natal off): its bodies are
     // another instant's. {overlay} is its name as the wheel title shows it.
     planetsPromoted: 'Planets from {overlay} · houses: {system}, from the geodetic angles',
+    // The same line for an EVENT chart (an ingress, a lunation, a founding — not a birth),
+    // 2026-10-20: its planets are the event moment's. A draft for Lina to confirm. {system} as
+    // above. One line in the panel header, under the place's angles.
+    // @i18n-verbatim
+    planetsEvent: 'Event positions · houses: {system}, from the geodetic angles',
+  },
+
+  // The houses line on every overlay wheel, both line systems (Lina, 22 Oct 2026, §3.2, her words):
+  // "{positions} · houses: {system}, from the {angles}" — which positions the wheel holds, its
+  // house system, and which angles its houses are taken from. Under "Outer wheel" in the overlaid
+  // view, and in the second header of the stacked one; a line in the panel header, wrapped when
+  // long, never cut short. {positions} is one of `positions` below, {angles} one of `angles`, each
+  // possibly carrying a calculation (`withCalc`); {system} is the house system's name.
+  // @i18n-verbatim
+  houses: {
+    line: '{positions} · houses: {system}, from the {angles}',
+    // The same line with no angle clause (Lina, 23 Oct 2026, H-2): a wheel whose houses come from its
+    // own moment at the place — transits, a return, an eclipse, an event chart — names no angles:
+    // "Transit positions · houses: Whole Sign".
+    lineOwn: '{positions} · houses: {system}',
+    // A word with its calculation in brackets after it: "Directed positions (Solar arc, Long.)",
+    // "progressed angles (Naibod, R.A.)". {word} and {calc} as built by the code.
+    withCalc: '{word} ({calc})',
+    // One generic word per family (her names, 23 Oct 2026 §6: Natal, Transit, Return, Eclipse, Event,
+    // Progressed, Directed). Use each language's one agreed term for each, the same word wherever it
+    // recurs.
+    positions: {
+      natal: 'Natal positions',
+      transit: 'Transit positions',
+      progressed: 'Progressed positions',
+      directed: 'Directed positions',
+      return: 'Return positions',
+      eclipse: 'Eclipse positions',
+      event: 'Event positions',
+    },
+    // Lower case: they follow "from the" in the line. Her four angle words (23 Oct 2026, §6).
+    angles: {
+      natal: 'natal angles',
+      progressed: 'progressed angles',
+      directed: 'directed angles',
+      geodetic: 'geodetic angles',
+    },
+    // The calculations' short forms, each tied to its name on the methods page (her §3.2): the four
+    // arc methods (Solar Arc, a progression's angles), then the primary directions' rate keys by
+    // their existing names. {rate} is a user rate's degrees per year.
+    calc: {
+      'sa-long': 'Solar arc, Long.',
+      'sa-ra': 'Solar arc, R.A.',
+      'naibod-long': 'Naibod, Long.',
+      'naibod-ra': 'Naibod, R.A.',
+      ptolemy: 'Ptolemy, 1°/yr',
+      naibod: 'Naibod, 59′08″/yr',
+      cardan: 'Cardan, 59′12″/yr',
+      'kepler-ra': 'Solar Daily Motion, RA',
+      'solar-long': 'Solar Daily Motion, Longitude',
+      'placidus-ra': 'True Solar Arc, RA',
+      user: 'User rate, {rate}°/yr',
+    },
   },
 
   // Pre-1970 timezone DST caution glyph beside a moment line.
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
 
-  // Dual wheels under Synastry: the partner's wheel is headed by the partner's own
-  // record (name, birth date · time, their birthplace), then one line set apart
-  // for where their wheel is actually cast.
+  // Under Synastry the partner's block is titled "NATAL CHART · {name}" and carries their own
+  // record (Lina, 23 Oct 2026, H-3), then "Relocated to:" where their wheel is cast elsewhere: the
+  // partner's angles and houses are cast at the active point — the pin, else the hovered point,
+  // else the active chart's birthplace — so that is usually not their own place.
   partnerHead: {
-    // Precedes the place name, styled apart from it ("Cast for  Vienna, Austria").
-    // The partner's angles and houses are cast at the active point — the pin, else
-    // the hovered point, else the active chart's birthplace — so this names a place
-    // that is usually not their own.
-    castFor: 'Cast for',
-    // The line's tip (hover, focus, or a tap). Names no place, so it is safe under
-    // Discreet mode. The fallback to the active chart's birthplace is deliberate —
+    // The partner's "Relocated to:" line's tip (hover, focus, or a tap). Names no place, so it
+    // is safe under Discreet mode. The fallback to the active chart's birthplace is deliberate —
     // both wheels read for one place (calculation-methods.md) — so the tip says how
     // to move it rather than apologising for it.
     castForTip: 'Where both wheels are cast',
     castForHint:
       'Their angles and houses are read for one place — your pin, the point you hover, or else your birthplace — not the partner’s own. Pin a place on the map to cast both there.',
-    // In place of "Cast for" when the partner is a composite chart, whose angles
-    // are midpoints of its two charts' own angles and so belong to no place.
-    // Celestial maps only: on a geodetic map a composite's wheel is the place's
-    // frame like any other, and takes "Cast for". (2026-10-02)
+    // Under a composite partner, whose angles are midpoints of its two charts' own angles
+    // and so belong to no place. Celestial maps only: on a geodetic map a composite's wheel
+    // is the place's frame like any other, and takes "Relocated to:". (2026-10-02)
     midpointAngles: 'Midpoint angles, not relocated',
   },
 
@@ -249,19 +336,16 @@ export const expandedSidebar = {
   },
 
   // Balance section: element/modality glyph constellations (always shown) +
-  // essential dignities (Advanced) over the bodies the map filter shows. The
-  // dignities read whichever rulership table Settings ▸ Calculation is set to.
-  //
-  // "Shown planets, points and main asteroids", not "the shown bodies": the catalog minor
-  // planets are shown in the chart and deliberately left out of these tallies (with them
-  // in, the counts would measure how many bodies are switched on rather than the chart —
-  // the reason is on calculation-methods.md), so "shown bodies" would promise a set this
-  // isn't. The three named groups are exactly what Map filters toggles ("main asteroids"
-  // is the Minor bodies window's name for the five built-in ones, which ARE counted), and
-  // "shown" says the tally follows that filter.
+  // essential dignities (Advanced) over the Sun, the Moon and the eight planets — ten bodies,
+  // so each tally adds up to ten (Lina, 22 Oct 2026). The dignities read whichever rulership
+  // table Settings ▸ Calculation is set to. Every other body shown in the chart (the nodes,
+  // Lilith, Chiron, the asteroids, catalog bodies) is placed there but not counted: with them
+  // in, the counts would measure how many bodies are switched on rather than the chart (the
+  // reason is on calculation-methods.md).
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
-  balanceHint: 'How the shown planets, points and main asteroids spread across the elements (fire, earth, air, water) and modalities (cardinal, fixed, mutable) — where the chart’s emphasis lies.',
+  // The Sun, the Moon and the eight planets only, since 22 Oct 2026 (Lina): each tally adds up to ten.
+  balanceHint: 'How the Sun, the Moon and the eight planets spread across the elements (fire, earth, air, water) and modalities (cardinal, fixed, mutable) — where the chart’s emphasis lies.',
   element: { fire: 'Fire', earth: 'Earth', air: 'Air', water: 'Water' },
   modality: { cardinal: 'Cardinal', fixed: 'Fixed', mutable: 'Mutable' },
   // Blurbs shown beneath the name in each balance category's hover tip: the

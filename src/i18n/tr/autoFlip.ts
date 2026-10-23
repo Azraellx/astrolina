@@ -13,10 +13,6 @@ export const autoFlip = {
     title: 'Katman çerçevesi Dönüş köşeleri üzerinde tutulur',
     body: 'Dönüş haritası, kendi köşeleriyle kendine ait bir andır; harita artık natal köşelere göre değil, bu köşelere göre çiziliyor. Önceki çerçeve silinmedi, beklemede — dönüşten çıkınca ya da kutucuktaki ✕ ile hemen geri gelir.',
   },
-  'line-system-held': {
-    title: 'Jeodezik beklemede',
-    body: 'Jeodezik çizgi sistemi tropikal zodyağı Dünya’nın boylamlarına yerleştirir; bu yüzden çizilecek bir sidereal sürümü yoktur. Seçiminiz silinmedi, beklemede — zodyağı yeniden Tropikal yapın, geri gelir.',
-  },
   'line-projection': {
     title: 'Bu çizgiler In Mundo çiziliyor',
     body: 'Her program, bir gök cisminin çizgisini çizebilmek için önce onun nerede “olduğuna” karar vermek zorundadır. In Mundo onu gökyüzünde durduğu yere, enlemiyle birlikte yerleştirir. In Zodiaco ise önce bu enlemi ekliptiğe indirger.',
@@ -36,5 +32,9 @@ export const autoFlip = {
   'language-held': {
     title: 'Seçtiğiniz dil beklemede',
     body: 'Seçtiğiniz dil bu cihazda çevrilir; bu, şu anda burada mümkün olmadığı için uygulama her zamanki dilinde gösteriliyor. Seçiminiz korunuyor, silinmedi. Başka bir dil seçmek için şu yolu kullanın: {route}.',
+  },
+  'no-chart-held': {
+    title: 'Harita seçili değilken beklemede',
+    body: 'Bir haritayı ilerleten ya da karşılaştıran katmanlar ve Yerel Uzay penceresi, harita yokken bekler; transitler anın kendi çerçevesinde çizilir. Hiçbir şey silinmez: harita menüsünden bir harita seçin, hepsi bıraktığınız gibi geri gelir.',
   },
 } as const;

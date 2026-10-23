@@ -21,7 +21,10 @@ export const chartManager = {
     space: 'Espacio',
     unknown: 'Desconocida',
     shared: 'Compartida',
+    events: 'Eventos',
   },
+  eventsEmpty: 'Aún no hay cartas de evento.',
+  eventRowAria: 'Carta de evento',
   folders: {
     new: 'Nueva carpeta',
     newChild: 'Nueva subcarpeta',

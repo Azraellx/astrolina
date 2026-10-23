@@ -39,6 +39,39 @@
   cursor: help;
 }
 
+/* The line-system conflict banner (LineConflictBanner, 2026-10-22): a card at the map's top
+   centre, under the toolbar, with the reason and the two fixes on a row of their own. */
+.line-conflict-banner {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px 14px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  background: rgba(var(--bg-panel), max(0.94, var(--fx-opaque)));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.line-conflict-text {
+  display: block;
+}
+.line-conflict-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.line-conflict-fixes .sky-held-fix {
+  margin-left: 0;
+  font-size: 11.5px;
+  padding: 2px 9px;
+}
+
 /* HeldHud: the floating-window chrome, narrower than the shared 320px base (it carries
    one sentence and one button). Compound selectors so they outweigh .location-hud's
    own width and collapse rules whatever order the stylesheets land in. */

@@ -29,15 +29,21 @@ import {
 import type { HouseSystem } from '../src/lib/ephemeris';
 import {
   buildOverlay,
+  buildSkyOverlay,
   epochMsToJD,
   jdToEpochMs,
+  NO_CHART_BLOCKED_OVERLAYS,
   normalizeAngle,
   OVERLAY_MODES,
   overlayBlockFor,
   overlayBlockedFor,
   SKY_HELD_OVERLAYS,
+  TIME_UNKNOWN_BLOCKED_OVERLAYS,
+  TIMELESS_GEODETIC_OVERLAYS,
 } from '../src/lib/astro/timeline';
-import type { AngleProgression } from '../src/lib/astro/timeline';
+import type { AngleProgression, OverlayKind, OverlayLayer } from '../src/lib/astro/timeline';
+import { RANGE_BODIES, isRanged, overlayBirthDateMotion } from '../src/lib/astro/timeless';
+import type { PlanetPosition } from '../src/lib/ephemeris';
 import { buildDavison } from '../src/lib/astro/relationship';
 import { generateLines, type MeridianLng } from '../src/lib/astro/lines';
 import type { BirthData } from '../src/lib/birthData';
@@ -522,7 +528,13 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
     worst < 4.95, `max ${worst.toFixed(2)}° (${worstAt}) over 48 chart/age combinations`);
 }
 
-// ── 10. Primary directions held on a geodetic map ─────────────────────────────
+// ── 10. Which overlays a chart and a map can carry ────────────────────────────
+// Three parts, all read through overlayBlockFor, the one predicate behind the Overlay
+// menu, the 'o' cycle and App's effective overlay: (a) primary directions held on a
+// geodetic map; (b) a chart with no birth time on a geodetic map (Lina's §15, 20 Oct
+// 2026); (c) no chart at all (2026-10-20).
+//
+// (a) Primary directions held on a geodetic map.
 // An internal rule, like §§1–7 (2026-10-02). Primary directions move the map by
 // advancing the RAMC, the sky turning over the place, and a geodetic map doesn't turn
 // (lib/skyHold), so the Overlay menu greys the mode there with the sky sentence and the
@@ -560,8 +572,225 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   check('geodetic + Davison: synastry keeps its own reason, primary directions the map\'s',
     overlayBlockFor(DAVISON, 'geodetic')('synastry') === 'davison' &&
       overlayBlockFor(DAVISON, 'geodetic')(PD) === 'geodetic');
-  check('no chart: the map\'s hold still answers',
-    overlayBlockFor(null, 'geodetic')(PD) === 'geodetic' && overlayBlockFor(null, 'celestial')(PD) === null);
+  // Until 2026-10-20 this read "no chart: the map's hold still answers". With no chart,
+  // 'no-chart' now outranks the map's reason on both maps, for the same reason the chart's
+  // own blocks do: "switch to Celestial" is no fix for a technique with nothing to direct.
+  check('no chart: the no-chart reason outranks the map\'s, on both maps',
+    overlayBlockFor(null, 'geodetic')(PD) === 'no-chart' && overlayBlockFor(null, 'celestial')(PD) === 'no-chart');
+}
+
+// (b) A chart with no birth time on a geodetic map (Lina's ruling §15, 20 Oct 2026).
+// The progressions, solar arc and Cyclocartography come off the time-unknown block on a
+// geodetic map, where a place's angles come from its coordinates and the overlays advance only
+// the planets' degrees; primary directions stay blocked, and Celestial is unchanged. The first
+// group is internal rules.
+//
+// The rest is TWO PARTS AGREE (Lina's one range rule for an overlay, 22 Oct 2026, §2.3). An
+// overlay's lines are banded by the overlay's own motion over the birth date, which
+// lib/astro/timeless overlayBirthDateMotion reads by rebuilding the overlay with the birth HOUR
+// moved across the date — every third hour and the last midnight — and reading each body's
+// longitude at the tilt App hands it. This suite moves the birth its own way: by the OFFSET
+// (tzOffset − h moves the birth's UT by +h hours, the civil fields untouched), every hour from
+// the date's first midnight to its last, each body read at its layer's own obliquity. The two
+// must find the same extent for every body of every lifted overlay. If they disagreed, a
+// progressed or directed band would not be where the line can be — and the range rule's
+// consequences must show: the progressed Moon is ranged, Cyclo's transiting outer bodies (read
+// at the overlay's own moment, which no birth hour moves) are not.
+// (Until 22 Oct this held each overlay body under the NATAL band's fixed half-width, which the
+// range rule retired: an overlay's range is its own now, not the chart's.)
+{
+  const TIMELESS = { ...CHART, timeKnown: false };
+  const COMPOSITE_TIMELESS = { ...CHART, composite: {}, timeKnown: false };
+  // Cyclocartography joined on 21 Oct 2026 (Lina, question 6).
+  const LIFTED = ['progressed', 'tertiary-progressed', 'solar-arc', 'cyclo'] as const;
+  check('the geodetic lift is the progressions, solar arc and Cyclocartography, nothing else',
+    TIMELESS_GEODETIC_OVERLAYS.size === LIFTED.length && LIFTED.every((m) => TIMELESS_GEODETIC_OVERLAYS.has(m)),
+    `set: ${[...TIMELESS_GEODETIC_OVERLAYS].join(', ')}`);
+  check('every lifted mode is one the time-unknown block bars (else the lift is a no-op)',
+    [...TIMELESS_GEODETIC_OVERLAYS].every((m) => TIME_UNKNOWN_BLOCKED_OVERLAYS.has(m)));
+  const geo = overlayBlockFor(TIMELESS, 'geodetic');
+  const cel = overlayBlockFor(TIMELESS, 'celestial');
+  const freeOnGeo = LIFTED.filter((m) => geo(m) === null);
+  check('timeless chart on geodetic: progressed, tertiary, solar arc and Cyclocartography are available',
+    freeOnGeo.length === LIFTED.length, `available: ${freeOnGeo.join(', ') || 'none'}`);
+  check('timeless chart on geodetic: primary directions still \'no-time\' (outranking the sky hold)',
+    geo('primary-directions') === 'no-time');
+  check('timeless chart on geodetic: Cyclo is available (question 6), on Celestial still \'no-time\'',
+    geo('cyclo') === null && cel('cyclo') === 'no-time');
+  const blockedOnCel = [...TIME_UNKNOWN_BLOCKED_OVERLAYS].filter((m) => cel(m) === 'no-time');
+  check('timeless chart on Celestial: every time-unknown block stands',
+    TIME_UNKNOWN_BLOCKED_OVERLAYS.size > 0 && blockedOnCel.length === TIME_UNKNOWN_BLOCKED_OVERLAYS.size,
+    `'no-time': ${blockedOnCel.join(', ')}`);
+  check('timeless chart, no line system given: reads as Celestial, lifts nothing',
+    LIFTED.every((m) => overlayBlockFor(TIMELESS)(m) === 'no-time'));
+  check('timeless chart on geodetic: transits, eclipses and synastry unaffected',
+    (['transits', 'eclipses', 'synastry'] as const).every((m) => geo(m) === null && cel(m) === null));
+  check('a timeless composite keeps the composite reason on geodetic',
+    LIFTED.every((m) => overlayBlockFor(COMPOSITE_TIMELESS, 'geodetic')(m) === 'composite'));
+
+  // The agreement check. Jim Lewis, recast with the time unknown (noon placeholder; UTC−4 with
+  // no zone, so his birth date is the 24 hours either side of noon), at ages 30 and 60.
+  const NOON: StoredChart = { ...CHART, hour: 12, minute: 0, timeKnown: false };
+  const noonJD = birthDataToJD(NOON);
+  // The tilt App hands the library on a geodetic map: the chart's own obliquity (geoEps).
+  const geoEps = obliquity(noonJD);
+  const lonOf = (p: PlanetPosition, layer: OverlayLayer) =>
+    p.lon ?? raDecToEclipticLon(p.ra, p.dec, obliquity(layer.jd));
+  // Built as App builds the layer (its progression clock from the mode).
+  const mk = (c: StoredChart, kind: OverlayKind, at: number) =>
+    buildOverlay(c, kind, at, null, 'mean', 'mean-quotidian', 'ptolemy', 1, 'relative-to-natal',
+      kind === 'tertiary-progressed' ? 'tertiary' : 'secondary', t)!;
+  const OUTER = ['Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
+  let compared = 0;
+  let worst = 0;
+  let worstAt = 'none';
+  const missing: string[] = [];
+  const moonSpread: string[] = [];
+  let moonMin = Infinity;
+  const moonRanged: string[] = [];
+  let moonUnranged = 0;
+  let outerN = 0;
+  let outerMoved = 0;
+  let outerSimMoved = 0;
+  let cases = 0;
+  for (const kind of TIMELESS_GEODETIC_OVERLAYS as Set<OverlayKind>) {
+    for (const age of [30, 60]) {
+      cases++;
+      const at = jdToEpochMs(noonJD + age * TROPICAL_YEAR_DAYS);
+      const base = mk(NOON, kind, at);
+      // The suite's own: the birth moved by its offset, hour by hour, midnight to midnight; each
+      // body's extent as offsets (the short way) from its placeholder longitude.
+      const sim = new Map<string, { lo: number; hi: number }>();
+      for (let h = -12; h <= 12; h++) {
+        const alt = h === 0 ? base : mk({ ...NOON, tzOffset: NOON.tzOffset - h }, kind, at);
+        for (const p of base.positions) {
+          if (!RANGE_BODIES.includes(p.name)) continue;
+          const q = alt.positions.find((x) => x.name === p.name);
+          if (!q) continue;
+          const d = normalizeAngle(lonOf(q, alt) - lonOf(p, base)) * RAD2DEG;
+          const r = sim.get(p.name) ?? { lo: 0, hi: 0 };
+          sim.set(p.name, { lo: Math.min(r.lo, d), hi: Math.max(r.hi, d) });
+        }
+      }
+      // The library's: the hour moved, through the build App hands it.
+      const lib = overlayBirthDateMotion(NOON, (c) => mk(c, kind, at), geoEps);
+      for (const [name, r] of sim) {
+        const l = lib?.ranges.get(name as never);
+        compared++;
+        if (!l) {
+          missing.push(`${kind}@${age} ${name}`);
+          continue;
+        }
+        const d = Math.max(Math.abs(l.lo - r.lo), Math.abs(l.hi - r.hi));
+        if (d > worst) {
+          worst = d;
+          worstAt = `${kind}@${age} ${name}: library ${l.lo.toFixed(4)}…+${l.hi.toFixed(4)}°, moved offset ${r.lo.toFixed(4)}…+${r.hi.toFixed(4)}°`;
+        }
+        if (kind === 'cyclo' && OUTER.includes(name)) {
+          outerN++;
+          if (l.hi - l.lo > 1e-9) outerMoved++;
+          if (r.hi - r.lo > 1e-9) outerSimMoved++;
+        }
+      }
+      const moonSim = sim.get('Moon');
+      const moon = moonSim ? moonSim.hi - moonSim.lo : 0;
+      moonMin = Math.min(moonMin, moon);
+      moonSpread.push(`${kind}@${age} ${moon.toFixed(2)}°`);
+      // The progressed Moon (and Cyclo's, which is the progressed one) is ranged; the solar arc's
+      // directed Moon too, carried by the arc.
+      const lm = lib?.ranges.get('Moon');
+      if (isRanged(lm)) moonRanged.push(`${kind}@${age} ${(lm.hi - lm.lo).toFixed(2)}°`);
+      else moonUnranged++;
+    }
+  }
+  // Non-vacuous: the birth-time move has to have moved the Moon, or two parts that both
+  // ignored the birth moment would agree on nothing moving.
+  check('the moved birth time really moves the overlay (the Moon spreads ≥ 5° in every case)',
+    cases === TIMELESS_GEODETIC_OVERLAYS.size * 2 && moonMin >= 5, `Moon: ${moonSpread.join(', ')}`);
+  check('overlayBirthDateMotion agrees with the birth moved by its offset, body by body, for every lifted overlay (within 0.001°)',
+    compared >= cases * RANGE_BODIES.length && missing.length === 0 && worst < 1e-3,
+    missing.length
+      ? `missing from the library: ${missing.join(', ')}`
+      : `${compared} body ranges, ${cases} overlay cases; worst ${worst.toExponential(2)}° (${worstAt})`);
+  check('the progressed Moon is ranged in every lifted overlay (progressed, tertiary, solar arc, Cyclo)',
+    moonRanged.length === cases && moonUnranged === 0, moonRanged.join(', '));
+  check('Cyclo\'s transiting outer bodies have no range at all, by both parts (no birth hour moves the moment they are read at)',
+    outerN === OUTER.length * 2 && outerMoved === 0 && outerSimMoved === 0,
+    `${outerN} ranges; ${outerMoved} moved by the library, ${outerSimMoved} by the offset`);
+}
+
+// (c) No chart (2026-10-20). With no chart the techniques that advance or compare a chart
+// are blocked with 'no-chart' (NO_CHART_BLOCKED_OVERLAYS); Transits and Eclipses stay, cast
+// by buildSkyOverlay in the moment's own frame. The set is checked against the builder, a
+// second part that knows nothing of the set: build every mode for two DIFFERENT charts at one
+// instant, and the layers that move when the chart moves are the ones that need a chart.
+// Synastry is the one named exception: its layer is the partner's own sky, which no chart
+// moves, and it is blocked because it compares a chart rather than because it advances one.
+{
+  const OTHER = PARTNER; // a different birth moment and place
+  const THIRD = stored({
+    name: 'third', year: 1965, month: 11, day: 2, hour: 18, minute: 45, tzOffset: 1,
+    birthplace: { label: 'Rome', lat: 41.9, lng: 12.5 },
+  });
+  const sameBodies = (a: PlanetPosition[], b: PlanetPosition[]) =>
+    a.length > 0 && a.length === b.length &&
+    a.every((p, i) => p.name === b[i].name && dAng(p.ra, b[i].ra) < 1e-12 && Math.abs(p.dec - b[i].dec) < 1e-12);
+  const layerOf = (c: StoredChart, m: OverlayKind) =>
+    buildOverlay(c, m, target, THIRD, 'mean', 'mean-quotidian', 'ptolemy', 1, 'transit-moment', 'secondary', t);
+  check('the two charts really differ (else nothing could move)',
+    !sameBodies(getPlanetPositions(birthDataToJD(CHART), 'mean'), getPlanetPositions(birthDataToJD(OTHER), 'mean')));
+  const moves: OverlayKind[] = [];
+  const still: OverlayKind[] = [];
+  for (const m of OVERLAY_MODES) {
+    const a = layerOf(CHART, m);
+    const b = layerOf(OTHER, m);
+    if (!a || !b) continue;
+    (sameBodies(a.positions, b.positions) && dAng(a.gmst, b.gmst) < 1e-12 ? still : moves).push(m);
+  }
+  const expected = new Set<OverlayKind>([...moves, 'synastry']);
+  check('the no-chart set is exactly the layers that move with the chart, plus synastry',
+    moves.length > 0 && still.includes('synastry') &&
+      expected.size === NO_CHART_BLOCKED_OVERLAYS.size && [...expected].every((m) => NO_CHART_BLOCKED_OVERLAYS.has(m)),
+    `move: ${moves.join(', ')}; still: ${still.join(', ')}`);
+  check('transits and eclipses are the layers no chart moves (besides synastry)',
+    still.length === 3 && still.includes('transits') && still.includes('eclipses'),
+    `still: ${still.join(', ')}`);
+
+  for (const ls of ['celestial', 'geodetic'] as const) {
+    const none = overlayBlockFor(null, ls);
+    const wrong = OVERLAY_MODES.filter(
+      (m) => none(m) !== (NO_CHART_BLOCKED_OVERLAYS.has(m) ? 'no-chart' : null),
+    );
+    check(`no chart on ${ls}: 'no-chart' for exactly the set, nothing for the rest`,
+      OVERLAY_MODES.length > NO_CHART_BLOCKED_OVERLAYS.size && wrong.length === 0,
+      wrong.length ? `wrong: ${wrong.map((m) => `${m}=${String(none(m))}`).join(', ')}` : `${OVERLAY_MODES.length} modes`);
+    check(`no chart on ${ls}: overlayBlockedFor bars the same set`,
+      OVERLAY_MODES.every((m) => overlayBlockedFor(null, ls)(m) === NO_CHART_BLOCKED_OVERLAYS.has(m)));
+  }
+  check('a chart is never \'no-chart\'',
+    [CHART, { ...CHART, timeKnown: false }, { ...CHART, composite: {} }, { ...CHART, tag: 'space' }].every((c) =>
+      (['celestial', 'geodetic'] as const).every((ls) =>
+        OVERLAY_MODES.every((m) => overlayBlockFor(c, ls)(m) !== 'no-chart'))));
+
+  // The sky with no chart. buildSkyOverlay and buildOverlay's two sky cases share one
+  // constructor today; these pin that a later edit can't split them: with no chart, the
+  // sky is exactly the 'transit-moment' layer of any chart at that instant, less the chart.
+  const skyT = buildSkyOverlay('transits', target, 'mean', t);
+  const momT = layerOf(CHART, 'transits')!;
+  check('no chart: the Transits sky is the moment-framed transit layer, less the chart',
+    skyT.kind === 'transits' && sameBodies(skyT.positions, momT.positions) &&
+      dAng(skyT.gmst, momT.gmst) < 1e-12 && dAng(skyT.gmst, gmstRadians(targetJD)) < 1e-12 &&
+      skyT.jd === momT.jd && skyT.labelFull === momT.labelFull && skyT.moment === momT.moment);
+  const ecMs = Date.UTC(2026, 7, 12, 17, 46); // an instant in the eclipse slot, as App passes one
+  const skyE = buildSkyOverlay('eclipses', ecMs, 'mean', t);
+  const momE = buildOverlay(CHART, 'eclipses', ecMs, null, 'mean', 'mean-quotidian', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  check('no chart: the eclipse chart is the same sky with or without a chart',
+    skyE.kind === 'eclipses' && sameBodies(skyE.positions, momE.positions) &&
+      dAng(skyE.gmst, momE.gmst) < 1e-12 && skyE.jd === momE.jd);
+  check('the sky layer is marked skyOnly and has no origin; a chart\'s layer is neither',
+    skyT.skyOnly === true && skyE.skyOnly === true && momT.skyOnly === undefined &&
+      Number.isNaN(skyT.originLat) && Number.isNaN(skyT.originLng) &&
+      momT.originLat === CHART.birthplace.lat && momT.originLng === CHART.birthplace.lng);
 }
 
 console.log(failures === 0 ? '\nverify-directions: ALL PASS' : `\nverify-directions: ${failures} FAILURE(S)`);

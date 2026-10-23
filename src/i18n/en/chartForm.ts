@@ -8,6 +8,29 @@
 // timezone status/notes (the IANA zone name is interpolated as {iana}, not translated),
 // birthplace search states, and validation errors.
 export const chartForm = {
+  // The Person | Event switch at the top of the form (2026-10-20), shown while event
+  // charts are available: what kind of moment the chart is. A person's chart is a
+  // birth; an event's is a moment in the world — an ingress, a founding, now. Event
+  // relabels the fields below (Place, not Birthplace) and drops "Lives now".
+  kind: {
+    // The switch's accessible name (it is a pair of radio buttons).
+    aria: 'Chart kind',
+    // The two segments' labels. They sit side by side above the name field, and are
+    // checked at the form's narrowest width.
+    // @i18n-max 12
+    person: 'Person',
+    // @i18n-max 12
+    event: 'Event',
+    // Each segment's hover tip. Under 180 characters.
+    personHint: 'A birth chart: a person’s birth moment and birthplace.',
+    eventHint: 'A moment in the world rather than a birth — an ingress, a founding, a time you choose. Filed with your event charts.',
+    // A line added after eventHint in the Event half's tip while the reader is below the rung
+    // event charts need (the half then wears that rung's badge, and a press opens the build's
+    // account flow). Neutral, as settings.theme.lockedNote is: the core knows no tier names, and
+    // a build that tiers event charts retunes it to say what unlocks them. Never on the open
+    // core's screen. It shares the tip with eventHint, so keep the two under 180 characters.
+    eventLockedNote: 'Not open to this account yet. Press to see what unlocks it.',
+  },
   name: 'Name',
   namePlaceholder: 'Enter a chart name',
   dateLabel: 'Date (Y / M / D)',
@@ -22,6 +45,33 @@ export const chartForm = {
     hint: 'Local time at the place, in the 24-hour clock — e.g. 21:30 for 9:30 pm.',
     hintBlank:
       'Local time at the birthplace, in the 24-hour clock — e.g. 21:30 for 9:30 pm. Don’t know the birth time? Leave it blank.',
+    // The same (i) on an event chart (2026-10-20): the place is the event's, and the
+    // time is the event's.
+    hintBlankEvent:
+      'Local time at the place, in the 24-hour clock — e.g. 21:30 for 9:30 pm. Don’t know the time? Leave it blank.',
+  },
+  // Notes under the moment and the zone while the date and time come from a MOMENT
+  // (a moment found for the chart) rather than from typing
+  // (2026-10-20). The moment is what is kept; the clock shown is that moment read in
+  // the zone the form holds.
+  instant: {
+    // After the minute box while no place is picked yet: the clock shown is
+    // Universal Time. The usual abbreviation, which some languages write their own way.
+    // @i18n-max 4
+    utSuffix: 'UT',
+    // Under the date and time, while no place is picked yet.
+    utUntilPlace: 'Shown in UT until a place is picked; the time then follows the place’s clock.',
+    // Under the date and time once there is a place.
+    followsZone: 'Changing the zone moves the clock, not the moment. Type a date or time to set your own.',
+    // Under the time zone, when the moment falls in the hour the clocks go back, so
+    // the same wall-clock time happens twice. {time} is that time ("01:30"), {offset}
+    // the offset written for the moment in force ("UTC−05:00"). The form has stated
+    // the zone itself so the chart keeps the moment; this says why the zone now reads
+    // as a manual choice.
+    overlap: '{time} happens twice here as the clocks go back. The zone is set to {offset} so the chart keeps this moment, not the other {time}.',
+    // The same hour after the zone was changed by hand: the zone now in the form
+    // reads {time} as the OTHER occurrence. Says what to choose to keep the moment.
+    overlapUnfixed: '{time} happens twice here as the clocks go back, and this zone reads it as the other one. Choose {offset} to keep the moment.',
   },
   hour: 'Hour',
   minute: 'Minute',
@@ -54,6 +104,10 @@ export const chartForm = {
     },
     modeTip: {
       auto: 'Auto: detected from the birthplace',
+      // The event chart's version of `auto` (2026-10-20). Every "…Event" key in this
+      // field is one: the line beside it with the event's place ("the place" — the field
+      // reads Place there), its date and its time in place of a birth's, kept as short.
+      autoEvent: 'Auto: detected from the place',
       standard: 'Standard zone + daylight',
       offset: 'Exact offset',
       iana: 'IANA time zone',
@@ -61,11 +115,20 @@ export const chartForm = {
     },
     modeHint: {
       auto: 'The birthplace’s zone and its daylight-saving rules on the birth date, or its local mean time before standard time began there.',
+      // The event chart's version of `auto`: the place's zone, on the event's date.
+      autoEvent:
+        'The place’s zone and its daylight-saving rules on the event’s date, or its local mean time before standard time began there.',
       standard:
         'A named standard zone plus the daylight correction your source gives, such as EST + daylight or GMT + double summer time.',
       offset:
         'The offset as your source prints it (5hw00, +5:30, 4:56:02 W), this birthplace’s local mean time, or UT.',
+      // The event chart's version of `offset`: the place's local mean time.
+      offsetEvent:
+        'The offset as your source prints it (5hw00, +5:30, 4:56:02 W), this place’s local mean time, or UT.',
       iana: 'Any zone in the time-zone database, found by name, city or abbreviation. Its rules for the birth date give the offset.',
+      // The event chart's version of `iana`: the zone's rules for the event's date.
+      ianaEvent:
+        'Any zone in the time-zone database, found by name, city or abbreviation. Its rules for the event’s date give the offset.',
       utc: 'A fixed whole-hour offset from UTC, with no daylight saving.',
     },
     // The folded field's link (2026-10-05): the same words as the coordinates'
@@ -103,10 +166,16 @@ export const chartForm = {
     // picked from the tz database, a typed offset, war time…); {terms} is built
     // from the strings here and the catalogue's names.
     pickAuto: 'Automatic — from the birthplace ({iana})',
+    // The event chart's version of `pickAuto`: the zone found from the event's place.
+    pickAutoEvent: 'Automatic — from the place ({iana})',
     pickLmt: 'Local mean time of the birthplace · {offset}',
+    // The event chart's version of `pickLmt`: the place's mean time, not a birthplace's.
+    pickLmtEvent: 'Local mean time of the place · {offset}',
     // The same entry while it is unavailable (lmtBeyond says why): on its
     // calendar of the time the birthplace's mean time is past ±15 h.
     pickLmtName: 'Local mean time of the birthplace',
+    // The event chart's version of `pickLmtName`: the place, not a birthplace.
+    pickLmtNameEvent: 'Local mean time of the place',
     pickUt: 'Universal Time (UT)',
     // The heading over the named zones, partway down the list.
     pickZones: 'Standard and daylight times',
@@ -124,6 +193,11 @@ export const chartForm = {
     pickDaylightHint: 'Daylight time: {zone}, {amount}.',
     setPlace: 'Set a birthplace to choose a time zone',
     setDate: 'Add the birth date to set the time zone',
+    // The same two on an event chart (2026-10-20), where the fields read Place and Date:
+    // the line under the time-zone caption while the zone can't be set yet — first with no
+    // place, then with a place but no date. The event's place and date, not a birth's.
+    setPlaceEvent: 'Set a place to choose a time zone',
+    setDateEvent: 'Add the date to set the time zone',
     // Standard zone + daylight. The zone names themselves are catalogue data
     // (lib/atlas/zoneEntry.ts), shown with region and offset, never alone.
     standardLabel: 'Standard zone',
@@ -138,6 +212,9 @@ export const chartForm = {
     // (Istanbul in 2000 kept EET, which the list doesn't name for it).
     standardNone:
       'No zone in this list was this birthplace’s standard time on this date. Choose one, or give the offset instead.',
+    // The event chart's version of `standardNone`: the event's place.
+    standardNoneEvent:
+      'No zone in this list was this place’s standard time on this date. Choose one, or give the offset instead.',
     // A daylight correction that takes the total past ±15 h (Line Islands +
     // double summer time). {offset} as "UTC+16:00".
     offsetRange: 'That comes to {offset}, more than 15 hours from UT. Choose another correction.',
@@ -167,10 +244,17 @@ export const chartForm = {
     // Why the E/W control is dimmed while the typed text names its own direction.
     directionStated: 'The offset you typed already says which way. Change it there.',
     lmtButton: 'Birthplace LMT',
+    // The event chart's version of `lmtButton`: a short button label, the place's LMT.
+    lmtButtonEvent: 'Place LMT',
     lmtTip: 'Local mean time of this birthplace',
+    // The event chart's version of `lmtTip`: the place, not a birthplace.
+    lmtTipEvent: 'Local mean time of this place',
     // {offset} is this birthplace's LMT in both notations.
     lmtHint:
       'Its longitude ÷ 15, to the second: {offset}. For a birth before standard time, or a source that gives LMT.',
+    // The event chart's version of `lmtHint`: an event, not a birth, before standard time.
+    lmtHintEvent:
+      'Its longitude ÷ 15, to the second: {offset}. For an event before standard time, or a source that gives LMT.',
     // The same, for a birthplace across the date line from the reckoning its
     // longitude implies (Alaska before 1867): a whole day added or taken, as
     // detection does, so the birth date means what it meant there.
@@ -181,6 +265,8 @@ export const chartForm = {
     lmtBeyond: 'On this date that comes to more than 15 hours from UT, past what an offset can state. Automatic gives it.',
     utButton: 'Time is UT',
     utTip: 'The birth time is in UT',
+    // The event chart's version of `utTip`: the event's time, not a birth time.
+    utTipEvent: 'The time is in UT',
     utHint: 'For a time recorded in Universal Time (GMT): the offset is zero.',
     // The searchable IANA list.
     ianaLabel: 'Search time zones',
@@ -190,14 +276,23 @@ export const chartForm = {
     ianaCount: '{count, plural, one {# time zone} other {# time zones}}',
     // Tag on the row for the zone the birthplace resolved to.
     ianaBirthplace: 'Birthplace',
+    // The event chart's version of `ianaBirthplace`: the same short tag, for the zone the
+    // event's place resolved to.
+    ianaBirthplaceEvent: 'Place',
     utcLabel: 'Choose UTC offset',
     utcPick: 'Choose an offset…',
     // Switching into the whole-hour picker from an offset it can't show.
     utcNone:
       'This birth’s offset, {offset}, isn’t a whole hour. Choose one, or give the exact offset instead.',
+    // The event chart's version of `utcNone`: the event's offset, not a birth's.
+    utcNoneEvent:
+      'This event’s offset, {offset}, isn’t a whole hour. Choose one, or give the exact offset instead.',
     // Switching into Exact offset from an offset past ±15 h (a date-line mean time).
     offsetNone:
       'This birth’s offset, {offset}, is more than 15 hours from UT, past what an offset can state. Type one, or switch back to Auto.',
+    // The event chart's version of `offsetNone`: the event's offset, not a birth's.
+    offsetNoneEvent:
+      'This event’s offset, {offset}, is more than 15 hours from UT, past what an offset can state. Type one, or switch back to Auto.',
     // A saved chart whose stored offset its own terms no longer give (older zone
     // data, a file's offset kept on import) reopens on that stored number. The
     // note names the terms it was saved in: Auto, a picked zone ({zone} is its
@@ -221,6 +316,10 @@ export const chartForm = {
     verifyDst: 'Verify daylight saving',
     verifyDstHint:
       'The time-zone data is unsure whether daylight saving applied here on this date. Check the zone against the birth record.',
+    // The event chart's version of `verifyDstHint`: an event has no birth record, so the
+    // check is against whatever source gave its time.
+    verifyDstHintEvent:
+      'The time-zone data is unsure whether daylight saving applied here on this date. Check the zone against your source.',
   },
   // The 12-hour echo beside the time boxes (2026-10-07, Lina's spec): "21 : 30
   // 9:30 pm", so a "9:30 PM" off a certificate typed as 09:30 has something on
@@ -238,6 +337,8 @@ export const chartForm = {
   // the time-dependent lines hidden.
   timeUnknown: {
     hint: 'No birth time will be saved as Unknown. You’ll still see the planets in their signs; on celestial maps, lines and houses need an exact time, so they’ll stay hidden there.',
+    // The same note on an event chart (2026-10-20): "the time", not "birth time".
+    hintEvent: 'No time will be saved as Unknown. You’ll still see the planets in their signs; on celestial maps, lines and houses need an exact time, so they’ll stay hidden there.',
   },
   // The tag toggle, on its own row after the coordinates since 2026-10-07 (it sat
   // beside the time boxes): a "Tag" caption, then a button whose label is the tag
@@ -259,6 +360,9 @@ export const chartForm = {
       'Added to a chart that arrived through a share link. Click to remove it; you can star the chart afterwards.',
   },
   birthplace: 'Birthplace',
+  // The same caption on an event chart (2026-10-20), where the place is where the
+  // event is cast: the only place tab it has, since "Lives now" is a person's.
+  place: 'Place',
   birthplacePlaceholder: 'City, country',
   searching: 'searching…',
   resolved: '✓ {label}',
@@ -288,6 +392,21 @@ export const chartForm = {
   homeClear: 'Clear',
   homePlaceholder: 'Where they live now…',
   homeAria: 'Search for where this person lives now',
+  // The small tag at the end of a row offered before anything is typed in a Lives now / Home
+  // search box (2026-10-23): the row is the pin the reader has dropped on the map, named by its
+  // place. Picking it makes that exact spot the home: the way in for an address no search finds.
+  // Sits beside the place name, like the "Home" tag on the chart's home row. One or two words.
+  // @i18n-max 14
+  homeMapPin: 'Map pin',
+  // A quiet line under the results of a Home search in a window beside the map (Local Space,
+  // Radar), shown once a search has answered, found or not: the hits can be the wrong places as
+  // easily as none. Dropping a pin on the map is clicking (or tapping) it; the pin then shows in
+  // this list, before anything is typed, tagged with homeMapPin.
+  homeMissHint: 'Not finding it? Drop a pin on the spot on the map, then pick it here.',
+  // The same line in the chart form, which covers the map: the reader saves the chart without
+  // the place for now, drops the pin, and finds it offered here the next time the form is open.
+  homeMissHintForm:
+    'Not finding it? Save for now, drop a pin on the spot on the map, and it’s offered here next time.',
   // Group label for the Birthplace / Lives now caption tabs — the two captions
   // above the form's single place box, which pick what that box edits.
   placeTabsAria: 'Which place to edit',
@@ -301,11 +420,15 @@ export const chartForm = {
   // two links, one under the other, doing the same thing.
   enterCoords: 'Set manually',
   errorNoPlace: 'Choose a birthplace from the dropdown.',
+  // The same three on an event chart (2026-10-20): the event's place, date and time.
+  errorNoPlaceEvent: 'Choose a place from the dropdown.',
   errorNoName: 'Add a name.',
   // The time is optional — leaving it empty marks the birth time unknown.
   errorNoDate: 'Add a birth date.',
+  errorNoDateEvent: 'Add the date.',
   errorPartialTime:
     'Add the hour too — or clear the minutes to mark the birth time unknown.',
+  errorPartialTimeEvent: 'Add the hour too — or clear the minutes to mark the time unknown.',
   // Tooltip on an out-of-range year box (not auto-corrected), and the matching
   // submit-blocked message. {min}/{max} are the ephemeris data's year range.
   yearRangeTip: 'Our ephemeris data covers {min}–{max}.',
@@ -339,12 +462,16 @@ export const chartForm = {
   rating: {
     unset: 'No rating',
     unsetHint: 'Nobody has said how reliable this birth data is.',
+    // The event chart's version of `unsetHint` (2026-10-20): the event's data, not a birth's.
+    unsetHintEvent: 'Nobody has said how reliable this data is.',
     AA: 'Birth record',
     A: 'From memory',
     B: 'Biography',
     C: 'Unknown source',
     DD: 'Conflicting',
     X: 'No birth time',
+    // The event chart's version of `X` (2026-10-20): the event's time, not a birth time.
+    XEvent: 'No time',
     XX: 'Undetermined',
   },
   // The full meaning of each code, revealed as a hover explanation on its row
@@ -356,6 +483,8 @@ export const chartForm = {
     C: 'The source is unknown, or the time was rectified.',
     DD: 'Conflicting or unverified: accounts that disagree, with nothing to settle them.',
     X: 'No birth time is known.',
+    // The event chart's version of `X` (2026-10-20): the event's time, not a birth time.
+    XEvent: 'No time is known.',
     XX: 'Undetermined.',
   },
 } as const;

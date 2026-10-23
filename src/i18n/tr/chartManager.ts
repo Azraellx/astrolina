@@ -21,7 +21,10 @@ export const chartManager = {
     space: 'Uzay',
     unknown: 'Bilinmeyen',
     shared: 'Paylaşılan',
+    events: 'Olaylar',
   },
+  eventsEmpty: 'Henüz olay haritası yok.',
+  eventRowAria: 'Olay haritası',
   folders: {
     new: 'Yeni klasör',
     newChild: 'İçinde yeni klasör',

@@ -13,6 +13,16 @@ export const common = {
   delete: 'Delete',
   // The other half of an inline Delete/Keep row confirm (see the chart lists).
   keep: 'Keep',
+  // The button under an empty Events list (the chart menu's, and My Charts' with the
+  // Events filter on), 2026-10-20: adds the example event chart, Aries Ingress 2026,
+  // to the library without opening it. A button label: keep it short.
+  // @i18n-max 24
+  addExampleEvent: 'Add example event',
+  // Its hover tip: what pressing it adds. Under 180 characters. Keep "Aries Ingress 2026"
+  // exactly as written, untranslated: it is the name the added chart is saved under, and the
+  // row that appears in the list reads it in English.
+  addExampleEventHint:
+    'Adds Aries Ingress 2026, the March equinox cast for Greenwich, to your charts. Nothing else changes, and you can delete it like any chart.',
   // Fallback location label shown when the cursor is over open water.
   locationFallbackOcean: 'Ocean',
   // Pre-1970 timezone DST caution (App header + expanded sidebar).
@@ -20,6 +30,9 @@ export const common = {
   // Unknown-birth-time banner (App header / coordinates window). Kept terse —
   // the chart form's note carries the full explanation of the degrade.
   timeUnknownBanner: 'Birth time unknown',
+  // The same banner for an EVENT chart (an ingress, a founding — a moment in the world, not a
+  // birth), 2026-10-20: "time", not "birth time". Kept as terse.
+  timeUnknownBannerEvent: 'Time unknown',
   // Replaces the banner above while a birth time is being TRIED ON: the map is
   // drawing a guess, and nothing has been written to the chart. Names the minute
   // so the reader can attribute what changed, and says "not saved" plainly —

@@ -13,10 +13,6 @@ export const autoFlip = {
     title: 'Overlay-Bezugsrahmen auf Revolutionsachsen festgehalten',
     body: 'Ein Revolutionshoroskop ist ein eigener Moment mit eigenen Achsen, und die Karte wird jetzt auf diese bezogen gezeichnet statt auf die Radixachsen. Der vorherige Bezugsrahmen ist zurückgestellt, nicht gelöscht – er kehrt zurück, wenn du die Revolution verlässt, oder sofort über das ✕ auf dem Chip.',
   },
-  'line-system-held': {
-    title: 'Geodätisch ist zurückgestellt',
-    body: 'Das geodätische Liniensystem bildet den tropischen Tierkreis auf die Längengrade der Erde ab, daher gibt es keine siderische Fassung davon, die sich zeichnen ließe. Deine Auswahl ist zurückgestellt, nicht gelöscht – stelle den Tierkreis wieder auf „Tropisch“, und sie kehrt zurück.',
-  },
   'line-projection': {
     title: 'Diese Linien werden In Mundo gezeichnet',
     body: 'Jedes Programm muss entscheiden, wo ein Himmelskörper „steht“, bevor es dessen Linie zeichnen kann. In Mundo setzt ihn dorthin, wo er am Himmel steht, mitsamt seiner Breite. In Zodiaco drückt diese Breite zuerst auf die Ekliptik herunter.',
@@ -36,5 +32,9 @@ export const autoFlip = {
   'language-held': {
     title: 'Deine gewählte Sprache ist zurückgestellt',
     body: 'Die Sprache, die du gewählt hast, wird auf diesem Gerät übersetzt. Das ist hier gerade nicht möglich, daher wird die App in ihrer üblichen Sprache angezeigt. Deine Auswahl bleibt erhalten und wird nicht gelöscht. Um eine andere Sprache zu wählen, öffne {route}.',
+  },
+  'no-chart-held': {
+    title: 'Zurückgestellt, solange kein Horoskop ausgewählt ist',
+    body: 'Overlays, die ein Horoskop fortschreiben oder vergleichen, und das Fenster Local Space warten, solange keines ausgewählt ist; Transite werden im eigenen Bezugsrahmen des Moments gezeichnet. Nichts ist gelöscht: Wähle ein Horoskop im Horoskopmenü, und sie kehren so zurück, wie du sie verlassen hast.',
   },
 } as const;

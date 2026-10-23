@@ -15,15 +15,15 @@ import { ZodiacGlyph } from './ZodiacGlyph';
 interface ZodiacRangeProps {
   /** The placeholder longitude, radians. */
   lon: number;
-  /** The half-width, degrees. */
-  halfDeg: number;
+  /** The range's ends as offsets from `lon`, degrees (lib/astro/timeless BodyRange). */
+  range: { lo: number; hi: number };
   /** The sign glyphs' size, px. */
   size?: number;
   className?: string;
 }
 
-export function ZodiacRange({ lon, halfDeg, size = 12, className }: ZodiacRangeProps) {
-  const { lo, hi } = lonRange(lon, halfDeg);
+export function ZodiacRange({ lon, range, size = 12, className }: ZodiacRangeProps) {
+  const { lo, hi } = lonRange(lon, range);
   // Figures and glyphs only, redrawn as the body moves: not offered to a page translator,
   // whose rewrite of one run React would then write into unseen. (2026-10-09)
   return (

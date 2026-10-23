@@ -76,8 +76,9 @@ export const wheel = {
     minorLineOverlay: '{name} {lon} · {chart}',
     // A line under the Part of Fortune's figure on a geodetic map, where the wheel builds
     // it from the place's geodetic Ascendant rather than the chart's own (the map's
-    // Fortune line keeps the chart's). The positions list marks the same row GE with
-    // this as its tip. (2026-10-02)
+    // Fortune line keeps the chart's). The wheel's tip is the one place it is said: the GE
+    // mark the positions list and the capture card once put on the row went on 2026-10-20
+    // (Lina, §6). (2026-10-02)
     fortuneGeodetic: 'From the geodetic Ascendant',
     // The same, on a chart with no birth time under the sect formula: the unknown hour
     // leaves the sect unknown, and a night birth's Fortune is the day one reflected across
@@ -88,11 +89,30 @@ export const wheel = {
       'From the geodetic Ascendant, as a day birth. Born at night, it would mirror across the Ascendant',
     fortuneGeodeticNight:
       'From the geodetic Ascendant, as a night birth. Born by day, it would mirror across the Ascendant',
-    // Under a body's SPAN in place of its degree, on a chart with no birth time: the chart
-    // is cast for 12:00, and the body could be anywhere in the span printed above this
-    // line at the real, unknown hour of that day (the Moon; the Part of Fortune on a
-    // geodetic map, for the sect its own note names). (2026-10-02)
-    rangeNote: 'Birth time unknown: anywhere in this span on the birth date',
+    // A body's tip on a chart with no birth time (Lina, 22 Oct 2026, §2.3, her wording, one note
+    // for every body it applies to; "range {a}–{b}" on every surface since 23 Oct, R-2): {range} is
+    // the body's range, drawn as two zodiac positions with their sign glyphs ("14°♋–21°♋"). It
+    // follows the body's noon longitude. Keep {range} as it is.
+    // @i18n-verbatim
+    birthDateRange: 'Birth time unknown: range {range}.',
+    // Follows birthDateRange when that motion crosses a sign boundary (her wording). {whose} is
+    // the body's possessive from `whose` below ("the Sun’s", "Mercury’s").
+    // @i18n-verbatim
+    rangeSignUncertain: 'The range crosses a sign boundary, so {whose} sign and dignity are themselves uncertain.',
+    // The possessive rangeSignUncertain names its body with: the Sun and the Moon with the
+    // article, the planets by name, as English says them.
+    whose: {
+      Sun: 'the Sun’s',
+      Moon: 'the Moon’s',
+      Mercury: 'Mercury’s',
+      Venus: 'Venus’s',
+      Mars: 'Mars’s',
+      Jupiter: 'Jupiter’s',
+      Saturn: 'Saturn’s',
+      Uranus: 'Uranus’s',
+      Neptune: 'Neptune’s',
+      Pluto: 'Pluto’s',
+    },
   },
   // Short keyword gloss per body, keyed by PlanetName. It used to be what the
   // wheel's own discs said on hover, which is where the position belongs — a

@@ -14,5 +14,6 @@ export const chartWheel = {
   openSidebarHint: 'Açılar ve gezegen tablosuyla daha büyük bir çark, kenar çubuğunda.',
   openSidebarLabel: 'Harita kenar çubuğunu göster',
   placeholder: 'Seçili harita yok',
+  skyHint: 'Gökyüzünün çarkı için Katman menüsünden Transitler ya da Tutulmalar’ı seçin.',
   noChart: 'HARİTA YOK (CCG)',
 } as const;

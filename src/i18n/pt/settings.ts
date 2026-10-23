@@ -209,9 +209,9 @@ export const settings = {
       title: 'Zonas sombreadas',
       hint: 'Preenche as doze zonas do MC: elemento como cor, modalidade como tom (Cardinal mais escuro, Mutável mais claro). A legenda no mapa mostra um elemento ou modalidade isolado.',
     },
-    presentation: {
-      title: 'Apresentação',
-      hint: 'Intensifica o sombreamento das zonas de suave para forte, para mostrar as zonas a outra pessoa.',
+    opacity: {
+      label: 'Opacidade',
+      aria: 'Opacidade das zonas sombreadas, em por cento',
     },
   },
   coordSystem: {
@@ -225,7 +225,7 @@ export const settings = {
     },
   },
   fortuneFormula: {
-    hint: 'A Parte da Fortuna é uma Parte calculada de vitalidade e bem-estar material — um ponto na eclíptica, não um corpo no céu, então só um referencial zodiacal pode situá-la: suas linhas no mapa-múndi exigem a Projeção das linhas em In Zodiaco (ou o sistema de linhas Geodésico). Relocar o alfinete do mapa-múndi a recalcula na roda do mapa natal para esse local, enquanto as linhas no mapa-múndi mantêm sua Fortuna natal.',
+    hint: 'A Parte da Fortuna é uma Parte calculada de vitalidade e bem-estar material — um ponto na eclíptica, não um corpo no céu, então só um referencial zodiacal pode situá-la: suas linhas no mapa-múndi exigem In Zodiaco, sob Sistema de linhas em Cálculo (ou o sistema de linhas Geodésico). Relocar o alfinete do mapa-múndi a recalcula na roda do mapa natal para esse local, enquanto as linhas no mapa-múndi mantêm sua Fortuna natal.',
     sect: {
       label: 'Por seita (diurna/noturna)',
       hint: 'Nascimentos de dia usam Ascendente + Lua − Sol; os de noite invertem para Ascendente + Sol − Lua. A convenção tradicional.',
@@ -249,7 +249,9 @@ export const settings = {
   inert: {
     fortuneMundo: 'Uma Parte é um ponto na eclíptica sem posição no céu, então o In Mundo não tem um local onde situá-la. Para ver esta linha, defina a projeção como In Zodiaco (Cálculo).',
     fortuneAdvanced: 'A Parte da Fortuna é uma leitura avançada — ative o Avançado para usá-la.',
-    geodeticSidereal: 'O sistema de linhas Geodésico projeta o zodíaco TROPICAL sobre as longitudes da Terra, então não tem versão sideral. Defina o zodíaco como Tropical (Avançado) para usá-lo; sua escolha é mantida.',
+    fortuneNoTime: 'Não é mostrada num mapa sem hora de nascimento: a Parte da Fortuna é construída a partir da Lua, cujo grau é incerto, e da seita do nascimento, de dia ou de noite, que exige a hora.',
+    geodeticSidereal: 'Os mapas geodésicos põem o zodíaco tropical na Terra; o sideral não tem convenção geodésica acordada. Defina o zodíaco como Tropical (Avançado) para usá-lo; sua escolha é mantida.',
+    siderealGeodetic: 'Indisponível em mapas geodésicos: a grade geodésica é tropical por definição. Mude para Celeste para ler em um zodíaco sideral.',
     geodeticHeld: 'O Geodésico está em revisão enquanto verificamos como ele é desenhado — preferimos mantê-lo em espera a desenhar um mapa pelo qual não podemos responder. Sua escolha é mantida, não apagada; volte em breve.',
     skyHeldWhy: 'Indisponível em mapas geodésicos, que não giram com o céu.',
     skyHeldFix: 'Mude o sistema de linhas para Celeste, em Cálculo, para usá-lo.',
@@ -260,6 +262,7 @@ export const settings = {
     anglesHeld: 'Em mapas geodésicos, os ângulos de um local vêm das suas coordenadas, então não se movem com o tempo.',
     paransHeld: 'Os parans não são mostrados em mapas geodésicos.',
     paransHeldFull: 'Os parans não são mostrados em mapas geodésicos. Mude o sistema de linhas para Celeste, em Cálculo, para usá-lo.',
+    needsChart: 'Requer um mapa. Escolha ou adicione um no menu de mapas da barra superior.',
   },
   nodeType: {
     true: {
@@ -450,6 +453,7 @@ export const settings = {
     contacts: {
       heading: 'Contatos natais',
       none: 'Nenhum contato dentro de 3° — este eclipse passa pelo mapa em silêncio.',
+      noChart: 'Nenhum mapa selecionado. Escolha um no menu de mapas para ver o que este eclipse atinge nele.',
       aspect: {
         conjunction: 'em conjunção',
         square: 'em quadratura',

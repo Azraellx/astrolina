@@ -303,6 +303,12 @@
 .es-hl-settings {
   color: var(--text-faint);
 }
+/* A sentence about the wheel rather than data (lib/chartHeader 'hint'): the sky alone with no
+   place pinned or hovered says how to cast its angles. Set as guidance, not a fact. (2026-10-20) */
+.es-hl-hint {
+  color: var(--text-faint);
+  font-style: italic;
+}
 /* A line's own label ("Born:", "Relocated to:") — set apart from the facts it heads. */
 .es-hl-lead {
   color: var(--text-faint);
@@ -376,10 +382,6 @@
 .es-geo-ge {
   color: var(--text);
   white-space: nowrap;
-}
-.es-geo-ge-tag {
-  font-weight: 600;
-  letter-spacing: 0.04em;
 }
 .es-geo-val .astro-glyph {
   margin: 0 1px;
@@ -469,18 +471,6 @@
   margin-left: 4px;
   color: var(--wheel-station, #c79a17);
   font-weight: 600;
-}
-
-/* GE beside a body whose figure is built from the place's geodetic frame (the Part of
-   Fortune on a geodetic map); its tip says so. Muted and small — a provenance mark, not
-   a state like ℞ or S beside it. (2026-10-02) */
-.es-ge-tag {
-  margin-left: 4px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
-  cursor: help;
 }
 
 /* --- Advanced planet table: one body per row, labelled coordinate columns ---
@@ -1425,19 +1415,10 @@
   color: var(--cool);
   letter-spacing: 0.02em;
 }
-.es-cast-for.pinned {
-  color: var(--accent);
-}
-.es-cast-for.natal-pinned {
-  color: var(--success);
-}
-.es-cast-for.natal {
-  color: var(--text);
-}
-/* The line as a tip trigger (the place form, not the composite's "Midpoint
-   angles"): sized to its text so only the words reveal the tip, not the empty
-   width beside them, and still capped at the pane so the place ellipsizes. */
-.es-cast-for.es-cast-for-tip {
+/* A synastry partner's "Relocated to:" line as a tip trigger (H-3, 23 Oct 2026): sized to its
+   text so only the words reveal the tip, not the empty width beside them, and still capped at
+   the pane so the place ellipsizes. */
+.es-hl.es-hl-tip {
   width: fit-content;
   max-width: 100%;
   cursor: help;
@@ -1448,12 +1429,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
-}
-.es-cast-for-place {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 /* The centred title above each of the paired local-space dials (natal /
@@ -1571,9 +1546,54 @@
 .es-asp-toggle.on.square { border-color: rgba(var(--danger-rgb, 232, 90, 79), 0.5); }
 .es-asp-toggle.on.conj { border-color: rgba(var(--accent-rgb), 0.5); }
 
+/* The houses line under a wheel's statement (2026-10-22, Lina §3.2): muted like the geodetic
+   block's, and wrapped, never cut short, however long the calculation in brackets runs. */
+.es-houses-line {
+  color: var(--text-muted);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 .es-empty {
   color: var(--text-faint);
   font-size: 13px;
+}
+/* Cyclocartography's card where the overlay wheel would be (2026-10-22): a heading in the header
+   labels' small capitals over one sentence, boxed like a note. */
+.es-cyclo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+  text-align: left;
+}
+.es-cyclo-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.es-cyclo-card-body {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+/* With no chart and no sky overlay to wheel: the usual line, then how to get the sky's wheel.
+   (2026-10-20) */
+.es-empty-sky {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  text-align: center;
+}
+.es-empty-hint {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* --- Drag handle on right edge --- */
@@ -1811,13 +1831,6 @@
    own name in the panel header (.switcher-trigger strong: 14px/600) rather than
    left at the date line's size — the two wheels are two charts here, and their
    names should carry the same weight as each other. */
-.es-overlay-chart-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-  letter-spacing: 0.02em;
-  font-variant-numeric: normal;
-}
 
 /* The moment stacks ABOVE the name in the top-right corner. Lay the corner out as
    a right-aligned column so the two lines share the right edge (flush to the wheel's corner);
@@ -1872,4 +1885,13 @@
 }
 .expanded-sidebar.es-compact .es-section-wheel {
   padding-top: 20px;
+}
+
+/* A chart with no birth time: "depends on the birth hour" after an aspect to the natal Moon
+   (2026-10-21, Lina §2.5). Quiet, on the type cell's line. */
+.asp-hour-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  font-style: italic;
 }

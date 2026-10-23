@@ -25,20 +25,29 @@
 //   7. Where each Ascendant curve ends                                OUTSIDE AGREEMENT
 //   8. The grid's curve generator against the place readout          INTERNAL IDENTITY (two parts agree)
 //
-// The grid layer (geodeticGrid.ts: geoGrid, buildGeoZones, geoReadoutAngles, geoAscZones),
-// 2026-10-02:
+// The grid layer (geodeticGrid.ts: geoGrid, geoAscGrid, buildGeoZones, geoReadoutAngles,
+// geoAscZones), 2026-10-02:
 //   G0. The grid builds before the engine is initialised (above it)  INTERNAL IDENTITY
 //   G1. The MC meridians: every 30° from Greenwich, pole to pole      OUTSIDE AGREEMENT + INTERNAL IDENTITY
-//   G2. The grid draws the generator §7 and §8 test                   INTERNAL IDENTITY
+//   G2. The grid draws the generator §7 and §8 test, at each tilt     INTERNAL IDENTITY
 //   G5. The zone rings' shape; the sign rule against them             INTERNAL IDENTITY (two parts agree)
 //   G6. The Appendix to the minute, through the readout               OUTSIDE AGREEMENT
-//   G7. The polar flag, and where the Ascendant is left out           OUTSIDE AGREEMENT + INTERNAL IDENTITY
+//   G7. The polar flag at 90° − ε, and where the Ascendant is left out OUTSIDE AGREEMENT + INTERNAL IDENTITY
 //   G8. MapLibre's own tiler: the ±180° seam, coverage, poles, wrap   OUTSIDE AGREEMENT
 //   G9. The zone fills: palette slots, the legend's isolate           INTERNAL IDENTITY (+ the palette's order)
 //   G10. The Ascendant zones (the hover highlight) against the readout INTERNAL IDENTITY (two parts agree)
-//        (+ OUTSIDE: which signs rise in the polar caps)
+//        (+ OUTSIDE: which signs rise in the polar caps), and at a 1900 tilt
+//   G11. One tilt: the readout against the wheel's frame              INTERNAL IDENTITY (two parts agree)
+//   G12. The readout's angle line, Lina's format                      OUTSIDE AGREEMENT (her format)
 // (G3 and G4 of the design are §8: the curve vertices and the row bisection, run on the
 // same generator the grid draws, as G2 pins.)
+//
+// One tilt (Lina, 20 Oct 2026, §2): every geodetic surface reads the loaded chart's obliquity of
+// date, or J2000 with no chart. So the parts that depend on ε — the curves, their equator
+// points, the readout, the polar flag, the zones, a frame read at a given tilt — are run at
+// J2000 AND at a 1900 chart's tilt (§6, §8, G2, G7, G10, G11), and each such section first
+// shows the two tilts really do move what it compares, so it can't pass by testing one
+// thing twice. (2026-10-20)
 //
 // The kinds, because a failure means different things (CLAUDE.md, "Prefer agreement
 // between two parts"):
@@ -55,8 +64,8 @@
 // Conventions: angles in radians inside the app, degrees at the edges; longitudes
 // east-positive, latitudes north-positive; the zodiacal branch (MC = longitude,
 // Greenwich = 0° Aries); the Ascendant is the EASTERN intersection of ecliptic and
-// horizon; the Appendix and the grid use the J2000 mean obliquity 23.4392911°, a chart
-// uses its true obliquity of date.
+// horizon; the Appendix uses the J2000 mean obliquity 23.4392911°, a chart its true obliquity
+// of date, and the grid the map's one tilt — the chart's, or J2000 with no chart (2026-10-20).
 import {
   EPS_J2000,
   birthDataToJD,
@@ -73,22 +82,29 @@ import {
 import { meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
 import { TRUNC_SNAP_ARCSEC, lonToZodiac, truncZodiac } from '../src/lib/astro/format';
 import { shiftAngles } from '../src/lib/astro/ayanamsa';
+import { GEO_ZONES_OPACITY_PCT } from '../src/lib/overlayPrefs';
 import {
   GEO_ASC_ZONE_TOL_DEG,
   GEO_ZONE_OPACITY,
-  POLAR_CIRCLE_J2000_DEG,
   buildGeoAscZones,
   buildGeoZones,
   foldRibbon,
+  geoAscGrid,
   geoAscZones,
   geoGrid,
   geoReadoutAngles,
   geoZoneId,
   geodeticAscCurve,
+  polarCircleDeg,
   type AscRibbon,
   type GeoAscZones,
   type GeoZoneColors,
 } from '../src/lib/astro/geodeticGrid';
+import { geoAngleText, geoAnglesParts, geoAnglesSegments, geoAnglesText } from '../src/lib/astro/geoReadoutText';
+import { SIGN_GLYPHS } from '../src/lib/astro/glyphChars';
+import { geoHighlightFor } from '../src/components/Map/geoHighlight';
+import { readFileSync } from 'node:fs';
+import { en } from '../src/i18n/en';
 import { GEO_ZONE_COLORS, THEMES } from '../src/lib/theme';
 import { BAND_SOURCE_OPTS, LINE_SOURCE_OPTS } from '../src/components/Map/tiling';
 import { SEED_BIRTHS } from '../src/lib/birthData';
@@ -202,22 +218,30 @@ section('G0 INTERNAL IDENTITY — the grid builds before the engine is initialis
   }
   check('control: a Swiss call throws here (the engine is not initialised yet)', swissDown);
   let built: ReturnType<typeof geoGrid> | null = null;
+  let ascJ: ReturnType<typeof geoAscGrid> | null = null;
   let err = '';
+  // A tilt of no chart's (Swiss is down, so no real moment's can be asked for yet): enough to
+  // show each ε gets a grid of its own.
+  const OTHER_EPS = EPS_J2000 + 1e-3;
+  let ascO: ReturnType<typeof geoAscGrid> | null = null;
   try {
     built = geoGrid();
+    ascJ = geoAscGrid(EPS_J2000);
+    ascO = geoAscGrid(OTHER_EPS);
     buildGeoZones(SYNTH_ZONE_COLORS, GEO_ZONE_OPACITY.normal, null);
     geoReadoutAngles(43.65, -79.383);
+    geoReadoutAngles(43.65, -79.383, OTHER_EPS);
   } catch (e) {
     err = String(e);
   }
-  check('geoGrid(), buildGeoZones and geoReadoutAngles all run without Swiss', built !== null && !err, err);
-  if (built) {
+  check('geoGrid(), geoAscGrid(ε), buildGeoZones and geoReadoutAngles all run without Swiss', built !== null && ascJ !== null && !err, err);
+  if (built && ascJ && ascO) {
     const counts = [
       built.mc.features.length,
-      built.asc.features.length,
+      ascJ.asc.features.length,
       built.mcLabelLines.features.length,
       built.zoneRings.length,
-      built.ascEquator.length,
+      ascJ.ascEquator.length,
     ];
     check(
       '12 MC meridians / 12 Ascendant curves / 12 label meridians / 12 zone rings / 12 equator points',
@@ -229,9 +253,37 @@ section('G0 INTERNAL IDENTITY — the grid builds before the engine is initialis
       geoGrid() === built &&
         Object.isFrozen(built) &&
         Object.isFrozen(built.mc.features) &&
-        Object.isFrozen(built.asc.features[3].geometry.coordinates[10]) &&
         Object.isFrozen(built.zoneRings[6]),
     );
+    // The tilt-dependent parts: one grid per ε, the same object for an ε each time it is asked
+    // for, frozen; a different ε is a different grid whose curves really differ; and the ε-free
+    // grid carries no Ascendant curves at all (its compat field went once App drew
+    // geoAscGrid(geoEps), 2026-10-20), so nothing can read a J2000 curve beside a chart's.
+    const moved = ascO.asc.features.some((f, k) =>
+      f.geometry.coordinates.some((p, i) => {
+        const q = ascJ!.asc.features[k].geometry.coordinates[i];
+        return !q || p[0] !== q[0] || p[1] !== q[1];
+      }),
+    );
+    check(
+      'geoAscGrid(ε) is one frozen object per tilt; another ε is another grid, its curves moved; geoGrid() carries none',
+      geoAscGrid(EPS_J2000) === ascJ &&
+        geoAscGrid(OTHER_EPS) === ascO &&
+        ascO !== ascJ &&
+        moved &&
+        ascJ.eps === EPS_J2000 &&
+        ascO.eps === OTHER_EPS &&
+        Object.isFrozen(ascJ.asc.features[3].geometry.coordinates[10]) &&
+        !('asc' in built),
+    );
+    // Each curve carries its own equator point and tilt, which the labels read off the
+    // collection pushed (geoGridLabels.ts) instead of rebuilding a grid.
+    const carried = [ascJ, ascO].every((g) =>
+      g.asc.features.every(
+        (f, k) => f.properties.eqLng === g.ascEquator[k][0] && f.properties.eps === g.eps && g.ascEquator[k][1] === 0,
+      ),
+    );
+    check('every Ascendant curve carries eqLng (its equator point) and eps (its tilt)', carried);
   }
   // The Ascendant zones (G10) too — and in the 8 ms slices the app feeds them where the browser
   // gives no idle estimate (useGeoAscZones; an idle callback's slice is the time it offers, at
@@ -247,7 +299,7 @@ section('G0 INTERNAL IDENTITY — the grid builds before the engine is initialis
   try {
     while (!zones && slices < 100000) {
       const t0 = performance.now();
-      zones = buildGeoAscZones(8);
+      zones = buildGeoAscZones(EPS_J2000, 8);
       const dt = performance.now() - t0;
       slices += 1;
       total += dt;
@@ -266,9 +318,11 @@ section('G0 INTERNAL IDENTITY — the grid builds before the engine is initialis
     'built once: geoAscZones() and a later build return that same object, frozen down to the coordinates',
     zones !== null &&
       geoAscZones() === zones &&
+      geoAscZones(EPS_J2000) === zones &&
       buildGeoAscZones() === zones &&
       Object.isFrozen(zones.features[0].geometry.coordinates[0][0][0]),
   );
+  check('…and per tilt: another ε has none until it is built (the hover lights nothing meanwhile)', geoAscZones(OTHER_EPS) === null);
 }
 
 await initEphemeris();
@@ -279,6 +333,16 @@ const JDS: Array<[string, number]> = [
   ['J2000.0', 2451545.0],
   [`${CHART.name} ${CHART.year}`, CHART_JD],
 ];
+// One tilt (2026-10-20): the parts that depend on ε are run at J2000 — the no-chart tilt — and
+// at a 1900 chart's, the steep end of what a chart brings (about 47″ steeper, plus that day's
+// nutation). And a present-day moment, read at J2000 the way No chart reads one.
+const JD_1900 = 2415020.5; // 1900-01-01 00:00 UT
+const EPS_1900 = obliquity(JD_1900);
+const TILTS: Array<[string, number]> = [
+  ['J2000', EPS_J2000],
+  ['1900', EPS_1900],
+];
+const JD_NOW = 2461333.5; // 2026-10-20 00:00 UT
 
 // ═══ 1 · The Appendix ════════════════════════════════════════════════════════════
 // OUTSIDE AGREEMENT. Lina's fixture table (Geodetic build instruction, Appendix): the
@@ -840,6 +904,68 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
   );
   const plain = shiftAngles(relocate(CHART_JD, to.lat, to.lng, 'placidus'), ayan, false);
   check('… and does not mark a relocated (non-geodetic) frame', plain.geodetic === undefined, `geodetic ${plain.geodetic}`);
+
+  // A frame at a GIVEN tilt (2026-10-20): the wheel with no chart is read at J2000 whatever the
+  // moment it shows (Lina, 20 Oct 2026, §2). The angles take the tilt; the cusps come from Swiss,
+  // which takes ε only from the moment, so geodeticFrame asks it at a moment whose obliquity is
+  // that tilt — and cusp 1 must still be the AS, cusp 10 the MC, as at the moment's own. First:
+  // passing the moment's own obliquity is the frame it always was, float for float.
+  {
+    let same = 0;
+    let n = 0;
+    for (const sys of SYS10) {
+      for (const [lat, lng] of [[43.65, -79.4], [-33.9, 18.4], [69.6, 18.9], [-77.8, 166.7]] as const) {
+        n += 1;
+        const a = geodeticFrame(CHART_JD, lat, lng, sys);
+        const b = geodeticFrame(CHART_JD, lat, lng, sys, obliquity(CHART_JD));
+        if (a.asc === b.asc && a.mc === b.mc && a.cusps.every((c, k) => c === b.cusps[k]) && !!a.fallback === !!b.fallback) same += 1;
+      }
+    }
+    check('geodeticFrame with eps = obliquity(jd) is the default frame, float for float (ten systems × four places)', n === 40 && same === n, `${same}/${n}`);
+  }
+  const atTilt: Array<[string, number, number]> = [
+    ['2026 moment at J2000 (No chart)', JD_NOW, EPS_J2000],
+    [`${CHART.year} moment at the 1900 tilt`, CHART_JD, EPS_1900],
+  ];
+  for (const [label, jd, eps] of atTilt) {
+    let frames = 0;
+    let anglesDiffer = 0;
+    let worst10 = 0;
+    let worst1 = 0;
+    let badWidth = 0;
+    let cuspsMoved = 0;
+    for (let i = 0; i < 36; i++) {
+      const lat = -87.5 + 5 * i;
+      for (let j = 0; j < 24; j++) {
+        const lng = -180 + 15 * j + 7;
+        const g = geodeticAngles(lng, lat, eps);
+        for (const sys of SYS10) {
+          const f = geodeticFrame(jd, lat, lng, sys, eps);
+          frames += 1;
+          if (f.asc !== g.asc || f.mc !== g.mc || f.dsc !== g.dsc || f.ic !== g.ic) anglesDiffer += 1;
+          if (CUSP10_IS_MC.has(sys)) worst10 = Math.max(worst10, angDiff(f.cusps[9], f.mc));
+          if (CUSP1_IS_AS.has(sys)) worst1 = Math.max(worst1, angDiff(f.cusps[0], f.asc));
+          for (let k = 0; k < 12; k++) {
+            const w = norm2pi(f.cusps[(k + 1) % 12] - f.cusps[k]);
+            if (!(w > 0 && w < Math.PI)) {
+              badWidth += 1;
+              break;
+            }
+          }
+          // The control: at the moment's own tilt the same place's cusps are elsewhere, so the
+          // given tilt really reaches them (not only the angles).
+          if (sys === 'placidus' || sys === 'regiomontanus') {
+            const own = geodeticFrame(jd, lat, lng, sys);
+            if (own.cusps.some((c, k) => angDiff(c, f.cusps[k]) > 1e-9)) cuspsMoved += 1;
+          }
+        }
+      }
+    }
+    check(`${label}: ${frames} frames — asc/mc/dsc/ic === the primitive at the given tilt`, frames === 8640 && anglesDiffer === 0, `${anglesDiffer} differ`);
+    check(`${label}: cusp 10 = MC and cusp 1 = AS at that tilt (to 1e-9 rad)`, frames > 0 && worst10 < 1e-9 && worst1 < 1e-9, `worst ${fmt(worst10)} / ${fmt(worst1)} rad`);
+    check(`${label}: every house runs forward and is under 180°`, frames > 0 && badWidth === 0, `${badWidth} frames`);
+    check(`${label}: control — the cusps differ from the moment's own-tilt frame (the tilt reaches them)`, cuspsMoved > 500, `${cuspsMoved} of 1728`);
+  }
 }
 
 // ═══ 7 · Where each Ascendant curve ends ═════════════════════════════════════════
@@ -904,9 +1030,9 @@ section('§7 OUTSIDE AGREEMENT — the Ascendant curves end where their degrees 
 // places that read AS = X are exactly where curve X crosses that row — one crossing
 // inside the curve's span, none outside it; (c) the zone a curve begins lies to its
 // EAST, judged by the one sign rule (truncZodiac).
-section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two parts agree)');
-{
-  const eps = EPS_J2000;
+// At both tilts (2026-10-20): the curves the map draws are traced at the chart's ε, or J2000.
+section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two parts agree), at J2000 and at 1900');
+for (const [tilt, eps] of TILTS) {
   const wrapPi = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
   const asAt = (lng: number, lat: number) => geodeticAngles(lng, lat, eps).asc;
 
@@ -918,7 +1044,7 @@ section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two 
   for (let k = 0; k < 12; k++) {
     const X = 30 * k * D2R;
     const raX = eclipticToRaDec(X, 0, eps).ra;
-    for (const [lng, lat] of geodeticAscCurve(30 * k)) {
+    for (const [lng, lat] of geodeticAscCurve(30 * k, eps)) {
       const g = geodeticAngles(lng, lat, eps);
       const H = Math.abs(wrapPi(g.ramc - raX));
       if (H < 0.6 * D2R || H > Math.PI - 0.6 * D2R) {
@@ -930,7 +1056,7 @@ section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two 
     }
   }
   check(
-    `(a) every vertex of the twelve curves reads AS = its degree`,
+    `${tilt}: (a) every vertex of the twelve curves reads AS = its degree`,
     vertices > 1000 && worstVertex < 1e-9,
     `${vertices} vertices, max Δ ${fmt(worstVertex)} rad; ${skipped} at hour angle 0/π skipped`,
   );
@@ -954,7 +1080,7 @@ section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two 
   for (let k = 0; k < 12; k++) {
     const X = 30 * k * D2R;
     const span = 90 - Math.abs(eclipticToRaDec(X, 0, eps).dec * R2D);
-    const curve = geodeticAscCurve(30 * k);
+    const curve = geodeticAscCurve(30 * k, eps);
     // Ground distance (degrees) from a point to the curve polyline, longitude scaled by
     // cos(latitude), across the antimeridian.
     const distToCurve = (lng: number, lat: number) => {
@@ -1041,23 +1167,23 @@ section('§8 INTERNAL IDENTITY — geodeticAscCurve against geodeticAngles (two 
     }
   }
   check(
-    '(b) inside each curve\'s span, exactly one place per row reads AS = X, and it lies on curve X',
+    `${tilt}: (b) inside each curve's span, exactly one place per row reads AS = X, and it lies on curve X`,
     inside > 3000 && insideOk === inside,
     `${insideOk}/${inside} rows, worst ${worstDist.toFixed(5)}° from the curve${firstBad.length ? `; ${firstBad.join('; ')}` : ''}`,
   );
   check(
-    '(b) outside the span, no place reads AS = X',
+    `${tilt}: (b) outside the span, no place reads AS = X`,
     outside > 0 && outsideOk === outside,
     `${outsideOk}/${outside} rows`,
   );
-  note(`${rows} rows over the 12 curves; ${nearTurn} within 1° of a curve's turning latitude skipped`);
+  note(`${tilt}: ${rows} rows over the 12 curves; ${nearTurn} within 1° of a curve's turning latitude skipped`);
   check(
-    `(c) below the polar circles, the zone a curve begins lies to its east`,
+    `${tilt}: (c) below the polar circles, the zone a curve begins lies to its east`,
     eastChecked > 2000 && eastOk === eastChecked,
     `${eastOk}/${eastChecked} crossings`,
   );
   note(
-    `(c) above the polar circles (printed, not asserted — the Ascendant runs backward in places): ` +
+    `${tilt}: (c) above the polar circles (printed, not asserted — the Ascendant runs backward in places): ` +
       `${polarEastOk}/${polarEast} crossings have the zone to the east`,
   );
 }
@@ -1113,10 +1239,27 @@ section('G1 OUTSIDE AGREEMENT + INTERNAL IDENTITY — the MC meridians');
 // INTERNAL IDENTITY. §7 (where the curves end) and §8 (the curves against the readout) run on
 // geodeticAscCurve; this pins that the grid DRAWS exactly that, vertex for vertex — so those
 // sections test what is on the map, not a copy of it. And each curve's equator point, where
-// its glyph goes, must be on the curve and read AS 0°00′ of its sign.
-section('G2 INTERNAL IDENTITY — the grid draws the generator §7 and §8 test');
+// its glyph goes, must be on the curve and read AS 0°00′ of its sign. At each tilt
+// (2026-10-20): geoAscGrid(ε) against geodeticAscCurve(30k, ε) and the readout at the same ε —
+// and the 1900 curves must really differ from the J2000 ones, or the second pass tests nothing.
+section('G2 INTERNAL IDENTITY — the grid draws the generator §7 and §8 test, at J2000 and at 1900');
 {
-  const grid = geoGrid();
+  const a0 = geoAscGrid(EPS_J2000).asc.features;
+  const a1 = geoAscGrid(EPS_1900).asc.features;
+  let worstMove = 0;
+  for (let k = 0; k < 12; k++) {
+    const c0 = a0[k].geometry.coordinates;
+    const c1 = a1[k].geometry.coordinates;
+    for (let i = 0; i < Math.min(c0.length, c1.length); i++) worstMove = Math.max(worstMove, Math.abs(normLng(c1[i][0] - c0[i][0])));
+  }
+  check(
+    'control: the 1900 tilt moves the curves (by up to about a hundredth of a degree)',
+    worstMove > 1e-4 && worstMove < 0.1,
+    `${worstMove.toExponential(2)}° at most, vertex for vertex`,
+  );
+}
+for (const [tilt, eps] of TILTS) {
+  const grid = geoAscGrid(eps);
   let same = 0;
   let eqOk = 0;
   let worstEq = 0;
@@ -1124,7 +1267,7 @@ section('G2 INTERNAL IDENTITY — the grid draws the generator §7 and §8 test'
   for (let k = 0; k < 12; k++) {
     const f = grid.asc.features[k];
     const a = f.geometry.coordinates;
-    const b = geodeticAscCurve(30 * k);
+    const b = geodeticAscCurve(30 * k, eps);
     if (
       f.properties.kind === 'asc' && f.properties.sign === k &&
       a.length === b.length && a.every((p, i) => p[0] === b[i][0] && p[1] === b[i][1])
@@ -1147,15 +1290,46 @@ section('G2 INTERNAL IDENTITY — the grid draws the generator §7 and §8 test'
       dist = Math.min(dist, Math.hypot(ax + t * vx, ay + t * vy));
     }
     worstEq = Math.max(worstEq, dist);
-    const r = geoReadoutAngles(lat, lng).as;
-    if (lat === 0 && dist < 0.02 && r && r.signIdx === k && r.text === "0°00'") eqOk += 1;
-    else if (bad.length < 3) bad.push(`${SIGNS[k]}: ${dist.toFixed(4)}° off, reads ${r?.text} ${r ? SIGNS[r.signIdx] : ''}`);
+    const r = geoReadoutAngles(lat, lng, eps).as;
+    // Where the AS glyph goes (geoGridLabels.ts): nudged east of the crossing, into the zone the
+    // curve begins — the readout there must name the curve's sign, so the label's polar check
+    // never drops an equator glyph.
+    const e = geoReadoutAngles(lat, lng + 0.05, eps).as;
+    if (lat === 0 && dist < 0.02 && r && r.signIdx === k && r.text === "0°00'" && e?.signIdx === k) eqOk += 1;
+    else if (bad.length < 3) bad.push(`${SIGNS[k]}: ${dist.toFixed(4)}° off, reads ${r?.text} ${r ? SIGNS[r.signIdx] : ''}, east ${e ? SIGNS[e.signIdx] : ''}`);
   }
-  check('geoGrid().asc feature k is geodeticAscCurve(30k), vertex for vertex (===)', same === 12, `${same}/12`);
+  check(`${tilt}: geoAscGrid(ε).asc feature k is geodeticAscCurve(30k, ε), vertex for vertex (===)`, same === 12, `${same}/12`);
   check(
-    'each curve\'s equator point is on the drawn curve and reads AS 0°00′ of its sign',
+    `${tilt}: each curve's equator point is on the drawn curve, reads AS 0°00′ of its sign, and just east of it its sign`,
     eqOk === 12,
     `${eqOk}/12, worst ${worstEq.toExponential(1)}° off${bad.length ? `; ${bad.join('; ')}` : ''}`,
+  );
+}
+// The label's polar check has work to do: inside the polar circles, just east of some curves
+// the readout names ANOTHER sign (§8(c), printed there), which is where geoGridLabels drops an
+// AS glyph rather than draw it on the wrong zone. Counted along the bottom of the map, where
+// the curves' bottom-edge glyphs go, from 70°S to 85°S; and outside the circles never.
+{
+  let polarSpots = 0;
+  let polarOther = 0;
+  let midSpots = 0;
+  let midOther = 0;
+  const grid = geoAscGrid(EPS_J2000);
+  for (let k = 0; k < 12; k++) {
+    for (const [lng, lat] of grid.asc.features[k].geometry.coordinates) {
+      if (lat > -85 && lat < -70) {
+        polarSpots += 1;
+        if (geoReadoutAngles(lat, lng + 0.2, EPS_J2000).as?.signIdx !== k) polarOther += 1;
+      } else if (Math.abs(lat) < 60) {
+        midSpots += 1;
+        if (geoReadoutAngles(lat, lng + 0.2 / Math.cos(lat * D2R), EPS_J2000).as?.signIdx !== k) midOther += 1;
+      }
+    }
+  }
+  check(
+    'just east of a curve: never another sign below 60°, sometimes another past 70°S (what the AS label check drops)',
+    midSpots > 1000 && midOther === 0 && polarSpots > 50 && polarOther > 0,
+    `below 60°: ${midOther}/${midSpots}; 70–85°S: ${polarOther}/${polarSpots} name another sign`,
   );
 }
 
@@ -1355,9 +1529,11 @@ section('G6 OUTSIDE AGREEMENT — the Appendix to the minute, through the grid r
 // ═══ G7 · The polar flag ═══════════════════════════════════════════════════════════
 // OUTSIDE AGREEMENT on the Appendix's own annotations ("inside the Arctic" / "Antarctic") and
 // on the J2000 polar circle, 90° − 23°26′21.448″; INTERNAL IDENTITY on the edges: the flag
-// switches at exactly POLAR_CIRCLE_J2000_DEG in both hemispheres, and the readout leaves the
-// Ascendant out only within 0.01° of a pole, where it is undefined (the MC is still there).
-section('G7 OUTSIDE AGREEMENT + INTERNAL IDENTITY — the polar flag, and where the AS is left out');
+// switches at exactly polarCircleDeg(ε) in both hemispheres — at J2000, at the 1900 tilt and at
+// a made-up 24°, so a threshold left at J2000's would fail two of the three (2026-10-20, Lina's
+// §18: the caution shows from 90° − ε) — and the readout leaves the Ascendant out only within
+// 0.01° of a pole, where it is undefined (the MC is still there).
+section('G7 OUTSIDE AGREEMENT + INTERNAL IDENTITY — the polar flag at 90° − ε, and where the AS is left out');
 {
   const want: Array<[string, boolean]> = [
     ['Tromsø', true], ['Resolute', true], ['McMurdo', true], ['Vostok', true],
@@ -1374,12 +1550,32 @@ section('G7 OUTSIDE AGREEMENT + INTERNAL IDENTITY — the polar flag, and where 
     if (p === polar) ok += 1;
   }
   check('polar: Tromsø, Resolute, McMurdo, Vostok; not Reykjavik, Ushuaia', ok === want.length, got.join(', '));
-  const P = POLAR_CIRCLE_J2000_DEG;
-  check('the threshold is the J2000 polar circle, 90° − 23.4392911° (66°33′38.55″)', Math.abs(P - (90 - 23.4392911)) < 1e-12, `${P}`);
+  const P = polarCircleDeg(EPS_J2000);
+  check('the J2000 threshold is the polar circle, 90° − 23.4392911° (66°33′38.55″)', Math.abs(P - (90 - 23.4392911)) < 1e-12, `${P}`);
   check(
-    'the flag switches exactly there, north and south',
+    'the default readout (no tilt given) is J2000\'s: the flag switches exactly there, north and south',
     !geoReadoutAngles(P - 1e-9, 0).polar && geoReadoutAngles(P, 0).polar &&
       !geoReadoutAngles(-(P - 1e-9), 0).polar && geoReadoutAngles(-P, 0).polar,
+  );
+  const threeTilts: Array<[string, number]> = [...TILTS, ['24°', 24 * D2R]];
+  let switches = 0;
+  for (const [, eps] of threeTilts) {
+    const Q = polarCircleDeg(eps);
+    if (
+      Math.abs(Q - (90 - eps * R2D)) < 1e-12 &&
+      !geoReadoutAngles(Q - 1e-9, 0, eps).polar && geoReadoutAngles(Q, 0, eps).polar &&
+      !geoReadoutAngles(-(Q - 1e-9), 0, eps).polar && geoReadoutAngles(-Q, 0, eps).polar
+    ) {
+      switches += 1;
+    }
+  }
+  // Between two tilts' circles the two readouts must disagree — the flag reads the tilt it is
+  // given, not a constant.
+  const mid = (polarCircleDeg(EPS_J2000) + polarCircleDeg(24 * D2R)) / 2;
+  check(
+    `at each of ${threeTilts.map(([n]) => n).join(', ')} the flag switches exactly at 90° − ε, north and south`,
+    switches === 3 && polarCircleDeg(EPS_1900) < P && !geoReadoutAngles(mid, 0, EPS_J2000).polar && geoReadoutAngles(mid, 0, 24 * D2R).polar,
+    `${switches}/3; 1900 circle ${polarCircleDeg(EPS_1900).toFixed(6)}° vs J2000 ${P.toFixed(6)}°`,
   );
   const pole = geoReadoutAngles(89.995, 10);
   check(
@@ -1555,7 +1751,7 @@ section("G8 OUTSIDE AGREEMENT — MapLibre's own tiler: the ±180° seam, full c
   // curve, taken to its canonical position, must lie on its own curve's feature in the tile
   // that holds it — to within the source's simplification tolerance plus the integer snap.
   // geojson-vt's projection restated: Web Mercator, y clamped to the world square.
-  const at = index(geoGrid().asc as FeatureCollection, LINE_SOURCE_OPTS);
+  const at = index(geoAscGrid(EPS_J2000).asc as FeatureCollection, LINE_SOURCE_OPTS);
   const mercY = (lat: number) => {
     const s = Math.sin(lat * D2R);
     const y = 0.5 - (0.25 * Math.log((1 + s) / (1 - s))) / Math.PI;
@@ -1577,7 +1773,7 @@ section("G8 OUTSIDE AGREEMENT — MapLibre's own tiler: the ±180° seam, full c
   for (let z = 1; z <= 4; z++) {
     const n = 2 ** z;
     for (let k = 0; k < 12; k++) {
-      for (const [lng, lat] of geoGrid().asc.features[k].geometry.coordinates) {
+      for (const [lng, lat] of geoAscGrid(EPS_J2000).asc.features[k].geometry.coordinates) {
         verts += 1;
         if (lng < -180 || lng > 180) wrapped += 1;
         const X = ((canonicalLng(lng) + 180) / 360) * n;
@@ -1700,10 +1896,21 @@ section('G9 INTERNAL IDENTITY — the zone fills: palette slots, the legend\'s i
     isoN === 7 && isoOk === isoN,
     `${isoOk}/${isoN}`,
   );
-  const pres = buildGeoZones(SYNTH_ZONE_COLORS, GEO_ZONE_OPACITY.presentation, null);
+  const pres = buildGeoZones(SYNTH_ZONE_COLORS, GEO_ZONE_OPACITY.bold, null);
   check(
-    'about 12% in use and 50% for Presentation',
-    base === 0.12 && GEO_ZONE_OPACITY.presentation === 0.5 && pres.features.every((f) => f.properties.opacity === 0.5),
+    'about 15% in use and 50% bold',
+    base === 0.15 && GEO_ZONE_OPACITY.bold === 0.5 && pres.features.every((f) => f.properties.opacity === 0.5),
+  );
+  // The opacity field (2026-10-20) migrates the Bold shading switch: its value for a stored "on"
+  // must be the strength the switch drew, or a bold reader's shading moves the day the field
+  // ships; its default is the grid's normal strength. Two parts, held to each other: the stored pref's numbers and the grid's.
+  check(
+    'opacity field default and migrated bold equal the grid strengths',
+    GEO_ZONES_OPACITY_PCT.default / 100 === GEO_ZONE_OPACITY.normal &&
+      GEO_ZONES_OPACITY_PCT.bold / 100 === GEO_ZONE_OPACITY.bold &&
+      GEO_ZONES_OPACITY_PCT.min <= GEO_ZONES_OPACITY_PCT.default &&
+      GEO_ZONES_OPACITY_PCT.bold <= GEO_ZONES_OPACITY_PCT.max,
+    `default ${GEO_ZONES_OPACITY_PCT.default}%, bold ${GEO_ZONES_OPACITY_PCT.bold}%`,
   );
   // Relative luminance (sRGB) of a #rrggbb.
   const lum = (hex: string) => {
@@ -1877,8 +2084,8 @@ section('G10 INTERNAL IDENTITY — the Ascendant zones against the readout (two 
   for (let i = 0; i < N; i++) {
     const lng = -180 + 360 * rnd();
     const polar = i % 3 === 0;
-    const lat = polar ? (rnd() < 0.5 ? -1 : 1) * (POLAR_CIRCLE_J2000_DEG + (LAT - POLAR_CIRCLE_J2000_DEG) * rnd()) : -LAT + 2 * LAT * rnd();
-    if (Math.abs(lat) >= POLAR_CIRCLE_J2000_DEG) polarProbes += 1;
+    const lat = polar ? (rnd() < 0.5 ? -1 : 1) * (polarCircleDeg(EPS_J2000) + (LAT - polarCircleDeg(EPS_J2000)) * rnd()) : -LAT + 2 * LAT * rnd();
+    if (Math.abs(lat) >= polarCircleDeg(EPS_J2000)) polarProbes += 1;
     const hits = zonesAt(lng, lat);
     if (hits.length === 1) single += 1;
     const s = asSign(lat, lng);
@@ -2112,6 +2319,398 @@ section('G10 INTERNAL IDENTITY — the Ascendant zones against the readout (two 
     '(f) folded at ±180°, made-up ribbons keep their area, stay inside −180…180, and hold exactly their own places',
     foldOk === synth.length,
     `${foldOk}/${synth.length} ribbons, ${foldProbes} probes${foldBad.length ? `; ${foldBad.join('; ')}` : ''}`,
+  );
+}
+
+// ═══ G10(g) · The Ascendant zones at another tilt ══════════════════════════════════
+// INTERNAL IDENTITY, two parts agreeing, at the 1900 tilt (2026-10-20): the zones are built per
+// ε, and must be the readout's at THEIR ε. (c)'s seeded probes again, against the readout at
+// 1900; and a control that can tell the tilts apart — places strictly between where the J2000
+// readout and the 1900 readout change sign (the curves move about a kilometre between the two),
+// where the 1900 zones must hold the 1900 sign and the J2000 zones hold the other. A zone set
+// built at the wrong tilt passes the probes (almost no random place falls in a kilometre-wide
+// strip) and fails this.
+section('G10(g) INTERNAL IDENTITY — the Ascendant zones at the 1900 tilt against the readout at it');
+{
+  let z1900: GeoAscZones | null = null;
+  for (let s = 0; !z1900 && s < 100000; s++) z1900 = buildGeoAscZones(EPS_1900, 8);
+  const zJ = geoAscZones(EPS_J2000);
+  check(
+    'built for the 1900 tilt: its own object, cached beside the J2000 set (which is still there)',
+    z1900 !== null && geoAscZones(EPS_1900) === z1900 && zJ !== null && zJ !== z1900,
+  );
+  type ZRing = { sign: number; ring: number[][]; box: [number, number, number, number] };
+  const ringsOf = (z: GeoAscZones | null): ZRing[] =>
+    (z?.features ?? []).flatMap((f, k) =>
+      f.geometry.coordinates.map((poly) => {
+        const ring = poly[0];
+        const xs = ring.map((p) => p[0]);
+        const ys = ring.map((p) => p[1]);
+        return { sign: k, ring, box: [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)] as [number, number, number, number] };
+      }),
+    );
+  const inRing = (ring: number[][], x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const zonesAt = (rings: ZRing[], lng: number, lat: number) =>
+    rings.filter((r) => lng >= r.box[0] && lng <= r.box[1] && lat >= r.box[2] && lat <= r.box[3] && inRing(r.ring, lng, lat)).map((r) => r.sign);
+  const R1900 = ringsOf(z1900);
+  const RJ = ringsOf(zJ);
+  const asAt = (eps: number) => (lat: number, lng: number) => geoReadoutAngles(lat, lng, eps).as?.signIdx ?? -1;
+  const as1900 = asAt(EPS_1900);
+  const asJ = asAt(EPS_J2000);
+  const TOL = GEO_ASC_ZONE_TOL_DEG;
+  const nearChange = (lat: number, lng: number, s: number) => {
+    for (const r of [TOL / 2, TOL]) {
+      for (let q = 0; q < 16; q++) {
+        const th = (q * Math.PI) / 8;
+        const la = lat + r * Math.sin(th);
+        if (Math.abs(la) > 89.99) continue;
+        if (as1900(la, lng + (r * Math.cos(th)) / Math.cos(lat * D2R)) !== s) return true;
+      }
+    }
+    return false;
+  };
+  let seed = 0x1900abcd;
+  const rnd = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const PC = polarCircleDeg(EPS_1900);
+  const N = 15000;
+  let agree = 0;
+  let excused = 0;
+  let polar = 0;
+  const bad: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const lng = -180 + 360 * rnd();
+    const lat = i % 3 === 0 ? (rnd() < 0.5 ? -1 : 1) * (PC + (89.99 - PC) * rnd()) : -89.99 + 2 * 89.99 * rnd();
+    if (Math.abs(lat) >= PC) polar += 1;
+    const hits = zonesAt(R1900, lng, lat);
+    const s = as1900(lat, lng);
+    if (hits.length === 1 && hits[0] === s) agree += 1;
+    else if (nearChange(lat, lng, s)) excused += 1;
+    else if (bad.length < 4) bad.push(`${lat.toFixed(5)}° ${lng.toFixed(5)}°: in [${hits.map((h) => SIGNS[h])}], reads ${SIGNS[s]}`);
+  }
+  check(
+    `(c) at 1900: every probe's zone is the 1900 readout's AS sign, but within the tolerance of a change (${N} probes, ${polar} polar)`,
+    polar > N / 4 && agree + excused === N && agree > N * 0.999,
+    `${agree}/${N} agree, ${excused} excused${bad.length ? `; ${bad.join('; ')}` : ''}`,
+  );
+  // The control: along rows, where each tilt's readout changes sign, paired in order; the places
+  // halfway between, where they are far enough apart to be outside both tolerances.
+  const changesAt = (as: (lat: number, lng: number) => number, lat: number) => {
+    const out: number[] = [];
+    let x0 = -180;
+    let s0 = as(lat, x0);
+    for (let i = 1; i <= 7200; i++) {
+      const x1 = -180 + i * 0.05;
+      const s1 = as(lat, x1);
+      if (s1 !== s0) {
+        let lo = x0;
+        let hi = x1;
+        while (hi - lo > 1e-9) {
+          const m = (lo + hi) / 2;
+          if (as(lat, m) === s0) lo = m;
+          else hi = m;
+        }
+        out.push((lo + hi) / 2);
+      }
+      x0 = x1;
+      s0 = s1;
+    }
+    return out;
+  };
+  let strips = 0;
+  let stripOk = 0;
+  let stripJ = 0;
+  for (const lat of [-55.3, -35.1, -10.7, 15.2, 40.9, 58.4]) {
+    const a = changesAt(asJ, lat);
+    const b = changesAt(as1900, lat);
+    if (a.length !== b.length) continue;
+    for (let i = 0; i < a.length; i++) {
+      if (Math.abs(a[i] - b[i]) * Math.cos(lat * D2R) < 4 * TOL) continue;
+      const x = (a[i] + b[i]) / 2;
+      strips += 1;
+      const want = as1900(lat, x);
+      const h1 = zonesAt(R1900, x, lat);
+      const hJ = zonesAt(RJ, x, lat);
+      if (want !== asJ(lat, x) && h1.length === 1 && h1[0] === want) stripOk += 1;
+      if (hJ.length === 1 && hJ[0] === asJ(lat, x)) stripJ += 1;
+    }
+  }
+  check(
+    'control: between the two tilts\' sign changes the 1900 zones hold the 1900 sign — and the J2000 zones the other',
+    strips > 20 && stripOk === strips && stripJ === strips,
+    `${stripOk}/${strips} places (J2000 zones: ${stripJ}/${strips} hold J2000's sign)`,
+  );
+}
+
+// ═══ G11 · One tilt ═══════════════════════════════════════════════════════════════
+// INTERNAL IDENTITY, two parts agreeing (Lina, 20 Oct 2026, §2: "One tilt on screen at a
+// time"). The hover readout (geoReadoutAngles at the map's tilt) and the wheel's frame
+// (geodeticFrame, what the sidebar and the Coordinates box print) are separate code; at a
+// chart's moment, the readout at that chart's obliquity must print exactly what the frame
+// does, AS and MC to the minute; with no chart, the readout at J2000 exactly what a frame read
+// at J2000 does, whatever the moment. The control: a readout left at J2000 under the 1941 chart
+// would print other minutes in places — so the agreement can't come from both being J2000.
+section('G11 INTERNAL IDENTITY — one tilt: the readout against the wheel\'s frame');
+{
+  const chartEps = obliquity(CHART_JD);
+  let n = 0;
+  let chartOk = 0;
+  let noChartOk = 0;
+  let wouldDiffer = 0;
+  const bad: string[] = [];
+  const same = (a: { text: string; signIdx: number } | null, lon: number) => {
+    const z = truncZodiac(lon, 'min');
+    return a !== null && a.text === z.text && a.signIdx === z.signIdx;
+  };
+  for (let i = 0; i < 60; i++) {
+    const lat = -64.5 + 2.17 * i;
+    for (let j = 0; j < 72; j++) {
+      const lng = -179.6 + 4.99 * j;
+      n += 1;
+      const f = geodeticFrame(CHART_JD, lat, lng, 'placidus');
+      const r = geoReadoutAngles(lat, lng, chartEps);
+      if (same(r.as, f.asc) && same(r.mc, f.mc)) chartOk += 1;
+      else if (bad.length < 3) bad.push(`${lat.toFixed(2)}° ${lng.toFixed(2)}°: readout ${r.as?.text}/${r.mc.text}, frame ${truncZodiac(f.asc, 'min').text}`);
+      const g = geodeticFrame(JD_NOW, lat, lng, 'placidus', EPS_J2000);
+      const rj = geoReadoutAngles(lat, lng);
+      if (same(rj.as, g.asc) && same(rj.mc, g.mc)) noChartOk += 1;
+      if (!same(rj.as, f.asc)) wouldDiffer += 1;
+    }
+  }
+  check(
+    `with a chart: the readout at its obliquity prints the frame's AS and MC, to the minute (${n} places)`,
+    n === 4320 && chartOk === n,
+    `${chartOk}/${n}${bad.length ? `; ${bad.join('; ')}` : ''}`,
+  );
+  check(`with no chart: the J2000 readout prints a J2000 frame's, at a 2026 moment`, n > 0 && noChartOk === n, `${noChartOk}/${n}`);
+  check('control: a readout left at J2000 under the 1941 chart prints another AS minute in places', wouldDiffer > n / 20, `${wouldDiffer}/${n}`);
+}
+
+// ═══ G12 · The readout's angle line ═════════════════════════════════════════════════
+// OUTSIDE AGREEMENT against Lina's format (20 Oct 2026, §4): "GE: AS 21°♈04′ · MC 10°♑37′" —
+// the code, a colon, each angle as degrees, sign, minutes. The one formatter (geoReadoutText)
+// through the English catalog's own templates, at Toronto (43°39′N 79°24′W, G6's row), with
+// real figures. The old surfaces printed "Toronto GE" over the angles and "GE · AS …"; a line
+// with "GE ·" in it is the old format back.
+section('G12 OUTSIDE AGREEMENT — the readout\'s angle line, Lina\'s format');
+{
+  const tpl = en.map.geoReadout;
+  const to = placeOf(ROWS[3]);
+  const r = geoReadoutAngles(to.lat, to.lng);
+  const parts = geoAnglesParts(r.as, r.mc);
+  const text = geoAnglesText(parts, tpl);
+  const want = `GE: AS 21°${SIGN_GLYPHS[0]}04' · MC 10°${SIGN_GLYPHS[9]}37'`;
+  check('Toronto: "GE: AS 21°♈04\' · MC 10°♑37\'" exactly', text === want, JSON.stringify(text));
+  check('…and never the old "GE ·" (nor a place glued to the code)', text.length > 0 && !text.includes('GE ·') && !/\bGE\s*$/.test(text) && text.startsWith('GE: AS '), JSON.stringify(text));
+  // The parts are the readout's own figures: from the readout's TruncZodiac or from the
+  // longitudes, the same, by the one rule.
+  const g = geodeticAngles(canonicalLng(to.lng), to.lat, EPS_J2000);
+  const fromLon = geoAnglesParts(g.asc, g.mc);
+  check(
+    'the parts from the longitudes are the parts from the readout (one truncation rule)',
+    JSON.stringify(fromLon) === JSON.stringify(parts) && parts.as?.deg === '21' && parts.as.min === '04' && parts.mc.deg === '10',
+    JSON.stringify(parts),
+  );
+  // In order: text, AS, text, MC — what the map's markup and the panel's glyphs are built from.
+  const segs = geoAnglesSegments(parts, tpl);
+  const shape = segs.map((s) => ('slot' in s ? s.slot : 'text')).join(',');
+  check('segments in order: "GE: AS ", AS, " · MC ", MC', shape === 'text,as,text,mc' && 'text' in segs[0] && segs[0].text === 'GE: AS ', shape);
+  // Within 0.01° of a pole there is no Ascendant: the MC-only line.
+  const pole = geoReadoutAngles(89.995, 10);
+  const poleText = geoAnglesText(geoAnglesParts(pole.as, pole.mc), tpl);
+  check('at a pole: "GE: MC 10°♈00\'"', pole.as === null && poleText === `GE: MC 10°${SIGN_GLYPHS[0]}00'`, JSON.stringify(poleText));
+  // Two-digit degrees and minutes, the glyph between: a single-digit degree is padded.
+  const one = geoAngleText(geoAnglesParts(null, (5 * 30 + 3 + 7 / 60) * D2R).mc);
+  check('two-digit figures: 3°07′ Virgo prints "03°♍07\'"', one === `03°${SIGN_GLYPHS[5]}07'`, JSON.stringify(one));
+  // The polar caution (§18), Lina's sentence with "AL" expanded.
+  check(
+    'the polar caution is her sentence',
+    tpl.polar === 'Polar zone: inside the polar circles the Ascendant has two definitions, half a circle apart. AstroLina uses the eastern point.',
+  );
+}
+
+// ── G13: the hover highlight follows the grid's switches ─────────────────────────────────
+// Lina, 20 Oct 2026, §4: MC meridians only, the MC band under the cursor; Ascendant curves only,
+// the Ascendant zone; both, both faint (the overlap darker); neither, nothing. The decision is
+// geoHighlightFor (components/Map/geoHighlight), which the map's hover calls — so here, over real
+// places, every lit feature must be the band or zone the place IS in by geometry the decision
+// never reads: the MC zone rings, and the built Ascendant zones (G10). Then the map's own wiring,
+// which Node can't reach, as a tripwire.
+section('G13 INTERNAL IDENTITY + SOURCE TRIPWIRE — the hover highlight follows the switches');
+{
+  const zones = geoAscZones(EPS_J2000);
+  const inRing = (ring: readonly (readonly number[])[], x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const mcZoneAt = (lat: number, lng: number) =>
+    geoGrid().zoneRings.flatMap((r, k) => (inRing(r, canonicalLng(lng), lat) ? [k] : []));
+  const ascZoneAt = (lat: number, lng: number) =>
+    (zones?.features ?? []).flatMap((f, k) =>
+      f.geometry.coordinates.some((poly) => inRing(poly[0], canonicalLng(lng), lat)) ? [k] : [],
+    );
+  const CASES = [
+    { name: 'MC only', drawn: { mc: true, asc: false } },
+    { name: 'AS only', drawn: { mc: false, asc: true } },
+    { name: 'both', drawn: { mc: true, asc: true } },
+    { name: 'neither', drawn: { mc: false, asc: false } },
+  ] as const;
+  // Toronto first, by name: the readout's own example place.
+  const toronto = geoReadoutAngles(43.6532, -79.3832);
+  const t = Object.fromEntries(CASES.map((c) => [c.name, geoHighlightFor(toronto, c.drawn)]));
+  check(
+    'Toronto: MC only lights its MC band, AS only its Ascendant zone, both both faint, neither nothing',
+    t['MC only'].mc === geoZoneId(toronto.mc.signIdx) && t['MC only'].asc === null && !t['MC only'].faint &&
+      t['AS only'].asc === geoZoneId(toronto.as!.signIdx) && t['AS only'].mc === null && !t['AS only'].faint &&
+      t.both.mc === t['MC only'].mc && t.both.asc === t['AS only'].asc && t.both.faint &&
+      t.neither.mc === null && t.neither.asc === null && !t.neither.faint,
+    JSON.stringify(t),
+  );
+  // Over the world: each lit id is the zone the place is in, by the rings.
+  const rnd = (() => {
+    let a = 20261020;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let x = a;
+      x = Math.imul(x ^ (x >>> 15), x | 1);
+      x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+  })();
+  let probes = 0;
+  let mcOk = 0;
+  let ascOk = 0;
+  let ascExcused = 0;
+  let unlitOk = 0;
+  const bad: string[] = [];
+  for (let n = 0; n < 1500; n++) {
+    const lat = -84 + 168 * rnd();
+    const lng = -180 + 360 * rnd();
+    const r = geoReadoutAngles(lat, lng);
+    if (!r.as) continue;
+    probes += 1;
+    const both = geoHighlightFor(r, { mc: true, asc: true });
+    const mcIn = mcZoneAt(lat, lng);
+    if (both.mc !== null && mcIn.length === 1 && mcIn[0] === both.mc - 1) mcOk += 1;
+    else bad.push(`MC at ${lat.toFixed(2)},${lng.toFixed(2)}: lit ${both.mc}, in ${mcIn.join('/')}`);
+    const ascIn = ascZoneAt(lat, lng);
+    if (both.asc !== null && ascIn.length === 1 && ascIn[0] === both.asc - 1) ascOk += 1;
+    else {
+      // Within the zones' tolerance of a change the polygon may hold the neighbour (G10 (c)).
+      const near = [0, 1, 2, 3, 4, 5, 6, 7].some((q) => {
+        const th = (q * Math.PI) / 4;
+        const s = geoReadoutAngles(lat + GEO_ASC_ZONE_TOL_DEG * Math.sin(th), lng + GEO_ASC_ZONE_TOL_DEG * Math.cos(th)).as?.signIdx;
+        return s !== undefined && ascIn.includes(s);
+      });
+      if (near) ascExcused += 1;
+      else bad.push(`AS at ${lat.toFixed(2)},${lng.toFixed(2)}: lit ${both.asc}, in ${ascIn.join('/')}`);
+    }
+    const none = geoHighlightFor(r, { mc: false, asc: false });
+    if (none.mc === null && none.asc === null) unlitOk += 1;
+  }
+  check(
+    `over ${probes} places with both on: the MC band lit is the MC zone ring holding the place, and the Ascendant zone the built zone holding it`,
+    !!zones && probes > 1000 && mcOk === probes && ascOk + ascExcused === probes && ascExcused < probes / 100,
+    `${mcOk}/${probes} MC, ${ascOk}/${probes} AS (${ascExcused} within ${GEO_ASC_ZONE_TOL_DEG}° of a change)${bad.length ? ` — ${bad.slice(0, 3).join(' | ')}` : ''}`,
+  );
+  check(`…and with neither on, none is lit anywhere`, probes > 1000 && unlitOk === probes, `${unlitOk}/${probes}`);
+  // At a pole there is no Ascendant: the MC band alone, still faint while both are on.
+  const pole = geoHighlightFor(geoReadoutAngles(89.995, 10), { mc: true, asc: true });
+  check('at a pole: no Ascendant zone, the MC band', pole.asc === null && pole.mc === geoZoneId(0), JSON.stringify(pole));
+
+  // The wiring. Map: the MC bands' layer between the zone fills and the Ascendant zones, both under
+  // the orb bands; the hover lighting through geoHighlightFor from the data each layer was handed;
+  // the paint fainter while both are lit. App: the readout on every geodetic map, whatever the
+  // switches; the highlight's two halves from the two switches; the zones built only for the curves.
+  const map = readFileSync('src/components/Map/Map.tsx', 'utf8').replace(/\r\n/g, '\n');
+  const style = readFileSync('src/components/Map/mapStyleApply.ts', 'utf8').replace(/\r\n/g, '\n');
+  const app = readFileSync('src/App.tsx', 'utf8').replace(/\r\n/g, '\n');
+  const stack = /const GEO_GRID_STACK = \[([\s\S]*?)\] as const;/.exec(map)?.[1] ?? '';
+  const ids = [...stack.matchAll(/id: '([^']+)', before: '([^']+)'/g)].map((m) => `${m[1]}<${m[2]}`);
+  check(
+    'GEO_GRID_STACK: zone fills, MC bands, Ascendant zones, each under the orb bands, in that order',
+    ids.slice(0, 3).join(' ') === 'geo-zones-layer<orb-bands-layer geo-mc-bands-layer<orb-bands-layer geo-asc-zones-layer<orb-bands-layer',
+    ids.join(' '),
+  );
+  const assertList = /const want = \[([\s\S]*?)\];/.exec(map)?.[1] ?? '';
+  check(
+    "the DEV stack assert expects geo-mc-bands-layer between them",
+    /'geo-zones-layer',\s*'geo-mc-bands-layer',\s*'geo-asc-zones-layer'/.test(assertList),
+  );
+  check(
+    'the hover lights through geoHighlightFor, from the MC bands and Ascendant zones as pushed',
+    /geoHighlightFor\(geo, \{\s*mc: \(dataRef\.current\.geoMcBands\?\.features\.length \?\? 0\) > 0,\s*asc: \(dataRef\.current\.geoAscZones\?\.features\.length \?\? 0\) > 0,\s*\}\)/.test(map) &&
+      /setGeoLit\('geo-asc-zones', lit\.asc, lit\.faint\)/.test(map) &&
+      /setGeoLit\('geo-mc-bands', lit\.mc, lit\.faint\)/.test(map),
+  );
+  check(
+    'the MC bands are pushed only while the host says the meridians are drawn (geoHover.mc)',
+    /const geoMcBands = geoHover\?\.mc \? geoMcBandsData\(\) : null;/.test(map) && /pushGated\('geo-mc-bands', data\.geoMcBands \?\? EMPTY_DATA\)/.test(map),
+  );
+  check(
+    'both lit layers are painted in the grid ink, at hover × faint while both are lit',
+    /const GEO_LIT_LAYERS = \['geo-mc-bands-layer', 'geo-asc-zones-layer'\] as const;/.test(style) &&
+      /\['feature-state', 'faint'\][^\n]*s\.geoGrid\.hover \* s\.geoGrid\.faint/.test(style),
+  );
+  check(
+    "App: the readout on every geodetic map (geoGridShown alone), the highlight's halves from the two switches",
+    /const geoReadout = useMemo\(\s*\(\) =>\s*geoGridShown\s*\?/.test(app) &&
+      /const geoHoverMc = geoGridShown && geoGridMcOn && !spotlightActive;/.test(app) &&
+      /const geoHoverAsc = geoGridShown && geoGridAscOn && !spotlightActive;/.test(app) &&
+      /geoHover=\{geoHover\}/.test(app) &&
+      /geoAscZones=\{geoHoverAsc && geoAscZones \? geoAscZones : EMPTY_FC\}/.test(app),
+  );
+}
+
+// ── G14: one formatter, both surfaces ─────────────────────────────────────────────────────
+// G12 holds the formatter to Lina's format; this holds the two surfaces that print a place's
+// geodetic angles to it — the map's readout (Map.tsx showGeo) and the chart panel's geodetic
+// line (ExpandedChartSidebar geoLines) — since before 2026-10-20 each built its own line and the
+// two had drifted apart. Neither renders under Node, so their source is read; the retired keys
+// must be read by nothing, or a surface is still building the old line.
+section('G14 SOURCE TRIPWIRE — the readout line is the one formatter, on the map and in the panel');
+{
+  const map = readFileSync('src/components/Map/Map.tsx', 'utf8').replace(/\r\n/g, '\n');
+  const panel = readFileSync('src/components/ExpandedChartSidebar/ExpandedChartSidebar.tsx', 'utf8').replace(/\r\n/g, '\n');
+  const tpl = /\{\s*angles: t\('map\.geoReadout\.angles'\),\s*anglesMcOnly: t\('map\.geoReadout\.anglesMcOnly'\)\s*,?\s*\}/;
+  check(
+    "the map's readout: geoAnglesText over geoAnglesParts, with the catalog's two templates, three lines",
+    /geoAnglesText\(\s*geoAnglesParts\(r\.as, r\.mc\)/.test(map) && tpl.test(map) &&
+      /geo-readout-place" translate="no"/.test(map) && /geo-readout-coords" translate="no"/.test(map) &&
+      /t\('map\.geoReadout\.polar'\)/.test(map),
+  );
+  check(
+    "the panel's geodetic line: geoAnglesSegments over geoAnglesParts, with the same two templates",
+    /geoAnglesSegments\(parts, \{/.test(panel) && /geoAnglesParts\(/.test(panel) && tpl.test(panel),
+  );
+  const RETIRED = /map\.geoReadout\.(place|coords|as|mc)\b|expandedSidebar\.geodetic\.ge\b/;
+  const readers = [
+    ['Map.tsx', map],
+    ['ExpandedChartSidebar.tsx', panel],
+    ['CaptureExtras.tsx', readFileSync('src/components/CaptureExtras/CaptureExtras.tsx', 'utf8')],
+  ].filter(([, s]) => RETIRED.test(s));
+  check(
+    'the retired keys (map.geoReadout.place/coords/as/mc, expandedSidebar.geodetic.ge) are read nowhere, and gone from the catalog',
+    readers.length === 0 && !('place' in en.map.geoReadout) && !('as' in en.map.geoReadout) && !('ge' in en.expandedSidebar.geodetic) && 'angles' in en.map.geoReadout,
+    readers.map(([n]) => n).join(', '),
   );
 }
 

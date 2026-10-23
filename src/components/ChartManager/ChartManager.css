@@ -219,6 +219,41 @@
   text-align: center;
 }
 
+/* The Events filter with nothing in it (2026-10-20): the line, then the example's
+   button under it — the chart menu's empty Events list makes the same offer. */
+.cm-list-empty--events {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.cm-add-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.4);
+  border-radius: 999px;
+  background: rgba(var(--accent-brand-rgb), 0.08);
+  color: var(--accent-brand);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cm-add-example:hover {
+  background: rgba(var(--accent-brand-rgb), 0.16);
+}
+.cm-add-example .tag-glyph {
+  color: inherit;
+}
+@media (pointer: coarse) {
+  .cm-add-example {
+    min-height: 40px;
+  }
+}
+
 /* Soft fade at the bottom of the list, shown only while more names lie below
    (ChartManager toggles its opacity on scroll). Fades to the panel bg → theme-aware. */
 .cm-list-fade {

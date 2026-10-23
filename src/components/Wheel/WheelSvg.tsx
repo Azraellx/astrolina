@@ -9,7 +9,7 @@
    in their own file, but that only affects dev hot-reload (a full reload instead
    of a hot-swap when editing this file), and the helpers belong with the wheel. */
 /* eslint-disable react-refresh/only-export-components */
-import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   POINTS,
   type EclipticPosition,
@@ -26,8 +26,10 @@ import { useT } from '../../i18n';
 import type { EnumLabels, MsgKey, TFn } from '../../i18n';
 import { ANGLE_LABEL, fmtDM, lonRange, lonToZodiac, truncZodiac } from '../../lib/astro/format';
 import { placeOnRing, type RingMark } from '../../lib/ringLayout';
+import { crossesSign, isRanged, type BodyRange } from '../../lib/astro/timeless';
 import { angleLabelHalfPx, wheelGeometry } from '../../lib/wheelGeometry';
-import { layoutMinorRing, minorRingWalls } from '../../lib/wheelRingLayout';
+import { layoutMinorRing, minorRingWalls, ringSpokes } from '../../lib/wheelRingLayout';
+import { cuspsInOrder, forwardSpan, houseIndexOf } from '../../lib/houses';
 import { minorDiamondPath, minorHollowPath } from '../../lib/minorBodies/mark';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
 import {
@@ -113,18 +115,63 @@ export const planetMeaning = (t: TFn, p: PlanetName) =>
 // its half-width in degrees. The longitude line becomes the span (2°♉–18°♉, each end in its
 // own sign) with a line saying why, and the title names a sign only when the whole span is
 // in one. `hideLon` hides the span and its line as it hides a degree. (2026-10-02)
+//
+// `house` (2026-10-23): the house the body is in, as the LAST of the figures ("7th House"), after
+// latitude — longitude and latitude are one pair of coordinates, and a line between them split it
+// (Salvatore, 2026-10-23). The 0-based index from lib/houses, read off the TRUE longitude, so it
+// names the house even where the glyph has been nudged along the ring. Dropped with the figure
+// under `hideLon` (a masked Lot's house would give its degree away within a few), and absent on a
+// wheel without houses — which is also every chart a `range` comes from, so the two never meet.
+//
+// `motion` (2026-10-23): whether the retrograde / stationary line is shown. The wheel passes its
+// `advanced`, the same gate as the readout's red and yellow (`sc` below), so a reader who can't
+// see a body coloured as retrograde isn't told so in its tip either — the two said different
+// things to a guest (Salvatore, 2026-10-23). The sidebar's ℞ / S marks are Advanced-only too.
+//
+// `range` (2026-10-22, Lina's one range rule): the body's motion over the birth date of a chart
+// with no birth time, as offsets from its noon degree (lib/astro/timeless). Every body prints its
+// noon longitude, like any chart's (R-3, 23 Oct 2026: the printed range no longer replaces the
+// degree); a RANGED body, and any whose range crosses a sign boundary — ranged or not — then gets
+// the note: "Birth time unknown: range {a}–{b}.", then "The range crosses a sign boundary, so the
+// {Body}'s sign and dignity are themselves uncertain." One note, word for word, for every body it
+// applies to. The dignity rows elsewhere are not hedged.
 function bodyTip(
   t: TFn,
   labels: EnumLabels,
-  p: { lon: number; lat?: number; retrograde?: boolean; stationary?: boolean },
-  opts: { trunc?: boolean; hideLon?: boolean; note?: string | null; range?: number | null } = {},
+  p: { name?: PlanetName; lon: number; lat?: number; retrograde?: boolean; stationary?: boolean },
+  opts: {
+    trunc?: boolean;
+    hideLon?: boolean;
+    note?: string | null;
+    range?: BodyRange | null;
+    house?: number | null;
+    motion?: boolean;
+  } = {},
 ): { suffix: ReactNode; sub: ReactNode } {
   const z = opts.trunc ? truncZodiac(p.lon, 'min') : null;
   const { signIdx, degMin } = z ? { signIdx: z.signIdx, degMin: z.text } : lonToZodiac(p.lon);
-  const half = opts.range ?? null;
-  const span = half !== null ? lonRange(p.lon, half) : null;
+  const range = opts.range ?? null;
+  const shown = isRanged(range ?? undefined) ? range : null;
+  const span = shown ? lonRange(p.lon, shown) : null;
+  const signCross = !!range && crossesSign((p.lon * 180) / Math.PI, range);
   const titleSign = !span ? signIdx : span.lo.signIdx === span.hi.signIdx ? span.lo.signIdx : null;
-  const tag = motionTag(p);
+  // The note, its range drawn with the sign glyphs: the sentence split at its placeholder.
+  const [notePre, notePost] = t('wheel.tip.birthDateRange', { range: '\u0001' }).split('\u0001');
+  const rangeNote =
+    range && (shown || signCross) ? (
+      <>
+        {notePre}
+        <ZodiacRange lon={p.lon} range={range} size={12} />
+        {notePost}
+        {signCross && p.name && (
+          <>
+            {' '}
+            {t('wheel.tip.rangeSignUncertain', { whose: t(`wheel.tip.whose.${p.name}` as MsgKey) })}
+          </>
+        )}
+      </>
+    ) : null;
+  const tag = opts.motion ? motionTag(p) : null;
   const figure = opts.hideLon ? null : (
     <>
       {/* Retrograde / stationary leads, in the ℞ / S mark and colour the
@@ -138,19 +185,23 @@ function bodyTip(
           <br />
         </>
       )}
-      {half !== null ? (
+      {t('wheel.tip.longitude', { lon: degMin })}
+      {rangeNote && (
         <>
-          <ZodiacRange lon={p.lon} halfDeg={half} size={12} />
           <br />
-          {t('wheel.tip.rangeNote')}
+          {rangeNote}
         </>
-      ) : (
-        t('wheel.tip.longitude', { lon: degMin })
       )}
       {p.lat !== undefined && (
         <>
           <br />
           {t('wheel.tip.latitude', { lat: fmtDM((p.lat * 180) / Math.PI, true) })}
+        </>
+      )}
+      {opts.house != null && (
+        <>
+          <br />
+          {t('wheel.house', { number: opts.house + 1 })}
         </>
       )}
     </>
@@ -221,16 +272,36 @@ export interface HoverTip {
 
 // Tag layout constants. The tag is centered on its anchor's x and clamped so a
 // max-width box never spills past the wheel edges (the scroll pane clips
-// overflow); near the top it flips below the anchor instead of above.
+// overflow); where it would rise past the wheel's top it opens below the anchor
+// instead of above.
 const TIP_MAX = 188;
 const TIP_HALF = TIP_MAX / 2;
 const TIP_FLIP_Y = 72;
+// The room kept between an opened tag and the wheel's top edge.
+const TIP_EDGE = 4;
 
 // The floating hint tag, anchored to a wheel element. Reuses the shared .ui-tip
 // chrome (index.css) so it matches the map's zenith popup + the timeline nub.
 export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
-  const placement = tip.y < TIP_FLIP_Y ? 'below' : 'above';
   const offset = tip.r + 9;
+  // Opens below its anchor when its OWN height would carry it past the wheel's top — where the
+  // scroll pane clips it under the chart-data lines above (Lina, 22 Oct 2026, §2.3: a range tip,
+  // taller than a degree's, lost its top line there). Measured after each layout; until the first
+  // measure, the old fixed rule.
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  const k = `${tip.x},${tip.y},${tip.title}`;
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    if (h !== height) setHeight(h);
+  });
+  const placement = height
+    ? tip.y - offset - height < TIP_EDGE
+      ? 'below'
+      : 'above'
+    : tip.y < TIP_FLIP_Y
+      ? 'below'
+      : 'above';
   const top = placement === 'below' ? tip.y + offset : tip.y - offset;
   const left = Math.min(Math.max(tip.x, TIP_HALF + 4), size - TIP_HALF - 4);
   // The tag stays mounted while the pointer moves from one mark to the next, and its title
@@ -239,9 +310,9 @@ export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
   // naming the first mark hovered. Keyed by the anchor and title, the two spans are replaced
   // instead whenever the tag moves to another mark (or the mark moves, as it does while the
   // time plays). (2026-10-09)
-  const k = `${tip.x},${tip.y},${tip.title}`;
   return (
     <div
+      ref={ref}
       className="wheel-tip ui-tip-box ui-tip"
       data-placement={placement}
       style={{ left, top, maxWidth: TIP_MAX }}
@@ -634,6 +705,14 @@ interface WheelSvgProps {
    */
   interactive?: boolean;
   /**
+   * The house focus (2026-10-23): hovering or tapping a body — or a sector of the house
+   * band — tints the house it is in and fades the other eleven, their bodies with them, so
+   * which slice a glyph belongs to is never a question of where the eye lands. An interactive
+   * wheel with houses has it unless this says otherwise; the Capture wheel turns it off, so a
+   * focus left up by a tap can't end up in an exported image.
+   */
+  houseFocus?: boolean;
+  /**
    * OFFER the per-body degree·sign·minute readout below the size at which the wheel
    * would offer it unprompted (READOUT_OFFER_MIN, lib/wheelGeometry). It is only an
    * offer either way: the geometry still sheds the trio — minutes first, then the sign,
@@ -705,14 +784,17 @@ interface WheelSvgProps {
    */
   bodyNotes?: ReadonlyMap<PlanetName, string> | null;
   /**
-   * Bodies known only to a span, with its half-width in degrees: a chart with no birth
-   * time, cast for its 12:00 placeholder (lib/astro/timeless) — the Moon, and on a geodetic
-   * map the Part of Fortune. Such a body's tip prints the span instead of a degree to the
-   * minute, it gets no degree·sign·minute trio in the readout ring, and a detailed wheel
-   * draws the span as an arc of the tick strip in its colour. The NATAL ring only, like
-   * bodyNotes. (2026-10-02)
+   * A chart with no birth time's bodies with their motion over the birth date (lib/astro/
+   * timeless BodyRange, offsets from the drawn degree). A RANGED body's tip prints its range
+   * instead of a degree to the minute, it gets no degree·sign·minute trio in the readout ring, a
+   * detailed wheel draws the range as an arc of the tick strip in its colour, and its aspects are
+   * dashed (they depend on the birth hour); any body whose range crosses a sign gets the note.
+   * The NATAL ring only, like bodyNotes. (2026-10-02; the range rule since 2026-10-22)
    */
-  ranges?: ReadonlyMap<PlanetName, number> | null;
+  ranges?: ReadonlyMap<PlanetName, BodyRange> | null;
+  /** The OVERLAY ring's bodies with their ranges (2026-10-21): a progression of a timeless chart,
+   *  whose ranged bodies print as ranges in their tips, as the natal ones do. */
+  overlayRanges?: ReadonlyMap<PlanetName, BodyRange> | null;
 }
 
 /** No catalog bodies: one stable reference, so the ring layout's memo holds still. */
@@ -764,6 +846,7 @@ export function WheelSvg({
   aspectOrbs = DEFAULT_ASPECT_ORBS,
   visibleAngles,
   interactive = false,
+  houseFocus,
   readouts = false,
   planetsOnly = false,
   minorBodies,
@@ -773,12 +856,50 @@ export function WheelSvg({
   maskAngleText = false,
   bodyNotes = null,
   ranges = null,
+  overlayRanges = null,
 }: WheelSvgProps) {
   const { t, labels } = useT();
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
   // wheel isn't interactive no handler ever sets it, so it stays null.
   const [tip, setTip] = useState<HoverTip | null>(null);
-  const clearTip = () => setTip(null);
+  // The house in focus (0-based), while a body or a house sector is hovered or tapped —
+  // see the houseFocus prop. Cleared with the tip, so the two always come and go together.
+  const [focusHouse, setFocusHouse] = useState<number | null>(null);
+  const clearTip = () => {
+    setTip(null);
+    setFocusHouse(null);
+  };
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // The glyph rings' last layouts, one slot a ring. A hover re-renders the wheel (the tip
+  // and the house focus live here), and laying a ring out with its houses is the dearest
+  // thing a render does: a fraction of a millisecond a ring, a few on a crowded bi-wheel.
+  // So a ring is re-laid only when what it lays out has changed — keyed on the inputs'
+  // values, since every one of them is rebuilt each render. (2026-10-23)
+  const ringMemo = useRef(new Map<string, { key: string; at: Map<string, number> }>());
+  // On a touch screen a tap IS the hover — it shows the tip and the focus — and nothing
+  // ever leaves, so both would stay up for good. A tap anywhere outside this wheel's own
+  // hover targets clears them; a tap on another target moves them there instead. Capture
+  // phase, so it runs before the target's own handler sets the next one. The targets show
+  // on the RELEASE (pointerup), not the press: a touch that turns into a scroll of the
+  // sidebar is cancelled by the browser rather than released, so it shows nothing.
+  useEffect(() => {
+    if (!tip && focusHouse === null) return;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      const el = e.target instanceof Element ? e.target : null;
+      if (
+        el &&
+        wrapRef.current?.contains(el) &&
+        el.closest('.planet-mark, .house-hit, .sign-hit, .minor-pip-hit')
+      ) {
+        return;
+      }
+      setTip(null);
+      setFocusHouse(null);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [tip, focusHouse]);
 
   // Bi-wheel: when a second chart is supplied (and the wheel is big enough), its
   // planets occupy an outer ring just inside the zodiac band, and the natal glyph
@@ -889,6 +1010,24 @@ export function WheelSvg({
   // The longitude that sits at due-left — the wheel's rotation reference, and the
   // ONE value every draw site below rotates against.
   const frameAnchor = wholeSign ? angles.cusps[0] : angles.asc;
+
+  // The house a body is in, from its TRUE longitude (lib/houses) — for its tip, and for
+  // the house focus. Null on a wheel without houses.
+  const houseAt = (lon: number) => (planetsOnly ? null : houseIndexOf(lon, angles.cusps));
+  // The focus is offered where the houses are drawn, can be told apart (a composite's
+  // cusps can come out of order — lib/houses cuspsInOrder) and something can be hovered.
+  const focusOn =
+    interactive && (houseFocus ?? true) && detailed && !planetsOnly && cuspsInOrder(angles.cusps);
+  const focusAt = (lon: number) => {
+    if (focusOn) setFocusHouse(houseAt(lon));
+  };
+  /** Whether a body at `lon` is outside the house in focus — its marks then fade. Read
+   *  through focusOn too, so a focus left over from before the houses went (a hotkey, or
+   *  playback, under a still pointer) fades nothing. */
+  const outOfFocus = (lon: number) =>
+    focusOn && focusHouse !== null && houseAt(lon) !== focusHouse;
+  /** The class a body's groups wear while another house is in focus. */
+  const focusClass = (lon: number) => (outOfFocus(lon) ? ' out-of-focus' : '');
 
   // The wheel is rotated so the first house cusp sits at due-left. Under every
   // system but whole sign that IS the ASC, making the ASC–DSC axis a true
@@ -1018,7 +1157,8 @@ export function WheelSvg({
   // figure sized for a circular disc — which left a code both off its own axis AND
   // still overlapping its neighbour, since the codes are wider than the discs the
   // figure was cut for. Both halves of that are fixed by giving each mark its own
-  // width and letting the axes stand still.)
+  // width and letting the axes stand still.) Since 2026-10-23 a code gives up its spot
+  // when holding it would push a body's centre out of its house (the `spokes` below).
   //
   // ONE converter for both rings, and the only place either of them may call the
   // layout module: placeOnRing answers in DEGREES round the ring, every draw site
@@ -1027,20 +1167,35 @@ export function WheelSvg({
   // true degree. (Which is what the overlay ring did the day it was moved onto
   // placeOnRing: the natal path converted, the overlay path did not.)
   const placeLongitudes = (
+    slot: string,
     fixed: RingMark[],
     movable: RingMark[],
     minSep: number,
     radius: number,
+    spokes?: readonly number[],
   ): Map<string, number> => {
+    const key = JSON.stringify([fixed, movable, minSep, radius, g.bodyOverlap, spokes ?? null, angles.asc]);
+    const last = ringMemo.current.get(slot);
+    if (last && last.key === key) return last.at;
     const out = new Map<string, number>();
     // The overlap tolerance rides on every ring this converter serves — see
     // BODY_OVERLAP_SHARE in ringLayout: bodies may share a third of their width
     // rather than be pushed across a house cusp to avoid touching.
-    for (const [name, deg] of placeOnRing(fixed, movable, minSep, radius, g.bodyOverlap)) {
+    for (const [name, deg] of placeOnRing(fixed, movable, minSep, radius, g.bodyOverlap, spokes)) {
       out.set(name, angles.asc + (deg * Math.PI) / 180);
     }
+    ringMemo.current.set(slot, { key, at: out });
     return out;
   };
+
+  // The house spokes, in the layout's own frame (2026-10-23): each body is kept with its
+  // centre inside its own house, and an angle code gives up its axis rather than push a
+  // body across one (lib/ringLayout says how, and why the code is the one that gives).
+  // Under exactly the condition the spokes themselves are drawn, and through the same
+  // `off`, so a body on a cusp ties bit for bit. The NATAL spokes serve the overlay ring
+  // too: they are the only houses this wheel draws, and they cross both rings. The cusp
+  // rim and the catalog ring are left house-blind — neither holds a body's glyph.
+  const spokes = ringSpokes(detailed && !planetsOnly ? angles.cusps : null, off);
 
   const displayLon = new Map<string, number>();
   if (detailed) {
@@ -1059,6 +1214,7 @@ export function WheelSvg({
     // on their own.
     const sep = g.ringSep;
     const placed = placeLongitudes(
+      'natal',
       angleMarks.map((a) => ({
         name: a.key as string,
         off: off(a.lon),
@@ -1071,6 +1227,7 @@ export function WheelSvg({
       })),
       sep,
       Math.max(rPlanets, 1),
+      spokes,
     );
     for (const [name, lon] of placed) displayLon.set(name, lon);
   }
@@ -1150,7 +1307,7 @@ export function WheelSvg({
   // and two units printed on the same spot are worse than either one moved.
   const bandLon =
     detailed && cuspMarks.length > 1
-      ? placeLongitudes(cuspMarks, [], 0, Math.max(rBandMid, 1))
+      ? placeLongitudes('band', cuspMarks, [], 0, Math.max(rBandMid, 1))
       : new Map<string, number>();
   /** Where cusp `idx`'s readout is drawn. Fixed marks keep their exact spot unless
    *  the band cannot hold the set at all — polar Placidus bunches cusps within a
@@ -1174,6 +1331,7 @@ export function WheelSvg({
   // spread against each other only and settled straight on top of them.
   const overlayDisplay = hasOverlay
     ? placeLongitudes(
+        'overlay',
         overlayAngleMarks.map((a) => ({
           name: a.key as string,
           off: off(a.lon),
@@ -1190,10 +1348,28 @@ export function WheelSvg({
         // isn't there.
         g.overlayRingSep,
         Math.max(rOverlay, 1),
+        spokes,
       )
     : null;
   const overlayLonFor = (p: EclipticPosition) =>
     overlayDisplay?.get(p.name) ?? p.lon;
+  /** An overlay body's tip and house focus — on hover, or on a tap. */
+  const showOverlay = (p: EclipticPosition, at: { x: number; y: number }) => {
+    setTip({
+      x: at.x,
+      y: at.y,
+      r: 9,
+      title: labels.planet(p.name),
+      ...bodyTip(t, labels, p, {
+        range: overlayRanges?.get(p.name),
+        house: houseAt(p.lon),
+        motion: advanced,
+      }),
+      color: planetInk(p.name),
+      marker: <PlanetGlyph planet={p.name} size={14} color={planetInk(p.name)} />,
+    });
+    focusAt(p.lon);
+  };
   const overlayAngleLonFor = (a: { key: string; lon: number }) =>
     overlayDisplay?.get(a.key) ?? a.lon;
 
@@ -1206,7 +1382,7 @@ export function WheelSvg({
     y,
     r,
     title: m.label,
-    ...bodyTip(t, labels, m),
+    ...bodyTip(t, labels, m, { house: houseAt(m.lon), motion: advanced }),
     color: m.color,
     marker: <MinorMark color={m.color} glyph={m.glyph} hollow={m.hypothetical} size={14} />,
   });
@@ -1375,7 +1551,9 @@ export function WheelSvg({
   // and body names, the hints) live in WheelTip, outside the <svg>, and stay translatable.
   const svg = (
     <svg
-      className={`wheel-svg notranslate${interactive ? ' interactive' : ''}`}
+      className={`wheel-svg notranslate${interactive ? ' interactive' : ''}${
+        focusOn && focusHouse !== null ? ' house-focused' : ''
+      }`}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
@@ -1600,23 +1778,28 @@ export function WheelSvg({
         angles.cusps.map((lon, idx) => {
           const next = angles.cusps[(idx + 1) % 12];
           if (!Number.isFinite(lon) || !Number.isFinite(next)) return null;
-          const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-          const mid = lon + span / 2;
+          const mid = lon + forwardSpan(lon, next) / 2;
           const pos = svgPos(mid, frameAnchor, (houseRingInner + houseRingOuter) / 2, cx, cy);
+          // The sector names its house, and puts it in focus as a body in it would.
+          const show = () => {
+            setTip({
+              x: pos.x,
+              y: pos.y,
+              r: houseBand / 2 + 4,
+              title: t('wheel.house', { number: idx + 1 }),
+              sub: houseMeaning(t, idx),
+            });
+            if (focusOn) setFocusHouse(idx);
+          };
           return (
             <path
               key={`house-hit-${idx}`}
               className="house-hit"
               d={annularSectorPath(lon, next, houseRingInner, houseRingOuter, frameAnchor, cx, cy)}
-              onMouseEnter={() =>
-                setTip({
-                  x: pos.x,
-                  y: pos.y,
-                  r: houseBand / 2 + 4,
-                  title: t('wheel.house', { number: idx + 1 }),
-                  sub: houseMeaning(t, idx),
-                })
-              }
+              onMouseEnter={show}
+              onPointerUp={(e) => {
+                if (e.pointerType !== 'mouse') show();
+              }}
               onMouseLeave={clearTip}
               aria-label={t('wheel.house', { number: idx + 1 })}
             />
@@ -1659,8 +1842,7 @@ export function WheelSvg({
           if (!Number.isFinite(lon) || !Number.isFinite(next)) return null;
           // Bisector of the house (cusp idx → next cusp), centered in the
           // dedicated house ring band.
-          const span = (((next - lon) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-          const mid = lon + span / 2;
+          const mid = lon + forwardSpan(lon, next) / 2;
           const pos = svgPos(mid, frameAnchor, (houseRingInner + houseRingOuter) / 2, cx, cy);
           return (
             <text
@@ -1668,7 +1850,7 @@ export function WheelSvg({
               x={pos.x}
               y={pos.y + 3}
               textAnchor="middle"
-              className="house-number"
+              className={`house-number${focusHouse === idx ? ' in-focus' : ''}`}
               fontSize={houseNumPx}
             >
               {idx + 1}
@@ -1714,6 +1896,11 @@ export function WheelSvg({
       {detailed &&
         filteredAspects.map((a, i) => {
           const opacity = 0.35 + (1 - a.orb / maxOrb) * 0.45;
+          // A chart with no birth time: an aspect to a RANGED body depends on the birth hour, so
+          // it is drawn dashed (Lina, 21 Oct 2026, §2.5; every ranged body since 22 Oct, §2.5).
+          const hourBound =
+            !!ranges &&
+            (isRanged(ranges.get(a.a as PlanetName)) || isRanged(ranges.get(a.b as PlanetName)));
           // A conjunction's two endpoints nearly coincide, so a chord collapses to
           // an invisible dot — mark it with a small disc at its longitude instead.
           if (a.category === 'conjunction') {
@@ -1721,7 +1908,20 @@ export function WheelSvg({
             if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
             const pos = svgPos(mid, frameAnchor, rAspectRing, cx, cy);
             return (
-              <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} style={{ fill: a.color }} opacity={opacity} />
+              hourBound ? (
+                <circle
+                  key={`asp-${i}`}
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={3}
+                  style={{ fill: 'none', stroke: a.color }}
+                  strokeWidth={1}
+                  strokeDasharray="2 1.5"
+                  opacity={opacity}
+                />
+              ) : (
+                <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} style={{ fill: a.color }} opacity={opacity} />
+              )
             );
           }
           const posA = svgPos(a.lonA, frameAnchor, rAspectRing, cx, cy);
@@ -1735,34 +1935,58 @@ export function WheelSvg({
               y2={posB.y}
               style={{ stroke: a.color }}
               strokeWidth={1}
+              strokeDasharray={hourBound ? '4 3' : undefined}
               opacity={opacity}
             />
           );
         })}
 
-      {/* A body known only to a span (ranges: a timeless chart's Moon, and its Part of
-          Fortune on a geodetic map) has its span drawn as an arc of the tick strip in its
-          own colour, centred on the tick at its placeholder degree — what the readout
-          ring's trio would otherwise say to the minute. First in the strip, so the catalog
-          diamonds and every tick draw over it, and deaf to the pointer, so it never takes a
-          hover from them. Detailed wheels only, like the ticks. (2026-10-02) */}
+      {/* A RANGED body (ranges: a timeless chart's bodies over the birth date) has its range
+          drawn as an arc in its own colour, around its noon degree. First in the strip, so the
+          catalog diamonds and every tick draw over it, and deaf to the pointer, so it never
+          takes a hover from them. Detailed wheels only, like the ticks. (2026-10-02)
+          Each ring carries its own (Lina, 23 Oct 2026, R-4): a single wheel's arcs sit in the tick
+          strip under the zodiac band; on a bi-wheel the chart's sit in a strip of the same width
+          just inside the divider — the inner ring's rim — and the overlay's ranged bodies
+          (overlayRanges: a progression of a timeless chart) take the tick strip, the outer ring's. */}
       {detailed &&
-        ranges &&
-        planets.map((p) => {
-          const half = ranges.get(p.name);
-          if (half === undefined) return null;
-          const h = (half * Math.PI) / 180;
+        (() => {
+          const D = Math.PI / 180;
+          const stripW = rZodiacInner - (rPip - pipR);
+          const arc = (
+            p: EclipticPosition,
+            r: BodyRange | undefined,
+            ring: 'natal' | 'overlay',
+            r0: number,
+            r1: number,
+          ) =>
+            isRanged(r) ? (
+              <path
+                key={`range-${ring}-${p.name}`}
+                className="wheel-range-arc"
+                data-body={p.name}
+                data-ring={ring}
+                d={annularSectorPath(p.lon + r.lo * D, p.lon + r.hi * D, r0, r1, frameAnchor, cx, cy)}
+                style={{ fill: planetInk(p.name) }}
+                opacity={0.22}
+                pointerEvents="none"
+              />
+            ) : null;
+          const inner = hasOverlay && rOverlayDivider > 0;
           return (
-            <path
-              key={`range-${p.name}`}
-              className="wheel-range-arc"
-              d={annularSectorPath(p.lon - h, p.lon + h, rPip - pipR, rZodiacInner, frameAnchor, cx, cy)}
-              style={{ fill: planetInk(p.name) }}
-              opacity={0.22}
-              pointerEvents="none"
-            />
+            <>
+              {ranges &&
+                planets.map((p) =>
+                  inner
+                    ? arc(p, ranges.get(p.name), 'natal', rOverlayDivider - stripW, rOverlayDivider)
+                    : arc(p, ranges.get(p.name), 'natal', rPip - pipR, rZodiacInner),
+                )}
+              {inner &&
+                overlayRanges &&
+                overlayPlanets!.map((p) => arc(p, overlayRanges.get(p.name), 'overlay', rPip - pipR, rZodiacInner))}
+            </>
           );
-        })}
+        })()}
 
       {/* Catalog minor bodies' hover zones below the ring size (interactive wheel
           only): one per cluster of rim diamonds — a strip of the tick band reaching
@@ -1949,6 +2173,39 @@ export function WheelSvg({
           );
         })}
 
+      {/* The house focus (2026-10-23, Salvatore): while a body or a house sector is
+          hovered or tapped, its house is tinted and the other eleven wash out to the
+          wheel's face — house band, spokes, ticks and leaders with them — so the slice a
+          glyph belongs to reads at a glance. Drawn HERE, after every line and before the
+          coins, discs and readouts, which fade by class instead (`out-of-focus`) so a body
+          in the house stays at full strength. Pointer-transparent: the hover targets
+          beneath it must stay live, or moving along the ring would flicker. */}
+      {focusOn &&
+        focusHouse !== null &&
+        (() => {
+          const from = angles.cusps[focusHouse];
+          const to = angles.cusps[(focusHouse + 1) % 12];
+          const edge = (lon: number) => {
+            const a = svgPos(lon, frameAnchor, rInner, cx, cy);
+            const b = svgPos(lon, frameAnchor, rZodiacInner, cx, cy);
+            return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+          };
+          return (
+            <g className="house-focus" aria-hidden="true">
+              <path
+                className="house-focus-wash"
+                d={annularSectorPath(to, from, rInner, rZodiacInner, frameAnchor, cx, cy)}
+              />
+              <path
+                className="house-focus-tint"
+                d={annularSectorPath(from, to, rInner, rZodiacInner, frameAnchor, cx, cy)}
+              />
+              <line className="house-focus-edge" {...edge(from)} />
+              <line className="house-focus-edge" {...edge(to)} />
+            </g>
+          );
+        })()}
+
       {/* The catalog ring — a single wheel at or above MINOR_RING_MIN (600px; never a
           bi-wheel — lib/wheelGeometry says why). Each body's
           coin — half a planet disc, a SOLID outline in its line colour (dashed is
@@ -1960,10 +2217,17 @@ export function WheelSvg({
       {minorRingOn &&
         minorList.map((m) => {
           const pos = svgPos(minorLonFor(m), frameAnchor, rMinor, cx, cy);
+          const show = () => {
+            setTip(minorTip(m, pos.x, pos.y, minorR));
+            focusAt(m.lon);
+          };
           const markProps = interactive
             ? {
-                className: 'planet-mark',
-                onMouseEnter: () => setTip(minorTip(m, pos.x, pos.y, minorR)),
+                className: `planet-mark${focusClass(m.lon)}`,
+                onMouseEnter: show,
+                onPointerUp: (e: { pointerType: string }) => {
+                  if (e.pointerType !== 'mouse') show();
+                },
                 onMouseLeave: clearTip,
                 'aria-label': m.label,
               }
@@ -2002,30 +2266,39 @@ export function WheelSvg({
         // only thing on that simplified wheel, so there's room).
         const r = discR;
         // Interactive wheel: the whole group is a hover target (a transparent hit
-        // disc widens it past the glyph) that scales the disc + names the planet.
+        // disc widens it past the glyph) that scales the disc + names the planet,
+        // and puts the house it is in into focus. A touch is the same gesture.
+        const show = () => {
+          setTip({
+            x: pos.x,
+            y: pos.y,
+            r,
+            title: labels.planet(p.name),
+            ...bodyTip(t, labels, p, {
+              hideLon: maskLot(p.name),
+              note: bodyNotes?.get(p.name),
+              range: ranges?.get(p.name),
+              house: maskLot(p.name) ? null : houseAt(p.lon),
+              motion: advanced,
+            }),
+            color: planetInk(p.name),
+            marker: (
+              <PlanetGlyph
+                planet={p.name}
+                size={14}
+                color={planetInk(p.name)}
+              />
+            ),
+          });
+          focusAt(p.lon);
+        };
         const markProps = interactive
           ? {
-              className: 'planet-mark',
-              onMouseEnter: () =>
-                setTip({
-                  x: pos.x,
-                  y: pos.y,
-                  r,
-                  title: labels.planet(p.name),
-                  ...bodyTip(t, labels, p, {
-                    hideLon: maskLot(p.name),
-                    note: bodyNotes?.get(p.name),
-                    range: ranges?.get(p.name),
-                  }),
-                  color: planetInk(p.name),
-                  marker: (
-                    <PlanetGlyph
-                      planet={p.name}
-                      size={14}
-                      color={planetInk(p.name)}
-                    />
-                  ),
-                }),
+              className: `planet-mark${focusClass(p.lon)}`,
+              onMouseEnter: show,
+              onPointerUp: (e: { pointerType: string }) => {
+                if (e.pointerType !== 'mouse') show();
+              },
               onMouseLeave: clearTip,
               'aria-label': labels.planet(p.name),
             }
@@ -2091,7 +2364,7 @@ export function WheelSvg({
               }
             : {};
           return (
-            <g key={`angle-disc-${a.key}`} className="planet-mark" {...markProps}>
+            <g key={`angle-disc-${a.key}`} className={`planet-mark${focusClass(a.lon)}`} {...markProps}>
               {interactive && <circle cx={pos.x} cy={pos.y} r={14} className="planet-hit" />}
               <g className="planet-mark-visual">
                 <text
@@ -2119,7 +2392,7 @@ export function WheelSvg({
             const tickPos = svgPos(p.lon, frameAnchor, rZodiacInner - 2, cx, cy);
             const tipPos = svgPos(p.lon, frameAnchor, rZodiacInner - 7, cx, cy);
             return (
-              <g key={`ov-${p.name}`}>
+              <g key={`ov-${p.name}`} className={focusClass(p.lon).trim() || undefined}>
                 <line
                   x1={truePos.x}
                   y1={truePos.y}
@@ -2141,23 +2414,13 @@ export function WheelSvg({
                 {interactive ? (
                   <g
                     className="planet-mark"
-                    onMouseEnter={() =>
-                      setTip({
-                        x: glyphPos.x,
-                        y: glyphPos.y,
-                        r: 9,
-                        title: labels.planet(p.name),
-                        ...bodyTip(t, labels, p),
-                        color: planetInk(p.name),
-                        marker: (
-                          <PlanetGlyph
-                            planet={p.name}
-                            size={14}
-                            color={planetInk(p.name)}
-                          />
-                        ),
-                      })
-                    }
+                    // An overlay body names, and focuses, the NATAL house it falls in: the
+                    // natal houses are the only ones this wheel draws, and their spokes
+                    // cross this ring. (The side-by-side wheel draws the overlay's own.)
+                    onMouseEnter={() => showOverlay(p, glyphPos)}
+                    onPointerUp={(e) => {
+                      if (e.pointerType !== 'mouse') showOverlay(p, glyphPos);
+                    }}
                     onMouseLeave={clearTip}
                     aria-label={labels.planet(p.name)}
                   >
@@ -2242,7 +2505,7 @@ export function WheelSvg({
           return (
             <g
               key={`ov-angle-${a.key}`}
-              className="planet-mark"
+              className={`planet-mark${focusClass(a.lon)}`}
               style={{ color: a.color }}
               {...markProps}
             >
@@ -2300,7 +2563,7 @@ export function WheelSvg({
           // geodetic MC is one — from printing as the minute below. (2026-10-02)
           const { signIdx, deg, min } = truncZodiac(a.lon, 'min');
           return (
-            <g key={`ov-angle-rdo-${a.key}`} className="planet-readout overlay-readout">
+            <g key={`ov-angle-rdo-${a.key}`} className={`planet-readout overlay-readout${focusClass(a.lon)}`} data-angle={a.key}>
               <text
                 x={degPos.x}
                 y={degPos.y + 3}
@@ -2342,7 +2605,8 @@ export function WheelSvg({
           return (
             <g
               key={`ovrdo-${p.name}`}
-              className="planet-readout overlay-readout"
+              className={`planet-readout overlay-readout${focusClass(p.lon)}`}
+              data-body={p.name}
               style={sc ? { color: sc } : undefined}
             >
               <text
@@ -2376,11 +2640,10 @@ export function WheelSvg({
           stationary → yellow. */}
       {showReadouts &&
         planets.map((p) => {
-          // No trio for a masked Lot, as for the masked angles below — nor for a body known
-          // only to a span (ranges), whose arc in the tick strip stands in for it: a span
-          // squeezed into the degree and minute slots reads as a degree and minutes.
-          // (2026-10-02)
-          if (maskLot(p.name) || ranges?.has(p.name)) return null;
+          // No trio for a masked Lot, as for the masked angles below. A ranged body (a chart with
+          // no birth time) prints its NOON degree like any chart's, with its arc behind it (Lina,
+          // 23 Oct 2026, R-3); its range is in the arc, the tip and the tables.
+          if (maskLot(p.name)) return null;
           const degPos = svgPos(lonFor(p), frameAnchor, g.rReadoutDeg, cx, cy);
           const signPos = svgPos(lonFor(p), frameAnchor, g.rReadoutSign, cx, cy);
           const minPos = svgPos(lonFor(p), frameAnchor, g.rReadoutMin, cx, cy);
@@ -2393,7 +2656,8 @@ export function WheelSvg({
           return (
             <g
               key={`rdo-${p.name}`}
-              className="planet-readout"
+              className={`planet-readout${focusClass(p.lon)}`}
+              data-body={p.name}
               style={sc ? { color: sc } : undefined}
             >
               <text
@@ -2438,7 +2702,7 @@ export function WheelSvg({
           // Truncated as the overlay ring's above (format.ts truncZodiac). (2026-10-02)
           const { signIdx, deg, min } = truncZodiac(a.lon, 'min');
           return (
-            <g key={`angle-rdo-${a.key}`} className="planet-readout">
+            <g key={`angle-rdo-${a.key}`} className={`planet-readout${focusClass(a.lon)}`} data-angle={a.key}>
               <text
                 x={degPos.x}
                 y={degPos.y + 3}
@@ -2471,7 +2735,7 @@ export function WheelSvg({
   // Interactive wheel: wrap the SVG so the hint tag can be an absolutely-
   // positioned HTML element over it (SVG user units map 1:1 to px here).
   return (
-    <div className="wheel-svg-wrap">
+    <div className="wheel-svg-wrap" ref={wrapRef}>
       {svg}
       {tip && <WheelTip tip={tip} size={size} />}
     </div>

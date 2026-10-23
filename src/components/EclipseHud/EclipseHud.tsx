@@ -79,6 +79,10 @@ interface EclipseHudProps {
   /** Eclipse-degree hits on the natal chart (conj/square/opp within 3°),
    *  tightest first; null outside eclipses mode. */
   contacts: EclipseContact[] | null;
+  /** No chart in force (2026-10-20): there is no chart for the degree to strike, so the
+   *  contacts line says that (settings.eclipses.contacts.noChart) rather than "this eclipse
+   *  passes the chart quietly", which would be a claim about a chart there is not. */
+  noChart?: boolean;
   /** Display toggles + the solar magnitude-isoline interval — relocated here
    *  from the Settings ▸ Overlay tab.
    *
@@ -120,6 +124,7 @@ export function EclipseHud({
   onLocate,
   details,
   contacts,
+  noChart = false,
   showOtherLines,
   setShowOtherLines,
   showChart,
@@ -674,7 +679,7 @@ export function EclipseHud({
                   </ul>
                 ) : (
                   <span className="eclipse-hud-contacts-empty">
-                    {t('settings.eclipses.contacts.none')}
+                    {t(noChart ? 'settings.eclipses.contacts.noChart' : 'settings.eclipses.contacts.none')}
                   </span>
                 )}
               </div>

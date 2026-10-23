@@ -4,6 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
+import type { BodyRange } from '../../lib/astro/timeless';
 import { useState } from 'react';
 import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
 import type { WheelMinorBody } from '../../lib/minorBodies/wheel';
@@ -48,10 +49,13 @@ interface ChartWheelProps {
   /** Discreet mode over the birthplace's geodetic frame: hide the angles' degree
    *  text (WheelSvg's maskAngleText, which says why). (2026-10-02) */
   maskAngleText?: boolean;
+  /** No chart in force and no sky overlay to wheel (2026-10-20): the placeholder adds a line
+   *  saying how to get the sky's wheel (chartWheel.skyHint). */
+  skyHint?: boolean;
   /** Bodies known only to a span on a chart with no birth time (WheelSvg's ranges): the
    *  enlarged minimap offers the readout ring, which must not print them to the minute.
    *  (2026-10-02) */
-  ranges?: ReadonlyMap<PlanetName, number> | null;
+  ranges?: ReadonlyMap<PlanetName, BodyRange> | null;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
@@ -81,6 +85,7 @@ export function ChartWheel({
   planetsOnly = false,
   onExpand,
   maskAngleText = false,
+  skyHint = false,
   ranges = null,
 }: ChartWheelProps) {
   const { t } = useT();
@@ -189,7 +194,11 @@ export function ChartWheel({
           <NoChartWheel size={COMPACT_SIZE} label={t('chartWheel.noChart')} />
         </div>
       ) : (
-        <div className="chart-wheel-placeholder">{t('chartWheel.placeholder')}</div>
+        <div className="chart-wheel-placeholder">
+          {/* One string child each, so a page translator can swap either whole. */}
+          <span>{t('chartWheel.placeholder')}</span>
+          {skyHint && <span className="chart-wheel-placeholder-hint">{t('chartWheel.skyHint')}</span>}
+        </div>
       )}
     </aside>
   );

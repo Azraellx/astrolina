@@ -27,8 +27,17 @@ export interface PlaceSearchHit {
   kind?: PlaceKind;
   /** A map zoom that frames this hit — hosts that fly the camera read it. */
   zoom?: number;
+  /** The point is EXACT — placed to the coordinate rather than a settlement's centroid (the
+   *  offline index's hand additions: Greenwich on the Prime Meridian). A host that marks where
+   *  the camera landed marks it as it would an unclassed point, though it has a kind, so the
+   *  reader can pin that very point (2026-10-23). */
+  exact?: boolean;
   /** Optional second line under the label (a district, a region, a note). */
   sub?: string;
+  /** The place's own name, when `label` is a name the reader gave the spot (a saved pin's
+   *  title). A host that stores a PLACE (a chart's home) takes this over the label; a host that
+   *  flies to a spot or names it keeps the label. (2026-10-23) */
+  place?: string;
   /** The map ALREADY draws a marker of its own at this point (a place the
    *  contributor plots, not one the basemap happens to label). A host that marks
    *  where the camera landed skips its own mark for it — two marks on one spot is
@@ -128,6 +137,8 @@ export interface PlaceSearchLibraryEntry {
   remove?: { label: string; confirm: string; keep: string; run: () => void };
   lat: number;
   lng: number;
+  /** The place's own name behind a reader-given label; rides out as {@link PlaceSearchHit.place}. */
+  place?: string;
   /** Framing hint for hosts that fly the camera. */
   zoom?: number;
   /** This entry is already drawn on the map (the contributor plots it there —

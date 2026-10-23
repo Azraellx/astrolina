@@ -212,6 +212,10 @@ interface DateTimeFieldsProps<V extends PartialMoment> {
    *  "no time" is meaningful (the birth form treats an empty time as unknown). The
    *  timeline date modal omits it, so its full moment can never lose a field. */
   timeClearable?: boolean;
+  /** What the time caption's (i) says, in place of the default — which is chosen by
+   *  `timeClearable` and speaks of a birthplace. An event chart's form passes its own
+   *  (the event's place and time; 2026-10-20). Omitted, the default stands. */
+  timeHint?: string;
   /** Hide the time fields entirely — for callers where only the DATE is
    *  meaningful (a day-scale pick). The emitted value keeps whatever hour/minute
    *  it was seeded with; `timeSuffix`/`timeClearable` are moot while hidden. */
@@ -236,6 +240,7 @@ export function DateTimeFields<V extends PartialMoment>({
   timeSuffix,
   timeDescribedBy,
   timeClearable = false,
+  timeHint,
   dateOnly = false,
 }: DateTimeFieldsProps<V>) {
   const { t } = useT();
@@ -296,9 +301,10 @@ export function DateTimeFields<V extends PartialMoment>({
               the time is clearable (the birth form), that blank = unknown. */}
           <InfoTip
             title={t('chartForm.timeLabel')}
-            hint={t(
-              timeClearable ? 'chartForm.timeInfo.hintBlank' : 'chartForm.timeInfo.hint',
-            )}
+            hint={
+              timeHint ??
+              t(timeClearable ? 'chartForm.timeInfo.hintBlank' : 'chartForm.timeInfo.hint')
+            }
           />
         </span>
         <div className="spin-group">

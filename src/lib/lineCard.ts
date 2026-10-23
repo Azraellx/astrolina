@@ -192,6 +192,10 @@ function minorParanReading(props: Record<string, unknown>, minor: string, t: TFn
 export interface LineCardDistance {
   km: number;
   type: 'pin' | 'natal';
+  /** Set for a line drawn with an uncertainty band (a chart with no birth time on a geodetic
+   *  map), measured by its band (2026-10-20): `covers` when the band covers the reference
+   *  point (`km` is then 0), else `km` is to the band's nearest edge. */
+  band?: { covers: boolean; range?: string; planet?: string };
 }
 
 /** The raw interpretation text for one line — plain strings, no HTML. */
@@ -364,7 +368,25 @@ function distanceLine(dist: LineCardDistance, t: TFn): string {
       : t('lineMeanings.distance.fromNatal');
   // The label, the figures and their units in one template (map.lineCard.distance), so a
   // language can write its own unit abbreviations and order. (2026-10-09)
-  return `<span class="ui-tip-sub line-card-distance">${t('map.lineCard.distance', { label, km, mi })}</span>`;
+  //
+  // A banded line by its band (2026-10-20), the rule every listing tool follows: inside it the
+  // reference point is on the line and no figure is printed; outside, the figure is to the
+  // band's nearest edge and the row says so — a bare "120 km" would read as the distance to
+  // the drawn line, which is only where the line would be at noon.
+  // Lina's wording since 21 Oct 2026 (§2.2): "Pin inside the Moon's band", or "x km to the edge of
+  // the Moon's band · birth time unknown · range 14°♋–21°♋" (the range in place of the figure
+  // since 22 Oct, R-2's phrase since 23 Oct) — the band named by its body on that body's own line.
+  const BAND_OF = new Set(['Sun', 'Moon', 'Mercury', 'Venus', 'Mars']);
+  const bandName =
+    dist.band?.planet && BAND_OF.has(dist.band.planet)
+      ? t(`map.lineCard.bandOf.${dist.band.planet}` as 'map.lineCard.bandOf.Moon')
+      : t('map.lineCard.bandOf.line');
+  const row = dist.band
+    ? dist.band.covers
+      ? t('map.lineCard.bandCovers', { label, band: bandName })
+      : t('map.lineCard.bandEdge', { label, km, mi, band: bandName, range: dist.band.range ?? '' })
+    : t('map.lineCard.distance', { label, km, mi });
+  return `<span class="ui-tip-sub line-card-distance">${row}</span>`;
 }
 
 /**

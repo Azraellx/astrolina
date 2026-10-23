@@ -14,5 +14,6 @@ export const chartWheel = {
   openSidebarHint: 'Una rueda más grande, con aspectos y la tabla de planetas, en la barra lateral.',
   openSidebarLabel: 'Mostrar la barra lateral de la carta',
   placeholder: 'Sin carta seleccionada',
+  skyHint: 'Elige Tránsitos o Eclipses en el menú Capa para ver la rueda del cielo.',
   noChart: 'SIN CARTA (CCG)',
 } as const;

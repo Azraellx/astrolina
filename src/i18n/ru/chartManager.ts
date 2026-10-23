@@ -21,7 +21,10 @@ export const chartManager = {
     space: 'Космос',
     unknown: 'Неизвестно',
     shared: 'По ссылке',
+    events: 'События',
   },
+  eventsEmpty: 'Карт событий пока нет.',
+  eventRowAria: 'Карта события',
   folders: {
     new: 'Новая папка',
     newChild: 'Новая вложенная папка',

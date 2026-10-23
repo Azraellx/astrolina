@@ -60,15 +60,20 @@ import {
   initialModel,
   openZone,
   pickOfValue,
+  wallClockForInstant,
   zoneNameOf,
   zonePickRows,
   zonePickValue,
   zoneReduce,
   zoneView,
+  type FormInstant,
   type ZoneAction,
   type ZoneInputs,
+  type ZoneModel,
   type ZonePickRow,
 } from '../src/components/BirthDataForm/zoneEntryModel';
+import { birthDataToJD, initEphemeris } from '../src/lib/ephemeris';
+import { EXAMPLE_EVENT_EXACT_UT_MS, exampleEventChart } from '../src/lib/eventCharts';
 import { resolveBirthTimezone, resolveZoneInfo } from '../src/lib/atlas/timezone';
 import { DAYLIGHT_CORRECTION, readAaf } from '../src/lib/import/readers/aaf';
 import {
@@ -1448,6 +1453,164 @@ console.log('\n── 8d. TWO PARTS AGREE: every row’s name gives the offset t
   every('a radio’s name and its save agree', rows, (r) =>
     r.saved != null && Math.abs(r.named - r.saved) <= 1 ? null : `${r.label}: named ${r.named}, saves ${r.saved}`,
   );
+}
+
+// ── 9. A moment the form was handed (2026-10-20) ────────────────────────────
+//
+// The Now button and a found moment hand the form an INSTANT; the boxes show it read in
+// the zone the field holds (wallClockForInstant), and the save writes those boxes with
+// that zone. The promise is that the chart cast from the record IS the instant, to the
+// minute — so the form's inverse is checked against the chart math's forward direction
+// (birthDataToJD, what every chart is cast from), and the clock shown against the tz
+// database's own reading of the instant at the place. Across the spring gap, the
+// repeated autumn hour (stated as R2 rules: the zone's other half, said why), a stated
+// zone, a typed offset, and a mean-time birth whose offset carries seconds.
+
+await initEphemeris();
+
+console.log('\n── 9. INTERNAL IDENTITY + TWO PARTS AGREE: a handed moment’s clock casts the moment, on the place’s own clock ──');
+
+const JD_UNIX_EPOCH = 2440587.5;
+const msOfJd = (jd: number) => (jd - JD_UNIX_EPOCH) * 86_400_000;
+/** The instant brought to a whole minute in UT by its rule — what a record of whole
+ *  minutes can hold, wherever the offset is a whole minute. */
+const roundedUt = (i: FormInstant) =>
+  i.round === 'ceil' ? Math.ceil((i.utMs - 1) / 60_000) * 60_000 : Math.round(i.utMs / 60_000) * 60_000;
+/** The same instant, allowing the float noise of a Julian Day (a millisecond or so) —
+ *  far inside the minute every check here is about. */
+const sameMs = (a: number | null, b: number) => a != null && Math.abs(a - b) < 50;
+
+/** The form handed `instant` at `place`, after `actions` taken in the zone field first:
+ *  the clock it shows, with the repeated hour's fix made once as the form makes it, and
+ *  the record its save would write. */
+function handed(place: { lat: number; lng: number } | null, instant: FormInstant, actions: ZoneAction[] = []) {
+  const opened = openZone(null);
+  const base = { initial: null, opened };
+  let model: ZoneModel = initialModel(opened, null);
+  const inputsAt = (m: ZoneModel): ZoneInputs => {
+    const d = wallClockForInstant(m, base, place, instant);
+    return { ...base, at: place && !d.ut ? { lat: place.lat, lng: place.lng, year: d.year, month: d.month, day: d.day, hour: d.hour, minute: d.minute } : null };
+  };
+  for (const a of actions) {
+    const inputs = inputsAt(model);
+    model = zoneReduce(model, a, zoneView(model, inputs), inputs);
+  }
+  const before = wallClockForInstant(model, base, place, instant);
+  if (before.ambiguous && before.fix) {
+    const inputs = inputsAt(model);
+    model = zoneReduce(model, { type: 'choose', pick: before.fix }, zoneView(model, inputs), inputs);
+  }
+  const shown = wallClockForInstant(model, base, place, instant);
+  const view = zoneView(model, inputsAt(model));
+  const record =
+    place && view.toSave
+      ? { name: 'x', year: shown.year, month: shown.month, day: shown.day, hour: shown.hour, minute: shown.minute, tzOffset: view.toSave.tzOffset, birthplace: { label: 'x', ...place } }
+      : null;
+  return { before, shown, view, castMs: record ? msOfJd(birthDataToJD(record)) : null };
+}
+
+{
+  const NY = { lat: 40.7128, lng: -74.006, zone: 'America/New_York' };
+  const LON = { lat: 51.5074, lng: -0.1278, zone: 'Europe/London' };
+  const MEL = { lat: -37.8136, lng: 144.9631, zone: 'Australia/Melbourne' };
+  type Case = { label: string; place: typeof NY; instant: FormInstant; repeated?: boolean };
+  const at = (y: number, mo: number, d: number, h: number, mi: number, s = 0, ms = 0) => Date.UTC(y, mo - 1, d, h, mi, s, ms);
+  const near = (utMs: number): FormInstant => ({ utMs, round: 'nearest' });
+  const ceil = (utMs: number): FormInstant => ({ utMs, round: 'ceil' });
+  const cases: Case[] = [
+    // New York: clocks spring 02:00 EST → 03:00 EDT on 8 Mar, fall 02:00 EDT → 01:00 EST on 1 Nov.
+    { label: 'NY just before the spring gap (01:30 EST)', place: NY, instant: near(at(2026, 3, 8, 6, 30)) },
+    { label: 'NY just after it (03:00 EDT)', place: NY, instant: near(at(2026, 3, 8, 7, 0)) },
+    { label: 'NY rounded UP across the gap (01:59:30 EST → 03:00 EDT)', place: NY, instant: ceil(at(2026, 3, 8, 6, 59, 30)) },
+    { label: 'NY repeated hour, first 01:30 (EDT)', place: NY, instant: near(at(2026, 11, 1, 5, 30)) },
+    { label: 'NY repeated hour, second 01:30 (EST)', place: NY, instant: near(at(2026, 11, 1, 6, 30)), repeated: true },
+    // London: 01:00 GMT → 02:00 BST on 29 Mar; 02:00 BST → 01:00 GMT on 25 Oct.
+    { label: 'London before the spring gap (00:30 GMT)', place: LON, instant: near(at(2026, 3, 29, 0, 30)) },
+    { label: 'London after it (02:30 BST)', place: LON, instant: near(at(2026, 3, 29, 1, 30)) },
+    { label: 'London repeated hour, first 01:30 (BST)', place: LON, instant: near(at(2026, 10, 25, 0, 30)) },
+    { label: 'London repeated hour, second 01:30 (GMT)', place: LON, instant: near(at(2026, 10, 25, 1, 30)), repeated: true },
+    // Melbourne: 03:00 AEDT → 02:00 AEST on 5 Apr; 02:00 AEST → 03:00 AEDT on 4 Oct.
+    { label: 'Melbourne repeated hour, first 02:30 (AEDT)', place: MEL, instant: near(at(2026, 4, 4, 15, 30)) },
+    { label: 'Melbourne repeated hour, second 02:30 (AEST)', place: MEL, instant: near(at(2026, 4, 4, 16, 30)), repeated: true },
+    { label: 'Melbourne before the spring gap (01:30 AEST)', place: MEL, instant: near(at(2026, 10, 3, 15, 30)) },
+    { label: 'Melbourne after it (03:30 AEDT)', place: MEL, instant: near(at(2026, 10, 3, 16, 30)) },
+    // Rounding: an ingress UP (the equinox), everything else to the nearest minute.
+    { label: 'Greenwich equinox, rounded up', place: { lat: 51 + 29 / 60, lng: 0, zone: 'Europe/London' }, instant: ceil(EXAMPLE_EVENT_EXACT_UT_MS) },
+    { label: 'NY summer, a :29.9 rounds down', place: NY, instant: near(at(2026, 7, 4, 16, 0, 29, 900)) },
+    { label: 'NY summer, a :30 rounds up', place: NY, instant: near(at(2026, 7, 4, 16, 0, 30)) },
+    { label: 'NY summer, a whole minute rounded up stays put', place: NY, instant: ceil(at(2026, 7, 4, 16, 0, 0)) },
+  ];
+  every('the record the form writes casts the moment, to the minute', cases, ({ label, place, instant }) => {
+    const h = handed(place, instant);
+    return sameMs(h.castMs, roundedUt(instant)) ? null : `${label}: casts ${h.castMs == null ? 'nothing' : new Date(h.castMs).toISOString()}, wants ${new Date(roundedUt(instant)).toISOString()}`;
+  });
+  every('…and the clock it shows is the place’s own clock at that minute (the tz database)', cases, ({ label, place, instant }) => {
+    const { shown } = handed(place, instant);
+    const tz = DateTime.fromMillis(roundedUt(instant), { zone: place.zone });
+    const want = `${tz.year}-${tz.month}-${tz.day} ${tz.hour}:${tz.minute}`;
+    const got = `${shown.year}-${shown.month}-${shown.day} ${shown.hour}:${shown.minute}`;
+    return got === want ? null : `${label}: shows ${got}, the place read ${want}`;
+  });
+  every('the repeated hour’s second occurrence is flagged, and only it', cases, ({ label, place, instant, repeated }) => {
+    const { before } = handed(place, instant);
+    return before.ambiguous === !!repeated ? null : `${label}: ambiguous ${before.ambiguous}`;
+  });
+  const repeats = cases.filter((c) => c.repeated);
+  every('  …its fix is the place’s standard time (the radios’ other half), and after it nothing is ambiguous', repeats, ({ label, place, instant }) => {
+    const h = handed(place, instant);
+    const fix = h.before.fix;
+    const row = fix && typeof fix === 'object' && 'zone' in fix ? fix : null;
+    return row && row.daylight === 'standard' && !h.shown.ambiguous && h.view.toSave?.tzManual === true
+      ? null
+      : `${label}: fix ${JSON.stringify(fix)}, still ambiguous ${h.shown.ambiguous}`;
+  });
+  every('  …and Automatic alone could not have cast it (the fix is a precondition, not a preference)', repeats, ({ label, place, instant }) => {
+    // The same clock saved on Automatic: the earlier occurrence, an hour away.
+    const { before } = handed(place, instant);
+    const autoSave = resolveZoneChoice({ mode: 'auto' }, { lat: place.lat, lng: place.lng, year: before.year, month: before.month, day: before.day, hour: before.hour, minute: before.minute });
+    const autoMs = msOfJd(birthDataToJD({ name: 'x', year: before.year, month: before.month, day: before.day, hour: before.hour, minute: before.minute, tzOffset: autoSave.tzOffset, birthplace: { label: 'x', lat: place.lat, lng: place.lng } }));
+    return sameMs(Math.abs(autoMs - roundedUt(instant)), H * 1000) ? null : `${label}: Automatic casts ${new Date(autoMs).toISOString()}`;
+  });
+
+  // The zone moves the clock, never the moment: one instant, three zones in the field.
+  const july = near(at(2026, 7, 4, 16, 0));
+  const ways: [string, ZoneAction[]][] = [
+    ['Automatic', []],
+    ['EST stated against July’s EDT', [{ type: 'choose', pick: { zone: 'est', daylight: 'standard' } }]],
+    ['a typed +05:30', [{ type: 'choose', pick: { custom: '+05:30' } }]],
+  ];
+  const each = ways.map(([label, actions]) => ({ label, h: handed(NY, july, actions) }));
+  every('changing the zone moves the clock shown …', each, ({ label, h }) =>
+    each.filter((o) => o.h.shown.hour === h.shown.hour && o.h.shown.minute === h.shown.minute).length === 1
+      ? null
+      : `${label}: shows ${h.shown.hour}:${h.shown.minute}, as another zone does`,
+  );
+  every('  …and never the moment it casts', each, ({ label, h }) =>
+    sameMs(h.castMs, roundedUt(july)) ? null : `${label}: casts ${h.castMs == null ? 'nothing' : new Date(h.castMs).toISOString()}`,
+  );
+
+  // A mean-time birthplace: the offset carries seconds, so the clock is a whole minute
+  // of a reading that wasn't — the record casts the moment to within 30 seconds.
+  const ulm = { lat: 48.4011, lng: 9.9876 };
+  const ulmMoment = near(at(1850, 3, 14, 10, 0, 20));
+  const u = handed(ulm, ulmMoment);
+  check('  a mean-time birthplace (Ulm 1850) casts the moment to within 30 seconds',
+    u.castMs != null && Math.abs(u.castMs - ulmMoment.utMs) <= 30_000 && !Number.isInteger(u.shown.offsetSeconds / 60),
+    `${u.castMs == null ? 'nothing' : (u.castMs - ulmMoment.utMs) / 1000} s at offset ${u.shown.offsetSeconds} s`);
+
+  // No place yet: the clock is Universal Time, flagged, and nothing is saved from it.
+  const ut = handed(null, near(at(2026, 10, 20, 9, 41, 31)));
+  check('  no place yet: the clock is UT, flagged as such',
+    ut.shown.ut && ut.shown.hour === 9 && ut.shown.minute === 42 && ut.shown.offsetSeconds === 0 && ut.castMs === null,
+    JSON.stringify(ut.shown));
+
+  // The example event is this path's output at Greenwich, field for field.
+  const g = handed({ lat: 51 + 29 / 60, lng: 0 }, ceil(EXAMPLE_EVENT_EXACT_UT_MS));
+  const seed = exampleEventChart(0);
+  const fromForm = { year: g.shown.year, month: g.shown.month, day: g.shown.day, hour: g.shown.hour, minute: g.shown.minute, tzOffset: g.view.toSave?.tzOffset, tzIana: g.view.toSave?.tzIana, tzManual: g.view.toSave?.tzManual, tzUncertain: g.view.toSave?.tzUncertain };
+  const fromSeed = { year: seed.year, month: seed.month, day: seed.day, hour: seed.hour, minute: seed.minute, tzOffset: seed.tzOffset, tzIana: seed.tzIana, tzManual: seed.tzManual, tzUncertain: seed.tzUncertain };
+  check('  the example event is what the form writes for the equinox at Greenwich, field by field',
+    same(fromForm, fromSeed), `${JSON.stringify(fromForm)} vs ${JSON.stringify(fromSeed)}`);
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);

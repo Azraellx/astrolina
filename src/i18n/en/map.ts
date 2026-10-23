@@ -46,6 +46,40 @@ export const map = {
   // where the horizon grazes the ecliptic at the line's crest and the
   // rising/setting identity (and so the As/Ds reading) flips across it.
   polarNote: 'Polar zone: past this line’s crest, rising and setting trade places.',
+  // Appended to the tooltip of a line drawn with an uncertainty band (a chart with no birth
+  // time on a geodetic map: the Moon's and Mercury's lines, the Moon's aspect and midpoint
+  // lines), only while the orb zones are drawn: the orb corridor then surrounds the whole band
+  // rather than the line at its centre. Lina's sentence (2026-10-20). A tooltip line about
+  // 260 px wide.
+  // @i18n-verbatim
+  // The second line of a banded line's hover tip (a chart with no birth time: a ranged body's
+  // lines), after the line's name ("Moon MC"). Lina's wording (23 Oct 2026, R-2: one label phrase on
+  // every surface, "range {a}–{b}" — a progressed range runs over the progressed day, so the
+  // birth date is not named); {range} is two zodiac positions with sign glyphs ("14°♋–21°♋").
+  // @i18n-verbatim
+  bandRange: 'birth time unknown · range {range}',
+  // The hover note on the 90°W and 90°E meridians (Lina, 21 Oct 2026, §4): the two meridians
+  // where the Ascendant curve runs straight pole to pole, shown when the cursor is on either
+  // line. Her wording for 90°W; the 90°E one mirrors it.
+  // @i18n-verbatim
+  geoMeridian90W: '0° Capricorn on the MC — 0° Aries rises at every latitude',
+  geoMeridian90E: '0° Cancer on the MC — 0° Libra rises at every latitude',
+  // The banner over a map that draws no lines because the stored line system and zodiac contradict
+  // each other (Geodetic chosen, a sidereal zodiac in force; Lina, 22 Oct 2026, §4) — a combination
+  // saved before the two controls greyed each other, or Advanced turned on over a sidereal zodiac.
+  // `body` says why nothing is drawn; the two buttons are the two fixes, each a setting's own
+  // value. A card about 300 px wide; the buttons short.
+  lineConflict: {
+    body: 'No lines are drawn: your line system is Geodetic, which is tropical by definition, and a sidereal zodiac is set. Choose one:',
+    toTropical: 'Set the zodiac to Tropical',
+    toCelestial: 'Switch to Celestial',
+  },
+  // The legend entry for the banded stroke, in the conventions row at the map's foot, after a
+  // drawn sample of the double hairline. Lina's wording (21 Oct 2026, §2.1).
+  // @i18n-verbatim
+  bandLegend: 'birth time unknown · degree uncertain',
+  bandCorridor:
+    'On a banded line the orb corridor surrounds the band, so it shows every place that could be within orb of the line, wherever in the band the line truly lies.',
   // Hover labels for the Eclipses overlay's curves. The tip leads with the
   // eclipse identity ("8 April 2024 · Total"), then one of these; where the
   // eclipse is visible, a sub-line adds the local circumstances at the cursor.
@@ -119,6 +153,30 @@ export const map = {
     // kilometres and in miles. Both units are always shown; write their abbreviations and
     // the order as the language does. (2026-10-09)
     distance: '{label} {km} km / {mi} mi',
+    // The same row for a line drawn with an uncertainty band — on a geodetic map, a chart with
+    // no birth time draws the Moon's and Mercury's lines (and the Moon's aspect and midpoint
+    // lines) with a band: every place the line could be across the unknown hours. Such a line
+    // is measured by its band (2026-10-20). {label} as above. `bandCovers`: the reference point
+    // lies inside the band, so it is as close to the line as the chart can say and no figure is
+    // shown. `bandEdge`: outside it, the figures are the distance to the band's nearest edge,
+    // not to the line drawn at its centre. A card line about 260 px wide.
+    // Since 21 Oct 2026 in Lina's words (§2.2): {band} is one of bandOf below, {range} the
+    // body's range as two zodiac positions ("14°♋–21°♋"), labelled "range" (R-2, 23 Oct).
+    // @i18n-verbatim
+    bandCovers: '{label} inside {band}',
+    // @i18n-verbatim
+    bandEdge: '{label} {km} km / {mi} mi to the edge of {band} · birth time unknown · range {range}',
+    // The band named by its body, as {band} above: "the Moon's band", "Mercury's band" (no
+    // article before a planet's name in English). `line` is for an aspect or midpoint line's
+    // band, and any other.
+    bandOf: {
+      Sun: 'the Sun’s band',
+      Moon: 'the Moon’s band',
+      Mercury: 'Mercury’s band',
+      Venus: 'Venus’s band',
+      Mars: 'Mars’s band',
+      line: 'this line’s band',
+    },
   },
   // Zenith stamp hover popup. {planet} is the planet display name.
   zenithTitle: '{planet} zenith',
@@ -126,15 +184,31 @@ export const map = {
   // Nadir (antipodal underfoot) stamp hover popup.
   nadirTitle: '{planet} nadir',
   nadirSub: 'where {planet} is directly underfoot',
-  // The geodetic grid's hover readout: the place (or, over open ground or water, its
-  // coordinates) tagged GE, then its geodetic angles to the minute. {place} is the nearest
-  // city's own name; {lat} and {lng} are degrees and minutes ("43°N39'"). Only AS and MC:
-  // DS and IC are their opposites, so they would add a line and no information.
+  // The geodetic grid's hover readout, in three lines since 2026-10-20 (Lina's format): the
+  // place's geodetic angles to the minute, then the nearest city's own name (over open ground
+  // or water there is none, and the line is left out), then the cursor's coordinates. The name
+  // and the coordinates are data, printed as they are, so only the angle line and the polar
+  // caution are here. Only AS and MC: DS and IC are their opposites, so they would add a line
+  // and no information.
   geoReadout: {
-    place: '{place} GE',
-    coords: '{lat} {lng} GE',
-    as: 'AS',
-    mc: 'MC',
+    // The geodetic angle line, first line of the map's hover readout and the chart panel's
+    // geodetic line (2026-10-20). Lina's format: GE (geodetic equivalents), a colon, then the
+    // Ascendant (AS) and Midheaven (MC), each a figure like 21°♈04'. Keep the codes, the colon
+    // and the middle dot exactly; translate nothing unless your language writes these angle
+    // codes differently. {as} and {mc} are the figures. The place and the coordinates follow
+    // on their own lines.
+    // @i18n-verbatim
+    angles: 'GE: AS {as} · MC {mc}',
+    // The same line within 0.01° of a pole, where the Ascendant is undefined: the MC alone.
+    // @i18n-verbatim
+    anglesMcOnly: 'GE: MC {mc}',
+    // Shown under the readout inside the polar circles (from 90° less the map's obliquity).
+    // Lina's sentence; she wrote "AL" for the app, expanded here to its name. "The eastern
+    // point": of the two places the ecliptic meets the horizon, the one in the east. A tooltip
+    // line, about 260 px wide; keep it two short sentences.
+    // @i18n-verbatim
+    polar:
+      'Polar zone: inside the polar circles the Ascendant has two definitions, half a circle apart. AstroLina uses the eastern point.',
   },
   // The zone-shading legend's heads: a row head isolates an element, a column head a
   // modality, and the same head again shows every zone. {group} is "Fire", "Cardinal", …

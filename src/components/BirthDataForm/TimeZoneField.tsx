@@ -105,6 +105,28 @@ const MODES: readonly ZoneEntryMode[] = ['auto', 'standard', 'offset', 'iana', '
  *  catalogue id can collide with it: ids are lower-case words and hyphens). */
 const UNNAMED = '~unnamed';
 
+/** The lines of this field that name a birthplace, a birth date or a birth time, each with
+ *  an event chart's version beside it in the catalog (`…Event`, 2026-10-20: "the place",
+ *  "the event's date", "the time"). Typed, so a line listed here without its sibling fails
+ *  to compile rather than showing a birth's words on an event's form. */
+type EventWorded =
+  | 'chartForm.tz.modeTip.auto'
+  | 'chartForm.tz.modeHint.auto'
+  | 'chartForm.tz.pickAuto'
+  | 'chartForm.tz.pickLmt'
+  | 'chartForm.tz.pickLmtName'
+  | 'chartForm.tz.standardNone'
+  | 'chartForm.tz.lmtButton'
+  | 'chartForm.tz.lmtTip'
+  | 'chartForm.tz.lmtHint'
+  | 'chartForm.tz.utTip'
+  | 'chartForm.tz.utcNone'
+  | 'chartForm.tz.offsetNone'
+  | 'chartForm.tz.verifyDstHint';
+
+/** `key` on a person's form, its event chart's version on an event's. */
+const worded = (key: EventWorded, event: boolean) => (event ? (`${key}Event` as const) : key);
+
 /** "+1 h", "+2 h", "+0:30" — a daylight correction's size, from its seconds. */
 function amountOf(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -195,7 +217,7 @@ function savedTerms(c: ZoneChoice, at: ZoneMoment, t: TFn): string {
  *  zone, rather than covering the window from top to bottom. */
 const ZONE_LIST_MAX_HEIGHT = 360;
 
-function ZonePickMenu({ zone }: { zone: ZoneEntryState }) {
+function ZonePickMenu({ zone, event }: { zone: ZoneEntryState; event: boolean }) {
   const { t } = useT();
   const r = zone.resolved;
   const at = zone.at;
@@ -216,19 +238,21 @@ function ZonePickMenu({ zone }: { zone: ZoneEntryState }) {
       : []),
     {
       value: 'auto',
-      label: iana ? t('chartForm.tz.pickAuto', { iana }) : t('chartForm.tz.modeTip.auto'),
-      hint: t('chartForm.tz.modeHint.auto'),
+      label: iana
+        ? t(worded('chartForm.tz.pickAuto', event), { iana })
+        : t(worded('chartForm.tz.modeTip.auto', event)),
+      hint: t(worded('chartForm.tz.modeHint.auto', event)),
     },
     {
       value: 'lmt',
       label: lmtUsable
-        ? t('chartForm.tz.pickLmt', { offset: formatBothNotations(lmt) })
-        : t('chartForm.tz.pickLmtName'),
+        ? t(worded('chartForm.tz.pickLmt', event), { offset: formatBothNotations(lmt) })
+        : t(worded('chartForm.tz.pickLmtName', event)),
       hint: lmtUsable
-        ? t(zone.lmtShifted ? 'chartForm.tz.lmtHintShifted' : 'chartForm.tz.lmtHint', {
+        ? t(zone.lmtShifted ? 'chartForm.tz.lmtHintShifted' : worded('chartForm.tz.lmtHint', event), {
             offset: formatBothNotations(lmt),
           })
-        : t('chartForm.tz.lmtTip'),
+        : t(worded('chartForm.tz.lmtTip', event)),
       disabled: !lmtUsable,
       disabledHint: t('chartForm.tz.lmtBeyond'),
     },
@@ -541,7 +565,18 @@ function keptNote(kept: NonNullable<ZoneEntryState['kept']>, at: ZoneMoment, t: 
   }
 }
 
-export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPlace: boolean }) {
+export function TimeZoneField({
+  zone,
+  hasPlace,
+  event = false,
+}: {
+  zone: ZoneEntryState;
+  hasPlace: boolean;
+  /** The form is an event chart's (2026-10-20): the locked prompt, and every line here
+   *  that would name a birthplace, a birth date or a birth time (EventWorded), names the
+   *  place, date and time as the event form's own fields do. */
+  event?: boolean;
+}) {
   const { t } = useT();
   const uid = useId();
   const captionId = `${uid}-caption`;
@@ -603,11 +638,19 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
     };
   }, [r, at, toSave, chooser]);
 
+  // Auto's tip and hint name the birthplace and the birth date, Offset's and IANA's hints
+  // one of them: those have an event chart's version (EventWorded); the rest name neither.
   const modeOptions: SegOption<ZoneEntryMode>[] = MODES.map((m) => ({
     value: m,
     label: t(`chartForm.tz.mode.${m}` as 'chartForm.tz.mode.auto'),
-    tip: t(`chartForm.tz.modeTip.${m}` as 'chartForm.tz.modeTip.auto'),
-    hint: t(`chartForm.tz.modeHint.${m}` as 'chartForm.tz.modeHint.auto'),
+    tip: t(
+      event && m === 'auto' ? 'chartForm.tz.modeTip.autoEvent' : (`chartForm.tz.modeTip.${m}` as 'chartForm.tz.modeTip.auto'),
+    ),
+    hint: t(
+      event && (m === 'auto' || m === 'offset' || m === 'iana')
+        ? (`chartForm.tz.modeHint.${m}Event` as const)
+        : (`chartForm.tz.modeHint.${m}` as 'chartForm.tz.modeHint.auto'),
+    ),
   }));
 
   if (zone.locked) {
@@ -680,7 +723,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
                 ))}
               </select>
             </div>
-            {!std && <p className="tz-note">{t('chartForm.tz.standardNone')}</p>}
+            {!std && <p className="tz-note">{t(worded('chartForm.tz.standardNone', event))}</p>}
           </>
         );
         break;
@@ -691,7 +734,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
         const lmtHint =
           lmt == null
             ? undefined
-            : t(zone.lmtShifted ? 'chartForm.tz.lmtHintShifted' : 'chartForm.tz.lmtHint', {
+            : t(zone.lmtShifted ? 'chartForm.tz.lmtHintShifted' : worded('chartForm.tz.lmtHint', event), {
                 offset: formatBothNotations(lmt),
               });
         body = (
@@ -732,12 +775,12 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
                   aria-disabled={!zone.lmtAvailable || undefined}
                   onClick={zone.lmtAvailable ? zone.takeLmt : undefined}
                   placement="top"
-                  tip={t('chartForm.tz.lmtTip')}
+                  tip={t(worded('chartForm.tz.lmtTip', event))}
                   hint={lmtHint}
                   unavailable={!zone.lmtAvailable}
                   note={zone.lmtAvailable ? undefined : t('chartForm.tz.lmtBeyond')}
                 >
-                  {t('chartForm.tz.lmtButton')}
+                  {t(worded('chartForm.tz.lmtButton', event))}
                 </TipButton>
                 <TipButton
                   type="button"
@@ -745,7 +788,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
                   aria-pressed={basis === 'ut'}
                   onClick={zone.takeUt}
                   placement="top"
-                  tip={t('chartForm.tz.utTip')}
+                  tip={t(worded('chartForm.tz.utTip', event))}
                   hint={t('chartForm.tz.utHint')}
                 >
                   {t('chartForm.tz.utButton')}
@@ -754,7 +797,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
             </div>
             {zone.pending && r && (
               <p className="tz-note">
-                {t('chartForm.tz.offsetNone', { offset: formatBothNotations(r.seconds) })}
+                {t(worded('chartForm.tz.offsetNone', event), { offset: formatBothNotations(r.seconds) })}
               </p>
             )}
           </>
@@ -775,6 +818,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
             }
             at={at}
             onPick={zone.pickIana}
+            event={event}
           />
         );
         break;
@@ -802,7 +846,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
             </div>
             {live.mode !== 'utc' && (
               <p className="tz-note">
-                {t('chartForm.tz.utcNone', { offset: formatBothNotations(r.seconds) })}
+                {t(worded('chartForm.tz.utcNone', event), { offset: formatBothNotations(r.seconds) })}
               </p>
             )}
           </>
@@ -834,7 +878,13 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
   // instead — nobody overrode anything there.
   const suffix = zone.overridden && !showKept ? t('chartForm.tz.manualOverride') : null;
 
-  const prompt = hasPlace ? t('chartForm.tz.setDate') : t('chartForm.tz.setPlace');
+  const prompt = event
+    ? hasPlace
+      ? t('chartForm.tz.setDateEvent')
+      : t('chartForm.tz.setPlaceEvent')
+    : hasPlace
+      ? t('chartForm.tz.setDate')
+      : t('chartForm.tz.setPlace');
 
   return (
     <div ref={fieldRef} className="tz-field" role="group" aria-labelledby={captionId}>
@@ -855,7 +905,11 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
               </span>
             )}
             {showDst && (
-              <ZoneMark className="tz-mark-dst" tip={t('chartForm.tz.verifyDst')} hint={t('chartForm.tz.verifyDstHint')} />
+              <ZoneMark
+                className="tz-mark-dst"
+                tip={t('chartForm.tz.verifyDst')}
+                hint={t(worded('chartForm.tz.verifyDstHint', event))}
+              />
             )}
             {zone.implausible && (
               <ZoneMark
@@ -899,7 +953,7 @@ export function TimeZoneField({ zone, hasPlace }: { zone: ZoneEntryState; hasPla
           </div>
         ) : (
           <div id={chooserId}>
-            <ZonePickMenu zone={zone} />
+            <ZonePickMenu zone={zone} event={event} />
           </div>
         )
       )}

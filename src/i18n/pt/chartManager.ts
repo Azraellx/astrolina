@@ -21,7 +21,10 @@ export const chartManager = {
     space: 'Espaço',
     unknown: 'Sem hora',
     shared: 'Compartilhado',
+    events: 'Eventos',
   },
+  eventsEmpty: 'Nenhum mapa de evento ainda.',
+  eventRowAria: 'Mapa de evento',
   folders: {
     new: 'Nova pasta',
     newChild: 'Nova subpasta',

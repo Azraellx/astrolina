@@ -12,7 +12,8 @@
 //
 //   npx tsx scripts/verify-cities.ts
 import rows from '../src/lib/atlas/data/cities15000.json';
-import { nearestCity, searchCity, searchPlaces } from '../src/lib/atlas/cityLookup';
+import { HAND_ADDED_GIDS, nearestCity, searchCity, searchPlaces } from '../src/lib/atlas/cityLookup';
+import { fmtCoordPair } from '../src/lib/coordFormat';
 import { composePlaceLabel, foldName, leadPlaceName } from '../src/lib/atlas/placeLabel';
 
 let failures = 0;
@@ -32,8 +33,9 @@ check(
   omitted > all.length / 2,
   `${omitted}/${all.length} omitted`,
 );
+// The hand additions are exempt: they are written as placed (Greenwich on the meridian at 51°29′00″, G-1).
 const tooPrecise = all.filter(
-  (r) => Math.round(r[2] * 1e3) / 1e3 !== r[2] || Math.round(r[3] * 1e3) / 1e3 !== r[3],
+  (r) => !HAND_ADDED_GIDS.has(r[7]) && (Math.round(r[2] * 1e3) / 1e3 !== r[2] || Math.round(r[3] * 1e3) / 1e3 !== r[3]),
 ).length;
 check('coordinates carry at most 3 decimals', tooPrecise === 0, `${tooPrecise} overlong`);
 
@@ -56,6 +58,38 @@ const paris = nearestCity(48.8566, 2.3522);
 check('nearestCity(Paris) → Paris', paris?.label.startsWith('Paris') ?? false, paris?.label);
 const tokyo = nearestCity(35.6762, 139.6503);
 check('nearestCity(Tokyo) → Tokyo', tokyo?.label.startsWith('Tokyo') ?? false, tokyo?.label);
+// Greenwich, a hand addition (scripts/build-cities.mjs ADDITIONS, 2026-10-22), placed on the Prime
+// Meridian at exactly 51°29′00″N 0°00′00″ (Lina, 23 Oct 2026, G-1): its own row, the Observatory and
+// the town centre all read Greenwich — never Eltham, the bigger town inside the same-place window.
+for (const [name, la, ln] of [
+  ['its row on the meridian', 51 + 29 / 60, 0],
+  ['the Observatory', 51.4769, -0.0015],
+  ['the town centre', 51.478, -0.012],
+] as const) {
+  const g = nearestCity(la, ln);
+  check(`nearestCity(Greenwich, ${name}) → Greenwich`, g?.label.startsWith('Greenwich,') ?? false, g?.label);
+}
+check(
+  'the Greenwich row is the GeoNames record, in population order',
+  (() => {
+    const all = rows as unknown as (string | number)[][];
+    const i = all.findIndex((r) => r[7] === 2647937);
+    return i > 0 && all[i][0] === 'Greenwich' && (all[i - 1][6] as number) >= 30578 && (all[i + 1][6] as number) <= 30578;
+  })(),
+);
+{
+  // G-1's objective: one Greenwich, at exactly 51°29′00″N 0°00′00″, as every place line prints it.
+  const all = rows as unknown as (string | number)[][];
+  const named = all.filter((r) => r[0] === 'Greenwich' && r[4] === 'GB');
+  const at = named.length === 1 ? fmtCoordPair(named[0][2] as number, named[0][3] as number) : '';
+  check('one Greenwich in England, on the meridian at 51°N29\'00" 000°E00\'00"', at === '51°N29\'00" 000°E00\'00"', `${named.length} row(s) ${at}`);
+  const hit = searchPlaces('Greenwich')[0];
+  check('searchPlaces("Greenwich") answers it first, as "Greenwich, England, United Kingdom"', hit?.label === 'Greenwich, England, United Kingdom' && hit.lat === named[0]?.[2] && hit.lng === 0, hit?.label);
+  // Exact, so Teleport marks its arrival and a click on the mark pins that very point; no other
+  // row claims it (a town's centroid is not a point to pin).
+  const exact = searchPlaces('Green', 40).filter((p) => p.exact);
+  check('the hand addition is the one EXACT hit (Teleport marks it, so "pin there" lands on the meridian)', hit?.exact === true && exact.length === 1, exact.map((p) => p.label).join(', '));
+}
 const ocean = nearestCity(-48, -123); // Point Nemo — no city within 50 km
 check('nearestCity(open ocean) → null', ocean === null, ocean?.label);
 

@@ -36,6 +36,12 @@
 // geographic midpoint, and a return's date (a solar return's gives the birthday away).
 // A place the reader pinned or hovers is where they are working, not who the chart is,
 // and reads normally.
+//
+// Two additions on 2026-10-20, both behind the geodetic hold because the caller derives
+// them: an EVENT chart (an ingress, a founding) is stated as one — EVENT CHART on a
+// celestial map, "Event:" for its moment, its own words for an unknown time — and "No
+// chart" with the sky drawn (the chart menu's "the sky alone") is a state of its own,
+// 'sky', stated from the overlay alone: there is no chart to state.
 
 import type { Formatters, TFn } from '../i18n';
 import type { ZodiacMode } from './astro/ayanamsa';
@@ -84,7 +90,7 @@ export interface Segment {
 export type LineRole =
   | 'moment' // the chart's own moment (natal: the birth; Davison: its UT moment)
   | 'birthplace'
-  | 'relocated' // "Relocated to:" / "Cast for:" — the point the angles are cast for
+  | 'relocated' // "Relocated to:" — the point the angles are cast for
   | 'overlay-moment' // an overlay's (or a return's) moment, in the cast place's clock
   | 'overlay-place' // where the overlay is cast, when that is the chart's own place
   | 'parent' // a relationship parent: name · date [· clock zone | · place]
@@ -93,18 +99,25 @@ export type LineRole =
   | 'derived' // "Derived from:"
   | 'geo' // marker: the geodetic GE / planets lines go here (rendered with glyphs)
   | 'rodden'
-  | 'settings';
+  | 'settings'
+  | 'hint'; // a sentence about the wheel, not data (No chart with no place: how to get angles)
 
 export interface HeaderLine {
   role: LineRole;
   segs: Segment[];
   /** A pre-1970 zone outside the US/EU on this moment: the renderer adds the ⚠. */
   tzUncertain?: boolean;
+  /** A synastry partner's "Relocated to:" line: the renderer gives it the tip saying both wheels
+   *  are cast for this one place, and how to move it (Salvatore, 2026-10-02). */
+  castTip?: boolean;
 }
 
 export type HeaderState =
   | 'none'
   | 'no-chart'
+  // No chart selected, and a sky overlay drawn in its place (2026-10-20): the wheel is
+  // the sky's at the overlay's moment, and the header states that alone.
+  | 'sky'
   | 'geodetic'
   | 'composite'
   | 'return'
@@ -114,6 +127,20 @@ export type HeaderState =
   | 'natal';
 
 /** The overlay riding with (or standing in for) the chart. */
+/** What an overlay's wheel is built from, for its houses line (Lina, 22 Oct 2026, §3.2): the
+ *  word for its positions, the word for the angles its houses are taken from, and — where the
+ *  technique has one — the calculation, in brackets after the word it moves: after the positions
+ *  on Solar Arc and primary directions (the arc moves the bodies; the angles follow), after the
+ *  angles on a progression (the rate moves only the angles). App decides it from the settings in
+ *  force (its effective frames); the sidebar words it. `rate` is a user primary rate's value.
+ *  `angles` is absent where the houses come from the wheel's own moment at the place — a chart of
+ *  its moment (transits, a return, an eclipse, an event) names none (Lina, 23 Oct 2026, H-2). */
+export interface WheelHouses {
+  positions: 'natal' | 'transit' | 'progressed' | 'directed' | 'return' | 'eclipse' | 'event';
+  angles?: 'natal' | 'progressed' | 'directed' | 'geodetic';
+  calc?: { key: string; on: 'positions' | 'angles'; rate?: number };
+}
+
 export interface HeaderOverlay {
   /** CCG is ignored: it never makes a wheel (no single chart), so it names nothing. */
   kind: OverlayKind;
@@ -143,6 +170,11 @@ export interface ChartHeaderInput {
   /** A promoted CCG left nothing to wheel ("NO CHART"): the header keeps the chart's
    *  own lines and names no state, as it did before there was a state to name. */
   noChart?: boolean;
+  /** The chart is an EVENT chart as the app PRESENTS it (lib/eventCharts presentedKind,
+   *  so false while the geodetic hold presents every chart as a person). Absent → a
+   *  person, as every header was before event charts (2026-10-20). Ignored on a
+   *  relationship chart, which states its own derivation. */
+  event?: boolean;
   /** The house frame the wheel draws, or null where it draws none (no birth time on a
    *  celestial map). `fallback`: the chosen system is undefined there, Porphyry used. */
   houses: { system: HouseSystem; fallback: boolean } | null;
@@ -157,6 +189,10 @@ export interface ChartHeaderInput {
 /** One statement: the state label and the lines under it. */
 export interface HeaderView {
   labelParts: string[];
+  /** The wheel's person, after the label, when two people share the wheel (synastry: "NATAL CHART ·
+   *  Lina", Lina's H-3, 23 Oct 2026). Already masked in Discreet mode. Kept apart from the label so
+   *  the renderer can keep a page translator off it — it is the reader's data. */
+  labelName?: string;
   lines: HeaderLine[];
   /** Blank rows the renderer reserves after the lines: the ones a relocation WOULD add
    *  (its cast line), while the chart is not relocated — so placing a pin, or the hover
@@ -188,6 +224,10 @@ export interface ChartHeaderModel extends HeaderView {
 // ── Small helpers ───────────────────────────────────────────────────────────
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+// Two places this close in both coordinates are one place: the tolerance App's natal-pin test uses
+// (about 110 m). Two charts recorded in the same city a second of arc apart — Lina's two Toronto
+// fixtures, 43°N42′22″ and 43°N42′23″ — share a cast place, and neither is "relocated" (H-3).
+const SAME_PLACE_DEG = 0.001;
 const SEP = ' · ';
 
 /** A Davison: a locally generated relationship chart with a real moment — the parents
@@ -248,6 +288,82 @@ function davisonZone(c: StoredChart): ZoneName {
   return c.tzOffset === 0 ? utName() : zoneNameForChart(c);
 }
 
+/** A line from segments, the absent ones (no lead, an unnamed place, a masked zone)
+ *  dropped, and the first one that remains starting flush. */
+function lineOf(role: LineRole, parts: (Segment | null)[], extra?: Partial<HeaderLine>): HeaderLine {
+  const segs = parts.filter((s): s is Segment => !!s);
+  if (segs.length) segs[0] = { ...segs[0], sep: '' };
+  return { role, segs, ...extra };
+}
+
+const plainSeg = (kind: SegmentKind, text: string, sep = SEP): Segment => ({ kind, text, mask: 'none', sep });
+
+// Chart-data settings, and only those (line-geometry settings live in the map's status
+// line): geocentric, the zodiac in force (geodetic is tropical-only), the house system
+// the wheel's cusps were drawn in — Porphyry wherever the chosen one is undefined —
+// left out where the wheel draws no houses, and the node.
+function settingsLineFor(input: ChartHeaderInput, geo: boolean): HeaderLine {
+  const { t } = input;
+  return lineOf('settings', [
+    plainSeg('text', t('expandedSidebar.header.geocentric')),
+    plainSeg('text', t(`settings.zodiac.${geo ? 'tropical' : input.zodiac}.label`)),
+    input.houses
+      ? plainSeg('text', t(`settings.houseSystem.${input.houses.fallback ? 'porphyry' : input.houses.system}.label`))
+      : null,
+    plainSeg('text', t(`settings.nodeType.${input.nodeType}.label`)),
+  ]);
+}
+
+/**
+ * The 'sky' state: No chart selected, and a time overlay drawn as the wheel
+ * (2026-10-20). Null when there is no such overlay — a null chart with nothing in its
+ * place stays 'none'.
+ *
+ * Stated from the overlay alone. Its moment is read on the clock of the place the angles
+ * are cast for — the pin, else the hover — as every overlay's is; with no place there are
+ * no angles and no place's clock, so it reads in UT, and a hint line says how to get a
+ * place. Nothing here is the subject's (there is no subject), so nothing is masked in
+ * Discreet mode: the place is one the reader chose.
+ */
+function skyHeaderModel(input: ChartHeaderInput): ChartHeaderModel | null {
+  const { t, fmt, point } = input;
+  const ov = input.overlay;
+  if (!ov || !ov.promoted || ov.ms == null || ov.kind === 'synastry' || ov.kind === 'cyclo') return null;
+  const geo = input.lineSystem === 'geodetic';
+  const zone = point ? castZoneAt(ov.ms, point.lat, point.lng) : utName();
+  const wall = wallClockAt(ov.ms, zone);
+  const placeLabel = (input.pointLabel ?? '').trim();
+  const lines: HeaderLine[] = [
+    lineOf('overlay-moment', [
+      plainSeg('date', fmt.dateWithWeekday(wall.year, wall.month, wall.day)),
+      plainSeg('clock', `${pad2(wall.hour)}:${pad2(wall.minute)}`),
+      plainSeg('zone', formatZoneLabel(zone), ' '),
+    ]),
+    // In the row a cast line takes, so placing a pin swaps one row for the other rather
+    // than pushing the sections below down.
+    point
+      ? lineOf('relocated', [
+          // No "Cast for:": the place is the drawn chart's own, and the line carries the pin
+          // where the pin is (Lina, 21 Oct 2026, §4).
+          placeLabel ? plainSeg('place', placeLabel, '') : null,
+          plainSeg('coords', fmtCoordPairDM(point.lat, point.lng), placeLabel ? SEP : ''),
+        ])
+      : lineOf('hint', [plainSeg('text', t('expandedSidebar.header.skyNoPlace'))]),
+    ...(geo ? [{ role: 'geo', segs: [] } satisfies HeaderLine] : []),
+    settingsLineFor(input, geo),
+  ];
+  // No chart to stand beside the sky's wheel, so the Dual layout has no first wheel and
+  // falls back to the single one: chartView is empty and there is no second statement.
+  return {
+    state: 'sky',
+    labelParts: [t(`expandedSidebar.header.kind.${ov.kind}`)],
+    lines,
+    chartView: { labelParts: [], lines: [] },
+    overlayView: null,
+    labelHasOverlayDate: true,
+  };
+}
+
 // ── The model ───────────────────────────────────────────────────────────────
 
 export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
@@ -255,7 +371,15 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   const id = identityFor(input.discreet);
   const empty: HeaderView = { labelParts: [], lines: [] };
   if (!chart) {
-    return { state: 'none', ...empty, chartView: empty, overlayView: null, labelHasOverlayDate: false };
+    return (
+      skyHeaderModel(input) ?? {
+        state: 'none',
+        ...empty,
+        chartView: empty,
+        overlayView: null,
+        labelHasOverlayDate: false,
+      }
+    );
   }
 
   const geo = input.lineSystem === 'geodetic';
@@ -271,6 +395,11 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   const cast = input.point && relocated ? input.point : chart.birthplace;
   const castLabel = relocated ? (input.pointLabel ?? '').trim() : '';
   const relationship = !!chart.composite || isDavison(chart);
+  // An event chart is stated as one; a relationship chart states its own derivation.
+  const event = !!input.event && !relationship;
+  // A synastry partner: two people on one wheel (Lina, 23 Oct 2026, H-3), so each block is titled
+  // with its chart's kind and its person's name, and both moments are led "Born:".
+  const partner = ov?.kind === 'synastry' ? (ov.partner ?? null) : null;
 
   // ── segment builders (Discreet applied here) ──
   const seg = (kind: SegmentKind, text: string, mask: Segment['mask'], sep = SEP): Segment => {
@@ -292,43 +421,45 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
     }
     return { kind, text, mask, sep };
   };
-  // A line from segments, the absent ones (no lead, an unnamed place, a masked zone)
-  // dropped, and the first one that remains starting flush.
-  const line = (role: LineRole, parts: (Segment | null)[], extra?: Partial<HeaderLine>): HeaderLine => {
-    const segs = parts.filter((s): s is Segment => !!s);
-    if (segs.length) segs[0] = { ...segs[0], sep: '' };
-    return { role, segs, ...extra };
-  };
+  const line = lineOf;
   // A clock and its zone, or — timeless — the wording that says the time is unknown
   // (the bodies are read at a noon placeholder, and "12:00" alone would read as a time
   // somebody recorded). The zone is the time's own qualifier, so it masks out WITH it.
+  // An event's unknown time is "time unknown", not "birth time unknown" (2026-10-20).
   const clockSegs = (
     hour: number,
     minute: number,
     zone: ZoneName,
     mask: Segment['mask'],
     timeless: boolean,
+    ofEvent = false,
   ): (Segment | null)[] =>
     timeless
-      ? [seg('text', t('expandedSidebar.timeUnknownNoon'), 'none')]
+      ? [seg('text', t(ofEvent ? 'expandedSidebar.timeUnknownNoonEvent' : 'expandedSidebar.timeUnknownNoon'), 'none')]
       : [
           seg('clock', `${pad2(hour)}:${pad2(minute)}`, mask),
           mask === 'subject' && id.on ? null : seg('zone', formatZoneLabel(zone), mask, ' '),
         ];
   const plainDate = (y: number, m: number, d: number) => fmt.date(y, m, d, 'long');
-  const lead = (key: 'born' | 'relocatedTo' | 'castFor' | 'midpoint' | 'derivedFrom') =>
+  const lead = (key: 'born' | 'eventLead' | 'relocatedTo' | 'midpoint' | 'derivedFrom') =>
     seg('lead', t(`expandedSidebar.header.${key}`), 'none');
 
   // ── line builders ──
   // The chart's own birth moment, in its own zone — always the birthplace's clock, even
-  // relocated ("Born:" says so then).
-  const natalMoment = (c: StoredChart | ParentSnapshot, born: boolean, tzUncertain?: boolean) =>
+  // relocated ("Born:" says so then). An event's moment is led "Event:" and words an
+  // unknown time as an event's (`ofEvent`, 2026-10-20).
+  const natalMoment = (
+    c: StoredChart | ParentSnapshot,
+    born: boolean,
+    tzUncertain?: boolean,
+    ofEvent = false,
+  ) =>
     line(
       'moment',
       [
-        born ? lead('born') : null,
+        born ? lead(ofEvent ? 'eventLead' : 'born') : null,
         seg('date', fmt.dateWithWeekday(c.year, c.month, c.day), 'subject', ' '),
-        ...clockSegs(c.hour, c.minute, zoneNameForChart(c), 'subject', timeUnknown(c)),
+        ...clockSegs(c.hour, c.minute, zoneNameForChart(c), 'subject', timeUnknown(c), ofEvent),
       ],
       tzUncertain ? { tzUncertain } : undefined,
     );
@@ -339,11 +470,11 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
     ]);
   // The point the angles are cast for, when it is not the chart's own: the place and its
   // coordinates to the minute, no zone — its clock is not an input. A place the reader
-  // chose, so never masked. "Cast for:" on a geodetic map, where the frame is the
-  // place's own rather than a natal frame moved there.
-  const relocatedLine = (withLead: boolean, leadKey: 'castFor' | 'relocatedTo' = geo ? 'castFor' : 'relocatedTo') =>
+  // chose, so never masked. "Relocated to:" is the one term on both line systems (Lina,
+  // 21 Oct 2026, §5), and the only one: "Cast for" appears nowhere (23 Oct, H-3).
+  const relocatedLine = (withLead: boolean) =>
     line('relocated', [
-      withLead ? lead(leadKey) : null,
+      withLead ? lead('relocatedTo') : null,
       castLabel ? seg('place', castLabel, 'none', ' ') : null,
       seg('coords', fmtCoordPairDM(cast.lat, cast.lng), 'none', castLabel ? SEP : ' '),
     ]);
@@ -371,10 +502,10 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
     ]);
 
   // A chart's own lines, by what the chart is — the panel's chart (relocating with the
-  // active point) or a synastry partner's (`reloc` false: the Dual header adds its own
-  // "Cast for" line). A relationship partner is stated as the panel would state it, so
+  // active point) or a synastry partner's (`reloc` false: partnerLinesOf adds the partner's own
+  // relocated line). A relationship partner is stated as the panel would state it, so
   // a composite partner gets no moment line either. `born` leads a natal moment with
-  // "Born:" — relocated, or under a ring whose own moment heads the lines.
+  // "Born:" — relocated, under a ring whose own moment heads the lines, or beside a partner.
   const chartLinesOf = (c: StoredChart, reloc: boolean, born = reloc): HeaderLine[] => {
     if (c.composite) {
       const { a, b } = c.composite;
@@ -405,15 +536,54 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
       }
       return out;
     }
+    // Only the panel's own chart is stated as an event: `event` is what the app presents
+    // for IT, and a synastry partner's header is their own record.
+    const ofEvent = event && c === chart;
     return reloc
-      ? [natalMoment(c, born, c.tzUncertain), birthplaceLine(c), relocatedLine(true)]
-      : [natalMoment(c, born, c.tzUncertain), birthplaceLine(c)];
+      ? [natalMoment(c, born, c.tzUncertain, ofEvent), birthplaceLine(c), relocatedLine(true)]
+      : [natalMoment(c, born, c.tzUncertain, ofEvent), birthplaceLine(c)];
   };
   const chartLines = () => chartLinesOf(chart, relocated);
   // The rows a relocation would add to chartLines(), held as blank space while there is
   // none (HeaderView.spareLines). Counted rather than assumed: a composite's angles do not
   // relocate, so off a geodetic map it adds nothing.
   const spare = relocated ? 0 : chartLinesOf(chart, true).length - chartLinesOf(chart, false).length;
+
+  // A synastry partner's block (H-3): their birth moment ("Born:") and birthplace — and, where their
+  // wheel is cast somewhere else, "Relocated to:" with that place. Their wheel is cast where the
+  // chart's is: the pin, else the hover, else the chart's own birthplace (both wheels are read for
+  // one place, calculation-methods.md), so that line appears when that place lies more than
+  // SAME_PLACE_DEG from the partner's own birthplace. The chart's birthplace is the subject's data,
+  // masked in Discreet; a point the reader chose is not. A composite partner's angles on a celestial
+  // map are its parents' midpoints and do not relocate, so it gets no line (the sidebar says so).
+  // No GE line, no houses line, no settings line: those are said once, under the chart.
+  const partnerLinesOf = (p: StoredChart): HeaderLine[] => {
+    const own = p.composite || isDavison(p) ? chartLinesOf(p, false) : [natalMoment(p, true, p.tzUncertain), birthplaceLine(p)];
+    if (p.composite && !geo) return own;
+    const at = input.point ?? chart.birthplace;
+    const wrapLng = (v: number) => ((((v + 180) % 360) + 360) % 360) - 180;
+    const elsewhere =
+      Math.abs(at.lat - p.birthplace.lat) > SAME_PLACE_DEG ||
+      Math.abs(wrapLng(at.lng - p.birthplace.lng)) > SAME_PLACE_DEG;
+    if (!elsewhere) return own;
+    const chosen = !!input.point && !input.isNatalPin;
+    const place = (chosen ? (input.pointLabel ?? '') : (chart.birthplace.label ?? '')).trim();
+    const mask: Segment['mask'] = chosen ? 'none' : 'subject';
+    return [
+      ...own,
+      line(
+        'relocated',
+        [
+          lead('relocatedTo'),
+          place ? seg('place', place, mask, ' ') : null,
+          seg('coords', fmtCoordPairDM(at.lat, at.lng), mask, place ? SEP : ' '),
+        ],
+        { castTip: true },
+      ),
+    ];
+  };
+  // A wheel's person, for its title when two share the wheel; tested for emptiness before masking.
+  const nameOf = (c: StoredChart): string | undefined => (c.name?.trim() ? id.name(c.name.trim()) : undefined);
 
   // Where an overlay is cast when no point is chosen: the chart's own place — the
   // birthplace, or a relationship chart's geographic midpoint.
@@ -463,22 +633,11 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
     chart.sourceRating
       ? line('rodden', [
           seg('text', t('expandedSidebar.header.rodden', { code: chart.sourceRating }), 'none'),
-          seg('text', t(`chartForm.rating.${chart.sourceRating}`), 'none'),
+          // An event rated X has no time, not no BIRTH time (the form's own XEvent, 2026-10-20).
+          seg('text', t(event && chart.sourceRating === 'X' ? 'chartForm.rating.XEvent' : `chartForm.rating.${chart.sourceRating}`), 'none'),
         ])
       : null;
-  // Chart-data settings, and only those (line-geometry settings live in the map's status
-  // line): geocentric, the zodiac in force (geodetic is tropical-only), the house system
-  // the wheel's cusps were drawn in — Porphyry wherever the chosen one is undefined —
-  // left out where the wheel draws no houses, and the node.
-  const settingsLine = (): HeaderLine =>
-    line('settings', [
-      seg('text', t('expandedSidebar.header.geocentric'), 'none'),
-      seg('text', t(`settings.zodiac.${geo ? 'tropical' : input.zodiac}.label`), 'none'),
-      input.houses
-        ? seg('text', t(`settings.houseSystem.${input.houses.fallback ? 'porphyry' : input.houses.system}.label`), 'none')
-        : null,
-      seg('text', t(`settings.nodeType.${input.nodeType}.label`), 'none'),
-    ]);
+  const settingsLine = (): HeaderLine => settingsLineFor(input, geo);
   const tail = (): HeaderLine[] => {
     const r = roddenLine();
     return r ? [r, settingsLine()] : [settingsLine()];
@@ -487,26 +646,39 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
 
   // ── labels ──
   const relocSuffix = relocated ? [t('expandedSidebar.header.relocated')] : [];
-  const chartLabel = (): string[] =>
+  // A chart's kind as its title names it: GEODETIC CHART · NATAL (or · EVENT) on a geodetic map;
+  // otherwise COMPOSITE (MIDPOINTS), DAVISON, EVENT CHART or NATAL CHART.
+  const kindLabel = (c: StoredChart, ofEvent: boolean): string[] =>
     geo
-      ? [t('expandedSidebar.header.geodetic')]
-      : chart.composite
+      ? [t('expandedSidebar.header.geodetic'), t(ofEvent ? 'expandedSidebar.header.eventKind' : 'expandedSidebar.header.natalKind')]
+      : c.composite
         ? [t('expandedSidebar.header.composite')]
-        : isDavison(chart)
-          ? [t('expandedSidebar.header.davison'), ...relocSuffix]
-          : [t('expandedSidebar.header.natal'), ...relocSuffix];
+        : isDavison(c)
+          ? [t('expandedSidebar.header.davison')]
+          : [t(ofEvent ? 'expandedSidebar.header.event' : 'expandedSidebar.header.natal')];
+  // The chart's own title: its kind, and RELOCATED where its angles are cast elsewhere (a geodetic
+  // frame is the place's own, and a composite's angles do not relocate). Beside a synastry partner
+  // the title is the kind and the name alone, the "Relocated to:" line saying the rest (H-3).
+  const chartLabel = (): string[] =>
+    partner
+      ? kindLabel(chart, event)
+      : geo || chart.composite
+        ? kindLabel(chart, event)
+        : [...kindLabel(chart, event), ...relocSuffix];
   // The overlay's own name and date: SOLAR RETURN 2026 · LUNAR RETURN · 3 August 2026 ·
   // TRANSITS · 1 August 2026 — the date the cast place's calendar shows.
   const overlayLabel = (): string[] => {
     if (!ov) return [];
-    if (ov.kind === 'synastry') return [t('expandedSidebar.header.synastry')];
+    // A partner is titled as their own chart (partnerLinesOf's block), never as "SYNASTRY" (H-3).
+    if (ov.kind === 'synastry') return partner ? kindLabel(partner, false) : [];
     const wall = ovClock!.wall;
     if (isReturn) {
       return ov.returnBody === 'solar'
         ? [t('expandedSidebar.header.solarReturn', { year: wall.year })]
-        : [t('expandedSidebar.header.lunarReturn'), id.on ? MASK_DATE : ovLongDate];
+        : [t('expandedSidebar.header.lunarReturn')];
     }
-    return [t(`expandedSidebar.header.kind.${ov.kind}`), ovLongDate];
+    // No date in the label since 21 Oct 2026 (Lina, §5): it is the moment line's, right below.
+    return [t(`expandedSidebar.header.kind.${ov.kind}`)];
   };
 
   // ── state, by precedence ──
@@ -545,7 +717,11 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
       // otherwise the chart's own. The GE angles and the planets line follow the place.
       labelParts = chartLabel();
       if (ov?.promoted && ovClock) spareLines = 0;
-      lines = [...(ov?.promoted && ovClock ? overlayLines() : chartLines()), geoMarker, ...tail()];
+      lines = [
+        ...(ov?.promoted && ovClock ? overlayLines() : partner ? chartLinesOf(chart, relocated, true) : chartLines()),
+        geoMarker,
+        ...tail(),
+      ];
       break;
     case 'composite':
       labelParts = chartLabel();
@@ -553,8 +729,9 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
         // The composite outranks its ring in the label, so the ring's moment is NAMED
         // ("Transits: …") — a bare date and clock here would read as the composite's own
         // moment, which it does not have (section 3 of verify-chart-header). Relocated, the
-        // ring is cast for the point though the composite's angles are not: "Cast for:".
-        lines = [...chartLines(), overlayMomentLine(true)!, ...(relocated ? [relocatedLine(true, 'castFor')] : []), ...tail()];
+        // ring is cast for the point though the composite's angles are not; its line reads
+        // "Relocated to:" like every other ("Cast for" appears nowhere: Lina, 23 Oct 2026, H-3).
+        lines = [...chartLines(), overlayMomentLine(true)!, ...(relocated ? [relocatedLine(true)] : []), ...tail()];
         spareLines = relocated ? 0 : 1;
       } else {
         lines = [...chartLines(), ...tail()];
@@ -576,27 +753,36 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
       }
       break;
     case 'synastry':
-      labelParts = [...overlayLabel(), ...relocSuffix];
-      lines = [...chartLines(), ...tail()];
+      // The chart's own block, titled with its kind and its person (H-3).
+      labelParts = chartLabel();
+      lines = [...chartLinesOf(chart, relocated, true), ...tail()];
       break;
     default:
       labelParts = chartLabel();
       lines = [...chartLines(), ...tail()];
   }
 
+  const chartName = partner && !input.noChart ? nameOf(chart) : undefined;
   const chartView: HeaderView = {
     labelParts: input.noChart ? [] : chartLabel(),
-    lines: [...chartLines(), ...(geo ? [geoMarker] : []), ...tail()],
+    ...(chartName ? { labelName: chartName } : {}),
+    lines: [...(partner ? chartLinesOf(chart, relocated, true) : chartLines()), ...(geo ? [geoMarker] : []), ...tail()],
     ...(spare ? { spareLines: spare } : {}),
   };
   let overlayView: ChartHeaderModel['overlayView'] = null;
   if (ov) {
-    const partner = ov.kind === 'synastry' ? (ov.partner ?? null) : null;
+    const partnerName = partner ? nameOf(partner) : undefined;
     overlayView = {
       // The second wheel's angles are cast for the same point as the first's, so it is
-      // relocated with it — except a partner's, whose header says where it is cast.
-      labelParts: [...overlayLabel(), ...(ov.kind === 'synastry' || geo ? [] : relocSuffix)],
-      lines: partner ? chartLinesOf(partner, false) : overlayLines(),
+      // relocated with it — except a partner's, titled as their own chart with their name and
+      // carrying their own "Relocated to:" line (partnerLinesOf).
+      labelParts: partner
+        ? kindLabel(partner, false)
+        : geo && ov.kind !== 'synastry'
+          ? [t('expandedSidebar.header.geodetic'), ...overlayLabel()]
+          : [...overlayLabel(), ...(ov.kind === 'synastry' ? [] : relocSuffix)],
+      ...(partnerName ? { labelName: partnerName } : {}),
+      lines: partner ? partnerLinesOf(partner) : overlayLines(),
       moment: overlayMoment(),
     };
   }
@@ -604,6 +790,7 @@ export function chartHeaderModel(input: ChartHeaderInput): ChartHeaderModel {
   return {
     state,
     labelParts,
+    ...(chartName && (state === 'synastry' || state === 'geodetic' || state === 'composite') ? { labelName: chartName } : {}),
     lines,
     ...(spareLines ? { spareLines } : {}),
     chartView,

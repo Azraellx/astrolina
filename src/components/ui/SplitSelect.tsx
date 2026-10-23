@@ -7,6 +7,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import './SplitSelect.css';
 import { TipButton } from './HoverTip';
+import { shouldShowTierBadge, tierLabel, type PlanTier } from '../../lib/plan';
 
 // One capsule split into halves, exactly one of them lit — a segmented picker in a
 // bubble, for a choice with two short answers and no third.
@@ -42,6 +43,12 @@ export interface SplitSelectOption<V extends string> {
    *  screen readers): the label and the tip carry the meaning. Keep it about a letter's height,
    *  and check the narrowest sidebar, since it widens its half. */
   icon?: ReactNode;
+  /** The rung a tier-locked teaser needs (lib/plan). Its badge follows the label, as a suffix,
+   *  the way a nav menu row wears it, and the tip's headline carries the same tag, so the two
+   *  always agree (2026-10-23). The press is still `onSelect`'s to route: the caller sends a
+   *  locked half to the upgrade flow. Nothing is drawn for the baseline rung, or where the
+   *  build's badge policy hides this one. */
+  tier?: PlanTier;
 }
 
 export function SplitSelect<V extends string>({
@@ -76,42 +83,53 @@ export function SplitSelect<V extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
     >
-      {options.map((o) => (
-        <TipButton
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          // aria-disabled rather than the native attribute, so the hover tip still
-          // fires — an unavailable half whose explanation you can't reach is worse
-          // than no half at all.
-          aria-disabled={o.disabled || undefined}
-          className={`split-select-seg${o.value === value ? ' is-on' : ''}${
-            o.disabled ? ' ui-inert' : ''
-          }`}
-          onClick={o.disabled ? undefined : () => onSelect(o.value)}
-          hotkey={o.hotkey}
-          note={o.disabled ? o.disabledHint : undefined}
-          unavailable={o.disabled}
-          // ABOVE, not the sidebar's usual 'left'. A left-opening card is anchored
-          // to the half it came from, so from the right half it lands squarely on
-          // top of the left one — hovering one option to read what it means would
-          // hide the other. Above clears the capsule whichever half is asked.
-          placement="top"
-          tip={o.tip}
-          hint={o.hint}
-        >
-          {/* The label is its own element so an unavailable half can be struck
-              through on hover — the strike is drawn on the LABEL, not the button
-              (see the rule in SplitSelect.css). */}
-          {o.icon && (
-            <span className="split-select-icon" aria-hidden="true">
-              {o.icon}
-            </span>
-          )}
-          <span className="split-select-label">{o.label}</span>
-        </TipButton>
-      ))}
+      {options.map((o) => {
+        const badge =
+          o.tier && o.tier !== 'new' && shouldShowTierBadge(o.tier) ? tierLabel(o.tier) : '';
+        return (
+          <TipButton
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={o.value === value}
+            // aria-disabled rather than the native attribute, so the hover tip still
+            // fires — an unavailable half whose explanation you can't reach is worse
+            // than no half at all.
+            aria-disabled={o.disabled || undefined}
+            className={`split-select-seg${o.value === value ? ' is-on' : ''}${
+              o.disabled ? ' ui-inert' : ''
+            }`}
+            onClick={o.disabled ? undefined : () => onSelect(o.value)}
+            hotkey={o.hotkey}
+            note={o.disabled ? o.disabledHint : undefined}
+            unavailable={o.disabled}
+            // ABOVE, not the sidebar's usual 'left'. A left-opening card is anchored
+            // to the half it came from, so from the right half it lands squarely on
+            // top of the left one — hovering one option to read what it means would
+            // hide the other. Above clears the capsule whichever half is asked.
+            placement="top"
+            tip={o.tip}
+            hint={o.hint}
+            advanced={o.tier === 'adv'}
+            gated={o.tier === 'gated'}
+          >
+            {/* The label is its own element so an unavailable half can be struck
+                through on hover — the strike is drawn on the LABEL, not the button
+                (see the rule in SplitSelect.css). */}
+            {o.icon && (
+              <span className="split-select-icon" aria-hidden="true">
+                {o.icon}
+              </span>
+            )}
+            <span className="split-select-label">{o.label}</span>
+            {badge && (
+              <span className={`split-select-tier navmenu-tier tier-${o.tier}`} aria-hidden="true">
+                {badge}
+              </span>
+            )}
+          </TipButton>
+        );
+      })}
     </div>
   );
 }

@@ -53,7 +53,9 @@ export const topNav = {
       cyclo: {
         label: 'Cyclocartography',
         tipTitle: 'Cyclocartography (CCG)',
-        desc: 'Jim Lewis’s hybrid: secondary-progressed personal planets with transiting Jupiter and beyond, on one map.',
+        // The first clause of the sidebar's Cyclocartography card (Lina, 22 Oct 2026, §2.6), as the
+        // row's hover text.
+        desc: 'It blends progressed Sun–Mars with transiting Jupiter–Pluto.',
       },
       synastry: {
         label: 'Synastry',

@@ -48,6 +48,7 @@ import { wheel } from './en/wheel';
 import { minorBodies } from './en/minorBodies';
 import { translateOffer } from './en/translateOffer';
 import { bindingLanguage } from './en/bindingLanguage';
+import { eventFinder } from './en/eventFinder';
 
 export const en = {
   common,
@@ -82,4 +83,5 @@ export const en = {
   minorBodies,
   translateOffer,
   bindingLanguage,
+  eventFinder,
 } as const;

@@ -10,6 +10,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from 'react';
 import type { MeasureInfo, SlideInfo } from '../Map/Map';
@@ -192,12 +193,19 @@ interface TopNavProps {
   /** Tab quick-swap feedback for the bar's switcher (null while the expanded
    *  sidebar hosts it, and when idle). */
   chartFlash: ChartQuickFlash | null;
+  /** The chart menu's sections and No chart row (see ChartSwitcherSky). Absent → today's
+   *  single list. (2026-10-20) */
+  switcherSky?: ChartSwitcherSky;
 
   /** When the expanded chart sidebar is open it already shows the name + DOB, so
    *  the bar's chart switcher fades out. */
   chartExpanded: boolean;
   /** Toggle the expanded chart view (was the minimap's Expand button). */
   onToggleExpand: () => void;
+  /** Whether the expanded chart view can open: with a chart, and — since 2026-10-20 — with
+   *  the sky alone in force, whose header holds the chart menu back to a chart (App's B key
+   *  takes the same condition). Absent → only with a chart, as before. */
+  canExpand?: boolean;
 
   tool: MapTool;
   setTool: (t: MapTool) => void;
@@ -246,6 +254,11 @@ interface TopNavProps {
   setShowSkyTimes: (v: boolean) => void;
   showLocalSpace: boolean;
   setShowLocalSpace: (v: boolean) => void;
+  /** No chart in force (App's skyAlone, 2026-10-20): local space has no birthplace to be cast
+   *  from, so its row is held with the one needs-a-chart sentence (settings.inert.needsChart)
+   *  and App's opener refuses it. Greyed open OR shut, unlike the sky hold: an open window is
+   *  put away then, not left showing a reason, so there is nothing for the row to close. */
+  skyAlone?: boolean;
   /** The user's plan tier (src/lib/plan.ts). Gates the menu items by tier — Slide (Tools),
    *  Sky Times + Local Space (View) and Synastry (Overlay) need 'adv' (Eclipses and every
    *  technique overlay are baseline: ADVANCED_OVERLAY_MODES in lib/astro/timeline.ts is the
@@ -276,6 +289,16 @@ interface TopNavProps {
   activeOverlayExt: string | null;
   onSelectOverlayExt: (id: string) => void;
 }
+
+/** What a chart menu needs beyond the chart list while event charts are on offer
+ *  (2026-10-20): the sections, the fixed "No chart · the sky alone" row, the trigger's line
+ *  under No chart, and Add example — ChartSwitcher's own props, so the two hosts (this bar and
+ *  the expanded sidebar) take one bundle from App and cannot drift. Omitted, the menu is the
+ *  one list it always was. */
+export type ChartSwitcherSky = Pick<
+  ComponentProps<typeof ChartSwitcher>,
+  'eventsOn' | 'lineSystem' | 'noChartPicked' | 'onSelectNoChart' | 'onAddExample' | 'skyMeta' | 'noChartHolds'
+>;
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -851,8 +874,10 @@ export function TopNav({
   onEditChart,
   onDeleteChart,
   chartFlash,
+  switcherSky,
   chartExpanded,
   onToggleExpand,
+  canExpand,
   tool,
   setTool,
   measure,
@@ -883,6 +908,7 @@ export function TopNav({
   setShowSkyTimes,
   showLocalSpace,
   setShowLocalSpace,
+  skyAlone = false,
   planTier,
   showGuides,
   setShowGuides,
@@ -912,6 +938,10 @@ export function TopNav({
   // App's openers refuse them there, closing excepted. (2026-10-02)
   const skyHeld = skyHeldFor(lineSystem);
   const skyHeldWhy = t('settings.inert.skyHeld');
+  // The other reason a view can be held: no chart in force (App's skyAlone), for Local Space,
+  // which is cast from a chart's birthplace. The sky hold's reason outranks it, as it does
+  // everywhere: switching the line system is what brings a held view back there. (2026-10-20)
+  const needsChartWhy = t('settings.inert.needsChart');
   const viewItems: {
     id: string;
     label: string;
@@ -929,6 +959,14 @@ export function TopNav({
      *  live row, so it can still be closed from here. (Replaced a free-text `note`, which
      *  carried the retired line-system switch's warning, 2026-10-02.) */
     held?: boolean;
+    /** The held row's reason, when it is not the sky hold's (no chart in force, 2026-10-20). */
+    heldWhy?: string;
+    /** Held in BOTH directions: the open view is put away rather than shown with the reason
+     *  (no chart in force — App's lsWindowOpen), so closing it here would flip the stored flag
+     *  with nothing on screen changing, and the window would not come back with the next
+     *  chart. The row greys open or shut, still showing the stored tick; the L key stands
+     *  down the same way. (2026-10-20) */
+    heldPutAway?: boolean;
   }[] = [
     // Built-in windows, on the digit row (1-3) and on mnemonic letters
     // (T = Teleport, S = Sky Times, L = Local Space). Badges mirror App's
@@ -941,7 +979,7 @@ export function TopNav({
     // More, which carries the key pill, and from the key itself; see App's showMinorHud.)
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
     { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes), held: skyHeld },
-    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace), held: skyHeld },
+    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace), held: skyHeld || skyAlone, heldWhy: skyHeld ? undefined : needsChartWhy, heldPutAway: skyAlone },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions()
@@ -989,6 +1027,10 @@ export function TopNav({
   // Slide held (reached tier only — a locked teaser says nothing about opening): greyed
   // while shut; armed, it would still disarm from its row. (2026-10-02)
   const slideHeld = skyHeld && tierMet(planTier, 'adv') && !sliding;
+  // …and with no chart in force, where there are no natal lines to spin: greyed with the
+  // needs-a-chart reason (App's slideAvailable refuses it, key included), not with "turn Natal
+  // Lines on", whose row is held then too. The sky hold's reason outranks it. (2026-10-20)
+  const slideNeedsChart = skyAlone && !slideHeld && tierMet(planTier, 'adv') && !sliding;
   const framing = tool === 'capture';
   const locationText = locationLabel ?? undefined;
   // Fade only while a non-natal pin upgrades to a NEW, more accurate address (App
@@ -1416,13 +1458,14 @@ export function TopNav({
                 onDelete={onDeleteChart}
                 compact
                 flash={chartFlash}
+                {...switcherSky}
               />
             </div>
             <TipButton
               type="button"
               className={`topnav-expand ${chartExpanded ? 'active' : ''}`}
               onClick={onToggleExpand}
-              disabled={!current}
+              disabled={!(canExpand ?? !!current)}
               aria-label={chartExpanded ? t('topNav.sidebarToggle.hideAria') : t('topNav.sidebarToggle.showAria')}
               aria-pressed={chartExpanded}
               tip={chartExpanded ? t('topNav.sidebarToggle.hideTip') : t('topNav.sidebarToggle.showTip')}
@@ -1548,12 +1591,12 @@ export function TopNav({
                       label={t('topNav.tools.slideItem')}
                       icon={<ToolMenuIcon tool="slide" />}
                       hint={
-                        slideEnabled
+                        slideEnabled || skyAlone
                           ? t('topNav.tools.slideHint')
                           : t('topNav.tools.slideUnavailable')
                       }
-                      note={slideHeld ? skyHeldWhy : undefined}
-                      unavailable={slideHeld}
+                      note={slideHeld ? skyHeldWhy : slideNeedsChart ? needsChartWhy : undefined}
+                      unavailable={slideHeld || slideNeedsChart}
                       hotkey="E"
                       tier="adv"
                       checked={sliding}
@@ -1674,9 +1717,13 @@ export function TopNav({
                         hint={
                           block === 'geodetic'
                             ? t('settings.inert.skyHeld')
-                            : block
-                              ? t(`topNav.overlay.blocked.${block}`)
-                              : t(`topNav.overlay.modes.${mode}.desc`)
+                            : // No chart says the one needs-a-chart sentence every such
+                              // control says (lib/astro/timeline NO_CHART_BLOCKED_OVERLAYS).
+                              block === 'no-chart'
+                              ? t('settings.inert.needsChart')
+                              : block
+                                ? t(`topNav.overlay.blocked.${block}`)
+                                : t(`topNav.overlay.modes.${mode}.desc`)
                         }
                         hotkey={<CycleHotkey label="O" />}
                         tier={advMode ? 'adv' : undefined}
@@ -1752,8 +1799,10 @@ export function TopNav({
                   // and the row says why. Greyed only while SHUT: the key is refused
                   // then, but closing never is. A locked teaser opens nothing (its click
                   // is the upgrade nudge), so it says nothing about being held. (2026-10-02)
+                  // A view that is put away while held (heldPutAway) greys open too: there
+                  // is no window on screen for the row to close. (2026-10-20)
                   const held = !!it.held && reached && !it.unavailable;
-                  const heldShut = held && !it.checked;
+                  const heldInert = held && (!it.checked || !!it.heldPutAway);
                   return (
                     <CheckItem
                       key={it.id}
@@ -1763,12 +1812,12 @@ export function TopNav({
                       // goes (the key is released), and the click is a no-op — never a
                       // nudge, which would be selling an unfinished feature.
                       hint={it.unavailable ?? it.hint}
-                      note={held ? skyHeldWhy : undefined}
+                      note={held ? (it.heldWhy ?? skyHeldWhy) : undefined}
                       hotkey={it.unavailable ? undefined : it.hotkey}
-                      unavailable={heldShut}
+                      unavailable={heldInert}
                       checked={it.checked && !it.unavailable}
                       tier={it.tier}
-                      disabled={!!it.unavailable || !reached || heldShut}
+                      disabled={!!it.unavailable || !reached || heldInert}
                       locked={!it.unavailable && !reached}
                       onToggle={() => {
                         it.onToggle();

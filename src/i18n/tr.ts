@@ -39,6 +39,7 @@ import { wheel } from './tr/wheel';
 import { minorBodies } from './tr/minorBodies';
 import { translateOffer } from './tr/translateOffer';
 import { bindingLanguage } from './tr/bindingLanguage';
+import { eventFinder } from './tr/eventFinder';
 
 export default {
   common,
@@ -73,4 +74,5 @@ export default {
   minorBodies,
   translateOffer,
   bindingLanguage,
+  eventFinder,
 } satisfies LocaleTree;

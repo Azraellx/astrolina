@@ -4,7 +4,7 @@ These JSON files are **generated** by [`scripts/build-cities.mjs`](../../../../s
 
 | File | Source table | Shape |
 |---|---|---|
-| `cities15000.json` | `cities15000` (places ≥ 15,000 pop, ~31k after dropping sub-city `PPLX` records) | `[name, asciiname, lat, lng, countryCode, admin1Code, population][]`, sorted by population desc |
+| `cities15000.json` | `cities15000` (places ≥ 15,000 pop, ~31k after dropping sub-city `PPLX` records, plus a short hand-additions list in the script) | `[name, asciiname, lat, lng, countryCode, admin1Code, population, geonameid, capital][]`, sorted by population desc |
 | `admin1.json` | `admin1CodesASCII` | `{ "US.CA": "California", … }` |
 | `countries.json` | `countryInfo` | `{ "US": "United States", … }` |
 

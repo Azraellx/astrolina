@@ -12,9 +12,12 @@ export const common = {
   edit: 'Düzenle',
   delete: 'Sil',
   keep: 'Koru',
+  addExampleEvent: 'Örnek olay ekle',
+  addExampleEventHint: 'Aries Ingress 2026 (Koç girişi) haritasını, yani Greenwich için hesaplanan Mart ekinoksunu, haritalarınıza ekler. Başka hiçbir şey değişmez; her harita gibi onu da silebilirsiniz.',
   locationFallbackOcean: 'Okyanus',
   tzWarning: '⚠ ABD/AB dışında 1970 öncesi saat dilimi: yaz saatini bir atlasla doğrulayın',
   timeUnknownBanner: 'Doğum saati bilinmiyor',
+  timeUnknownBannerEvent: 'Saat bilinmiyor',
   provisionalTimeBanner: '⚠ {time} deneniyor — geçici, kaydedilmedi',
   locked: {
     feature: '{feature} bir {tier} özelliğidir.',

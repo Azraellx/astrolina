@@ -15,6 +15,16 @@
   font-style: normal;
   font-display: swap;
 }
+/* The twelve sign glyphs at Bold, for the geodetic grid's MC labels (2026-10-20; the rule that
+   uses it is Map.css .geo-grid-badge-mc, which says why it is a family of its own). Declared
+   here beside the regular face, where the fonts are. */
+@font-face {
+  font-family: 'Noto Sans Symbols Bold';
+  src: url('./fonts/subset-NotoSansSymbols-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Astrological glyphs: rendered from the bundled 'Noto Sans Symbols' subset.
    font-variant-emoji: text — together with the
@@ -152,9 +162,10 @@ span.astro-glyph {
   --globe-void: #04050b;
 
   /* Chart tags: a steady gold star, a cool slate for the (system) "space" tag, a
-     warm red for the (system) "shared" gift, and a neutral grey for the (system)
-     "unknown" birth-time mark. Fixed hues, so the marks read the same across
-     themes and never follow the map-state accent. */
+     warm red for the (system) "shared" gift, a neutral grey for the (system)
+     "unknown" birth-time mark, and (2026-10-20) a sea green for the event-chart
+     calendar. Fixed hues, so the marks read the same across themes and never follow
+     the map-state accent. */
   --tag-star: #f5b83d;
   --tag-star-rgb: 245, 184, 61;
   --tag-space: #7fa8d4;
@@ -163,6 +174,7 @@ span.astro-glyph {
   --tag-shared-rgb: 224, 87, 79;
   --tag-unknown: #9a9aa6;
   --tag-unknown-rgb: 154, 154, 166;
+  --tag-event: #57b39a;
 
   color: var(--text-strong);
   background: var(--bg-page);
@@ -686,6 +698,11 @@ textarea::placeholder {
 }
 .tag-glyph--unknown {
   color: var(--tag-unknown);
+}
+/* The event-chart calendar (TagIcon 'event', 2026-10-20): derived from the chart's kind,
+   never a stored tag, so it sits beside whichever tag the chart carries. */
+.tag-glyph--event {
+  color: var(--tag-event);
 }
 /* Tag shown as a prefix before a chart name (My Charts list + top-bar picker). */
 .tag-icon {

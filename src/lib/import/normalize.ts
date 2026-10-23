@@ -154,6 +154,12 @@ export function toStoredChart(c: ImportedChart, index: number): StoredChart {
   // Only ever written as false: absent means known, which is what every chart
   // saved before unknown-time existed has always meant.
   if (!c.timeKnown) chart.timeKnown = false;
+  // An event or an organisation is an event chart (2026-10-20). A fact the file
+  // states, so it is written whatever the geodetic hold says: the hold only masks
+  // how a kind is shown (lib/eventCharts presentedKind), and a record imported on a
+  // held device must still be an event when it lifts. Only ever written as 'event':
+  // a person's record keeps no `kind` key, exactly as before.
+  if (c.kind === 'event' || c.kind === 'organisation') chart.kind = 'event';
   // Bounded on the way in as well as in the form: a source can carry a comment
   // block of any length, and a chart too large for its blob would be dropped by
   // a downstream store rather than saved — silently, since it still looks fine

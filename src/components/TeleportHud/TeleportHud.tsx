@@ -183,8 +183,13 @@ export function TeleportHud({
         // a saved spot that flies its own marker and false of a home address, which
         // nothing plots — so the one row most worth marking was the one row that
         // never got a mark.
+        //
+        // `exact` is the third case, and the point's own fact again: a place the atlas holds
+        // to its exact coordinate (a hand addition — Greenwich on the Prime Meridian) is marked
+        // though it is a town, so a click on the mark pins that very point, named (Lina, 23 Oct
+        // 2026, G-1: "pin there"). Every other town lands unmarked, as before.
         onPick={(hit) => {
-          const precise = hit.kind === undefined && !hit.onMap;
+          const precise = (hit.kind === undefined || !!hit.exact) && !hit.onMap;
           onFlyTo(
             hit.lat,
             hit.lng,

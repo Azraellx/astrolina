@@ -67,6 +67,31 @@ export function minorRingWalls(axes: RingAxes | null): number[] {
 }
 
 /**
+ * The house cusps as spokes for placeOnRing — offsets in DEGREES in the same frame as the
+ * marks they are laid out against, so a body's house on the ring is the sector the wheel
+ * draws between the same two cusp lines.
+ *
+ * `cusps` in radians, as the chart's angles carry them; `toOffset` is the renderer's own
+ * longitude → offset conversion (degrees from the Ascendant, in [0, 360)), passed in
+ * rather than restated here so the spokes cannot drift from the marks by a frame.
+ * Undefined unless there are exactly twelve finite cusps — a chart with no birth time, or
+ * a wheel that draws no cusps, gets the house-blind layout.
+ *
+ * Shared by the renderer (WheelSvg) and scripts/verify-wheel-layout.ts, so the suite
+ * asserts about the spokes the wheel lays its glyphs out against rather than a copy.
+ * The order of the cusps does not matter: placeOnRing sorts the spokes, so a chart whose
+ * cusps run out of order (a composite can) is laid out against the sectors the lines
+ * actually cut.
+ */
+export function ringSpokes(
+  cusps: readonly number[] | null | undefined,
+  toOffset: (lon: number) => number,
+): number[] | undefined {
+  if (!cusps || cusps.length !== 12 || !cusps.every(Number.isFinite)) return undefined;
+  return cusps.map(toOffset);
+}
+
+/**
  * Where each coin is drawn: display longitude in radians, keyed by the body's id.
  *
  * `walls` and `bodies` must be in the same frame (display longitudes, already in the

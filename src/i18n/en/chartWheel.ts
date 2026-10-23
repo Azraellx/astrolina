@@ -18,6 +18,10 @@ export const chartWheel = {
   openSidebarHint: 'A larger wheel with aspects and the planet table, in the side panel.',
   openSidebarLabel: 'Show chart sidebar',
   placeholder: 'No chart selected',
+  // Under the placeholder above in the corner minimap, while No chart (the sky alone) is chosen
+  // and no overlay is drawing the sky (2026-10-20): how to get a wheel there. The minimap is
+  // narrow (about 180 px of text), so keep it short. "Overlay menu" is the top bar's.
+  skyHint: 'Choose Transits or Eclipses in the Overlay menu for the sky’s wheel.',
   // Shown in the empty wheel when an overlay with no coherent chart (Cyclo·cartography)
   // is promoted with the natal chart hidden — there's nothing to draw.
   noChart: 'NO CHART (CCG)',

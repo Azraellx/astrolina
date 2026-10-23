@@ -416,6 +416,8 @@ export function saveShowNightShade(show: boolean) {
 const GEO_GRID_MC_KEY = 'astro:geo-grid-mc:v1';
 const GEO_GRID_ASC_KEY = 'astro:geo-grid-asc:v1';
 const GEO_ZONES_KEY = 'astro:geo-zones:v1';
+// The Bold shading switch's key (Presentation before that): read once, by the opacity field's
+// loader below, as its migration; nothing writes it since 2026-10-20.
 const GEO_ZONES_PRESENTATION_KEY = 'astro:geo-zones-presentation:v1';
 
 /** MC meridians: on unless switched off. */
@@ -450,12 +452,33 @@ export function saveGeoZones(show: boolean) {
   localStorage.setItem(GEO_ZONES_KEY, show ? '1' : '0');
 }
 
-/** Presentation (zone shading at about 50% rather than 12%): off unless switched on. */
-export function loadGeoZonesPresentation(): boolean {
-  return localStorage.getItem(GEO_ZONES_PRESENTATION_KEY) === '1';
+/**
+ * Zone shading's opacity, in percent: a field with up and down arrows where the Bold shading
+ * switch was (Salvatore, 2026-10-20). Default 15, in steps of 5; the field's range below.
+ *
+ * A NEW key, read through the old one. The switch drew two strengths, 12% off and 50% on; with
+ * no value of its own the field reads the switch: '1' → 50, so a reader who had Bold shading on
+ * keeps exactly what they chose, and anything else → the default. That default is 15, not the
+ * switch's 12, on purpose (Salvatore, the same day): the switch's "off" was never a strength
+ * anyone picked, only "not bold", so it takes the field's new default with every untouched
+ * install. Nothing was ever written for it, so CLAUDE.md rule 6 has no stored default to
+ * strand. The old key is only ever read, never written or removed; only the field writes the
+ * new one.
+ */
+const GEO_ZONES_OPACITY_KEY = 'astro:geo-zones-opacity:v1';
+export const GEO_ZONES_OPACITY_PCT = { default: 15, bold: 50, min: 5, max: 80, step: 5 } as const;
+export function loadGeoZonesOpacityPct(): number {
+  const raw = localStorage.getItem(GEO_ZONES_OPACITY_KEY);
+  const n = raw === null ? NaN : Number(raw);
+  if (Number.isFinite(n)) {
+    return Math.min(Math.max(n, GEO_ZONES_OPACITY_PCT.min), GEO_ZONES_OPACITY_PCT.max);
+  }
+  return localStorage.getItem(GEO_ZONES_PRESENTATION_KEY) === '1'
+    ? GEO_ZONES_OPACITY_PCT.bold
+    : GEO_ZONES_OPACITY_PCT.default;
 }
-export function saveGeoZonesPresentation(on: boolean) {
-  localStorage.setItem(GEO_ZONES_PRESENTATION_KEY, on ? '1' : '0');
+export function saveGeoZonesOpacityPct(pct: number) {
+  localStorage.setItem(GEO_ZONES_OPACITY_KEY, String(pct));
 }
 
 // Zodiac reading frame: tropical (default) or sidereal by ayanamsa. Display

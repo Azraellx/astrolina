@@ -54,15 +54,12 @@ export type AutoFlipKind =
    *  understood that their frame was gone — is told the new one once. Nobody should
    *  inherit a silence they agreed to about something else. */
   | 'overlay-frame-held'
-  /** The geodetic mapping is merely HELD — a sidereal zodiac has no geodetic variant,
-   *  so the map falls back to celestial for as long as that lasts. It was made a kind
-   *  of its own beside a rewrite of the same visible change ('line-system', retired
-   *  2026-10-02 — see the header), and the reason still stands for any rewrite that
-   *  comes: the map changes the same way, but nothing was taken. Telling someone their
-   *  setting is gone when it is only waiting is a different (and worse) sentence, and
-   *  someone who has understood one of these has not thereby understood the other — so
-   *  it carries its own dismissal. */
-  | 'line-system-held'
+  // ('line-system-held' retired 2026-10-22: a sidereal zodiac no longer masks a Geodetic choice
+  // into a celestial map. The two controls grey each other's conflicting half, and a conflict that
+  // arrives anyway clears the map under a banner with both fixes — App's lineConflict — so there
+  // is no silent move left to announce. Its reason for being a kind of its own beside a rewrite
+  // still stands for any held-not-taken change that comes: telling someone their setting is gone
+  // when it is only waiting is a different, and worse, sentence.)
   /** Not a flip — the one DEFAULT here that routinely reads as a bug. This app draws
    *  In Mundo where most others draw In Zodiaco, so a reader cross-checking against
    *  the program they came from finds lines that don't agree and reasonably concludes
@@ -129,7 +126,15 @@ export type AutoFlipKind =
    *  Its own kind, not 'language-detected' with another sentence: that one reports a language
    *  the reader never chose arriving; this one a language they did choose waiting. Same setting,
    *  different fact (CLAUDE.md rule 3). */
-  | 'language-held';
+  | 'language-held'
+  /** "No chart · the sky alone" was chosen (App's selectNoChart, 2026-10-20) and it HOLDS
+   *  something the map was drawing: an overlay that advances or compares a chart reads None,
+   *  transits leave the chart's frame for the moment's own, or an open Local Space window is
+   *  put away (it measures from the chart's place). Masked, never written (rule 2):
+   *  picking a chart brings each back as it was. Announced only when one of those actually
+   *  moves (lib/skyAlone noChartHoldChanges), so choosing No chart over Transits already in the
+   *  moment's frame says nothing. Its own kind: a different fact from every hold above. */
+  | 'no-chart-held';
 
 /** Per-kind behaviour. One table rather than parallel maps, so adding a kind is one
  *  edit and can't half-land. */
@@ -183,14 +188,9 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
     tone: 'warn',
     once: false,
   },
-  // Points at the Line system control in the Calculation panel, when the sidebar
-  // happens to be open on it.
-  'line-system-held': {
-    targets: ['[data-autoflip="line-system"]'],
-    tone: 'warn',
-    once: false,
-  },
-  // Fired by opening the panel this control lives in, so it is guaranteed on screen.
+  // Fired by opening the panel this control lives in, so it is guaranteed on screen — and
+  // only on a celestial map, the one line system the control is drawn under since
+  // 2026-10-20 (Sidebar), so the anchor is there whenever this fires.
   'line-projection': {
     targets: ['[data-autoflip="line-projection"]'],
     tone: 'info',
@@ -235,6 +235,15 @@ export const AUTO_FLIP_META: Record<AutoFlipKind, AutoFlipMeta> = {
   // announced (heldLanguageRecorded) stops a repeat at every boot of the same hold. (2026-10-10)
   'language-held': {
     targets: [],
+    tone: 'warn',
+    once: false,
+  },
+  // The chart menu — the way back, which the copy names — in whichever host is on screen: the
+  // top bar's, or the expanded sidebar's while the bar's has faded out. Warn: something the
+  // reader was looking at went away. Repeats until dismissed: it reports what just happened.
+  // (2026-10-20)
+  'no-chart-held': {
+    targets: ['.topnav-chart .chart-switcher', '.es-switcher .chart-switcher'],
     tone: 'warn',
     once: false,
   },

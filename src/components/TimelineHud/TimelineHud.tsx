@@ -90,6 +90,10 @@ interface TimelineHudProps {
    *  framing is forced to the moment's own sky upstream — the control marks that
    *  value, disabled, rather than the stored preference it is ignoring. */
   frameLocked?: boolean;
+  /** Why the frame is locked, as the segments' hint, when it is not the unknown birth time:
+   *  with no chart in force (2026-10-20) there is no natal frame at all, and the reason is the
+   *  one needs-a-chart sentence. Absent → timeline.positioning.lockedNoTime. */
+  lockReason?: string;
   /** The live returns borrow, or null. Non-null means the frame above is being HELD on
    *  the moment's own sky for this return — so the bar shows the chip, names the second
    *  segment "Return angles", and swaps in the copy written for a return. Unlike
@@ -108,6 +112,10 @@ interface TimelineHudProps {
    *  Zeniths/Nadirs toggle, so they need no separate control here. */
   showNatal: boolean;
   setShowNatal: (v: boolean) => void;
+  /** No chart in force (App's skyAlone, 2026-10-20): the overlay is promoted whatever the eye
+   *  says, so the eye is HELD — greyed, showing the STORED value (rule 2: a held toggle shows
+   *  the reader's choice), inert, with settings.inert.needsChart as its reason. */
+  natalHeld?: boolean;
   /** Registered map extensions surfaced in THIS bar's display drawer
    *  (surface 'timeline-drawer'): their open-state + toggle, shared with the
    *  View-menu plumbing. Entitlement-gated with no teaser — un-entitled rows
@@ -483,11 +491,13 @@ export function TimelineHud({
   setTransitFrame,
   lineSystem,
   frameLocked = false,
+  lockReason,
   returnHold = null,
   onEndReturnHold,
   flashFrameSeq = 0,
   showNatal,
   setShowNatal,
+  natalHeld = false,
   openExtensions,
   onToggleExtension,
   arcMethod,
@@ -754,6 +764,11 @@ export function TimelineHud({
   const snapWillReframe =
     lineSystem === 'celestial' && !frameLocked && transitFrame === 'relative-to-natal';
   const reframeHint = snapWillReframe ? t('timeline.returns.reframes') : undefined;
+  // A return is a chart's: with no chart in force (or an empty library) there is nothing to
+  // snap to, so the buttons are held — greyed and inert, with the one needs-a-chart sentence —
+  // where they used to be live and silently do nothing. (2026-10-20)
+  const returnsHeld = !current;
+  const returnsHeldWhy = returnsHeld ? t('settings.inert.needsChart') : undefined;
 
   // One luminary's return controls: ‹ prev · the named snap button · next ›. Shared by
   // the Solar (left) and Lunar (right) groups that flank the centred "Returns" label.
@@ -761,23 +776,33 @@ export function TimelineHud({
     <span key={body} className="thud-return-group">
       <TipButton
         type="button"
-        className="thud-step-btn"
-        onClick={() => onSnapReturn(body, -1)}
+        className={`thud-step-btn${returnsHeld ? ' ui-inert' : ''}`}
+        onClick={() => {
+          if (!returnsHeld) onSnapReturn(body, -1);
+        }}
         aria-label={t(`timeline.returns.${body}.prevAria`)}
+        aria-disabled={returnsHeld || undefined}
         placement="top"
         tip={t(`timeline.returns.${body}.prev`)}
         hint={reframeHint}
+        note={returnsHeldWhy}
+        unavailable={returnsHeld}
       >
         ‹
       </TipButton>
       <TipButton
         type="button"
-        className={`thud-return-btn${activeReturn === body ? ' active' : ''}`}
-        onClick={() => onSnapReturn(body, 0)}
+        className={`thud-return-btn${activeReturn === body ? ' active' : ''}${returnsHeld ? ' ui-inert' : ''}`}
+        onClick={() => {
+          if (!returnsHeld) onSnapReturn(body, 0);
+        }}
         aria-label={t(`timeline.returns.${body}.snapAria`)}
+        aria-disabled={returnsHeld || undefined}
         placement="top"
         tip={t(`timeline.returns.${body}.snap`)}
         hint={reframeHint}
+        note={returnsHeldWhy}
+        unavailable={returnsHeld}
       >
         <span className="astro-glyph" translate="no" aria-hidden="true">
           {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
@@ -786,12 +811,17 @@ export function TimelineHud({
       </TipButton>
       <TipButton
         type="button"
-        className="thud-step-btn"
-        onClick={() => onSnapReturn(body, 1)}
+        className={`thud-step-btn${returnsHeld ? ' ui-inert' : ''}`}
+        onClick={() => {
+          if (!returnsHeld) onSnapReturn(body, 1);
+        }}
         aria-label={t(`timeline.returns.${body}.nextAria`)}
+        aria-disabled={returnsHeld || undefined}
         placement="top"
         tip={t(`timeline.returns.${body}.next`)}
         hint={reframeHint}
+        note={returnsHeldWhy}
+        unavailable={returnsHeld}
       >
         ›
       </TipButton>
@@ -861,15 +891,23 @@ export function TimelineHud({
   // in a bottom row of the bar (there's room now the bar is wider) — same buttons either way.
   const displayToggles = (
     <>
+      {/* Held with no chart in force (natalHeld): the stored value, greyed and inert — a
+          control that shows a value the map isn't drawing must refuse writes while the mask
+          is up — with the reason as the tip's note. (2026-10-20) */}
       <TipButton
         type="button"
-        className={`thud-drawer-toggle ${showNatal ? 'on' : 'off'}`}
+        className={`thud-drawer-toggle ${showNatal ? 'on' : 'off'}${natalHeld ? ' ui-inert' : ''}`}
         placement="top"
         tip={t('settings.natal.title')}
         hint={t('settings.natal.hint')}
+        note={natalHeld ? t('settings.inert.needsChart') : undefined}
+        unavailable={natalHeld}
         aria-label={t('settings.natal.title')}
         aria-pressed={showNatal}
-        onClick={() => setShowNatal(!showNatal)}
+        aria-disabled={natalHeld || undefined}
+        onClick={() => {
+          if (!natalHeld) setShowNatal(!showNatal);
+        }}
         onPointerDown={(e) => e.stopPropagation()}
       >
         <EyeIcon open={showNatal} />
@@ -1376,7 +1414,7 @@ export function TimelineHud({
                       // (geodetic hold / locked frame): explain why instead.
                       hint={
                         !posEnabled
-                          ? (anglesHeldWhy ?? t('timeline.positioning.lockedNoTime'))
+                          ? (anglesHeldWhy ?? lockReason ?? t('timeline.positioning.lockedNoTime'))
                           : !onReturn
                             ? t(`settings.positioning.${value}.hint`)
                             : active

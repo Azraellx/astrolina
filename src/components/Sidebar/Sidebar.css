@@ -366,7 +366,17 @@ html[data-mapstate='natal-pinned'] .sidebar {
    ADV rung): dimmed, by Salvatore's ask (2026-10-14), where the nav's teaser rows keep
    their full look. Only the dim: a press opens the account screen, so the pointer and the
    hover stay, and it is not .ui-inert — nothing here is unavailable at every plan. */
-.theme-option.is-locked {
+.theme-option.is-locked,
+.tech-toggle.is-locked {
+  opacity: 0.55;
+}
+/* A locked row that wears its rung's badge (Zone shading, 2026-10-23) dims everything BUT the
+   badge: the badge is what says why the row is dim and what reaches it, and at 0.55 it read as
+   part of the dimming rather than the reason for it. */
+.tech-toggle.is-locked:has(> .navmenu-tier) {
+  opacity: 1;
+}
+.tech-toggle.is-locked:has(> .navmenu-tier) > :not(.navmenu-tier) {
   opacity: 0.55;
 }
 
@@ -471,6 +481,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
   margin-top: 7px;
 }
 
+/* The same room under Calculation's Line system, whose options (In Mundo / In Zodiaco on
+   Celestial, the grid's switches on Geodetic) sit under it with no title since 2026-10-20. */
+.sidebar .split-select + .theme-list,
+.sidebar .split-select + .technique-list {
+  margin-top: 7px;
+}
+
 .tech-toggle {
   display: flex;
   align-items: center;
@@ -533,12 +550,16 @@ html[data-mapstate='natal-pinned'] .sidebar {
   padding: 4px 8px 2px;
 }
 
-/* Calculation ▸ Geodetic grid ▸ Presentation, nested under Zone shading (which it
-   strengthens): inset like the star-set row, but always shown — it can be set before the
-   shading is switched on. */
-.tech-toggle.geo-grid-sub {
-  width: calc(100% - 16px);
+/* Calculation's geodetic grid ▸ the zone shading's opacity field (in place of the Bold shading
+   switch since 2026-10-20), nested under Zone shading, which it sets the strength of: inset
+   like the star-set row, and shown only while the shading is on, like the orb-zone fields. */
+.orb-zone-steppers.geo-grid-sub {
   margin-left: 16px;
+}
+/* A percent is two digits at most (5–80), so the box is narrower than the shared six-character
+   one: the inset row's label slot needs the room for "Opacity (%)" and its longer translations. */
+.orb-zone-steppers.geo-grid-sub .calc-user-rate .calc-user-rate-input {
+  width: calc(2ch + 18px);
 }
 
 /* The Aspect Lines window opener — a sub-row revealed under the Aspect Lines

@@ -8,12 +8,24 @@
 # Run this after adding or removing a glyph in src/lib/astro/glyphChars.ts, then
 # commit the updated .woff2.
 #
+# It writes a SECOND subset too (2026-10-20): the twelve sign glyphs alone, from the same
+# Noto Sans Symbols variable font pinned at Bold (700) — the geodetic grid's MC labels, which
+# Lina asked for in bold (20 Oct 2026, §4). A browser's synthetic bold smears these at 14 px,
+# and the regular subset carries no bold master. Its own family name in CSS
+# ('Noto Sans Symbols Bold', components/Map/Map.css), never a 700 face of 'Noto Sans
+# Symbols': a bold face of that family covering only the signs would leave every other glyph
+# in a bold run (a tip's title) with no face at all. `--bold-only` writes just this one,
+# fetching only its source, so the regular subset's bytes are left exactly as they are.
+#
 # Prereq (one-time): python -m pip install fonttools brotli
 #
 # Output is woff2-only — woff2 is supported by ~98% of browsers, and anything
 # older can't run this app's WebGL/WASM stack anyway.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+BOLD_ONLY=0
+if [ "${1:-}" = "--bold-only" ]; then BOLD_ONLY=1; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -27,6 +39,21 @@ SYM="$TMP/NotoSansSymbols-VariableFont_wght.ttf"
 SYM2="$TMP/NotoSansSymbols2-Regular.ttf"
 MATH="$TMP/NotoSansMath-Regular.ttf"
 curl -fsSL "$GF/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf" -o "$SYM"
+
+# The bold signs: SIGN_GLYPHS (U+2648–U+2653), the Symbols font pinned at wght 700, the same
+# tables dropped as below (no shaping is ever asked of a lone glyph), the OFL name records
+# kept. One font, so no merge.
+BOLD_OUT="src/fonts/subset-NotoSansSymbols-Bold.woff2"
+python -m fontTools.varLib.instancer "$SYM" wght=700 -o "$TMP/sym-bold.ttf" >/dev/null
+python -m fontTools.subset "$TMP/sym-bold.ttf" \
+  --unicodes="2648-2653" \
+  --drop-tables+="GSUB,GPOS,GDEF,BASE,MATH,JSTF,vhea,vmtx,VORG,cvt,fpgm,prep,gasp,hdmx,VDMX,LTSH" \
+  --name-IDs='*' \
+  --flavor=woff2 \
+  --output-file="$BOLD_OUT"
+echo "Wrote $BOLD_OUT ($(wc -c < "$BOLD_OUT") bytes)"
+if [ "$BOLD_ONLY" = 1 ]; then exit 0; fi
+
 curl -fsSL "$GF/notosanssymbols2/NotoSansSymbols2-Regular.ttf" -o "$SYM2"
 curl -fsSL "$GF/notosansmath/NotoSansMath-Regular.ttf" -o "$MATH"
 

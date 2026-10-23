@@ -209,9 +209,9 @@ export const settings = {
       title: 'Bölge tonlaması',
       hint: 'On iki MC bölgesini doldurur: element renk, nitelik ton olarak (Öncü en koyu, Değişken en açık). Haritadaki lejant tek bir elementi ya da niteliği tek başına gösterir.',
     },
-    presentation: {
-      title: 'Sunum',
-      hint: 'Bölgeleri başka birine göstermek için bölge tonlamasını soluktan güçlüye yükseltir.',
+    opacity: {
+      label: 'Opaklık',
+      aria: 'Bölge tonlaması opaklığı, yüzde olarak',
     },
   },
   coordSystem: {
@@ -225,7 +225,7 @@ export const settings = {
     },
   },
   fortuneFormula: {
-    hint: 'Şans Noktası, canlılık ve dünyevi rahatlıkla ilgili hesaplanmış bir kısımdır — gökyüzünde bir cisim değil, ekliptik üzerinde bir noktadır; bu yüzden onu yalnızca zodyakal bir çerçeve yerleştirebilir: harita çizgileri için Çizgi izdüşümü ayarının In Zodiaco olması (ya da Jeodezik çizgi sistemi) gerekir. Harita raptiyesinin yerini değiştirmek onu harita çarkında o yer için yeniden hesaplar; harita çizgileri ise natal Şans Noktanızı korur.',
+    hint: 'Şans Noktası, canlılık ve dünyevi rahatlıkla ilgili hesaplanmış bir kısımdır — gökyüzünde bir cisim değil, ekliptik üzerinde bir noktadır; bu yüzden onu yalnızca zodyakal bir çerçeve yerleştirebilir: harita çizgileri için Hesaplama bölümündeki Çizgi sistemi altında In Zodiaco (ya da Jeodezik çizgi sistemi) gerekir. Harita raptiyesinin yerini değiştirmek onu harita çarkında o yer için yeniden hesaplar; harita çizgileri ise natal Şans Noktanızı korur.',
     sect: {
       label: 'Sekte dayalı (gündüz/gece)',
       hint: 'Gündüz doğumlarında Yükselen + Ay − Güneş kullanılır; gece doğumlarında formül tersine döner: Yükselen + Güneş − Ay. Geleneksel uygulama.',
@@ -249,7 +249,9 @@ export const settings = {
   inert: {
     fortuneMundo: 'Bir kısım, ekliptik üzerinde olup gökyüzünde konumu olmayan bir noktadır; bu yüzden In Mundo onu yerleştirecek bir yer bulamaz. Bu çizgiyi görmek için izdüşümü In Zodiaco olarak ayarlayın (Hesaplama).',
     fortuneAdvanced: 'Şans Noktası Gelişmiş bir yorumdur — kullanmak için Gelişmiş modu açın.',
-    geodeticSidereal: 'Jeodezik çizgi sistemi TROPİKAL zodyağı Dünya’nın boylamlarına haritalar; sidereal sürümü yoktur. Kullanmak için zodyağı Tropikal yapın (Gelişmiş); seçiminiz korunur.',
+    fortuneNoTime: 'Doğum saati olmayan bir haritada gösterilmez: Şans Noktası, derecesi belirsiz olan Ay’dan ve saati gerektiren doğum sektinden (gündüz ya da gece) oluşturulur.',
+    geodeticSidereal: 'Jeodezik haritalar tropikal zodyağı Dünya’ya serer; sidereal zodyağın uzlaşılmış bir jeodezik kuralı yoktur. Kullanmak için zodyağı Tropikal yapın (Gelişmiş); seçiminiz korunur.',
+    siderealGeodetic: 'Jeodezik haritalarda kullanılamaz: jeodezik ızgara tanımı gereği tropikaldir. Sidereal bir zodyakta okumak için Göksel’e geçin.',
     geodeticHeld: 'Jeodezik, nasıl çizdiğini kontrol ettiğimiz süre boyunca inceleme altında — arkasında duramayacağımız bir harita çizmektense onu beklemede tutmayı tercih ederiz. Seçiminiz korunuyor, silinmedi; yakında yeniden bakın.',
     skyHeldWhy: 'Gökyüzüyle birlikte dönmeyen jeodezik haritalarda kullanılamaz.',
     skyHeldFix: 'Kullanmak için Hesaplama bölümünde çizgi sistemini Göksel olarak değiştirin.',
@@ -260,6 +262,7 @@ export const settings = {
     anglesHeld: 'Jeodezik haritalarda bir yerin köşeleri koordinatlarından gelir; bu yüzden zamanla hareket etmez.',
     paransHeld: 'Jeodezik haritalarda paranlar gösterilmez.',
     paransHeldFull: 'Jeodezik haritalarda paranlar gösterilmez. Kullanmak için Hesaplama bölümünde çizgi sistemini Göksel olarak değiştirin.',
+    needsChart: 'Bir harita gerektirir. Üst çubuktaki harita menüsünden bir harita seçin ya da ekleyin.',
   },
   nodeType: {
     true: {
@@ -450,6 +453,7 @@ export const settings = {
     contacts: {
       heading: 'Natal temaslar',
       none: '3° içinde temas yok — bu tutulma haritanın yanından sessizce geçer.',
+      noChart: 'Seçili harita yok. Bu tutulmanın haritada neye temas ettiğini görmek için harita menüsünden bir harita seçin.',
       aspect: {
         conjunction: 'kavuşum',
         square: 'kare',

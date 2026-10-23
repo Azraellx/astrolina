@@ -665,6 +665,22 @@
     0 0 1px var(--geo-halo, rgba(0, 0, 0, 0.6));
 }
 
+/* An MC band's name is bold (Lina, 20 Oct 2026, §4), from a subset of its own: the twelve sign
+   glyphs of Noto Sans Symbols pinned at Bold (scripts/subset-font.sh; its @font-face is in
+   index.css beside the regular one). A family of its own, not a 700 face of 'Noto Sans Symbols':
+   a bold face of that family carrying only the signs would leave every other glyph in a bold run
+   — a tip's title — with no face to draw from. The regular face is the fallback while it loads
+   (synthesised bold). The capture stamp reads both off the glyph. */
+.geo-grid-badge-mc .astro-glyph,
+.geo-grid-badge-asc .astro-glyph {
+  font-family: 'Noto Sans Symbols Bold', 'Noto Sans Symbols', sans-serif;
+  font-weight: 700;
+}
+
+/* AS glyphs are bold too since 21 Oct 2026 (Lina, §4); the two rows are told apart by where they
+   stand — MC along the top, AS along the bottom — and since her §5 of 22 Oct by nothing else:
+   bare glyphs with their halo, no rule under the AS ones, no glyph pairs at the 90° meridians. */
+
 /* The bundled symbol font sits a touch low; nudge badge glyphs up to optically centre
    them (matching the SVG-mode glyph in the chart wheel). Use a fixed px, not a %: badge
    glyphs are a fixed 11px, and a percentage is resolved against the glyph's (very tall)
@@ -702,10 +718,20 @@
   text-align: center;
 }
 
-/* The geodetic grid's hover readout: the place, then AS and MC to the minute with the sign
-   glyph between degree and minute (as in the Coordinates box), then — past the polar circle —
-   the map's polar caution, smaller and muted. Tabular figures so the angles don't shimmer as
-   the cursor moves across a band. */
+/* The geodetic hover readout, in Lina's three lines (2026-10-20): "GE: AS … · MC …" to the minute
+   with the sign glyph between degree and minute (as in the Coordinates box), then the place's
+   name, then the cursor's coordinates — and, inside the polar circles, her caution, smaller and
+   muted. Tabular figures so the angles don't shimmer as the cursor moves across a band. */
+.geo-readout-place {
+  font-size: 11px;
+  color: var(--text);
+}
+.geo-readout-coords {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .geo-readout-angles {
   font-size: 11.5px;
   font-weight: 600;

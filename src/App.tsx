@@ -33,7 +33,7 @@ import {
   type ThemeEditorContext,
 } from './lib/extensions/themeOptions';
 import { builtinThemeEntitled } from './lib/extensions/builtinThemeTiers';
-import { type PlanTier, nudgeAction, planTierFor, tierMet } from './lib/plan';
+import { type PlanTier, nudgeAction, planTierFor, shouldShowNudge, tierMet } from './lib/plan';
 import type {
   Feature,
   FeatureCollection,
@@ -68,6 +68,7 @@ import {
 // (lib/skyHold, 2026-10-02).
 import { SkyBandHeld } from './components/SkyHeldNote/SkyBandHeld';
 import { HeldHud } from './components/SkyHeldNote/HeldHud';
+import { LineConflictBanner } from './components/SkyHeldNote/LineConflictBanner';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
 import { getMapOverlays, MAP_CLICK_EVENT, type MapClickDetail } from './lib/extensions/mapOverlays';
 import {
@@ -82,7 +83,7 @@ import { watchSettled } from './lib/hudSettled';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
-import { TopNav, type MapTool } from './components/TopNav/TopNav';
+import { TopNav, type ChartSwitcherSky, type MapTool } from './components/TopNav/TopNav';
 import type { ChartQuickFlash } from './components/ChartSwitcher/ChartSwitcher';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import {
@@ -115,6 +116,24 @@ import { detectedAtBoot, isTranslated } from './i18n/runtime';
 // The geodetic review hold — one boolean, masking a preference rather than
 // rewriting it. See lib/geodeticHold for the whole of it and how to lift it.
 import { GEODETIC_HELD } from './lib/geodeticHold';
+// Event charts and "No chart" (2026-10-20), behind that hold: the stored selection and what is
+// in force from it, the menu's Tab cycle, the seeds and the example event, and the trigger's
+// line for the sky alone (lib/eventCharts); what a map with no chart draws and what choosing
+// No chart holds (lib/skyAlone).
+import {
+  noChartMeta,
+  presentedKind,
+  resolveSelection,
+  seedLibrary,
+  selectionToPersist,
+  tabCycleIds,
+  withExampleEvent,
+} from './lib/eventCharts';
+import { noChartHoldChanges, skyLayerFor } from './lib/skyAlone';
+// The line system on screen from the stored choice, the zodiac and Advanced — App's derived
+// `lineSystem`. In lib/lineSystem since 2026-10-20, so a saved document can derive the same
+// mask over its own stored choice.
+import { effectiveLineSystem, geodeticMaskFor } from './lib/lineSystem';
 // The sky hold: what a geodetic map can't show, keyed on the DERIVED line system. A third
 // hold beside the one above, never folded into it (lib/skyHold says why).
 import { skyHeldFor } from './lib/skyHold';
@@ -123,7 +142,7 @@ import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
-import { SEED_BIRTHS, applyTimeHypothesis, timeUnknown } from './lib/birthData';
+import { applyTimeHypothesis, timeUnknown } from './lib/birthData';
 import {
   buildShareUrl,
   consumeShareParam,
@@ -143,7 +162,7 @@ import {
   wallClockAt,
   zoneNameForChart,
 } from './lib/atlas/zoneName';
-import { castClockAt } from './lib/chartHeader';
+import { castClockAt, type WheelHouses } from './lib/chartHeader';
 import { useReverseGeocodeCell } from './lib/atlas/useReverseGeocode';
 import { useNearestCity, useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { useCountryOf } from './lib/atlas/useCountryOf';
@@ -171,7 +190,6 @@ import {
   obliquity,
   partOfFortuneLon,
   PLANET_NAMES,
-  projectMinorOntoEcliptic,
   projectOntoEcliptic,
   raDecToEclipticLon,
   relocate,
@@ -248,6 +266,8 @@ import {
   overlayMinorSamples,
   tagMinor,
   normalizeAngle,
+  NO_CHART_BLOCKED_OVERLAYS,
+  TIMELESS_GEODETIC_OVERLAYS,
   type AngleProgression,
   type ArcMethod,
   type ProgAngleFrame,
@@ -302,16 +322,31 @@ import { mapPreviewFor } from './components/Map/mapStyleApply';
 import { MinorBodiesHud } from './components/MinorBodiesHud/MinorBodiesHud';
 import { generateNightShade } from './lib/astro/nightShade';
 import {
-  GEO_ZONE_OPACITY,
   buildGeoZones,
+  geoAscGrid,
   geoGrid,
   geoReadoutAngles,
   type GeoZoneIsolate,
   type GeoZoneProps,
 } from './lib/astro/geodeticGrid';
 import { useGeoAscZones } from './lib/astro/useGeoAscZones';
-import { TIMELESS_BAND_DEG, TIMELESS_RANGE_DEG } from './lib/astro/timeless';
-import { generateUncertaintyBands } from './lib/astro/uncertaintyBands';
+import {
+  birthDateMotion,
+  overlayBirthDateMotion,
+} from './lib/astro/timeless';
+import { generateUncertaintyBands, stampBands } from './lib/astro/uncertaintyBands';
+// The chart's complete line set in a named line system — App's buildAllLines' natal half, and
+// what the extension context's collectAllLinesFor builds for a document in another one; its
+// frame helpers are the drawn memos' too, so the two read one rule. (2026-10-20)
+import {
+  buildNatalLineSet,
+  emptyNatalLineSet,
+  natalLineEps,
+  natalLinePositions,
+  natalMinorLinePositions,
+  stampNatalBands,
+  type NatalLineInputs,
+} from './lib/astro/allLines';
 import {
   loadAspectOrbs,
   saveAspectOrbs,
@@ -347,7 +382,7 @@ import {
   loadGeoGridAscPref,
   loadGeoGridMc,
   loadGeoZones,
-  loadGeoZonesPresentation,
+  loadGeoZonesOpacityPct,
   loadParanOrbVal,
   loadPrimaryRate,
   loadShowNightShade,
@@ -389,7 +424,7 @@ import {
   saveGeoGridAscPref,
   saveGeoGridMc,
   saveGeoZones,
-  saveGeoZonesPresentation,
+  saveGeoZonesOpacityPct,
   saveParanOrbVal,
   savePrimaryRate,
   saveShowNightShade,
@@ -407,8 +442,8 @@ import {
   loadCharts,
   loadCurrentId,
   newChartId,
+  NO_CHART_ID,
   publishCurrentChart,
-  recentShortlist,
   registerChartPatch,
   saveCharts,
   saveCurrentId,
@@ -539,22 +574,6 @@ const chartUtcMs = (c: StoredChart) =>
 // The STORED line-system choice (see lineSystemPref in App).
 const loadLineSystemPref = (): LineSystem =>
   localStorage.getItem('astro:line-system:v1') === 'geodetic' ? 'geodetic' : 'celestial';
-
-// The line system ON SCREEN, from the three things that decide it: the stored choice, the
-// zodiac, and Advanced — which is what lets a sidereal zodiac take effect at all. App's
-// derived `lineSystem` is exactly this (the reasoning is there). It lives out here so that a
-// setter about to change one of the three can ask what the line system is ABOUT to become,
-// and act on the change as the event it is, rather than an effect chasing it afterwards.
-function effectiveLineSystem(
-  pref: LineSystem,
-  zodiac: ZodiacMode,
-  advanced: boolean,
-): LineSystem {
-  const effZodiac = advanced ? zodiac : 'tropical';
-  return pref === 'geodetic' && (GEODETIC_HELD || effZodiac !== 'tropical')
-    ? 'celestial'
-    : pref;
-}
 
 // Whether a registered Tools-menu extension declares `needsSiderealTime` — the tools a
 // geodetic map holds (lib/skyHold). Out here so App's stable tool openers can ask without a
@@ -706,11 +725,13 @@ function tagZeniths(
 // asks "is this an example chart?" needn't import App; re-exported for existing callers.
 export { SEED_CHART_ID_PREFIX };
 
-const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
-  ...b,
-  id: `${SEED_CHART_ID_PREFIX}${i}`,
-  createdAt: Date.now() + i,
-}));
+// A fresh library: the person examples (Jim Lewis first, so he stays `charts[0]`, the chart a
+// fresh install opens on), and — on a device the geodetic hold doesn't cover — the example event
+// after them, Aries Ingress 2026 (Salvatore, 2026-10-20). Held, exactly the set it always was,
+// ids and order included (lib/eventCharts seedLibrary; verify-event-charts §6 holds it to that).
+// The example event is not seeded (2026-10-21): event charts sit on the ADV rung, and the
+// tier is not known this early; a reader at that rung adds it from the empty Events list in one click.
+const seedCharts: StoredChart[] = seedLibrary(true, Date.now());
 
 export default function App() {
   // `locale`, `pref` and `machineHold` are for the language-held notice alone (its effect, beside
@@ -754,10 +775,19 @@ export default function App() {
   // state only: it is never persisted and never written back onto the record —
   // see the derived `current` below and applyTimeHypothesis in lib/birthData.
   const [timeHypothesis, setTimeHypothesis] = useState<number | null>(null);
-  const storedCurrent = useMemo(
-    () => charts.find((c) => c.id === currentId) ?? charts[0] ?? null,
+  // The chart in force from the stored pick. `currentId` is the PREF and may hold the
+  // "No chart" sentinel (NO_CHART_ID, 2026-10-20): unlocked, that is no chart at all; while
+  // the geodetic hold is up it reads as the first chart, exactly as a held device read every
+  // library before No chart existed — masked, never written (CLAUDE.md rule 2), so the pick
+  // is still there when the hold lifts. Any other id that has gone missing repairs to the
+  // first chart, as it always has (lib/eventCharts resolveSelection).
+  const selection = useMemo(
+    () => resolveSelection(charts, currentId, GEODETIC_HELD),
     [charts, currentId],
   );
+  // (Its `noChartPicked` — the pick in force — is not read here: everything that changes with
+  // no chart reads `skyAlone` below, which an empty library on an unlocked device shares.)
+  const storedCurrent = selection.storedCurrent;
   // The chart every consumer below reads. While a time is being tried on, this is
   // the STORED record with that minute substituted — so the angular linework,
   // houses, wheel and every downstream tool answer for the provisional time at
@@ -772,6 +802,21 @@ export default function App() {
     () => applyTimeHypothesis(storedCurrent, timeHypothesis),
     [storedCurrent, timeHypothesis],
   );
+  // THE SKY ALONE: no chart in force on a device the geodetic hold doesn't cover — No chart
+  // picked, or an empty library. Every surface below that changes with no chart reads this
+  // DERIVED value, never the pick: Transits and Eclipses are cast with nothing from a chart
+  // under them (overlayLayer), stand in for the chart on the map and the wheel, the frame is
+  // the moment's own, and what needs a chart — the techniques that advance or compare one,
+  // the returns, local space, Natal Lines, Slide — is held with one reason
+  // (settings.inert.needsChart). A held device has no sky alone: its empty library behaves
+  // exactly as it did before (Lina's §6 answer, Salvatore's design pass, 2026-10-20).
+  const skyAlone = current === null && !GEODETIC_HELD;
+  // The same flag for the stable openers, which read it at call time. Written synchronously by
+  // selectNoChart (the one opener of the state) and synced after commit, skyHeldRef's shape.
+  const skyAloneRef = useRef(skyAlone);
+  useEffect(() => {
+    skyAloneRef.current = skyAlone;
+  }, [skyAlone]);
   // A provisional time is only ever announced, never assumed: while one stands the
   // header says so (below), and whatever set it is expected to say so too.
   const provisionalTime = timeHypothesis != null && current !== storedCurrent;
@@ -979,9 +1024,18 @@ export default function App() {
   // so the preference is masked and never rewritten, and a reader who had Geodetic
   // selected still has it the day the hold lifts.
   //
-  // (The derivation itself is `effectiveLineSystem`, out at module scope, so the setters
+  // (The derivation itself is `effectiveLineSystem`, in lib/lineSystem, so the setters
   // further down can ask what it is about to become before they change one of its inputs.)
   const lineSystem: LineSystem = effectiveLineSystem(lineSystemPref, zodiacMode, advancedWheel);
+  // A STORED Geodetic choice that a sidereal zodiac in force contradicts (Lina, 22 Oct 2026, §4):
+  // "AL never draws a line system the reader didn't choose." Neither control can make this any
+  // more — each greys the other's conflicting half — so it only ARRIVES: a combination saved
+  // before 22 Oct, or Advanced turned on over a stored sidereal zodiac. While it stands the map
+  // draws no body lines at all (mapCleared below), never Celestial ones by default, and the
+  // banner (LineConflictBanner) offers both fixes. Derived, nothing written: both choices stay
+  // as they were stored until the reader picks one fix. The hold masks first: while Geodetic is
+  // held, its stored choice is invisible and there is no conflict to show.
+  const lineConflict = lineSystemPref === 'geodetic' && geodeticMaskFor(zodiacMode, advancedWheel) === 'sidereal';
   // The SKY HOLD (lib/skyHold): on a geodetic map, everything that reads the sky's turning
   // rather than a zodiacal degree is held — local space, parans and star parans, fixed-star
   // lines, the Vertex axis, zenith/nadir points and the ecliptic curve, night shade, the Sky
@@ -1033,7 +1087,7 @@ export default function App() {
   // them (skyHeld above). Every one of those memos reads this ONE gate, so anything else
   // that comes to turn the same families off joins it here, never memo by memo.
   // verify-geodetic-chart §6 holds the memos to it. (2026-10-02)
-  const skyFamiliesOff = noTime || skyHeld;
+  const skyFamiliesOff = noTime || skyHeld || lineConflict;
   // Acknowledgement for settings this app moves on the user's behalf (lib/autoFlipNotice).
   // Declared up here, ahead of the setters that announce. `announce` is called from event
   // handlers — with two documented exceptions, each arriving with no gesture to hang it on:
@@ -1493,6 +1547,9 @@ export default function App() {
   useEffect(() => {
     themeEditorKeyRef.current = runThemeEditorKey;
   }, [runThemeEditorKey]);
+  // The 0 key's target, selectNoChart, is declared far below this keydown handler; a ref
+  // reaches it without reading the const before it exists. (2026-10-21)
+  const selectNoChartKeyRef = useRef<() => void>(() => {});
   // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
   const [projection, setProjection] = useState<MapProjectionMode>(loadProjection);
 
@@ -1556,6 +1613,10 @@ export default function App() {
   // made earlier in the same gesture counts. (2026-10-02)
   const setShowLocalSpaceSafe = useCallback((v: boolean) => {
     if (v && skyHeldRef.current) return;
+    // …and with no chart in force: local space is cast from a chart's birthplace, and the sky
+    // alone has none (its row greys with settings.inert.needsChart). Closing never is.
+    // (2026-10-20)
+    if (v && skyAloneRef.current) return;
     setShowLocalSpace(v);
   }, []);
   const setShowSkyTimesSafe = useCallback((v: boolean) => {
@@ -1712,7 +1773,15 @@ export default function App() {
   // bring it back, and the owner can't be used without it. Only where the window could be opened
   // at all: Advanced on. (2026-10-12)
   const lsKeptByLock = viewLock?.keepsLocalSpace != null;
-  const lsWindowOpen = lsKeptByLock ? advancedWheel : showLocalSpace && !viewParked;
+  // With no chart in force (skyAlone) an open window is put away, not closed: it has no origin
+  // to measure from and would draw nothing, so it is back as the reader left it when a chart is
+  // picked, and its View-menu row says why meanwhile (settings.inert.needsChart). The stored flag
+  // is untouched (rule 2). (2026-10-20) `lsOpenWithChart` is the window as it draws with a
+  // chart in force — what choosing No chart puts away, so what its notice and the No chart
+  // row's tip name (lib/skyAlone noChartHoldChanges). A lock that keeps it up keeps it
+  // whatever the chart, and any other lock has parked it already: neither is put away.
+  const lsOpenWithChart = showLocalSpace && !viewParked;
+  const lsWindowOpen = lsKeptByLock ? advancedWheel : lsOpenWithChart && !skyAlone;
   const closeLsWindow = useCallback(() => {
     setShowLocalSpaceSafe(false);
     getViewLock()?.keepsLocalSpace?.onClose();
@@ -2206,8 +2275,8 @@ export default function App() {
   // (2026-10-02)
   const [geoGridMcOn, setGeoGridMcOn] = useState(loadGeoGridMc);
   const [geoGridAscPref, setGeoGridAscPref] = useState<boolean | null>(loadGeoGridAscPref);
-  const [geoZonesOn, setGeoZonesOn] = useState(loadGeoZones);
-  const [geoZonesPresentation, setGeoZonesPresentation] = useState(loadGeoZonesPresentation);
+  const [geoZonesOnPref, setGeoZonesOn] = useState(loadGeoZones);
+  const [geoZonesOpacityPct, setGeoZonesOpacityPctState] = useState(loadGeoZonesOpacityPct);
   const [geoZoneIsolate, setGeoZoneIsolate] = useState<GeoZoneIsolate>(null);
   const setGeoGridMc = useCallback((v: boolean) => {
     setGeoGridMcOn(v);
@@ -2221,9 +2290,10 @@ export default function App() {
     setGeoZonesOn(v);
     saveGeoZones(v);
   }, []);
-  const setGeoZonesPresentationPref = useCallback((v: boolean) => {
-    setGeoZonesPresentation(v);
-    saveGeoZonesPresentation(v);
+  // Written only by the field itself, inside the reader's gesture (overlayPrefs says why).
+  const setGeoZonesOpacityPct = useCallback((pct: number) => {
+    setGeoZonesOpacityPctState(pct);
+    saveGeoZonesOpacityPct(pct);
   }, []);
   const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
 
@@ -2267,7 +2337,8 @@ export default function App() {
   // restates in the terms readable up here: every paran-blocked mode is a time overlay). One
   // value for the map toggle, its hotkey, the Sidebar row and this hold, so they cannot
   // disagree.
-  const paransOverlayBlocked = overlayAuxBlocked(overlayMode, 'paran') && !showNatal;
+  // (The sky alone promotes its transits whatever the eye says, so it is restated too.)
+  const paransOverlayBlocked = overlayAuxBlocked(overlayMode, 'paran') && (!showNatal || skyAlone);
   const [minorParansPref, setMinorParansPrefState] = useState(loadMinorParansPref);
   const minorParansHeld = !effShowParans || paransOverlayBlocked;
   const minorParansOn = minorParansPref && !minorParansHeld;
@@ -2306,16 +2377,26 @@ export default function App() {
   // to pick (settings.inert.anglesHeld). Masked like the others, never written — the
   // overlays still move the planets through the grid, and the reader's stored frames come
   // back on Celestial. (2026-10-02)
+  //
+  // With no chart in force there is no natal frame at all, so on a celestial map the
+  // transits are the moment's own sky — what the sky layer is built in (lib/skyAlone, timeline
+  // buildSkyOverlay) — and the bar marks that, locked, with the needs-a-chart reason. Masked
+  // like the others: the stored frame is back with the first chart picked. (2026-10-20)
+  //
+  // The chart it belongs to is the one IN FORCE, which snapToReturn stamps — not the stored
+  // pick, which can name what isn't in force: a held device's "No chart" pick reads as the
+  // first chart (resolveSelection), and a borrow keyed on the pick there never took hold while
+  // its notice still fired. (2026-10-20)
   const frameHeldForReturn =
     returnBorrow !== null &&
-    returnBorrow.chartId === currentId &&
+    returnBorrow.chartId === (current?.id ?? null) &&
     overlayMode === 'transits' &&
     lineSystem === 'celestial' &&
     !noTime;
   const effTransitFrame: TransitFrame =
     lineSystem === 'geodetic'
       ? 'relative-to-natal'
-      : noTime || frameHeldForReturn
+      : !current || noTime || frameHeldForReturn
         ? 'transit-moment'
         : transitFrame;
   // The progressed overlays' Angles control, held at Natal angles on a geodetic map for the
@@ -2367,6 +2448,16 @@ export default function App() {
   // section and the Aspect Lines window belong to (lib/plan). Hoisted here so the
   // memos below can read it; also keeps tierMet calls out of the render JSX.
   const gatedTierMet = tierMet(planTier, 'gated');
+  // Event charts sit on the ADV rung (Salvatore, 2026-10-21): below it they are not on
+  // offer and a stored event chart reads as an ordinary one — DERIVED from the tier, never written,
+  // exactly as the geodetic hold once masked them. A build that nudges offers them as a teaser.
+  // Behind the geodetic hold as well (lib/geodeticHold), until Lina's acceptance check lifts it.
+  const eventsLocked = GEODETIC_HELD || !tierMet(planTier, 'adv');
+  const eventsTeaser = !GEODETIC_HELD && eventsLocked && shouldShowNudge('adv');
+  // Zone shading sits on the ADV rung too (2026-10-21): the stored switch is kept and masked
+  // below the rung (rule 2), so it comes back as it was once the reader reaches the rung.
+  const geoZonesOn = geoZonesOnPref && !eventsLocked;
+  const geoZonesLocked = eventsLocked;
   // Effective aspect-line filters: the stored pref applies only once the plan
   // reaches the gated rung — a stale pref can never hide lines below it.
   const effAspectLineFilters = gatedTierMet
@@ -2487,9 +2578,11 @@ export default function App() {
         if (session) {
           session = { ids: session.ids, index: (session.index + 1) % session.ids.length };
         } else {
-          // Same folder-scoped shortlist the switcher shows — Tab flashes that
-          // menu, so cycling a different set would contradict what is on screen.
-          const ids = recentShortlist(charts, current).map((c) => c.id);
+          // The most recently used charts across the whole library, not the folder's
+          // (2026-10-23); the flash draws this list itself, so it shows what is cycled.
+          // While event charts are on offer, those of the active chart's own kind
+          // (Events or People); with No chart, none (lib/eventCharts tabCycleIds).
+          const ids = tabCycleIds(charts, current, eventsLocked);
           if (ids.length < 2) return; // one chart (or none): let Tab be Tab
           // Start from the active chart's slot (top, having just been used)
           // and step once — the previous chart.
@@ -2525,7 +2618,10 @@ export default function App() {
           // Advanced ▸ Lines toggles — gated on Advanced mode (no-op while off,
           // like the section that hosts them). Each is its family's own first letter,
           // in the section's own order; that rule is what N cost Night Shade below.
-          case 'n': if (advancedWheel && !parked) setShowNatalLines((v) => !v); break;
+          // …and with no chart in force, where there are no natal lines to put down: its
+          // Sidebar row greys with the needs-a-chart reason, and the key stands down with it.
+          // (2026-10-20)
+          case 'n': if (advancedWheel && !parked && !skyAlone) setShowNatalLines((v) => !v); break;
           // …and, as its greyed row, while Cyclocartography stands in for the chart.
           case 'p': if (advancedWheel && !parked && !held && !paransOverlayBlocked) setShowParans((v) => !v); break;
           case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
@@ -2597,6 +2693,10 @@ export default function App() {
         case '1': if (!getViewLock()) setShowCoords((v) => !v); break;
         case '2': if (!getViewLock()) setShowChart((v) => !v); break;
         case '3': setShowSettings((v) => !v); break;
+        // No chart, beside the window keys (Lina's suggestion, 21 Oct 2026; Salvatore's call):
+        // through its one opener, which refuses while the geodetic mapping is held. It is not
+        // in the Tab cycle, which walks the active chart's own section of the chart menu.
+        case '0': if (!getViewLock()) selectNoChartKeyRef.current(); break;
         // The Minor bodies window — the digit row's next window, beside Settings, where
         // its More button lives. Catalog bodies are an Advanced reading (like 's').
         case '4': if (advancedWheel && !getViewLock()) setShowMinorHud((v) => !v); break;
@@ -2605,7 +2705,10 @@ export default function App() {
         // and both read the sky's turning: through their Safe openers, so on a geodetic
         // map the key closes an open one and opens nothing (the hold check lives there).
         case 's': if (advancedWheel && !getViewLock()) setShowSkyTimesSafe(!showSkyTimes); break;
-        case 'l': if (advancedWheel && !getViewLock()) setShowLocalSpaceSafe(!showLocalSpace); break;
+        // …and with no chart in force L stands down in BOTH directions: the window is put away
+        // then (lsWindowOpen), so a press would flip the stored flag with nothing on screen
+        // changing, and the window would not come back with the next chart. (2026-10-20)
+        case 'l': if (advancedWheel && !getViewLock() && !skyAlone) setShowLocalSpaceSafe(!showLocalSpace); break;
         case 'o': {
           // An owner that parks every overlay (ViewLock.overlaysReason) stands this down, as
           // its Overlay menu is disabled: a step would write a choice nothing can show.
@@ -2637,7 +2740,9 @@ export default function App() {
         // Capture — ungated, so no advanced-mode gate (unlike Slide).
         case 'c': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
         case 'a': setCreating(true); break;
-        case 'b': if (current) setWheelExpanded((v) => !v); break;
+        // The sidebar opens on the sky alone too: its header holds the chart menu, which is
+        // the way back to a chart (the bar's toggle takes the same condition). (2026-10-20)
+        case 'b': if (current || skyAlone) setWheelExpanded((v) => !v); break;
         // Discreet mode: blank every name, date and place on screen. Deliberately
         // NOT parked under a view lock — a surface owning the viewport still
         // shows chart names, and this is wanted most in the second where someone
@@ -2685,6 +2790,7 @@ export default function App() {
     // zone during render.
   }, [
     current,
+    skyAlone,
     charts,
     pinned,
     toggleSlide,
@@ -2783,11 +2889,12 @@ export default function App() {
         // while Advanced is off, so turning Advanced back on hands the technique straight
         // back — the same courtesy the house system, zodiac and orb settings already get.
       }
-      announceFlip('line-system-held', lineSystem === 'geodetic' && next !== 'geodetic');
+      // (Turning Advanced on over a stored sidereal zodiac and a stored Geodetic choice brings
+      // the conflict in: the map clears and the banner offers both fixes — lineConflict.)
       advancedRef.current = on;
       setAdvancedWheel(on);
     },
-    [lineSystem, lineSystemPref, zodiacMode, announceFlip, enterLineSystem],
+    [lineSystemPref, zodiacMode, enterLineSystem],
   );
 
   // The Line system control's own setter. Choosing Geodetic closes nothing and switches
@@ -2804,10 +2911,15 @@ export default function App() {
       // Geodetic half is dimmed: this refusal is what makes that dimming true rather
       // than decorative.
       if (next === 'geodetic' && (GEODETIC_HELD || effZodiacMode !== 'tropical')) return;
-      enterLineSystem(effectiveLineSystem(next, zodiacMode, advancedWheel));
+      const derived = effectiveLineSystem(next, zodiacMode, advancedWheel);
+      // The one-time In Mundo card explains a control that a geodetic map doesn't show
+      // (2026-10-20), so it closes with the switch rather than pointing at the grid's
+      // switches under a title that is no longer true. It booked itself seen when it showed.
+      if (derived === 'geodetic' && autoFlipKind === 'line-projection') dismissAutoFlip(false);
+      enterLineSystem(derived);
       setLineSystemPref(next);
     },
-    [effZodiacMode, zodiacMode, advancedWheel, enterLineSystem],
+    [effZodiacMode, zodiacMode, advancedWheel, enterLineSystem, autoFlipKind, dismissAutoFlip],
   );
   // Switching INTO sidereal doesn't rewrite the line system any more — it MASKS a
   // geodetic choice (see the derived lineSystem). Nothing is lost, but the Sidebar's
@@ -2817,28 +2929,23 @@ export default function App() {
   // features are held on a geodetic map wherever it comes from (skyHeld).
   const setZodiacModeSafe = useCallback(
     (m: ZodiacMode) => {
-      const next = effectiveLineSystem(lineSystemPref, m, advancedWheel);
-      // 'line-system-held' says this path masks the geodetic choice rather than rewriting
-      // it — a different fact about the reader's setting from a rewrite, so it has its own
-      // message and its own dismissal (lib/autoFlipNotice).
-      //
-      // Judged on the line system ON SCREEN before and after, which is the only honest
-      // test of "did the map change". Geodetic on screen now means a stored Geodetic choice
-      // and no hold; not on screen after means this zodiac is what masks it. Reading the
-      // stored choice alone also fired from one sidereal zodiac to another, and while
-      // Advanced was off — both times with Geodetic already held, so a warning about a
-      // no-op, which teaches people to dismiss warnings unread.
-      announceFlip('line-system-held', lineSystem === 'geodetic' && next !== 'geodetic');
-      enterLineSystem(next);
+      // A sidereal zodiac is unavailable while Geodetic is the reader's line system (Lina, 22 Oct
+      // 2026, §4: the conflict is prevented at whichever control is touched second) — the menu
+      // greys its sidereal rows, and this refusal makes the greying true rather than decorative.
+      // Tropical is always open: it is one of the two fixes for a conflict that arrived.
+      if (m !== 'tropical' && lineSystemPref === 'geodetic' && !GEODETIC_HELD) return;
+      enterLineSystem(effectiveLineSystem(lineSystemPref, m, advancedWheel));
       setZodiacMode(m);
     },
-    [lineSystem, lineSystemPref, advancedWheel, announceFlip, enterLineSystem],
+    [lineSystemPref, advancedWheel, enterLineSystem],
   );
   // Opening the Calculation panel is the one moment the In Mundo default can be
   // explained to someone who hasn't yet been confused by it. Gated on the projection
   // actually being ON SCREEN and still at its default: a reader who has already moved
   // it knows the control exists, and under the geodetic mapping the control has no say
-  // (everything is on the ecliptic there by construction). Fires once
+  // (everything is on the ecliptic there by construction) and since 2026-10-20 isn't drawn
+  // at all — the Sidebar shows it only on Celestial — so this gate is also what keeps the
+  // card from pointing at a control that isn't there. Fires once
   // — see the `once` flag in lib/autoFlipNotice.
   const openSidebarSection = useCallback(
     (section: SidebarSection | null) => {
@@ -3240,11 +3347,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveCurrentId(current?.id ?? null);
+    // The PICK, never the chart standing in for it (CLAUDE.md rule 2, the line it calls the
+    // easiest to get wrong): while the geodetic hold masks a stored "No chart" to the first
+    // chart, writing `current?.id` here — as this effect did until 2026-10-20 — would save
+    // that chart over the reader's pick, visible only after the hold lifts. selectionToPersist
+    // keeps the sentinel whenever it is the pick, held or not, and otherwise saves the chart in
+    // force, which still repairs a stale id to the first chart as it always has.
+    saveCurrentId(selectionToPersist(currentId, current));
     // Mirror the resolved active chart where plain modules can read and follow
-    // it (lib/chartLibrary) — per-chart stores key their data on it.
+    // it (lib/chartLibrary) — per-chart stores key their data on it. The DERIVED chart: null
+    // with no chart in force.
     publishCurrentChart(current);
-  }, [current]);
+  }, [currentId, current]);
 
   // The asteroid ephemeris file loads on demand (see ensureAsteroidEphemeris):
   // until it's in, Chiron/Ceres/Pallas/Juno/Vesta drop out of every sampling
@@ -3294,6 +3408,15 @@ export default function App() {
         : 0,
     [current],
   );
+  // A chart with no birth time: each body's motion over its birth date (lib/astro/timeless — Lina's
+  // one range rule, 22 Oct 2026), read once per chart. The wheel and the tables print a ranged body
+  // as its range, and on a geodetic map its lines carry the band the motion sweeps.
+  const natalMotion = useMemo(
+    () => (noTime && current && !current.composite ? birthDateMotion(current, nodeType) : null),
+    // ephemerisEpoch: resample when the deferred ephemeris arrives, as the positions do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [current, noTime, nodeType, ephemerisEpoch],
+  );
   // A composite chart's positions are the parents' coordinate-wise midpoints
   // (lon/lat/RA/dec each averaged per body), not a cast of the stored moment
   // (which only anchors the sidereal frame — see lib/astro/composite.ts).
@@ -3324,6 +3447,15 @@ export default function App() {
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
   const eps = useMemo(() => obliquity(jd), [jd]);
+  // THE ONE TILT a geodetic map is drawn at (Lina, 20 Oct 2026, §2): "Every geodetic surface
+  // uses the loaded chart's true obliquity of date. With no chart loaded, every geodetic surface
+  // uses J2000. One tilt on screen at a time." Keyed on the DERIVED chart, so whatever leaves
+  // `current` null leaves J2000 here with no clause of its own. Derived, never stored, and read
+  // by every geodetic surface — the grid's Ascendant curves, the readout and its polar caution,
+  // the Ascendant zones, the wheel's frame and the Coordinates box, the bands, and the overlay
+  // lines, which until that day were each drawn at their own moment's obliquity (ovEps below).
+  // Declared once, here: verify-geodetic-chart §7 says so if a second tilt appears.
+  const geoEps = current ? eps : EPS_J2000;
 
   // Slide tool: while the user spins the globe, resample the LINE positions at natal+Δt
   // (bucketed, ~1-hour steps) so the WHOLE line pipeline — cage, parans, orb bands,
@@ -3364,13 +3496,16 @@ export default function App() {
     // lines get their bands (uncertaintyBands below). The families that read the sky's
     // turning — parans, zenith stamps, star parans — read skyFamiliesOff rather than
     // leaning on this one, since on a geodetic map it no longer empties them. (2026-10-02)
-    if (noTime && !timelessGeodetic) return [];
+    //
+    // The rule itself is lib/astro/allLines natalLinePositions (2026-10-20), which a document's
+    // own line set reads too (collectAllLinesFor): projected In Zodiaco and on a geodetic map,
+    // and laid back on the equator there at the one tilt (geoEps).
     const jdEff = sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd;
-    return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-      ? projectOntoEcliptic(slidPositions, jdEff)
-      : slidPositions;
+    // No body lines while a line-system conflict stands (lineConflict): the empty set the
+    // generators read for a chart with no birth time on a celestial map.
+    return natalLinePositions(slidPositions, jdEff, lineSystem, coordSystem, noTime || lineConflict, geoEps);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noTime, timelessGeodetic, lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, ephemerisEpoch]);
+  }, [noTime, lineSystem, coordSystem, slidPositions, jd, sliding, slideBucket, current, geoEps, ephemerisEpoch]);
 
   // Part of Fortune — a derived zodiacal point (the Ascendant plus the Moon–Sun
   // arc, sect-aware). It is not a sampled body, so it is injected here rather than
@@ -3393,7 +3528,9 @@ export default function App() {
   // a time.
   const fortuneSect = useMemo(
     () =>
-      advancedWheel && current && !current.composite && (!noTime || lineSystem === 'geodetic')
+      // Not on a chart with no birth time, on either map (Lina, 21 Oct 2026, §2.4): Fortune is
+      // built from the Moon, whose degree is uncertain, and from the sect, which needs the hour.
+      advancedWheel && current && !current.composite && !noTime
         ? isDayBirth(ecliptic, gmst, eps, current.birthplace.lat, current.birthplace.lng)
         : null,
     [advancedWheel, current, noTime, lineSystem, ecliptic, gmst, eps],
@@ -3423,21 +3560,29 @@ export default function App() {
   // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
   // independent of time. Injected into the line/zenith generators. The one factory
   // every frame here takes its mapping from, so the geodetic grid and the lines
-  // can't read two copies of it (2026-10-02).
+  // can't read two copies of it (2026-10-02). At the one tilt on a geodetic map (geoEps,
+  // through natalLineEps), the chart's own obliquity on a celestial one. (2026-10-20)
+  const lineEps = natalLineEps({ eps, geoEps }, lineSystem);
   const meridianLng = useMemo<MeridianLng>(
-    () => meridianLngFor(lineSystem, eps, gmst),
-    [lineSystem, eps, gmst],
+    () => meridianLngFor(lineSystem, lineEps, gmst),
+    [lineSystem, lineEps, gmst],
   );
 
   // Fortune joins the angle-line generator ONLY (never `linePositions`), and only
   // In-Zodiaco/geodetic — so it draws its four angle lines without leaking into
   // mundo lines, parans, zenith stamps, or the aspect/midpoint families.
+  //
+  // A timeless chart's bands are stamped on here, at generation (2026-10-20): every line of a
+  // ranged body (natalMotion) carries its band as `props.band` (lib/astro/uncertaintyBands), so
+  // the fills, the orb corridors, the tips, collectAllLines and every listing tool read the one
+  // stamp, and none rebuilds it (CLAUDE.md rule 5). Stamped on the geometry, before the colour
+  // step, so a colour change keeps each band object — what the corridors are cached by.
   const allLines = useMemo(() => {
     const inZodiaco = lineSystem === 'geodetic' || coordSystem === 'zodiaco';
     const src =
       fortuneMapPos && inZodiaco ? [...linePositions, fortuneMapPos] : linePositions;
-    return generateLines(src, meridianLng, lineOpts);
-  }, [linePositions, meridianLng, fortuneMapPos, lineSystem, coordSystem, lineOpts]);
+    return stampNatalBands(generateLines(src, meridianLng, lineOpts), linePositions, natalMotion, lineSystem, geoEps);
+  }, [linePositions, meridianLng, fortuneMapPos, lineSystem, coordSystem, lineOpts, natalMotion, geoEps]);
   // No birth time, no parans, in either line system: a paran is two bodies on angles at one
   // moment of the sky's turning, which the unknown hour decides. Gated here (skyFamiliesOff)
   // rather than by linePositions, which a geodetic map now fills for a timeless chart.
@@ -3715,19 +3860,21 @@ export default function App() {
   const minorRequestKey = minorRequests.map((r) => `${r.n}@${r.source.id}`).join(',');
   useEffect(() => {
     // A composite fetches like any chart: its catalog bodies are the parents' midpoints,
-    // sampled from the same files at the parents' moments (compositeMinorSamples).
-    if (!current || minorRequests.length === 0) return;
+    // sampled from the same files at the parents' moments (compositeMinorSamples). The sky
+    // alone fetches too: a sky layer places the reader's catalog bodies at its own instant
+    // (timeline overlayMinorSamples), as the transits beside a chart do. (2026-10-20)
+    if ((!current && !skyAlone) || minorRequests.length === 0) return;
     void ensureMinorBodies(minorRequests);
     // Keyed on the request set; minorLoadVer re-runs it after a retry clears a failure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [minorRequestKey, current, minorLoadVer]);
+  }, [minorRequestKey, current, skyAlone, minorLoadVer]);
   // Loaded AND wanted: the only bodies ever sampled (a failed file is never sampled —
   // the engine's failure path is expensive, see lib/minorBodies/se1Header.ts).
   const minorNumbers = useMemo(
-    () => (current ? minorReadyNumbers(minorPref, advancedWheel, minorLoadState) : []),
+    () => (current || skyAlone ? minorReadyNumbers(minorPref, advancedWheel, minorLoadState) : []),
     // minorLoadVer: a file landing or failing changes the ready set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [current, minorPref, advancedWheel, minorLoadVer],
+    [current, skyAlone, minorPref, advancedWheel, minorLoadVer],
   );
   // At the chart's own moment, then at the slid instant for the lines — the same two
   // steps the planets take, so a Slide keeps catalog lines aligned with the cage. The
@@ -3744,11 +3891,13 @@ export default function App() {
   // A composite's are the parents' midpoints instead, by the planets' own rule — no
   // speed, no station, and lon/lat of record, which minorLinePositionOf hands the lines
   // (the In-Zodiaco projection reads the longitude midpoint, as it does for the planets).
+  // None with no chart: the bodies the sky alone places are its layer's (overlayMinorSampled),
+  // and there is no chart moment to sample here at all.
   const minorSamples = useMemo(
     () =>
-      minorNumbers.length === 0
+      minorNumbers.length === 0 || !current
         ? []
-        : current?.composite
+        : current.composite
           ? compositeMinorSamples(current.composite, minorNumbers)
           : getMinorSamples(jd, minorNumbers, true),
     [jd, minorNumbers, current],
@@ -3762,15 +3911,14 @@ export default function App() {
   }, [minorPositions, sliding, slideBucket, jd, minorNumbers, current]);
   // The planets' own frame rule (linePositions above): In-Zodiaco and geodetic project
   // onto the ecliptic, In-Mundo keeps the true sky; no birth time, no lines — but on a
-  // geodetic map, where the placeholder's degrees are all a line reads. (No catalog body
-  // moves far enough in 12 hours to want a band.) (2026-10-02)
+  // geodetic map, where the placeholder's degrees are all a line reads. (A catalog body is read
+  // at noon with no range, as the range rule has it: lib/astro/timeless.) (2026-10-02)
+  // (lib/astro/allLines natalMinorLinePositions since 2026-10-20: one rule with the planets',
+  // at the one geodetic tilt.)
   const minorLinePositions = useMemo(() => {
-    if (noTime && !timelessGeodetic) return [];
     const jdEff = sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd;
-    return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-      ? projectMinorOntoEcliptic(minorSlidPositions, jdEff)
-      : minorSlidPositions;
-  }, [noTime, timelessGeodetic, lineSystem, coordSystem, minorSlidPositions, jd, sliding, slideBucket, current]);
+    return natalMinorLinePositions(minorSlidPositions, jdEff, lineSystem, coordSystem, noTime || lineConflict, geoEps);
+  }, [noTime, lineSystem, coordSystem, minorSlidPositions, jd, sliding, slideBucket, current, geoEps]);
   // Whether the Angles filter shows any of the four angles catalog bodies draw — a draw
   // gate on every catalog line, the chart's and an overlay's (the rows, below the overlay
   // memos, read it through minorChartContext).
@@ -3889,7 +4037,7 @@ export default function App() {
       // site, so midpoint features below are never touched and everything
       // downstream (map layers, edge badges, hover tips) follows for free.
       features.push(
-        ...generateAspectLines(vis, meridianLng, effCoordSystem, eps, lineOpts).features.filter(
+        ...generateAspectLines(vis, meridianLng, effCoordSystem, lineEps, lineOpts).features.filter(
           (f) =>
             aspectLinePasses(
               effAspectLineFilters,
@@ -3901,15 +4049,22 @@ export default function App() {
     }
     if (effShowMidpointLines) {
       features.push(
-        ...generateMidpointLines(vis, meridianLng, effCoordSystem, eps, lineOpts).features,
+        ...generateMidpointLines(vis, meridianLng, effCoordSystem, lineEps, lineOpts).features,
       );
     }
-    return {
-      type: 'FeatureCollection',
-      features: features.filter((f) =>
-        visibleLineTypes.has(f.properties.lineType),
-      ),
-    };
+    // A ranged body's aspect and midpoint lines carry a timeless chart's bands too (Lina, 22 Oct
+    // 2026, §2.2), stamped here as the planet lines' are (allLines above) — about each line's
+    // virtual point, `vlon`.
+    return stampNatalBands(
+      {
+        type: 'FeatureCollection',
+        features: features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
+      },
+      linePositions,
+      natalMotion,
+      lineSystem,
+      geoEps,
+    );
   }, [
     effShowAspectLines,
     effShowMidpointLines,
@@ -3921,8 +4076,10 @@ export default function App() {
     visiblePlanets,
     visibleLineTypes,
     meridianLng,
-    eps,
+    lineEps,
     lineOpts,
+    natalMotion,
+    geoEps,
   ]);
   const angleLines = useMemo(() => inkAspectLines(angleLinesGeom, inks), [angleLinesGeom, inks]);
 
@@ -3963,7 +4120,11 @@ export default function App() {
   // geodetic map, where the open window shows the hold's reason instead and draws nothing
   // (skyHeld). Everything that means "local space is ON" reads this, never the raw flag,
   // so the flag stays as the reader left it. (2026-10-02)
-  const lsActive = showLocalSpace && !skyHeld;
+  //
+  // And with no chart in force (skyAlone), where there is no birthplace to cast it from: a sky
+  // layer's origin is NaN on purpose (timeline buildSkyOverlay), so this one gate is what keeps
+  // the overlay's and the promoted local space from being generated off it. (2026-10-20)
+  const lsActive = showLocalSpace && !skyHeld && !skyAlone;
   // The Local Space VIEW as the expanded sidebar reads it — its local-space pair of dials and
   // the aspect list's Compare columns: open by the reader, or kept up beside a viewport owner
   // that works from it (ViewLock.keepsLocalSpace), where the window shows (lsWindowOpen) and the
@@ -3971,7 +4132,7 @@ export default function App() {
   // map's own local-space drawing (lsActive) keeps reading the stored flag: the map under such
   // an owner is hidden, and draws nothing extra. (2026-10-13)
   const lsViewOn = lsKeptByLock ? advancedWheel : showLocalSpace;
-  const lsPanelsOn = lsViewOn && !skyHeld;
+  const lsPanelsOn = lsViewOn && !skyHeld && !skyAlone;
   const localSpaceGeom = useMemo(
     () => (lsActive ? filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound) : EMPTY_FC),
     [allLocalSpace, visiblePlanets, lsActive, hideLsInbound],
@@ -4125,8 +4286,15 @@ export default function App() {
   // and the chart's own moment otherwise (symbolic overlays like progressions
   // have no second real instant to shade). Empty on a geodetic map (skyHeld): the wash is
   // the sky turning at a moment, and the stored switch keeps its choice. (2026-10-02)
+  //
+  // With no chart in force the wash still has a moment wherever the sky alone has one — the
+  // target date under Transits, the maximum under Eclipses — and none otherwise: the chart's
+  // own moment it falls back to does not exist. (2026-10-20)
   const nightShade = useMemo(() => {
-    if (!showNightShade || !current || skyHeld) return EMPTY_FC;
+    if (!showNightShade || skyHeld) return EMPTY_FC;
+    if (!current && !(skyAlone && (overlayMode === 'transits' || (overlayMode === 'eclipses' && resolvedEclipse)))) {
+      return EMPTY_FC;
+    }
     const nightJd =
       overlayMode === 'eclipses' && resolvedEclipse
         ? resolvedEclipse.event.maximum
@@ -4136,7 +4304,7 @@ export default function App() {
     // The map style's (NIGHT_SHADE_STYLE for a built-in), at the map's own rate.
     const style = mapStyle.nightShade;
     return generateNightShade(nightJd, style.color, style.opacity);
-  }, [showNightShade, current, skyHeld, overlayMode, resolvedEclipse, targetDate, jd, mapStyle.nightShade]);
+  }, [showNightShade, current, skyAlone, skyHeld, overlayMode, resolvedEclipse, targetDate, jd, mapStyle.nightShade]);
 
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
@@ -4396,8 +4564,10 @@ export default function App() {
   // (planet on angle, aspect/midpoint/paran/local-space explainers). Off in
   // eclipses mode, whose clicks pin the local-circumstances card instead. The
   // builder's identity carries the active chart so a card can't outlive it.
+  // The sky alone keeps it: its lines are the transits' own, and a card reads what was clicked.
+  // (2026-10-20)
   const lineCard = useMemo(() => {
-    if (overlayMode === 'eclipses' || !current) return null;
+    if (overlayMode === 'eclipses' || (!current && !skyAlone)) return null;
     return (
       layerId: string,
       props: Record<string, unknown>,
@@ -4409,7 +4579,7 @@ export default function App() {
     // pinned card would float over empty map, so the change closes it (the
     // Map's close-on-identity effect).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayMode, current, lineSystem, coordSystem, t]);
+  }, [overlayMode, current, skyAlone, lineSystem, coordSystem, t]);
 
   // Ease the camera to an eclipse's headline ground point (the catalog's
   // whole-degree coordinates are plenty at this zoom). Menu picks and the
@@ -4468,7 +4638,27 @@ export default function App() {
   );
 
   const overlayLayer = useMemo(() => {
-    if (overlayMode === 'off' || !current) return null;
+    if (overlayMode === 'off') return null;
+    // No chart in force: the sky alone (lib/skyAlone skyLayerFor) — Transits at the target
+    // date, or the eclipse chart at the maximum while it is shown — cast in the moment's own
+    // frame, the only one there is with no chart. Every other technique advances or compares a
+    // chart and is already masked to 'off' above (overlayBlockFor's 'no-chart'). A held device
+    // has no sky alone, so its empty library builds nothing, as before. (2026-10-20)
+    if (!current) {
+      if (!skyAlone) return null;
+      return skyLayerFor(
+        overlayMode,
+        {
+          targetDate,
+          eclipseMs:
+            showEclipseChart && resolvedEclipse && eclipsesMod
+              ? eclipsesMod.jdToMs(resolvedEclipse.event.maximum)
+              : null,
+        },
+        nodeType,
+        t,
+      );
+    }
     // Belt-and-braces for the stale-mode reset effect above: a mode this chart can't
     // carry (composite / unknown birth time) never builds a layer. And a SYNASTRY
     // partner whose own birth time is unknown has no real angular sky to overlay —
@@ -4521,6 +4711,7 @@ export default function App() {
   }, [
     overlayMode,
     current,
+    skyAlone,
     lineSystem,
     targetDate,
     partner,
@@ -4539,16 +4730,74 @@ export default function App() {
     ephemerisEpoch,
   ]);
 
+  // The overlays' tilt (see overlayFrame just below): the one geodetic tilt to lay their bodies
+  // back on the equator at, undefined on a celestial map (projectOntoEcliptic then keeps the
+  // moment's own), and the ε their meridian mapping reads. (2026-10-20)
+  const ovProjectEps = lineSystem === 'geodetic' ? geoEps : undefined;
+  const ovFrameEps = useCallback((ovJd: number) => ovProjectEps ?? obliquity(ovJd), [ovProjectEps]);
+  // §15 (Lina, 20 Oct 2026): a chart with no birth time on a geodetic map carries progressions
+  // and solar arc (timeline TIMELESS_GEODETIC_OVERLAYS — the angles there don't progress), and
+  // their bodies are as uncertain as the chart's: the progressed or directed Moon moves with the
+  // unknown birth hour exactly as the natal one does (verify-directions §10(b)). So the overlay's
+  // own lines carry the chart's bands, centred on the overlay's positions — stamped through
+  // stampBands with `tagged`, since they wear the overlay's tag. Transits and every other
+  // overlay are another moment's, with a time of their own, and take none.
+  const ovBanded =
+    timelessGeodetic && !!overlayLayer && TIMELESS_GEODETIC_OVERLAYS.has(overlayLayer.kind);
+  // The overlay's own motion over the birth date (Lina, 22 Oct 2026, §2.3, the range rule for a
+  // progression): the overlay rebuilt with the birth moved across its date
+  // (timeless overlayBirthDateMotion), every argument as the layer itself was built with.
+  const overlayMotion = useMemo(() => {
+    if (!ovBanded || !current || !overlayLayer) return null;
+    const kind = overlayLayer.kind;
+    return overlayBirthDateMotion(
+      current,
+      (c) =>
+        buildOverlay(
+          c,
+          kind,
+          targetDate,
+          partner,
+          nodeType,
+          angleProgression,
+          primaryRate,
+          userPrimaryRate,
+          effTransitFrame,
+          kind === 'tertiary-progressed' ? 'tertiary' : 'secondary',
+          t,
+          fmt,
+        ),
+      geoEps,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ovBanded, overlayLayer, geoEps]);
+  const stampOverlayBands = useCallback(
+    <P extends LineProps>(
+      fc: FeatureCollection<LineString, P>,
+      ovPositions: PlanetPosition[],
+    ): FeatureCollection<LineString, P> =>
+      ovBanded && overlayMotion ? stampBands(fc, ovPositions, overlayMotion, geoEps, { tagged: true }) : fc,
+    [ovBanded, overlayMotion, geoEps],
+  );
+
   // The active overlay's drawing frame — its bodies (ecliptic-projected in
   // zodiaco/geodetic, true-sky otherwise), the meridian mapping, its label prefix,
-  // and its epoch's obliquity. One source shared by the overlay's auxiliary line
+  // and the obliquity it is mapped at. One source shared by the overlay's auxiliary line
   // families (aspect/midpoint/star) so they can't drift from the base overlay lines.
+  //
+  // ONE TILT on a geodetic map (Lina, 20 Oct 2026, §2; geoEps above). An overlay's lines were
+  // mapped at their own moment's obliquity until then — a transit, a progression or a partner
+  // drawn on a second tilt beside the chart's — and now take the map's: each body's longitude is
+  // still read at its own moment (projectOntoEcliptic's frameEps), and laid on the map at geoEps.
+  // A celestial map keeps the moment's own ε, which places nothing there but an In-Zodiaco
+  // point's equatorial position. ovFrameEps / ovProjectEps below say it once for every overlay
+  // memo here and in buildAllLines.
   const overlayFrame = useMemo(() => {
     if (!overlayLayer) return null;
-    const ovEps = obliquity(overlayLayer.jd);
+    const ovEps = ovFrameEps(overlayLayer.jd);
     const ovPositions =
       lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd, ovProjectEps)
         : overlayLayer.positions;
     const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
     return {
@@ -4559,7 +4808,7 @@ export default function App() {
       isCyclo: overlayLayer.kind === 'cyclo',
       jd: overlayLayer.jd,
     };
-  }, [overlayLayer, coordSystem, lineSystem]);
+  }, [overlayLayer, coordSystem, lineSystem, ovFrameEps, ovProjectEps]);
 
   // ── Catalog minor bodies beside the overlay (lib/astro/timeline overlayMinorSamples) ──
   // The reader's catalog set placed by the overlay's own rule — sampled at its instant,
@@ -4596,9 +4845,11 @@ export default function App() {
             visibleLineTypes,
             zenith: effShowZenith,
             decor: minorDecor,
+            // The one geodetic tilt, as the planets' overlay memos map theirs (2026-10-20).
+            geoEps,
           })
         : null,
-    [overlayLayer, overlayMinorSampled, lineSystem, coordSystem, visibleLineTypes, effShowZenith, minorDecor],
+    [overlayLayer, overlayMinorSampled, lineSystem, coordSystem, visibleLineTypes, effShowZenith, minorDecor, geoEps],
   );
   // The overlay's catalog parans: its catalog bodies (overlayMinor's frame-projected positions
   // and meridian) paired with its visible planets as its own parans read them (overlayFrame's
@@ -4680,7 +4931,12 @@ export default function App() {
       type: 'FeatureCollection',
       features: features.filter((f) => visibleLineTypes.has(f.properties.lineType)),
     };
-    return isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix);
+    // A progression of a timeless chart on a geodetic map: its ranged bodies' aspect and midpoint
+    // lines carry the bands, as the chart's own do (§15, stampOverlayBands above).
+    return stampOverlayBands(
+      isCyclo ? tagLabelsBy(fc, (p) => cycloBodyTag(p.planet)) : tagLabels(fc, prefix),
+      ovPositions,
+    );
   }, [
     overlayFrame,
     overlayAux,
@@ -4693,6 +4949,8 @@ export default function App() {
     visiblePlanets,
     visibleLineTypes,
     lineOpts,
+    stampOverlayBands,
+    ovBanded,
   ]);
   // In the aspect inks, as the chart's own aspect lines are: they take those lines' place
   // in the one layer while an overlay is up, so they read as that family, not the overlay's.
@@ -4733,20 +4991,26 @@ export default function App() {
     const isCyclo = overlayLayer.kind === 'cyclo';
     const ovPositions =
       lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd, ovProjectEps)
         : overlayLayer.positions;
     // ε once per memo, not once per traced vertex (the old closure called Swiss's
-    // obliquity inside the mapping). Same value, same float (2026-10-02).
-    const ovEps = obliquity(overlayLayer.jd);
+    // obliquity inside the mapping). Same value, same float (2026-10-02). The one tilt on a
+    // geodetic map (ovFrameEps, 2026-10-20).
+    const ovEps = ovFrameEps(overlayLayer.jd);
     const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
     return {
+      // Banded where §15 says (stampOverlayBands), before the filters, so a band follows its
+      // line through them.
       lines: mergeNodePairs(
         filterLines(
-          isCyclo
-            ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
-                cycloBodyTag(p.planet),
-              )
-            : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+          stampOverlayBands(
+            isCyclo
+              ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
+                  cycloBodyTag(p.planet),
+                )
+              : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+            ovPositions,
+          ),
           visiblePlanets,
           visibleLineTypes,
         ),
@@ -4809,7 +5073,7 @@ export default function App() {
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowZenith, coordSystem, lineSystem, lineOpts]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowZenith, coordSystem, lineSystem, lineOpts, ovProjectEps, ovFrameEps, stampOverlayBands]);
   // …and its colour step: the bodies' inks, the overlay's one ink over its lines, local
   // space and parans when the palette sets one (inkOverlayLines says why not its stamps).
   // The same bundle back when nothing differs, which on Dark is every family (on the light
@@ -4874,7 +5138,7 @@ export default function App() {
     [overlay, overlayMinorInked, overlayMinorParansInked],
   );
   const mapOverlay =
-    overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlayWithMinor;
+    lineConflict || (overlayMode === 'eclipses' && !showEclipseMapLines) ? null : overlayWithMinor;
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -4890,8 +5154,25 @@ export default function App() {
   // to stand in for the natal chart. (Only the time overlays expose the Display
   // section that holds this toggle, so it can always be switched back; synastry and
   // "no overlay" leave the natal chart alone.)
+  //
+  // With no chart in force the sky's transits ARE what stands in for a chart, whatever the eye
+  // says: there is no natal chart to show beside them, so they are promoted, and the drawer's
+  // Natal Chart eye greys showing the stored value (TimelineHud natalHeld) and writes nothing —
+  // the reader's choice is back with the first chart picked (rule 2). (2026-10-20)
   const isTimeOverlay = TIME_OVERLAY_MODES.has(overlayMode);
-  const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
+  const promoteOverlay = isTimeOverlay && !!overlayLayer && (!showNatal || skyAlone);
+  // The wheel's chart with no chart in force: the sky layer, Transits (promoted, above) or the
+  // eclipse chart — which is not a time overlay, so it isn't promoted onto the map (its lines
+  // stay opt-in there), but it is the only chart the wheel has. Synastry can't arise here (it
+  // compares a chart). `wheelOverlay` is the one test for "the overlay IS the wheel's chart":
+  // a promoted overlay, or the sky. (2026-10-20)
+  const wheelIsSky = skyAlone && !!overlayLayer && overlayLayer.kind !== 'synastry';
+  const wheelOverlay = promoteOverlay || wheelIsSky;
+  // The empty wheel's "choose Transits or Eclipses" line (chartWheel.skyHint,
+  // expandedSidebar.skyEmpty), only while neither is chosen: with Eclipses chosen and its chart
+  // hidden (or its module still loading) the line would send the reader to a pick already made.
+  const skyWheelHint =
+    skyAlone && !wheelIsSky && overlayMode !== 'transits' && overlayMode !== 'eclipses';
   // The overlay's instant as epoch ms — what the chart statement and the capture caption
   // read its moment from, rather than parsing the layer's "YYYY-MM-DD HH:MM" caption
   // string back: the target date, or the eclipse maximum the eclipse chart is cast for.
@@ -4909,21 +5190,28 @@ export default function App() {
   // return body and promotion state: the sidebar's other overlay props are nulled while
   // the overlay is promoted, but the statement has to name a promoted return as the
   // return it is. (2026-10-07)
+  //
+  // With no chart in force the sky's layer is the wheel's chart (wheelIsSky), so it goes in
+  // as standing in for one — that is what puts the statement in its 'sky' state — and an
+  // event chart is stated as one (EVENT CHART, "Event:"): the kind as PRESENTED, so a held
+  // device states every chart as a person, as before. (2026-10-20)
+  const presentedEvent = presentedKind(current, eventsLocked) === 'event';
   const sidebarHeader = useMemo<SidebarHeaderInfo>(
     () => ({
       overlay: overlayLayer
         ? {
             kind: overlayLayer.kind,
             ms: overlayMs,
-            promoted: promoteOverlay,
+            promoted: wheelOverlay,
             returnBody: overlayReturn,
             partner: overlayLayer.kind === 'synastry' ? partner : null,
           }
         : null,
       zodiac: effZodiacMode,
       nodeType,
+      event: presentedEvent,
     }),
-    [overlayLayer, overlayMs, promoteOverlay, overlayReturn, partner, effZodiacMode, nodeType],
+    [overlayLayer, overlayMs, wheelOverlay, overlayReturn, partner, effZodiacMode, nodeType, presentedEvent],
   );
   // Eclipses ▸ Display ▸ Other Lines: unlike the time overlays' Natal toggle
   // (which promotes the overlay to stand in for the chart), turning this off simply
@@ -4932,6 +5220,9 @@ export default function App() {
   // — so the eclipse path stands alone. It overrides those families' own toggles for
   // as long as it is off. The wheel and readouts keep the natal chart.
   const eclipseSolo = overlayMode === 'eclipses' && !showEclipseOtherLines;
+  // Every family eclipseSolo clears is cleared too while a line-system conflict stands
+  // (lineConflict above): no body line on the map, the overlay's included (mapOverlay).
+  const mapCleared = eclipseSolo || lineConflict;
   // Advanced ▸ Lines ▸ Natal Lines. A DRAW-time hide: the lines are still generated,
   // still measured, and still handed to every panel through the extension context —
   // only the map stops drawing them. That is the difference from eclipseSolo above,
@@ -4974,7 +5265,10 @@ export default function App() {
         minorLoadState,
         minorChartContext({
           advanced: advancedWheel,
-          none: !current,
+          // With no chart, the sky's transits stand in for one (promoted), and their catalog
+          // bodies are the rows' to report; with nothing promoted there is no chart to read.
+          // (2026-10-20)
+          none: !current && !promoteOverlay,
           // Whatever sampled where the lines are drawn — minorPositions itself when not
           // sliding (the same array), the slid instant's sample while sliding.
           chartSampled: new Set(minorSlidPositions.map((p) => p.n)),
@@ -5053,21 +5347,27 @@ export default function App() {
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     const ovPositions =
       lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd, ovProjectEps)
         : overlayLayer.positions;
-    // ε hoisted once per memo, as in the overlay memo above (2026-10-02).
-    const ovEps = obliquity(overlayLayer.jd);
+    // ε hoisted once per memo, as in the overlay memo above (2026-10-02); the one geodetic
+    // tilt there (2026-10-20).
+    const ovEps = ovFrameEps(overlayLayer.jd);
     const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
     // Promoted CCG keeps the per-body source tags (see the overlay memo above).
     const isCyclo = overlayLayer.kind === 'cyclo';
     return {
+      // Promoted, a timeless chart's progression still carries the bands (§15): it stands in
+      // for the chart, and is as uncertain as the chart.
       lines: mergeNodePairs(
         filterLines(
-          isCyclo
-            ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
-                cycloBodyTag(p.planet),
-              )
-            : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+          stampOverlayBands(
+            isCyclo
+              ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
+                  cycloBodyTag(p.planet),
+                )
+              : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+            ovPositions,
+          ),
           visiblePlanets,
           visibleLineTypes,
         ),
@@ -5124,6 +5424,9 @@ export default function App() {
     coordSystem,
     lineSystem,
     lineOpts,
+    ovProjectEps,
+    ovFrameEps,
+    stampOverlayBands,
   ]);
   // …in the chart's own inks, not the overlay's: promoted, it IS the chart, drawn through
   // the natal path. The crossing dots come after the colour step, as the chart's do (they
@@ -5155,7 +5458,7 @@ export default function App() {
   // one-frame rule (see overlayAux). A synastry partner's or an eclipse's own rows ride
   // beside them in the overlay's bundle (effOverlayParans); a time overlay has none. Resolved here rather than with the other eff* families further down
   // because the orb bands below need it.
-  const effParans = eclipseSolo ? EMPTY_FC : promoted ? promoted.parans : parans;
+  const effParans = mapCleared ? EMPTY_FC : promoted ? promoted.parans : parans;
   // The DRAW-only twin, for Advanced ▸ Lines ▸ Natal Lines — effLines/drawLines' split, and
   // for the same reason: a panel keeps reading what the map has stopped drawing. Only beside
   // an overlay — ANY overlay, Eclipses included (overlayLayer, not overlayAux), so the rule
@@ -5172,10 +5475,16 @@ export default function App() {
     // DRAWN rows (drawParans), for the same reason. Until 2026-10-06 they were built from
     // the chart's parans while the one-frame rule hid those rows under an overlay, so a
     // transit map carried shaded bands around rows nobody could see.
+    //
+    // A line carrying a timeless chart's band (props.band, stamped at generation) gets its
+    // corridor round the BAND, not round the line at the band's centre (Lina, 20 Oct 2026, §13:
+    // every place that could be within orb of the line, wherever in the band it truly lies) —
+    // generateOrbBands reads the stamp itself (orbBands bandedCorridor), cached per band
+    // object, which the stamping memos keep stable.
     const bandLines =
-      eclipseSolo || hideNatalAngles ? EMPTY_FC : promoted ? promoted.lines : lines;
+      mapCleared || hideNatalAngles ? EMPTY_FC : promoted ? promoted.lines : lines;
     return generateOrbBands(bandLines, drawParans, orbZoneKm, paranOrbKm);
-  }, [effShowOrbZones, eclipseSolo, hideNatalAngles, promoted, lines, drawParans, orbZoneKm, paranOrbKm]);
+  }, [effShowOrbZones, mapCleared, hideNatalAngles, promoted, lines, drawParans, orbZoneKm, paranOrbKm]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -5215,11 +5524,15 @@ export default function App() {
   );
   // Reference point for the line-card "Distance from …" row: the placed custom pin if there
   // is one, otherwise the natal birthplace (the default). Map reads it per line-click.
+  // With no chart in force there is no birthplace to fall back to, so the row measures from a
+  // placed pin alone. (2026-10-20)
   const distanceRef: { lat: number; lng: number; type: 'pin' | 'natal' } | null = current
     ? pinned && !isNatalPin
       ? { lat: pinned.lat, lng: pinned.lng, type: 'pin' }
       : { lat: current.birthplace.lat, lng: current.birthplace.lng, type: 'natal' }
-    : null;
+    : skyAlone && pinned
+      ? { lat: pinned.lat, lng: pinned.lng, type: 'pin' }
+      : null;
   const coordSource = isNatalPin
     ? 'natal-pinned'
     : pinned
@@ -5246,18 +5559,50 @@ export default function App() {
   //  The top-nav readout is suppressed while a map tool is active (see `locationLabel`),
   //  but the pin's own reverse-geocode keeps resolving so the Coordinates window can
   //  still name a placed pin mid-measure.
-  const { label: pinnedLabel, current: pinnedLabelCurrent } = useReverseGeocodeCell(
+  const { label: pinnedLookupLabel, current: pinnedLookupCurrent } = useReverseGeocodeCell(
     isNatalPin ? null : pinned,
     detailZoom,
   );
-  // The place last picked in the Local Space window's place row (below), kept so the row names
-  // the place the reader chose rather than the town the pin's lookup finds around it. Transient:
-  // it names the pin only while the pin is still where that pick put it.
-  const [lsPickedPlace, setLsPickedPlace] = useState<{
+  // The place a pin was made FROM, when it was made from a chosen place — the arrival crosshair
+  // of a Teleport pick, the Home marker, a saved pin, the Local Space window's place row — kept so
+  // everything that names the pin names the place the reader chose rather than the town the
+  // lookup finds around it (Lina, 22 Oct 2026, §1; G-1 since 23 Oct: the name a search gave, not the
+  // lookup's, in the Coordinates box and on "Relocated to:"). Transient, never stored: it names the pin only while
+  // the pin is still where that pick put it, so a pin moved by hand falls back to the lookup.
+  const [pickedPlace, setPickedPlace] = useState<{
     label: string;
     lat: number;
     lng: number;
   } | null>(null);
+  const pinPicked =
+    pinned &&
+    pickedPlace &&
+    Math.abs(pickedPlace.lat - pinned.lat) < 1e-7 &&
+    Math.abs(pickedPlace.lng - pinned.lng) < 1e-7
+      ? pickedPlace.label
+      : null;
+  // The pin's name as every reader below takes it: the picked place's while it stands, else the
+  // lookup's. The plain name stays on the DERIVED value, so no read site can reach past it.
+  const pinnedLabel = isNatalPin ? pinnedLookupLabel : (pinPicked ?? pinnedLookupLabel);
+  const pinnedLabelCurrent = pinPicked != null || pinnedLookupCurrent;
+  // The placed pin as the home pickers offer it (the chart form's Lives now box, the Local Space
+  // window's Home row; ChartHomeEditor mapPinSection): the way in for a home no search finds —
+  // drop the pin on it, then pick it there (2026-10-23). Named by its place, never the sticky name
+  // of the point before it: its coordinates until the lookup for THIS point settles. Offered,
+  // never taken. Not the natal pin: a home on the birthplace is what an unset home already says.
+  const homePinOffer = useMemo(
+    () =>
+      pinned && !isNatalPin
+        ? {
+            lat: pinned.lat,
+            lng: pinned.lng,
+            label:
+              (pinnedLabelCurrent ? pinnedLabel : null) ??
+              `${fmtLat(pinned.lat)}, ${fmtLng(pinned.lng)}`,
+          }
+        : null,
+    [pinned, isNatalPin, pinnedLabel, pinnedLabelCurrent],
+  );
   // The Local Space origin's place, for the window's place row under an owner that offers one
   // (ViewLock.keepsLocalSpace.place), and where it is: a pin's picked name while it stands where
   // the pick put it, else its looked-up place — its coordinates until the lookup for THIS point
@@ -5268,10 +5613,10 @@ export default function App() {
     const { point, kind } = r;
     const coords = `${fmtLat(point.lat)}, ${fmtLng(point.lng)}`;
     const picked =
-      lsPickedPlace &&
-      Math.abs(lsPickedPlace.lat - point.lat) < 1e-7 &&
-      Math.abs(lsPickedPlace.lng - point.lng) < 1e-7
-        ? lsPickedPlace.label
+      pickedPlace &&
+      Math.abs(pickedPlace.lat - point.lat) < 1e-7 &&
+      Math.abs(pickedPlace.lng - point.lng) < 1e-7
+        ? pickedPlace.label
         : null;
     const label =
       kind === 'pin'
@@ -5284,7 +5629,7 @@ export default function App() {
             ? identity.text(current.birthplace.label)
             : coords;
     return { label, lat: point.lat, lng: point.lng };
-  }, [localSpaceOriginResolved, isNatalPin, current, pinnedLabel, pinnedLabelCurrent, lsPickedPlace, identity]);
+  }, [localSpaceOriginResolved, isNatalPin, current, pinnedLabel, pinnedLabelCurrent, pickedPlace, identity]);
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useCountryOf(hover);
   // The sky band's place label while follow-the-cursor is on: the offline
@@ -5584,16 +5929,27 @@ export default function App() {
   // The planets stay the chart's own; only the frame they sit in belongs to the place.
   // birthAngles above stays the CELESTIAL radix on purpose — it is the eclipse
   // contacts' birth chart, which a map setting must not move. (2026-10-02)
+  //
+  // At the one tilt (geoEps, 2026-10-20) — which with a chart loaded is its own obliquity
+  // of date, so the frame is the one geodeticFrame always gave; passed explicitly so the
+  // wheel and the readout, the grid and the Coordinates box read one ε by construction.
+  //
+  // With no chart in force the place's frame is the sky's wheel's (wheelIsSky): the pin, else
+  // the hover — no birthplace to fall back on, so with neither there are no angles and the
+  // wheel is planets only. At the one tilt, which with no chart is J2000 (Lina, §2: "With no
+  // chart loaded, every geodetic surface uses J2000"), so the wheel, the Coordinates box and
+  // the readout read one ε here too. (`jd` is 0 then; the frame takes its ε as given and its
+  // cusps from a moment of that obliquity, so no moment of the chart's is read.) (2026-10-20)
   const angles = useMemo(() => {
     if (lineSystem === 'geodetic') {
-      if (!current) return null;
-      const at = activePoint ?? current.birthplace;
-      return geodeticFrame(jd, at.lat, at.lng, effHouseSystem);
+      const at = activePoint ?? current?.birthplace;
+      if (!at || (!current && !wheelIsSky)) return null;
+      return geodeticFrame(jd, at.lat, at.lng, effHouseSystem, geoEps);
     }
     return activePoint && current && !current.composite && !noTime
       ? relocate(jd, activePoint.lat, activePoint.lng, effHouseSystem)
       : birthAngles;
-  }, [lineSystem, jd, activePoint, current, noTime, birthAngles, effHouseSystem]);
+  }, [lineSystem, jd, activePoint, current, wheelIsSky, noTime, birthAngles, effHouseSystem, geoEps]);
   // Where the eclipse degree strikes the natal chart (conj/square/opp, 3°),
   // for the Sidebar's contacts list. Targets are the user's visible bodies
   // plus the RADIX angles — birthAngles, not the pin-relocated ones: the
@@ -5603,8 +5959,10 @@ export default function App() {
   // eclipse moment, the radix points by the ayanamsa at birth — they differ by
   // the inter-epoch precession, the same convention every other overlay uses
   // (tropical → both ayanamsas 0, so the list is byte-identical to before).
+  // None with no chart: there is no chart for the degree to strike, and the panel says so
+  // (EclipseHud noChart) rather than "this eclipse passes the chart quietly". (2026-10-20)
   const eclipseContactList = useMemo<EclipseContact[] | null>(() => {
-    if (overlayMode !== 'eclipses' || !eclipseDetails || !resolvedEclipse || !eclipsesMod)
+    if (overlayMode !== 'eclipses' || !eclipseDetails || !resolvedEclipse || !eclipsesMod || !current)
       return null;
     const eclipseAyan = ayanamsaRad(resolvedEclipse.event.maximum, effZodiacMode);
     const natalShift = ayanamsaRad(jd, effZodiacMode);
@@ -5624,6 +5982,7 @@ export default function App() {
     eclipseDetails,
     resolvedEclipse,
     eclipsesMod,
+    current,
     ecliptic,
     visiblePlanets,
     birthAngles,
@@ -5653,9 +6012,23 @@ export default function App() {
   // partner has no other set to show; the overlay still moves its PLANETS through
   // them. The bi-wheel's outer angle marks then repeat the inner ones, which is the
   // honest picture rather than a second, sky-turned frame. (2026-10-02)
+  //
+  // With no chart in force the sky's layer is the wheel's only chart (wheelIsSky), and its
+  // angles are the point's: on a geodetic map the place's frame (`angles`, at J2000 then); on
+  // a celestial map the sky at the layer's own moment over the pin or the hover — the transit
+  // and eclipse layers have no directing arc to apply. No point, no angles: the wheel is
+  // planets only. (2026-10-20)
   const overlayAngles = useMemo(() => {
-    if (!overlayLayer || !current) return null;
+    if (!overlayLayer) return null;
+    if (!current) {
+      if (!wheelIsSky) return null;
+      if (lineSystem === 'geodetic') return angles;
+      return activePoint ? relocate(overlayLayer.jd, activePoint.lat, activePoint.lng, effHouseSystem) : null;
+    }
     if (lineSystem === 'geodetic') return angles;
+    // The transit wheel is the full transit chart, the moment's own angles at the place, whatever the
+    // Angles control draws on the map (Lina, 23 Oct 2026, H-1: the control moves the map only — the
+    // 22 Oct wheel that followed it is reverted; whether any wheel should is registered for later).
     if (overlayLayer.kind === 'synastry' && partner?.composite) {
       return compositeAngles(partner.composite, effHouseSystem);
     }
@@ -5672,7 +6045,44 @@ export default function App() {
       overlayLayer.angleArc,
       overlayLayer.angleFrame,
     );
-  }, [overlayLayer, activePoint, current, partner, effHouseSystem, lineSystem, angles]);
+  }, [overlayLayer, activePoint, current, wheelIsSky, partner, effHouseSystem, lineSystem, angles]);
+  // The overlay wheel's houses line (Lina, 22 Oct 2026, §3.2; one rule since 23 Oct, H-2): which
+  // positions, and — only where the houses do NOT come from the wheel's own moment at the place —
+  // which angles they come from. A wheel that is simply a chart for its moment (transits, a return,
+  // an eclipse) names no angles on a celestial map; on a geodetic map every wheel's houses are the
+  // place's. The calculation rides where the technique has one.
+  const overlayHouses = useMemo<WheelHouses | null>(() => {
+    if (!overlayLayer) return null;
+    const geo = lineSystem === 'geodetic';
+    const own = geo ? { angles: 'geodetic' as const } : {};
+    switch (overlayLayer.kind) {
+      case 'transits':
+        return { positions: overlayReturn ? 'return' : 'transit', ...own };
+      case 'progressed':
+      case 'tertiary-progressed':
+        return geo
+          ? { positions: 'progressed', angles: 'geodetic' }
+          : effProgAngleFrame === 'natal'
+            ? { positions: 'progressed', angles: 'natal' }
+            : { positions: 'progressed', angles: 'progressed', calc: { key: progAngleMethod, on: 'angles' } };
+      case 'solar-arc':
+        return { positions: 'directed', angles: geo ? 'geodetic' : 'directed', calc: { key: arcMethod, on: 'positions' } };
+      case 'primary-directions':
+        return {
+          positions: 'directed',
+          angles: geo ? 'geodetic' : 'directed',
+          calc: { key: primaryRate, on: 'positions', rate: userPrimaryRate },
+        };
+      case 'synastry':
+        // The partner is a second person on the same wheel, not a chart of a moment: no houses line
+        // under them, on either line system (H-3); the chart's own carries the geodetic one.
+        return null;
+      case 'eclipses':
+        return { positions: 'eclipse', ...own };
+      default:
+        return null; // Cyclocartography: no wheel
+    }
+  }, [overlayLayer, lineSystem, overlayReturn, effProgAngleFrame, progAngleMethod, arcMethod, primaryRate, userPrimaryRate]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
   // the same observer location as the relocated angles (active point, else natal).
@@ -5680,8 +6090,9 @@ export default function App() {
     // `Map` is the MapLibre component here, so lean on the helper (empty ecliptic
     // → empty result) rather than a `new Map()` literal for the no-chart case.
     const obs = activePoint ?? current?.birthplace;
-    // Promoting the overlay → report the OVERLAY's bodies at the overlay's moment.
-    if (promoteOverlay && overlayLayer) {
+    // Promoting the overlay → report the OVERLAY's bodies at the overlay's moment. So does the
+    // sky alone's wheel (wheelOverlay: the eclipse chart, too, with no chart). (2026-10-20)
+    if (wheelOverlay && overlayLayer) {
       return getHorizontalCoords(
         obs ? (overlayEcliptic ?? []) : [],
         overlayLayer.gmst,
@@ -5691,24 +6102,25 @@ export default function App() {
       );
     }
     return getHorizontalCoords(obs ? ecliptic : [], gmst, eps, obs?.lat ?? 0, obs?.lng ?? 0);
-  }, [promoteOverlay, overlayLayer, overlayEcliptic, activePoint, current, ecliptic, gmst, eps]);
+  }, [wheelOverlay, overlayLayer, overlayEcliptic, activePoint, current, ecliptic, gmst, eps]);
 
   // The same RA + declination + azimuth/altitude for the four chart angles (each
   // an ecliptic point), so the Advanced table can show real data instead of dashes.
   //
   // Geodetic: always the place's frame (`angles`, which a promoted overlay shares),
-  // converted at the obliquity it was built with — eps, the chart's — so its RA and
-  // declination are those of the very longitudes the rows print. (2026-10-02)
+  // converted at the obliquity it was built with — the one tilt, geoEps (the chart's own,
+  // with a chart) — so its RA and declination are those of the very longitudes the rows
+  // print. (2026-10-02; geoEps 2026-10-20)
   const angleCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
     const geo = lineSystem === 'geodetic';
-    const a = promoteOverlay && !geo ? overlayAngles : angles;
+    const a = wheelOverlay && !geo ? overlayAngles : angles;
     if (!a || !obs) return null;
-    if (promoteOverlay && overlayLayer && !geo) {
+    if (wheelOverlay && overlayLayer && !geo) {
       return getAngleCoords(a, overlayLayer.gmst, obliquity(overlayLayer.jd), obs.lat, obs.lng);
     }
-    return getAngleCoords(a, gmst, eps, obs.lat, obs.lng);
-  }, [promoteOverlay, overlayLayer, overlayAngles, angles, activePoint, current, gmst, eps, lineSystem]);
+    return getAngleCoords(a, gmst, geo ? geoEps : eps, obs.lat, obs.lng);
+  }, [wheelOverlay, overlayLayer, overlayAngles, angles, activePoint, current, gmst, eps, geoEps, lineSystem]);
 
   // The same equatorial + horizon coordinates for the OVERLAY's bodies and
   // angles, at the overlay's own moment and the same observer, so the expanded
@@ -5724,7 +6136,7 @@ export default function App() {
   // COLUMN comes from the display positions the sidebar already holds.
   const overlayAdvancedCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
-    if (promoteOverlay || !overlayLayer || !obs) return null;
+    if (wheelOverlay || !overlayLayer || !obs) return null;
     return getHorizontalCoords(
       overlayEcliptic ?? [],
       overlayLayer.gmst,
@@ -5732,16 +6144,16 @@ export default function App() {
       obs.lat,
       obs.lng,
     );
-  }, [promoteOverlay, overlayLayer, overlayEcliptic, activePoint, current]);
+  }, [wheelOverlay, overlayLayer, overlayEcliptic, activePoint, current]);
 
   // Geodetic: overlayAngles IS `angles` (see overlayAngles), so its rows read what the
-  // chart's rows read — the chart's own sidereal time and obliquity — and the two
-  // tables print the same figures for the same four points. (2026-10-02)
+  // chart's rows read — the chart's own sidereal time and the one tilt (geoEps, angleCoords
+  // above) — and the two tables print the same figures for the same four points. (2026-10-02)
   const overlayAngleCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
-    if (promoteOverlay || !overlayLayer || !overlayAngles || !obs) return null;
+    if (wheelOverlay || !overlayLayer || !overlayAngles || !obs) return null;
     if (lineSystem === 'geodetic') {
-      return getAngleCoords(overlayAngles, gmst, eps, obs.lat, obs.lng);
+      return getAngleCoords(overlayAngles, gmst, geoEps, obs.lat, obs.lng);
     }
     return getAngleCoords(
       overlayAngles,
@@ -5750,7 +6162,7 @@ export default function App() {
       obs.lat,
       obs.lng,
     );
-  }, [promoteOverlay, overlayLayer, overlayAngles, activePoint, current, lineSystem, gmst, eps]);
+  }, [wheelOverlay, overlayLayer, overlayAngles, activePoint, current, lineSystem, gmst, geoEps]);
 
   // Sidereal display layer (Advanced ▸ Zodiac). The map's line geometry is
   // zodiac-independent and never shifts; every WHEEL/READOUT longitude does,
@@ -5818,22 +6230,25 @@ export default function App() {
   // planets + transiting outers) with no single coherent chart, so we never wheel it.
   // With Natal visible we just drop its overlay ring (isCyclo on the overlay* props);
   // with Natal hidden there's nothing left to draw, so the wheel goes to an explicit
-  // "NO CHART" empty state (noChart) — angles nulled here so the corners/toggles/coord
-  // angles fall away with it.
+  // "NO CHART" empty state (cycloEmpty) — angles nulled here so the corners/toggles/coord
+  // angles fall away with it. (Named `noChart` until 2026-10-20, when "No chart" became a
+  // state of its own — the sky alone — that this one must not be read as.)
   const isCyclo = overlayMode === 'cyclo';
-  const noChart = promoteOverlay && isCyclo;
+  const cycloEmpty = promoteOverlay && isCyclo;
   // Whether the wheel's single chart IS the natal chart — ONE test, read by both the
   // planets and the catalog bodies below, so nothing natal can ride onto a wheel that
   // is standing in for another chart. False for the NO CHART state and for a promoted
   // overlay, whose bodies are another instant's: a catalog body sampled at the birth
   // moment has no place on a transit chart — the overlay's own catalog set goes there
-  // instead (see wheelMinor).
-  const wheelIsNatal = !noChart && !(promoteOverlay && displayOverlayEcliptic);
+  // instead (see wheelMinor). False, too, for the sky alone's wheel (wheelIsSky), which has no
+  // natal chart at all — the eclipse chart included, which is never promoted. (2026-10-20)
+  const wheelIsNatal = !cycloEmpty && !(promoteOverlay && displayOverlayEcliptic) && !wheelIsSky;
   // On a geodetic map the wheel's Fortune is built from the place's geodetic Ascendant
   // (fortuneWheelPos reads `angles`, which is the place's frame there), while the map's
   // Fortune line keeps the chart's own (fortuneMapPos). Two Fortunes a reader can meet
-  // side by side, so the wheel's says which Ascendant it took: a line in its tip and a
-  // GE tag on its row (bodyNotes). Natal wheel only, the one that carries a Fortune.
+  // side by side, so the wheel's says which Ascendant it took: a line in its tip
+  // (bodyNotes) — and only there since 2026-10-20, when the GE tag the positions list and the
+  // capture card put on its row went (Lina, §6). Natal wheel only, the one that carries a Fortune.
   // Keyed on whether there IS a wheel Fortune, not on its degree, so a hover moving it
   // hands the wheel the same map. (`Map` is the MapLibre component in this file, hence
   // globalThis.) (2026-10-02)
@@ -5849,20 +6264,17 @@ export default function App() {
         ? 'wheel.tip.fortuneGeodeticNight'
         : 'wheel.tip.fortuneGeodeticDay'
       : 'wheel.tip.fortuneGeodetic';
-  const wheelBodyNotes = useMemo<ReadonlyMap<PlanetName, string> | null>(
-    () =>
-      lineSystem === 'geodetic' && hasWheelFortune && wheelIsNatal
-        ? new globalThis.Map<PlanetName, string>([['Fortune', t(fortuneNoteKey)]])
-        : null,
-    [lineSystem, hasWheelFortune, wheelIsNatal, fortuneNoteKey, t],
-  );
-  // A chart with no birth time is cast for 12:00, and a body that moves far in a day is
-  // printed as the span it may lie in rather than to the minute (lib/astro/timeless): the
-  // Moon in either line system, and the Part of Fortune, which only a geodetic map's wheel
-  // has (fortuneSect). The natal wheel's bodies only — an overlay promoted in its place has
-  // a time of its own. A module constant, so the wheel and the panels get one reference.
-  // (2026-10-02)
-  const natalRanges = noTime && wheelIsNatal ? TIMELESS_RANGE_DEG : null;
+  const wheelBodyNotes = useMemo<ReadonlyMap<PlanetName, string> | null>(() => {
+    const entries: [PlanetName, string][] = [];
+    if (lineSystem === 'geodetic' && hasWheelFortune && wheelIsNatal) entries.push(['Fortune', t(fortuneNoteKey)]);
+    return entries.length ? new globalThis.Map<PlanetName, string>(entries) : null;
+  }, [lineSystem, hasWheelFortune, wheelIsNatal, fortuneNoteKey, t]);
+  // A chart with no birth time is cast for 12:00, and each body's motion over the birth date is
+  // its uncertainty (lib/astro/timeless, Lina's one range rule of 22 Oct 2026). Every body read
+  // goes to the wheel and the tables with its range: a RANGED body prints as its range, and any
+  // whose range crosses a sign boundary gets the note, in either line system. The natal wheel's
+  // bodies only — an overlay promoted in its place reads its own (overlayMotion).
+  const natalRanges = noTime && wheelIsNatal ? (natalMotion?.ranges ?? null) : null;
   // Memoized so appending Fortune (a fresh array on the common natal path) doesn't
   // hand the wheel + capture memos a new reference every render.
   const wheelPlanets = useMemo(
@@ -5871,30 +6283,38 @@ export default function App() {
         ? fortuneWheelPos
           ? [...displayEcliptic, fortuneWheelPos]
           : displayEcliptic
-        : noChart
+        : cycloEmpty
           ? []
-          : // Promoted: wheelIsNatal is false here only because this is set.
+          : // Promoted, or the sky alone: wheelIsNatal is false here only because of one.
             (displayOverlayEcliptic ?? []),
-    [wheelIsNatal, noChart, displayOverlayEcliptic, displayEcliptic, fortuneWheelPos],
+    [wheelIsNatal, cycloEmpty, displayOverlayEcliptic, displayEcliptic, fortuneWheelPos],
   );
-  const wheelAngles = noChart
+  // The sky alone's are the overlay's own, or none with no point to cast them for — never a
+  // chart's, which there is not. (2026-10-20)
+  const wheelAngles = cycloEmpty
     ? null
-    : promoteOverlay && displayOverlayAngles
+    : wheelIsSky
       ? displayOverlayAngles
-      : displayAngles;
+      : promoteOverlay && displayOverlayAngles
+        ? displayOverlayAngles
+        : displayAngles;
+  // A wheel with planets and no angles: a chart with no birth time on a celestial map, or the
+  // sky alone with no point pinned or hovered — drawn on the neutral Aries frame, planets only.
+  // (2026-10-20)
+  const wheelPlanetsOnly = noTime || (wheelIsSky && !wheelAngles);
   // The Coordinates box's angles: the wheel's, except on a geodetic map with no chart
   // loaded. A place's geodetic angles need no chart, so the box still reads them for
-  // the hovered or pinned point — at J2000's obliquity, the grid's own, because with
-  // no chart there is no date to take one from. (2026-10-02)
+  // the hovered or pinned point — at the one tilt (geoEps), which with no chart is J2000,
+  // because there is no date to take one from (Lina, 20 Oct 2026, §2). (2026-10-02)
   const coordAngles = useMemo(
     () =>
       lineSystem === 'geodetic' && !current && activePoint
         ? {
-            ...geodeticAngles(activePoint.lng, activePoint.lat, EPS_J2000),
+            ...geodeticAngles(activePoint.lng, activePoint.lat, geoEps),
             geodetic: true as const,
           }
         : wheelAngles,
-    [lineSystem, current, activePoint, wheelAngles],
+    [lineSystem, current, activePoint, wheelAngles, geoEps],
   );
   // Discreet mode on a geodetic map: the angles are a function of the place alone (the
   // MC IS its longitude), so while they are the birthplace's — no pin and no hover, or
@@ -5940,7 +6360,7 @@ export default function App() {
   // Not natal and not NO CHART: the promoted overlay, the only other way here.
   const promotedWheelMinor = useMemo<readonly WheelMinorBody[]>(
     () =>
-      !wheelIsNatal && !noChart && overlayMinorSampled.length > 0
+      !wheelIsNatal && !cycloEmpty && overlayMinorSampled.length > 0
         ? buildWheelMinor(overlayMinorSampled, {
             ayan: overlayAyan,
             decor: minorDecorInked,
@@ -5948,7 +6368,7 @@ export default function App() {
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [wheelIsNatal, noChart, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
+    [wheelIsNatal, cycloEmpty, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
   );
   const wheelMinor = wheelIsNatal ? natalWheelMinor : promotedWheelMinor;
   // Hold the catalog ring while a wanted body's file is still on its way. A body with no
@@ -5966,18 +6386,19 @@ export default function App() {
   const minorCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
     if (!obs || wheelMinor.length === 0) return null;
-    const st = promoteOverlay && overlayLayer ? overlayLayer.gmst : gmst;
+    const st = wheelOverlay && overlayLayer ? overlayLayer.gmst : gmst;
     return getMinorHorizontalCoords(wheelMinor, st, obs.lat, obs.lng);
-  }, [activePoint, current, wheelMinor, gmst, promoteOverlay, overlayLayer]);
+  }, [activePoint, current, wheelMinor, gmst, wheelOverlay, overlayLayer]);
   // The same for the OVERLAY's ring, while it rides beside the chart: its catalog set,
   // placed by its rule and moved by its own ayanamsa — exactly as its planets are — for the
   // bi-wheel's overlay marks, the Dual layout's second wheel and the overlay's positions
   // table, with horizon figures at the overlay's own sidereal time (overlayAdvancedCoords'
   // observer and instant). The overlay ring's own gates and no others: none when promoted
-  // (wheelMinor carries it then) and none for Cyclo, which is never wheeled.
+  // (wheelMinor carries it then) and none for Cyclo, which is never wheeled — nor for the sky
+  // alone, whose layer IS the wheel's chart (wheelOverlay). (2026-10-20)
   const overlayMinorWheel = useMemo<readonly WheelMinorBody[]>(
     () =>
-      !promoteOverlay && !isCyclo && overlayMinorSampled.length > 0
+      !wheelOverlay && !isCyclo && overlayMinorSampled.length > 0
         ? buildWheelMinor(overlayMinorSampled, {
             ayan: overlayAyan,
             decor: minorDecorInked,
@@ -5985,7 +6406,7 @@ export default function App() {
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [promoteOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
+    [wheelOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
   );
   const overlayMinorCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
@@ -6111,13 +6532,14 @@ export default function App() {
         : overlayLayer.labelFull.split('·')[0].trim()
     : null;
   const captureCardOverlay =
-    captureChart && !promoteOverlay && !isCyclo && displayOverlayEcliptic
+    captureChart && !wheelOverlay && !isCyclo && displayOverlayEcliptic
       ? displayOverlayEcliptic.filter((p) => visiblePlanets.has(p.name))
       : null;
   // Unknown birth time on a celestial map: there are no angles, but the bodies still read by
   // sign — so the card draws them planets-only on the neutral Aries frame, as the sidebar
   // does. (On a geodetic map wheelAngles is the place's frame, birth time or not.)
-  const captureCardFrame = wheelAngles ?? (noTime ? ARIES_FRAME : null);
+  // The sky alone with no point is planets-only on the same frame (wheelPlanetsOnly). (2026-10-20)
+  const captureCardFrame = wheelAngles ?? (wheelPlanetsOnly ? ARIES_FRAME : null);
   // Null (no panel, no inset) unless the Capture tool is armed. WHEEL view shows the wheel
   // whenever a chart exists (the planets are always drawn, angles/balance modulate the rest);
   // LIST view shows whenever there are planet rows (its baseline) or an enabled angles group.
@@ -6147,11 +6569,11 @@ export default function App() {
                 overlayMinorBodies: captureCardOverlay ? overlayMinorWheel : null,
                 overlayName: captureCardOverlay ? overlayWheelName : null,
                 overlayAngles:
-                  promoteOverlay || isCyclo ? null : (displayOverlayAngles ?? null),
+                  wheelOverlay || isCyclo ? null : (displayOverlayAngles ?? null),
                 visibleAspects,
                 aspectOrbs: effAspectOrbs,
                 advanced: advancedWheel,
-                planetsOnly: noTime && !wheelAngles,
+                planetsOnly: wheelPlanetsOnly && !wheelAngles,
                 maskAngleText: maskGeAngleText,
                 // The natal wheel's spans and source notes, as the sidebar's wheel draws
                 // them: a picture of a timeless chart must not print its Moon to the
@@ -6186,9 +6608,8 @@ export default function App() {
               balance: captureExtras.balance ? captureBalance : [],
               maskAngleText: maskGeAngleText,
               ranges: natalRanges,
-              // The list's Fortune row is the wheel's (captureExtraPlanets comes from
-              // wheelPlanets), so it carries the same source mark. (2026-10-02)
-              bodyNotes: wheelBodyNotes,
+              // No source note on the list: its Fortune row carried a GE mark from it until
+              // 2026-10-20, when Lina (§6) asked for the mark to go; the wheel's tip keeps it.
             }
           : null;
 
@@ -6331,12 +6752,16 @@ export default function App() {
   // saying the same thing in a second colour. Straight through onPlacePin, so an
   // adopted arrival is a pin like any other: same coordinate hygiene, same hover
   // readout, same onboarding tick.
+  // The pin keeps the arrival's name (Lina, 22 Oct 2026, §1): a pin made from a chosen place is
+  // named for it, not for the nearest town.
   const onArrivalClick = useCallback(
     (lat: number, lng: number) => {
       onPlacePin(lat, lng);
+      const label = arrivalMark?.label;
+      setPickedPlace(label ? { label, lat, lng: ((((lng + 180) % 360) + 360) % 360) - 180 } : null);
       setArrivalMark(null);
     },
-    [onPlacePin],
+    [onPlacePin, arrivalMark],
   );
   // Clicking the home marker does the two things "go home" means, in the order
   // they read: the pin lands there (so the reading, the readouts and the
@@ -6351,9 +6776,21 @@ export default function App() {
   const onHomeClick = useCallback(
     (lat: number, lng: number) => {
       onPlacePin(lat, lng);
+      // Home's own name on the pin it makes, as for any chosen place.
+      const home = current?.home;
+      setPickedPlace(home ? { label: home.label, lat, lng: ((((lng + 180) % 360) + 360) % 360) - 180 } : null);
       teleportToPoint(lat, lng, CLOSE_ZOOM);
     },
-    [onPlacePin, teleportToPoint],
+    [onPlacePin, teleportToPoint, current],
+  );
+  // The extension context's pin setter: the point, and — when a plugin places the pin FROM a named
+  // place (a saved pin) — that name, which the pin then carries like any chosen place's.
+  const placePinNamed = useCallback(
+    (point: { lat: number; lng: number } | null, label?: string) => {
+      setPinned(point);
+      setPickedPlace(point && label ? { label, lat: point.lat, lng: point.lng } : null);
+    },
+    [],
   );
   const onRecenterPin = useCallback(() => {
     if (pinned) jumpTo(pinned.lat, pinned.lng);
@@ -6472,7 +6909,9 @@ export default function App() {
   // whenever they are off the map: the eclipse clean-up, an overlay promoted into the
   // primary slot (the cage is the overlay then, not the resampled natal chart), or the
   // Natal Lines switch. A geodetic map is the sky hold's, not this: armSlide refuses there.
-  const slideAvailable = !eclipseSolo && !promoted && !hideNatalAngles;
+  // And the sky alone, which has no natal cage at all — with the overlay off too, where nothing
+  // is promoted to say so. (2026-10-20)
+  const slideAvailable = !mapCleared && !promoted && !hideNatalAngles && !skyAlone;
   useEffect(() => {
     slideAvailableRef.current = slideAvailable;
   }, [slideAvailable]);
@@ -6583,6 +7022,88 @@ export default function App() {
       prev.map((c) => (c.id === id ? { ...c, lastUsedAt: Date.now() } : c)),
     );
   }, []);
+
+  // "No chart · the sky alone" (the chart menu's fixed row, 2026-10-20): the ONE opener of the
+  // state, so no plugin or hotkey route can reach it past the hold. Refused while the geodetic
+  // hold is up — the row isn't offered there, and a stored pick would only be masked anyway.
+  // Writes the pick (NO_CHART_ID), bumps no recency (there is no chart to have been used), and
+  // says what it holds, through the one notice kind for that fact ('no-chart-held'), only when
+  // something on the map actually moves: a technique that advances or compares a chart going
+  // to None, transits leaving the chart's frame for the moment's, or an open Local Space
+  // window being put away (lib/skyAlone noChartHoldChanges — CLAUDE.md rule 3). Everything it
+  // holds is masked, never written, and is back as it was with the first chart picked.
+  const selectNoChart = useCallback(() => {
+    if (GEODETIC_HELD) return;
+    announceFlip(
+      'no-chart-held',
+      noChartHoldChanges({
+        chartInForce: current !== null,
+        overlayMode,
+        lineSystem,
+        transitFrame: effTransitFrame,
+        localSpaceOpen: lsOpenWithChart,
+      }),
+    );
+    skyAloneRef.current = true;
+    setCurrentId(NO_CHART_ID);
+  }, [current, overlayMode, lineSystem, effTransitFrame, lsOpenWithChart, announceFlip]);
+  useEffect(() => {
+    selectNoChartKeyRef.current = selectNoChart;
+  }, [selectNoChart]);
+
+  // The example event (Aries Ingress 2026), from the "Add example event" button under an empty
+  // Events list: added once and never twice (lib/eventCharts withExampleEvent hands the same
+  // array back, so a second press writes nothing), refused while the hold is up, and NOT
+  // selected — the reader asked for a chart in the library, not for the map to move. A write the
+  // reader asked for through its own control. (2026-10-20)
+  const addExampleEvent = useCallback(() => {
+    if (eventsLocked) return;
+    setCharts((prev) => withExampleEvent(prev, Date.now()));
+  }, [eventsLocked]);
+
+  // What both chart menus (the top bar's and the sidebar's) need beyond the chart list, in one
+  // bundle so the two hosts cannot disagree: event charts on offer exactly while the hold is
+  // lifted (DERIVED, never stored); the DERIVED line system, which orders the sections; the sky
+  // alone in force, which marks the No chart row and puts "No chart" on the trigger — an empty
+  // library on an unlocked device included, since the sky is what it draws; the trigger's line
+  // under it (lib/eventCharts noChartMeta: the overlay and its UT date, or "The sky alone");
+  // and what choosing No chart would put away — the overlay, an open Local Space window —
+  // each named by its menu name only when it will be (rule 3). (2026-10-20)
+  const skyMetaMs =
+    overlayMode === 'transits'
+      ? targetDate
+      : overlayMode === 'eclipses' && resolvedEclipse
+        ? jdToMs(resolvedEclipse.event.maximum)
+        : null;
+  const skyMetaMode = overlayMode === 'transits' || overlayMode === 'eclipses' ? overlayMode : null;
+  const skyMeta = useMemo(
+    () => (skyAlone ? noChartMeta(t, fmt, skyMetaMode, skyMetaMs) : null),
+    [skyAlone, t, fmt, skyMetaMode, skyMetaMs],
+  );
+  const noChartHolds = useMemo(
+    () =>
+      current
+        ? [
+            ...(overlayMode !== 'off' && NO_CHART_BLOCKED_OVERLAYS.has(overlayMode)
+              ? [t(`topNav.overlay.modes.${overlayMode}.label`)]
+              : []),
+            ...(lsOpenWithChart ? [t('topNav.view.localSpace')] : []),
+          ]
+        : [],
+    [current, overlayMode, lsOpenWithChart, t],
+  );
+  const switcherSky = useMemo<ChartSwitcherSky>(
+    () => ({
+      eventsOn: !eventsLocked,
+      lineSystem,
+      noChartPicked: skyAlone,
+      onSelectNoChart: selectNoChart,
+      onAddExample: addExampleEvent,
+      skyMeta,
+      noChartHolds,
+    }),
+    [lineSystem, skyAlone, selectNoChart, addExampleEvent, skyMeta, noChartHolds],
+  );
 
   const handleSaveChart = (chart: StoredChart) => {
     // Stamp recency on the saved chart.
@@ -6995,60 +7516,92 @@ export default function App() {
   // GEOMETRY only, in the generators' own colours (2026-10-06): the wrapper below puts the
   // palette's inks on it (inkAllLines), so a colour change re-inks the cached set rather than
   // regenerating it — the quadratic midpoints above all.
+  //
+  // The NATAL half is lib/astro/allLines buildNatalLineSet since 2026-10-20 — the same builder a
+  // document asks for its own line system through (collectAllLinesFor, below) — handed the
+  // families the drawn memos already hold (they read the same rules: natalLinePositions,
+  // natalLineEps, stampNatalBands), so nothing is generated twice. The overlay half stays here.
+  //
+  // Its inputs, the live map's: the slid sample the drawn memos read (no Slide on a geodetic
+  // map, so there it is the chart's own), and the catalog parans' switch as derived.
+  const liveNatalInputs = useMemo<NatalLineInputs>(
+    () => ({
+      positions: slidPositions,
+      sampleJd: sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd,
+      jd,
+      eps,
+      gmst,
+      geoEps,
+      coordSystem,
+      noTime,
+      motion: natalMotion,
+      fortune: fortuneMapPos,
+      starSet,
+      starColor: STAR_LINE_COLORS[theme],
+      localSpaceOrigin,
+      minor: {
+        positions: minorSlidPositions,
+        sampleJd: sliding && current ? jd + slideBucket * SLIDE_BUCKET_DAYS : jd,
+        decor: minorDecor,
+      },
+      minorParans: minorParansOn,
+    }),
+    [
+      slidPositions,
+      sliding,
+      current,
+      jd,
+      slideBucket,
+      eps,
+      gmst,
+      geoEps,
+      coordSystem,
+      noTime,
+      natalMotion,
+      fortuneMapPos,
+      starSet,
+      theme,
+      localSpaceOrigin,
+      minorSlidPositions,
+      minorDecor,
+      minorParansOn,
+    ],
+  );
   const buildAllLines = useCallback((): AllLines => {
-    if (!current) {
-      return {
-        lines: EMPTY_FC,
-        angleLines: EMPTY_FC,
-        parans: EMPTY_FC,
-        starLines: EMPTY_FC,
-        localSpace: EMPTY_FC,
-        overlayLines: null,
-        overlayParans: null,
-        overlayLocalSpace: null,
-        natalAngleLines: EMPTY_FC,
-        natalParans: EMPTY_FC,
-        natalStarLines: EMPTY_FC,
-        minorLines: EMPTY_FC,
-        overlayMinorLines: null,
-        minorParans: EMPTY_FC,
-        overlayMinorParans: null,
-        skyHeld,
-      };
-    }
     const effCoordSystem: CoordSystem = lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
-    // Natal: allLines / allParans / allLocalSpace are ALREADY unfiltered; aspects + midpoints are
-    // regenerated here from the FULL body set (not the visible subset), all line types; star lines
-    // are generated regardless of the Fixed Stars toggle. The aspect-line display
-    // filters are intentionally NOT applied either — this is the everything set.
-    const natalLines = allLines;
-    const angleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
-      ...generateAspectLines(linePositions, meridianLng, effCoordSystem, eps, lineOpts).features,
-      ...generateMidpointLines(linePositions, meridianLng, effCoordSystem, eps, lineOpts).features,
-    ];
-    const natalAngleLines: FeatureCollection<LineString, AngleOverlayLineProps> = {
-      type: 'FeatureCollection',
-      features: angleFeatures,
-    };
-    // Unknown birth time: on a celestial map the natal families above are already empty
-    // (linePositions is emptied at the source). On a geodetic map the planet, aspect and
-    // midpoint lines are drawn from the 12:00 placeholder, so they are here too — every
-    // consumer of this set that lists lines for a timeless chart guards itself — while
-    // allParans keeps its own gate (skyFamiliesOff). The star lines generate from the
-    // catalog + jd alone, so they read that gate here too, in either system. (2026-10-02)
+    // Natal: allLines / allParans / allLocalSpace / allMinorLines are ALREADY unfiltered, and
+    // handed in; buildNatalLineSet adds the aspects and midpoints from the FULL body set (not
+    // the visible subset), all line types, the star lines regardless of the Fixed Stars toggle,
+    // and the catalog parans while the reader's switch is in effect (minorParansOn). The
+    // aspect-line display filters are intentionally NOT applied either — this is the
+    // everything set.
+    //
+    // Unknown birth time: on a celestial map the natal families are empty (linePositions is
+    // emptied at the source). On a geodetic map the planet, aspect and midpoint lines are drawn
+    // from the 12:00 placeholder, so they are here too, with their bands — every consumer of
+    // this set that lists lines for a timeless chart guards itself — while the parans and star
+    // lines keep their own gate (skyFamiliesOff). (2026-10-02)
     //
     // On a geodetic map the whole set is built HELD (skyHeld, returned below so a listing
-    // can say so): that gate empties the natal parans and star lines, allLocalSpace is
+    // can say so): that gate empties the natal parans and star lines, local space is
     // empty, every generator leaves the Vertex axis out (lineOpts), and the overlay's
     // parans, local space and star lines are left out below. (2026-10-02)
-    const natalStarLines = skyFamiliesOff
-      ? EMPTY_FC
-      : generateStarLines(
-          starsOfDate(jd, starSet),
-          meridianLng,
-          lineSystem === 'geodetic' ? eps : null,
-          STAR_LINE_COLORS[theme],
-        );
+    //
+    // With no chart the natal half is empty (emptyNatalLineSet: every natal family, and the
+    // set's skyHeld and lineSystem), and the sky alone's layer, when one is up, fills the
+    // overlay half below exactly as transits beside a chart do — so a plugin reading the
+    // complete set finds the drawn sky in overlayLines, as it finds a promoted overlay's.
+    // (2026-10-20)
+    const natal = current
+      ? buildNatalLineSet(liveNatalInputs, lineSystem, {
+          lines: allLines,
+          parans: allParans,
+          localSpace: allLocalSpace,
+          minorLines: allMinorLines,
+        })
+      : emptyNatalLineSet(lineSystem);
+    const natalAngleLines = natal.natalAngleLines;
+    const natalStarLines = natal.natalStarLines;
     // Overlay (transits / progressions / synastry / …), if one is active — the same generators on
     // the overlay's positions/frame, tagged, unfiltered. Mirrors the `overlay` memo below sans filters.
     let overlayLines: FeatureCollection | null = null;
@@ -7056,15 +7609,6 @@ export default function App() {
     let overlayLocalSpace: FeatureCollection | null = null;
     let overlayMinorAll: FeatureCollection | null = null;
     let overlayMinorParansAll: FeatureCollection | null = null;
-    // The catalog bodies' parans with the planets, the chart's: only while the reader's
-    // switch is in effect (minorParansOn — held with the map's parans, so a set that lists
-    // them never lists rows the reader can't switch on), and, as allParans, none without a
-    // birth time. Every built-in body for a partner — unfiltered, as allParans pairs every
-    // body — from the lines' own positions, meridian and decoration.
-    const natalMinorParans: FeatureCollection =
-      minorParansOn && !skyFamiliesOff && minorLinePositions.length > 0
-        ? generateMinorParans(minorLinePositions, linePositions, meridianLng, minorDecor)
-        : EMPTY_FC;
     // One-frame rule: when an overlay is active its aspect/midpoint and star families
     // REPLACE the natal ones in the complete set, so a reveal/report reads the active frame.
     // The parans left that rule on 2026-10-06 (see overlayAux): the chart's stay in `parans`
@@ -7074,17 +7618,21 @@ export default function App() {
     if (overlayLayer) {
       const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
       const isCyclo = overlayLayer.kind === 'cyclo';
-      const ovEps = obliquity(overlayLayer.jd);
+      // The one tilt on a geodetic map, and the §15 bands, as the drawn overlay memos read them.
+      const ovEps = ovFrameEps(overlayLayer.jd);
       const ovPositions =
         lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-          ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+          ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd, ovProjectEps)
           : overlayLayer.positions;
       const ovMeridianLng: MeridianLng = meridianLngFor(lineSystem, ovEps, overlayLayer.gmst);
-      overlayLines = isCyclo
-        ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
-            cycloBodyTag(p.planet),
-          )
-        : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix);
+      overlayLines = stampOverlayBands(
+        isCyclo
+          ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng, lineOpts), (p) =>
+              cycloBodyTag(p.planet),
+            )
+          : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
+        ovPositions,
+      );
       // Parans suppressed under Cyclocartography (no single sky-moment across epochs), and
       // held on a geodetic map.
       overlayParans =
@@ -7099,6 +7647,7 @@ export default function App() {
         visibleLineTypes: ALL_MINOR_ANGLES,
         zenith: false,
         decor: minorDecor,
+        geoEps,
       });
       overlayMinorAll = ovMinor.lines;
       // …and their parans with the overlay's bodies, wherever its planet parans are in this
@@ -7110,7 +7659,9 @@ export default function App() {
               prefix,
             )
           : null;
-      overlayLocalSpace = skyHeld
+      // Held on a geodetic map, and never cast from a sky layer, whose origin is NaN on purpose:
+      // with no chart there is no birthplace to radiate from (timeline buildSkyOverlay).
+      overlayLocalSpace = skyHeld || overlayLayer.skyOnly
         ? null
         : generateLocalSpace(
             overlayLayer.positions,
@@ -7132,9 +7683,12 @@ export default function App() {
           type: 'FeatureCollection',
           features: ovAngleFeatures,
         };
-        angleLinesOut = isCyclo
-          ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
-          : tagLabels(ovAngleFc, prefix);
+        angleLinesOut = stampOverlayBands(
+          isCyclo
+            ? tagLabelsBy(ovAngleFc, (p) => cycloBodyTag(p.planet))
+            : tagLabels(ovAngleFc, prefix),
+          ovPositions,
+        );
         starLinesOut = skyHeld
           ? EMPTY_FC
           : tagLabels(
@@ -7149,11 +7703,11 @@ export default function App() {
       }
     }
     return {
-      lines: natalLines,
+      lines: natal.lines,
       angleLines: angleLinesOut,
-      parans: allParans,
+      parans: natal.parans,
       starLines: starLinesOut,
-      localSpace: allLocalSpace,
+      localSpace: natal.localSpace,
       overlayLines,
       overlayParans,
       overlayLocalSpace,
@@ -7163,42 +7717,42 @@ export default function App() {
       // them. (natalParans now equals `parans` — the parans left the rule on
       // 2026-10-06 — and is kept so the slot's readers need not change.)
       natalAngleLines,
-      natalParans: allParans,
+      natalParans: natal.parans,
       natalStarLines,
       // Catalog bodies: the chart's own, every line type of the ones in play — and an
       // overlay's beside them, tagged, as the overlay's planet lines are. No one-frame rule
       // to choose between: catalog lines are angle lines, which an overlay draws beside
       // the chart's rather than in place of them.
-      minorLines: allMinorLines,
+      minorLines: natal.minorLines,
       overlayMinorLines: overlayMinorAll,
       // Their parans with the planets, the chart's, beside an overlay too — as `parans`.
-      minorParans: natalMinorParans,
+      minorParans: natal.minorParans,
       overlayMinorParans: overlayMinorParansAll,
       skyHeld,
+      lineSystem,
     };
   }, [
     current,
     lineSystem,
     coordSystem,
+    liveNatalInputs,
     allLines,
     allMinorLines,
     overlayMinorSampled,
     minorDecor,
     minorParansOn,
-    minorLinePositions,
     theme,
-    linePositions,
-    meridianLng,
-    eps,
-    jd,
+    geoEps,
     starSet,
     overlayLayer,
     overlayAux,
     allParans,
     allLocalSpace,
-    skyFamiliesOff,
     skyHeld,
     lineOpts,
+    ovFrameEps,
+    ovProjectEps,
+    stampOverlayBands,
   ]);
 
   // The caching face of the builder above: the set is computed lazily ONCE per input
@@ -7283,6 +7837,122 @@ export default function App() {
     ],
   );
 
+  // ── A document's own line set (MapExtensionContext.collectAllLinesFor; seam L119) ──────────
+  // Lina's ruling for Reports (20 Oct 2026, §23): a report records the line system it was made
+  // in and builds its own lines in it, so a geodetic report stays geodetic on a celestial map
+  // and the reverse. In the map's own system that is the complete set above, the same object;
+  // in the other, the chart's natal families alone, built by lib/astro/allLines from the chart's
+  // own sample — never a Slide's: a record is of the chart, not of a gesture on the live map —
+  // lazily, once per input state, and inked in the committed inks as the live set is.
+  //
+  // The review hold is applied here as well as by the caller: a 'geodetic' asked for while it
+  // is up is answered in Celestial, as the map would draw it, so a held device never builds a
+  // geodetic set whatever a caller passes (the set's lineSystem says which it got).
+  const docNatalInputs = useMemo<NatalLineInputs>(
+    () => ({
+      positions,
+      sampleJd: jd,
+      jd,
+      eps,
+      gmst,
+      geoEps,
+      coordSystem,
+      noTime,
+      motion: natalMotion,
+      fortune: fortuneMapPos,
+      starSet,
+      starColor: STAR_LINE_COLORS[theme],
+      localSpaceOrigin,
+      minor: { positions: minorPositions, sampleJd: jd, decor: minorDecor },
+      // The catalog parans' switch as it stands but for the sky hold, which the builder applies
+      // for the system asked — and with no overlay to stand in for the chart, nothing else holds.
+      minorParans: minorParansPref && advancedWheel && showParans,
+    }),
+    [
+      positions,
+      jd,
+      eps,
+      gmst,
+      geoEps,
+      coordSystem,
+      noTime,
+      natalMotion,
+      fortuneMapPos,
+      starSet,
+      theme,
+      localSpaceOrigin,
+      minorPositions,
+      minorDecor,
+      minorParansPref,
+      advancedWheel,
+      showParans,
+    ],
+  );
+  const docLinesCacheRef = useRef<{
+    ls: LineSystem;
+    inputs: NatalLineInputs;
+    geom: AllLines;
+    inks: MapInks;
+    set: AllLines;
+  } | null>(null);
+  const collectAllLinesFor = useCallback(
+    (ls: LineSystem): AllLines => {
+      const want: LineSystem = ls === 'geodetic' && GEODETIC_HELD ? 'celestial' : ls;
+      if (want === lineSystem) return collectAllLines();
+      const cur = docLinesCacheRef.current;
+      const same = !!cur && cur.ls === want && cur.inputs === docNatalInputs;
+      if (same && cur.inks === inksCommitted) return cur.set;
+      const geom = same
+        ? cur.geom
+        : current
+          ? buildNatalLineSet(docNatalInputs, want)
+          : emptyNatalLineSet(want);
+      const set = inkAllLines(geom, inksCommitted);
+      docLinesCacheRef.current = { ls: want, inputs: docNatalInputs, geom, inks: inksCommitted, set };
+      return set;
+    },
+    [lineSystem, collectAllLines, docNatalInputs, inksCommitted, current],
+  );
+  // Its stamp: linesStamp in the map's own system; otherwise the stable inputs of that natal-
+  // only set — no overlay, so nothing about one; the Fortune point's place stands in for the
+  // settings that move it (Advanced, the formula). Moves exactly when the set would.
+  const docMinorParans = minorParansPref && advancedWheel && showParans;
+  const fortuneKey = fortuneMapPos ? fortuneMapPos.ra.toFixed(9) : '';
+  const linesStampFor = useCallback(
+    (ls: LineSystem): string => {
+      const want: LineSystem = ls === 'geodetic' && GEODETIC_HELD ? 'celestial' : ls;
+      if (want === lineSystem) return linesStamp;
+      return [
+        'natal',
+        current?.id ?? '',
+        jd,
+        nodeType,
+        ephemerisEpoch,
+        want,
+        coordSystem,
+        starSet,
+        inksCommitted.key,
+        minorNumbers.join(','),
+        docMinorParans && !skyHeldFor(want) ? 'mp' : '',
+        fortuneKey,
+      ].join('|');
+    },
+    [
+      lineSystem,
+      linesStamp,
+      current,
+      jd,
+      nodeType,
+      ephemerisEpoch,
+      coordSystem,
+      starSet,
+      inksCommitted.key,
+      minorNumbers,
+      docMinorParans,
+      fortuneKey,
+    ],
+  );
+
   // The line "spotlight": when set, the <Map> dims and draws only the lines
   // within radiusKm of `center` (a null center = aiming: dim + hide all lines); null = the normal
   // map. The plugin drives it through setLineSpotlight on the extension ctx below.
@@ -7318,7 +7988,7 @@ export default function App() {
   // exposes this FULL set so a consumer can measure every visible line and decide
   // proximity itself; the <Map> narrows each line family through the spotlight (applySpot) and
   // drops the non-line families while a spotlight is active, for a lines-only reveal on a dim map.
-  const effLines = eclipseSolo ? EMPTY_FC : promoted ? promoted.lines : lines;
+  const effLines = mapCleared ? EMPTY_FC : promoted ? promoted.lines : lines;
   // The DRAW-only twin of effLines, for Advanced ▸ Lines ▸ Natal Lines. It forks here
   // rather than above it because the two hides answer different questions: eclipseSolo
   // asks "what is on the map", which a report must agree with, while this one asks only
@@ -7329,30 +7999,16 @@ export default function App() {
   // filters: the reveal is a deliberate "show me everything near HERE", and a filter it
   // honoured would make the one gesture meant to find a line unable to find it.
   const drawLines = hideNatalAngles ? EMPTY_FC : effLines;
-  // A timeless chart on a geodetic map draws its lines from the 12:00 placeholder; the
-  // Moon's and Mercury's can be anywhere in a band either side by the real hour, so each of
-  // their lines gets one, filled in its own colour (lib/astro/uncertaintyBands). Built from
-  // drawLines, so a band goes wherever its line goes — the planet and Angles filters, the
-  // natal-lines hide, the eclipse clean-up — and from the very positions, frame and
-  // obliquity the lines were (CLAUDE.md rule 5). None while an overlay is promoted: its
-  // lines are another moment's, which has a time. (2026-10-02)
-  const uncertaintyBands = useMemo(
-    () =>
-      !timelessGeodetic || promoted
-        ? EMPTY_FC
-        : generateUncertaintyBands(drawLines, linePositions, TIMELESS_BAND_DEG, meridianLng, eps),
-    [timelessGeodetic, promoted, drawLines, linePositions, meridianLng, eps],
-  );
   // Auxiliary families follow the ACTIVE FRAME (one-frame rule): the overlay's own
   // aspect/midpoint/star/paran set when an overlay is active, the natal set otherwise —
   // never both, and independent of the Natal display toggle (which the promoted swap
   // of the PRIMARY lines still honors). Eclipses keep the natal set (overlayAux false).
-  const effAngleLines = eclipseSolo
+  const effAngleLines = mapCleared
     ? EMPTY_FC
     : overlayAux
       ? overlayAngleLines
       : angleLines;
-  const effStarLines = eclipseSolo
+  const effStarLines = mapCleared
     ? EMPTY_FC
     : overlayAux
       ? overlayStarLines
@@ -7361,7 +8017,7 @@ export default function App() {
   // clean-up, swapped for the overlay's own catalog lines while it is promoted (tagged, in
   // the natal source, exactly as the promoted planet lines are), and — for DRAWING only —
   // under Natal Lines, exactly as effLines/drawLines above split it.
-  const effMinorLines = eclipseSolo
+  const effMinorLines = mapCleared
     ? EMPTY_FC
     : promoted
       ? (overlayMinorInked?.lines ?? EMPTY_FC)
@@ -7373,8 +8029,8 @@ export default function App() {
   // the DRAWN rows (the window and the More button's count, which describe the screen).
   // A promoted overlay is not a gate here: the rows already read its set (minorRows).
   const minorRowsEff = useMemo(
-    () => withMinorDrawGate(minorRows, eclipseSolo ? 'natalOff' : null),
-    [minorRows, eclipseSolo],
+    () => withMinorDrawGate(minorRows, mapCleared ? 'natalOff' : null),
+    [minorRows, mapCleared],
   );
   const minorRowsDrawn = useMemo(
     () => withMinorDrawGate(minorRowsEff, hideNatalAngles ? 'natalOff' : null),
@@ -7384,7 +8040,7 @@ export default function App() {
   // they're generated; Zeniths/Nadirs, Natal Lines, eclipse clean-up) and, like the
   // lines, are the overlay's while it is promoted.
   const effMinorZenith =
-    eclipseSolo || hideNatalAngles || !effShowZenith
+    mapCleared || hideNatalAngles || !effShowZenith
       ? EMPTY_FC
       : promoted
         ? (overlayMinorInked?.zenith ?? EMPTY_FC)
@@ -7395,35 +8051,35 @@ export default function App() {
   // promoted planet parans are), and otherwise the chart's, beside an overlay's too — whose
   // own ride in its bundle, effMapOverlay.minorParans. The draw twin takes the Natal Lines
   // hide beside an overlay, as drawParans does.
-  const effMinorParans: FeatureCollection<LineString, MinorParanProps> = eclipseSolo
+  const effMinorParans: FeatureCollection<LineString, MinorParanProps> = mapCleared
     ? NO_MINOR_PARANS
     : promoted
       ? (overlayMinorParansInked ?? NO_MINOR_PARANS)
       : minorParans;
   const drawMinorParans = overlayLayer && hideNatalAngles ? NO_MINOR_PARANS : effMinorParans;
-  const effLocalSpace = eclipseSolo ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
+  const effLocalSpace = mapCleared ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
   // The three below are map-only — nothing on the extension context carries them — so
   // they take the Natal Lines hide in place rather than needing a draw* twin. Each is a
   // mark ON a natal angle line (a crossing dot, a zenith circle or nadir diamond) or the
   // curve those stamps are read against, so each goes when the line under it does.
   const effLocalSpaceCross =
-    eclipseSolo || hideNatalAngles
+    mapCleared || hideNatalAngles
       ? EMPTY_FC
       : promoted
         ? promoted.localSpaceCross
         : localSpaceCross;
   const effLocalSpaceOrigin =
-    lsActive && !eclipseSolo ? (promoted ? promoted.origin : localSpaceOrigin) : null;
+    lsActive && !mapCleared ? (promoted ? promoted.origin : localSpaceOrigin) : null;
   const effZenith =
-    eclipseSolo || hideNatalAngles || !effShowZenith
+    mapCleared || hideNatalAngles || !effShowZenith
       ? EMPTY_FC
       : promoted
         ? promoted.zenith
         : zenith;
   const effNadir =
-    eclipseSolo || hideNatalAngles || !effShowZenith ? EMPTY_FC : mapNadir;
+    mapCleared || hideNatalAngles || !effShowZenith ? EMPTY_FC : mapNadir;
   const effEcliptic =
-    eclipseSolo || hideNatalAngles || !effShowZenith
+    mapCleared || hideNatalAngles || !effShowZenith
       ? null
       : promoted
         ? promoted.eclipticLine
@@ -7437,11 +8093,49 @@ export default function App() {
   const effOverlayMinorLines = promoted || !mapOverlay ? null : (mapOverlay.minorLines ?? EMPTY_FC);
   const effMapOverlay = promoted ? null : mapOverlay;
 
+  // A timeless chart on a geodetic map draws its lines from the 12:00 placeholder; a ranged
+  // body's can be anywhere in a band over the birth date, so each of its lines gets one, filled
+  // in its own colour (lib/astro/uncertaintyBands). Built from
+  // what is DRAWN, so a band goes wherever its line goes — the planet and Angles filters, the
+  // natal-lines hide, the eclipse clean-up — and filled from the band each line carries
+  // (props.band, stamped where the line was generated at the positions, frame and tilt it was
+  // drawn with: CLAUDE.md rule 5). (2026-10-02)
+  //
+  // Three families since 2026-10-20 (Lina's 20 Oct reply): the planet lines; the Moon's aspect
+  // and midpoint lines (§12), as drawn — the chart's, or an overlay's in their place; and a
+  // progression's or solar arc's own lines, beside the chart's or promoted to stand in for
+  // them (§15, stampOverlayBands). Every other overlay is another moment's, with a time of its
+  // own: its lines carry no stamp, and the tag keeps them from taking one here.
+  //
+  // So an overlay's lines are fed in only while they can carry a band (ovBanded). Any other
+  // overlay — Transits, playing — would hand the memo new lines on every tick and rebuild every
+  // band fill for nothing; its own lines (and, under the one-frame rule, its aspect and midpoint
+  // lines in the chart's place, or its promoted lines) add no band, so they are left out and the
+  // band collection keeps its identity. The output is the same either way. (2026-10-20)
+  const bandLines = promoted && !ovBanded ? EMPTY_FC : drawLines;
+  const bandAngleLines = overlayAux && !ovBanded ? EMPTY_FC : effAngleLines;
+  const bandOverlayLines = ovBanded ? effOverlayLines : null;
+  const uncertaintyBands = useMemo(() => {
+    if (!timelessGeodetic) return EMPTY_FC;
+    const drawn: FeatureCollection<LineString, LineProps> = {
+      type: 'FeatureCollection',
+      features: [
+        ...bandLines.features,
+        ...bandAngleLines.features,
+        ...(bandOverlayLines?.features ?? []),
+      ] as Feature<LineString, LineProps>[],
+    };
+    if (!natalMotion) return EMPTY_FC;
+    return generateUncertaintyBands(drawn, linePositions, natalMotion, meridianLng, geoEps);
+  }, [timelessGeodetic, natalMotion, bandLines, bandAngleLines, bandOverlayLines, linePositions, meridianLng, geoEps]);
+
   // ── The geodetic grid (lib/astro/geodeticGrid) ──────────────────────────────────────────
   // Drawn only on a geodetic map: the DERIVED line system, so a sidereal zodiac and the hold
   // mask it with no clause of their own, and the reader's switches stay as they were for when
-  // Geodetic comes back (CLAUDE.md rule 2). The grid reads no chart, so it draws the same with
-  // or without one. (2026-10-02)
+  // Geodetic comes back (CLAUDE.md rule 2). The grid reads no chart but the tilt: the one tilt,
+  // geoEps — the chart's obliquity of date with one loaded, J2000 without (Lina, 20 Oct 2026,
+  // §2). The MC meridians and the zones are the same at any tilt; the Ascendant curves, the
+  // readout and the Ascendant zones are drawn at it. (2026-10-02)
   const geoGridShown = lineSystem === 'geodetic';
   // "Body lines visible" for the Ascendant curves' auto default: every family of body line as
   // drawn — the planet lines (after the filters, the eclipse clean-up and the Natal Lines hide,
@@ -7484,38 +8178,49 @@ export default function App() {
             // The map style's zone colours (GEO_ZONE_COLORS for a built-in), the same set the
             // legend is handed, so a swatch always matches its zone.
             mapStyle.geoZones,
-            geoZonesPresentation ? GEO_ZONE_OPACITY.presentation : GEO_ZONE_OPACITY.normal,
+            geoZonesOpacityPct / 100,
             geoZoneIsolate,
           )
         : EMPTY_FC,
-    [geoGridShown, geoZonesOn, geoZonesPresentation, geoZoneIsolate, mapStyle.geoZones],
+    [geoGridShown, geoZonesOn, geoZonesOpacityPct, geoZoneIsolate, mapStyle.geoZones],
   );
   // The hover readout's place names: the bundled cities, loaded on first use of the grid.
   // (2026-10-02)
   const nearestCityFn = useNearestCity(geoGridShown);
-  // Whenever any grid layer is drawn. The place is the nearest city's own name ("Toronto", not
-  // "Toronto, Ontario, Canada"); null over open ground or water, where the map prints the
-  // coordinates instead. The map hands over a canonical longitude on every world copy, which
-  // the city lookup needs (it misses Toronto at 280.6°E). (2026-10-02)
+  // The readout, whenever the map is geodetic — whatever the grid's switches say (Lina, 20 Oct
+  // 2026, §4: it read "GE" over a map with every grid layer off, and was then gone with them,
+  // which made it look like part of the grid rather than the answer to "what is here").
+  // At the one tilt (geoEps), so its figures are the wheel's and the Coordinates box's, and its
+  // polar caution starts at 90° − that ε. The place is the nearest city's own name ("Toronto",
+  // not "Toronto, Ontario, Canada"); null over open ground or water, where the map leaves the
+  // line out. The map hands over a canonical longitude on every world copy, which the city
+  // lookup needs (it misses Toronto at 280.6°E). (2026-10-02)
   const geoReadout = useMemo(
     () =>
-      geoGridShown && (geoGridMcOn || geoGridAscOn || geoZonesOn)
+      geoGridShown
         ? (lat: number, lng: number): GeoReadout => {
             const city = nearestCityFn?.(lat, lng) ?? null;
             return {
-              ...geoReadoutAngles(lat, lng),
+              ...geoReadoutAngles(lat, lng, geoEps),
               place: city ? city.label.split(',')[0].trim() || null : null,
             };
           }
         : null,
-    [geoGridShown, geoGridMcOn, geoGridAscOn, geoZonesOn, nearestCityFn],
+    [geoGridShown, geoEps, nearestCityFn],
   );
+  // What the hover highlights follows the grid's switches (Lina, 20 Oct 2026, §4): the MC band
+  // under the cursor while the MC meridians are on, the Ascendant zone while the curves are, both
+  // — each fainter, the overlap darker — with both on, and nothing with neither (the readout still
+  // shows). Gone under a spotlight with the rest of the grid. (2026-10-20)
+  const geoHoverMc = geoGridShown && geoGridMcOn && !spotlightActive;
+  const geoHoverAsc = geoGridShown && geoGridAscOn && !spotlightActive;
+  const geoHover = useMemo(() => ({ mc: geoHoverMc, asc: geoHoverAsc }), [geoHoverMc, geoHoverAsc]);
   // The Ascendant zones the hover lights — everywhere the readout gives the AS sign under the
-  // cursor — built in idle-time slices the first time any grid layer is drawn (the readout is
-  // up from then, hovered or not), and from then on one module constant for the page. Until
-  // they are built, the hover simply lights nothing; Zone shading does not gate them.
-  // (2026-10-02)
-  const geoAscZones = useGeoAscZones(geoReadout !== null);
+  // cursor — built in idle-time slices for the one tilt, and only while the Ascendant curves are
+  // drawn (so a map that never shows them never pays for the build); each tilt's are kept for
+  // the page, and a chart of another ε builds its own (about a second of idle slices, during
+  // which the hover lights no zone). Zone shading does not gate them. (2026-10-02; 2026-10-20)
+  const geoAscZones = useGeoAscZones(geoHoverAsc, geoEps);
 
   // The spotlight-narrowed line FCs for the <Map>, MEMOIZED so their references stay stable when the
   // inputs (the spotlight + the effective linework) don't change. Without this, applySpot rebuilds a
@@ -7681,8 +8386,9 @@ export default function App() {
       targetDate,
       pinned,
       pinnedLabel,
-      // The useState setter — stable identity, so it doesn't belong in the deps below.
-      placePin: setPinned,
+      pinnedLabelCurrent,
+      // Stable identity (useCallback over two setters), so it doesn't belong in the deps below.
+      placePin: placePinNamed,
       visiblePlanets,
       nodeType,
       houseSystem,
@@ -7708,7 +8414,9 @@ export default function App() {
       // Measured off the layer the map is actually drawing, so it is right for every
       // overlay without a table of which ones move their frame: the ones that hold the
       // natal RAMC report 0 because their gmst IS the natal one.
-      frameOffsetDeg: overlayLayer
+      // 0 with no chart: there is no natal frame to be offset from (`gmst` is the placeholder
+      // moment's then), and the sky layer is in the moment's own. (2026-10-20)
+      frameOffsetDeg: overlayLayer && current
         ? Math.abs((normalizeAngle(overlayLayer.gmst - gmst) * 180) / Math.PI)
         : 0,
       // As drawn: night shade is held on a geodetic map, its switch untouched. (2026-10-02)
@@ -7762,6 +8470,9 @@ export default function App() {
       setLineSpotlight,
       collectAllLines,
       linesStamp,
+      // A document's own line system's set and stamp (seam L119, 2026-10-20).
+      collectAllLinesFor,
+      linesStampFor,
       advancedMode: advancedWheel,
       setAdvancedMode,
       openView: openViewById,
@@ -7781,6 +8492,7 @@ export default function App() {
       targetDate,
       pinned,
       pinnedLabel,
+      pinnedLabelCurrent,
       visiblePlanets,
       nodeType,
       houseSystem,
@@ -7826,6 +8538,8 @@ export default function App() {
       openBuiltinTool,
       collectAllLines,
       linesStamp,
+      collectAllLinesFor,
+      linesStampFor,
       showNightShade,
       advancedWheel,
       setAdvancedMode,
@@ -7894,13 +8608,15 @@ export default function App() {
         orbBands={spotlightActive ? EMPTY_FC : orbBands}
         nightShade={spotlightActive ? EMPTY_FC : nightShade}
         // The geodetic grid drops out under a spotlight like the other non-line families. Its
-        // collections are module constants (geoGrid(), the Ascendant zones), so they tile once
-        // and are only ever swapped for the empty one. The Ascendant zones go with the readout,
-        // which lights them. (2026-10-02)
+        // collections are cached per tilt (geoGrid() for the ε-free parts, geoAscGrid(geoEps)
+        // and the Ascendant zones at the one tilt), so they tile once per tilt and are only ever
+        // swapped for the empty one. The Ascendant zones go with the curves, whose hover lights
+        // them (geoHover). (2026-10-02; one tilt 2026-10-20)
         geoGridMc={geoGridShown && geoGridMcOn && !spotlightActive ? geoGrid().mc : EMPTY_FC}
-        geoGridAsc={geoGridShown && geoGridAscOn && !spotlightActive ? geoGrid().asc : EMPTY_FC}
+        geoGridAsc={geoGridShown && geoGridAscOn && !spotlightActive ? geoAscGrid(geoEps).asc : EMPTY_FC}
         geoZones={spotlightActive ? EMPTY_FC : geoZones}
-        geoAscZones={geoReadout && geoAscZones && !spotlightActive ? geoAscZones : EMPTY_FC}
+        geoAscZones={geoHoverAsc && geoAscZones ? geoAscZones : EMPTY_FC}
+        geoHover={geoHover}
         // A wash like the zones, so a spotlight's lines-only reveal drops it too. (2026-10-02)
         uncertaintyBands={spotlightActive ? EMPTY_FC : uncertaintyBands}
         geoReadout={spotlightActive ? null : geoReadout}
@@ -8037,7 +8753,13 @@ export default function App() {
                   })}
                 </p>
               ) : (
-                noTime && <p className="tz-warning">{t('common.timeUnknownBanner')}</p>
+                noTime && (
+                  // An event chart's time is not a birth time (presentedEvent: as the app
+                  // presents the chart, so a person while the hold is up). (2026-10-20)
+                  <p className="tz-warning">
+                    {t(presentedEvent ? 'common.timeUnknownBannerEvent' : 'common.timeUnknownBanner')}
+                  </p>
+                )
               )}
               {current?.tzUncertain && (
                 <p className="tz-warning">{t('common.tzWarning')}</p>
@@ -8082,6 +8804,9 @@ export default function App() {
           setAllLineTypes={setAllLineTypes}
           showNatalLines={showNatalLines}
           setShowNatalLines={setShowNatalLines}
+          // With no chart in force there are no natal lines to put down: the row greys with the
+          // needs-a-chart reason, showing the stored switch, and Shift N stands down. (2026-10-20)
+          natalLinesHeld={skyAlone}
           showParans={showParans}
           setShowParans={setShowParans}
           showAspectLines={showAspectLines}
@@ -8112,8 +8837,11 @@ export default function App() {
           showZenith={showZenith}
           setShowZenith={setShowZenith}
           lineSystem={lineSystem}
+          chartNoTime={noTime}
           setLineSystem={setLineSystemSafe}
           siderealActive={effZodiacMode !== 'tropical'}
+          geodeticChosen={lineSystemPref === 'geodetic' && !GEODETIC_HELD}
+          lineConflict={lineConflict}
           // The grid's four switches (Sidebar greys them off a geodetic map, with the reason).
           // `asc` is the DERIVED state, so the eye shows what is drawn; the setter stores the
           // reader's choice from then on. (2026-10-02)
@@ -8124,8 +8852,9 @@ export default function App() {
             setAsc: setGeoGridAsc,
             zones: geoZonesOn,
             setZones: setGeoZones,
-            presentation: geoZonesPresentation,
-            setPresentation: setGeoZonesPresentationPref,
+            zonesLocked: geoZonesLocked,
+            opacityPct: geoZonesOpacityPct,
+            setOpacityPct: setGeoZonesOpacityPct,
           }}
           coordSystem={coordSystem}
           setCoordSystem={setCoordSystem}
@@ -8184,8 +8913,14 @@ export default function App() {
         onEditChart={(id) => setEditingId(id)}
         onDeleteChart={handleDelete}
         chartFlash={wheelExpanded ? null : chartFlash}
+        // The chart menu's sections and the No chart row (2026-10-20), the same bundle the
+        // sidebar's menu gets.
+        switcherSky={switcherSky}
         chartExpanded={wheelExpanded}
         onToggleExpand={() => setWheelExpanded((v) => !v)}
+        // The sidebar opens on the sky alone too — its header holds the chart menu, the way back
+        // to a chart — as the B key does. (2026-10-20)
+        canExpand={!!current || skyAlone}
         tool={mapTool}
         setTool={setMapTool}
         measure={measure}
@@ -8216,6 +8951,9 @@ export default function App() {
         setShowSkyTimes={setShowSkyTimesSafe}
         showLocalSpace={showLocalSpace}
         setShowLocalSpace={setShowLocalSpaceSafe}
+        // No chart in force: the Local Space row greys with the needs-a-chart reason, as its
+        // opener refuses (setShowLocalSpaceSafe). (2026-10-20)
+        skyAlone={skyAlone}
         planTier={planTier}
         showGuides={showGuides}
         setShowGuides={toggleGuides}
@@ -8246,6 +8984,7 @@ export default function App() {
           nodeType={nodeType}
           advancedMode={advancedWheel}
           overlayFrame={infoOverlayFrame}
+          bandedLines={noTime && lineSystem === 'geodetic' && uncertaintyBands.features.length > 0}
           onOpen={(section) => {
             setShowSettings(true);
             openSidebarSection(section);
@@ -8278,14 +9017,20 @@ export default function App() {
           transitFrame={effTransitFrame}
           setTransitFrame={setTransitFrameByUser}
           lineSystem={lineSystem}
-          frameLocked={noTime}
+          // With no chart the frame is locked on the moment's own sky too (effTransitFrame),
+          // and says it needs a chart rather than a birth time. (2026-10-20)
+          frameLocked={noTime || !current}
+          lockReason={!current ? t('settings.inert.needsChart') : undefined}
           returnHold={frameHeldForReturn ? returnBorrow : null}
           onEndReturnHold={endReturnBorrow}
           flashFrameSeq={flashFrameSeq}
           openExtensions={openExtensions}
           onToggleExtension={toggleExtension}
+          // The STORED eye, greyed and inert with no chart in force, where the sky's transits
+          // are promoted whatever it says (promoteOverlay). (2026-10-20)
           showNatal={showNatal}
           setShowNatal={setShowNatal}
+          natalHeld={skyAlone}
           arcMethod={arcMethod}
           setArcMethod={setArcMethod}
           // EFFECTIVE, like transitFrame: Natal angles while the map is geodetic, so the
@@ -8336,6 +9081,8 @@ export default function App() {
           }}
           details={eclipseDetails}
           contacts={eclipseContactList}
+          // No chart for the degree to strike: the contacts line says so. (2026-10-20)
+          noChart={!current}
           showOtherLines={showEclipseOtherLines}
           setShowOtherLines={setShowEclipseOtherLines}
           showChart={showEclipseChart}
@@ -8440,7 +9187,7 @@ export default function App() {
                   value: lsOriginPlace,
                   changeTip: viewLock.keepsLocalSpace.place.changeTip,
                   onPick: (p) => {
-                    setLsPickedPlace(p);
+                    setPickedPlace(p);
                     viewLock.keepsLocalSpace?.place?.onPick(p);
                   },
                 }
@@ -8468,6 +9215,7 @@ export default function App() {
           hideLsDegrees={hideLsDegrees}
           setHideLsDegrees={setHideLsDegrees}
           localSpaceOrigin={localSpaceOrigin}
+          homePin={homePinOffer}
         />
       )}
       {/* The Aspect Lines window (gated tier): opened from Settings ▸ Advanced ▸
@@ -8625,6 +9373,14 @@ export default function App() {
           </Fragment>
         ) : null,
       )}
+      {/* A line-system conflict that arrived (lineConflict): the map draws no body lines, and
+          this says why with both fixes (Lina, 22 Oct 2026, §4). */}
+      {lineConflict && !viewParked && (
+        <LineConflictBanner
+          onTropical={() => setZodiacModeSafe('tropical')}
+          onCelestial={() => setLineSystemSafe('celestial')}
+        />
+      )}
       {/* Registered Tools-menu extensions (registerToolExtension) — toggled HUDs
           surfaced in the Tools dropdown. Entitled → the HUD. A tool that declares
           `needsSiderealTime` is HELD on a geodetic map: the host draws HeldHud in its
@@ -8680,30 +9436,35 @@ export default function App() {
           // header's "houses:" line — the effective one, Placidus with Advanced off.
           houseSystem={effHouseSystem}
           bodyNotes={wheelBodyNotes}
-          // A timeless chart's Moon (and geodetic Fortune) as spans, not minutes. (2026-10-02)
+          // A timeless chart's bodies with their birth-date ranges (lib/astro/timeless). (2026-10-22)
           ranges={natalRanges}
+          overlayRanges={ovBanded && overlayLayer?.kind !== 'cyclo' ? (overlayMotion?.ranges ?? null) : null}
           planets={wheelPlanets}
           // The natal chart's catalog bodies (empty unless the wheel IS the natal chart),
           // the ring held while their files load, and their rows' horizon figures.
           minorBodies={wheelMinor}
           minorReserve={wheelMinorReserve}
           minorCoords={minorCoords}
-          planetsOnly={noTime}
+          // …or the sky alone with no point to cast its angles for (wheelPlanetsOnly).
+          planetsOnly={wheelPlanetsOnly}
           // CCG never rides as an overlay ring/caption either (no coherent chart to
           // show alongside the natal) — isCyclo drops it whether or not it's promoted.
-          overlayPlanets={promoteOverlay || isCyclo ? null : displayOverlayEcliptic}
+          // Nor does the sky alone's layer, which is the wheel's chart (wheelOverlay).
+          overlayPlanets={wheelOverlay || isCyclo ? null : displayOverlayEcliptic}
           // The overlay ring's catalog bodies and their horizon figures — empty under the
           // same two exclusions (overlayMinorWheel).
           overlayMinorBodies={overlayMinorWheel}
           overlayMinorCoords={overlayMinorCoords}
-          overlayAngles={promoteOverlay || isCyclo ? null : displayOverlayAngles}
+          overlayAngles={wheelOverlay || isCyclo ? null : displayOverlayAngles}
           overlayLabel={
-            promoteOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
+            wheelOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
           }
           // The chart statement's inputs: the header, the wheel corners and the Dual
           // layout's second header all read the one model built from these. (2026-10-07)
           header={sidebarHeader}
           overlayKind={overlayLayer?.kind ?? null}
+          // The overlay wheel's houses line (Lina, 22 Oct 2026, §3.2), both line systems.
+          overlayHouses={overlayHouses}
           // The synastry partner's own record, so the second wheel's header can
           // introduce the partner as the panel header introduces the active chart —
           // their birth date and time and THEIR birthplace — rather than the label
@@ -8712,17 +9473,19 @@ export default function App() {
           overlayPartner={
             overlayLayer?.kind === 'synastry' && !promoteOverlay ? partner : null
           }
-          overlayReturn={promoteOverlay || isCyclo ? null : overlayReturn}
+          overlayReturn={wheelOverlay || isCyclo ? null : overlayReturn}
           // When promoted CCG leaves nothing to wheel, render the empty "NO CHART" state.
-          noChart={noChart}
+          noChart={cycloEmpty}
           // When the overlay is promoted (Natal hidden), the wheel's state title is
           // REPLACED by the overlay's own name — the same tag the timeline bar shows
           // ("Sec. Progressed", "Transits", …) — still coloured by the live hover/pin
           // state. This is the name half of labelFull ("Sec. Progressed · age 30.2" →
           // "Sec. Progressed"), matching the overlay caption in the wheel's other corner.
           // Cyclo keeps its "CCG" short form (its "Cyclo·carto·graphy" would split badly).
+          // The sky alone's layer is named the same way: it stands in for a chart there is not.
+          // (2026-10-20)
           promotedLabel={
-            promoteOverlay && overlayLayer
+            wheelOverlay && overlayLayer
               ? overlayLayer.kind === 'cyclo'
                 ? 'CCG'
                 : overlayLayer.labelFull.split('·')[0].trim()
@@ -8740,15 +9503,15 @@ export default function App() {
           // showing the overlay's bodies at another moment — no coherent frame
           // to compare). This one condition is the entire gate.
           localSpaceCoords={
-            lsPanelsOn && !promoteOverlay && gatedTierMet ? localSpaceCoords : null
+            lsPanelsOn && !wheelOverlay && gatedTierMet ? localSpaceCoords : null
           }
           natalLocalSpaceCoords={
-            lsPanelsOn && !promoteOverlay && gatedTierMet
+            lsPanelsOn && !wheelOverlay && gatedTierMet
               ? natalLocalSpaceCoords
               : null
           }
           relocatedLocalSpaceCoords={
-            lsPanelsOn && !promoteOverlay && gatedTierMet
+            lsPanelsOn && !wheelOverlay && gatedTierMet
               ? relocatedLocalSpaceCoords
               : null
           }
@@ -8758,11 +9521,11 @@ export default function App() {
           // Read off the view's OPEN flag, not lsActive: on a geodetic map the slot says
           // the hold instead, but the tier still decides which local-space controls
           // exist to be held (the aspect list's Compare switch). (2026-10-05)
-          localSpaceGated={lsViewOn && !promoteOverlay && !gatedTierMet}
+          localSpaceGated={lsViewOn && !wheelOverlay && !skyAlone && !gatedTierMet}
           // The view is open but HELD on a geodetic map: the slot the dials would take
           // shows the hold's reason and its fix instead (lib/skyHold). Same promoted-overlay
           // exclusion as the dials themselves. (2026-10-02)
-          localSpaceHeld={lsViewOn && skyHeld && !promoteOverlay}
+          localSpaceHeld={lsViewOn && skyHeld && !wheelOverlay}
           onOpenCalc={() => openSettingsSection('calc')}
           localSpaceRelocated={localSpaceRelocated}
           aspectOrbs={effAspectOrbs}
@@ -8780,6 +9543,11 @@ export default function App() {
           onEditChart={(id) => setEditingId(id)}
           onDeleteChart={handleDelete}
           chartFlash={chartFlash}
+          // The chart menu's sections and the No chart row — the top bar's bundle — and the
+          // sky alone in force, with whether the empty wheel's hint applies. (2026-10-20)
+          switcherSky={switcherSky}
+          skyAlone={skyAlone}
+          skyHint={skyWheelHint}
         />
       ) : (
         showChart &&
@@ -8792,8 +9560,11 @@ export default function App() {
             planets={wheelPlanets}
             minorBodies={wheelMinor}
             visiblePlanets={visiblePlanets}
-            noChart={noChart}
-            planetsOnly={noTime}
+            noChart={cycloEmpty}
+            planetsOnly={wheelPlanetsOnly}
+            // No chart and no sky overlay: the placeholder says how to get the sky's wheel.
+            // (2026-10-20)
+            skyHint={skyWheelHint}
             maskAngleText={maskGeAngleText}
             ranges={natalRanges}
             // Second doorway to the sidebar wheel, beside the minimap's resize
@@ -8852,6 +9623,16 @@ export default function App() {
           onDelete={handleDelete}
           onImport={() => setImporting(true)}
           onClose={closeManager}
+          // Event charts (2026-10-20): offered exactly while the hold is lifted (DERIVED, never
+          // stored); a new chart opens on Event on a geodetic map (the DERIVED line system), and
+          // the form's finder reads the zodiac in force. The Events list's Add example is the
+          // same idempotent add the chart menu offers.
+          eventsOn={!eventsLocked}
+          eventsTeaser={eventsTeaser}
+          defaultKind={lineSystem === 'geodetic' ? 'event' : 'person'}
+          zodiac={effZodiacMode}
+          onAddExample={addExampleEvent}
+          mapPin={homePinOffer}
         />
       )}
       {importing && (

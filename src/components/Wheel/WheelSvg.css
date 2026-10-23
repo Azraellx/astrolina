@@ -261,6 +261,43 @@
   fill: rgba(var(--accent-rgb), 0.12);
 }
 
+/* The house focus (2026-10-23): a hovered or tapped body's house is tinted, and the
+   other eleven wash out to the wheel's face, the face a Custom theme paints or the
+   panel behind it. Every part is pointer-transparent, so the hover targets under it
+   stay live. Bodies outside the house fade by class rather than under the wash, which
+   would also bury the ones inside it. */
+.wheel-svg .house-focus {
+  pointer-events: none;
+  animation: wheel-house-focus-in 0.15s ease-out;
+}
+.wheel-svg .house-focus-wash {
+  fill: var(--wheel-face, rgb(var(--bg-panel)));
+  opacity: 0.6;
+}
+.wheel-svg .house-focus-tint {
+  fill: rgba(var(--accent-rgb), 0.1);
+}
+.wheel-svg .house-focus-edge {
+  stroke: rgba(var(--accent-rgb), 0.7);
+  stroke-width: 1.2;
+}
+.wheel-svg .house-number.in-focus {
+  fill: var(--accent);
+  font-weight: 700;
+}
+.wheel-svg .out-of-focus {
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+@keyframes wheel-house-focus-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Catalog minor bodies' rim diamonds (the body's tick at its true degree) are never a
    hover target themselves: below the ring size, a cluster's zone drawn beneath them
    names the bodies, and on the ring the coins do. Pointer-transparent so the zone stays
@@ -398,8 +435,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .wheel-svg.interactive .planet-mark-visual,
-  .wheel-svg.interactive .minor-pip-hit {
+  .wheel-svg.interactive .minor-pip-hit,
+  .wheel-svg.interactive .sign-hit,
+  .wheel-svg.interactive .house-hit,
+  .wheel-svg .out-of-focus {
     transition: none;
+  }
+  .wheel-svg .house-focus {
+    animation: none;
   }
   .wheel-svg.interactive .planet-mark:hover .planet-mark-visual {
     transform: none;

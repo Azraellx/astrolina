@@ -6,10 +6,19 @@
 
 // The geodetic grid: the zodiac laid on the Earth as a place's own angles — twelve
 // MC meridians at 30° intervals and twelve Ascendant curves at 0° of each sign. It
-// reads NO chart state: no positions, no moment, no house system, and no Swiss call
-// (the obliquity is J2000's), so it draws the same with or without a chart loaded.
-// verify-geodetic G0 builds it before the engine is initialised, which is what holds
-// that to be true rather than intended.
+// reads no positions, no moment, no house system and no Swiss call, so it builds with
+// the engine still down: verify-geodetic G0 builds it before the engine is initialised,
+// which is what holds that to be true rather than intended.
+//
+// It reads ONE thing, the tilt (2026-10-20). Lina's ruling (20 Oct 2026, §2): "Every
+// geodetic surface uses the loaded chart's true obliquity of date. With no chart loaded,
+// every geodetic surface uses J2000. One tilt on screen at a time." The MC meridians, the
+// label meridians and the zone rings don't depend on it — a place's MC is its longitude
+// at any ε — so they stay one frozen singleton (geoGrid). The Ascendant curves, where they
+// cross the equator, the readout and the Ascendant zones do, so each of those takes ε:
+// geoAscGrid(eps) and the zones are cached per tilt, the readout is computed at it. App
+// hands every one of them its one derived geoEps; until 2026-10-20 they were all J2000
+// under any chart, a second tilt beside the chart's wheel and lines.
 //
 // Everything here that names a place's sign — the hover readout, which MC zone a place is
 // in, the Ascendant zone the hover highlights — goes through ONE rule, truncZodiac
@@ -58,6 +67,12 @@ export interface GeoGridLineProps {
   kind: 'mc' | 'asc';
   /** 0 (Aries) … 11 (Pisces): the sign that begins on this line. */
   sign: number;
+  /** An Ascendant curve's own facts (2026-10-20), so the labels read the collection actually
+   *  pushed rather than rebuilding the grid at a tilt they would have to guess (CLAUDE.md
+   *  rule 5): the longitude where the curve crosses the equator, and the tilt it was traced
+   *  at. Absent on the MC meridians, which have neither. */
+  eqLng?: number;
+  eps?: number;
 }
 
 /** One MC zone's fill. No hover state: the hover lights the ASCENDANT zone under the cursor
@@ -81,13 +96,20 @@ export type GeoZoneIsolate =
 /** Per element, the three modality shades: cardinal (darkest), fixed, mutable (lightest). */
 export type GeoZoneColors = Record<Element, readonly [string, string, string]>;
 
-// The latitude beyond which some degrees never rise: 90° − ε at J2000, 66°33′39″. The
-// readout's polar caution is keyed to it — the grid's obliquity, not the map's fixed 66.5°.
-export const POLAR_CIRCLE_J2000_DEG = 90 - EPS_J2000 * RAD2DEG;
+/** The latitude beyond which some degrees never rise, 90° − ε, at the map's one tilt (66°33′39″
+ *  at J2000). The readout's polar caution is keyed to it — the grid's obliquity, not the map's
+ *  fixed 66.5° — and moves with ε (Lina, 20 Oct 2026, §2 and §18). It replaced the J2000-only
+ *  POLAR_CIRCLE_J2000_DEG on 2026-10-20. */
+export function polarCircleDeg(eps: number): number {
+  return 90 - eps * RAD2DEG;
+}
 
-// Zone shading in use (about 12%) and for showing someone else (about 50%) — a switch,
-// not a slider.
-export const GEO_ZONE_OPACITY = { normal: 0.12, presentation: 0.5 } as const;
+// Zone shading's opacity: 15% by default, and 50%, what the Bold shading switch drew on. Since
+// 2026-10-20 the reader sets it in percent (Calculation's opacity field, which replaced the
+// switch; lib/overlayPrefs GEO_ZONES_OPACITY_PCT): these two are that field's default and the
+// value the switch's stored "on" migrates to, and verify:geodetic holds the pair equal. (The
+// switch's "off" drew 12%; the field's default is 15, by Salvatore's choice the same day.)
+export const GEO_ZONE_OPACITY = { normal: 0.15, bold: 0.5 } as const;
 
 /** A sign's Ascendant zone as a feature-state id: 1 … 12. Never 0 — a falsy id is the case
  *  MapLibre reads as "no id" on some paths, and Aries would never highlight. */
@@ -100,25 +122,39 @@ const AS_UNDEFINED_LAT = 89.99;
 // globe can bend them onto its surface and the tiler (tolerance 0) has real vertices to keep.
 const RING_STEP_DEG = 2;
 
+/** The grid's ε-free parts: the same at every tilt, so one frozen object for the page. */
 export interface GeoGrid {
   /** Twelve MC meridians at normLng(30k), −90…90 (0° Libra on +180). */
   mc: FeatureCollection<LineString, GeoGridLineProps>;
-  /** Twelve Ascendant curves: feature k is geodeticAscCurve(30k), as drawn. */
-  asc: FeatureCollection<LineString, GeoGridLineProps>;
   /** The band-centre meridians (15° into each sign) — where an MC band's label goes. Never drawn. */
   mcLabelLines: FeatureCollection<LineString, GeoGridLineProps>;
-  /** Where Ascendant curve k crosses the equator, [lng, 0]. */
-  ascEquator: readonly (readonly [number, number])[];
   /** MC zone k as one closed counter-clockwise ring, densified, closed at ±90. */
   zoneRings: readonly (readonly [number, number])[][];
+}
+
+/** The grid's parts that depend on the tilt: the Ascendant curves and where they cross the
+ *  equator, at one ε. */
+export interface GeoAscGrid {
+  /** The tilt they were traced at (radians). */
+  eps: number;
+  /** Twelve Ascendant curves: feature k is geodeticAscCurve(30k, eps), as drawn, carrying its
+   *  `eqLng` and `eps`. */
+  asc: FeatureCollection<LineString, GeoGridLineProps>;
+  /** Where Ascendant curve k crosses the equator, [lng, 0] — each feature's `eqLng`. */
+  ascEquator: readonly (readonly [number, number])[];
 }
 
 function lineFeature(
   coordinates: [number, number][],
   kind: 'mc' | 'asc',
   sign: number,
+  extra?: { eqLng: number; eps: number },
 ): Feature<LineString, GeoGridLineProps> {
-  return { type: 'Feature', properties: { kind, sign }, geometry: { type: 'LineString', coordinates } };
+  return {
+    type: 'Feature',
+    properties: extra ? { kind, sign, ...extra } : { kind, sign },
+    geometry: { type: 'LineString', coordinates },
+  };
 }
 
 // West edge of zone k: 30k, folded so Libra runs −180…−150 and Pisces −30…0 — every ring
@@ -155,39 +191,69 @@ function deepFreeze<T>(o: T): T {
 let built: GeoGrid | null = null;
 
 /**
- * The grid, built on first call and frozen — the SAME object every call after, for the
- * life of the page. The map's push skips a source whose collection has the identity it
- * had last time (Map.tsx pushData), so a constant grid is tiled once, not on every render.
+ * The grid's ε-free parts, built on first call and frozen — the SAME object every call
+ * after, for the life of the page. The map's push skips a source whose collection has the
+ * identity it had last time (Map.tsx pushData), so a constant grid is tiled once, not on
+ * every render.
  */
 export function geoGrid(): GeoGrid {
   if (built) return built;
-  // The grid's own meridian mapping: the geodetic one, at J2000. GMST is unread there.
-  const gridLng = meridianLngFor('geodetic', EPS_J2000, 0);
   const mc: Feature<LineString, GeoGridLineProps>[] = [];
-  const asc: Feature<LineString, GeoGridLineProps>[] = [];
   const labels: Feature<LineString, GeoGridLineProps>[] = [];
-  const equator: (readonly [number, number])[] = [];
   const rings: [number, number][][] = [];
   for (let k = 0; k < 12; k++) {
     // The meridians run on past meridianCoords' ±85 to the map edge, like the zone rings.
     const L = normLng(30 * k);
     mc.push(lineFeature([[L, -90], ...meridianCoords(L), [L, 90]], 'mc', k));
-    asc.push(lineFeature(geodeticAscCurve(30 * k), 'asc', k));
     labels.push(lineFeature(meridianCoords(normLng(30 * k + 15)), 'mc', k));
-    // Curve k crosses the equator at hour angle −90° (the ASC side): lat(H) = 0 there,
-    // on both of the tracer's branches.
-    const ra = eclipticToRaDec(30 * k * DEG2RAD, 0, EPS_J2000).ra;
-    equator.push([normLng(gridLng(ra - Math.PI / 2)), 0]);
     rings.push(zoneRing(k));
   }
   built = deepFreeze<GeoGrid>({
     mc: { type: 'FeatureCollection', features: mc },
-    asc: { type: 'FeatureCollection', features: asc },
     mcLabelLines: { type: 'FeatureCollection', features: labels },
-    ascEquator: equator,
     zoneRings: rings,
   });
   return built;
+}
+
+// The Ascendant grids built so far, by tilt. A page meets J2000 (no chart) and the tilt of
+// each chart opened, so a few entries cover a session's switching back and forth; each keeps
+// its identity while it is held, so returning to a chart re-uses its curves untiled. J2000's,
+// the no-chart tilt, is never let go. (2026-10-20)
+const ASC_GRID_CACHE = 4;
+const ascGrids = new Map<number, GeoAscGrid>();
+
+/**
+ * The Ascendant curves at tilt `eps` (radians), built on first call for that tilt and frozen
+ * — the same object for that ε while it is cached. Every curve is geodeticAscCurve(30k, eps),
+ * the generator verify-geodetic §7 and §8 test; each carries where it crosses the equator.
+ */
+export function geoAscGrid(eps: number = EPS_J2000): GeoAscGrid {
+  const hit = ascGrids.get(eps);
+  if (hit) return hit;
+  // The grid's own meridian mapping: the geodetic one, at this tilt. GMST is unread there.
+  const gridLng = meridianLngFor('geodetic', eps, 0);
+  const asc: Feature<LineString, GeoGridLineProps>[] = [];
+  const equator: (readonly [number, number])[] = [];
+  for (let k = 0; k < 12; k++) {
+    // Curve k crosses the equator at hour angle −90° (the ASC side): lat(H) = 0 there,
+    // on both of the tracer's branches.
+    const ra = eclipticToRaDec(30 * k * DEG2RAD, 0, eps).ra;
+    const eqLng = normLng(gridLng(ra - Math.PI / 2));
+    asc.push(lineFeature(geodeticAscCurve(30 * k, eps), 'asc', k, { eqLng, eps }));
+    equator.push([eqLng, 0]);
+  }
+  const grid = deepFreeze<GeoAscGrid>({ eps, asc: { type: 'FeatureCollection', features: asc }, ascEquator: equator });
+  if (ascGrids.size >= ASC_GRID_CACHE) {
+    for (const k of ascGrids.keys()) {
+      if (k !== EPS_J2000) {
+        ascGrids.delete(k);
+        break;
+      }
+    }
+  }
+  ascGrids.set(eps, grid);
+  return grid;
 }
 
 /**
@@ -226,31 +292,34 @@ export interface GeoReadoutAngles {
   /** Null within 0.01° of a pole, where the Ascendant is undefined. */
   as: TruncZodiac | null;
   mc: TruncZodiac;
-  /** Past the J2000 polar circle (|lat| ≥ 90° − ε), where some degrees never rise. */
+  /** Past the polar circle at the readout's tilt (|lat| ≥ 90° − ε, polarCircleDeg), where
+   *  some degrees never rise. */
   polar: boolean;
 }
 
 /**
  * A place's geodetic AS and MC as the readout shows them, truncated to the minute by the one
- * sign rule. J2000 obliquity, like the curves — the readout and the curve it sits on must
- * agree, and a chart's obliquity of date would put them up to a quarter-minute apart. The
- * longitude is folded to its canonical meridian first, so every world copy reads the same
- * float. `mc.signIdx` is ALSO which MC zone the place is in, and `as.signIdx` which
- * Ascendant zone (geoAscZones).
+ * sign rule, at the map's one tilt `eps` — the tilt the curves were traced at, so the readout
+ * and the curve it sits on agree, and the chart's wheel and Coordinates box with both (Lina,
+ * 20 Oct 2026, §2: J2000 with no chart, the chart's obliquity of date with one; App's geoEps).
+ * The default is J2000, the no-chart tilt. The longitude is folded to its canonical meridian
+ * first, so every world copy reads the same float. `mc.signIdx` is ALSO which MC zone the place
+ * is in, and `as.signIdx` which Ascendant zone (geoAscZones at the same ε).
  */
-export function geoReadoutAngles(lat: number, lng: number): GeoReadoutAngles {
-  const g = readoutFrame(lat, lng);
+export function geoReadoutAngles(lat: number, lng: number, eps: number = EPS_J2000): GeoReadoutAngles {
+  const g = readoutFrame(lat, lng, eps);
   return {
     as: Math.abs(lat) > AS_UNDEFINED_LAT ? null : truncZodiac(g.asc, 'min'),
     mc: truncZodiac(g.mc, 'min'),
-    polar: Math.abs(lat) >= POLAR_CIRCLE_J2000_DEG,
+    polar: Math.abs(lat) >= polarCircleDeg(eps),
   };
 }
 
-// The readout's frame at a place — J2000, the canonical meridian. One function for the readout
-// and the Ascendant zones alike, so the two can never come to read different floats.
-function readoutFrame(lat: number, lng: number): GeodeticAngles {
-  return geodeticAngles(canonicalLng(lng), lat, EPS_J2000);
+// The readout's frame at a place — at the tilt given, on the canonical meridian. One function
+// for the readout and the Ascendant zones alike, so the two can never come to read different
+// floats.
+function readoutFrame(lat: number, lng: number, eps: number): GeodeticAngles {
+  return geodeticAngles(canonicalLng(lng), lat, eps);
 }
 
 // ── The Ascendant zones: what the hover highlights ──────────────────────────────────────
@@ -278,6 +347,12 @@ function readoutFrame(lat: number, lng: number): GeodeticAngles {
 // ~0.3 s of arithmetic, so it is never built on the main thread's hot path: buildGeoAscZones
 // is resumable, and useGeoAscZones feeds it idle-time slices the first time the readout is
 // up. verify-geodetic G0 times it; G10 holds the result to the readout. (2026-10-02)
+//
+// Per tilt since 2026-10-20: the zones are the readout's, and the readout is read at the map's
+// one ε, so a chart of another date needs its own set — about a second of idle slices after the
+// switch, during which the hover lights nothing rather than a zone of another tilt (CLAUDE.md
+// rule 5: a highlight must not disagree with the readout beside it). A few sets are kept, the
+// J2000 one always.
 
 /** One Ascendant zone: every place whose readout gives sign `sign` as its AS. `zone` is the
  *  feature-state id the hover keys on (geoZoneId, never 0). */
@@ -321,9 +396,9 @@ interface AscRow {
   e: number[];
 }
 
-function ascRow(lat: number): AscRow {
+function ascRow(lat: number, eps: number): AscRow {
   const row: AscRow = { y: lat, x: [], w: [], e: [] };
-  const asAt = (lng: number) => readoutFrame(lat, lng).asc;
+  const asAt = (lng: number) => readoutFrame(lat, lng, eps).asc;
   const signOf = (asc: number) => truncZodiac(asc, 'min').signIdx;
   const change = (at: number, s0: number, s1: number) => {
     row.x.push(at);
@@ -550,7 +625,7 @@ export function foldRibbon({ sign, y, l, r }: AscRibbon, out: Position[][][][]) 
 // The whole build, as steps: it yields after every row it computes, every ribbon it folds and
 // every zone it freezes — none of them more than a millisecond or two.
 type Work = Generator<void, void, void>;
-function* ascZoneWork(): Generator<void, GeoAscZones, void> {
+function* ascZoneWork(eps: number): Generator<void, GeoAscZones, void> {
   const polys: Position[][][][] = Array.from({ length: 12 }, () => []);
   let open: AscRibbon[] = [];
   let openRow: AscRow | null = null;
@@ -614,7 +689,7 @@ function* ascZoneWork(): Generator<void, GeoAscZones, void> {
       else yield* split(A, B);
       return;
     }
-    const M = ascRow((A.y + B.y) / 2);
+    const M = ascRow((A.y + B.y) / 2, eps);
     yield;
     const ab = matchRows(A, B);
     const am = ab && matchRows(A, M);
@@ -635,10 +710,10 @@ function* ascZoneWork(): Generator<void, GeoAscZones, void> {
     if (k * ASC_ROW_STEP_DEG > -AS_UNDEFINED_LAT) ys.push(k * ASC_ROW_STEP_DEG);
   }
   ys.push(AS_UNDEFINED_LAT);
-  let A = ascRow(ys[0]);
+  let A = ascRow(ys[0], eps);
   yield;
   for (let k = 1; k < ys.length; k++) {
-    const B = ascRow(ys[k]);
+    const B = ascRow(ys[k], eps);
     yield;
     yield* refine(A, B);
     A = B;
@@ -659,30 +734,54 @@ function* ascZoneWork(): Generator<void, GeoAscZones, void> {
   return deepFreeze<GeoAscZones>({ type: 'FeatureCollection', features });
 }
 
-let ascZones: GeoAscZones | null = null;
-let ascWork: Generator<void, GeoAscZones, void> | null = null;
+// The zone sets by tilt: each built once, or its build part-way through. Bounded like the
+// Ascendant grids — a set is ~26,000 vertices — and the J2000 set is never let go. A build
+// dropped part-way (its tilt left the cache) starts over if that tilt comes back.
+const ASC_ZONE_CACHE = 3;
+interface ZoneSlot {
+  zones: GeoAscZones | null;
+  work: Generator<void, GeoAscZones, void> | null;
+}
+const zoneSlots = new Map<number, ZoneSlot>();
 
-/** The Ascendant zones once built, else null. Built once per page; the same frozen object
- *  from then on, so the map tiles it once. */
-export function geoAscZones(): GeoAscZones | null {
-  return ascZones;
+function zoneSlot(eps: number): ZoneSlot {
+  let slot = zoneSlots.get(eps);
+  if (slot) return slot;
+  if (zoneSlots.size >= ASC_ZONE_CACHE) {
+    for (const k of zoneSlots.keys()) {
+      if (k !== EPS_J2000) {
+        zoneSlots.delete(k);
+        break;
+      }
+    }
+  }
+  slot = { zones: null, work: null };
+  zoneSlots.set(eps, slot);
+  return slot;
+}
+
+/** The Ascendant zones at tilt `eps` once built, else null. Built once per tilt while it is
+ *  cached; the same frozen object from then on, so the map tiles it once. */
+export function geoAscZones(eps: number = EPS_J2000): GeoAscZones | null {
+  return zoneSlots.get(eps)?.zones ?? null;
 }
 
 /**
- * Build the Ascendant zones for about `budgetMs` (one step past it at most: a row, a ribbon
- * folded or a zone frozen) and return them once they are complete — null while work remains.
- * Resumable: each call carries on where the last one stopped.
+ * Build the Ascendant zones at tilt `eps` for about `budgetMs` (one step past it at most: a
+ * row, a ribbon folded or a zone frozen) and return them once they are complete — null while
+ * work remains. Resumable: each call for the same ε carries on where the last one stopped.
  */
-export function buildGeoAscZones(budgetMs = Infinity): GeoAscZones | null {
-  if (ascZones) return ascZones;
-  ascWork ??= ascZoneWork();
+export function buildGeoAscZones(eps: number = EPS_J2000, budgetMs = Infinity): GeoAscZones | null {
+  const slot = zoneSlot(eps);
+  if (slot.zones) return slot.zones;
+  const work = (slot.work ??= ascZoneWork(eps));
   const until = performance.now() + budgetMs;
   for (;;) {
-    const step = ascWork.next();
+    const step = work.next();
     if (step.done) {
-      ascWork = null;
-      ascZones = step.value;
-      return ascZones;
+      slot.work = null;
+      slot.zones = step.value;
+      return slot.zones;
     }
     if (performance.now() >= until) return null;
   }

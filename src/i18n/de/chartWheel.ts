@@ -14,5 +14,6 @@ export const chartWheel = {
   openSidebarHint: 'Eine größere Horoskopzeichnung mit Aspekten und Planetentabelle, in der Seitenleiste.',
   openSidebarLabel: 'Horoskop-Seitenleiste anzeigen',
   placeholder: 'Kein Horoskop ausgewählt',
+  skyHint: 'Für die Horoskopzeichnung des Himmels im Menü Overlay Transite oder Finsternisse wählen.',
   noChart: 'KEIN HOROSKOP (CCG)',
 } as const;

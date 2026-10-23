@@ -44,7 +44,7 @@ export const topNav = {
       cyclo: {
         label: 'Ciclocartografia',
         tipTitle: 'Ciclocartografia (CCG)',
-        desc: 'O híbrido de Jim Lewis: planetas pessoais em progressão secundária com os trânsitos de Júpiter em diante, num só mapa.',
+        desc: 'Combina Sol–Marte progredidos com Júpiter–Plutão em trânsito.',
       },
       synastry: {
         label: 'Sinastria',

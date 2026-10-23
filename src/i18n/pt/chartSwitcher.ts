@@ -10,6 +10,25 @@ export const chartSwitcher = {
   noChart: 'Nenhum mapa selecionado',
   tip: 'Trocar, editar ou adicionar um mapa',
   tabHint: '{key} troca para o seu mapa anterior — pressione mais vezes para percorrer os cinco recentes.',
+  tabHintSections: '{key} troca para o seu mapa anterior na mesma lista, Eventos ou Pessoas — pressione mais vezes para percorrê-la.',
   empty: 'Nenhum mapa salvo ainda.',
   searchAdd: 'Pesquisar + adicionar nome',
+  sky: {
+    name: 'Sem mapa',
+    tagline: 'só o céu',
+    meta: '{overlay} · {date}',
+    metaOff: 'Só o céu',
+    overlay: {
+      transits: 'Trânsitos',
+      eclipses: 'Eclipse',
+    },
+    hint: 'Desenhar o céu sem mapa ativo: Trânsitos e Eclipses usam o próprio referencial do momento.',
+    hintMasks: '{count, plural, one {{held} exige um mapa e fica em espera até você escolher um.} other {{held} exigem um mapa e ficam em espera até você escolher um.}}',
+  },
+  section: {
+    events: 'Eventos',
+    people: 'Pessoas',
+    eventsEmpty: 'Nenhum mapa de evento ainda.',
+    peopleEmpty: 'Nenhum mapa de pessoa ainda.',
+  },
 } as const;

@@ -10,6 +10,25 @@ export const chartSwitcher = {
   noChart: 'Seçili harita yok',
   tip: 'Harita değiştirin, düzenleyin veya ekleyin',
   tabHint: '{key} tuşu sizi önceki haritanıza götürür — son beş harita arasında dolaşmak için basmaya devam edin.',
+  tabHintSections: '{key} tuşu sizi aynı listedeki (Olaylar ya da Kişiler) önceki haritanıza götürür — listede dolaşmak için basmaya devam edin.',
   empty: 'Henüz kayıtlı harita yok.',
   searchAdd: 'Ara + ad ekle',
+  sky: {
+    name: 'Harita yok',
+    tagline: 'yalnızca gökyüzü',
+    meta: '{overlay} · {date}',
+    metaOff: 'Yalnızca gökyüzü',
+    overlay: {
+      transits: 'Transitler',
+      eclipses: 'Tutulma',
+    },
+    hint: 'Gökyüzünü haritasız çizin: Transitler ve Tutulmalar anın kendi çerçevesinde çalışır.',
+    hintMasks: '{count, plural, one {{held} bir harita gerektirdiği için siz birini seçene kadar bekler.} other {{held} bir harita gerektirdiği için siz birini seçene kadar bekler.}}',
+  },
+  section: {
+    events: 'Olaylar',
+    people: 'Kişiler',
+    eventsEmpty: 'Henüz olay haritası yok.',
+    peopleEmpty: 'Henüz kişi haritası yok.',
+  },
 } as const;

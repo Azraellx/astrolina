@@ -16,9 +16,11 @@ import type { SourceRating } from '../sourceRating';
 /** Where a record came from. Informational: it rides the row for the error report. */
 export type SourceFormat = 'delimited' | 'fixed' | 'aaf' | 'block';
 
-/** What kind of moment the record describes. Only ever informational here — the
- *  app has one chart type — but sources distinguish them and dropping the
- *  distinction would silently relabel an event as a person. */
+/** What kind of moment the record describes, as the source states it. Since
+ *  2026-10-20 the app has event charts, and an 'event' or an 'organisation' (an
+ *  incorporation, a founding) arrives as one: StoredChart.kind 'event'
+ *  (normalize.ts toStoredChart). 'natal' and 'unknown' arrive as persons, which is
+ *  what every import before then made of every record. */
 export type ChartKind = 'natal' | 'event' | 'organisation' | 'unknown';
 
 /** How the record's UTC offset was arrived at. 'file' means the source stated it

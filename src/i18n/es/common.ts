@@ -12,9 +12,12 @@ export const common = {
   edit: 'Editar',
   delete: 'Eliminar',
   keep: 'Conservar',
+  addExampleEvent: 'Agregar un ejemplo',
+  addExampleEventHint: 'Agrega Aries Ingress 2026, el equinoccio de marzo calculado para Greenwich, a tus cartas. No cambia nada más, y puedes eliminarla como cualquier carta.',
   locationFallbackOcean: 'Océano',
   tzWarning: '⚠ Zona horaria pre-1970 fuera de EE. UU./UE: verifica el horario de verano en un atlas',
   timeUnknownBanner: 'Hora de nacimiento desconocida',
+  timeUnknownBannerEvent: 'Hora desconocida',
   provisionalTimeBanner: '⚠ Probando {time}: provisional, sin guardar',
   locked: {
     feature: '{feature} es una función de {tier}.',

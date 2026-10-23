@@ -41,8 +41,14 @@ export interface ShareState {
    *  which a bare moment can't recast. `sourceRating` rides along so the
    *  recipient's copy says how far its time can be trusted, as the sender's does
    *  (2026-10-16: until then a link dropped it, so a rectified or remembered time
-   *  arrived looking like a recorded one). */
-  chart: BirthData & { tzIana?: string; tzEntry?: TzEntry; sourceRating?: SourceRating };
+   *  arrived looking like a recorded one). `kind` rides along so an event chart
+   *  arrives as one (2026-10-20); absent, as on every link before, means a person. */
+  chart: BirthData & {
+    tzIana?: string;
+    tzEntry?: TzEntry;
+    sourceRating?: SourceRating;
+    kind?: 'event';
+  };
   /** The camera at share time (absent → the default first-load framing). */
   view?: ShareView | null;
   /** The placed pin (absent → none). */
@@ -68,6 +74,7 @@ interface Wire {
   ze?: WireEntry; // tzEntry — how tz was stated (lib/atlas/zoneEntry); never overrides tz
   tk?: 0; // present (0) ⇔ timeKnown === false; absent ⇔ known
   sr?: SourceRating; // source rating (lib/sourceRating); absent ⇔ nobody has said
+  k?: 'e'; // present ('e') ⇔ an event chart (StoredChart.kind); absent ⇔ a person
   pl: string; // birthplace label
   pa: number; // birthplace lat
   pg: number; // birthplace lng
@@ -78,7 +85,9 @@ interface Wire {
 // A TzEntry with short keys, in the same spirit as the rest of the wire. Added
 // 2026-10-02 as an OPTIONAL key of v1 rather than a v2: older decoders ignore
 // keys they do not know, so links minted now still open everywhere. `sr`, the
-// source rating, joined the same way on 2026-10-16.
+// source rating, joined the same way on 2026-10-16, and `k`, the chart's kind, on
+// 2026-10-20 — an event sent to a build that predates event charts opens there as a
+// person, which is all that build has.
 type WireEntry =
   | { m: 's'; s: number; d: DaylightCode; z?: string } // standard: std, daylight, zone id
   | { m: 'o'; s: number; b?: 'lmt' | 'ut'; t?: string }; // offset: seconds, basis, text
@@ -152,6 +161,7 @@ export function encodeShareState(state: ShareState): string {
   if (c.tzEntry) wire.ze = toWireEntry(c.tzEntry);
   if (c.timeKnown === false) wire.tk = 0;
   if (c.sourceRating && KNOWN_RATINGS.has(c.sourceRating)) wire.sr = c.sourceRating;
+  if (c.kind === 'event') wire.k = 'e';
   if (state.view) {
     wire.vw = [round(state.view.lat, 3), round(state.view.lng, 3), round(state.view.zoom, 2)];
   }
@@ -220,6 +230,11 @@ export function decodeShareState(raw: string | null | undefined): ShareState | n
     // codes is read, never fitted (normalizeRating is for files from elsewhere; a
     // link of ours only ever writes one of the seven, so anything else is not ours).
     if (typeof w.sr === 'string' && KNOWN_RATINGS.has(w.sr)) chart.sourceRating = w.sr;
+    // The kind, dropped the same way: only the one value a link of ours writes is read,
+    // and anything else leaves the chart a person rather than failing the link. A fact
+    // about the record, so it is restored whatever the geodetic hold says (the hold only
+    // masks how a kind is shown — lib/eventCharts presentedKind).
+    if (w.k === 'e') chart.kind = 'event';
 
     const state: ShareState = { chart };
     if (Array.isArray(w.vw) && w.vw.length === 3) {

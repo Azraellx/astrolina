@@ -77,3 +77,17 @@
     bottom: calc(var(--edge, 3px) + 28px + max(env(safe-area-inset-bottom, 0px), var(--sky-band-h, 0px)));
   }
 }
+
+/* The legend entry for a timeless chart's Moon and Mercury lines (2026-10-21): a sample of
+   their stroke — two hairlines with a gap, as the map draws them — then its words. */
+.info-bar-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.info-bar-band-swatch {
+  width: 16px;
+  height: 4px;
+  border-top: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+}

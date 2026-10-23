@@ -43,11 +43,21 @@ const LT = ['get', 'lineType'];
 const dash = (d: readonly number[]) => [...d];
 
 // The width expressions the layers have always used, with MapStyle's widths in them.
-/** Meridians: MC, else IC. */
-const meridianWidth = (mc: number, ic: number) => expr(['case', ['==', LT, 'MC'], mc, ic]);
-/** Horizon layers: the Vertex axis, else ASC/DSC. */
+// A chart with no birth time: its Moon's and Mercury's angle lines, drawn at the noon degree,
+// take a stroke no other line class uses — two parallel hairlines in the body's colour (Lina,
+// 21 Oct 2026, §2.1: "a thin double stroke"; legible, and not the dash, which is the
+// overlays'). A banded line is one stampBands wrote `band` onto; MapLibre draws a line with a
+// gap width as two lines of the line width either side of the gap.
+const BANDED = ['has', 'band'];
+const BANDED_HAIRLINE = 0.75;
+const BANDED_GAP = 2.2;
+const bandedGap = () => expr(['case', BANDED, BANDED_GAP, 0]);
+/** Meridians: MC, else IC. A banded line is a hairline either side of its gap. */
+const meridianWidth = (mc: number, ic: number) =>
+  expr(['case', BANDED, BANDED_HAIRLINE, ['==', LT, 'MC'], mc, ic]);
+/** Horizon layers: the Vertex axis, else ASC/DSC; a banded line a hairline pair. */
 const horizonWidth = (vx: number, horizon: number) =>
-  expr(['case', ['in', LT, ['literal', ['VX', 'AVX']]], vx, horizon]);
+  expr(['case', BANDED, BANDED_HAIRLINE, ['in', LT, ['literal', ['VX', 'AVX']]], vx, horizon]);
 /** The overlay node pairs, one layer for every angle (a Vertex pair takes the horizon width,
  *  as it always has). */
 const pairWidth = (mc: number, ic: number, horizon: number) =>
@@ -87,6 +97,8 @@ const ANGLE_ARROW_LAYERS = [
 // hovered stamp now grows ×1.1 through a twin drawn from its own baked sprite, Map.tsx
 // STAMP_LIFTS, which carries the palette's disc and inks inside the image.)
 const GEO_GRID_LINE_LAYERS = ['geo-grid-mc-layer', 'geo-grid-asc-layer'] as const;
+// The two the geodetic hover lights a feature of: the MC band (2026-10-20) and the Ascendant zone.
+const GEO_LIT_LAYERS = ['geo-mc-bands-layer', 'geo-asc-zones-layer'] as const;
 
 /** The table. In the order the layers are stacked, for whoever reads it beside Map.tsx. */
 export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
@@ -110,7 +122,11 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
   paint('local-space-layer-in', 'line-width', (s) => s.localSpace.width),
   paint('local-space-layer-in', 'line-dasharray', (s) => dash(s.localSpace.inboundDash)),
 
-  paint('angle-lines-layer', 'line-width', (s) => s.aspect.width),
+  // A banded aspect or midpoint line (a chart with no birth time, Lina 22 Oct 2026, §2.2) takes
+  // the banded double hairline, as a banded angle line does; its dash stays, which still says
+  // what kind of line it is.
+  paint('angle-lines-layer', 'line-width', (s) => expr(['case', BANDED, BANDED_HAIRLINE, s.aspect.width])),
+  paint('angle-lines-layer', 'line-gap-width', bandedGap),
   paint('angle-lines-layer', 'line-dasharray', (s) => dash(s.aspect.dash)),
 
   paint('star-lines-layer', 'line-width', (s) => s.star.width),
@@ -133,6 +149,10 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
   layout('minor-lines-marks', 'visibility', (s) => visible(s.minorBeads)),
 
   paint('acg-lines-meridian', 'line-width', (s) => meridianWidth(s.natal.mcWidth, s.natal.icWidth)),
+  paint('acg-lines-meridian', 'line-gap-width', bandedGap),
+  paint('acg-lines-horizon', 'line-gap-width', bandedGap),
+  paint('acg-lines-ov-meridian', 'line-gap-width', bandedGap),
+  paint('acg-lines-ov-horizon', 'line-gap-width', bandedGap),
   paint('acg-lines-horizon', 'line-width', (s) => horizonWidth(s.natal.vxWidth, s.natal.horizonWidth)),
   paint('acg-lines-meridian-pair', 'line-gradient', (s) => nodeGradient(s.nodePair.nn, s.nodePair.sn)),
   paint('acg-lines-meridian-pair', 'line-width', (s) => meridianWidth(s.natal.mcWidth, s.natal.icWidth)),
@@ -180,14 +200,32 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
 
   paint('measure-points', 'circle-stroke-color', (s) => s.halo),
 
-  // The Ascendant zone under the cursor, lit in the grid's own ink (feature-state hover).
-  paint('geo-asc-zones-layer', 'fill-color', (s) => s.geoGrid.line),
-  paint('geo-asc-zones-layer', 'fill-opacity', (s) =>
-    expr(['case', ['boolean', ['feature-state', 'hover'], false], s.geoGrid.hover, 0]),
-  ),
+  // The MC band and the Ascendant zone under the cursor, lit in the grid's own ink (feature-state
+  // hover) — each at `faint` of that while both are lit (feature-state faint), so the two read
+  // lighter and their overlap, where both washes stack, darker (Lina, 20 Oct 2026, §4).
+  ...each(GEO_LIT_LAYERS, (l) => [
+    paint(l, 'fill-color', (s) => s.geoGrid.line),
+    paint(l, 'fill-opacity', (s) =>
+      expr([
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        ['case', ['boolean', ['feature-state', 'faint'], false], s.geoGrid.hover * s.geoGrid.faint, s.geoGrid.hover],
+        0,
+      ]),
+    ),
+  ]),
   ...each(GEO_GRID_LINE_LAYERS, (l) => [
     paint(l, 'line-color', (s) => s.geoGrid.line),
-    paint(l, 'line-width', (s) => s.geoGrid.width),
+    // One weight heavier on the 90°W and 90°E meridians (2026-10-21, Lina §4): 0° Capricorn /
+    // 0° Cancer on the MC, where 0° Aries / 0° Libra rise at every latitude.
+    paint(l, 'line-width', (s) =>
+      expr([
+        'case',
+        ['in', ['get', 'sign'], ['literal', l === 'geo-grid-mc-layer' ? [3, 9] : [0, 6]]],
+        s.geoGrid.width * 2.2,
+        s.geoGrid.width,
+      ]),
+    ),
     paint(l, 'line-opacity', (s) => s.geoGrid.opacity),
   ]),
 ]);

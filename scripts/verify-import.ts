@@ -466,5 +466,57 @@ console.log('\n── Layer 4: broken rows fail loudly, one at a time ──');
     detectShape(readFileSync(resolve(FIXTURES, 'f01-lewis.aaf'), 'utf8')).format === 'aaf');
 }
 
+// ── The record's kind (2026-10-20) ──────────────────────────────────────────
+//
+// The exchange format states what each record is: m/f/w a person, e/l an event, o an
+// organisation. Since event charts exist, the last three arrive as StoredChart.kind
+// 'event' — and a person arrives exactly as before, with no `kind` key at all, so a
+// library re-imported after the upgrade holds byte-identical person records. Moved the
+// other way: one record, its kind letter flipped and nothing else, must differ in
+// `kind` and in nothing else.
+
+console.log('\n── The exchange format’s kind letter: events arrive as events, people unchanged ──');
+
+{
+  // Synthetic: a London noon in 1990, stated in GMT, the JD the record's own moment.
+  const record = (letter: string) =>
+    `#A93:Kind ${letter},Test,${letter},1.1.1990,12:00,London,England (UK)\n#B93:2447893.0,51n30,0w07,0hw00,0`;
+  const one = (letter: string) => {
+    const report = parseImport(sourceFromText(record(letter)), { controls: DEFAULT_CONTROLS });
+    return chartsFrom(report)[0];
+  };
+  const cases: [string, 'event' | undefined][] = [
+    ['m', undefined],
+    ['f', undefined],
+    ['w', undefined],
+    ['e', 'event'],
+    ['l', 'event'],
+    ['o', 'event'],
+    ['x', undefined], // a letter the format doesn't define: the record's 'unknown', a person
+  ];
+  const wrong = cases.filter(([letter, want]) => {
+    const c = one(letter);
+    return !c || c.kind !== want || (want === undefined && 'kind' in c);
+  });
+  check(`every kind letter lands on its kind (${cases.length})`, wrong.length === 0,
+    wrong.map(([l]) => `${l}: ${JSON.stringify(one(l)?.kind)}`).join('; '));
+
+  // Byte-identical, minus the fields every import mints afresh (and the name, which
+  // carries the letter) — and, for the event, minus the one field it should differ in.
+  const stable = (c: object | undefined, drop: string[] = []) => {
+    if (!c) return 'none';
+    const copy: Record<string, unknown> = { ...c };
+    for (const k of ['id', 'createdAt', 'name', ...drop]) delete copy[k];
+    return JSON.stringify(copy);
+  };
+  const person = one('m');
+  const event = one('e');
+  check('a person’s record has no kind key in its JSON',
+    !!person && !JSON.stringify(person).includes('"kind"'), person ? JSON.stringify(person) : 'none');
+  check('  flipping the letter m → e moves the kind and nothing else',
+    !!person && !!event && event.kind === 'event' && stable(event, ['kind']) === stable(person),
+    `${stable(event, ['kind'])} vs ${stable(person)}`);
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
 process.exit(failures === 0 ? 0 : 1);

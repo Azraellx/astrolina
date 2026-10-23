@@ -44,7 +44,7 @@ export const topNav = {
       cyclo: {
         label: 'Siklokartografi',
         tipTitle: 'Siklokartografi (CCG)',
-        desc: 'Jim Lewis’in melez yöntemi: ikincil progres kişisel gezegenler ile transit Jüpiter ve ötesi, tek bir haritada.',
+        desc: 'Progres Güneş–Mars ile transit Jüpiter–Plüton’u harmanlar.',
       },
       synastry: {
         label: 'Sinastri',

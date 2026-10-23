@@ -9,7 +9,8 @@
 // paran, and local-space generators consume unchanged. This is the single
 // abstraction behind transits, secondary progressions, solar-arc directions,
 // and relationship (synastry) overlays — each is just "derive a different
-// positions+gmst and overlay it."
+// positions+gmst and overlay it." With no chart, the two overlays that need none
+// (transits, the eclipse chart) are cast by buildSkyOverlay in the moment's own frame.
 import type { FeatureCollection, Geometry, LineString, Point } from 'geojson';
 import {
   birthDataToJD,
@@ -142,6 +143,52 @@ export const TIME_UNKNOWN_BLOCKED_OVERLAYS = new Set<OverlayMode>([
   'cyclo',
 ]);
 
+// The time-unknown blocks a GEODETIC map lifts: the progressions and solar arc, for a chart
+// with no birth time (Lina's ruling, 20 Oct 2026, §15). The block above exists because
+// advancing the noon placeholder would invent a moment, and on a Celestial map the moment is
+// what places the lines: the angles are the birth instant's sky turning over the place. A
+// geodetic map takes a place's angles from its coordinates and never from the clock, so what
+// these three advance there is the planets' DEGREES alone. A missing birth time leaves those
+// degrees uncertain by their motion when the birth is moved across its date (lib/astro/timeless
+// overlayBirthDateMotion, Lina's range rule of 22 Oct 2026), which the overlay's own lines carry
+// as bands at the overlay's own positions, as the natal lines do theirs. The angle frame is held at
+// Natal angles on a geodetic map anyway (settings.inert.anglesHeld), so no angle advances.
+//
+// Not here, and still blocked for a timeless chart on either map:
+//   · Primary directions advance the RAMC, which needs the birth minute, and which a geodetic
+//     map holds in any case (SKY_HELD_OVERLAYS); 'no-time' outranks that hold, as below.
+// Cyclocartography joined them on 21 Oct 2026 (Lina, question 6): map lines only, its
+// progressed Moon and Mercury lines in the uncertain stroke with bands on hover, the rest at
+// the placeholder.
+// Keyed on the DERIVED line system, like every block here: a Geodetic choice masked to
+// Celestial (a sidereal zodiac, the review hold) draws a celestial map, and the block stands.
+export const TIMELESS_GEODETIC_OVERLAYS = new Set<OverlayMode>([
+  'progressed',
+  'tertiary-progressed',
+  'solar-arc',
+  'cyclo',
+]);
+
+// Overlay modes unavailable with NO chart (2026-10-20): the techniques that advance or
+// compare a chart. Every progression and direction advances a birth moment, Cyclo advances
+// half its sky from one, and Synastry lays a partner beside one; with no chart there is
+// nothing to advance and nothing to compare. Transits and Eclipses stay, because the sky at a
+// moment is real with nothing under it: buildSkyOverlay casts it in the moment's own frame.
+//
+// "No chart" is a state the reader can choose (the chart menu's "the sky alone" row, behind
+// the geodetic review hold), and it is also what an empty library has always been. Before
+// this set existed an empty library's Overlay menu offered these rows, and picking one drew
+// nothing: a silent no-op, now a greyed row with its reason. Masked like the chart blocks:
+// the reader's overlay choice is kept and returns with a chart.
+export const NO_CHART_BLOCKED_OVERLAYS = new Set<OverlayMode>([
+  'progressed',
+  'tertiary-progressed',
+  'solar-arc',
+  'primary-directions',
+  'cyclo',
+  'synastry',
+]);
+
 // Overlay modes HELD on a geodetic map (lib/skyHold, 2026-10-02). Primary Directions
 // move the map by advancing the RAMC — the sky turning over the place — and a geodetic
 // map has no turning to advance. Every other overlay moves the PLANETS by degree and
@@ -152,20 +199,36 @@ export const SKY_HELD_OVERLAYS = new Set<OverlayMode>(['primary-directions']);
 
 /** WHICH block bars a mode, or null if none does. A menu that greys a row out owes the
  *  reader the reason — and the reasons are different things, not one blanket
- *  "unavailable": the first three are facts about the CHART, 'geodetic' is the MAP's
- *  line system (SKY_HELD_OVERLAYS). */
-export type OverlayBlock = 'composite' | 'no-time' | 'davison' | 'geodetic';
+ *  "unavailable": the first three are facts about the CHART, 'no-chart' is the absence
+ *  of one (NO_CHART_BLOCKED_OVERLAYS), 'geodetic' is the MAP's line system
+ *  (SKY_HELD_OVERLAYS). */
+export type OverlayBlock = 'composite' | 'no-time' | 'davison' | 'no-chart' | 'geodetic';
 
 /** Pass the EFFECTIVE line system (App.tsx's derived `lineSystem`, `ctx.lineSystem`);
- *  omitted, it reads as Celestial and holds nothing on the map's account. */
+ *  omitted, it reads as Celestial and holds nothing on the map's account — and, the
+ *  same way, lifts none of the timeless chart's blocks (TIMELESS_GEODETIC_OVERLAYS). */
 export function overlayBlockFor(
   chart: { composite?: unknown; timeKnown?: boolean; tag?: string } | null,
   lineSystem: LineSystem = 'celestial',
 ): (mode: OverlayMode) => OverlayBlock | null {
   const held = skyHeldFor(lineSystem);
-  if (!chart) return (mode) => (held && SKY_HELD_OVERLAYS.has(mode) ? 'geodetic' : null);
+  // No chart outranks the map, for the reason the chart's own blocks do below: the
+  // geodetic reason names a fix (switch to Celestial) that does nothing for a technique
+  // with no chart to advance. Every mode the map holds is in the no-chart set today, so
+  // the second test only answers if a held mode is ever added that needs no chart.
+  if (!chart) {
+    return (mode) =>
+      NO_CHART_BLOCKED_OVERLAYS.has(mode)
+        ? 'no-chart'
+        : held && SKY_HELD_OVERLAYS.has(mode)
+          ? 'geodetic'
+          : null;
+  }
   const composite = !!chart.composite;
+  // A timeless chart's progressions and solar arc on a geodetic map (§15, above). Only the
+  // 'no-time' test reads it: a composite or a Davison keeps its own reason on any map.
   const noTime = chart.timeKnown === false;
+  const geodetic = lineSystem === 'geodetic';
   // A Davison is a locally-generated relationship chart: real natal math (so no
   // `composite` payload) but system-tagged 'space' by the relationship generator.
   // You can't add a partner to a chart that is already a two-person relationship
@@ -173,7 +236,13 @@ export function overlayBlockFor(
   const davison = !composite && chart.tag === 'space';
   return (mode) => {
     if (composite && COMPOSITE_BLOCKED_OVERLAYS.has(mode)) return 'composite';
-    if (noTime && TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode)) return 'no-time';
+    if (
+      noTime &&
+      TIME_UNKNOWN_BLOCKED_OVERLAYS.has(mode) &&
+      !(geodetic && TIMELESS_GEODETIC_OVERLAYS.has(mode))
+    ) {
+      return 'no-time';
+    }
     if (davison && mode === 'synastry') return 'davison';
     // The chart's own blocks outrank the map's: the geodetic reason names a setting
     // to change, and on a chart that bars the mode anyway that fix would be false.
@@ -382,8 +451,16 @@ export interface OverlayLayer {
   jd: number; // effective JD, for toEclipticPositions in the bi-wheel
   positions: PlanetPosition[];
   gmst: number;
-  originLat: number; // local-space origin
+  /** Local-space origin: the chart's birthplace, or a synastry partner's. NaN on a
+   *  `skyOnly` layer, which has no place under it (see buildSkyOverlay). */
+  originLat: number;
   originLng: number;
+  /** A layer cast with NO chart (buildSkyOverlay): the sky at its instant in that instant's
+   *  own frame, with nothing natal in it, so no origin and nothing to read against a birth
+   *  moment. Absent on every layer buildOverlay makes. A consumer that needs a chart (local
+   *  space from the origin, a natal frame, a return) tests this, or the absence of a chart,
+   *  before it reads the layer. (2026-10-20) */
+  skyOnly?: true;
   /** Per-body epochs for a layer that MIXES instants (cyclo: progressed
    *  inners + transiting outers). Sidereal display shifts each listed body by
    *  its own epoch's ayanamsa instead of the layer's `jd`; absent for the
@@ -685,7 +762,6 @@ export function buildOverlay(
   const moment = mode === 'synastry' ? null : fmtDateTimeUTC(targetDate);
   switch (mode) {
     case 'transits': {
-      const jd = epochMsToJD(targetDate);
       // Default 'relative-to-natal': frame the transiting planets against the NATAL
       // RAMC (the birth chart's angular framework), so the lines move only with the
       // planets' zodiacal motion. 'transit-moment' uses the transit instant's own
@@ -694,22 +770,8 @@ export function buildOverlay(
       const gmst =
         transitFrame === 'relative-to-natal'
           ? gmstRadians(birthDataToJD(chart))
-          : gmstRadians(jd);
-      return {
-        kind: mode,
-        moment,
-        // The nub already shows "Transits" as the mode name — no readout needed.
-        measure: null,
-        labelFull: t('timeline.labelFull.transits', {
-          datetime: fmtDateTimeUTC(targetDate),
-        }),
-        jd,
-        positions: getPlanetPositions(jd, nodeType),
-        gmst,
-        originLat: chart.birthplace.lat,
-        originLng: chart.birthplace.lng,
-        bodyRule: { by: 'sample', jd },
-      };
+          : gmstRadians(epochMsToJD(targetDate));
+      return skyLayer('transits', targetDate, nodeType, gmst, chart.birthplace, t);
     }
     case 'progressed':
     case 'tertiary-progressed': {
@@ -946,23 +1008,74 @@ export function buildOverlay(
       // geographic fact at one instant, and only the same-instant framing puts
       // the Sun/Moon conjunction's MC line through the path itself, so the
       // transit overlay's relative-to-natal positioning setting does not apply.
-      const jd = epochMsToJD(targetDate);
-      return {
-        kind: mode,
-        moment,
-        measure: null,
-        labelFull: t('timeline.labelFull.eclipses', {
-          datetime: fmtDateTimeUTC(targetDate),
-        }),
-        jd,
-        positions: getPlanetPositions(jd, nodeType),
-        gmst: gmstRadians(jd),
-        originLat: chart.birthplace.lat,
-        originLng: chart.birthplace.lng,
-        bodyRule: { by: 'sample', jd },
-      };
+      return skyLayer(
+        'eclipses',
+        targetDate,
+        nodeType,
+        gmstRadians(epochMsToJD(targetDate)),
+        chart.birthplace,
+        t,
+      );
     }
   }
+}
+
+/** The sky at one instant as a layer, framed by `gmst`: what Transits and the eclipse chart
+ *  both are. The ONE construction behind buildOverlay's two sky cases and buildSkyOverlay,
+ *  so the sky cast with no chart is the transit sky by construction rather than a second
+ *  copy that agrees with the first only until one of them is edited. */
+function skyLayer(
+  mode: 'transits' | 'eclipses',
+  targetDate: number,
+  nodeType: NodeType,
+  gmst: number,
+  origin: { lat: number; lng: number },
+  t: TFn,
+): OverlayLayer {
+  const jd = epochMsToJD(targetDate);
+  return {
+    kind: mode,
+    moment: fmtDateTimeUTC(targetDate),
+    // The nub already shows "Transits" as the mode name, and the eclipse chart has no
+    // timeline bar: neither needs a readout.
+    measure: null,
+    labelFull: t(`timeline.labelFull.${mode}`, { datetime: fmtDateTimeUTC(targetDate) }),
+    jd,
+    positions: getPlanetPositions(jd, nodeType),
+    gmst,
+    originLat: origin.lat,
+    originLng: origin.lng,
+    bodyRule: { by: 'sample', jd },
+  };
+}
+
+/**
+ * The sky at `ms` with NO chart under it: Transits at the target date, or the eclipse chart
+ * at an eclipse's maximum (the caller passes that instant, as it does to buildOverlay). For
+ * the "No chart" state, where the chart menu's "the sky alone" row is picked, and for an
+ * empty library. (2026-10-20)
+ *
+ * The frame is the moment's own sidereal time, because with no chart it is the only frame
+ * there is: "relative to natal" has no natal RAMC to hold. So this is exactly the
+ * 'transit-moment' transit layer of any chart at the same instant, less the chart. On a
+ * geodetic map the frame doesn't place a line at all (meridianLngFor reads the degree), so
+ * there it is simply the transiting planets at their degrees.
+ *
+ * `skyOnly` marks it, and the origin is NaN rather than a made-up place: local space is cast
+ * from a chart's birthplace, and a caller that forgets the no-chart gate computes NaN, which
+ * nothing can mistake for a place, rather than a confident star of lines from 0°N 0°E.
+ *
+ * Only the two sky modes: every other overlay advances or compares a chart
+ * (NO_CHART_BLOCKED_OVERLAYS). buildOverlay keeps its signature; this sits beside it.
+ */
+export function buildSkyOverlay(
+  mode: 'transits' | 'eclipses',
+  ms: number, // epoch ms UTC: the target date, or the eclipse maximum
+  nodeType: NodeType = 'mean',
+  t: TFn = getI18n().t,
+): OverlayLayer {
+  const layer = skyLayer(mode, ms, nodeType, gmstRadians(epochMsToJD(ms)), { lat: NaN, lng: NaN }, t);
+  return { ...layer, skyOnly: true };
 }
 
 // Two-letter tag per overlay kind, shown on the map ahead of the glyph + angle
@@ -1153,14 +1266,20 @@ export interface OverlayMinorFrame {
   zenith: boolean;
   /** Name, themed colour and sprite per body — the natal lines' own decoration. */
   decor: (n: number) => MinorDecor;
+  /** The one tilt a geodetic map is drawn at (App's geoEps; Lina, 20 Oct 2026, §2): on a
+   *  geodetic map the overlay's catalog lines are mapped and laid back on the equator at it, as
+   *  its planets' lines are — the longitude still read at the layer's own moment. Omitted, the
+   *  layer's own obliquity, which is what every geodetic overlay drew at before 2026-10-20.
+   *  Unread on a celestial map. */
+  geoEps?: number;
 }
 
 export interface OverlayMinorGeometry {
   /** The positions the lines were drawn from, in the overlay's frame — projected onto
    *  the ecliptic In Zodiaco and on a geodetic map. What an overlay paran set pairs. */
   positions: MinorPosition[];
-  /** The overlay's meridian mapping: meridianLngFor(lineSystem, obliquity(layer.jd),
-   *  layer.gmst), the overlay planets' own. */
+  /** The overlay's meridian mapping: meridianLngFor(lineSystem, ε, layer.gmst) — ε the frame's
+   *  geoEps on a geodetic map, else obliquity(layer.jd) — the overlay planets' own. */
   meridianLng: MeridianLng;
   /** Angle lines, Angles-filtered and tagged (tagMinor). */
   lines: FeatureCollection<LineString, MinorLineProps>;
@@ -1174,7 +1293,8 @@ export interface OverlayMinorGeometry {
  * window's rows read the samples, and the decoration reads the rows).
  *
  * Frame, projection and meridian are the overlay planets' own (App's overlay memo):
- * projected at the layer's jd, mapped through the layer's gmst at its obliquity. The
+ * projected at the layer's jd, mapped through the layer's gmst at its obliquity — on a
+ * geodetic map at the one tilt instead (frame.geoEps, 2026-10-20). The
  * tag is the overlay's prefix — on Cyclo the transits' 'Tr', since catalog bodies ride
  * its transiting side (see the cyclo case of buildOverlay).
  */
@@ -1183,11 +1303,13 @@ export function overlayMinorLines(
   samples: readonly OverlayMinorSample[],
   frame: OverlayMinorFrame,
 ): OverlayMinorGeometry {
-  const meridianLng = meridianLngFor(frame.lineSystem, obliquity(layer.jd), layer.gmst);
+  // One tilt on a geodetic map (frame.geoEps), as the overlay planets' memos map theirs.
+  const geoEps = frame.lineSystem === 'geodetic' ? frame.geoEps : undefined;
+  const meridianLng = meridianLngFor(frame.lineSystem, geoEps ?? obliquity(layer.jd), layer.gmst);
   const raw = samples.map(minorLinePositionOf);
   const positions =
     frame.lineSystem === 'geodetic' || frame.coordSystem === 'zodiaco'
-      ? projectMinorOntoEcliptic(raw, layer.jd)
+      ? projectMinorOntoEcliptic(raw, layer.jd, geoEps)
       : raw;
   const tag = layer.kind === 'cyclo' ? OVERLAY_LABEL_PREFIX.transits : OVERLAY_LABEL_PREFIX[layer.kind];
   const all = generateMinorLines(positions, meridianLng, frame.decor);

@@ -36,8 +36,14 @@ import {
   setFolderOpen,
   UNFILED,
   undeclareFolder,
+  DEFAULT_EVENT_FOLDER,
+  loadLastEventFolder,
+  loadLastFolder,
+  saveLastEventFolder,
+  saveLastFolder,
 } from '../src/lib/chartFolders';
 import { recentShortlist, RECENT_COUNT, type StoredChart } from '../src/lib/chartLibrary';
+import { SECTION_COUNT, switcherSections, tabCycleIds } from '../src/lib/eventCharts';
 
 // A minimal store, so the module under test is the real one.
 const backing = new Map<string, string>();
@@ -203,6 +209,109 @@ console.log('\n── The quick-switch shortlist stays in its folder ──');
   check('with no active chart it falls back to the whole library',
     recentShortlist(charts).length === RECENT_COUNT,
     String(recentShortlist(charts).length));
+}
+
+// ── Two shortlists, each in its own folder (2026-10-20) ─────────────────────
+//
+// With event charts on offer the menu shows an Events list and a People list. Each is
+// the same folder-scoped shortlist, of fewer rows, anchored to the active chart when it
+// is of that kind and otherwise to the most recent chart of the kind — so the folder
+// rule above holds for both, and the held menu is the old list of five exactly.
+
+console.log('\n── Two shortlists, each in its own folder ──');
+
+{
+  const mk = (name: string, folder: string | undefined, used: number, event = false) => {
+    const c = chart(name, folder);
+    c.lastUsedAt = used;
+    if (event) c.kind = 'event';
+    return c;
+  };
+  const charts = [
+    mk('Client A', 'Clients', 50),
+    mk('Client B', 'Clients', 49),
+    mk('Client C', 'Clients', 48),
+    mk('Client D', 'Clients', 47),
+    mk('Client E', 'Clients', 46),
+    mk('Client F', 'Clients', 45),
+    mk('Aunt', 'Family', 100),
+    mk('Cousin', 'Family', 99),
+    mk('Aries 2026', 'Mundane/Ingresses', 30, true),
+    mk('Cancer 2026', 'Mundane/Ingresses', 29, true),
+    mk('Libra 2026', 'Mundane/Ingresses', 28, true),
+    mk('Capricorn 2026', 'Mundane/Ingresses', 27, true),
+    mk('Aries 2027', 'Mundane/Ingresses', 26, true),
+    mk('New Moon', 'Mundane/Lunations', 90, true),
+  ];
+  const by = (n: string) => charts.find((c) => c.name === n)!;
+  const namesOf = (list: StoredChart[]) => list.map((c) => c.name);
+
+  const four = recentShortlist(charts, by('Client A'), SECTION_COUNT);
+  const five = recentShortlist(charts, by('Client A'));
+  check('a shortlist of four is the first four of the five, in order',
+    four.length === SECTION_COUNT && five.length === RECENT_COUNT &&
+      JSON.stringify(namesOf(four)) === JSON.stringify(namesOf(five).slice(0, SECTION_COUNT)),
+    `${namesOf(four).join(', ')} | ${namesOf(five).join(', ')}`);
+
+  // A person active: People anchors to them; Events to the most recent event's folder.
+  const onClient = switcherSections(charts, by('Client A'), 'celestial', false)!;
+  check('People anchors to the active person, in their folder',
+    onClient.person.length === SECTION_COUNT && onClient.person.every((c) => chartFolder(c) === 'Clients'),
+    namesOf(onClient.person).join(', '));
+  check('  Events anchors to the most recent event, in ITS folder',
+    JSON.stringify(namesOf(onClient.event)) === JSON.stringify(['New Moon']),
+    namesOf(onClient.event).join(', '));
+  check('  …and neither list holds the other kind',
+    onClient.person.every((c) => c.kind !== 'event') && onClient.event.every((c) => c.kind === 'event'));
+
+  // An event active: Events anchors to it; People to the most recent person (Aunt).
+  const onIngress = switcherSections(charts, by('Aries 2026'), 'geodetic', false)!;
+  check('Events anchors to the active event, in its folder',
+    onIngress.event.length === SECTION_COUNT &&
+      onIngress.event.every((c) => chartFolder(c) === 'Mundane/Ingresses') &&
+      !namesOf(onIngress.event).includes('New Moon'),
+    namesOf(onIngress.event).join(', '));
+  check('  People anchors to the most recent person — and stays in that person’s folder',
+    JSON.stringify(namesOf(onIngress.person)) === JSON.stringify(['Aunt', 'Cousin']),
+    namesOf(onIngress.person).join(', '));
+
+  // Held: no sections. The Tab cycle left the folder on 2026-10-23 (Salvatore): it is the
+  // library's five most recent, while the menu a click opens (`five`) keeps to Client A's.
+  check('held, there are no sections', switcherSections(charts, by('Client A'), 'geodetic', true) === null);
+  const heldTab = tabCycleIds(charts, by('Client A'), true);
+  const libraryFive = recentShortlist(charts, null).map((c) => c.id);
+  check('  …and the Tab cycle is the library’s five most recent, not the folder’s',
+    heldTab.length === RECENT_COUNT && JSON.stringify(heldTab) === JSON.stringify(libraryFive) &&
+      JSON.stringify(heldTab) !== JSON.stringify(five.map((c) => c.id)),
+    namesOf(heldTab.map((id) => charts.find((c) => c.id === id)!)).join(', '));
+}
+
+// ── The last event folder is a memory of its own (2026-10-20) ───────────────
+//
+// Two runs, two keys: filing an ingress must not move where the next client goes, and
+// filing a client must not move where the next ingress goes. Each half moves its own
+// key and requires the other NOT to move.
+
+console.log('\n── The last event folder is a memory of its own ──');
+
+{
+  backing.clear();
+  check('an event starts in Mundane while nothing is remembered',
+    loadLastEventFolder() === DEFAULT_EVENT_FOLDER && DEFAULT_EVENT_FOLDER === 'Mundane', loadLastEventFolder());
+  check('  …while a person starts unfiled, as before', loadLastFolder() === UNFILED, loadLastFolder());
+  saveLastEventFolder('Mundane/Ingresses');
+  check('saving an event’s folder moves the event memory',
+    loadLastEventFolder() === 'Mundane/Ingresses', loadLastEventFolder());
+  check('  …and leaves the person memory where it was', loadLastFolder() === UNFILED, loadLastFolder());
+  saveLastFolder('Clients/2026');
+  check('saving a person’s folder moves the person memory', loadLastFolder() === 'Clients/2026', loadLastFolder());
+  check('  …and leaves the event memory where it was',
+    loadLastEventFolder() === 'Mundane/Ingresses', loadLastEventFolder());
+  saveLastEventFolder(UNFILED);
+  check('an event filed as Unfiled is remembered as that, not as the default',
+    loadLastEventFolder() === UNFILED, JSON.stringify(loadLastEventFolder()));
+  const keys = [...backing.keys()];
+  check('  the two memories are two keys', keys.length === 2 && new Set(keys).size === 2, keys.join(', '));
 }
 
 // ── Moving things about ─────────────────────────────────────────────────────

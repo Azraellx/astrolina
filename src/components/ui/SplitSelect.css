@@ -60,6 +60,20 @@
   line-height: 0;
 }
 
+/* A tier-locked option's badge (SplitSelectOption.tier): a suffix after the label, as a nav
+   menu row wears it, centred on the label rather than sat on its baseline, where its 9px capitals
+   rode low beside the label's lowercase (2026-10-23). `middle` still left it 1.5px under the
+   segment's centre (measured in Chrome), so it is lifted a whole pixel, which stays crisp on a 1x
+   screen. The face is .navmenu-tier's. */
+.split-select-tier {
+  position: relative;
+  top: -1px;
+  display: inline-block;
+  margin-left: 5px;
+  line-height: 12px;
+  vertical-align: middle;
+}
+
 /* Background only, exactly as .theme-option:hover does it. Lifting the TEXT here
    was tried and rejected against the real render: it pushed the UNSELECTED half to
    the same weight as the live one beside it, which is the one thing this control

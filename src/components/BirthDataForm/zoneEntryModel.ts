@@ -47,6 +47,8 @@
 
 import { DateTime } from 'luxon';
 import type { StoredChart } from '../../lib/chartLibrary';
+import { offsetHoursAt } from '../../lib/atlas/timezone';
+import { roundToMinute } from '../../lib/astro/eventSearch';
 import { zoneNameForChart, type ZoneName } from '../../lib/atlas/zoneName';
 import {
   applyOffsetDirection,
@@ -834,4 +836,178 @@ export function zoneReduce(model: ZoneModel, action: ZoneAction, view: ZoneView,
         : model;
     }
   }
+}
+
+// ── A moment the form was given rather than typed (2026-10-20) ───────────────
+//
+// The Now button, and a moment found for an event chart, hand the form an INSTANT — a
+// point in Universal Time — not a wall clock. The date and time boxes then show that
+// instant read in the zone the field holds, and are derived from it on every render
+// rather than written once (CLAUDE.md rule 2): changing the zone, or picking the place
+// the zone is detected from, moves the clock shown and never the moment. Typing in the
+// boxes is the reader's own statement and releases the instant (the form does that).
+//
+// The clock is read through the SAME zoneView the save goes through, so the record the
+// form writes from the boxes is the instant back again: what it shows is what it casts.
+// The tz database alone would not do — a zone the reader stated (EST + daylight in
+// January, a typed offset) is not the place's clock, and the save writes the stated one.
+
+/** A moment the form was handed: the instant, and how to bring it to a whole minute
+ *  (BirthData holds no seconds). An ingress rounds UP, so the chart shows the body in
+ *  its new sign rather than at 29°59′ of the old one; everything else — the Now button
+ *  included — rounds to the nearest minute. */
+export interface FormInstant {
+  utMs: number;
+  round: 'ceil' | 'nearest';
+}
+
+/** The boxes' values for an instant, and how they were read. */
+export interface InstantWallClock {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  /** The offset the clock is read at, east-positive seconds — 0 in UT. */
+  offsetSeconds: number;
+  /** No place yet, so no zone: the clock is Universal Time, and the form says so. */
+  ut: boolean;
+  /** The clock falls in the hour that happens twice as the clocks go back, and the zone
+   *  the field holds reads it as the OTHER occurrence — so the boxes cannot cast this
+   *  moment under that zone. */
+  ambiguous: boolean;
+  /** While `ambiguous`: the pick that states this occurrence's offset — the chooser's
+   *  other half (EST beside EDT) where that is the offset, else a custom offset. The form
+   *  makes it (CLAUDE.md row B: a precondition of the moment it was handed, announced
+   *  under the zone field). Null otherwise. */
+  fix: ZonePick | null;
+}
+
+/** Whole minutes on the wall clock, by the instant's rule — eventSearch's roundToMinute,
+ *  the one rule, so the minute the boxes show is the minute the panel found (chartInstantOf)
+ *  wherever the offset is a whole minute. (Until 2026-10-20 a 1 ms slack on 'ceil' let an
+ *  ingress within a millisecond past a minute show that minute while the panel said the
+ *  next — and cast the chart a hair BEFORE the ingress, in the old sign. Caught by
+ *  verify:event-search §h.) */
+function roundWallMs(ms: number, round: FormInstant['round']): number {
+  return roundToMinute(ms, round);
+}
+
+/** The civil fields of an epoch-ms value read as UTC. */
+function civilOfMs(ms: number): Pick<InstantWallClock, 'year' | 'month' | 'day' | 'hour' | 'minute'> {
+  const d = new Date(ms);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+  };
+}
+
+/** The offset (east-positive seconds) the field would save at a moment: what toSave
+ *  writes, or — while saving must wait — what the zone in effect resolves to. */
+function savedOffsetSeconds(v: ZoneView): number | null {
+  if (v.toSave) return v.toSave.tzOffset * 3600;
+  return v.resolved ? v.resolved.seconds : null;
+}
+
+/**
+ * The wall clock the form shows for an instant: the fields that, saved with the zone the
+ * field would save AT them, cast that instant (rounded to the minute by its rule).
+ *
+ * A fixed point, because Automatic's offset depends on the wall clock it is read at. The
+ * first guess is the place's real offset AT the instant (the tz database, which answers
+ * it unambiguously), so the clock lands on the reading the place's clocks really showed
+ * — never on a time inside the spring gap that merely casts the same instant. Then the
+ * field is asked at that clock; if it would save another offset (a stated zone), that
+ * offset is tried, until the two agree.
+ *
+ * They never agree only in the repeated autumn hour, where the field's Automatic reads
+ * the clock as its first occurrence: the second is then `ambiguous`, with the `fix` that
+ * states its offset. LMT-era offsets carry seconds, so the wall clock is rounded by the
+ * instant's rule after the offset is applied: the record casts the instant to within
+ * 30 seconds there, exactly otherwise.
+ */
+export function wallClockForInstant(
+  model: ZoneModel,
+  inputs: Pick<ZoneInputs, 'initial' | 'opened'>,
+  place: { lat: number; lng: number } | null,
+  instant: FormInstant,
+): InstantWallClock {
+  const clockAt = (offsetSeconds: number) =>
+    civilOfMs(roundWallMs(instant.utMs + offsetSeconds * 1000, instant.round));
+  if (!place) return { ...clockAt(0), offsetSeconds: 0, ut: true, ambiguous: false, fix: null };
+
+  const viewAt = (c: ReturnType<typeof clockAt>) =>
+    zoneView(model, { ...inputs, at: { lat: place.lat, lng: place.lng, ...c } });
+
+  const first = viewAt(clockAt(0));
+  const iana = first.resolved?.tzIana ?? first.resolved?.detected?.iana;
+  let truth: number | null = null;
+  if (iana) {
+    // Read at the MINUTE the instant rounds to, not the instant: an ingress at 05:59:59.6 UT
+    // on New York's autumn change rounds up to 06:00, which the place's clocks read as 01:00
+    // EST — the offset a second earlier would show a 02:00 EDT that no clock ever read.
+    // (Rounding commutes with a whole-minute offset, which is every zone that changes.)
+    const h = offsetHoursAt(iana, roundToMinute(instant.utMs, instant.round));
+    if (Number.isFinite(h)) truth = h * 3600;
+  }
+  let guess = truth ?? savedOffsetSeconds(first) ?? 0;
+  for (let i = 0; i < 4; i++) {
+    const c = clockAt(guess);
+    const s = savedOffsetSeconds(viewAt(c));
+    if (s == null || Math.abs(s - guess) < 0.5) {
+      return { ...c, offsetSeconds: s ?? guess, ut: false, ambiguous: false, fix: null };
+    }
+    guess = s;
+  }
+
+  // The repeated hour: show the clock this occurrence read, and name what states it.
+  const want = truth ?? guess;
+  const c = clockAt(want);
+  const other = viewAt(c).chooser?.other;
+  const fix: ZonePick =
+    other && Math.abs(other.seconds - want) < 0.5
+      ? { zone: other.zone.id, daylight: other.daylight }
+      : { custom: customOffsetText(Math.round(want)) };
+  return { ...c, offsetSeconds: want, ut: false, ambiguous: true, fix };
+}
+
+/** The form's statement of a repeated hour's zone (2026-10-20): the moment and place it
+ *  was made for (`key`), the field's state before it, and the state it produced. */
+export interface ZoneFix {
+  key: string;
+  before: ZoneModel;
+  after: ZoneModel;
+}
+
+/** What the form does about the repeated autumn hour on a render. Stating the zone is a
+ *  precondition of ONE moment at ONE place (CLAUDE.md row B), so the statement lasts as long
+ *  as they do:
+ *
+ *   • `state` — the moment the form holds is the hour's second occurrence, and nothing has
+ *     been stated for it yet: state `pick` (the instant's `fix`), once per moment and place.
+ *   • `release` — the moment or place it was stated for has gone (another moment found, Now,
+ *     another place, or typing that releases the instant). If the field still holds exactly
+ *     the state the form produced, `restore` is the state before it, so the next moment is
+ *     read as an untouched field reads it — never left on a stated zone the note under the
+ *     field no longer explains. A zone the reader changed since is theirs: `restore` is null.
+ *
+ *  Null when there is nothing to do. `key` is null while there is no instant or no place. */
+export function zoneFixStep(
+  fix: ZoneFix | null,
+  key: string | null,
+  model: ZoneModel,
+  shown: InstantWallClock | null,
+): { kind: 'release'; restore: ZoneModel | null } | { kind: 'state'; pick: ZonePick } | null {
+  if (fix && fix.key !== key) return { kind: 'release', restore: model === fix.after ? fix.before : null };
+  if (!key || fix || !shown?.ambiguous || !shown.fix) return null;
+  return { kind: 'state', pick: shown.fix };
+}
+
+/** Whether the field still holds the zone the form stated for this moment and place — the
+ *  one condition under which the note may say the form set it. */
+export function zoneFixHolds(fix: ZoneFix | null, key: string | null, model: ZoneModel): boolean {
+  return !!fix && fix.key === key && model === fix.after;
 }

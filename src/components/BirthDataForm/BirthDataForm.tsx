@@ -11,13 +11,18 @@ import { parseCoord } from '../../lib/import/fields';
 import {
   folderName,
   isValidFolderName,
+  loadLastEventFolder,
   loadLastFolder,
   MAX_FOLDER_DEPTH,
   MAX_FOLDER_NAME,
   normalizeFolderPath,
+  saveLastEventFolder,
   saveLastFolder,
   UNFILED,
 } from '../../lib/chartFolders';
+import { formOpeningKind, kindField, type ChartKindOf } from '../../lib/eventCharts';
+import type { ZodiacMode } from '../../lib/astro/ayanamsa';
+import { formatUtcNotation } from '../../lib/atlas/zoneEntry';
 import { SOURCE_RATINGS, type SourceRating } from '../../lib/sourceRating';
 import {
   NAME_HARD_LIMIT,
@@ -30,9 +35,12 @@ import {
 } from '../../lib/chartLibrary';
 import { HintMenu } from '../Sidebar/Sidebar';
 import { PlaceSearchField } from '../ui/PlaceSearchField';
+import { homeLabelOf, mapPinSection } from '../ui/ChartHomeEditor';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { SplitSelect } from '../ui/SplitSelect';
 import { TagIcon } from '../ui/TagIcon';
+import { nudgeAction } from '../../lib/plan';
 import { jdToCivil } from '../../lib/ephemeris';
 import { solveCompositeFrameJd } from '../../lib/astro/composite';
 import {
@@ -44,6 +52,17 @@ import { useT } from '../../i18n';
 import type { TFn } from '../../i18n';
 import { TimeZoneField } from './TimeZoneField';
 import { useZoneEntry } from './useZoneEntry';
+import { zoneFixHolds, zoneFixStep, type FormInstant, type ZoneFix } from './zoneEntryModel';
+import { foundEventOf, type FoundEvent } from '../../lib/astro/eventNaming';
+import { EventFinder } from './EventFinder';
+import {
+  instantAnchor,
+  instantOfFound,
+  remembersFolder,
+  shownFolder,
+  shownName,
+  typedAnchor,
+} from './eventFinderModel';
 import './BirthDataForm.css';
 
 const approxEq = (a: number, b: number) => Math.abs(a - b) < 1e-5;
@@ -88,6 +107,25 @@ interface BirthDataFieldsProps {
   folderOptions?: readonly string[];
   /** Folder a NEW chart should start in, e.g. the one open in the list. */
   folderSeed?: string;
+  /** Event charts are on offer (2026-10-20): the geodetic hold is lifted on this
+   *  device, so the form shows the Person | Event switch. Omitted (false), the form is
+   *  a person's exactly as before — and an event being edited still keeps its kind,
+   *  which the save carries whether or not the switch is shown. */
+  eventsOn?: boolean;
+  /** Event charts locked below the ADV rung, the build nudging (2026-10-21): the switch
+   *  still shows, its Event half wears the rung's badge, and pressing it runs the upgrade flow. */
+  eventsTeaser?: boolean;
+  /** The kind a NEW chart opens on while `eventsOn`: Event on a geodetic map, where the
+   *  world's charts are the work, Person elsewhere. The caller derives it from the
+   *  DERIVED line system; it is never stored. Omitted → Person. */
+  defaultKind?: ChartKindOf;
+  /** The EFFECTIVE zodiac (App's effZodiacMode), which a moment found for an event chart
+   *  follows — an ingress in sidereal is a sidereal ingress. Omitted → tropical. */
+  zodiac?: ZodiacMode;
+  /** The placed map pin, offered in the Lives now box before anything is typed (ChartHomeEditor
+   *  mapPinSection): the way in for a home no search finds. Null with no pin, or the natal one.
+   *  (2026-10-23) */
+  mapPin?: { lat: number; lng: number; label: string } | null;
 }
 
 // The birth-details form body (name, date/time, birthplace), without modal chrome,
@@ -102,19 +140,63 @@ export function BirthDataFields({
   onImport,
   folderOptions,
   folderSeed,
+  eventsOn = false,
+  eventsTeaser = false,
+  defaultKind = 'person',
+  // Until App hands the effective zodiac down (R3), a found ingress is a tropical one.
+  zodiac = 'tropical',
+  mapPin = null,
 }: BirthDataFieldsProps) {
-  const { t } = useT();
-  const [name, setName] = useState(initial?.name ?? nameSeed ?? '');
-  // Where this chart is filed, and what is known about where its data came
-  // from. Both ride the record; both are carried explicitly through submit
-  // below, for the reason stated there.
-  const [folder, setFolder] = useState(() =>
-    normalizeFolderPath(
-      // An existing chart keeps its own folder. A new one starts where the
-      // list was pointing, or failing that where the last chart went.
-      initial ? initial.folder : (folderSeed || loadLastFolder()),
-    ),
+  const { t, fmt } = useT();
+  // The name the READER gave, or null while they have given none (2026-10-20): the field
+  // then shows the name a found moment suggests (`suggestion`, below), derived and never
+  // written in, so a suggestion can never overwrite what was typed — and a field the reader
+  // cleared stays empty, since '' is theirs too. An edited chart's name, and a name carried
+  // over from the search box, are the reader's from the start.
+  const [nameOwn, setNameOwn] = useState<string | null>(initial?.name ?? (nameSeed || null));
+  // What the chart's moment is (2026-10-20): the FACT the record carries
+  // (StoredChart.kind). An existing chart keeps its own — on a held device too, where
+  // the switch isn't shown, so an event edited there is still an event; a new one opens
+  // on the caller's derived default, and only while event charts are on offer.
+  const [kind, setKind] = useState<ChartKindOf>(() => formOpeningKind(initial, eventsOn, defaultKind));
+  // What the form SHOWS, which every label below reads: the hold presents an event
+  // as a person, so a held device's form is exactly the person form it always was.
+  const isEvent = eventsOn && kind === 'event';
+  // The folder a NEW chart of a kind starts in: where the list was pointing, or failing
+  // that where the last chart of that kind went (lib/chartFolders keeps the two runs
+  // apart — an ingress saved a moment ago is no reason to file the next client there).
+  // Derived from the kind, so switching it moves the default along.
+  const kindFolder = useMemo(
+    () => normalizeFolderPath(folderSeed || (kind === 'event' ? loadLastEventFolder() : loadLastFolder())),
+    [kind, folderSeed],
   );
+  // The folder the READER chose here, or null while they have chosen none (2026-10-20). An
+  // existing chart keeps its own, as theirs. While it is null the chart is filed in a found
+  // moment's suggested folder, if there is one, else in the kind's default — both derived
+  // (`folder`, below), so neither a kind switch nor a suggestion ever overrides a pick.
+  // Where it is filed, and what is known about where its data came from, both ride the
+  // record; both are carried explicitly through submit below, for the reason stated there.
+  const [folderOwn, setFolderOwn] = useState<string | null>(() =>
+    initial ? normalizeFolderPath(initial.folder) : null,
+  );
+  const chooseKind = (k: ChartKindOf) => {
+    if (k !== kind) setKind(k);
+  };
+  // A moment the form was handed rather than typed — the Now button, or (from the
+  // panel that finds one) an ingress, a lunation… — or null. While set, the date and
+  // time boxes SHOW it, read in the zone the form holds, and are derived from it on
+  // every render (useZoneEntry `derived`): changing the zone or the place moves the
+  // clock, never the moment. Typing in a box releases it (the DateTimeFields onChange
+  // below). See zoneEntryModel's FormInstant for the rounding.
+  const [instant, setInstant] = useState<FormInstant | null>(null);
+  // The moment Find the moment last filled in, whose name and folder the form suggests
+  // until the reader gives their own (nameOwn / folderOwn). Null after Now, which is a
+  // moment but not an event anyone named.
+  const [found, setFound] = useState<FoundEvent | null>(null);
+  // The panel that finds one, open under the date (Event mode only).
+  const [finderOpen, setFinderOpen] = useState(false);
+  const finderId = useId();
+  const findButtonId = useId();
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [sourceRating, setSourceRating] = useState<SourceRating | null>(
     () => initial?.sourceRating ?? null,
@@ -149,11 +231,6 @@ export function BirthDataFields({
   // Organizing tag. Only Star is user-assignable (a None ⇄ Star toggle); the system
   // 'space' tag is set by future in-app tools, never here.
   const [tag, setTag] = useState<ChartTag>(initial?.tag ?? 'none');
-  // An EMPTY time is how an unknown birth time is entered: both boxes blank →
-  // the chart saves timeKnown: false anchored at local noon, and every
-  // time-of-day-dependent layer downstream degrades honestly. The list marks
-  // such charts with the grey "?" tag (system-derived, like 'space').
-  const noTime = hour == null && minute == null;
 
   const [locationQuery, setLocationQuery] = useState(
     initial?.birthplace.label ?? '',
@@ -180,6 +257,10 @@ export function BirthDataFields({
   // serves both (the caption tabs above it switch the target), so the form
   // never shows two search inputs at once.
   const [placeTarget, setPlaceTarget] = useState<'birth' | 'home'>('birth');
+  // The tab in force: an event has only its place (the Lives now tab is a person's), so
+  // Event reads the birthplace target whatever the tab state says, and switching back
+  // to Person finds the tab where it was.
+  const target = isEvent ? 'birth' : placeTarget;
   // True once the tabs have been used: from then on the search field takes
   // focus when a switch remounts it (switching means "now type"), without
   // stealing focus when the form first opens.
@@ -222,10 +303,12 @@ export function BirthDataFields({
   // editable straight away — the user can then adjust it. The TIME stays empty on
   // purpose: an empty time means "unknown", so pre-filling it would silently claim
   // a birth minute nobody entered. Guarded on every field being empty, so it never
-  // overwrites a date you've already started entering.
+  // overwrites a date you've already started entering — and on there being no
+  // instant, whose clock the boxes already show (2026-10-20).
   useEffect(() => {
     if (
       !selectedPlace ||
+      instant != null ||
       year != null ||
       month != null ||
       day != null ||
@@ -240,7 +323,7 @@ export function BirthDataFields({
     setMonth(now.getMonth() + 1);
     setDay(now.getDate());
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [selectedPlace, year, month, day, hour, minute]);
+  }, [selectedPlace, instant, year, month, day, hour, minute]);
 
   // Timezone: Auto (the zone detected from the birthplace, DST-aware) by default,
   // or a zone stated through TimeZoneField's radios (useZoneEntry; 2026-10-02,
@@ -252,7 +335,104 @@ export function BirthDataFields({
   // chart stores, so what the field shows is what the chart math will use.
   const effHour = hour ?? 12;
   const effMinute = minute ?? 0;
-  const zone = useZoneEntry(initial, selectedPlace, year, month, day, effHour, effMinute);
+  const zone = useZoneEntry(initial, selectedPlace, year, month, day, effHour, effMinute, instant);
+  // The moment the boxes SHOW, and the save writes: an instant's clock while one is
+  // held (read through the zone field, so it is the clock its own save casts back to
+  // the instant), else what was typed.
+  const shown = zone.derived;
+  const mYear = shown ? shown.year : year;
+  const mMonth = shown ? shown.month : month;
+  const mDay = shown ? shown.day : day;
+  const mHour = shown ? shown.hour : hour;
+  const mMinute = shown ? shown.minute : minute;
+  // An EMPTY time is how an unknown birth time is entered: both boxes blank →
+  // the chart saves timeKnown: false anchored at local noon, and every
+  // time-of-day-dependent layer downstream degrades honestly. The list marks
+  // such charts with the grey "?" tag (system-derived, like 'space'). An
+  // instant always has a time.
+  const noTime = mHour == null && mMinute == null;
+
+  // What a found moment suggests (2026-10-20), only while the form is an event's: switch to
+  // Person and the suggestion steps aside — it names an event — and comes back with Event.
+  // Rebuilt in the language in force, so a language switch with the form open re-words it.
+  const suggestion = useMemo(
+    () => (found && isEvent ? foundEventOf({ jd: found.jd, detail: found.detail }, t, fmt) : null),
+    [found, isEvent, t, fmt],
+  );
+  // The name and folder the form shows and saves: the reader's, else the suggestion — named
+  // for the date the boxes SHOW, which in Melbourne can be a day past the UT date — else
+  // the default (eventFinderModel shownName / shownFolder).
+  const name = shownName(
+    nameOwn,
+    suggestion,
+    mYear != null && mMonth != null && mDay != null ? { year: mYear, month: mMonth, day: mDay } : null,
+  );
+  const folder = shownFolder(folderOwn, suggestion, kindFolder);
+
+  // Where Find the moment searches from: the instant the boxes show, exactly — or what was
+  // typed, at the offset the zone field would save it with — or, with nothing entered, now.
+  const finderAnchor =
+    instant && shown
+      ? instantAnchor(instant, shown)
+      : typedAnchor({ year, month, day, hour, minute }, zone.toSave?.tzOffset ?? null, {
+          min: BIRTH_YEAR_MIN,
+          max: BIRTH_YEAR_MAX,
+        });
+  const finderShown = finderOpen && isEvent && !initial?.composite;
+  // A found moment is the moment the reader asked for: the boxes show it (as an instant,
+  // read in whichever zone the form holds), and its name and folder are suggested.
+  const takeFound = (f: FoundEvent) => {
+    setError(null);
+    setInstant(instantOfFound(f));
+    setFound(f);
+  };
+
+  // The hour that happens twice (2026-10-20). A moment handed to the form can fall in
+  // the repeated autumn hour, where Automatic reads the clock as its FIRST occurrence;
+  // the second can then only be cast by stating its offset. That is a precondition of
+  // the moment the reader asked for (CLAUDE.md row B), so the form states it — once per
+  // moment and place, through the zone field's own `choose` — and says why under the
+  // zone field. A zone the reader changes afterwards is theirs: it is not stated again,
+  // and the note says what would keep the moment instead.
+  //
+  // The statement lasts exactly as long as its moment and place (zoneEntryModel
+  // zoneFixStep): when either goes — another moment found, Now, another place, or typing
+  // that releases the instant — a zone still as the form stated it is given back as it
+  // was before, so the next moment is never read on a stated zone that nothing on screen
+  // explains any more. A zone the reader has changed since stays theirs.
+  const fixKey =
+    instant && selectedPlace
+      ? `${instant.utMs}|${instant.round}|${selectedPlace.lat},${selectedPlace.lng}`
+      : null;
+  const [zoneFix, setZoneFix] = useState<ZoneFix | null>(null);
+  useEffect(() => {
+    const step = zoneFixStep(zoneFix, fixKey, zone.model, shown);
+    if (!step) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (step.kind === 'release') {
+      if (step.restore) zone.restore(step.restore);
+      setZoneFix(null);
+      return;
+    }
+    if (!fixKey) return;
+    const before = zone.model;
+    const after = zone.choose(step.pick);
+    setZoneFix({ key: fixKey, before, after });
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [fixKey, zoneFix, shown, zone]);
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  // Why the zone reads as a manual choice: only while it is still the one the form stated
+  // ('overlap'), or — once the reader has changed it — while the zone they chose reads the
+  // clock as the other occurrence ('overlapUnfixed'). A zone of theirs that keeps the
+  // moment needs no note, and the form did not set it.
+  const fixHolds = zoneFixHolds(zoneFix, fixKey, zone.model);
+  const overlapNote =
+    shown && zoneFix && zoneFix.key === fixKey && (fixHolds || shown.ambiguous)
+      ? t(fixHolds ? 'chartForm.instant.overlap' : 'chartForm.instant.overlapUnfixed', {
+          time: `${pad2(shown.hour)}:${pad2(shown.minute)}`,
+          offset: formatUtcNotation(Math.round(shown.offsetSeconds)),
+        })
+      : null;
 
   // The 12-hour echo beside the time boxes (Lina, 2026-10-06): someone reading
   // "9:30 PM" off a certificate can type 09:30 and cast a chart twelve hours
@@ -261,7 +441,7 @@ export function BirthDataFields({
   // shown elsewhere; hidden while the time is empty (an unknown time has no
   // half of the day). A bare hour reads as :00, as the save does.
   const echoId = useId();
-  const echo = hour != null ? twelveHour(hour, minute ?? 0, t) : null;
+  const echo = mHour != null ? twelveHour(mHour, mMinute ?? 0, t) : null;
 
   // Latest selected place, read by the reverse-geocode effect below WITHOUT being
   // one of its triggers (declared first so it syncs before that effect runs).
@@ -317,22 +497,29 @@ export function BirthDataFields({
     e.preventDefault();
     setError(null);
     if (!selectedPlace) {
-      setError(t('chartForm.errorNoPlace'));
+      setError(t(isEvent ? 'chartForm.errorNoPlaceEvent' : 'chartForm.errorNoPlace'));
       return;
     }
     if (!name.trim()) {
       setError(t('chartForm.errorNoName'));
       return;
     }
+    // The moment as SHOWN (an instant's clock, or what was typed) — what the boxes say
+    // is what is saved.
+    const year = mYear;
+    const month = mMonth;
+    const day = mDay;
+    const hour = mHour;
+    const minute = mMinute;
     if (year == null || month == null || day == null) {
-      setError(t('chartForm.errorNoDate'));
+      setError(t(isEvent ? 'chartForm.errorNoDateEvent' : 'chartForm.errorNoDate'));
       return;
     }
     // The time is optional (empty = unknown), but minutes without an hour is an
     // incomplete entry, not a statement — block it with an explanation. An hour
     // without minutes reads as on-the-hour (:00), the way people say times.
     if (hour == null && minute != null) {
-      setError(t('chartForm.errorPartialTime'));
+      setError(t(isEvent ? 'chartForm.errorPartialTimeEvent' : 'chartForm.errorPartialTime'));
       return;
     }
     // The year box doesn't auto-clamp to the data range (so a typo isn't silently
@@ -404,6 +591,10 @@ export function BirthDataFields({
       // So do a Davison chart's (2026-10-07): the header's "Derived from" line
       // reads them, and checks they still reproduce this moment and place.
       davison: initial?.davison,
+      // The chart's kind, written every time (2026-10-20): only 'event' is ever
+      // stored, so a person's record is unchanged — and an event edited on a held
+      // device, where the switch isn't shown, keeps its kind from `initial`.
+      kind: kindField(kind),
     };
     if (initial?.composite) {
       // The stored moment IS the composite's angle frame (the ASC-midpoint of
@@ -418,8 +609,17 @@ export function BirthDataFields({
         tzEntry: undefined,
       });
     }
-    // Remember where this went, so the next chart starts there.
-    saveLastFolder(folder);
+    // Remember where this went, so the next chart of its kind starts there. A folder the
+    // reader picked here, the list's open folder, the record's own and the last one they
+    // used are all theirs, and are written as they always were. A folder the form only
+    // SUGGESTED (one named for a found moment, which nobody picked) is not, and is never
+    // written (CLAUDE.md rule 1) — or an unchosen "Mundane/Lunations" would become the
+    // next chart's default without anyone having picked it. Picking it in the menu makes
+    // it theirs.
+    if (remembersFolder(folderOwn, suggestion)) {
+      if (kind === 'event') saveLastEventFolder(folder);
+      else saveLastFolder(folder);
+    }
     onSubmit(chart);
   };
 
@@ -430,8 +630,44 @@ export function BirthDataFields({
     setLngText(String(s.lng));
   };
 
+  // A relationship chart (a composite, a Davison) is two people's, never an event's.
+  const kindSwitch = (eventsOn || eventsTeaser) && !initial?.composite && !initial?.davison && initial?.tag !== 'space';
+
   return (
     <form className="birth-form birth-fields" onSubmit={handleSubmit}>
+        {/* What kind of moment this is (2026-10-20), first because it decides what the
+            fields below are called. Shown only while event charts are on offer. */}
+        {kindSwitch && (
+          <SplitSelect<ChartKindOf>
+            className="kind-switch"
+            ariaLabel={t('chartForm.kind.aria')}
+            value={eventsOn ? kind : 'person'}
+            onSelect={(v) => (v === 'event' && !eventsOn ? nudgeAction() : chooseKind(v))}
+            options={[
+              {
+                value: 'person',
+                label: t('chartForm.kind.person'),
+                tip: t('chartForm.kind.person'),
+                hint: t('chartForm.kind.personHint'),
+              },
+              {
+                value: 'event',
+                label: t('chartForm.kind.event'),
+                tip: t('chartForm.kind.event'),
+                // Below the rung, its own locked note follows what it is. (It borrowed the theme
+                // rows' note until 2026-10-23, which a build that tiers themes retunes to name them.)
+                hint: eventsOn
+                  ? t('chartForm.kind.eventHint')
+                  : `${t('chartForm.kind.eventHint')} ${t('chartForm.kind.eventLockedNote')}`,
+                // Below the rung the ADV badge follows the word, as a suffix, and the tip wears it
+                // too (SplitSelectOption.tier; Salvatore, 2026-10-23: it led the word, low, and the
+                // tip had none). The calendar mark leads once the rung is reached.
+                icon: eventsOn ? <TagIcon tag="event" /> : undefined,
+                tier: eventsOn ? undefined : 'adv',
+              },
+            ]}
+          />
+        )}
         <label>
           <span>{t('chartForm.name')}</span>
           <div className="name-field">
@@ -439,7 +675,7 @@ export function BirthDataFields({
               type="text"
               value={name}
               maxLength={NAME_HARD_LIMIT}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setNameOwn(e.target.value)}
               placeholder={t('chartForm.namePlaceholder')}
               autoFocus={autoFocusName}
             />
@@ -464,13 +700,20 @@ export function BirthDataFields({
           disabled={!!initial?.composite}
         >
         <DateTimeFields
-          value={{ year, month, day, hour, minute }}
+          value={{ year: mYear, month: mMonth, day: mDay, hour: mHour, minute: mMinute }}
           yearHint={t('chartForm.yearRangeTip', {
             min: BIRTH_YEAR_MIN,
             max: BIRTH_YEAR_MAX,
           })}
           timeClearable
+          timeHint={isEvent ? t('chartForm.timeInfo.hintBlankEvent') : undefined}
           onChange={(v) => {
+            // Typing is the reader's own statement of the moment: it releases an
+            // instant, keeping the clock it showed with this one change on top. And the
+            // found event's suggestion with it, as Now does — the moment is no longer the
+            // event's, and a dated name would re-date itself to whatever was typed.
+            setInstant(null);
+            setFound(null);
             setYear(v.year);
             setMonth(v.month);
             setDay(v.day);
@@ -478,21 +721,68 @@ export function BirthDataFields({
             setMinute(v.minute);
           }}
           timeSuffix={
-            echo && (
+            (echo || shown?.ut) && (
               <>
-                <span className="time-echo" aria-hidden="true">
-                  {echo}
-                </span>
+                {/* No place yet, so the instant's clock is Universal Time. */}
+                {shown?.ut && <span className="moment-ut">{t('chartForm.instant.utSuffix')}</span>}
+                {echo && (
+                  <span className="time-echo" aria-hidden="true">
+                    {echo}
+                  </span>
+                )}
                 {/* What the time boxes are described by: the echo is a visual
                     check, so it is described rather than announced live. */}
-                <span id={echoId} hidden>
-                  {t('chartForm.timeEcho.aria', { echo })}
-                </span>
+                {echo && (
+                  <span id={echoId} hidden>
+                    {t('chartForm.timeEcho.aria', { echo })}
+                  </span>
+                )}
               </>
             )
           }
           timeDescribedBy={echo ? echoId : undefined}
         />
+        {/* No Now button beside it: Lina dropped it on 21 Oct 2026 (§3) — No chart with the
+            Transits overlay already shows this minute's sky, and a Now chart would fill
+            libraries with moments nobody chose. */}
+        {isEvent && !initial?.composite && (
+          <div className="moment-actions">
+            {/* Find the moment (2026-10-20): opens the panel below, which searches the sky
+                for the event this chart is about and fills these boxes with it. */}
+            <TipButton
+              type="button"
+              id={findButtonId}
+              className={`moment-action${finderShown ? ' is-on' : ''}`}
+              aria-expanded={finderShown}
+              aria-controls={finderShown ? finderId : undefined}
+              onClick={() => setFinderOpen((v) => !v)}
+              placement="top"
+              tip={t('eventFinder.openTip')}
+              hint={t('eventFinder.openHint')}
+            >
+              {t('eventFinder.open')}
+            </TipButton>
+          </div>
+        )}
+        {finderShown && (
+          <EventFinder
+            id={finderId}
+            anchor={finderAnchor}
+            zodiac={zodiac}
+            onFound={takeFound}
+            onClose={() => {
+              setFinderOpen(false);
+              document.getElementById(findButtonId)?.focus();
+            }}
+          />
+        )}
+        {/* While the boxes show an instant: in UT until there is a place, then on the
+            place's clock, which a zone change moves. One string each. */}
+        {shown && (
+          <p className="instant-note">
+            {t(shown.ut ? 'chartForm.instant.utUntilPlace' : 'chartForm.instant.followsZone')}
+          </p>
+        )}
         {/* An EMPTY time means "birth time unknown" (never for a composite — its
             moment is synthesized). The note appears once the user has moved PAST
             the time — they've started on the birthplace with the boxes still
@@ -501,7 +791,9 @@ export function BirthDataFields({
         {!initial?.composite &&
           noTime &&
           (selectedPlace != null || locationQuery.trim() !== '') && (
-            <p className="time-unknown-note">{t('chartForm.timeUnknown.hint')}</p>
+            <p className="time-unknown-note">
+              {t(isEvent ? 'chartForm.timeUnknown.hintEvent' : 'chartForm.timeUnknown.hint')}
+            </p>
           )}
         </fieldset>
 
@@ -511,6 +803,15 @@ export function BirthDataFields({
             remounts the field on a switch so it opens on the new target's
             settled value with no half-typed draft carried across. */}
         <div className="location-field">
+          {/* An event chart has one place, the event's (2026-10-20): "Lives now" is a
+              person's, so its tab goes and the caption names the one place. The
+              record's `home` is still carried through the save untouched, so a chart
+              switched to Event and back keeps it. */}
+          {isEvent ? (
+            <div className="location-field-tabs">
+              <span className="location-field-tab is-on is-caption">{t('chartForm.place')}</span>
+            </div>
+          ) : (
           <div
             className="location-field-tabs"
             role="radiogroup"
@@ -533,29 +834,43 @@ export function BirthDataFields({
               </button>
             ))}
           </div>
+          )}
           {/* The shared place-search field: same box, same keys, same scopes as
               every other place search in the app. The birthplace target is
               restricted to cities — a birthplace is a settlement, never a whole
               region or country — while Home accepts any place kind, like the
               other surfaces that set it. The online reach (on by default)
               covers what the bundled index has not: small towns and older
-              place names. Home adopts its stored label so a pick shows settled
-              and a Clear empties the box. */}
+              place names. Home adopts a pick's label so it shows settled, and a
+              Clear empties the box. Home also offers, before anything is typed,
+              the map pin and the reader's own places — the way in for a home no
+              search finds (2026-10-23); a birthplace offers neither. So Home's
+              box opens EMPTY, its stored value shown on the ✓ line under it: a
+              box opened on the stored name would hide those rows from exactly
+              the reader who set a town first and has since pinned the house. */}
           <PlaceSearchField
-            key={placeTarget}
-            className="chartform-place"
-            kinds={placeTarget === 'birth' ? BIRTHPLACE_KINDS : undefined}
-            initialQuery={
-              (placeTarget === 'birth' ? selectedPlace?.label : home?.label) ?? ''
+            key={target}
+            className={`chartform-place${target === 'home' ? ' chartform-home' : ''}`}
+            kinds={target === 'birth' ? BIRTHPLACE_KINDS : undefined}
+            library={target === 'home'}
+            sections={
+              target === 'home'
+                ? mapPinSection(mapPin, t('chartForm.homeMapPin'), (h) =>
+                    setHome({ ...h, updatedAt: Date.now() }),
+                  )
+                : undefined
             }
-            adoptQuery={placeTarget === 'birth' ? adoptedLabel : (home?.label ?? '')}
+            omitAt={target === 'home' ? home : undefined}
+            missHint={target === 'home' ? t('chartForm.homeMissHintForm') : undefined}
+            initialQuery={(target === 'birth' ? selectedPlace?.label : undefined) ?? ''}
+            adoptQuery={target === 'birth' ? adoptedLabel : (home?.label ?? '')}
             // What a search here ranks toward: the place this target last held. For
             // the birthplace that is the coordinates, which typing over the box leaves
             // alone, so picking a town and then typing its street keeps the town in
             // view. Only a hint (`near`, not `bias`): the reader may be replacing
             // that place with one anywhere else.
             near={
-              placeTarget === 'birth'
+              target === 'birth'
                 ? summaryLat != null && summaryLng != null
                   ? { lat: summaryLat, lng: summaryLng }
                   : undefined
@@ -564,29 +879,29 @@ export function BirthDataFields({
             keepQueryOnPick
             autoFocus={placeTouched}
             onQueryChange={(q) => {
-              if (placeTarget !== 'birth') return;
+              if (target !== 'birth') return;
               setLocationQuery(q);
               // Typing over a resolved place unsettles it: submitting needs a
               // picked result, not a half-typed name.
               setSelectedPlace((p) => (p && p.label === q ? p : null));
             }}
             onPick={(s) =>
-              placeTarget === 'birth'
+              target === 'birth'
                 ? pickSuggestion(s)
-                : setHome({ label: s.label, lat: s.lat, lng: s.lng, updatedAt: Date.now() })
+                : setHome({ label: homeLabelOf(s), lat: s.lat, lng: s.lng, updatedAt: Date.now() })
             }
             placeholder={t(
-              placeTarget === 'birth'
+              target === 'birth'
                 ? 'chartForm.birthplacePlaceholder'
                 : 'chartForm.homePlaceholder',
             )}
-            ariaLabel={t(placeTarget === 'birth' ? 'chartForm.birthplace' : 'chartForm.homeAria')}
+            ariaLabel={t(target === 'birth' ? (isEvent ? 'chartForm.place' : 'chartForm.birthplace') : 'chartForm.homeAria')}
             strings={placeSearchStrings}
           />
-          {placeTarget === 'birth' && selectedPlace && (
+          {target === 'birth' && selectedPlace && (
             <p className="resolved">{t('chartForm.resolved', { label: selectedPlace.label })}</p>
           )}
-          {placeTarget === 'home' && (
+          {target === 'home' && (
             <>
               {home ? (
                 <p className="resolved home-resolved">
@@ -612,7 +927,11 @@ export function BirthDataFields({
             for the entered date, by name, with "Set manually" for the chooser —
             the coordinates' pattern. Locked until a birthplace and date exist. A
             composite's zone is fixed at UT. */}
-        <TimeZoneField zone={zone} hasPlace={!!selectedPlace} />
+        <TimeZoneField zone={zone} hasPlace={!!selectedPlace} event={isEvent} />
+        {/* Why the zone reads as a manual choice after a moment in the repeated autumn
+            hour (the fix effect above) — or, once the reader has changed it, what would
+            keep the moment. One string. */}
+        {overlapNote && <p className="instant-note instant-note--zone">{overlapNote}</p>}
 
         {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default,
             in DMS with the longitude padded to three digits (2026-10-07: every
@@ -763,12 +1082,19 @@ export function BirthDataFields({
                     {
                       value: '' as const,
                       label: t('chartForm.rating.unset'),
-                      hint: t('chartForm.rating.unsetHint'),
+                      hint: t(isEvent ? 'chartForm.rating.unsetHintEvent' : 'chartForm.rating.unsetHint'),
                     },
+                    // An event chart's X says "No time", not "No birth time" (2026-10-20).
                     ...SOURCE_RATINGS.map((code) => ({
                       value: code,
-                      label: `${code} · ${t(`chartForm.rating.${code}` as 'chartForm.rating.AA')}`,
-                      hint: t(`chartForm.ratingHint.${code}` as 'chartForm.ratingHint.AA'),
+                      label: `${code} · ${t(
+                        isEvent && code === 'X' ? 'chartForm.rating.XEvent' : (`chartForm.rating.${code}` as 'chartForm.rating.AA'),
+                      )}`,
+                      hint: t(
+                        isEvent && code === 'X'
+                          ? 'chartForm.ratingHint.XEvent'
+                          : (`chartForm.ratingHint.${code}` as 'chartForm.ratingHint.AA'),
+                      ),
                     })),
                   ]}
                 />
@@ -800,7 +1126,7 @@ export function BirthDataFields({
             <FolderPicker
               value={folder}
               options={folderOptions ?? []}
-              onChange={setFolder}
+              onChange={setFolderOwn}
               t={t}
             />
             <button type="submit" className="primary ui-sheen">

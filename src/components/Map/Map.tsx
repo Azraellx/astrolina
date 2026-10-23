@@ -19,6 +19,7 @@ import {
 } from 'react';
 import maplibregl, {
   type ExpressionSpecification,
+  type FilterSpecification,
   type LayerSpecification,
   type StyleSpecification,
 } from 'maplibre-gl';
@@ -34,7 +35,7 @@ import {
   type CaptureFrameExtras,
 } from '../CaptureExtras/CaptureExtras';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
-import type { UncertaintyBandProps } from '../../lib/astro/uncertaintyBands';
+import { bandCoverage, type LineBand, type UncertaintyBandProps, bandKeyOf, bandRangeText, type BandedLineProps } from '../../lib/astro/uncertaintyBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
 import type { MinorLineProps, MinorZenithProps } from '../../lib/astro/minorLines';
 import type { NightShadeProps } from '../../lib/astro/nightShade';
@@ -44,13 +45,14 @@ import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
 import type { EclipseMapData } from '../../lib/astro/eclipses';
 import {
+  geoGrid,
   geoZoneId,
   type GeoAscZones,
   type GeoGridLineProps,
   type GeoReadoutAngles,
   type GeoZoneProps,
 } from '../../lib/astro/geodeticGrid';
-import type { TruncZodiac } from '../../lib/astro/format';
+import { geoAnglesParts, geoAnglesText, type GeoAnglePart } from '../../lib/astro/geoReadoutText';
 import { canonicalLng, fmtLatDM, fmtLngDM } from '../../lib/coordFormat';
 import { BASEMAP_STYLE_URLS, type Theme } from '../../lib/theme';
 import { builtinPalette, planetInk, type BasemapChoice, type MapStyle } from '../../lib/themePalette';
@@ -158,7 +160,8 @@ import {
   placeParanChips,
   type ParanBadge,
 } from './paranChips';
-import { GEO_GRID_CHIP, placeGeoGridChips, type GeoGridBadge } from './geoGridLabels';
+import { GEO_GRID_CHIPS, placeGeoGridChips, type GeoGridBadge } from './geoGridLabels';
+import { geoHighlightFor } from './geoHighlight';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
@@ -168,7 +171,7 @@ import type { PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { MsgKey, TFn } from '../../i18n';
-import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
+import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { CreditsModal } from '../CreditsModal/CreditsModal';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
@@ -177,6 +180,48 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   type: 'FeatureCollection',
   features: [],
 });
+
+// A chart with no birth time: a ranged body's bands, and a banded line's orb corridor, show
+// only while that line is hovered or tapped (Lina, 21 Oct 2026, §2.1). A band belongs to the
+// hovered line ONLY (her §2.2 fault, 22 Oct: hovering the natal Moon MC lit the progressed one
+// too): the band polygons (bandKey) and the corridors (bandOf) carry their line's own key
+// (uncertaintyBands bandKeyOf — tag, kind, bodies and angle), and the hover sets that key. With
+// none hovered, no band and only the ordinary corridors.
+const BAND_HOVER_NONE = ['==', ['get', 'bandKey'], ''] as unknown as FilterSpecification;
+const BAND_HOVER_NONE_ORB = ['!', ['has', 'bandOf']] as unknown as FilterSpecification;
+const bandHoverKeys = new WeakMap<maplibregl.Map, string | null>();
+function setBandHover(map: maplibregl.Map, key: string | null) {
+  if ((bandHoverKeys.get(map) ?? null) === key) return;
+  bandHoverKeys.set(map, key);
+  if (map.getLayer('uncertainty-bands-layer')) {
+    map.setFilter(
+      'uncertainty-bands-layer',
+      key ? (['==', ['get', 'bandKey'], key] as unknown as FilterSpecification) : BAND_HOVER_NONE,
+    );
+  }
+  if (map.getLayer('orb-bands-layer')) {
+    map.setFilter(
+      'orb-bands-layer',
+      key
+        ? (['any', ['!', ['has', 'bandOf']], ['==', ['get', 'bandOf'], key]] as unknown as FilterSpecification)
+        : BAND_HOVER_NONE_ORB,
+    );
+  }
+}
+/** A rendered feature's `band` (MapLibre hands nested properties back as JSON strings). */
+function parseBand(v: unknown): LineBand | null {
+  if (v == null) return null;
+  try {
+    const b = (typeof v === 'string' ? JSON.parse(v) : v) as Partial<LineBand>;
+    return typeof b.angle === 'string' && typeof b.lo === 'number' && typeof b.hi === 'number' ? (b as LineBand) : null;
+  } catch {
+    return null;
+  }
+}
+/** The hover key of a rendered line feature that carries `band` (its props as MapLibre hands
+ *  them back, the band already parsed): the key its band polygon and corridor were given. */
+const renderedBandKey = (props: Record<string, unknown>, band: LineBand) =>
+  bandKeyOf({ ...(props as unknown as BandedLineProps), band });
 
 // The sources' tile options (LINE_ / PARAN_ / WASH_ / BAND_SOURCE_OPTS) and the Slide rotation
 // (translateLng, wrapSpin) live in tiling.ts, where the slide check can tile them as the map does.
@@ -1088,6 +1133,10 @@ const ZENITH_SOURCE_BY_LAYER: Record<string, string> = {
   [MINOR_ZENITH_OV_LAYER]: 'minor-zenith-ov',
 };
 const ZENITH_HIT_TOLERANCE_PX = 4;
+// How near the pin's point the cursor counts as ON the pin for the geodetic readout, which then
+// reads the pin's own coordinates (Lina, 23 Oct 2026, G-1). The pin's tip is the point; a few
+// pixels either side is a hand's aim at it, and well inside any grid band at a usable zoom.
+const PIN_READOUT_PX = 4;
 
 // The stamps' hover (2026-10-09, Salvatore): the coin itself grows ×1.1 — the scale the app's
 // other hover lifts use — where a second, larger circle used to bloom out from behind it. A
@@ -1863,6 +1912,11 @@ interface MapProps {
    *  change freely. Always called with a canonical longitude (−180…180], whichever world copy
    *  the cursor is over — so a host's own lookups (the nearest city) need no folding. */
   geoReadout?: ((lat: number, lng: number) => GeoReadout | null) | null;
+  /** What the hover lights under the cursor beside the readout (Lina, 20 Oct 2026, §4): the MC
+   *  band while `mc`, the Ascendant zone (from `geoAscZones`) while `asc` — both, each fainter,
+   *  with both on — and nothing with neither. The host passes the grid's own switches, so the
+   *  highlight names only what the grid draws. Absent: no MC band, the zones as passed. */
+  geoHover?: { mc: boolean; asc: boolean } | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   /** Dots where local-space lines cross birth-chart lines (empty when LS hidden). */
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
@@ -2162,6 +2216,8 @@ interface MapData {
   geoGridAsc?: FeatureCollection<LineString, GeoGridLineProps> | null;
   geoZones?: FeatureCollection<Polygon, GeoZoneProps> | null;
   geoAscZones?: GeoAscZones | null;
+  /** The twelve MC bands the hover lights (geoMcBands), while geoHover.mc. */
+  geoMcBands?: FeatureCollection<Polygon, GeoMcBandProps> | null;
   uncertaintyBands?: FeatureCollection<Polygon, UncertaintyBandProps> | null;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
@@ -2476,8 +2532,10 @@ async function installWorldFallback(
 // and the lines (2026-10-02). Everything else in setupCustomLayers stacks by insertion order:
 //   - the zone fills sit on the night wash (the two never show together: night shade is held
 //     on a geodetic map) and under the body-coloured orb bands;
-//   - the Ascendant zone the hover lights, directly over the zone fills so it lifts them too,
-//     and under the orb bands like them;
+//   - the MC band and the Ascendant zone the hover lights (2026-10-20: the MC band joined it,
+//     as the hover came to follow the grid's switches), directly over the zone fills so they
+//     lift them too, and under the orb bands like them — the MC band first, so where the two
+//     overlap the Ascendant zone's wash lies over it and the overlap reads darker;
 //   - the uncertainty bands (a chart with no birth time: its Moon's and Mercury's) above the
 //     zone fills, so a reader zoomed in sees the band in the body's colour, not a lone edge;
 //   - the MC meridians and the Ascendant curves above both, and under 'ecliptic-layer', which
@@ -2487,11 +2545,35 @@ async function installWorldFallback(
 // any layer on the hover or snap lists — every body line — has come to sit beneath the grid.
 const GEO_GRID_STACK = [
   { id: 'geo-zones-layer', before: 'orb-bands-layer' },
+  { id: 'geo-mc-bands-layer', before: 'orb-bands-layer' },
   { id: 'geo-asc-zones-layer', before: 'orb-bands-layer' },
   { id: 'uncertainty-bands-layer', before: 'ecliptic-layer' },
   { id: 'geo-grid-mc-layer', before: 'ecliptic-layer' },
   { id: 'geo-grid-asc-layer', before: 'ecliptic-layer' },
 ] as const;
+
+/** An MC band as the hover lights it: its feature-state id, geoZoneId(sign). */
+interface GeoMcBandProps {
+  zone: number;
+}
+// The twelve MC bands for the hover (2026-10-20): the grid's own zone rings, built once for the
+// page — the MC bands don't depend on the tilt — so the push skips them once tiled.
+let geoMcBandsBuilt: FeatureCollection<Polygon, GeoMcBandProps> | null = null;
+function geoMcBandsData(): FeatureCollection<Polygon, GeoMcBandProps> {
+  if (geoMcBandsBuilt) return geoMcBandsBuilt;
+  geoMcBandsBuilt = {
+    type: 'FeatureCollection',
+    features: geoGrid().zoneRings.map((ring, k) => ({
+      type: 'Feature',
+      properties: { zone: geoZoneId(k) },
+      geometry: { type: 'Polygon', coordinates: [ring.map(([x, y]) => [x, y])] },
+    })),
+  };
+  return geoMcBandsBuilt;
+}
+// The two sources the hover lights a feature of.
+type GeoLitSource = 'geo-asc-zones' | 'geo-mc-bands';
+const GEO_LIT_SOURCES: readonly GeoLitSource[] = ['geo-asc-zones', 'geo-mc-bands'];
 
 // Every value a palette decides — widths, dashes, opacities, the halos, the zenith discs, the node
 // pairs' colours, the grid's paint — is written into its layer from `style` by bindLayer, from the
@@ -2527,6 +2609,9 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       id: 'orb-bands-layer',
       source: 'orb-bands',
       type: 'fill',
+      // A banded line's corridor shows only with its band, while the line is hovered or tapped
+      // (setBandHover below; Lina, 21 Oct 2026, §2.1). Every other corridor always.
+      filter: BAND_HOVER_NONE_ORB,
       // fill-opacity: the per-feature opacity, times the palette's orb strength (bound).
       paint: {
         'fill-color': ['get', 'color'],
@@ -3495,6 +3580,15 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     ...BAND_SOURCE_OPTS,
     promoteId: 'zone',
   });
+  // The MC bands the hover lights (2026-10-20): the zone rings again, unfilled but for the one
+  // under the cursor — the readout's own MC sign, by feature-state, exactly as the Ascendant
+  // zones — sourced like them and keyed the same way (`zone` 1…12).
+  map.addSource('geo-mc-bands', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...BAND_SOURCE_OPTS,
+    promoteId: 'zone',
+  });
   // The uncertainty bands, per-feature like the orb bands and tiled like the zones: a wash, so
   // no buffer, and a band about an MC line has straight meridian edges, so no simplification.
   map.addSource('uncertainty-bands', { type: 'geojson', data: EMPTY_FC(), ...BAND_SOURCE_OPTS });
@@ -3514,7 +3608,16 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
         'fill-antialias': false,
       },
     },
-    // Unfilled but for the zone under the cursor: the grid's own ink, faint (theme.ts).
+    // Unfilled but for the band and the zone under the cursor: the grid's own ink, faint, and
+    // fainter still while both are lit (theme.ts GEO_GRID_STYLE hover and faint).
+    'geo-mc-bands-layer': {
+      id: 'geo-mc-bands-layer',
+      source: 'geo-mc-bands',
+      type: 'fill',
+      paint: {
+        'fill-antialias': false,
+      },
+    },
     'geo-asc-zones-layer': {
       id: 'geo-asc-zones-layer',
       source: 'geo-asc-zones',
@@ -3527,6 +3630,9 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       id: 'uncertainty-bands-layer',
       source: 'uncertainty-bands',
       type: 'fill',
+      // Shown on hover, not always (Lina, 21 Oct 2026, §2.1): only the hovered or tapped line's
+      // band, set by setBandHover; none otherwise.
+      filter: BAND_HOVER_NONE,
       paint: {
         'fill-color': ['get', 'color'],
         'fill-opacity': ['get', 'opacity'],
@@ -3556,6 +3662,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     const want = [
       'night-shade-layer',
       'geo-zones-layer',
+      'geo-mc-bands-layer',
       'geo-asc-zones-layer',
       'orb-bands-layer',
       'uncertainty-bands-layer',
@@ -3673,6 +3780,7 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false, lsOn
   // up, the grid would stand still while the cage turned — add them there first.
   pushGated('geo-zones', data.geoZones ?? EMPTY_DATA);
   pushGated('geo-asc-zones', data.geoAscZones ?? EMPTY_DATA);
+  pushGated('geo-mc-bands', data.geoMcBands ?? EMPTY_DATA);
   pushGated('uncertainty-bands', data.uncertaintyBands ?? EMPTY_DATA);
   pushGated('geo-grid-mc', data.geoGridMc ?? EMPTY_DATA);
   pushGated('geo-grid-asc', data.geoGridAsc ?? EMPTY_DATA);
@@ -4162,6 +4270,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   geoAscZones,
   uncertaintyBands,
   geoReadout,
+  geoHover,
   localSpace,
   localSpaceCross,
   localSpaceOrigin,
@@ -5062,7 +5171,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           }
           const cs = getComputedStyle(g);
           const px = parseFloat(cs.fontSize) || 11;
-          ctx.font = `${px * scale}px "Noto Sans Symbols", sans-serif`;
+          // The geodetic grid's glyphs carry their own weight and face (an MC band's name is
+          // bold, from the bold sign subset; Map.css) — taken off the element, so the still
+          // draws what the screen does. Every other glyph keeps the regular face, as it always
+          // has. (2026-10-20)
+          const gridGlyph = g.closest('.geo-grid-badge');
+          ctx.font = gridGlyph
+            ? `${cs.fontWeight} ${px * scale}px ${cs.fontFamily}`
+            : `${px * scale}px "Noto Sans Symbols", sans-serif`;
           // The wheel's glyphs are SVG <text> (colour in `fill`); the list/badge glyphs are
           // HTML spans (colour in `color`). Source whichever this element uses.
           ctx.fillStyle =
@@ -5288,7 +5404,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // through a ref (refreshed in the post-commit effect below, beside onRightClick).
   const onArrivalClickRef = useRef(onArrivalClick);
   const onHomeClickRef = useRef(onHomeClick);
-  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
+  // The MC bands the hover lights, while the host says the MC meridians are drawn (geoHover):
+  // one module constant, so the push skips it once tiled. (2026-10-20)
+  const geoMcBands = geoHover?.mc ? geoMcBandsData() : null;
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, geoMcBands, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
   // The translator, for computeBadges (bound once, refs only): a catalog chip's words decide its
   // size, so they are resolved where it is placed (minorChipText). The nav controls' tips read it
   // too, from listeners bound once per map (NAV_CTRL_TIPS).
@@ -5402,9 +5521,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const eclipseTipRef = useRef(eclipseTip);
   // The geodetic grid's readout, read the same way: it changes as grid layers come and go.
   const geoReadoutRef = useRef(geoReadout);
-  // The Ascendant zone the hover has lit (its feature-state id), or null. Component-level so
-  // the hover handler and the zone-data effect below can both clear it.
-  const hoveredZoneRef = useRef<number | null>(null);
+  // The MC band and the Ascendant zone the hover has lit (each its feature-state id, and whether
+  // it was lit faint), or null. Component-level so the hover handler and the data effect below
+  // can both clear them. (2026-10-20: the MC band joined the Ascendant zone.)
+  const geoLitRef = useRef<Record<GeoLitSource, { id: number; faint: boolean } | null>>({
+    'geo-asc-zones': null,
+    'geo-mc-bands': null,
+  });
   const eclipseCardRef = useRef(eclipseCard);
   const lineCardRef = useRef(lineCard);
   const distanceRefRef = useRef(distanceRef);
@@ -5442,7 +5565,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onRightClickRef.current = onRightClick;
     onArrivalClickRef.current = onArrivalClick;
     onHomeClickRef.current = onHomeClick;
-    dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
+    dataRef.current = { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, geoMcBands, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     tRef.current = t;
     slideActiveRef.current = !!slideActive;
     spotlightActiveRef.current = !!spotlightActive;
@@ -6302,8 +6425,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       // The geodetic grid's sign glyphs, after everything (CHIP_RANK.grid; geoGridLabels.ts): the
       // band tops while the meridians or the zone shading are drawn, the curves' glyphs while the
-      // curves are — read off what was pushed, so a glyph never names a line that isn't there.
-      // Never moved by the Capture spread below; a glyph a spread chip lands on is dropped there
+      // curves are — read off what was pushed, so a glyph never names a line that isn't there,
+      // and placed on the very curves pushed (the one tilt's, geoAscGrid; 2026-10-20). Never
+      // moved by the Capture spread below; a glyph a spread chip lands on is dropped there
       // instead, as one with no clear spot is here. Not in the LS-only still, which empties the
       // grid at the source.
       const drawn = (fc: FeatureCollection | null | undefined) => (fc?.features.length ?? 0) > 0;
@@ -6317,6 +6441,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             },
             occupancy,
             inset,
+            data.geoGridAsc ?? undefined,
           );
       // While the Capture frame is armed, the export is a STILL — it can't be panned or hovered,
       // so the overlaps the slide cap left are relaxed apart too, off the lines if need be
@@ -6342,14 +6467,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         pbadges = spread.slice(n, np) as ParanBadge[];
         minorPlaced = spread.slice(np) as MinorChip[];
         if (gridPlaced.length) {
-          const { hw, hh } = GEO_GRID_CHIP;
           const boxes = spread.map((b) => {
             const s = 'planetA' in b ? paranSizeOf(b) : 'body' in b ? minorSizeOf(b) : sizeOf(b);
             return { l: b.x - s.hw, t: b.y - s.hh, r: b.x + s.hw, b: b.y + s.hh };
           });
-          gridPlaced = gridPlaced.filter(
-            (g) => !boxes.some((o) => g.x + hw > o.l && g.x - hw < o.r && g.y + hh > o.t && g.y - hh < o.b),
-          );
+          // Each glyph's own chip: the MC band names are larger than the curves' (2026-10-20).
+          gridPlaced = gridPlaced.filter((g) => {
+            const { hw, hh } = GEO_GRID_CHIPS[g.kind];
+            return !boxes.some((o) => g.x + hw > o.l && g.x - hw < o.r && g.y + hh > o.t && g.y - hh < o.b);
+          });
         }
       }
       const edge = edgePlaced;
@@ -6735,7 +6861,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       previewInksAppliedRef.current.clear();
       // The swap dropped every feature-state with the sources: no zone is lifted any more, so
       // the next move must lift one afresh rather than think it already has.
-      hoveredZoneRef.current = null;
+      geoLitRef.current = { 'geo-asc-zones': null, 'geo-mc-bands': null };
       applyLsArrowVisibility(map, hideLsArrowsRef.current);
       pushData(map, dataRef.current, true, lsTransparentRef.current);
       // A running Slide owns the sources, rotated to its spin (see the data effect). A style that
@@ -7271,12 +7397,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const clearLine = () => {
       hoveredLine = null;
       linePopup.remove();
+      setBandHover(map, null);
     };
-    // The geodetic grid's readout: the place under the cursor, then its geodetic AS and MC to
-    // the minute, the sign glyph between degree and minute as in the Coordinates box. The
-    // lowest-ranked tip — a zenith, a crossing or a line under the cursor names itself instead
-    // — and driven off the cursor here rather than off the app's hover, which a placed pin
-    // freezes. Its HTML is re-set only when the text changes; it moves on every frame.
+    // The geodetic readout: the place under the cursor's geodetic AS and MC to the minute, the
+    // sign glyph between degree and minute as in the Coordinates box, then the place's name and
+    // its coordinates. The lowest-ranked tip — a zenith, a crossing or a line under the cursor
+    // names itself instead — and driven off the cursor here rather than off the app's hover,
+    // which a placed pin freezes. Its HTML is re-set only when the text changes; it moves on
+    // every frame.
     const geoPopup = new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
@@ -7289,25 +7417,47 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       geoHtml = null;
       geoPopup.remove();
     };
-    // Each angle is a code and a degree — all of it kept out of a page translator (glyphHtml says
-    // why). The head too: a place's own name or its coordinates, and the GE code — no words.
-    // The polar caution below is a sentence, and stays translatable. (2026-10-09)
-    const geoAngle = (label: string, z: TruncZodiac) =>
-      `<span class="geo-readout-angle" translate="no">${label} ${String(z.deg).padStart(2, '0')}°` +
-      `<span class="astro-glyph">${SIGN_GLYPHS[z.signIdx]}</span>${String(z.min).padStart(2, '0')}'</span>`;
+    // Lina's three lines (20 Oct 2026, §4): "GE: AS 21°♈04' · MC 10°♑37'", laid out by the one
+    // formatter the chart panel's geodetic line uses too (lib/astro/geoReadoutText), then the
+    // place's own name, then the cursor's coordinates — two lines over open ground or water,
+    // where there is no name. Each figure, the name and the coordinates are kept out of a page
+    // translator (glyphHtml says why): values and the reader's ground, not words; the template's
+    // own text is escaped as it goes in. The polar caution is a sentence, and stays translatable.
+    // (2026-10-09; three lines 2026-10-20)
+    const geoAngle = (p: GeoAnglePart) =>
+      `<span class="geo-readout-angle" translate="no">${p.deg}°` +
+      `<span class="astro-glyph">${p.glyph}</span>${p.min}'</span>`;
+    // On the 90°W or 90°E meridian — the two where the Ascendant curve runs straight pole to pole
+    // — the readout adds the line's note (Lina, 21 Oct 2026, §4; on the line itself since her §5 of
+    // 22 Oct, when its glyph pairs went). Read off the drawn grid under the cursor, so a meridian
+    // switched off says nothing: the MC line where Capricorn (Cancer) begins, or the Ascendant
+    // curve where Aries (Libra) begins to rise, which lies on the same meridian.
+    const meridianNote = (at: maplibregl.LngLat): string | null => {
+      const layers = ['geo-grid-mc-layer', 'geo-grid-asc-layer'].filter((id) => map.getLayer(id));
+      if (!layers.length) return null;
+      const pt = map.project(at);
+      const r = 5;
+      for (const f of map.queryRenderedFeatures([[pt.x - r, pt.y - r], [pt.x + r, pt.y + r]], { layers })) {
+        const { kind, sign } = f.properties as { kind?: string; sign?: number };
+        if ((kind === 'mc' && sign === 9) || (kind === 'asc' && sign === 0)) return t('map.geoMeridian90W');
+        if ((kind === 'mc' && sign === 3) || (kind === 'asc' && sign === 6)) return t('map.geoMeridian90E');
+      }
+      return null;
+    };
     const showGeo = (r: GeoReadout, at: maplibregl.LngLat) => {
-      const head = r.place
-        ? t('map.geoReadout.place', { place: escapeHtml(r.place) })
-        : t('map.geoReadout.coords', { lat: fmtLatDM(at.lat), lng: fmtLngDM(at.lng) });
-      const angles = (r.as ? [geoAngle(t('map.geoReadout.as'), r.as)] : [])
-        .concat(geoAngle(t('map.geoReadout.mc'), r.mc))
-        .join(' · ');
-      // Past the polar circle the map's own polar caution: some degrees never rise there, and
-      // the Ascendant can jump half the zodiac between neighbouring places.
+      const angles = geoAnglesText(
+        geoAnglesParts(r.as, r.mc),
+        { angles: t('map.geoReadout.angles'), anglesMcOnly: t('map.geoReadout.anglesMcOnly') },
+        { angle: geoAngle, text: escapeHtml },
+      );
+      // Inside the polar circles at the map's one tilt (90° − ε), her caution: two definitions of
+      // the Ascendant, and which one the map uses. The line tips keep their own (map.polarNote).
       const html =
-        `<div class="ui-tip geo-readout"><span class="ui-tip-title" translate="no">${head}</span>` +
-        `<span class="geo-readout-angles">${angles}</span>` +
-        (r.polar ? `<span class="ui-tip-sub geo-readout-caution">${t('map.polarNote')}</span>` : '') +
+        `<div class="ui-tip geo-readout"><span class="geo-readout-angles">${angles}</span>` +
+        (r.place ? `<span class="geo-readout-place" translate="no">${escapeHtml(r.place)}</span>` : '') +
+        `<span class="geo-readout-coords" translate="no">${fmtLatDM(at.lat)} ${fmtLngDM(canonicalLng(at.lng))}</span>` +
+        (r.polar ? `<span class="ui-tip-sub geo-readout-caution">${t('map.geoReadout.polar')}</span>` : '') +
+        ((note) => (note ? `<span class="ui-tip-sub geo-readout-meridian">${escapeHtml(note)}</span>` : ''))(meridianNote(at)) +
         `</div>`;
       geoPopup.setLngLat(at);
       if (html !== geoHtml) {
@@ -7316,25 +7466,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       if (!geoPopup.isOpen()) geoPopup.addTo(map);
     };
-    // The Ascendant zone under the cursor, lit by feature-state: the zone of the readout's OWN
-    // AS sign (truncZodiac's rule), never a polygon hit-test — so the highlight and the readout
-    // can't disagree anywhere, the polar caps included, where neighbouring places can rise half
-    // the zodiac apart. Null clears it.
-    const setZoneHover = (id: number | null) => {
-      const prev = hoveredZoneRef.current;
-      if (prev === id) return;
-      hoveredZoneRef.current = id;
+    // The MC band and the Ascendant zone under the cursor, lit by feature-state: the band and
+    // the zone of the readout's OWN MC and AS signs (truncZodiac's rule), never a polygon
+    // hit-test — so the highlight and the readout can't disagree anywhere, the polar caps
+    // included, where neighbouring places can rise half the zodiac apart. `faint` while both are
+    // lit (mapStyleApply's paint). Null clears it.
+    const setGeoLit = (source: GeoLitSource, id: number | null, faint: boolean) => {
+      const prev = geoLitRef.current[source];
+      if (prev ? prev.id === id && prev.faint === faint : id === null) return;
+      geoLitRef.current[source] = id === null ? null : { id, faint };
       // No source mid style swap (the swap drops every feature-state with it); and on unmount
       // this teardown runs after map.remove(), when the map has no style left to ask.
       let live: boolean;
       try {
-        live = !!map.getSource('geo-asc-zones');
+        live = !!map.getSource(source);
       } catch {
         return;
       }
       if (!live) return;
-      if (prev != null) map.setFeatureState({ source: 'geo-asc-zones', id: prev }, { hover: false });
-      if (id != null) map.setFeatureState({ source: 'geo-asc-zones', id }, { hover: true });
+      if (prev) map.setFeatureState({ source, id: prev.id }, { hover: false, faint: false });
+      if (id !== null) map.setFeatureState({ source, id }, { hover: true, faint });
     };
     const showLine = (hit: { id: string; html: string }, at: maplibregl.LngLat) => {
       linePopup.setLngLat(at);
@@ -7393,16 +7544,34 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // own compatibility mousemove, so it takes the finger's reach the click does
       // (see hitReach).
       const reach = hitReach(isTouchLayout());
-      // The geodetic readout for the point under the cursor (null off a geodetic map, or with
-      // every grid layer off), and the Ascendant-zone highlight that follows it, Zone shading
-      // on or off — the highlight whatever tip wins below, the readout only where none does.
-      // Within 0.01° of a pole the readout has no AS, and nothing is lit. The longitude is
-      // folded first: e.lngLat is unwrapped over a repeated world copy, and the host's
+      // The geodetic readout for the point under the cursor (null off a geodetic map), and the
+      // highlight that follows it, Zone shading on or off — the highlight whatever tip wins
+      // below, the readout only where none does. Which highlight follows the grid's switches
+      // (the host's geoHover, through the data each one feeds): the MC band with the meridians
+      // on, the Ascendant zone with the curves on, both at once faint, so their overlap reads
+      // darker. Within 0.01° of a pole the readout has no AS, and no zone is lit. The longitude
+      // is folded first: e.lngLat is unwrapped over a repeated world copy, and the host's
       // nearest-city lookup missed Toronto at 280.6°E that it finds at 79.4°W (review,
       // 2026-10-02).
-      const geo = geoReadoutRef.current?.(e.lngLat.lat, canonicalLng(e.lngLat.lng)) ?? null;
-      const ascZonesDrawn = (dataRef.current.geoAscZones?.features.length ?? 0) > 0;
-      setZoneHover(geo?.as && ascZonesDrawn ? geoZoneId(geo.as.signIdx) : null);
+      // On the pin's point — within PIN_READOUT_PX of it — the readout reads the PIN's own
+      // coordinates, not the cursor's (Lina, 23 Oct 2026, G-1: "pin there → hover"): a pin set
+      // exactly on a meridian then reads that meridian, rather than whichever side of it the
+      // pointer's sub-pixel falls on.
+      const pinAt = markerRef.current?.getLngLat() ?? null;
+      const onPin =
+        !!pinAt &&
+        (() => {
+          const p = map.project(pinAt);
+          return Math.hypot(p.x - e.point.x, p.y - e.point.y) <= PIN_READOUT_PX;
+        })();
+      const readAt = onPin ? pinAt : e.lngLat;
+      const geo = geoReadoutRef.current?.(readAt.lat, canonicalLng(readAt.lng)) ?? null;
+      const lit = geoHighlightFor(geo, {
+        mc: (dataRef.current.geoMcBands?.features.length ?? 0) > 0,
+        asc: (dataRef.current.geoAscZones?.features.length ?? 0) > 0,
+      });
+      setGeoLit('geo-asc-zones', lit.asc, lit.faint);
+      setGeoLit('geo-mc-bands', lit.mc, lit.faint);
       // A zenith stamp under the cursor wins: animate it + show the tooltip;
       // otherwise fall back to the map's CSS grab cursor.
       const zen = zenithAtPoint(map, e.point, reach.zenith);
@@ -7477,6 +7646,32 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 line.id += `@${Math.round(e.lngLat.lng * 4)}`;
               }
             }
+            // A line drawn with a timeless chart's band, while the orb zones are drawn: the
+            // corridor goes round the band, not round the line at its centre, and her sentence
+            // says so (Lina, 20 Oct 2026, §13). Only then — a note about a corridor nobody can
+            // see is one a reader learns to skip. The band rides the rendered properties as JSON.
+            // Only the chart's own planet lines (the natal path, a promoted overlay's included)
+            // have orb zones at all; an overlay's line beside them, or an aspect line, has a band
+            // and no corridor, so no sentence.
+            // A banded line (a chart with no birth time): its band, and its corridor when orb zones
+            // are drawn, appear while it is hovered or tapped; the tip carries the range (Lina,
+            // 22 Oct 2026, §2.2; R-2, 23 Oct: "Moon MC · birth time unknown · range 14°♋–21°♋").
+            const lineBand = parseBand(line.props.band);
+            setBandHover(map, lineBand ? renderedBandKey(line.props, lineBand) : null);
+            if (lineBand) {
+              line.html = line.html.replace(
+                '</div>',
+                `<span class="ui-tip-sub">${t('map.bandRange', { range: bandRangeText(lineBand) })}</span></div>`,
+              );
+            }
+            const ownLine = line.layerId.startsWith('acg-lines') && !line.layerId.startsWith('acg-lines-ov');
+            if (ownLine && line.props.band != null && (dataRef.current.orbBands?.features.length ?? 0) > 0) {
+              line.html = line.html.replace(
+                '</div>',
+                `<span class="ui-tip-sub">${t('map.bandCorridor')}</span></div>`,
+              );
+              line.id += '|corridor';
+            }
             clearZenith();
             clearCross();
             clearGeo();
@@ -7487,7 +7682,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             clearLine();
             // The readout only over no line at all: a line whose tip is held down for its own
             // open card is still a line, and the readout there would sit on that card instead.
-            if (geo && !line) showGeo(geo, e.lngLat);
+            if (geo && !line) showGeo(geo, readAt);
             else clearGeo();
           }
           setCursor('');
@@ -7519,7 +7714,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearCross();
       clearLine();
       clearGeo();
-      setZoneHover(null);
+      for (const source of GEO_LIT_SOURCES) setGeoLit(source, null, false);
       onLeave?.();
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
@@ -7621,12 +7816,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         const fc = hit ? lineGeomRef.current[hit.source] : undefined;
         if (hit && ref && fc) {
           let km = Infinity;
+          // A BANDED line (a chart with no birth time on a geodetic map) is measured by its
+          // band, as every listing tool measures it (2026-10-20, Lina's §16): a reference point
+          // the band covers is ON the line, and outside it the distance is to the band's nearest
+          // edge, never to the noon line at its centre. Read off the band the line carries.
+          let banded: { covers: boolean; km: number; band: LineBand } | null = null;
           for (const f of fc.features) {
             if (sameFeatureProps(f.properties, hit.props)) {
               km = Math.min(km, nearestApproachKm(ref.lat, ref.lng, f.geometry));
+              const band = (f.properties as { band?: LineBand } | null)?.band;
+              if (band) {
+                const c = bandCoverage(band, ref.lat, ref.lng);
+                const r = c.covers ? 0 : c.edgeKm;
+                if (Number.isFinite(r) && (!banded || r < banded.km)) banded = { covers: c.covers, km: r, band };
+              }
             }
           }
-          if (Number.isFinite(km)) dist = { km, type: ref.type };
+          if (banded)
+            dist = {
+              km: banded.km,
+              type: ref.type,
+              band: {
+                covers: banded.covers,
+                range: bandRangeText(banded.band),
+                // Named by its body on that body's own line; an aspect or midpoint line's band is
+                // "this line's".
+                planet: hit.props.kind ? undefined : String(hit.props.planet),
+              },
+            };
+          else if (Number.isFinite(km)) dist = { km, type: ref.type };
         }
         // A paran's registered annotation, for the CLICKED spot — the same line the hover
         // tip adds (lib/extensions/paranAnnotation). The tip was its only home, so a finger,
@@ -7641,6 +7859,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             : null;
         const builder = lineCardRef.current;
         const html = hit ? builder(hit.layerId, hit.props, dist, extra) : null;
+        // A tap on a banded line shows its band (and corridor), as a hover does (§2.1); a tap
+        // anywhere else takes it down.
+        const tappedBand = hit ? parseBand(hit.props.band) : null;
+        setBandHover(map, tappedBand ? renderedBandKey(hit!.props, tappedBand) : null);
         if (html && hit) {
           const at = e.lngLat;
           const open = () => {
@@ -7783,7 +8005,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearCross();
       clearLine();
       clearGeo();
-      setZoneHover(null);
+      for (const source of GEO_LIT_SOURCES) setGeoLit(source, null, false);
       eclipseCardPopup.remove();
       eclipseCardPopupRef.current = null;
       lineCardPopup.remove();
@@ -8916,7 +9138,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // re-tile just those.
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
-        pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
+        pushData(map, { lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, geoMcBands, uncertaintyBands, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse }, false, lsTransparentRef.current);
         // The labels re-placed over the new data. On a pure recolour (a Custom theme's commit:
         // the same geometry in new colours) this pass's first geometry read — readHudRects'
         // getBoundingClientRect — forces a layout, and was looked at for that (2026-10-06) and
@@ -8965,7 +9187,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.on('idle', run);
       map.on('sourcedata', onSourceData);
     }
-  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint, syncPreviewInks]);
+  }, [lines, angleLines, parans, orbBands, starLines, minorLines, minorZenith, minorParans, nightShade, geoGridMc, geoGridAsc, geoZones, geoAscZones, geoMcBands, uncertaintyBands, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, lsTransparent, slideActive, computeBadges, spinPaint, syncPreviewInks]);
 
   // The editor's preview line colours (mapStyleApply PREVIEW_INK_BINDINGS) follow the prop — after
   // the data effect above in the same commit, so that when the preview goes (its colours have
@@ -8975,17 +9197,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     syncPreviewInks();
   }, [mapPreview, syncPreviewInks]);
 
-  // New Ascendant-zone data (the readout coming or going, the zones finishing their build)
+  // New highlight data (a grid switch, the zones finishing their build, a new tilt's zones)
   // drops the highlight: feature-state outlives setData, so a zone lit when the collection
-  // emptied would come back lit with it, under no cursor. The next move lights the zone under
-  // the cursor afresh.
+  // emptied would come back lit with it, under no cursor — and one lit faint for two layers
+  // would stay faint once one went. The next move lights what is under the cursor afresh.
   useEffect(() => {
     const map = mapRef.current;
-    const id = hoveredZoneRef.current;
-    if (!map || id == null) return;
-    hoveredZoneRef.current = null;
-    if (map.getSource('geo-asc-zones')) map.setFeatureState({ source: 'geo-asc-zones', id }, { hover: false });
-  }, [geoAscZones]);
+    if (!map) return;
+    for (const source of GEO_LIT_SOURCES) {
+      const lit = geoLitRef.current[source];
+      if (!lit) continue;
+      geoLitRef.current[source] = null;
+      if (map.getSource(source)) map.setFeatureState({ source, id: lit.id }, { hover: false, faint: false });
+    }
+  }, [geoAscZones, geoMcBands]);
 
   // Toggle basemap road / river / foliage visibility — and the whole-basemap blank
   // (Local Space ▸ "Hide map") — live (theme reloads reapply via the style.load
@@ -9871,26 +10096,29 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         })}
         {/* The geodetic grid's sign glyphs (geoGridLabels.ts) — the Coordinates box's own glyphs,
             in the grid's one neutral colour, with no pill: they label a reference, not a reading,
-            and take no clicks. The halo is the eclipse digits' (MapStyle.eclipseHalo; for a
-            built-in theme ECLIPSE_LABEL_HALO, whose Earth entry is a light parchment for exactly
-            this case — dark ink on a pale basemap). Both colours are the palette's. Gone with the
-            other labels from the LS-only still and a chart-subject export. */}
+            and take no clicks. Each kind at its own size and weight (Lina, 20 Oct 2026, §4): an
+            MC band's name bold and larger, from the bold sign subset (Map.css), an Ascendant
+            curve's regular and smaller (GEO_GRID_CHIPS). The halo is the grid's own
+            (MapStyle.geoGrid.halo, 2026-10-20 — the eclipse digits' until then, whose values it
+            starts from). Both colours are the palette's. Gone with the other labels from the
+            LS-only still and a chart-subject export. */}
         {!chartSubject && !lsTransparent && geoGridBadges.map((b) => (
           <span
             key={b.key}
             data-bkey={b.key}
-            className="geo-grid-badge"
+            className={`geo-grid-badge geo-grid-badge-${b.kind}`}
             aria-hidden="true"
             style={
               {
                 ...badgePos(b.x, b.y),
                 color: mapStyle.geoGrid.label,
                 zIndex: b.z,
-                '--geo-halo': mapStyle.eclipseHalo.color,
+                fontWeight: GEO_GRID_CHIPS[b.kind].weight,
+                '--geo-halo': mapStyle.geoGrid.halo,
               } as CSSProperties
             }
           >
-            <ZodiacGlyph sign={b.sign} size={12} />
+            <ZodiacGlyph sign={b.sign} size={GEO_GRID_CHIPS[b.kind].px} />
           </span>
         ))}
         {!chartSubject && localSpaceBadges.map((b) => {

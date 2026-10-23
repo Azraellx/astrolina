@@ -99,24 +99,25 @@ export interface RangeEnd {
   deg: number;
 }
 
-/** A longitude known only to within ±halfDeg — a body on a chart with no birth time
- *  (lib/astro/timeless) — as the two ends of its span, each truncated to the whole degree
- *  in its OWN sign (2026-10-02). Read through truncZodiac above, so it is the same rule as
- *  every truncated readout: the snap keeps an end that is exactly 0° Aries from printing as
- *  29° Pisces on float noise, and an end never names a sign it isn't in. A span across a
- *  sign boundary therefore carries two signs (24°♓–9°♈), and one inside a sign the same
- *  one twice (2°♉–18°♉). `lonRad` in radians, like truncZodiac. */
-export function lonRange(lonRad: number, halfDeg: number): { lo: RangeEnd; hi: RangeEnd } {
-  const h = (halfDeg * Math.PI) / 180;
-  const lo = truncZodiac(lonRad - h, 'min');
-  const hi = truncZodiac(lonRad + h, 'min');
+/** A longitude known only to a range — a body on a chart with no birth time, over its birth
+ *  date (lib/astro/timeless) — as the two ends of that range, each truncated to the whole
+ *  degree in its OWN sign (2026-10-02; offsets since the range rule of 22 Oct). `range` is the
+ *  ends as offsets in degrees from `lonRad` (lo ≤ 0 ≤ hi). Read through truncZodiac above, so
+ *  it is the same rule as every truncated readout: the snap keeps an end that is exactly 0°
+ *  Aries from printing as 29° Pisces on float noise, and an end never names a sign it isn't
+ *  in. A range across a sign boundary therefore carries two signs (24°♓–9°♈), and one inside a
+ *  sign the same one twice (2°♉–18°♉). `lonRad` in radians, like truncZodiac. */
+export function lonRange(lonRad: number, range: { lo: number; hi: number }): { lo: RangeEnd; hi: RangeEnd } {
+  const lo = truncZodiac(lonRad + (range.lo * Math.PI) / 180, 'min');
+  const hi = truncZodiac(lonRad + (range.hi * Math.PI) / 180, 'min');
   return { lo: { signIdx: lo.signIdx, deg: lo.deg }, hi: { signIdx: hi.signIdx, deg: hi.deg } };
 }
 
 /** lonRange as plain text, "2°♉–18°♉": each end's degree then its sign glyph, joined by an
- *  en dash with no spaces. For an attribute or a test; the rendered form is ZodiacRange. */
-export function lonRangeText(lonRad: number, halfDeg: number): string {
-  const { lo, hi } = lonRange(lonRad, halfDeg);
+ *  en dash with no spaces. For an attribute, a map tip or a test; the rendered form is
+ *  ZodiacRange. */
+export function lonRangeText(lonRad: number, range: { lo: number; hi: number }): string {
+  const { lo, hi } = lonRange(lonRad, range);
   return `${lo.deg}°${SIGN_GLYPHS[lo.signIdx]}–${hi.deg}°${SIGN_GLYPHS[hi.signIdx]}`;
 }
 

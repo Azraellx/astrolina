@@ -1,0 +1,174 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Find the moment (2026-10-20): the panel under an event chart's Date, opened by the
+   Find… pill beside Now. A quiet inset block in the form's own tint, so it reads as part
+   of the moment it fills rather than as a dialog on top of the form. */
+
+/* Find… while its panel is open: lit, as a pressed toggle. */
+.moment-action.is-on {
+  color: var(--text-strong);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.event-finder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 8px;
+  background: rgba(var(--tint), 0.03);
+  font-size: 12px;
+  color: var(--text-strong);
+  animation: ui-rise var(--dur-move) var(--ease-settle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-finder {
+    animation: none;
+  }
+}
+
+/* The kind, then its sentence: menus and words on one wrapping line, so a long language
+   (de, ru) or a narrow pane folds the sentence rather than squeezing a menu. */
+.ef-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.ef-pick-line {
+  display: contents;
+}
+.ef-slot {
+  display: inline-flex;
+  min-width: 0;
+}
+/* The shared dropdown is a full-width form control by default (.calc-menu-trigger); here
+   each sizes to its value, as words in a sentence do. */
+.ef-slot .calc-menu {
+  display: inline-flex;
+  min-width: 0;
+}
+.ef-slot .calc-menu-trigger {
+  width: auto;
+  max-width: 100%;
+  margin-top: 0;
+}
+.ef-word {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Where the search starts from: a quiet remark, like the form's other notes. */
+.ef-anchor {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* ‹ Previous / Find next ›: an equal pair across the panel. */
+.ef-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.ef-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.05);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.ef-step:hover {
+  border-color: rgba(var(--tint), 0.26);
+  background: rgba(var(--tint), 0.09);
+}
+.ef-step:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+/* Find next is the usual press: a touch of the accent. */
+.ef-step--next {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.ef-step--next:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.14);
+}
+.ef-chev {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+/* The result (or "Searching…", or none), with the exact moment's (i) after it. The line
+   keeps its height while empty, so a result arriving doesn't push the form down a row. */
+.ef-result-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 16px;
+}
+.ef-result {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+/* (Never display: none while empty — a status line hidden from the accessibility tree
+   would not announce the result that fills it.) */
+.ef-exact {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--text-muted);
+  cursor: help;
+}
+.ef-exact:hover,
+.ef-exact:focus-visible {
+  color: var(--text-strong);
+  outline: none;
+}
+
+/* A phone: every target at least 40 px. */
+@media (pointer: coarse) {
+  .ef-step {
+    min-height: 40px;
+  }
+  .ef-slot .calc-menu-trigger {
+    min-height: 40px;
+  }
+  .ef-exact {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    margin: -12px -12px -12px 0;
+  }
+}

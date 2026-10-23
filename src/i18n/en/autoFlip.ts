@@ -52,14 +52,6 @@ export const autoFlip = {
     title: 'Overlay frame held on Return angles',
     body: 'A return chart is a moment of its own, with its own angles, and the map is now drawn against them rather than the natal ones. The previous frame is held, not cleared — it comes back on leaving the return, or straight away from the ✕ on the chip.',
   },
-  // The whole map changes, but nothing was taken — so the sentence that matters here is
-  // the one about getting it back, not the one about what moved.
-  // (It opens on "The Geodetic line system" because "Geodetic maps…" first reads as the
-  // plural noun the hold sentences use — "on geodetic maps".)
-  'line-system-held': {
-    title: 'Geodetic is on hold',
-    body: 'The Geodetic line system maps the tropical zodiac onto Earth’s longitudes, so there is no sidereal version of it to draw. Your choice is held, not cleared — set the zodiac back to Tropical and it returns.',
-  },
   // Not a change — a difference. Worth saying plainly, because the reader's first
   // encounter with it is usually a set of lines that don't match the program they came
   // from, and "this app is wrong" is the reasonable conclusion from that evidence.
@@ -173,5 +165,18 @@ export const autoFlip = {
   'language-held': {
     title: 'Your chosen language is on hold',
     body: 'The language you chose is translated on this device, which isn’t possible here right now, so the app is shown in its usual language. Your choice is kept, not cleared. To choose another language, use {route}.',
+  },
+  // Choosing "No chart · the sky alone" in the chart menu (2026-10-20) set aside
+  // something that reads a chart: an overlay that advances or compares one (a
+  // progression, a direction, Synastry), the transits' Natal-angles frame, which has
+  // no natal angles to follow, or an open Local Space window, which measures from the
+  // chart's place ("Local Space" is the window's name in the View menu). Shown only when
+  // one of those was actually in force, so it always reports a change the reader can see.
+  // A HOLD, like the others here: nothing was switched off or closed, and picking a chart
+  // brings it all back. No location clause about the chart menu beyond its name: the card
+  // may not be able to point at it.
+  'no-chart-held': {
+    title: 'Held while no chart is selected',
+    body: 'Overlays that advance or compare a chart, and the Local Space window, wait while there is none; transits are drawn in the moment’s own frame. Nothing is cleared: pick a chart from the chart menu and they come back as you left them.',
   },
 } as const;

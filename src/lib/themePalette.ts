@@ -261,6 +261,11 @@ export interface MapStyle {
     readonly width: number;
     readonly label: string;
     readonly hover: number;
+    /** The sign labels' halo (2026-10-20). */
+    readonly halo: string;
+    /** The share of `hover` each highlight keeps while the MC band and the Ascendant zone are
+     *  both lit (GEO_GRID_STYLE says why). The base table's: not a token. */
+    readonly faint: number;
   };
   readonly nightShade: { readonly color: string; readonly opacity: number };
   readonly geoZones: Readonly<Record<Element, readonly [string, string, string]>>;
@@ -743,6 +748,7 @@ export const UNMIRRORED_CSS: Readonly<Record<string, string>> = {
   '--tag-shared-rgb': 'chart tag',
   '--tag-unknown': 'chart tag',
   '--tag-unknown-rgb': 'chart tag',
+  '--tag-event': 'chart mark (the event-chart calendar, 2026-10-20)',
   '--dur-tap': 'motion timing, not colour',
   '--dur-quick': 'motion timing',
   '--dur-move': 'motion timing',
@@ -1628,6 +1634,22 @@ add({
   deps: [...MAP_TABLE_DEPS],
   derive: (get, c) => GEO_GRID_STYLE[mapTableOf(get, c.base)].hover,
 });
+// The sign labels' halo (2026-10-20): the ground they sit on, pushed away from their ink — on an
+// own land colour, that land lightened on a light map and darkened on a dark one (the label ink
+// goes the other way: geo.grid.line), else the basemap's table.
+add({
+  id: 'geo.grid.halo',
+  kind: 'color',
+  group: 'mapSurface',
+  tier: 'derived',
+  alpha: true,
+  builtin: (b) => GEO_GRID_STYLE[b].halo,
+  deps: [...LAND_DEPS],
+  derive: landRule(
+    (land, light) => formatColor(withAlpha(mix(land, light ? '#ffffff' : '#000000', 0.4), 0.95)),
+    (t) => GEO_GRID_STYLE[t].halo,
+  ),
+});
 // The MC zones: Auto from the element colours (modality as lightness), but only once an
 // element colour has moved — until then, the basemap's tuned table.
 for (const el of ELEMENT_ORDER) {
@@ -2390,6 +2412,8 @@ function mapBodyOf(base: Theme, v: Values): MapBody {
       width: W('geo.grid.width'),
       label: C('geo.grid.label'),
       hover: v['geo.grid.hover'] as number,
+      halo: C('geo.grid.halo'),
+      faint: GEO_GRID_STYLE[table].faint,
     },
     nightShade: { color: C('nightShade.color'), opacity: v['nightShade.opacity'] as number },
     geoZones,

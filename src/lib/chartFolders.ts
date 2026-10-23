@@ -173,6 +173,13 @@ export function flattenFolders(nodes: readonly FolderNode[]): FolderNode[] {
 const DECLARED_KEY = 'astro:chart-folders:v1';
 const OPEN_KEY = 'astro:chart-folders-open:v1';
 const LAST_KEY = 'astro:chart-folder-last:v1';
+const LAST_EVENT_KEY = 'astro:charts:last-event-folder:v1';
+
+/** Where an event chart starts when nothing has been chosen for one yet — the
+ *  conventional name for the charts of the world rather than of a person
+ *  (2026-10-20). English data, like the example chart's name: a folder is the
+ *  reader's own label, and one the app names stays named. */
+export const DEFAULT_EVENT_FOLDER = 'Mundane';
 
 function readList(key: string): string[] {
   try {
@@ -254,6 +261,36 @@ export function saveLastFolder(path: string): void {
     localStorage.setItem(LAST_KEY, normalizeFolderPath(path));
   } catch {
     // Only costs the next chart its default.
+  }
+}
+
+/**
+ * The same memory for EVENT charts, kept apart from the one above (2026-10-20).
+ *
+ * The runs are different runs: a reader filing clients doesn't want the next
+ * client offered "Mundane/Ingresses" because an ingress was the last thing
+ * saved, and the reverse. Two keys, so each kind of chart starts where the last
+ * one of its kind went. Absent → DEFAULT_EVENT_FOLDER; a stored '' (the reader
+ * filed an event as Unfiled) is a choice and is kept as one.
+ *
+ * Written only for a folder the reader chose — never for a suggestion the form
+ * made on their behalf, or an unchosen "Mundane/Lunations" would become the
+ * next event's default without anyone having picked it.
+ */
+export function loadLastEventFolder(): string {
+  try {
+    const raw = localStorage.getItem(LAST_EVENT_KEY);
+    return raw === null ? DEFAULT_EVENT_FOLDER : normalizeFolderPath(raw);
+  } catch {
+    return DEFAULT_EVENT_FOLDER;
+  }
+}
+
+export function saveLastEventFolder(path: string): void {
+  try {
+    localStorage.setItem(LAST_EVENT_KEY, normalizeFolderPath(path));
+  } catch {
+    // Only costs the next event its default.
   }
 }
 

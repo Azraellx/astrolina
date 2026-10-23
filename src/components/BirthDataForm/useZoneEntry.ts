@@ -18,10 +18,14 @@ import type { DaylightCode, OffsetDirection, ZoneEntryMode, ZoneMoment } from '.
 import {
   initialModel,
   openZone,
+  wallClockForInstant,
   zoneReduce,
   zoneView,
+  type FormInstant,
+  type InstantWallClock,
   type ZoneAction,
   type ZoneInputs,
+  type ZoneModel,
   type ZonePick,
   type ZoneView,
 } from './zoneEntryModel';
@@ -37,10 +41,28 @@ export interface ZoneEntryState extends ZoneView {
   takeUt: () => void;
   pickIana: (zone: string) => void;
   pickUtc: (hours: number) => void;
-  /** The form's list: a way and its zone in one step. */
-  choose: (pick: ZonePick) => void;
+  /** The form's list: a way and its zone in one step. Returns the field's state it
+   *  produced, for a caller that has to know later whether it is still in force. */
+  choose: (pick: ZonePick) => ZoneModel;
+  /** The field's own state, and a way to put an earlier one back — for the form's
+   *  statement of a repeated hour's zone, which gives back what it replaced once its
+   *  moment has gone (zoneEntryModel zoneFixStep, 2026-10-20). */
+  model: ZoneModel;
+  restore: (model: ZoneModel) => void;
+  /** While the form holds an instant (2026-10-20): the date and time it shows, read
+   *  in the zone this field holds (zoneEntryModel wallClockForInstant). The field's
+   *  moment — `at`, and so `toSave` — is then THAT clock, not the arguments'. Null
+   *  without an instant. */
+  derived: InstantWallClock | null;
 }
 
+/**
+ * `instant` (optional, 2026-10-20): a moment the form was handed (the Now button, a
+ * moment found for an event chart). While it is set, the date and time arguments are
+ * ignored and the field derives the clock from the instant instead — through the same
+ * zoneView the save uses, so changing the zone here moves the clock and never the
+ * moment. Omitted or null, the field is exactly what it was.
+ */
 export function useZoneEntry(
   initial: StoredChart | null | undefined,
   place: { lat: number; lng: number } | null,
@@ -49,24 +71,48 @@ export function useZoneEntry(
   day: number | null,
   hour: number,
   minute: number,
+  instant: FormInstant | null = null,
 ): ZoneEntryState {
   const [opened] = useState(() => openZone(initial));
   const [model, setModel] = useState(() => initialModel(opened, initial));
 
-  const at = useMemo<ZoneMoment | null>(
-    () =>
-      place && year != null && month != null && day != null
-        ? { lat: place.lat, lng: place.lng, year, month, day, hour, minute }
-        : null,
-    [place, year, month, day, hour, minute],
+  const derived = useMemo(
+    () => (instant ? wallClockForInstant(model, { initial, opened }, place, instant) : null),
+    [model, initial, opened, place, instant],
   );
+  const at = useMemo<ZoneMoment | null>(() => {
+    if (derived) {
+      // In UT (no place yet) there is no moment for a zone to be read at.
+      return place && !derived.ut
+        ? {
+            lat: place.lat,
+            lng: place.lng,
+            year: derived.year,
+            month: derived.month,
+            day: derived.day,
+            hour: derived.hour,
+            minute: derived.minute,
+          }
+        : null;
+    }
+    return place && year != null && month != null && day != null
+      ? { lat: place.lat, lng: place.lng, year, month, day, hour, minute }
+      : null;
+  }, [derived, place, year, month, day, hour, minute]);
   const inputs = useMemo<ZoneInputs>(() => ({ initial, opened, at }), [initial, opened, at]);
   const view = useMemo(() => zoneView(model, inputs), [model, inputs]);
 
-  const dispatch = (action: ZoneAction) => setModel(zoneReduce(model, action, view, inputs));
+  const dispatch = (action: ZoneAction) => {
+    const next = zoneReduce(model, action, view, inputs);
+    setModel(next);
+    return next;
+  };
 
   return {
     ...view,
+    derived,
+    model,
+    restore: setModel,
     setMode: (mode) => dispatch({ type: 'mode', mode }),
     pickStandard: (zone) => dispatch({ type: 'standard', zone }),
     setDaylight: (code) => dispatch({ type: 'daylight', code }),

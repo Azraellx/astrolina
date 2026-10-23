@@ -18,12 +18,23 @@
 // Hosts re-skin by scoping overrides under `className` rather than forking.
 // Strings arrive as props — like the search field, this mounts in React roots
 // outside the i18n provider.
+//
+// A home no search finds (2026-10-23, Salvatore: an address missing from the street
+// index, though the reader can zoom in and pin the very house). The pickers offer the
+// placed map pin and the reader's own places before anything is typed, and say so
+// under a search's answer. The pin is offered, never taken: a home is only ever set
+// by a pick.
 
 import { useState, type ReactNode } from 'react';
 import type { ChartHome } from '../../lib/chartLibrary';
 import { maskText } from '../../lib/discreet';
+import type { PlaceSearchHit } from '../../lib/extensions/placeSearchProviders';
 import { HoverTip } from './HoverTip';
-import { PlaceSearchField, type PlaceSearchStrings } from './PlaceSearchField';
+import {
+  PlaceSearchField,
+  type PlaceSearchSection,
+  type PlaceSearchStrings,
+} from './PlaceSearchField';
 import { useHoverTip } from './useHoverTip';
 import './ChartHomeEditor.css';
 
@@ -35,6 +46,10 @@ export interface ChartHomeStrings {
   clear: string;
   placeholder: string;
   searchAria: string;
+  /** The tag on the map pin's row. */
+  mapPinTag: string;
+  /** Under a search's answer, while the host offers the map pin. */
+  missHint: string;
 }
 
 const EN: ChartHomeStrings = {
@@ -45,7 +60,38 @@ const EN: ChartHomeStrings = {
   clear: 'Clear',
   placeholder: 'Search for a place…',
   searchAria: 'Search for a home place',
+  mapPinTag: 'Map pin',
+  missHint: 'Not finding it? Drop a pin on the spot on the map, then pick it here.',
 };
+
+/** The placed map pin as a home picker offers it — a standing row named by the pin's place,
+ *  shared by this editor and the chart form's Lives now box so the two offer it alike. The field
+ *  drops the row where a saved pin stands on the same spot, or where it is the value already. */
+export function mapPinSection(
+  pin: { lat: number; lng: number; label: string } | null | undefined,
+  tag: string,
+  onPick: (home: { label: string; lat: number; lng: number }) => void,
+): PlaceSearchSection[] | undefined {
+  if (!pin) return undefined;
+  return [
+    {
+      id: 'map-pin',
+      items: [
+        {
+          id: 'map-pin',
+          label: pin.label,
+          tag,
+          at: { lat: pin.lat, lng: pin.lng },
+          onPick: () => onPick({ label: pin.label, lat: pin.lat, lng: pin.lng }),
+        },
+      ],
+    },
+  ];
+}
+
+/** The name a home takes from a pick: the place's own, where the row's label is a name the
+ *  reader gave the spot (a saved pin's title). Salvatore, 2026-10-23: a home is a place. */
+export const homeLabelOf = (hit: PlaceSearchHit) => hit.place ?? hit.label;
 
 interface ChartHomeEditorProps {
   /** The place shown — a chart's Home, or any place with a name and coordinates (only those are
@@ -71,6 +117,13 @@ interface ChartHomeEditorProps {
   /** A tip on Change (Set), for a host whose pick does more than the value shows — disclosed on
    *  the trigger. Absent, no tip. */
   changeTip?: { title: string; hint: string };
+  /** Offer the reader's own places (the registered standing list) before anything is typed. */
+  library?: boolean;
+  /** The placed map pin, offered as a row before anything is typed: the way in for a place no
+   *  search finds. Null while there is no pin (or it stands on the birthplace); absent for a host
+   *  that offers no pin at all, which also leaves out the hint that points to it. `label` is the
+   *  pin's place, its coordinates until that settles. (2026-10-23) */
+  mapPin?: { lat: number; lng: number; label: string } | null;
 }
 
 export function ChartHomeEditor({
@@ -83,9 +136,15 @@ export function ChartHomeEditor({
   maskValue,
   clearable = true,
   changeTip,
+  library = false,
+  mapPin,
 }: ChartHomeEditorProps) {
   const S = { ...EN, ...strings };
   const [picking, setPicking] = useState(false);
+  const pick = (home: { label: string; lat: number; lng: number }) => {
+    onChange(home);
+    setPicking(false);
+  };
 
   return (
     <div className={`che${className ? ` ${className}` : ''}`}>
@@ -117,10 +176,11 @@ export function ChartHomeEditor({
         <PlaceSearchField
           className="che-search"
           bias={value ? { lat: value.lat, lng: value.lng } : undefined}
-          onPick={(hit) => {
-            onChange({ label: hit.label, lat: hit.lat, lng: hit.lng });
-            setPicking(false);
-          }}
+          onPick={(hit) => pick({ label: homeLabelOf(hit), lat: hit.lat, lng: hit.lng })}
+          library={library}
+          sections={mapPinSection(mapPin, S.mapPinTag, pick)}
+          omitAt={value}
+          missHint={mapPin !== undefined ? S.missHint : undefined}
           onCancel={() => setPicking(false)}
           placeholder={S.placeholder}
           ariaLabel={S.searchAria}

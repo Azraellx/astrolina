@@ -10,6 +10,25 @@ export const chartSwitcher = {
   noChart: 'Sin carta seleccionada',
   tip: 'Cambia, edita o agrega una carta',
   tabHint: '{key} cambia a tu carta anterior; presiónala otra vez para recorrer las cinco más recientes.',
+  tabHintSections: '{key} cambia a tu carta anterior de la misma lista, Eventos o Personas; presiónala otra vez para recorrerla.',
   empty: 'Aún no hay cartas guardadas.',
   searchAdd: 'Buscar + Agregar nombre',
+  sky: {
+    name: 'Sin carta',
+    tagline: 'solo el cielo',
+    meta: '{overlay} · {date}',
+    metaOff: 'Solo el cielo',
+    overlay: {
+      transits: 'Tránsitos',
+      eclipses: 'Eclipse',
+    },
+    hint: 'Dibuja el cielo sin carta vigente: Tránsitos y Eclipses funcionan en el propio marco del momento.',
+    hintMasks: '{count, plural, one {{held} necesita una carta: espera a que elijas una.} other {{held} necesitan una carta: esperan a que elijas una.}}',
+  },
+  section: {
+    events: 'Eventos',
+    people: 'Personas',
+    eventsEmpty: 'Aún no hay cartas de evento.',
+    peopleEmpty: 'Aún no hay cartas de persona.',
+  },
 } as const;

@@ -31,10 +31,14 @@ export function InfoBar({
   nodeType,
   advancedMode,
   overlayFrame,
+  bandedLines = false,
   onOpen,
   onShowFrameControl,
 }: {
   lineSystem: LineSystem;
+  /** A chart with no birth time's Moon and Mercury lines are drawn in the double hairline
+   *  (2026-10-21): the row carries the legend entry for that stroke (Lina, §2.1). */
+  bandedLines?: boolean;
   coordSystem: CoordSystem;
   houseSystem: HouseSystem;
   zodiacMode: ZodiacMode;
@@ -70,6 +74,15 @@ export function InfoBar({
   return (
     <div className="info-bar">
       {item(labels.lineSystem(lineSystem), 'calc')}
+      {bandedLines && (
+        <>
+          {dot}
+          <span className="info-bar-band">
+            <span className="info-bar-band-swatch" aria-hidden="true" />
+            <span>{t('map.bandLegend')}</span>
+          </span>
+        </>
+      )}
       {/* Line projection is a Celestial-only refinement. */}
       {lineSystem === 'celestial' && (
         <>

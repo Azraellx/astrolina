@@ -139,6 +139,7 @@ export function ZoneSearchField({
   detected,
   at,
   onPick,
+  event = false,
 }: {
   /** The zone in effect; shown in the box whenever nothing is being typed. */
   value: string;
@@ -149,6 +150,9 @@ export function ZoneSearchField({
   /** The birth moment, for each row's offset. */
   at: ZoneMoment;
   onPick: (zone: string) => void;
+  /** An event chart's form (2026-10-20): the detected zone's tag reads Place, as the
+   *  form's place field does there, not Birthplace. */
+  event?: boolean;
 }) {
   const { t } = useT();
   const uid = useId();
@@ -399,7 +403,9 @@ export function ZoneSearchField({
                   <span className="psf-row-main">
                     <span className="psf-row-label">{r.id}</span>
                     {isDetected(r.id) && (
-                      <span className="psf-row-tag">{t('chartForm.tz.ianaBirthplace')}</span>
+                      <span className="psf-row-tag">
+                        {t(event ? 'chartForm.tz.ianaBirthplaceEvent' : 'chartForm.tz.ianaBirthplace')}
+                      </span>
                     )}
                   </span>
                   {sub && <span className="psf-row-sub">{sub}</span>}

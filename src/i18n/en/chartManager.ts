@@ -27,7 +27,18 @@ export const chartManager = {
     space: 'Space',
     unknown: 'Unknown',
     shared: 'Share',
+    // Event charts (2026-10-20): charts of a moment (an ingress, a founding) rather than
+    // of a person. A chip like the tags, though it filters by the chart's kind. Short:
+    // the chips share one row under the search box.
+    // @i18n-max 12
+    events: 'Events',
   },
+  // The list's empty line while the Events chip is on and there are no event charts. The
+  // Add example event button sits under it.
+  eventsEmpty: 'No event charts yet.',
+  // What a screen reader hears for the mark before an event chart's name in the list and
+  // in the chart menu (the mark itself is a small calendar glyph).
+  eventRowAria: 'Event chart',
   // Folders. A folder is a path written on the chart, so the tree is whatever
   // paths are in use. Charts with no folder are simply listed after the tree,
   // under no heading — they are the ones not sorted yet, which is when you most

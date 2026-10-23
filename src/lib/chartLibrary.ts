@@ -114,6 +114,23 @@ export interface StoredChart extends BirthData {
    *  so a chart filed at "Clients/2026" is all it takes for both levels to
    *  exist; see lib/chartFolders.ts. */
   folder?: string;
+  /**
+   * What the chart's moment IS: an event's (an ingress, a founding, a moment
+   * cast from Now) rather than a person's birth. Only 'event' is ever stored —
+   * absent means a person, which is what every chart saved before event charts
+   * existed has always been — so a person's record stays byte-identical and a
+   * build that syncs charts by content hash doesn't see the whole library change
+   * on upgrade (2026-10-20).
+   *
+   * A FACT about the record, like the rest of it. It is written only by the
+   * chart form's Person | Event toggle, by the importer (from a file that says
+   * so) and by a share link; the geodetic hold never clears it, it only masks
+   * how it is shown (lib/eventCharts presentedKind), so an event entered on an
+   * unlocked device comes back an event when the hold lifts. A field the form
+   * forgets is a field the next edit drops, so the form carries it explicitly —
+   * on a held device too, where the toggle isn't shown.
+   */
+  kind?: 'event';
 }
 
 /** Recency key for sorting the "most recently used" list (newest first). */
@@ -138,18 +155,25 @@ export const RECENT_COUNT = 5;
  * shortlist against each other the same way.
  *
  * With no chart given it falls back to the whole library, which is what an
- * empty or brand-new set wants.
+ * empty or brand-new set wants, and what the Tab swap asks for since 2026-10-23
+ * (lib/eventCharts tabCycleIds): Tab cycles the charts you were just in,
+ * wherever they are filed, and its flash shows that list for the second it runs.
+ *
+ * `count` defaults to the one shortlist there was until 2026-10-20; the
+ * dropdown's Events and People sections (lib/eventCharts switcherSections)
+ * each ask for fewer, so two lists fit where one did.
  */
 export function recentShortlist(
   charts: readonly StoredChart[],
   current?: StoredChart | null,
+  count: number = RECENT_COUNT,
 ): StoredChart[] {
   const scope = current ? normalizeFolderPath(current.folder) : null;
   const inScope =
     scope === null ? charts : charts.filter((c) => normalizeFolderPath(c.folder) === scope);
   return [...inScope]
     .sort((a, b) => chartRecency(b) - chartRecency(a))
-    .slice(0, RECENT_COUNT);
+    .slice(0, count);
 }
 
 /** A chart's tag, defaulting an absent field to 'none' (back-compat for old records). */
@@ -200,6 +224,19 @@ export function displayName(name: string, limit = NAME_SOFT_LIMIT): string {
 const STORAGE_KEY = 'astro:charts:v1';
 const CURRENT_KEY = 'astro:charts:current:v1';
 
+/**
+ * The selection "No chart · the sky alone" (2026-10-20), stored in the current-id
+ * key in place of a chart's id. A string rather than a second key, so the one
+ * value that says what is selected can't disagree with another about it.
+ *
+ * It is the PREF: what the reader picked. While the geodetic hold is up the app
+ * masks it to the first chart (lib/eventCharts resolveSelection) and never
+ * writes over it, so the choice is still there when the hold lifts. The '~'
+ * keeps it clear of every id there is — minted `c_…`, imported `c_…_n`, the
+ * examples' `seed_…` — and of a downstream build's `_none` scope.
+ */
+export const NO_CHART_ID = '~none';
+
 export function loadCharts(): StoredChart[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -247,7 +284,9 @@ export function publishCurrentChart(chart: StoredChart | null): void {
   for (const l of currentListeners) l();
 }
 
-/** The active chart, or null when the library is empty. Stable between changes. */
+/** The active chart, or null when the library is empty — and, since 2026-10-20, while
+ *  "No chart" is selected on a device the geodetic hold doesn't cover (NO_CHART_ID).
+ *  Stable between changes. */
 export function getCurrentChart(): StoredChart | null {
   return currentChart;
 }

@@ -153,6 +153,21 @@ async function main() {
       c[7] === 'PPLC' ? 1 : 0, // capital (seat of government)
     ]);
   }
+  // HAND ADDITIONS (2026-10-22): places a reader needs named that the PPLX filter above drops.
+  // Greenwich is filed by GeoNames as a section of London, so the hover and the pin's lookup
+  // named the point at the Prime Meridian "Eltham" (Lina's §1, 22 Oct 2026). Each row is the
+  // GeoNames record (geonameid, population), and each gid is listed in
+  // src/lib/atlas/cityLookup.ts HAND_ADDED_GIDS, where a hand addition that is the NEAREST row
+  // wins its same-place window (its population is a district's, below the towns around it). A
+  // district tier would replace this list.
+  //
+  // Greenwich is placed ON the Prime Meridian, at exactly 51°29′00″N 0°00′00″, rather than at the
+  // GeoNames centroid ~800 m west (51.478, −0.012): the one Greenwich every search finds, so a chart
+  // cast for it has 0° Aries on its geodetic MC (Lina, 23 Oct 2026, G-1). A hand addition is pushed
+  // as written, past the 3-decimal rounding above, so 51°29′00″ survives every formatter — 51.483
+  // would print 51°28′59″.
+  const ADDITIONS = [['Greenwich', 0, 51.4833333, 0, 'GB', 'ENG', 30578, 2647937, 0]];
+  for (const a of ADDITIONS) if (!rows.some((r) => r[7] === a[7])) rows.push(a);
   // Sort by population desc so the typeahead surfaces major cities first.
   rows.sort((a, b) => b[6] - a[6]);
 

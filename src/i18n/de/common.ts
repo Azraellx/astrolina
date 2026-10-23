@@ -12,9 +12,12 @@ export const common = {
   edit: 'Bearbeiten',
   delete: 'Löschen',
   keep: 'Behalten',
+  addExampleEvent: 'Beispielereignis anlegen',
+  addExampleEventHint: 'Fügt deinen Horoskopen Aries Ingress 2026 hinzu, die für Greenwich berechnete März-Tagundnachtgleiche. Sonst ändert sich nichts, und du kannst es wie jedes Horoskop löschen.',
   locationFallbackOcean: 'Ozean',
   tzWarning: '⚠ Zeitzone vor 1970 außerhalb von USA/EU: Prüfe die Sommerzeit in einem Atlas',
   timeUnknownBanner: 'Geburtszeit unbekannt',
+  timeUnknownBannerEvent: 'Zeit unbekannt',
   provisionalTimeBanner: '⚠ {time} im Test – vorläufig, nicht gespeichert',
   locked: {
     feature: 'Die Funktion {feature} gehört zum Tarif {tier}.',

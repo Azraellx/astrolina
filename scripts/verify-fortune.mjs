@@ -93,5 +93,40 @@ for (const [label, hour, wantDay] of [['noon  ', 12, true], ['midnite', 0, false
   assertBool(`${label.trim()} sect classification`, day, wantDay);
 }
 
+// 3 · Where Fortune's geodetic note is said (SOURCE TRIPWIRE, 2026-10-20). On a geodetic map
+//     the wheel's Fortune is built from the place's Ascendant, and a note says so. Lina (20 Oct
+//     2026, §6) asked for the GE mark that the positions list and the capture card put on its
+//     row to go, the note to stay on the wheel's tip. Those are components no Node suite renders,
+//     so their source is read: no mark anywhere, and the tip still carrying the note — each a
+//     count of something found, so a renamed file fails rather than passing on an empty read.
+{
+  const { readFileSync } = await import('node:fs');
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+  const read = (p) => readFileSync(join(root, p), 'utf8');
+  const marked = [
+    'components/ExpandedChartSidebar/ExpandedChartSidebar.tsx',
+    'components/ExpandedChartSidebar/ExpandedChartSidebar.css',
+    'components/CaptureExtras/CaptureExtras.tsx',
+    'components/CaptureExtras/CaptureExtras.css',
+  ].map((p) => ({ p, src: read(p) }));
+  const leftover = marked.filter(({ src }) => /es-ge-tag|cx-ge-tag|expandedSidebar\.geodetic\.ge\b/.test(src));
+  console.log('\n— where the geodetic note is said —');
+  assertBool(
+    `no GE mark on a row: ${marked.length} files read (${marked.reduce((n, f) => n + f.src.length, 0)} chars), none marks one${leftover.length ? ` — still in ${leftover.map((f) => f.p).join(', ')}` : ''}`,
+    marked.every((f) => f.src.length > 1000) && leftover.length === 0,
+    true,
+  );
+  const wheel = read('components/Wheel/WheelSvg.tsx');
+  const app = read('App.tsx');
+  assertBool(
+    "the wheel's tip still says it (bodyNotes into the body tip), and App still builds the note",
+    /note:\s*bodyNotes\?\.get\(p\.name\)/.test(wheel) && /wheel\.tip\.fortuneGeodetic/.test(app),
+    true,
+  );
+  // The catalog's mark key is gone with its readers (a key no surface reads is a stale string).
+  const catalog = read('i18n/en/expandedSidebar.ts');
+  assertBool('the mark’s catalog key is retired (expandedSidebar.geodetic.ge)', !/\n\s*ge: 'GE',/.test(catalog) && /planetsPromoted:/.test(catalog), true);
+}
+
 console.log(fails === 0 ? '\nAll Fortune checks passed.' : `\n${fails} Fortune check(s) FAILED.`);
 process.exit(fails === 0 ? 0 : 1);

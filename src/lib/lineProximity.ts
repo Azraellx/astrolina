@@ -13,6 +13,7 @@
 // place↔line search (citiesNearLine, which lives with the city index).
 
 import type { Feature, FeatureCollection, LineString } from 'geojson';
+import { bandCovers, bandOutline, type LineBand } from './astro/uncertaintyBands';
 
 const R_KM = 6371;
 const D2R = Math.PI / 180;
@@ -176,16 +177,30 @@ export function isWithinKm(coordsList: Coords[], lat: number, lng: number, maxKm
 
 /** A new FeatureCollection keeping only the LineString features that pass within `maxKm` of
  *  (lat,lng). Per-FEATURE: a normal one-feature line (its whole great circle) reveals whole;
- *  a line split into several features reveals only the pieces that qualify. */
+ *  a line split into several features reveals only the pieces that qualify.
+ *
+ *  A line carrying an uncertainty band (`props.band`, lib/astro/uncertaintyBands — a chart with
+ *  no birth time on a geodetic map) qualifies by its BAND (2026-10-20): where the band covers
+ *  the point (bandCovers, the band's definition), or its ring — the fill the map draws
+ *  (bandOutline) — passes within `maxKm`. That is the ranking a listing tool gives a banded line
+ *  (bandCoverage's), so a reveal shows every line its list names; the ring is measured here with
+ *  this module's own cached segments rather than bandCoverage's, since the reveal runs over
+ *  every banded line at each spotlight change. */
 export function filterWithinKm<P>(
   fc: FeatureCollection<LineString, P>,
   lat: number,
   lng: number,
   maxKm: number,
 ): FeatureCollection<LineString, P> {
-  const features = fc.features.filter((f: Feature<LineString, P>) =>
-    isWithinKm([f.geometry.coordinates as Coords], lat, lng, maxKm),
-  );
+  const features = fc.features.filter((f: Feature<LineString, P>) => {
+    const band = (f.properties as { band?: LineBand } | null)?.band;
+    if (band) {
+      if (bandCovers(band, lat, lng)) return true;
+      const ring = bandOutline(band);
+      if (ring && isWithinKm([ring], lat, lng, maxKm)) return true;
+    }
+    return isWithinKm([f.geometry.coordinates as Coords], lat, lng, maxKm);
+  });
   return { ...fc, features };
 }
 

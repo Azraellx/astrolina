@@ -21,7 +21,10 @@ export const chartManager = {
     space: 'Weltraum',
     unknown: 'Unbekannt',
     shared: 'Geteilt',
+    events: 'Ereignisse',
   },
+  eventsEmpty: 'Noch keine Ereignishoroskope.',
+  eventRowAria: 'Ereignishoroskop',
   folders: {
     new: 'Neuer Ordner',
     newChild: 'Neuer Unterordner',

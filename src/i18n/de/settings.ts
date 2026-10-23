@@ -209,9 +209,9 @@ export const settings = {
       title: 'Zonenschattierung',
       hint: 'Füllt die zwölf MC-Zonen: Element als Farbe, Modalität als Tönung (Kardinal am dunkelsten, Veränderlich am hellsten). Die Legende zeigt ein Element oder eine Modalität einzeln.',
     },
-    presentation: {
-      title: 'Präsentation',
-      hint: 'Verstärkt die Zonenschattierung von schwach auf kräftig, um die Zonen jemand anderem zu zeigen.',
+    opacity: {
+      label: 'Deckkraft',
+      aria: 'Deckkraft der Zonenschattierung, in Prozent',
     },
   },
   coordSystem: {
@@ -225,7 +225,7 @@ export const settings = {
     },
   },
   fortuneFormula: {
-    hint: 'Der Glückspunkt ist ein berechnetes Los der Vitalität und weltlichen Leichtigkeit – ein Punkt auf der Ekliptik, kein Himmelskörper am Himmel. Daher kann ihn nur ein zodiakaler Bezugsrahmen platzieren: Seine Kartenlinien brauchen die Linienprojektion auf In Zodiaco (oder das geodätische Liniensystem). Wird der Karten-Pin versetzt, wird er in der Horoskopzeichnung für diesen Ort neu berechnet, während die Kartenlinien deinen Radix-Glückspunkt behalten.',
+    hint: 'Der Glückspunkt ist ein berechnetes Los der Vitalität und weltlichen Leichtigkeit – ein Punkt auf der Ekliptik, kein Himmelskörper am Himmel. Daher kann ihn nur ein zodiakaler Bezugsrahmen platzieren: Seine Kartenlinien brauchen In Zodiaco, unter „Liniensystem“ im Bereich „Berechnung“ (oder das geodätische Liniensystem). Wird der Karten-Pin versetzt, wird er in der Horoskopzeichnung für diesen Ort neu berechnet, während die Kartenlinien deinen Radix-Glückspunkt behalten.',
     sect: {
       label: 'Nach Sekte (Tag/Nacht)',
       hint: 'Taggeburten nutzen Aszendent + Mond − Sonne, Nachtgeburten umgekehrt Aszendent + Sonne − Mond. Die traditionelle Konvention.',
@@ -249,7 +249,9 @@ export const settings = {
   inert: {
     fortuneMundo: 'Ein Los ist ein Punkt auf der Ekliptik ohne Position am Himmel, daher kann In Mundo es nirgends platzieren. Um diese Linie zu sehen, stelle die Projektion auf In Zodiaco (Berechnung).',
     fortuneAdvanced: 'Der Glückspunkt gehört zum erweiterten Modus – schalte diesen ein, um ihn zu nutzen.',
-    geodeticSidereal: 'Das geodätische Liniensystem legt den TROPISCHEN Tierkreis auf die Längengrade – also nie siderisch. Stelle „Tropisch“ ein (Erweitert), um es zu nutzen; deine Wahl bleibt erhalten.',
+    fortuneNoTime: 'Bei einem Horoskop ohne Geburtszeit nicht angezeigt: Der Glückspunkt wird aus dem Mond gebildet, dessen Grad unsicher ist, und aus der Sekte der Geburt, Tag oder Nacht, die die Stunde erfordert.',
+    geodeticSidereal: 'Geodätische Karten legen den tropischen Tierkreis auf die Erde; für einen siderischen Tierkreis gibt es keine anerkannte geodätische Konvention. Stelle den Tierkreis auf „Tropisch“ (Erweitert), um es zu nutzen; deine Wahl bleibt erhalten.',
+    siderealGeodetic: 'Auf geodätischen Karten nicht verfügbar: Das geodätische Gitter ist definitionsgemäß tropisch. Wechsle zu „Himmelsbezogen“, um in einem siderischen Tierkreis zu lesen.',
     geodeticHeld: '„Geodätisch“ wird überprüft, während wir kontrollieren, wie es zeichnet – wir stellen es lieber zurück, als eine Karte zu zeichnen, hinter der wir nicht stehen können. Deine Wahl bleibt erhalten und wird nicht gelöscht; schau bald wieder vorbei.',
     skyHeldWhy: 'Auf geodätischen Karten nicht verfügbar, da sie sich nicht mit dem Himmel drehen.',
     skyHeldFix: 'Stelle das Liniensystem unter „Berechnung“ auf „Himmelsbezogen“, um es zu nutzen.',
@@ -260,6 +262,7 @@ export const settings = {
     anglesHeld: 'Auf geodätischen Karten ergeben sich die Achsen eines Ortes aus seinen Koordinaten und bewegen sich daher nicht mit der Zeit.',
     paransHeld: 'Parans werden auf geodätischen Karten nicht angezeigt.',
     paransHeldFull: 'Parans werden auf geodätischen Karten nicht angezeigt. Stelle das Liniensystem unter „Berechnung“ auf „Himmelsbezogen“, um es zu nutzen.',
+    needsChart: 'Braucht ein Horoskop. Wähle im Horoskopmenü in der oberen Leiste eines aus oder füge eines hinzu.',
   },
   nodeType: {
     true: {
@@ -450,6 +453,7 @@ export const settings = {
     contacts: {
       heading: 'Radixkontakte',
       none: 'Keine Kontakte innerhalb von 3° – diese Finsternis zieht still am Horoskop vorbei.',
+      noChart: 'Kein Horoskop ausgewählt. Wähle eines im Horoskopmenü, um zu sehen, was diese Finsternis darin trifft.',
       aspect: {
         conjunction: 'Konjunktion',
         square: 'Quadrat',

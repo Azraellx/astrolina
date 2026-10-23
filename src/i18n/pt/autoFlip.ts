@@ -13,10 +13,6 @@ export const autoFlip = {
     title: 'Referencial da sobreposição mantido em Ângulos da revolução',
     body: 'Um mapa de revolução é um momento próprio, com ângulos próprios, e o mapa-múndi agora é desenhado em relação a eles, e não aos natais. O referencial anterior fica em espera, não é apagado — ele volta ao sair da revolução, ou imediatamente pelo ✕ do botão.',
   },
-  'line-system-held': {
-    title: 'O Geodésico está em espera',
-    body: 'O sistema de linhas Geodésico mapeia o zodíaco tropical sobre as longitudes da Terra, então não existe uma versão sideral dele para desenhar. Sua escolha fica em espera, não é apagada — volte o zodíaco para Tropical e ela retorna.',
-  },
   'line-projection': {
     title: 'Estas linhas são desenhadas In Mundo',
     body: 'Todo programa precisa decidir onde um corpo “está” antes de poder desenhar a linha dele. In Mundo o coloca onde ele está no céu, com latitude e tudo. In Zodiaco primeiro achata essa latitude sobre a eclíptica.',
@@ -36,5 +32,9 @@ export const autoFlip = {
   'language-held': {
     title: 'Seu idioma escolhido está em espera',
     body: 'O idioma que você escolheu é traduzido neste dispositivo, o que não é possível aqui no momento, então o app é exibido no idioma de sempre. Sua escolha é mantida, não é apagada. Para escolher outro idioma, acesse {route}.',
+  },
+  'no-chart-held': {
+    title: 'Em espera sem mapa selecionado',
+    body: 'As sobreposições que avançam ou comparam um mapa, e a janela Espaço local, ficam em espera enquanto não há mapa; os trânsitos são desenhados no próprio referencial do momento. Nada é apagado: escolha um mapa no menu de mapas e elas voltam como você as deixou.',
   },
 } as const;
