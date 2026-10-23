@@ -468,9 +468,9 @@ console.log('\n── 6. TWO PARTS AGREE: the example event is the Sun’s own i
     const d = sun.lon * RAD;
     return d > 180 ? d - 360 : d;
   };
-  // Bisect the Sun through 0° between the 19th and the 21st of March 2026.
-  let lo = jdOf(Date.UTC(2026, 2, 19));
-  let hi = jdOf(Date.UTC(2026, 2, 21));
+  // Bisect the Sun through 0° between the 19th and the 21st of March 2027.
+  let lo = jdOf(Date.UTC(2027, 2, 19));
+  let hi = jdOf(Date.UTC(2027, 2, 21));
   const bracketed = sunLon(lo) < 0 && sunLon(hi) > 0;
   for (let i = 0; i < 60 && hi - lo > 1e-9; i++) {
     const mid = (lo + hi) / 2;
@@ -479,7 +479,7 @@ console.log('\n── 6. TWO PARTS AGREE: the example event is the Sun’s own i
   }
   const ingressMs = msOf((lo + hi) / 2);
   check('the Sun crosses 0° in the bracket (the bisection had something to find)', bracketed,
-    `${sunLon(jdOf(Date.UTC(2026, 2, 19)))}° → ${sunLon(jdOf(Date.UTC(2026, 2, 21)))}°`);
+    `${sunLon(jdOf(Date.UTC(2027, 2, 19)))}° → ${sunLon(jdOf(Date.UTC(2027, 2, 21)))}°`);
   check('the exact-instant constant is the ephemeris’s ingress, within a second',
     bracketed && Math.abs(ingressMs - EXAMPLE_EVENT_EXACT_UT_MS) <= 1000,
     `${new Date(ingressMs).toISOString()} vs ${new Date(EXAMPLE_EVENT_EXACT_UT_MS).toISOString()}`);
@@ -491,13 +491,13 @@ console.log('\n── 6. TWO PARTS AGREE: the example event is the Sun’s own i
   check('the seeded record casts with the Sun in [0°, 0°01′) Aries',
     castLon >= 0 && castLon < 1 / 60, `${(castLon * 60).toFixed(3)}′`);
   check('  …named, filed and marked as R4 has it',
-    seed.name === EXAMPLE_EVENT_NAME && EXAMPLE_EVENT_NAME === 'Aries Ingress 2026' &&
+    seed.name === EXAMPLE_EVENT_NAME && EXAMPLE_EVENT_NAME === 'Aries Ingress 2027' &&
       seed.folder === EXAMPLE_EVENT_FOLDER && EXAMPLE_EVENT_FOLDER === 'Mundane/Ingresses' &&
       seed.kind === 'event' && seed.tzOffset === 0 && seed.tzIana === 'Europe/London' && seed.tzManual === false,
     JSON.stringify(seed));
   check('its id is deterministic and an example’s',
     exampleEventChart(1).id === EXAMPLE_EVENT_ID && exampleEventChart(2).id === EXAMPLE_EVENT_ID &&
-      EXAMPLE_EVENT_ID === 'seed_aries_ingress_2026' && isSeedChart(seed));
+      EXAMPLE_EVENT_ID === 'seed_aries_ingress_2027' && isSeedChart(seed));
 
   // Add example: once, then never again — the second call returns the very same array.
   const lib: StoredChart[] = [LIBRARY[0]];

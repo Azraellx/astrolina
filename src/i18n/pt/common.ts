@@ -13,7 +13,7 @@ export const common = {
   delete: 'Excluir',
   keep: 'Manter',
   addExampleEvent: 'Criar evento de exemplo',
-  addExampleEventHint: 'Adiciona Aries Ingress 2026 (ingresso em Áries), o equinócio de março calculado para Greenwich, aos seus mapas. Nada mais muda, e você pode excluí-lo como qualquer mapa.',
+  addExampleEventHint: 'Adiciona Aries Ingress 2027 (ingresso em Áries), o equinócio de março calculado para Greenwich, aos seus mapas. Nada mais muda, e você pode excluí-lo como qualquer mapa.',
   locationFallbackOcean: 'Oceano',
   tzWarning: '⚠ Fuso anterior a 1970 fora dos EUA/UE: confira o horário de verão num atlas',
   timeUnknownBanner: 'Hora de nascimento desconhecida',

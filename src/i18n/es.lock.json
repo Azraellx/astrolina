@@ -400,7 +400,7 @@
     "chartWheel.shrink": { "src": "730e78b747ba", "out": "60eb510f20d8", "st": "reviewed" },
     "chartWheel.skyHint": { "src": "5e7fcf8c21b6", "out": "f25bc86cec1b", "st": "reviewed" },
     "common.addExampleEvent": { "src": "cecf28f9fe50", "out": "6a2ad59753e0", "st": "reviewed" },
-    "common.addExampleEventHint": { "src": "eb9b60de6281", "out": "0c4fff4e80f1", "st": "reviewed" },
+    "common.addExampleEventHint": { "src": "84ba34be5cbc", "out": "1f1adf0e55f6", "st": "reviewed" },
     "common.cancel": { "src": "19766ed6ccb2", "out": "bb9dbb406dcb", "st": "reviewed" },
     "common.cardinal.east": { "src": "a9f51566bd67", "out": "a9f51566bd67", "st": "reviewed" },
     "common.cardinal.north": { "src": "8ce86a6ae65d", "out": "8ce86a6ae65d", "st": "reviewed" },

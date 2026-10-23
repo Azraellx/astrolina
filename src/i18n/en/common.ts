@@ -14,15 +14,15 @@ export const common = {
   // The other half of an inline Delete/Keep row confirm (see the chart lists).
   keep: 'Keep',
   // The button under an empty Events list (the chart menu's, and My Charts' with the
-  // Events filter on), 2026-10-20: adds the example event chart, Aries Ingress 2026,
+  // Events filter on), 2026-10-20: adds the example event chart, Aries Ingress 2027,
   // to the library without opening it. A button label: keep it short.
   // @i18n-max 24
   addExampleEvent: 'Add example event',
-  // Its hover tip: what pressing it adds. Under 180 characters. Keep "Aries Ingress 2026"
+  // Its hover tip: what pressing it adds. Under 180 characters. Keep "Aries Ingress 2027"
   // exactly as written, untranslated: it is the name the added chart is saved under, and the
   // row that appears in the list reads it in English.
   addExampleEventHint:
-    'Adds Aries Ingress 2026, the March equinox cast for Greenwich, to your charts. Nothing else changes, and you can delete it like any chart.',
+    'Adds Aries Ingress 2027, the March equinox cast for Greenwich, to your charts. Nothing else changes, and you can delete it like any chart.',
   // Fallback location label shown when the cursor is over open water.
   locationFallbackOcean: 'Ocean',
   // Pre-1970 timezone DST caution (App header + expanded sidebar).

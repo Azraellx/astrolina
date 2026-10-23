@@ -13,7 +13,7 @@
 // the next event chart only when the reader chose it.
 //
 // THE SUN'S INGRESS is named as astrologers title the chart — "{sign} Ingress {year}", so the
-// March equinox is "Aries Ingress 2026", the name the example event chart carries
+// March 2027 equinox is "Aries Ingress 2027", the name the example event chart carries
 // (lib/eventCharts.ts; verify:event-search holds the two equal). The slow planets, Jupiter to
 // Pluto, enter a sign once in years, so the year names the event; the Moon and the inner
 // planets enter one often enough that only the date does. A lunation is named by the Moon's

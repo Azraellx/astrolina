@@ -727,7 +727,7 @@ export { SEED_CHART_ID_PREFIX };
 
 // A fresh library: the person examples (Jim Lewis first, so he stays `charts[0]`, the chart a
 // fresh install opens on), and — on a device the geodetic hold doesn't cover — the example event
-// after them, Aries Ingress 2026 (Salvatore, 2026-10-20). Held, exactly the set it always was,
+// after them, Aries Ingress 2027 (Salvatore, 2026-10-20; 2026 until it had passed). Held, exactly the set it always was,
 // ids and order included (lib/eventCharts seedLibrary; verify-event-charts §6 holds it to that).
 // The example event is not seeded (2026-10-21): event charts sit on the ADV rung, and the
 // tier is not known this early; a reader at that rung adds it from the empty Events list in one click.
@@ -7051,7 +7051,7 @@ export default function App() {
     selectNoChartKeyRef.current = selectNoChart;
   }, [selectNoChart]);
 
-  // The example event (Aries Ingress 2026), from the "Add example event" button under an empty
+  // The example event (Aries Ingress 2027), from the "Add example event" button under an empty
   // Events list: added once and never twice (lib/eventCharts withExampleEvent hands the same
   // array back, so a second press writes nothing), refused while the hold is up, and NOT
   // selected — the reader asked for a chart in the library, not for the map to move. A write the

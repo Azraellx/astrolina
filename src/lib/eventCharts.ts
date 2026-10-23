@@ -192,29 +192,30 @@ export function selectionToPersist(currentId: string | null, current: StoredChar
 // ── The example event ───────────────────────────────────────────────────────
 
 /** Deterministic, like the person example's (chartLibrary SEED_CHART_ID_PREFIX says why). */
-export const EXAMPLE_EVENT_ID = `${SEED_CHART_ID_PREFIX}aries_ingress_2026`;
+export const EXAMPLE_EVENT_ID = `${SEED_CHART_ID_PREFIX}aries_ingress_2027`;
 
-/** The March 2026 equinox: the Sun's apparent geocentric longitude reaches 0° Aries at
- *  20 Mar 2026 14:45:57.75 UT (measured against the shipped ephemeris; the published
- *  minute is 14:46). verify-event-charts bisects the Sun through 0° and requires this
- *  within a second. */
-export const EXAMPLE_EVENT_EXACT_UT_MS = Date.UTC(2026, 2, 20, 14, 45, 57, 750);
+/** The March 2027 equinox: the Sun's apparent geocentric longitude reaches 0° Aries at
+ *  20 Mar 2027 20:24:41.72 UT (measured against the shipped ephemeris). verify-event-charts
+ *  bisects the Sun through 0° and requires this within a second. */
+export const EXAMPLE_EVENT_EXACT_UT_MS = Date.UTC(2027, 2, 20, 20, 24, 41, 720);
 
 /** The minute the example is cast for: the ingress rounded UP, so the chart shows the Sun
  *  at 0° Aries rather than at 29°59′ Pisces — the rule every found ingress follows. */
-export const EXAMPLE_EVENT_CHART_UT_MS = Date.UTC(2026, 2, 20, 14, 46);
+export const EXAMPLE_EVENT_CHART_UT_MS = Date.UTC(2027, 2, 20, 20, 25);
 
 /** The example's name and folder: English data, like "Jim Lewis" — a record's name is
  *  the reader's own once it is in their library. The name is also what the finder
  *  suggests for the same ingress ("{sign} Ingress {year}"). */
-export const EXAMPLE_EVENT_NAME = 'Aries Ingress 2026';
+export const EXAMPLE_EVENT_NAME = 'Aries Ingress 2027';
 export const EXAMPLE_EVENT_FOLDER = 'Mundane/Ingresses';
 
 /**
- * The example event chart: Aries Ingress 2026, cast for Greenwich (Salvatore, 2026-10-20).
+ * The example event chart: Aries Ingress 2027, cast for Greenwich (Salvatore, 2026-10-20; the
+ * 2026 ingress until 2026-10-23, when it had passed — a seeded copy of that one keeps its id
+ * and stays the reader's chart).
  *
  * Shaped exactly as the chart form would save it from a found ingress on Automatic:
- * GMT applies (British Summer Time begins on 29 March), so the offset is 0 and the zone
+ * GMT applies (British Summer Time begins on 28 March), so the offset is 0 and the zone
  * is the place's own, detected rather than stated. The place is the one Greenwich every
  * search finds, the bundled atlas's row on the Prime Meridian at exactly 51°29′00″N 0°00′00″
  * (Lina, 23 Oct 2026, G-1), with the label that search gives it.
