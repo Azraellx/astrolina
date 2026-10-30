@@ -654,9 +654,13 @@ function filterParans(
 // Node one — the nodes are antipodes, so SN-on-MC = NN-on-IC, SN-rising = NN-setting, etc.
 // — and would draw the same latitude line and label on top of each other. So we drop the
 // South-Node duplicates (which also removes the degenerate node-to-node parans, since those
-// involve SN), leaving each distinct nodal-axis paran drawn once and labelled by the North
-// Node. With only one node shown there are no duplicates, so nothing is dropped. This is the
-// parans counterpart of the two-tone node-LINE merge (mergeNodePairs).
+// involve SN), leaving each distinct nodal-axis paran drawn once, and flag the North-Node row
+// `pair` so the chip, the hover tip and the card name BOTH readings ("Ma IC × NN As / SN Ds").
+// Labelled by the North Node alone, a South-Node paran was on the map but unfindable under its
+// own name — and the two nodes are read differently, so the hidden reading was the one a reader
+// went looking for (a reader's report, 2026-10-29). With only one node shown there are no
+// duplicates, so nothing is dropped or flagged. This is the parans counterpart of the two-tone
+// node-LINE merge (mergeNodePairs).
 function mergeNodeParans(
   fc: FeatureCollection<LineString, ParanProps>,
   planets: Set<PlanetName>,
@@ -664,10 +668,14 @@ function mergeNodeParans(
   if (!(planets.has('NorthNode') && planets.has('SouthNode'))) return fc;
   return {
     type: 'FeatureCollection',
-    features: fc.features.filter(
-      (f) =>
-        f.properties.planetA !== 'SouthNode' && f.properties.planetB !== 'SouthNode',
-    ),
+    features: fc.features.flatMap((f) => {
+      const { planetA, planetB } = f.properties;
+      if (planetA === 'SouthNode' || planetB === 'SouthNode') return [];
+      if (planetA === 'NorthNode' || planetB === 'NorthNode') {
+        return [{ ...f, properties: { ...f.properties, pair: true } }];
+      }
+      return [f];
+    }),
   };
 }
 function filterLocalSpace(
@@ -4214,16 +4222,27 @@ export default function App() {
   useEffect(() => {
     if (eclipsesMod) return;
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      import('./lib/astro/eclipses').then(
-        (m) => {
-          if (!cancelled) setEclipsesMod((cur) => cur ?? m);
-        },
-        () => {}, // quiet — the on-demand path owns error reporting + retry
-      );
-    }, 3500);
+    let timer = 0;
+    // After the map has drawn, so it doesn't compete with the tiles on a slow link. The cap is for
+    // a map that never reports (no WebGL, no connection for its tiles).
+    const settle = () => {
+      if (timer) return;
+      window.removeEventListener('astro:map-drawn', settle);
+      timer = window.setTimeout(() => {
+        import('./lib/astro/eclipses').then(
+          (m) => {
+            if (!cancelled) setEclipsesMod((cur) => cur ?? m);
+          },
+          () => {}, // quiet — the on-demand path owns error reporting + retry
+        );
+      }, 3500);
+    };
+    window.addEventListener('astro:map-drawn', settle);
+    const cap = window.setTimeout(settle, 15_000);
     return () => {
       cancelled = true;
+      window.removeEventListener('astro:map-drawn', settle);
+      window.clearTimeout(cap);
       window.clearTimeout(timer);
     };
   }, [eclipsesMod]);

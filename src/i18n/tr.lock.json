@@ -1009,6 +1009,7 @@
     "lineMeanings.overlayNote.Tp": { "src": "5210b0ca97ee", "out": "f36f1ce030e6", "st": "reviewed" },
     "lineMeanings.overlayNote.Tr": { "src": "7cbfe325201e", "out": "600de2653e3c", "st": "reviewed" },
     "lineMeanings.paran": { "src": "ed0c7af25b21", "out": "1c0e4ccfcb79", "st": "reviewed" },
+    "lineMeanings.paranNodePair": { "src": "09d1ebb1af4e", "out": "dfe20c3debdd", "st": "reviewed" },
     "lineMeanings.paranTitle": { "src": "45155105de2e", "out": "45155105de2e", "st": "reviewed" },
     "lineMeanings.star": { "src": "364dcff7dcd9", "out": "fb848a9cfcec", "st": "reviewed" },
     "lineMeanings.starThemes.Achernar": { "src": "c8a275872369", "out": "3548239d3f31", "st": "reviewed" },

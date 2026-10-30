@@ -17,6 +17,7 @@ import {
   chartRecency,
   chartTag,
   displayName,
+  isSeedChart,
   type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
@@ -181,6 +182,15 @@ export function ChartManager({
   // opens, but the user is usually tapping an existing name or the "add" button, not searching.
   // Desktop keeps the autofocus — a focused search box there is quick, non-intrusive access.
   const touch = useTouchLayout();
+  // Where the cursor starts: the new chart's name when the caller asks, and by any route while the
+  // library holds nothing of the reader's own (only the examples, or charts shared to them). There
+  // is nothing there to search for yet, and adding their chart is what they came to do. Read once,
+  // as the window opens.
+  const [cursorOnName] = useState(
+    () =>
+      startOnName ||
+      (!initialEditId && !charts.some((c) => !isSeedChart(c) && chartTag(c) !== 'shared')),
+  );
   const id = useIdentity();
   const [query, setQuery] = useState('');
   // Tag filter for the list; 'all' shows everything. Independent of the search box.
@@ -581,7 +591,7 @@ export function ChartManager({
                   setConfirmId(null);
                 }}
                 placeholder={t('chartManager.searchPlaceholder')}
-                autoFocus={!touch && !startOnName}
+                autoFocus={!touch && !cursorOnName}
                 aria-label={t('chartManager.searchLabel')}
               />
               {query && (
@@ -998,7 +1008,7 @@ export function ChartManager({
               key={formKey}
               initial={editing}
               nameSeed={editing ? undefined : seed}
-              autoFocusName={startOnName && formKey === 0 && !editing}
+              autoFocusName={cursorOnName && formKey === 0 && !editing}
               folderOptions={allFolderPaths}
               folderSeed={editing ? undefined : activeFolder}
               submitLabel={editing ? t('chartManager.saveChanges') : t('chartManager.addChart')}

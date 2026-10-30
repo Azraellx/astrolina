@@ -30,6 +30,7 @@ export const lineMeanings = {
   },
   generic: '{theme} Ao longo desta linha, esse tema colore {essence}.',
   nodePair: 'Esta linha é o Nodo Norte em um ângulo e o Nodo Sul no ângulo oposto.',
+  paranNodePair: 'Na leitura a partir do Nodo Sul, este paran é {reading}: o Nodo Sul sempre ocupa o ângulo oposto ao do Nodo Norte.',
   meanings: {
     Sun: {
       MC: 'A identidade e a direção de vida ganham destaque. Reconhecimento, liderança e a visibilidade de quem se é de verdade surgem aqui com naturalidade, e a carreira leva uma marca pessoal, embora sob essa luz pouco fique escondido.',

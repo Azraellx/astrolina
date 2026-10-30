@@ -30,6 +30,7 @@ export const lineMeanings = {
   },
   generic: '{theme} Entlang dieser Linie färbt dieses Thema {essence}.',
   nodePair: 'Diese Linie ist der Nordknoten an der einen Achse und der Südknoten an der gegenüberliegenden.',
+  paranNodePair: 'Vom Südknoten aus gelesen ist dieser Paran {reading}: Der Südknoten steht immer an der Achse gegenüber dem Nordknoten.',
   meanings: {
     Sun: {
       MC: 'Identität und Lebensrichtung treten ins Rampenlicht. Anerkennung, Führung und als die Person gesehen zu werden, die man ist, ergeben sich hier wie von selbst, und die Karriere trägt eine persönliche Handschrift, doch in diesem Licht bleibt wenig verborgen.',

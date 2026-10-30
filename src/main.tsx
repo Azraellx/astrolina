@@ -36,7 +36,7 @@ interface LoadState {
    *  stalled. */
   busy?: boolean
 }
-const w = window as unknown as { __load?: LoadState; __loadTaken?: () => void }
+const w = window as unknown as { __load?: LoadState; __loadTaken?: () => void; __holdsLoadingScreen?: boolean }
 const load: LoadState = w.__load ?? { start: performance.now(), done: false, floor: 0 }
 const bar = document.getElementById('ls-bar')
 const statusEl = document.getElementById('ls-status')
@@ -143,9 +143,13 @@ window.clearTimeout(slowTimer)
 load.busy = false
 load.done = true
 if (bar) bar.style.width = '100%'
-// Let the bar visibly reach 100%, then fade the screen out before mounting.
-if (screen) screen.style.opacity = '0'
-await new Promise((resolve) => setTimeout(resolve, 240))
+// Let the bar visibly reach 100%, then fade the screen out before mounting. Not on a host page
+// that keeps the screen up through the mount itself (Pro's index.html): nothing fades there, so
+// the wait would be a quarter of a second of nothing, on every boot.
+if (!w.__holdsLoadingScreen) {
+  if (screen) screen.style.opacity = '0'
+  await new Promise((resolve) => setTimeout(resolve, 240))
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

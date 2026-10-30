@@ -167,7 +167,7 @@ import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { LINE_TYPE_LABEL, OPPOSITE_ANGLE } from '../../lib/astro/lines';
-import type { PlanetName } from '../../lib/ephemeris';
+import { PLANET_CODES, type PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { MsgKey, TFn } from '../../i18n';
@@ -1596,15 +1596,30 @@ function lineLabelHtml(
   } else if (layerId.startsWith('parans')) {
     const pa = props.planetA as PlanetName;
     const pb = props.planetB as PlanetName;
+    // One side of the row: the body on its angle — and, on a node-pair row (ParanProps.pair, both
+    // nodes shown), the North Node's side goes on to name the South Node on the opposite angle,
+    // "NN As / SN Ds". In short form there, and only there: with the other body's name beside
+    // them, the two nodes' full names ran out of the tip's fixed width (Salvatore, 2026-10-30).
+    // The line card, which has the room, still names them in full.
+    const sideHtml = (p: PlanetName, angle: LineType): string => {
+      const nodes = props.pair && p === 'NorthNode';
+      return (
+        glyphHtml(p, planetInk(p)) +
+        `${nodes ? PLANET_CODES.NorthNode : labels.planet(p)} ${tagHtml(ANGLE_CODE[angle])}` +
+        (nodes
+          ? `<span class="cross-tip-x">/</span>` +
+            glyphHtml('SouthNode', planetInk('SouthNode')) +
+            `${PLANET_CODES.SouthNode} ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[angle]])}`
+          : '')
+      );
+    };
     // The tag leads BOTH bodies, as on the chip: an overlay's paran pairs two of its own.
     row =
       pre +
-      glyphHtml(pa, planetInk(pa)) +
-      `${labels.planet(pa)} ${tagHtml(ANGLE_CODE[props.angleA as LineType])}` +
+      sideHtml(pa, props.angleA as LineType) +
       `<span class="cross-tip-x">×</span>` +
       pre +
-      glyphHtml(pb, planetInk(pb)) +
-      `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
+      sideHtml(pb, props.angleB as LineType);
   } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
     row = t('map.ecliptic');
   } else if (layerId.startsWith('eclipse')) {
@@ -6700,6 +6715,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // still lets you zoom right in for fine placement.
         maxZoom: 22,
         attributionControl: false,
+        // Checked in development; a reader's browser needn't re-check a fixed style on every boot.
+        validateStyle: import.meta.env.DEV,
         // Keep the WebGL back-buffer readable so the Capture tool can draw the
         // map canvas into an export bitmap (getCanvas().drawImage). The cost is a
         // small, one-time GPU memory bump — negligible for this app's frame rate.
@@ -6881,6 +6898,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       computeBadgesRef.current();
       // The internal map ref is live now — let MapOverlayHost subscribe to a real instance.
       if (first) setMapReady(true);
+      // Neutral seam: the chart's own lines are on the map, whatever of the basemap has arrived.
+      // The tiles can take seconds more on a slow link, and the app is usable from here, so a
+      // downstream build lifts its loading screen on this rather than on `astro:map-drawn`.
+      if (first) {
+        const announce = () => {
+          if (mapRef.current !== map) return void map.off('render', announce);
+          if (!map.getSource('acg-lines') || !map.isSourceLoaded('acg-lines')) return;
+          map.off('render', announce);
+          window.dispatchEvent(new Event('astro:lines-drawn'));
+        };
+        map.on('render', announce);
+        map.triggerRepaint();
+      }
       // Offline (or Outline) → draw the bundled world outline beneath the chart lines (the offline
       // style has no basemap of its own). The outline lands async, so re-run the detail toggles
       // after it: a live basemap blank must catch it too. Its colours are read when it lands, and
@@ -7051,6 +7081,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('webglcontextlost', () => setGlStatus('lost'));
     map.on('webglcontextrestored', () => setGlStatus('ok'));
 
+    // Neutral seam: the map has drawn its first full picture. Work that would compete with the
+    // basemap's tiles for a slow connection can wait for this (a downstream build's background
+    // downloads do).
+    map.once('load', () => window.dispatchEvent(new Event('astro:map-drawn')));
     mapRef.current = map;
 
     // Console / automation escape hatch for performance diagnosis (e.g. counting
@@ -7487,10 +7521,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (prev) map.setFeatureState({ source, id: prev.id }, { hover: false, faint: false });
       if (id !== null) map.setFeatureState({ source, id }, { hover: true, faint });
     };
-    const showLine = (hit: { id: string; html: string }, at: maplibregl.LngLat) => {
+    const showLine = (hit: { id: string; html: string; layerId: string }, at: maplibregl.LngLat) => {
       linePopup.setLngLat(at);
       if (hoveredLine !== hit.id) {
         hoveredLine = hit.id;
+        // A paran's row names two bodies and can't wrap, so under the popup's default 240px cap
+        // the longer ones ran out of the box: an overlay's, with its tag on both sides (243px of
+        // text in 220px of room), and longer names in other languages (Меркурий, 225px). It fits
+        // its own text instead. Only parans: a line near a pole carries a sentence that has to
+        // wrap, and they never do (isHorizonLine).
+        linePopup.setMaxWidth(hit.layerId.includes('parans') ? 'none' : '240px');
         linePopup.setHTML(hit.html);
       }
       if (!linePopup.isOpen()) linePopup.addTo(map);
@@ -10063,6 +10103,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ) : (
               <PlanetGlyph planet={planet} size={11} color={paranText} />
             );
+          // A node-pair row (both nodes shown): the North Node's side goes on to name the South
+          // Node on the opposite angle — "☊ As / ☋ Ds" — so the South Node's reading can be found
+          // under its own name, as on a fused node line's chip.
+          const southNodeSide = (nnAngle: ParanBadge['angleA']) => (
+            <>
+              <span className="paran-badge-x" translate="no">/</span>
+              <PlanetGlyph planet="SouthNode" size={11} color={paranText} />
+              <span className="acg-badge-code" translate="no">
+                {ANGLE_CODE[OPPOSITE_ANGLE[nnAngle]]}
+              </span>
+            </>
+          );
           return (
             <TipButton
               type="button"
@@ -10087,10 +10139,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               {side('A', b.planetA)}
               <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleA]}</span>
+              {b.pair && b.planetA === 'NorthNode' && southNodeSide(b.angleA)}
               <span className="paran-badge-x" translate="no">×</span>
               {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
               {side('B', b.planetB)}
               <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleB]}</span>
+              {b.pair && b.planetB === 'NorthNode' && southNodeSide(b.angleB)}
             </TipButton>
           );
         })}

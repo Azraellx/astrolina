@@ -30,6 +30,7 @@ export const lineMeanings = {
   },
   generic: '{theme} Bu çizgi boyunca bu tema şunları renklendirir: {essence}.',
   nodePair: 'Bu çizgi bir köşede Kuzey Ay Düğümü, karşı köşede ise Güney Ay Düğümüdür.',
+  paranNodePair: 'Güney Ay Düğümü’nden bakıldığında bu paran şöyledir: {reading}. Güney Ay Düğümü her zaman Kuzey Ay Düğümü’nün karşısındaki köşede yer alır.',
   meanings: {
     Sun: {
       MC: 'Kimlik ve yaşam yönü spot ışıklarının altına çıkar. Tanınmak, liderlik ve olduğu gibi görülmek burada doğal gelir; kariyer kişisel bir imza taşır, ancak bu ışıkta pek az şey gizli kalır.',

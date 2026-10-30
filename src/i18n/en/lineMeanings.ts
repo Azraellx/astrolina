@@ -46,6 +46,11 @@ export const lineMeanings = {
   generic: '{theme} Along this line that theme colours {essence}.',
   // Extra line on a merged node line: the same geometry is both nodes.
   nodePair: 'This line is the North Node on one angle and the South Node on the opposite one.',
+  // Extra line on a merged node PARAN (both nodes shown): the same latitude read from the South
+  // Node, which always stands on the angle opposite the North Node's. {reading} is a full paran
+  // title built from paranTitle above, e.g. "Mars IC × South Node DSC". Shown under the card's
+  // reading, beside the overlay notes; one sentence.
+  paranNodePair: 'From the South Node, this paran is {reading}: the South Node always holds the angle opposite the North Node.',
 
   // Bespoke body-on-angle readings, every computed body.
   meanings: {

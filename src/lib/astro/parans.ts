@@ -49,6 +49,12 @@ export interface ParanProps {
   /** Overlay/promoted tag (e.g. "Tr"); absent for the natal chart. Shown as the
    *  paran badge's label prefix. */
   tag?: string;
+  /** Set by the node-pair merge (App.mergeNodeParans) while BOTH nodes are shown: this North
+   *  Node row is also the South Node's, on the opposite angle (the nodes are antipodes, so the
+   *  South Node rises as the North Node sets), and the South Node's own row was dropped as its
+   *  duplicate. Every surface that names the row names both readings — the parans' counterpart
+   *  of LineProps.pair. */
+  pair?: boolean;
   /** Fixed-star paran (report-only — never drawn as a map line): the star's
    *  name. The `label` carries the full star × planet pairing; planetA/planetB
    *  both hold the PLANET side so the planet-visibility filter keeps working. */

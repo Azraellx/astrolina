@@ -61,6 +61,9 @@ export interface ParanBadge {
   minorSide?: 'A' | 'B';
   minorColor?: string;
   prefix: string;
+  /** A North Node row standing for the South Node's too (ParanProps.pair, both nodes shown): the
+   *  chip names both, "NN As / SN Ds", the South Node on the opposite angle. */
+  pair?: boolean;
   /** Click-to-fly target: the paran's intersection point. */
   targetLng: number;
   targetLat: number;
@@ -126,7 +129,7 @@ const PARAN_SIDE_GAP = 6;
 // A catalog row's face adds the body and its side: the mark drawn there depends on the body.
 export function paranChipFace(b: ParanBadge): string {
   const minor = b.minorN !== undefined ? `|${b.minorSide}${b.minorN}` : '';
-  return `×|${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}${minor}`;
+  return `×|${b.prefix}|${b.planetA}|${b.angleA}|${b.planetB}|${b.angleB}${minor}${b.pair ? '|pair' : ''}`;
 }
 
 // A paran chip's size before its face has been measured, built like estimateEdgeChip in Map.tsx
@@ -135,12 +138,16 @@ export function paranChipFace(b: ParanBadge): string {
 // ~4.5 per tag letter, 3 px flex gaps. Both codes are two letters on a paran chip (MC, IC, As,
 // Ds — Map.tsx's ANGLE_CODE). A catalog row's mark stands in for one glyph and is up to a pixel
 // wider (the hollow ◇ of a hypothetical point, 12 px; Map.tsx's estimateMinorChip). A tag is
-// drawn TWICE, once before each body (2026-10-06): both bodies are the overlay's.
+// drawn TWICE, once before each body (2026-10-06): both bodies are the overlay's. A node pair
+// adds the South Node's glyph, its two-letter code and a "/" (~6 px with its margins): three
+// items more.
 export function estimateParanChip(b: ParanBadge): BadgeSize {
-  const codeChars = 4;
+  const codeChars = 4 + (b.pair ? 2 : 0);
   const prefixChars = 2 * b.prefix.length;
-  const items = 5 + (b.prefix ? 2 : 0);
-  const w = 12 + 22 + (b.minorN !== undefined ? 1 : 0) + 6 * codeChars + 8 + 4.5 * prefixChars + 3 * (items - 1);
+  const items = 5 + (b.prefix ? 2 : 0) + (b.pair ? 3 : 0);
+  const w =
+    12 + 22 + (b.pair ? 11 : 0) + (b.minorN !== undefined ? 1 : 0) + 6 * codeChars + 8 + (b.pair ? 6 : 0) +
+    4.5 * prefixChars + 3 * (items - 1);
   return { hw: w / 2, hh: 7.5 };
 }
 
@@ -223,6 +230,7 @@ export function placeParanChips(
           ...(minor ? { minorN: p.number, minorSide: p.side, minorColor: p.color } : {}),
           // Tag prefix (overlay or promoted); empty for the natal chart's own parans.
           prefix: p.tag ?? '',
+          ...(!minor && p.pair ? { pair: true } : {}),
           targetLng: p.intersectionLng,
           targetLat: p.latitude,
         },

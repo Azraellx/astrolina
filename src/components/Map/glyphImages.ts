@@ -195,6 +195,8 @@ function rebakeInFont(): void {
 // bake is ~90 canvases read back with getImageData, ~85 ms of a commit measured, while one body's
 // colour moves three images (its glyph, its zenith stamp, its nadir stamp). A colour dragged
 // across the picker is followed at most every REBAKE_MS, the last position always landing.
+// Every canvas here exists to be read back, once, so each asks for willReadFrequently: a
+// GPU-backed canvas pays for that read in a round trip to the GPU, on every boot (2026-10-30).
 //
 // A re-bake asked for while a build is baking (ensureGlyphImages, which may be waiting on the font)
 // is held, not baked: the build is about to replace every sprite with what IT was handed, which may
@@ -270,7 +272,7 @@ function rasterize(
   const canvas = document.createElement('canvas');
   canvas.width = PX;
   canvas.height = PX;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   ctx.font = `${FONT_PX}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
@@ -311,7 +313,7 @@ function rasterizeStarMark(color: string, halo: string): ImageData | null {
   const canvas = document.createElement('canvas');
   canvas.width = STAR_PX;
   canvas.height = STAR_PX;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   const cx = STAR_PX / 2;
   const cy = STAR_PX / 2;
@@ -381,7 +383,7 @@ function rasterizeZenith(
   const canvas = document.createElement('canvas');
   canvas.width = ZENITH_STAMP_PX;
   canvas.height = ZENITH_STAMP_PX;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   const c = ZENITH_STAMP_PX / 2;
   // Disc fill + planet-colour ring, centred on the sprite (i.e. on the point).
@@ -407,7 +409,7 @@ function rasterizeNadir(
   const canvas = document.createElement('canvas');
   canvas.width = ZENITH_STAMP_PX;
   canvas.height = ZENITH_STAMP_PX;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   const c = ZENITH_STAMP_PX / 2;
   const r = NADIR_DIAMOND_R;
@@ -458,7 +460,7 @@ function rasterizeMinorCoin(
   const canvas = document.createElement('canvas');
   canvas.width = ZENITH_STAMP_PX;
   canvas.height = ZENITH_STAMP_PX;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   const c = ZENITH_STAMP_PX / 2;
   ctx.beginPath();

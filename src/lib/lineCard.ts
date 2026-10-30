@@ -26,7 +26,7 @@ import type { PlanetName } from './ephemeris';
 // the funnel the map's labels and badges use, so a card or report never spells the same
 // line two ways. The raw LineType still picks the catalog keys (title, angleEssence).
 // (No new coupling: angleAspects below already brings lines.ts with it.)
-import { LINE_TYPE_LABEL, type LineType } from './astro/lines';
+import { LINE_TYPE_LABEL, OPPOSITE_ANGLE, type LineType } from './astro/lines';
 import { aspectBranchReading, type AspectKind } from './astro/angleAspects';
 import { ASPECT_GLYPHS, MINOR_GLYPHS, PLANET_GLYPHS } from './astro/glyphChars';
 import { isHypotheticalKey, isMinorNumber, minorKeyOf } from './minorBodies/ids';
@@ -480,6 +480,22 @@ export function buildLineCard(
   }
 
   if (layerId.startsWith('parans')) {
+    // A node-pair row (both nodes shown): the same latitude read from the South Node, which is on
+    // the angle opposite the North Node's — named in full, as the title names the North Node's.
+    if (props.pair) {
+      const nnA = props.planetA === 'NorthNode';
+      const swap = (p: unknown, angle: unknown): [string, string] =>
+        p === 'NorthNode'
+          ? [t('planets.SouthNode.name'), angleLabel(OPPOSITE_ANGLE[angle as LineType])]
+          : [t(`planets.${p as PlanetName}.name`), angleLabel(angle)];
+      const [a, angleA] = swap(props.planetA, props.angleA);
+      const [b, angleB] = swap(props.planetB, props.angleB);
+      if (nnA || props.planetB === 'NorthNode') {
+        notes.unshift(
+          t('lineMeanings.paranNodePair', { reading: t('lineMeanings.paranTitle', { a, b, angleA, angleB }) }),
+        );
+      }
+    }
     return card(reading.title, reading.body, [...notes, footer]);
   }
 
