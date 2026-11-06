@@ -30,7 +30,7 @@ export type Messages = Widen<EN>;
 
 // The languages that ship a translated catalog (or will: a code is listed here before its
 // catalog lands, and languages.ts' `available` flag is what opens it to readers).
-export type ShippedLocale = 'en' | 'es' | 'pt' | 'tr' | 'de' | 'ru';
+export type ShippedLocale = 'en' | 'es' | 'pt' | 'tr' | 'de' | 'ru' | 'pl';
 
 // A language translated on the reader's own device from the English catalog — 'mt:fr'.
 // Never shipped, never detected; only ever chosen.

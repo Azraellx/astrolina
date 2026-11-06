@@ -57,7 +57,6 @@ export const MACHINE_CANDIDATES: readonly { lang: string; autonym: string }[] = 
   { lang: 'fr', autonym: 'Français' },
   { lang: 'it', autonym: 'Italiano' },
   { lang: 'nl', autonym: 'Nederlands' },
-  { lang: 'pl', autonym: 'Polski' },
   { lang: 'cs', autonym: 'Čeština' },
   { lang: 'sk', autonym: 'Slovenčina' },
   { lang: 'hu', autonym: 'Magyar' },

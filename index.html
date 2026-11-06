@@ -24,7 +24,7 @@
          either. -->
     <script id="lang-boot">
       (function () {
-        var AVAILABLE = ["en", "es", "pt", "tr", "de", "ru"];
+        var AVAILABLE = ["en", "es", "pt", "tr", "de", "ru", "pl"];
         var DECLARED = {"pt": "pt-BR"};
         var pick = null;
         // Whether this device had used the app before anything after this script runs - an existing
@@ -41,6 +41,9 @@
         } catch (e) {}
         try {
           var stored = localStorage.getItem('astro:locale:v2');
+          // A device-translation choice for a language that now ships its own catalog reads as that
+          // catalog, as readPref() in i18n/runtime.ts derives it (mt:pl, 2026-11-06). Never written.
+          if (stored && stored.indexOf('mt:') === 0 && AVAILABLE.indexOf(stored.slice(3)) >= 0) stored = stored.slice(3);
           if (stored && AVAILABLE.indexOf(stored) >= 0) pick = stored;
         } catch (e) {}
         if (!pick) {

@@ -13,7 +13,7 @@ import { LANGUAGES } from './languages';
 import { coreLocaleLoaders } from './locales';
 import type { LocaleTree, ShippedLocale } from './types';
 
-const SHIPPED: readonly ShippedLocale[] = ['en', 'es', 'pt', 'tr', 'de', 'ru'];
+const SHIPPED: readonly ShippedLocale[] = ['en', 'es', 'pt', 'tr', 'de', 'ru', 'pl'];
 
 export function isShippedLocale(code: string): code is ShippedLocale {
   return (SHIPPED as readonly string[]).includes(code);

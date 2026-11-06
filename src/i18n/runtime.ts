@@ -278,9 +278,18 @@ function effectiveFor(id: LocaleId | null): EffectiveLocale {
   return id && isAvailable(id) ? id : (linkLanguage() ?? detect());
 }
 
+// A stored device-translation choice for a language that has since shipped its own catalog
+// ('mt:pl' once Polish shipped, 2026-11-06) reads as that catalog: the reader chose the
+// language, and the shipped translation is the better one. Derived on every read, never
+// written (CLAUDE.md rule 2): storage keeps 'mt:pl' until the reader picks again. index.html's
+// lang-boot script does the same, so <html lang> agrees before the bundle runs.
 function readPref(): LocaleId | null {
   try {
     const v = localStorage.getItem(LOCALE_KEY);
+    if (v && isMachineLocale(v)) {
+      const shipped = v.slice(3);
+      if ((availableLocales() as readonly string[]).includes(shipped)) return shipped as ShippedLocale;
+    }
     return v && isLocaleId(v) ? v : null;
   } catch {
     return null;

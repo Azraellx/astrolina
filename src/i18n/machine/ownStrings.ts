@@ -33,7 +33,7 @@
 // How they are written, language by language:
 //   - Register: the natural one for software in that language, as the shipped catalogs chose
 //     theirs (German du, Spanish tú; Russian and Turkish formal). Informal where that is the norm —
-//     it (tu), nl (je), pl, hu, fi, da, sv, no, vi (bạn); formal where that is — fr (vous), cs,
+//     it (tu), nl (je), hu, fi, da, sv, no, vi (bạn); formal where that is — fr (vous), cs,
 //     sk, ro, bg, uk, el, hr, id (Anda), hi (आप); polite and pronoun-light in ja, ko, zh, th.
 //   - A placeholder is never inflected (restructure the sentence instead). {language}
 //     is a language's own name — often not this language's word for it, and capitalised as its own
@@ -167,31 +167,6 @@ export const OWN_STRINGS: Record<string, Record<string, string>> = {
     'autoFlip.language-held.title': 'Je gekozen taal staat in de wacht',
     'autoFlip.language-held.body':
       'De taal die je hebt gekozen wordt op dit apparaat vertaald, en dat is hier nu niet mogelijk. Daarom wordt de app in de gebruikelijke taal getoond. Je keuze blijft bewaard en is niet gewist. Ga naar {route} om een andere taal te kiezen.',
-  },
-  pl: {
-    'settings.machine.section': 'Tłumaczone automatycznie',
-    'settings.machine.sectionHint':
-      'Powyższe języki są dostarczane z aplikacją AstroLina. Poniższe języki będą tłumaczone automatycznie na tym urządzeniu.',
-    'settings.machine.hint':
-      'Tłumaczone z angielskiego na tym urządzeniu w miarę korzystania z aplikacji. Niektóre sformułowania mogą być nieprecyzyjne.',
-    'settings.machine.downloadHint':
-      'Tłumaczone z angielskiego na tym urządzeniu. Za pierwszym razem na urządzenie pobierany jest model tłumaczenia.',
-    'settings.machine.partialHint':
-      'Część aplikacji jest jeszcze po angielsku. Wybierz ten język ponownie, aby dokończyć pobieranie tłumaczenia na to urządzenie.',
-    'settings.machine.heldDownloadHint':
-      'Twój wybór, wstrzymany do czasu ponownego pobrania tłumaczenia na to urządzenie. Wybierz ten język, aby rozpocząć pobieranie.',
-    'settings.machine.heldHint':
-      'To urządzenie nie może teraz tłumaczyć na ten język. Twój wybór zostaje zachowany i wróci, gdy będzie to możliwe.',
-    'settings.machine.cacheHint':
-      'Wyświetlane na podstawie tego, co to urządzenie przetłumaczyło wcześniej. Nie może już tu tłumaczyć, więc nowy tekst pozostaje po angielsku.',
-    'settings.machine.downloading': 'Pobieranie języka {language} na to urządzenie… {percent}%',
-    'settings.machine.translating': 'Tłumaczenie na język {language}…',
-    'settings.machine.failed': 'Nie udało się skonfigurować języka {language} na tym urządzeniu.',
-    'settings.machine.disclosure':
-      'Przetłumaczono maszynowo na tym urządzeniu. Niektóre sformułowania mogą być nieprecyzyjne; wszystko, czego jeszcze nie przetłumaczono, jest wyświetlane po angielsku.',
-    'autoFlip.language-held.title': 'Wybrany język jest wstrzymany',
-    'autoFlip.language-held.body':
-      'Wybrany język jest tłumaczony na tym urządzeniu, co nie jest tu teraz możliwe, więc aplikacja jest wyświetlana w swoim zwykłym języku. Twój wybór został zachowany, a nie usunięty. Aby wybrać inny język, przejdź do: {route}.',
   },
   cs: {
     'settings.machine.section': 'Automatický překlad',

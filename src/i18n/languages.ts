@@ -45,6 +45,7 @@ export const LANGUAGES: LanguageOption[] = [
   { code: 'tr', autonym: 'Türkçe', available: true },
   { code: 'de', autonym: 'Deutsch', available: true },
   { code: 'ru', autonym: 'Русский', available: true },
+  { code: 'pl', autonym: 'Polski', available: true },
   // Development only: every catalogued string comes back accented, padded and bracketed
   // (pseudo.ts), so bare English on screen is an uncatalogued string and a clipped bracket
   // is an overflow. A production build never lists it, and a stored 'qps' there is ignored.

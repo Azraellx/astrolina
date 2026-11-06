@@ -10,6 +10,7 @@ import type { LocaleTree, ShippedLocale } from './types';
 export const coreLocaleLoaders: Partial<Record<ShippedLocale, () => Promise<{ default: LocaleTree }>>> = {
   de: () => import('./de'),
   es: () => import('./es'),
+  pl: () => import('./pl'),
   pt: () => import('./pt'),
   ru: () => import('./ru'),
   tr: () => import('./tr'),
