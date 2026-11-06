@@ -171,6 +171,119 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
   }
 }
 
+// ── Borders: one hierarchy on every served map ───────────────────────────────────────────────
+// (2026-11-06; the reasons and the inks are at lib/theme BORDER_COLORS.) Country borders draw
+// darker and heavier, state and province borders lighter, thinner and dashed, and both from the
+// zooms a chart is read at. The served styles disagreed on all of it: whether state lines appear
+// below zoom 5 or 8, how faint they are, and how close the two kinds look.
+//
+// A style's boundary layers are told apart by their FILTER, since each style names its layers its
+// own way: a filter that admits admin_level 2 alone is a country layer. Disputed borders are drawn
+// as countries but keep the style's own dash. Everything else on the boundary source-layer is
+// sub-national. Earth's style puts counties (levels 6 and 8) in that layer too, so those keep half
+// opacity: the emphasis is for states and provinces. Boundaries over water (`maritime`: the
+// offshore limits along a coast, the lines through lakes) are left out on every map, as Bright
+// and Positron already leave them out. Earth's and Dark's styles drew them, which at the new
+// weight put a dark line just off every coast.
+//
+// Called on each live style load, BEFORE applyBasemapPaint. The colour written here becomes the
+// "style's own" that applyBasemapPaint snapshots, so a palette's border colour paints over it
+// and clearing that colour puts these inks back, not the served ones.
+//
+// STRENGTH (2026-11-06, Salvatore: "tone it down a little", and let a reader move it either way
+// in their own theme). The inks in BORDER_COLORS are drawn at full opacity only from ×1.25; at the
+// default (×1) they are laid at 85% over the land and the widths below are 80% of the first pass's,
+// which takes the country borders from about 4.5:1 to 3.4–4.1:1 against the land. The palette's
+// basemap.borderStrength then scales both, written by applyBasemapPaint with the rest of the
+// palette's paint (so an editor's preview moves it live): the opacity in proportion, up to full,
+// and the width more gently, (0.4 + 0.6 × p) of the default, so ×0.25 leaves a hairline and ×3
+// draws country borders 2.2× as wide at full ink. Opacity rather than a mixed colour, so the
+// scaling holds over a palette's own land and border colours too: an opacity over the land IS the
+// mix.
+const SUBNATIONAL_MINZOOM = 2;
+const COUNTRY_WIDTH_STOPS: readonly (readonly [number, number])[] = [
+  [1, 0.65], [3, 1.05], [5, 1.45], [8, 1.9], [12, 2.55],
+];
+const STATE_WIDTH_STOPS: readonly (readonly [number, number])[] = [
+  [2, 0.5], [4, 0.7], [6, 0.95], [10, 1.45],
+];
+/** The ink's opacity at the default strength. */
+const DEFAULT_INK_OPACITY = 0.85;
+const MARITIME = ['==', ['to-number', ['get', 'maritime'], 0], 1];
+
+const widthExpr = (stops: readonly (readonly [number, number])[], k: number) => [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  ...stops.flatMap(([z, w]) => [z, Math.round(w * k * 100) / 100]),
+];
+
+function boundaryKind(l: LayerSpecification): 'country' | 'disputed' | 'state' {
+  if (/disputed/i.test(l.id)) return 'disputed';
+  const f = JSON.stringify((l as { filter?: unknown }).filter ?? null);
+  // ["==",["get","admin_level"],2] (expression) or ["<=","admin_level",2] (legacy filter).
+  return /"admin_level"\]?,2\]/.test(f) ? 'country' : 'state';
+}
+
+/** The served map's boundary line layers, each with its kind. */
+function boundaryLayers(map: MlMap): { id: string; kind: ReturnType<typeof boundaryKind> }[] {
+  let ids: string[];
+  try {
+    ids = map.getLayersOrder();
+  } catch {
+    return [];
+  }
+  const out: { id: string; kind: ReturnType<typeof boundaryKind> }[] = [];
+  for (const id of ids) {
+    const l = map.getLayer(id);
+    if (!l || l.type !== 'line' || l.sourceLayer !== 'boundary') continue;
+    if (!l.source || isChartSource(l.source, map.getSource(l.source)?.type)) continue;
+    out.push({ id, kind: boundaryKind(l.serialize() as LayerSpecification) });
+  }
+  return out;
+}
+
+/**
+ * Width and opacity of the served map's borders at `p` times the default strength (the palette's
+ * basemap.borderStrength). Called by applyBasemapPaint, which leaves the colours to the writes
+ * before it. A map with no boundary source-layer (the Outline style) is left untouched.
+ */
+function applyBorderStrength(map: MlMap, strength: number): void {
+  const p = Math.max(strength, 0);
+  const ink = Math.min(1, DEFAULT_INK_OPACITY * p);
+  const k = 0.4 + 0.6 * p;
+  const countryOpacity = ['case', MARITIME, 0, ink];
+  const stateOpacity = [
+    'case',
+    MARITIME,
+    0,
+    ['<=', ['to-number', ['get', 'admin_level'], 99], 4],
+    ink,
+    Math.round(ink * 50) / 100,
+  ];
+  const countryWidth = widthExpr(COUNTRY_WIDTH_STOPS, k);
+  const stateWidth = widthExpr(STATE_WIDTH_STOPS, k);
+  for (const { id, kind } of boundaryLayers(map)) {
+    const state = kind === 'state';
+    safe(() => map.setPaintProperty(id, 'line-width', state ? stateWidth : countryWidth));
+    safe(() => map.setPaintProperty(id, 'line-opacity', state ? stateOpacity : countryOpacity));
+  }
+}
+
+export function applyBorderWeights(map: MlMap, ink: { country: string; state: string }): void {
+  for (const { id, kind } of boundaryLayers(map)) {
+    if (kind === 'state') {
+      const l = map.getLayer(id);
+      safe(() => map.setLayerZoomRange(id, SUBNATIONAL_MINZOOM, l?.maxzoom ?? 24));
+      safe(() => map.setPaintProperty(id, 'line-color', ink.state));
+    } else {
+      safe(() => map.setPaintProperty(id, 'line-color', ink.country));
+    }
+    // Crisp at every zoom: Dark blurs its borders, which at chart zooms reads as a smudge.
+    safe(() => map.setPaintProperty(id, 'line-blur', 0));
+  }
+}
+
 // ── The palette's paint over the served basemap ──────────────────────────────────────────────
 // MapStyle.basemapPaint: one colour (or setting) per KIND of basemap layer, each null for "the
 // style's own" (2026-10-06). It replaced applyLabelContrast, which painted Dark's place names
@@ -277,5 +390,9 @@ export function applyBasemapPaint(map: MlMap, paint: BasemapPaint): void {
     const fade = LANDCOVER_SOURCE_LAYERS.has(sl) ? LANDCOVER_FADE[type] : undefined;
     if (fade) write(id, fade, paint.landcover === 'flat' ? 0 : null);
   }
+  // The borders' width and opacity (the borders section above). Not through write(): there is no
+  // style's own to put back, since applyBorderWeights replaced it on load, and the default is a
+  // value like any other. (Bound to the palette with the rest of its paint, never alone.)
+  applyBorderStrength(map, paint.borderStrength);
 }
 

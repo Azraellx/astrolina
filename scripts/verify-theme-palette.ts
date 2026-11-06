@@ -348,7 +348,7 @@ const resolve2 = (base: Theme, o: Record<string, TokenValue>) => {
     eq('worldFallback', m.worldFallback, WORLD_FALLBACK_COLORS[t]);
     const lc = LABEL_CONTRAST[t];
     eq('basemapPaint', m.basemapPaint, {
-      water: null, waterway: null, land: null, landcover: 'keep', border: null, road: BASEMAP_ROAD_PAINT[t], building: null,
+      water: null, waterway: null, land: null, landcover: 'keep', border: null, borderStrength: 1, road: BASEMAP_ROAD_PAINT[t], building: null,
       label: lc?.color ?? null, labelHalo: lc?.halo ?? null, labelHaloWidth: lc?.haloWidth ?? null,
     });
     eq('switches', [m.basemap, m.arrows, m.minorBeads, m.starSparks, m.orbStrength, m.lineWeight], [t, true, true, true, 1, 1]);

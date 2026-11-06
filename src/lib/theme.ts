@@ -123,6 +123,27 @@ export const WORLD_FALLBACK_COLORS: Record<ServedMap, { ocean: string; land: str
   dark: { ocean: 'hsl(210, 26%, 15%)', land: 'hsl(210, 12%, 23%)', line: 'hsl(210, 12%, 44%)' },
 };
 
+// Border inks per served map, painted over each style's own boundary lines by basemapStyle's
+// applyBorderWeights (2026-11-06). A reader reported that country borders were faint in every
+// theme and state and province borders visible only in Dark. They were right: each served style
+// set its own rules, and Bright hid state lines below zoom 5, Positron below zoom 8, and Earth's
+// style drew them at half opacity (about 1.5:1). Country borders sat at 1.6–2.3:1 against the land.
+// At full ink these put country borders at about 4.5:1 and state and province borders at about
+// 2.5:1 against each map's land, so the hierarchy reads by weight on every theme. The default
+// strength lays them at 85% (3.4–4.1:1 and about 2.2:1; Salvatore asked the same day for the first
+// pass toned down a little), and a palette's basemap.borderStrength moves them from there, both
+// written by basemapStyle's applyBasemapPaint. Both stay NEUTRAL: a coloured
+// border would read as a chart line, the one thing a basemap line must never do here (the ferry
+// routes are hidden for the same reason). A palette's own border colour (basemap.border) still
+// paints over these.
+export const BORDER_COLORS: Record<ServedMap, { country: string; state: string }> = {
+  vintage: { country: 'hsl(30, 14%, 40%)', state: 'hsl(35, 12%, 56%)' },
+  glass: { country: 'hsl(250, 8%, 46%)', state: 'hsl(250, 6%, 60%)' },
+  positron: { country: 'hsl(0, 0%, 45%)', state: 'hsl(0, 0%, 60%)' },
+  fiord: { country: 'hsl(222, 30%, 82%)', state: 'hsl(222, 20%, 64%)' },
+  dark: { country: 'hsl(0, 0%, 52%)', state: 'hsl(0, 0%, 34%)' },
+};
+
 // A fixed reference view used when eyeballing basemap-theme tweaks; not rendered
 // at runtime.
 export const THEME_REFERENCE_VIEW = { name: 'Hartsmere', lat: 54.0091, lng: -2.4417 } as const;

@@ -279,6 +279,9 @@ export interface MapStyle {
     /** 'flat': hide landcover/landuse/park fills so a set land colour reads as one flat sheet. */
     readonly landcover: 'keep' | 'flat';
     readonly border: string | null;
+    /** How strongly the borders draw, as a multiple of the default hierarchy (1 = 100%):
+     *  components/Map/basemapStyle applyBorderStrength. */
+    readonly borderStrength: number;
     readonly road: string | null;
     readonly building: string | null;
     /** Place-name text (the `place` source-layer); Dark's LABEL_CONTRAST is its built-in. */
@@ -1497,6 +1500,19 @@ add({
   derive: (_get, c) => (c.own('map.land') ? 'flat' : 'keep'),
 });
 add({ id: 'basemap.border', kind: 'color?', group: 'mapSurface', tier: 'detail', builtin: () => null });
+// How strongly the served map's borders draw, as a multiple of the default hierarchy
+// (components/Map/basemapStyle applyBorderStrength; lib/theme BORDER_COLORS says why there is one),
+// 2026-11-06. A palette's, so a reader who wants bolder or fainter borders sets it in their own theme
+// and it travels with the theme: its share code, its synced copy. Relative to the default, so a later
+// retune of the inks keeps every theme's "bolder" or "fainter". 0.25–3 (25–300%), on a 0.25 step.
+add({
+  id: 'basemap.borderStrength',
+  kind: 'number',
+  group: 'mapSurface',
+  tier: 'detail',
+  range: { min: 0.25, max: 3, step: 0.25 },
+  builtin: () => 1,
+});
 // Roads: the style's own, but on Glass's map (Bright) a quiet warm grey since 2026-10-08 — lib/theme
 // BASEMAP_ROAD_PAINT says why. Follows the map CHOSEN, not mapTableOf: that reads Glass's tables for
 // Positron, and Positron keeps its own roads. (Outline has none to paint.)
@@ -2424,6 +2440,7 @@ function mapBodyOf(base: Theme, v: Values): MapBody {
       land: N('basemap.land'),
       landcover: v['basemap.landcover'] === 'flat' ? 'flat' : 'keep',
       border: N('basemap.border'),
+      borderStrength: typeof v['basemap.borderStrength'] === 'number' ? (v['basemap.borderStrength'] as number) : 1,
       road: N('basemap.road'),
       building: N('basemap.building'),
       label: N('basemap.label'),

@@ -54,7 +54,7 @@ import {
 } from '../../lib/astro/geodeticGrid';
 import { geoAnglesParts, geoAnglesText, type GeoAnglePart } from '../../lib/astro/geoReadoutText';
 import { canonicalLng, fmtLatDM, fmtLngDM } from '../../lib/coordFormat';
-import { BASEMAP_STYLE_URLS, type Theme } from '../../lib/theme';
+import { BASEMAP_STYLE_URLS, BORDER_COLORS, type Theme } from '../../lib/theme';
 import { builtinPalette, planetInk, type BasemapChoice, type MapStyle } from '../../lib/themePalette';
 import { spriteSpecFor, type SpriteSpec } from '../../lib/lineInks';
 import { PROJECTION_SPEC, type MapProjectionMode } from '../../lib/projection';
@@ -81,6 +81,7 @@ import {
 } from './glyphImages';
 import {
   applyBasemapPaint,
+  applyBorderWeights,
   applyDetailToggles,
   forgetBasemapPaint,
   isChartSource,
@@ -6866,7 +6867,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // style's layers are new, so nothing an earlier style was painted with carries over. The
       // offline / Outline style is the app's own, painted from worldFallback instead.
       forgetBasemapPaint(map);
-      if (kind === 'live') applyBasemapPaint(map, style.basemapPaint);
+      if (kind === 'live' && basemap !== 'outline') {
+        // One border hierarchy on every served map, written first so the palette's border
+        // colour (applyBasemapPaint) paints over it and puts it back when cleared.
+        applyBorderWeights(map, BORDER_COLORS[basemap]);
+        applyBasemapPaint(map, style.basemapPaint);
+      }
       paintedSurfaceRef.current = { basemapPaint: style.basemapPaint, worldFallback: style.worldFallback };
       // Every value the palette decides — the grid's one neutral colour among them — is bound
       // into the layers here: the one path every style lands on (first load, theme change,

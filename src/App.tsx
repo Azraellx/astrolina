@@ -2843,6 +2843,25 @@ export default function App() {
     return () => window.removeEventListener('astro:open-my-charts', onOpenMyCharts);
   }, []);
 
+  // Neutral seam: open the chart sidebar, the full wheel. It does what the top bar's sidebar
+  // button and the B key do, under the same condition: a chart, or the sky alone. It opens and
+  // never closes. A downstream build's onboarding dispatches
+  // `window.dispatchEvent(new Event('astro:open-chart-sidebar'))` once a new reader's first chart
+  // is in: readers reported not knowing the sidebar existed, so they thought their chart had no
+  // wheel (2026-11-06). Nothing is persisted. wheelExpanded lasts one page life, as the button's
+  // does.
+  const canExpandRef = useRef(false);
+  useEffect(() => {
+    canExpandRef.current = !!current || skyAlone;
+  }, [current, skyAlone]);
+  useEffect(() => {
+    const onOpenChartSidebar = () => {
+      if (canExpandRef.current) setWheelExpanded(true);
+    };
+    window.addEventListener('astro:open-chart-sidebar', onOpenChartSidebar);
+    return () => window.removeEventListener('astro:open-chart-sidebar', onOpenChartSidebar);
+  }, []);
+
   // Every setter below that can move the line system ON SCREEN calls this with what it is
   // about to become, before it changes anything: skyHeldRef learns now, for a gate later in
   // the same gesture (Help's setAdvancedMode → openView), and Slide — which can't spin a map
