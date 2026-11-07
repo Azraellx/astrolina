@@ -2267,6 +2267,10 @@ export interface MapHandle {
     lng: number,
     zoom?: number,
     duration?: number,
+    /** Land the point this fraction of the map's height below its centre (0 or omitted: on
+     *  it), to keep it clear of something drawn over the upper map (the onboarding's natal
+     *  hop, under the map guide). */
+    below?: number,
   ) => { lat: number; lng: number } | null;
   /** Fly to the stashed "go back" view, swapping it for the current one — so the
    *  same control toggles between the two locations (two-deep back/forward).
@@ -2321,11 +2325,13 @@ function flyWithSidebarOffset(
   // Optional flight time (ms). Omitted → MapLibre's default flyTo curve. A small value gives a
   // near-instant hop (the transparent-export toggle wants that; the normal fly stays leisurely).
   duration?: number,
+  // Pixels below the canvas centre to leave the target (teleportTo's `below`).
+  offsetY = 0,
 ) {
   map.flyTo({
     center: [lng, lat],
     zoom,
-    offset: [sidebarOffsetX(leftInset), 0],
+    offset: [sidebarOffsetX(leftInset), offsetY],
     essential: true,
     ...(duration !== undefined ? { duration } : {}),
   });
@@ -4421,12 +4427,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         .wrap();
       return { lat: p.lat, lng: p.lng };
     },
-    teleportTo: (lat: number, lng: number, zoom?: number, duration?: number) => {
+    teleportTo: (lat: number, lng: number, zoom?: number, duration?: number, below?: number) => {
       const map = mapRef.current;
       if (!map) return null;
       // Remember where we are so "Go back" can return here.
       teleportBackRef.current = snapshotView(map);
-      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current, duration);
+      const offsetY = below ? map.getContainer().clientHeight * below : 0;
+      flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4), leftInsetRef.current, duration, offsetY);
       // [lng, lat] -> {lat, lng}: the pre-jump centre "Go back" now targets.
       const c = teleportBackRef.current.center;
       return { lat: c[1], lng: c[0] };

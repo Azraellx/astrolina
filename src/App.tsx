@@ -741,6 +741,11 @@ export { SEED_CHART_ID_PREFIX };
 // tier is not known this early; a reader at that rung adds it from the empty Events list in one click.
 const seedCharts: StoredChart[] = seedLibrary(true, Date.now());
 
+/** The camera's zoom for the `astro:show-natal-pin` hop: regional, under CLOSE_ZOOM (see there). */
+const NATAL_HOP_ZOOM = 7;
+/** …and how far below the map's centre it leaves the pin, as a fraction of its height. */
+const NATAL_HOP_BELOW = 0.25;
+
 export default function App() {
   // `locale`, `pref` and `machineHold` are for the language-held notice alone (its effect, beside
   // the language-detected one, says why). (2026-10-10)
@@ -3732,8 +3737,10 @@ export default function App() {
       // transparent-export re-frame (a framing gesture, not a destination) —
       // exactly as they were.
       mark?: { label?: string } | null,
+      // Land the point this fraction of the map's height below centre (Map's teleportTo).
+      below?: number,
     ) => {
-      const target = mapRef.current?.teleportTo(lat, lng, zoom, duration);
+      const target = mapRef.current?.teleportTo(lat, lng, zoom, duration, below);
       if (target) {
         setLocationReturn('back');
         setTeleportTarget(target);
@@ -6854,6 +6861,40 @@ export default function App() {
       recordMission('place-natal');
     }
   }, [surfaceMissions, pinned, current, onPinNatal, recordMission]);
+  // Neutral seam: show the reader their natal pin. It does what a right-click with no pin does
+  // (drops the natal pin, ticks that mission, surfaces the map-click guide: "How to place a pin"),
+  // whatever pin is placed, then hops the camera there as the Teleport window does, so Location's
+  // Back returns to where the reader was. At a regional zoom (NATAL_HOP_ZOOM), under the detail
+  // threshold (CLOSE_ZOOM): at or past it the zoom guide surfaces with `replace` (the
+  // zoom-threshold effect below) and would take the place of the pin guide this means to show.
+  // Regional also keeps the chart's lines around the birthplace in view. The pin lands a quarter of
+  // the map's height below centre (NATAL_HOP_BELOW): the guide opens over the upper map, at a
+  // quarter of the window's height (MissionGuide topRightHome), and centred the pin sat under it. A downstream build's
+  // onboarding dispatches `window.dispatchEvent(new Event('astro:show-natal-pin'))` after a new
+  // reader's first chart is in (2026-11-06). Nothing is persisted beyond what those gestures
+  // persist themselves (the mission's progress).
+  const showNatalPinRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    showNatalPinRef.current = () => {
+      if (!current) return;
+      surfaceMissions();
+      onPinNatal();
+      recordMission('place-natal');
+      teleportToPoint(
+        current.birthplace.lat,
+        current.birthplace.lng,
+        NATAL_HOP_ZOOM,
+        undefined,
+        null,
+        NATAL_HOP_BELOW,
+      );
+    };
+  }, [current, surfaceMissions, onPinNatal, recordMission, teleportToPoint]);
+  useEffect(() => {
+    const onShowNatalPin = () => showNatalPinRef.current();
+    window.addEventListener('astro:show-natal-pin', onShowNatalPin);
+    return () => window.removeEventListener('astro:show-natal-pin', onShowNatalPin);
+  }, []);
   // Stable so the measure effect (which depends on it) isn't torn down on every
   // re-render during a drag. Right-click cancel also clears the measure mission.
   const stopMeasure = useCallback(() => {
