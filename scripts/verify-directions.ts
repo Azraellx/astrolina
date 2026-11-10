@@ -9,10 +9,13 @@
 // and primary-direction arcs and frames, transit framing, synastry framing, and
 // the Davison midpoints. Each assertion pins either a textbook identity (the
 // day-for-a-year ratio, solar-arc-in-longitude's directed MC = natal MC + arc, the
-// bi-wheel's RAMC+arc directed angles) or a deliberate design equivalence (primary
-// directions' MAP lines as a rigid rotation ≡ advancing the RAMC), so any future
-// change of convention has to be made knowingly.
+// RAMC+arc directed angles of the solar-arc and progressed bi-wheels, the classical
+// arcs of direction) or a deliberate design equivalence (primary directions are the
+// natal sky on a frame advanced by the arc, so every line family the map draws from
+// that layer is the natal one carried west by the arc — and the layer has no wheel
+// of its own), so any future change of convention has to be made knowingly.
 import { createRequire } from 'node:module';
+import type { FeatureCollection, LineString } from 'geojson';
 import {
   birthDataToJD,
   directedAngles,
@@ -21,15 +24,18 @@ import {
   gmstRadians,
   initEphemeris,
   obliquity,
+  projectOntoEcliptic,
   raDecToEclipticLon,
   eclipticLonOfRA,
   eclipticToRaDec,
   relocate,
+  trueMidnightsAround,
 } from '../src/lib/ephemeris';
 import type { HouseSystem } from '../src/lib/ephemeris';
 import {
   buildOverlay,
   buildSkyOverlay,
+  CHARTLESS_OVERLAYS,
   epochMsToJD,
   jdToEpochMs,
   NO_CHART_BLOCKED_OVERLAYS,
@@ -41,11 +47,12 @@ import {
   TIME_UNKNOWN_BLOCKED_OVERLAYS,
   TIMELESS_GEODETIC_OVERLAYS,
 } from '../src/lib/astro/timeline';
-import type { AngleProgression, OverlayKind, OverlayLayer } from '../src/lib/astro/timeline';
+import type { AngleProgression, OverlayKind, OverlayLayer, PrimaryRate } from '../src/lib/astro/timeline';
 import { RANGE_BODIES, isRanged, overlayBirthDateMotion } from '../src/lib/astro/timeless';
 import type { PlanetPosition } from '../src/lib/ephemeris';
 import { buildDavison } from '../src/lib/astro/relationship';
-import { generateLines, type MeridianLng } from '../src/lib/astro/lines';
+import { generateEcliptic, generateLines, meridianLngFor } from '../src/lib/astro/lines';
+import { generateStarLines, starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
 import type { StoredChart } from '../src/lib/chartLibrary';
 import type { TFn } from '../src/i18n';
@@ -321,60 +328,344 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
 }
 
 // ── 3. Primary directions ─────────────────────────────────────────────────────
+// The layer is THE NATAL SKY ON AN ADVANCED FRAME (2026-11-10): the bodies keep their natal
+// places and the frame turns, gmst = natal RAMC + arc. So the arc is read off the frame,
+// `layer.gmst − natal gmst`, and every family the map draws from the layer is the natal family
+// carried WEST by exactly the arc. (Until then the bodies were moved by −arc in RA against the
+// natal frame. That drew the same In Mundo body lines and nothing else the same: In Zodiaco
+// projected the moved body, and the stars and the ecliptic line stayed where they were.)
+//
+// Four parts, and they are not the same KIND of check (§8's header draws the line):
+//  (a) the arc of every time-key. Internal for the fixed keys. For the two Solar Daily Motion
+//      keys the day of birth is found here a SECOND way — bisection on the Sun's hour angle,
+//      the Sun read straight from Swiss — and the layer's rate must be the Sun's travel over it;
+//  (b) the layer's shape. Internal;
+//  (c) the map. TWO PARTS AGREE: the lines built from the layer the way the app's overlay frame
+//      builds them, against the natal lines built in the natal frame and moved west by the arc;
+//  (d) the classical arcs. An INTERNAL IDENTITY: the arc at which the layer's own drawn line
+//      reaches the birthplace is the textbook arc of direction. The closed forms are restated
+//      here, so (d) passes on a wrong ephemeris; what it pins is that the line the map draws
+//      IS the classical direction, in both projections. Its three figures to two decimals are
+//      pinned beside it, so a change of convention has to be made knowingly.
 {
-  const pd = buildOverlay(CHART, 'primary-directions', target, null, 'mean', 'mean-quotidian', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
-  // Ptolemy key: 1°/yr — extract the applied RA arc from the shifted Sun.
-  const arc = normalizeAngle(natal[0].ra - pd.positions[0].ra); // bodies move −arc
-  check('Ptolemy key: arc = 1°/yr × years', Math.abs(arc * RAD2DEG - years) < 1e-9, `${(arc * RAD2DEG).toFixed(6)}° at ${years.toFixed(4)} yr`);
-
-  // MAP EQUIVALENCE (the design claim in timeline.ts): bodies−arc against the
-  // natal RAMC draws the same lines as natal bodies against RAMC+arc.
-  const mlA: MeridianLng = (ra) => ((ra - pd.gmst) * 180) / Math.PI;
-  const mlB: MeridianLng = (ra) => ((ra - (pd.gmst + arc)) * 180) / Math.PI;
-  const linesA = generateLines(pd.positions.slice(0, 3), mlA);
-  const linesB = generateLines(natal.slice(0, 3), mlB);
-  let worst = 0;
-  for (let i = 0; i < linesA.features.length; i++) {
-    const ca = linesA.features[i].geometry.coordinates as [number, number][];
-    const cb = linesB.features[i].geometry.coordinates as [number, number][];
-    if (ca.length !== cb.length) { worst = Infinity; break; }
-    for (let k = 0; k < ca.length; k++) {
-      // Fold the longitude delta to the true circular distance (a raw %360 of a
-      // near-360 seam-wrap delta would read ~360, not ~0).
-      const dLng = Math.abs(ca[k][0] - cb[k][0]) % 360;
-      worst = Math.max(worst, Math.min(dLng, 360 - dLng), Math.abs(ca[k][1] - cb[k][1]));
-    }
-  }
-  check('primary directions: rigid rotation ≡ advancing the RAMC (map lines)', worst < 1e-9, `max vertex Δ ${worst.toExponential(2)}°`);
-
-  // The bi-wheel's directed angles now use the classical RAMC + arc (Q5/Q6): the directed
-  // MC matches the independent closed-form eclipticLonOfRA(RAMC + arc) — a different code
-  // path than relocate — and advances FORWARD (~1°/yr), not the old rigid −arc rotation
-  // that crept backward through the zodiac.
-  const natalAngles = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus');
-  const dir = directedAngles(natalAngles, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus', pd.angleArc, pd.angleFrame);
-  const classicalMc = eclipticLonOfRA(natalGmst + CHART.birthplace.lng * DEG2RAD + arc, eps);
-  check('primary: bi-wheel angle frame is forward RAMC + arc', pd.angleFrame === 'ramc' && Math.abs((pd.angleArc ?? 0) - arc) < 1e-12);
-  check('primary: directed MC = closed-form RAMC + arc', dAng(dir.mc, classicalMc) < 1e-9, `Δ ${(dAng(dir.mc, classicalMc) * RAD2DEG / ARCSEC).toFixed(3)}″`);
-  // Forward through the zodiac (the textbook "MC advances ~1°/yr"), not frozen / backward.
-  check('primary: directed MC advances forward of natal', normalizeAngle(dir.mc - natalAngles.mc) > 0);
-  const fmtZ = (lon: number) => {
-    const d = ((lon * RAD2DEG) % 360 + 360) % 360;
-    const SIGNS = ['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis'];
-    return `${Math.floor(d % 30)}°${String(Math.floor(((d % 30) % 1) * 60)).padStart(2, '0')}′ ${SIGNS[Math.floor(d / 30)]}`;
+  const PD = 'primary-directions' as const;
+  const pdOf = (rate: PrimaryRate, user = 1, at = target, chart: StoredChart = CHART) =>
+    buildOverlay(chart, PD, at, null, 'mean', 'mean-quotidian', rate, user, 'relative-to-natal', 'secondary', t)!;
+  // The applied arc, degrees, read off the layer's own frame.
+  const arcOf = (layer: OverlayLayer, baseGmst = natalGmst) => normalizeAngle(layer.gmst - baseGmst) * RAD2DEG;
+  const wrapDeg = (d: number) => normalizeAngle(d * DEG2RAD) * RAD2DEG;
+  // The Sun straight from Swiss, degrees: a second read beside the app's sampling layer.
+  const FLAG = node.CalculationFlag.SwissEphemeris | node.CalculationFlag.Speed;
+  const FLAG_EQ = FLAG | node.CalculationFlag.Equatorial;
+  const sunEq = (jd: number) => {
+    const s = node.calculatePosition(jd, node.Planet.Sun, FLAG_EQ);
+    return { ra: s.longitude as number, dec: s.latitude as number };
   };
-  console.log(`  [convention table] age 30, Ptolemy key, ${CHART.name} @ birthplace:`);
-  console.log(`    natal MC          ${fmtZ(natalAngles.mc)}`);
-  console.log(`    app directed MC   ${fmtZ(dir.mc)}   (RAMC + arc → advances ~1°/yr)`);
-  console.log(`    classical dir. MC ${fmtZ(classicalMc)}   (independent closed form)`);
+  const sunLonDeg = (jd: number) => node.calculatePosition(jd, node.Planet.Sun, FLAG).longitude as number;
+  const utc = (jd: number) => new Date(jdToEpochMs(jd)).toISOString().replace('T', ' ').replace('Z', ' UT');
 
-  // Rate keys scale the arc as documented.
-  const naibod = buildOverlay(CHART, 'primary-directions', target, null, 'mean', 'mean-quotidian', 'naibod', 1, 'relative-to-natal', 'secondary', t)!;
-  const arcN = normalizeAngle(natal[0].ra - naibod.positions[0].ra);
-  check('Naibod key: 0.985647°/yr', Math.abs(arcN * RAD2DEG - 0.985647 * years) < 1e-9);
-  const user2 = buildOverlay(CHART, 'primary-directions', target, null, 'mean', 'mean-quotidian', 'user', 2, 'relative-to-natal', 'secondary', t)!;
-  const arcU = normalizeAngle(natal[0].ra - user2.positions[0].ra);
-  check('user key 2°/yr honored', Math.abs(arcU * RAD2DEG - 2 * years) < 1e-9);
+  // ── (a) The arc of every time-key ───────────────────────────────────────────
+  // A Record over PrimaryRate, so a key added to the type has to be given its arc here.
+  const sunRaTravel = wrapDeg(sunEq(birthJD + years).ra - sunEq(birthJD).ra);
+  const FIXED: Record<Exclude<PrimaryRate, 'kepler-ra' | 'solar-long'>, { label: string; layer: OverlayLayer; want: number }> = {
+    ptolemy: { label: 'Ptolemy key: arc = 1°/yr × years', layer: pdOf('ptolemy'), want: years },
+    naibod: { label: 'Naibod key: 0.985647°/yr', layer: pdOf('naibod'), want: 0.985647 * years },
+    cardan: { label: 'Cardan key: 0.986667°/yr', layer: pdOf('cardan'), want: 0.986667 * years },
+    user: { label: 'user key 2°/yr honored', layer: pdOf('user', 2), want: 2 * years },
+    'placidus-ra': {
+      label: 'Placidus key: the secondary-progressed Sun\'s travel in RA (birth → birth + one day per year)',
+      layer: pdOf('placidus-ra'), want: sunRaTravel,
+    },
+  };
+  for (const { label, layer, want } of Object.values(FIXED)) {
+    const got = arcOf(layer);
+    check(label, Math.abs(got - want) < 1e-9, `${got.toFixed(6)}° at ${years.toFixed(4)} yr, Δ ${(got - want).toExponential(2)}°`);
+  }
+  check('the keys really differ at age 30 (else one arc would satisfy them all)',
+    new Set(Object.values(FIXED).map((f) => arcOf(f.layer).toFixed(4))).size === Object.keys(FIXED).length,
+    Object.entries(FIXED).map(([k, f]) => `${k} ${arcOf(f.layer).toFixed(4)}°`).join(', '));
+
+  // The two Solar Daily Motion keys: the Sun's travel over the DAY OF BIRTH, the day running
+  // between the two true midnights (the Sun's lower culminations) that bound the birth moment
+  // at the birthplace. Found here independently of the app's solver: the Sun's hour angle at the
+  // place, less π, wrapped, rises through zero once a day; step back from the birth moment by the
+  // fraction of a turn it shows, bracket, bisect.
+  const dayOfBirth = (jd: number, lngDeg: number) => {
+    const g = (at: number) => normalizeAngle(gmstRadians(at) + lngDeg * DEG2RAD - sunEq(at).ra * DEG2RAD - Math.PI);
+    const root = (guess: number) => {
+      let lo = guess - 0.02;
+      let hi = guess + 0.02;
+      if (!(g(lo) < 0 && g(hi) > 0)) return NaN;
+      for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (g(mid) < 0) lo = mid; else hi = mid;
+      }
+      return (lo + hi) / 2;
+    };
+    const since = ((g(jd) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI); // turns since the last one
+    const before = root(jd - since);
+    const after = root(before + 1);
+    return {
+      before, after,
+      ra: wrapDeg(sunEq(after).ra - sunEq(before).ra),
+      lon: wrapDeg(sunLonDeg(after) - sunLonDeg(before)),
+    };
+  };
+  // The hour angle of the Sun as the APP reads it (its own sampling layer, not this suite's).
+  const appHourAngle = (jd: number, lngDeg: number) => {
+    const sun = getPlanetPositions(jd, 'mean').find((p) => p.name === 'Sun')!;
+    return gmstRadians(jd) + lngDeg * DEG2RAD - sun.ra;
+  };
+  const sunAlt = (jd: number, latDeg: number, lngDeg: number) => {
+    const s = sunEq(jd);
+    const H = gmstRadians(jd) + lngDeg * DEG2RAD - s.ra * DEG2RAD;
+    const phi = latDeg * DEG2RAD;
+    const dec = s.dec * DEG2RAD;
+    return Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H)) * RAD2DEG;
+  };
+  const { lat: bLat, lng: bLng } = CHART.birthplace;
+  const day = dayOfBirth(birthJD, bLng);
+  const offPi = Math.max(
+    Math.abs(normalizeAngle(appHourAngle(day.before, bLng) - Math.PI)),
+    Math.abs(normalizeAngle(appHourAngle(day.after, bLng) - Math.PI)),
+  );
+  check('day of birth: two true midnights bracket the birth moment, a day apart, the Sun\'s hour angle π at each',
+    day.before < birthJD && birthJD < day.after &&
+      day.after - day.before > 0.99 && day.after - day.before < 1.01 && offPi < 1e-6,
+    `${utc(day.before)} → ${utc(day.after)} (${(day.after - day.before).toFixed(6)} d), hour angle off π by ${offPi.toExponential(2)} rad`);
+  // A second reading of "midnight" that owes nothing to the hour angle's zero: the Sun is under
+  // the horizon there and lower than ten minutes either side.
+  const TEN_MIN = 10 / 1440;
+  check('day of birth: at each midnight the Sun is below the horizon and at its lowest',
+    [day.before, day.after].every((m) => {
+      const a = sunAlt(m, bLat, bLng);
+      return a < 0 && a < sunAlt(m - TEN_MIN, bLat, bLng) && a < sunAlt(m + TEN_MIN, bLat, bLng);
+    }),
+    `altitude ${sunAlt(day.before, bLat, bLng).toFixed(3)}° and ${sunAlt(day.after, bLat, bLng).toFixed(3)}°`);
+  const appDay = trueMidnightsAround(birthJD, bLng);
+  const dSec = Math.max(Math.abs(appDay.before - day.before), Math.abs(appDay.after - day.after)) * 86400;
+  check('day of birth: the app\'s two midnights are the bisected ones (within 0.01 s)', dSec < 0.01, `max Δ ${dSec.toExponential(2)} s`);
+  const keplerRate = arcOf(pdOf('kepler-ra')) / years;
+  const solarLongRate = arcOf(pdOf('solar-long')) / years;
+  check('Solar Daily Motion in RA: the rate is the Sun\'s RA travel between the two true midnights',
+    Math.abs(keplerRate - day.ra) < 1e-7, `${keplerRate.toFixed(7)}°/yr vs ${day.ra.toFixed(7)}° over the day, Δ ${(keplerRate - day.ra).toExponential(2)}°`);
+  check('Solar Daily Motion in longitude: the rate is the Sun\'s longitude travel between the same two',
+    Math.abs(solarLongRate - day.lon) < 1e-7, `${solarLongRate.toFixed(7)}°/yr vs ${day.lon.toFixed(7)}° over the day, Δ ${(solarLongRate - day.lon).toExponential(2)}°`);
+  check('the two solar keys are two rates (RA and longitude travel differ over the day)',
+    Math.abs(keplerRate - solarLongRate) > 1e-3, `RA ${keplerRate.toFixed(5)}°, longitude ${solarLongRate.toFixed(5)}°`);
+  // The day is the BIRTHPLACE's. Move the place a third of the way round the Earth with the
+  // birth moment held: other midnights bound the moment, the rates move with them, and both
+  // parts must follow. A rate read at the birth instant, or at Greenwich, fails this.
+  {
+    const FAR: StoredChart = { ...CHART, birthplace: { ...CHART.birthplace, lng: bLng + 120 } };
+    const farDay = dayOfBirth(birthJD, bLng + 120);
+    const farRa = arcOf(pdOf('kepler-ra', 1, target, FAR)) / years;
+    const farLon = arcOf(pdOf('solar-long', 1, target, FAR)) / years;
+    check('the day of birth is the birthplace\'s: moved 120° east, other midnights bound the same moment and both rates follow',
+      birthDataToJD(FAR) === birthJD && farDay.before < birthJD && birthJD < farDay.after &&
+        Math.abs(farDay.before - day.before) > 0.3 &&
+        Math.abs(farRa - farDay.ra) < 1e-7 && Math.abs(farLon - farDay.lon) < 1e-7 &&
+        Math.abs(farRa - keplerRate) > 1e-6 && Math.abs(farLon - solarLongRate) > 1e-6,
+      `${utc(farDay.before)} → ${utc(farDay.after)}: RA ${farRa.toFixed(7)}° (was ${keplerRate.toFixed(7)}°), longitude ${farLon.toFixed(7)}° (was ${solarLongRate.toFixed(7)}°)`);
+  }
+
+  // ── (b) The layer is the natal sky on an advanced frame ─────────────────────
+  const pd = FIXED.ptolemy.layer;
+  const arcDeg = arcOf(pd);
+  const TEN = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
+  const isNatal = (layer: OverlayLayer) =>
+    layer.positions.length === natal.length &&
+    layer.positions.every((p, i) => p.name === natal[i].name && p.ra === natal[i].ra && p.dec === natal[i].dec);
+  check('primary: every body stands at its natal RA and declination, exactly, under every key',
+    natal.length >= TEN.length && TEN.every((n) => pd.positions.some((p) => p.name === n)) &&
+      [...Object.values(FIXED).map((f) => f.layer), pdOf('kepler-ra'), pdOf('solar-long')].every(isNatal),
+    `${pd.positions.length} bodies`);
+  check('primary: the layer is read at the birth moment, and its catalog bodies are sampled there',
+    pd.jd === birthJD && pd.bodyRule.by === 'sample' && pd.bodyRule.jd === birthJD,
+    `bodyRule ${JSON.stringify(pd.bodyRule)}`);
+  check('primary: no directed angles ride the layer (no angleArc, no angleFrame)',
+    pd.angleArc === undefined && pd.angleFrame === undefined);
+  // What is left of "the directed MC advances": the frame's RAMC does, by the arc.
+  check('primary: the frame advances — its RAMC is the natal one plus the arc, forward',
+    arcDeg > 0 && Math.abs(arcDeg - years) < 1e-9, `+${arcDeg.toFixed(4)}° at age ${years.toFixed(1)}`);
+  const pd0 = pdOf('ptolemy', 1, jdToEpochMs(birthJD));
+  check('primary at age 0: the natal sky on the natal frame', isNatal(pd0) && dAng(pd0.gmst, natalGmst) < 1e-12);
+  // The set that tells the wheel side "no chart of its own" against the builder, which knows
+  // nothing of the set: build every mode at age 30, and the layers whose bodies are the natal
+  // bodies unmoved are the ones with no second set of positions to show.
+  {
+    const unmoved = OVERLAY_MODES.filter((m) => {
+      const layer = buildOverlay(CHART, m, target, PARTNER, 'mean', 'mean-quotidian', 'ptolemy', 1, 'relative-to-natal',
+        m === 'tertiary-progressed' ? 'tertiary' : 'secondary', t);
+      return !!layer && isNatal(layer);
+    });
+    check('the chartless set is exactly the modes whose layer carries the natal bodies unmoved',
+      OVERLAY_MODES.length > unmoved.length && unmoved.length === CHARTLESS_OVERLAYS.size &&
+        unmoved.every((m) => CHARTLESS_OVERLAYS.has(m)) && CHARTLESS_OVERLAYS.has(PD),
+      `unmoved: ${unmoved.join(', ') || 'none'} of ${OVERLAY_MODES.length}`);
+  }
+
+  // ── (c) The map: every family is the natal one, the arc west ────────────────
+  // The natal side in the natal frame; the layer's side as the app's overlay frame builds it —
+  // the layer's own positions, instant and gmst through the same meridian mapping.
+  const mlNatal = meridianLngFor('celestial', eps, natalGmst);
+  const mlLayer = meridianLngFor('celestial', obliquity(pd.jd), pd.gmst);
+  const circ = (d: number) => {
+    const m = Math.abs(d) % 360; // the true circular distance (a seam-wrap reads ~360 raw)
+    return Math.min(m, 360 - m);
+  };
+  type Lines = FeatureCollection<LineString>;
+  // Vertex by vertex: natal longitude − arc against the layer's, latitude against latitude.
+  // `moved` is the least distance any vertex actually travelled, so a pair of identical
+  // collections (an arc that reached neither side) cannot pass; `n` fails an empty set.
+  const carried = (natalFc: Lines, layerFc: Lines) => {
+    const bad = { n: 0, vertices: 0, worst: Infinity, moved: 0 };
+    if (natalFc.features.length !== layerFc.features.length) return bad;
+    let worst = 0;
+    let moved = Infinity;
+    let vertices = 0;
+    for (let i = 0; i < natalFc.features.length; i++) {
+      const a = natalFc.features[i].geometry.coordinates;
+      const b = layerFc.features[i].geometry.coordinates;
+      if (a.length !== b.length) return bad;
+      if (JSON.stringify(natalFc.features[i].properties) !== JSON.stringify(layerFc.features[i].properties)) return bad;
+      for (let k = 0; k < a.length; k++) {
+        worst = Math.max(worst, circ(a[k][0] - arcDeg - b[k][0]), Math.abs(a[k][1] - b[k][1]));
+        moved = Math.min(moved, circ(a[k][0] - b[k][0]));
+        vertices++;
+      }
+    }
+    return { n: natalFc.features.length, vertices, worst, moved };
+  };
+  const report = (label: string, r: ReturnType<typeof carried>, minFeatures: number) =>
+    check(label, r.n >= minFeatures && r.vertices > 0 && r.worst < 1e-9 && Math.abs(r.moved - arcDeg) < 1e-9,
+      `${r.n} lines, ${r.vertices} vertices, max vertex Δ ${r.worst.toExponential(2)}°, every vertex moved ${r.moved.toFixed(6)}°`);
+
+  const mundoNatal = generateLines(natal, mlNatal);
+  const mundoLayer = generateLines(pd.positions, mlLayer);
+  const planetsDrawn = new Set(mundoLayer.features.map((f) => f.properties.planet as string));
+  check('primary map: all ten planets are drawn from the layer', TEN.every((n) => planetsDrawn.has(n)), `${planetsDrawn.size} bodies`);
+  // Four angle lines a body at least (plus the Vertex-axis runs).
+  report('primary map, In Mundo: every body line is the natal line, the arc west', carried(mundoNatal, mundoLayer), TEN.length * 4);
+
+  const zodNatalPos = projectOntoEcliptic(natal, birthJD);
+  const zodLayer = generateLines(projectOntoEcliptic(pd.positions, pd.jd), mlLayer);
+  report('primary map, In Zodiaco: the natal degree\'s lines, the arc west (project the natal body, then turn)',
+    carried(generateLines(zodNatalPos, mlNatal), zodLayer), TEN.length * 4);
+  // The two projections have to be two things on this chart, or the In Zodiaco row above is the
+  // In Mundo row again; and the retired construction — move the body in RA, THEN project — is
+  // pinned as the thing that must not come back, by how far its meridian lines stood off.
+  {
+    const mcLng = (fc: Lines) =>
+      new Map(fc.features.filter((f) => f.properties?.lineType === 'MC')
+        .map((f) => [f.properties!.planet as string, f.geometry.coordinates[0][0]]));
+    const apart = (a: Map<string, number>, b: Map<string, number>) => {
+      let worst = 0;
+      let who = 'none';
+      for (const n of TEN) {
+        const d = circ((a.get(n) ?? NaN) - (b.get(n) ?? NaN));
+        if (!(d <= worst)) { worst = d; who = n; }
+      }
+      return { worst, who };
+    };
+    const proj = apart(mcLng(mundoLayer), mcLng(zodLayer));
+    check('primary map: In Mundo and In Zodiaco are different lines on this chart', proj.worst > 0.5,
+      `MC lines up to ${proj.worst.toFixed(2)}° apart (${proj.who})`);
+    const arcRad = arcDeg * DEG2RAD;
+    const retired = generateLines(
+      projectOntoEcliptic(natal.map((p) => ({ ...p, ra: p.ra - arcRad })), birthJD), mlNatal);
+    const old = apart(mcLng(retired), mcLng(zodLayer));
+    check('primary map, In Zodiaco: the retired construction (move the body, then project) is not what is drawn',
+      old.worst > 0.5, `its MC lines stood up to ${old.worst.toFixed(2)}° off (${old.who})`);
+  }
+
+  const starsNatal = generateStarLines(starsOfDate(birthJD, 'all'), mlNatal, null, '#fff');
+  const starsLayer = generateStarLines(starsOfDate(pd.jd, 'all'), mlLayer, null, '#fff');
+  report('primary map: every fixed-star line is the natal one, the arc west', carried(starsNatal, starsLayer), 20);
+  report('primary map: the ecliptic line is the natal one, the arc west',
+    carried(generateEcliptic(birthJD, mlNatal), generateEcliptic(pd.jd, mlLayer)), 1);
+
+  // ── (d) The classical arcs, off the drawn line (an internal identity) ───────
+  // A second chart: 7 September 1937, 10:58 CST, Saint Louis, True Node. For each direction the
+  // arc is FOUND on the map — the layer rebuilt under the Ptolemy key at the date whose arc is
+  // the trial value, its line generated as in (c), bisected until the line stands on the
+  // birthplace — and then read off that layer's own frame. It must be the textbook arc:
+  //   the Sun to the Midheaven         α☉ − RAMC
+  //   Mars to the Ascendant, In Mundo   α − SA − RAMC, SA = acos(−tan φ · tan δ)
+  //   the same, In Zodiaco              as above for the point (λ♂, β = 0)
+  // A drawn horizon line is a run of vertices, so its longitude AT the birthplace's latitude is
+  // read by polynomial interpolation through the six vertices nearest it (the vertices lie on
+  // the curve exactly, about a degree apart; a straight chord between two would be ~0.002° out).
+  {
+    const dms = (d: number, m: number, s: number) => d + m / 60 + s / 3600;
+    const DAVIS = stored({
+      name: 'Martin Davis',
+      year: 1937, month: 9, day: 7, hour: 10, minute: 58, tzOffset: -6,
+      birthplace: { label: 'Saint Louis', lat: dms(38, 37, 31), lng: -dms(90, 11, 24) },
+    });
+    const dJD = birthDataToJD(DAVIS);
+    const dGmst = gmstRadians(dJD);
+    const dEps = obliquity(dJD);
+    const dNatal = getPlanetPositions(dJD, 'true');
+    const phi = DAVIS.birthplace.lat * DEG2RAD;
+    const ramc = dGmst + DAVIS.birthplace.lng * DEG2RAD;
+    const layerAt = (arc: number) =>
+      buildOverlay(DAVIS, PD, jdToEpochMs(dJD + arc * TROPICAL_YEAR_DAYS), null, 'true', 'mean-quotidian', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+    const lngAtLat = (coords: number[][], lat: number) => {
+      const near = [...coords].sort((a, b) => Math.abs(a[1] - lat) - Math.abs(b[1] - lat)).slice(0, 6);
+      const x = near.map((c) => c[1]);
+      const p = near.map((c) => c[0]);
+      for (let m = 1; m < x.length; m++) { // Neville
+        for (let i = 0; i < x.length - m; i++) {
+          p[i] = ((lat - x[i + m]) * p[i] + (x[i] - lat) * p[i + 1]) / (x[i] - x[i + m]);
+        }
+      }
+      return p[0];
+    };
+    // The longitude where a body's line of one type stands at the birthplace's latitude, drawn
+    // from the layer as the app draws it in the given projection.
+    const lineLng = (layer: OverlayLayer, body: string, type: 'MC' | 'ASC', zodiaco: boolean) => {
+      const pos = (zodiaco ? projectOntoEcliptic(layer.positions, layer.jd) : layer.positions).filter((p) => p.name === body);
+      const f = generateLines(pos, meridianLngFor('celestial', obliquity(layer.jd), layer.gmst))
+        .features.find((x) => x.properties.lineType === type);
+      if (!f || f.geometry.coordinates.length < 6) return NaN;
+      return type === 'MC' ? f.geometry.coordinates[0][0] : lngAtLat(f.geometry.coordinates, DAVIS.birthplace.lat);
+    };
+    const arcToBirthplace = (body: string, type: 'MC' | 'ASC', zodiaco: boolean) => {
+      const off = (arc: number) => wrapDeg(lineLng(layerAt(arc), body, type, zodiaco) - DAVIS.birthplace.lng);
+      let lo = 0;
+      let hi = 90;
+      if (!(off(lo) > 0 && off(hi) < 0)) return NaN; // the line starts east of the place and is carried west past it
+      for (let i = 0; i < 50; i++) {
+        const mid = (lo + hi) / 2;
+        if (off(mid) > 0) lo = mid; else hi = mid;
+      }
+      const at = layerAt((lo + hi) / 2);
+      return Math.abs(off((lo + hi) / 2)) < 1e-9 ? arcOf(at, dGmst) : NaN;
+    };
+    const turn = (rad: number) => ((rad * RAD2DEG) % 360 + 360) % 360;
+    const dSun = dNatal.find((p) => p.name === 'Sun')!;
+    const dMars = dNatal.find((p) => p.name === 'Mars')!;
+    const semiArc = (dec: number) => Math.acos(-Math.tan(phi) * Math.tan(dec));
+    // Mars' degree straight from Swiss (not through the app's RA/dec → longitude route).
+    const marsLon = (node.calculatePosition(dJD, node.Planet.Mars, FLAG).longitude as number) * DEG2RAD;
+    const marsZod = eclipticToRaDec(marsLon, 0, dEps);
+    const CASES = [
+      { label: 'the Sun to the Midheaven: α☉ − RAMC', got: arcToBirthplace('Sun', 'MC', false),
+        want: turn(dSun.ra - ramc), printed: 15.19 },
+      { label: 'Mars to the Ascendant, In Mundo: α − SA − RAMC', got: arcToBirthplace('Mars', 'ASC', false),
+        want: turn(dMars.ra - semiArc(dMars.dec) - ramc), printed: 35.58 },
+      { label: 'Mars to the Ascendant, In Zodiaco: the same for (λ♂, β = 0)', got: arcToBirthplace('Mars', 'ASC', true),
+        want: turn(marsZod.ra - semiArc(marsZod.dec) - ramc), printed: 33.25 },
+    ];
+    for (const c of CASES) {
+      check(`classical arc off the drawn line — ${c.label}`, Math.abs(c.got - c.want) < 1e-6,
+        `line reaches the birthplace at ${c.got.toFixed(5)}°, closed form ${c.want.toFixed(5)}°, Δ ${(c.got - c.want).toExponential(2)}°`);
+      check(`…and it is ${c.printed.toFixed(2)}° (±0.005)`, Math.abs(c.got - c.printed) <= 0.005, `${c.got.toFixed(5)}°`);
+    }
+    check('the two projections give Mars two different arcs (the In Zodiaco row is not the In Mundo row again)',
+      Math.abs(CASES[1].got - CASES[2].got) > 1, `${(CASES[1].got - CASES[2].got).toFixed(2)}° apart`);
+  }
 }
 
 // ── 4. Transit frames ─────────────────────────────────────────────────────────

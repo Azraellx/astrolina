@@ -48,7 +48,7 @@ export const settings = {
   shiftTag: 'Umschalt',
   natal: {
     title: 'Radix',
-    hint: 'Das zugrunde liegende Geburtshoroskop. Ausgeblendet tritt das Overlay an seine Stelle und übernimmt Linien, Horoskopzeichnung und Anzeigen des Horoskops.',
+    hint: 'Das zugrunde liegende Geburtshoroskop. Ausgeblendet übernimmt das Overlay dessen Linien und, sofern es ein eigenes Horoskop hat, Horoskopzeichnung und Anzeigen.',
   },
   languageUnavailable: 'Demnächst verfügbar.',
   languageNotice: {
@@ -347,7 +347,7 @@ export const settings = {
     },
     control: {
       tip: 'Der Zeitschlüssel der Primärdirektionen',
-      hint: 'Primärdirektionen bilden die tägliche Drehung nach: Die Achsen des Horoskops werden weitergedreht, während die Himmelskörper ihre Radixpositionen am Himmel behalten. Der Zeitschlüssel gibt an, wie viel Bogen pro Lebensjahr hinzukommt. Die Schulen unterscheiden sich, und die Unterschiede sind real: Im Laufe eines Lebens liegen Ptolemäus und Naibod mehr als ein Jahr auseinander.',
+      hint: 'Primärdirektionen folgen der Primärbewegung: der täglichen Drehung des Himmels, die die Himmelskörper in den Stunden nach der Geburt zu Horizont und Meridian trägt. Der Zeitschlüssel legt fest, wie viel dieser Drehung einem Lebensjahr entspricht. Die Schulen unterscheiden sich: Im Laufe eines Lebens liegen Ptolemäus und Naibod mehr als ein Jahr auseinander.',
     },
   },
   positioning: {

@@ -48,7 +48,7 @@ export const settings = {
   shiftTag: 'Shift',
   natal: {
     title: 'Carta natal',
-    hint: 'La carta natal de base. Ocúltala y la capa ocupa su lugar: asume las líneas, la rueda y los datos de la carta.',
+    hint: 'La carta natal de base. Ocúltala y la capa asume sus líneas y, si la capa tiene una carta propia, la rueda y los datos.',
   },
   languageUnavailable: 'Próximamente.',
   languageNotice: {
@@ -347,7 +347,7 @@ export const settings = {
     },
     control: {
       tip: 'La clave de las direcciones primarias',
-      hint: 'Las direcciones primarias modelan la rotación diaria: los ángulos de la carta avanzan mientras los cuerpos mantienen sus lugares natales en el cielo. La tasa es la clave: cuánto arco se acumula por año de vida. Las escuelas difieren, y la diferencia es real: a lo largo de una vida, Ptolomeo y Naibod se separan más de un año.',
+      hint: 'Las direcciones primarias siguen el movimiento primario: la rotación diaria del cielo, que lleva los cuerpos al horizonte y al meridiano en las horas posteriores al nacimiento. La clave fija cuánto de esa rotación representa un año de vida. Las escuelas difieren: a lo largo de una vida, Ptolomeo y Naibod se separan en más de un año.',
     },
   },
   positioning: {

@@ -182,7 +182,7 @@ export interface PlanetPosition {
   /** Ecliptic longitude motion, degrees/day (negative = retrograde) — carried only
    *  by positions SAMPLED from the sky, which is what makes its absence meaningful.
    *
-   *  A directed chart (solar arc, primary directions) advances every body by one
+   *  A directed chart (solar arc) advances every body by one
    *  shared arc, so its bodies have no daily motion of their own: the two shift
    *  helpers above build fresh positions without this field, and every readout of
    *  it then prints an em-dash rather than quoting the birth sky's rate as though
@@ -694,26 +694,66 @@ export function shiftMinorRightAscension(p: DirectedMinor, deltaRaRad: number): 
   return { n: p.n, ...shiftRaCoords(p, deltaRaRad) };
 }
 
-// The Sun's instantaneous daily motion in ECLIPTIC LONGITUDE (degrees/day) straight
-// from Swiss — the "Natal Solar Rate in Longitude" primary-direction key. Sun is
-// index 0 of PLANET_NAMES.
-export function solarDailyMotionLong(
-  jd: number,
-  nodeType: NodeType = 'mean',
-): number {
-  return getEclipticPositions(jd, nodeType)[0].speed ?? 0;
+// The two true midnights that bound the DAY OF BIRTH at a place: the Sun's lower
+// culminations (anti-culminations) before and after `jd`, at geographic longitude `lngDeg`
+// (east-positive). Apparent sidereal time against the Sun's apparent right ascension, so
+// these are true midnights, not civil or mean ones. Newton on the hour angle, the Sun
+// resampled each step; converges to well under a second in three or four steps.
+export function trueMidnightsAround(jd: number, lngDeg: number): { before: number; after: number } {
+  const lng = (lngDeg * Math.PI) / 180;
+  // Sidereal time gained per day, radians: one turn and the day's 3m56s.
+  const rate = TWO_PI * 1.00273790935;
+  const wrap = (x: number) => {
+    let v = x % TWO_PI;
+    if (v > Math.PI) v -= TWO_PI;
+    if (v <= -Math.PI) v += TWO_PI;
+    return v;
+  };
+  const solve = (guess: number) => {
+    let t = guess;
+    for (let i = 0; i < 12; i++) {
+      const ra = getPlanetPositions(t)[0].ra;
+      const step = wrap(Math.PI - wrap(gmstRadians(t) + lng - ra)) / rate;
+      t += step;
+      if (Math.abs(step) < 1e-9) break;
+    }
+    return t;
+  };
+  const near = solve(jd);
+  return near <= jd
+    ? { before: near, after: solve(near + 1) }
+    : { before: solve(near - 1), after: near };
 }
 
-// The Sun's instantaneous daily motion in RIGHT ASCENSION (degrees/day) — the
-// Kepler ("Natal Solar Rate in RA") key. Swiss has no RA-speed field, so take a
-// centered finite difference over ±0.5 day, unwrapping the 0/2π seam.
-export function solarDailyMotionRA(jd: number): number {
-  const ra0 = getPlanetPositions(jd - 0.5)[0].ra;
-  const ra1 = getPlanetPositions(jd + 0.5)[0].ra;
-  let d = ra1 - ra0;
+// The two "Solar Daily Motion" primary-direction keys: the Sun's true motion over the DAY
+// OF BIRTH, the day being the interval between the two true midnights that bound the birth
+// moment at the birthplace (trueMidnightsAround). Degrees over that day, used as degrees
+// per year of life. In right ascension this is the key attributed to Brahe and commonly
+// called Kepler's; in ecliptic longitude it is a modern key with no classical author, and
+// its arc is still applied in right ascension. Sun is index 0 of PLANET_NAMES.
+//
+// Until 2026-11-10 these read the Sun's instantaneous speed at the birth moment (longitude)
+// and a ±12 h finite difference centred on it (RA): neither is the day of birth. The
+// difference is small — 0.0002°/yr on the fixture, about a minute of arc by age 90.
+export function solarDailyMotionLong(
+  jd: number,
+  lngDeg: number,
+  nodeType: NodeType = 'mean',
+): number {
+  const { before, after } = trueMidnightsAround(jd, lngDeg);
+  let d =
+    getEclipticPositions(after, nodeType)[0].lon - getEclipticPositions(before, nodeType)[0].lon;
   if (d > Math.PI) d -= TWO_PI;
   if (d < -Math.PI) d += TWO_PI;
-  return (d * 180) / Math.PI; // over a 1-day baseline → degrees/day
+  return (d * 180) / Math.PI;
+}
+
+export function solarDailyMotionRA(jd: number, lngDeg: number): number {
+  const { before, after } = trueMidnightsAround(jd, lngDeg);
+  let d = getPlanetPositions(after)[0].ra - getPlanetPositions(before)[0].ra;
+  if (d > Math.PI) d -= TWO_PI;
+  if (d < -Math.PI) d += TWO_PI;
+  return (d * 180) / Math.PI;
 }
 
 // Which convention the astrocartography lines use:

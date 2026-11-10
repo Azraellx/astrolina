@@ -197,6 +197,15 @@ export const NO_CHART_BLOCKED_OVERLAYS = new Set<OverlayMode>([
 // geodetic, and the stored choice is kept for Celestial.
 export const SKY_HELD_OVERLAYS = new Set<OverlayMode>(['primary-directions']);
 
+// Overlay modes with NO CHART of their own (Lina, 10 Nov 2026). Primary Directions keep the
+// bodies at their natal places and carry them to the angles by the sky's rotation: the map
+// shows where, and there is no second set of positions or angles to draw. So the wheel side
+// of the app — the bi-wheel's outer ring, the Dual layout's second wheel, the wheel that
+// stands in when the Natal Chart is hidden, the overlay's tables and lists, the capture
+// card — sees no overlay under one of these and stays natal, with the reason stated
+// (`expandedSidebar.overlayNoChart`). The map and the dated lists are untouched by this set.
+export const CHARTLESS_OVERLAYS = new Set<OverlayMode>(['primary-directions']);
+
 /** WHICH block bars a mode, or null if none does. A menu that greys a row out owes the
  *  reader the reason — and the reasons are different things, not one blanket
  *  "unavailable": the first three are facts about the CHART, 'no-chart' is the absence
@@ -379,8 +388,8 @@ const TROPICAL_MONTH_DAYS = 27.321582;
 //  - 'transit-moment': the standard Jim Lewis transit astrocartography — the
 //    transiting planets angular at the transit instant itself, driven by that
 //    moment's sidereal time (the diurnal/primary placement; lines sweep ~15°/hour).
-// (Solar Arc and Primary Directions are already natal-RAMC framed; Progressed has
-// its own angle-progression setting.)
+// (Solar Arc is already natal-RAMC framed, Primary Directions turns the natal frame by
+// its own arc, and Progressed has its own angle-progression setting.)
 export type TransitFrame = 'relative-to-natal' | 'transit-moment';
 
 // Mean solar motion keys (degrees/year of life), per their classical definitions.
@@ -466,13 +475,14 @@ export interface OverlayLayer {
    *  its own epoch's ayanamsa instead of the layer's `jd`; absent for the
    *  single-instant overlays. */
   bodyJd?: Partial<Record<PlanetName, number>>;
-  /** Directed-overlay angle inference. Solar-arc / primary-directions / progressed have no
+  /** Directed-overlay angle inference. Solar-arc / progressed have no
    *  relocatable "second moment": their bi-wheel angle marks are the NATAL angles advanced
    *  by the directional arc. `angleArc` is that arc (radians); `angleFrame` is how it
    *  advances the angles — 'long' adds it to each angle's ecliptic longitude (solar-arc-in-
    *  longitude); 'ramc' advances the RAMC by the arc and re-derives MC/ASC (the classical
    *  meridian operation — see ephemeris.directedAngles). Absent for transits / synastry,
-   *  whose overlay angles come straight from relocate() at the target moment. */
+   *  whose overlay angles come straight from relocate() at the target moment, and for
+   *  primary directions, which has no chart of its own to mark (CHARTLESS_OVERLAYS). */
   angleArc?: number;
   angleFrame?: 'long' | 'ramc';
   /** The moment whose relocated angles seed the bi-wheel's overlay ring (defaults to
@@ -492,11 +502,12 @@ export interface OverlayLayer {
  * follow. Four, because every overlay mode reduces to one of them:
  *  - `sample`: the sky at one instant — transits and eclipses (the target), the
  *    progressed overlays (their progressed instant), synastry (the partner's moment),
- *    and Cyclo's transiting side (the target);
+ *    Cyclo's transiting side (the target), and primary directions (the BIRTH moment:
+ *    the natal sky itself, which the layer's advanced frame turns);
  *  - `shift-long`: the birth sky directed by one arc in ecliptic longitude, at `eps`
  *    (solar arc and Naibod in longitude);
  *  - `shift-ra`: the birth sky directed by one arc in right ascension (solar arc and
- *    Naibod in RA; primary directions, whose bodies move by −arc — see buildOverlay);
+ *    Naibod in RA);
  *  - `composite`: a composite partner's midpoints.
  * `baseJd` is the birth moment the directed rules shift FROM.
  */
@@ -644,6 +655,9 @@ export function directedBase(chart: StoredChart, nodeType: NodeType) {
     );
   return {
     birthJD, eps, natal, natalGMST, natalSun,
+    // The birthplace's longitude, degrees east: the meridian the day of birth is measured
+    // at (the Solar Daily Motion keys' true midnights — primaryArcPlan).
+    birthLngDeg: chart.birthplace.lng,
     yearsAt, progressedJDAt, arcLongAt, arcRAAt, ramcOfLong,
     arcsAtProgressedJD, naibodArcTo,
   };
@@ -716,9 +730,12 @@ export function primaryArcPlan(
     case 'cardan':
       return { degPerYear: CARDAN_DEG_PER_YR, trueArcRA: false };
     case 'kepler-ra':
-      return { degPerYear: solarDailyMotionRA(base.birthJD), trueArcRA: false };
+      return { degPerYear: solarDailyMotionRA(base.birthJD, base.birthLngDeg), trueArcRA: false };
     case 'solar-long':
-      return { degPerYear: solarDailyMotionLong(base.birthJD, nodeType), trueArcRA: false };
+      return {
+        degPerYear: solarDailyMotionLong(base.birthJD, base.birthLngDeg, nodeType),
+        trueArcRA: false,
+      };
     case 'placidus-ra':
       return { degPerYear: 1.1, trueArcRA: true };
     case 'user':
@@ -905,13 +922,21 @@ export function buildOverlay(
     }
     case 'primary-directions': {
       const c = directionContext(chart, targetDate, nodeType);
-      // Primary directions rotate the chart rigidly by the arc. We direct the bodies
-      // in RA (−arc, declination unchanged) against the natal frame: this draws the
-      // SAME swept lines as advancing the RAMC by +arc would (the hour angle is
-      // unchanged), and ALSO gives the bi-wheel real directed positions — advancing
-      // only the frame left `positions` = natal, so the overlay ring mirrored the
-      // natal one. The rate is the time-key (arc per year); positive arc directs
-      // forward.
+      // Primary directions follow the primary motion: the natal sky turned by the arc. The
+      // bodies keep their natal places and the FRAME advances — gmst = natal + arc — so
+      // every family the map draws from this layer is the natal one carried west by the
+      // arc, by construction: the body lines in both projections (In Zodiaco projects the
+      // NATAL body, then the frame turns it — the zero-latitude degree carried by the arc),
+      // the fixed stars, the ecliptic line, zenith points, aspect and midpoint lines, and
+      // the catalog bodies. The rate is the time-key (arc per year); a positive arc
+      // directs forward.
+      //
+      // Until 2026-11-10 this moved the BODIES by −arc in RA against the natal frame, to
+      // give a bi-wheel ring of directed positions. In Mundo that drew the same body lines,
+      // but In Zodiaco it projected the moved body (not the classical construction), the
+      // stars and the ecliptic stayed put, and the ring ran against its own angles. The
+      // technique has no chart of its own (CHARTLESS_OVERLAYS): nothing reads these
+      // positions as a wheel.
       const arc = primaryArcAt(
         c,
         primaryArcPlan(primaryRate, userPrimaryRate, c, nodeType),
@@ -924,17 +949,13 @@ export function buildOverlay(
         measure: `${arcDeg}°`,
         labelFull: t('timeline.labelFull.primary-directions', { deg: arcDeg }),
         jd: c.birthJD,
-        positions: c.natal.map((p) => shiftRightAscension(p, -arc)),
-        gmst: c.natalGMST,
-        // The bodies ride a rigid −arc RA rotation (drawing the same map lines as RAMC+arc
-        // would); the bi-wheel angle marks instead advance FORWARD via RAMC + arc — an angle
-        // is fixed by the RAMC, so the directed MC advances ~1°/yr (see directedAngles).
-        angleArc: arc,
-        angleFrame: 'ramc',
+        positions: c.natal,
+        gmst: c.natalGMST + arc,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
-        // The bodies' own direction, −arc — not the angles' +arc above.
-        bodyRule: { by: 'shift-ra', baseJd: c.birthJD, arc: -arc },
+        // The birth sky, sampled as it stands: a catalog body is turned by the frame, like
+        // a planet, and never by a second shift of its own.
+        bodyRule: { by: 'sample', jd: c.birthJD },
       };
     }
     case 'cyclo': {

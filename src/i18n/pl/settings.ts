@@ -48,7 +48,7 @@ export const settings = {
   shiftTag: 'Shift',
   natal: {
     title: 'Horoskop urodzeniowy',
-    hint: 'Podstawowy horoskop urodzeniowy. Po jego ukryciu zastępuje go nakładka — przejmuje linie, koło i odczyty horoskopu.',
+    hint: 'Podstawowy horoskop urodzeniowy. Po jego ukryciu nakładka przejmuje jego linie oraz — jeśli ma własny horoskop — koło i odczyty.',
   },
   languageUnavailable: 'Wkrótce.',
   languageNotice: {
@@ -347,7 +347,7 @@ export const settings = {
     },
     control: {
       tip: 'Klucz czasu dyrekcji prymarnych',
-      hint: 'Dyrekcje prymarne odtwarzają dobowy obrót: kąty horoskopu są przesuwane naprzód, a ciała zachowują urodzeniowe miejsca na niebie. Tempo to klucz czasu — ile łuku przypada na rok życia. Szkoły się różnią, a rozpiętość jest realna: w ciągu życia Ptolemeusz i Naibod rozchodzą się o ponad rok.',
+      hint: 'Dyrekcje prymarne podążają za ruchem pierwotnym: dobowym obrotem nieba, który w godzinach po urodzeniu niesie ciała do horyzontu i południka. Klucz czasu określa, jaka część tego obrotu przypada na jeden rok życia. Szkoły się różnią: w ciągu życia Ptolemeusz i Naibod rozchodzą się o ponad rok.',
     },
   },
   positioning: {

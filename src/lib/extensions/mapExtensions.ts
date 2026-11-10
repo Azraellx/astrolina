@@ -256,9 +256,10 @@ export interface MapExtensionContext {
    *  they are instead of only that they are off. A number is more use than a warning.
    *
    *  Only meaningful where the frame itself moves: the progressed overlays under
-   *  'progressed', and Transits under 'transit-moment'. Solar Arc and Primary Directions
-   *  hold the natal RAMC and move the BODIES instead, so this reads 0 there — which is
-   *  correct, and is why their lists never part company with the map. */
+   *  'progressed', and Transits under 'transit-moment'. Solar Arc holds the natal RAMC and
+   *  moves the BODIES instead, so this reads 0 there. Primary Directions turn the frame by
+   *  the arc, but that turn is the technique itself, which a dated list computes too, so
+   *  it reads 0 there by name — and neither list ever parts company with the map. */
   frameOffsetDeg: number;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
    *  extension drawing its own day/night treatment can follow the same switch. EFFECTIVE:

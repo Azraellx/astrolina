@@ -48,7 +48,7 @@ export const settings = {
   shiftTag: 'Shift',
   natal: {
     title: 'Natal harita',
-    hint: 'Alttaki doğum haritası. Gizlediğinizde katman onun yerine geçer — haritanın çizgilerini, çarkını ve göstergelerini devralır.',
+    hint: 'Alttaki doğum haritası. Gizlediğinizde katman onun çizgilerini, katmanın kendi haritası varsa çarkı ve göstergeleri devralır.',
   },
   languageUnavailable: 'Yakında.',
   languageNotice: {
@@ -347,7 +347,7 @@ export const settings = {
     },
     control: {
       tip: 'Primer direksiyonların zaman anahtarı',
-      hint: 'Primer direksiyonlar günlük dönüşü modeller: gök cisimleri gökyüzündeki natal yerlerini korurken haritanın köşeleri ileri taşınır. Oran, zaman anahtarıdır — yaşamın her yılında ne kadar yay biriktiği. Ekoller ayrışır ve fark gerçektir: bir ömür boyunca Ptolemy ile Naibod arasındaki fark bir yılı aşar.',
+      hint: 'Primer direksiyonlar birincil hareketi izler: gökyüzünün günlük dönüşü; bu dönüş, doğumdan sonraki saatlerde cisimleri ufka ve meridyene taşır. Zaman anahtarı, bu dönüşün ne kadarının yaşamın bir yılına karşılık geldiğini belirler. Ekoller ayrışır: bir ömür boyunca Ptolemy ile Naibod arasındaki fark bir yılı aşar.',
     },
   },
   positioning: {

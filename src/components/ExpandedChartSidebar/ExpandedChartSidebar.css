@@ -1492,6 +1492,19 @@
   line-height: 1.5;
 }
 
+/* Under the natal wheel while an overlay with no chart of its own is on (Primary
+   Directions): the reason there is no second wheel, read as a note. (2026-11-10) */
+.es-no-overlay-chart {
+  max-width: 34em;
+  margin: 0 auto;
+  align-self: center;
+  padding: 6px 12px 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 .es-section-wheel svg {
   display: block;
   flex-shrink: 0;

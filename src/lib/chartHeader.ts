@@ -130,15 +130,15 @@ export type HeaderState =
 /** What an overlay's wheel is built from, for its houses line (Lina, 22 Oct 2026, §3.2): the
  *  word for its positions, the word for the angles its houses are taken from, and — where the
  *  technique has one — the calculation, in brackets after the word it moves: after the positions
- *  on Solar Arc and primary directions (the arc moves the bodies; the angles follow), after the
- *  angles on a progression (the rate moves only the angles). App decides it from the settings in
- *  force (its effective frames); the sidebar words it. `rate` is a user primary rate's value.
+ *  on Solar Arc (the arc moves the bodies; the angles follow), after the angles on a progression
+ *  (the rate moves only the angles). App decides it from the settings in force (its effective
+ *  frames); the sidebar words it. Primary Directions has no wheel, so no line (10 Nov 2026).
  *  `angles` is absent where the houses come from the wheel's own moment at the place — a chart of
  *  its moment (transits, a return, an eclipse, an event) names none (Lina, 23 Oct 2026, H-2). */
 export interface WheelHouses {
   positions: 'natal' | 'transit' | 'progressed' | 'directed' | 'return' | 'eclipse' | 'event';
   angles?: 'natal' | 'progressed' | 'directed' | 'geodetic';
-  calc?: { key: string; on: 'positions' | 'angles'; rate?: number };
+  calc?: { key: string; on: 'positions' | 'angles' };
 }
 
 export interface HeaderOverlay {

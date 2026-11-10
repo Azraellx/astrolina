@@ -48,7 +48,7 @@ export const settings = {
   shiftTag: 'Shift',
   natal: {
     title: 'Mapa natal',
-    hint: 'O mapa natal subjacente. Oculte-o e a sobreposição toma o seu lugar — assumindo as linhas, a roda e os dados do mapa.',
+    hint: 'O mapa natal subjacente. Oculte-o e a sobreposição assume as linhas dele e, quando a sobreposição tem um mapa próprio, a roda e os dados.',
   },
   languageUnavailable: 'Em breve.',
   languageNotice: {
@@ -347,7 +347,7 @@ export const settings = {
     },
     control: {
       tip: 'A chave de tempo das direções primárias',
-      hint: 'As direções primárias modelam a rotação diária: os ângulos do mapa avançam enquanto os corpos mantêm suas posições natais no céu. A chave é a medida do tempo — quanto arco se acumula por ano de vida. As escolas divergem, e a diferença é real: ao longo de uma vida, Ptolomeu e Naibod se afastam em mais de um ano.',
+      hint: 'As direções primárias seguem o movimento primário: a rotação diária do céu, que leva os corpos ao horizonte e ao meridiano nas horas após o nascimento. A chave de tempo define quanto dessa rotação equivale a um ano de vida. As escolas divergem: ao longo de uma vida, Ptolomeu e Naibod se afastam em mais de um ano.',
     },
   },
   positioning: {

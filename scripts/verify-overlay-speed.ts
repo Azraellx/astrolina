@@ -8,11 +8,16 @@
 //
 // The expanded sidebar prints an overlay's daily motion, and the honest answer is
 // not the same for every overlay. A transit ring is the real sky at an instant and
-// has a rate per body; a solar-arc or primary-directions ring is the birth sky
-// advanced by ONE shared arc, so its bodies have no daily motion of their own and
-// quoting the natal rate there would be a fabricated figure. The distinction is
-// carried by the presence or absence of the field — so it is worth a test, since
-// "undefined" is easy to reintroduce by accident and impossible to see in a diff.
+// has a rate per body; a solar-arc ring is the birth sky advanced by ONE shared
+// arc, so its bodies have no daily motion of their own and quoting the natal rate
+// there would be a fabricated figure. The distinction is carried by the presence or
+// absence of the field — so it is worth a test, since "undefined" is easy to
+// reintroduce by accident and impossible to see in a diff.
+//
+// Primary directions are neither: the layer is the birth sky ITSELF on a turned
+// frame, so its positions are the natal samples, rates included — and nothing
+// prints them, because the technique has no ring or table of its own
+// (timeline CHARTLESS_OVERLAYS). Both halves are checked at the end.
 //
 //   npm run verify:overlay-speed
 
@@ -29,13 +34,14 @@ import {
   shiftEclipticLongitude,
   obliquity,
 } from '../src/lib/ephemeris';
-import { overlayMinorSamples } from '../src/lib/astro/timeline';
+import { buildOverlay, CHARTLESS_OVERLAYS, overlayMinorSamples } from '../src/lib/astro/timeline';
+import type { StoredChart } from '../src/lib/chartLibrary';
 import { buildWheelMinor } from '../src/lib/minorBodies/wheel';
 import type { TFn } from '../src/i18n';
 
 await initEphemeris();
 
-const JD = 2460000.5; // 2023-02-24 00:00 UT — nothing special, just a real instant
+const JD = 2460000.5; // 2023-02-25 00:00 UT — nothing special, just a real instant
 let failures = 0;
 const check = (label: string, ok: boolean, detail = '') => {
   if (!ok) failures += 1;
@@ -67,7 +73,7 @@ const eps = obliquity(JD);
 const arc = (30 * Math.PI) / 180;
 const inRa = sampled.map((p) => shiftRightAscension(p, arc));
 const inLon = sampled.map((p) => shiftEclipticLongitude(p, arc, eps));
-check('solar arc / primary directions (in RA) carry no speed',
+check('solar arc (in RA) carries no speed',
   inRa.every((p) => p.speed == null));
 check('solar arc (in longitude) carries no speed', inLon.every((p) => p.speed == null));
 check('…and so their table cells stay empty',
@@ -112,6 +118,23 @@ const ceres = sampled.find((p) => p.name === 'Ceres');
 check('a sampled overlay keeps its rate — the planets\' own Ceres rate, exactly',
   !!ovCeres && !!ceres && ceres.speed != null && ovCeres.speed === ceres.speed,
   `${ovCeres?.speed} vs ${ceres?.speed}`);
+
+// Primary directions: the birth sky itself, so the layer's bodies ARE the natal samples and
+// keep their rates; what keeps a natal rate out of an overlay table is that this overlay has
+// none. A chart cast for JD exactly, so its natal sample is `sampled` above; directed 30 years.
+const AT_JD: StoredChart = {
+  id: 'verify', createdAt: 0, name: 'verify', year: 2023, month: 2, day: 25, hour: 0, minute: 0, tzOffset: 0,
+  birthplace: { label: 'origin', lat: 0, lng: 0 },
+};
+const pd = buildOverlay(AT_JD, 'primary-directions', Date.UTC(2053, 1, 25), null, 'mean', 'mean-quotidian', 'ptolemy', 1,
+  'relative-to-natal', 'secondary', t);
+check('primary directions: the layer\'s bodies are the natal samples, rates and all',
+  !!pd && pd.jd === JD && pd.positions.length === sampled.length &&
+    pd.positions.every((p, i) => p.name === sampled[i].name && p.ra === sampled[i].ra && p.dec === sampled[i].dec &&
+      p.speed != null && p.speed === sampled[i].speed),
+  pd ? `${pd.positions.length} bodies at JD ${pd.jd}` : 'no layer');
+check('…and no ring or table of its own exists to print them (the chartless set)',
+  CHARTLESS_OVERLAYS.has('primary-directions') && !CHARTLESS_OVERLAYS.has('solar-arc'));
 
 console.log(failures ? `\n${failures} FAILING CHECK(S)` : '\nall checks pass');
 process.exit(failures ? 1 : 0);

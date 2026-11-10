@@ -82,7 +82,10 @@ export const settings = {
     // apart and both start with the word: this one SWAPS rather than hides — the
     // overlay is promoted into the chart's place, drawn through its path, and the
     // wheel and readouts follow it. Saying so is what keeps the pair distinguishable.
-    hint: 'The underlying birth chart. Hide it and the overlay stands in for it — taking over the chart’s lines, wheel and readouts.',
+    //
+    // "and, where the overlay has a chart of its own": Primary Directions has none, so there
+    // only the lines change hands and the wheel stays natal (Lina, 10 Nov 2026, PD-10 test 6).
+    hint: 'The underlying birth chart. Hide it and the overlay takes over its lines and, where the overlay has a chart of its own, the wheel and readouts.',
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
@@ -554,7 +557,10 @@ export const settings = {
     // and none of the seven entries is the right place to carry it.
     control: {
       tip: 'The primary-directions time key',
-      hint: 'Primary directions model the daily rotation: the chart’s angles are carried forward while the bodies hold their natal places in the sky. The rate is the time-key — how much arc accrues per year of life. Schools differ, and the spread is real: over a lifetime Ptolemy and Naibod part by more than a year.',
+      // Lina's wording, word for word (10 Nov 2026, PD-10 test 1). Longer than a hover hint
+      // usually runs: it is the one place the technique is explained beside its control.
+      // @i18n-verbatim
+      hint: 'Primary directions follow the primary motion: the daily rotation of the sky, which carries the bodies to the horizon and the meridian in the hours after birth. The time key sets how much of that rotation stands for one year of life. Schools differ: over a lifetime Ptolemy and Naibod part by more than a year.',
     },
   },
 

@@ -185,6 +185,9 @@ console.log('\n── 1. INTERNAL IDENTITY: the label, for every state and by pr
     { name: 'secondary progressed', input: { overlay: ov('progressed') }, want: ['SECONDARY PROGRESSED'] },
     { name: 'tertiary progressed', input: { overlay: ov('tertiary-progressed') }, want: ['TERTIARY PROGRESSED'] },
     { name: 'solar arc', input: { overlay: ov('solar-arc') }, want: ['SOLAR ARC'] },
+    // The model's own word for the kind, and no more than that: the app hands the model no
+    // overlay under a technique with no chart of its own (timeline CHARTLESS_OVERLAYS), so no
+    // wheel is titled this way. The gate is the app's, not the model's.
     { name: 'primary directions', input: { overlay: ov('primary-directions') }, want: ['PRIMARY DIRECTIONS'] },
     { name: 'eclipse chart', input: { overlay: ov('eclipses') }, want: ['ECLIPSE'] },
     // A return outranks the transits it is a moment of.

@@ -34,7 +34,7 @@ These are the things that follow from running in a browser.
 These are the known gaps. The ones with a plan say so; the rest are deliberate scope.
 
 - **Star parans.** Fixed-star angle lines ship (a 40-star catalog with proper motion), but the per-location star × planet paran list and star-to-star parans are not surfaced.
-- **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, or converse motion. (A dated directions list does not ship.)
+- **A full classical primary-directions engine.** Primary directions are drawn to the four angles only: each body, or its zodiac degree, carried to the meridian and the horizon by the sky's rotation. There are no directions between bodies, none to the intermediate cusps or to aspect points, no semi-arc proportions, and no converse motion. (A dated directions list does not ship.)
 - **Sidereal mode is a reading layer.** A sidereal zodiac mode ships (Lahiri
   and Fagan/Bradley ayanamsas) over the wheel and readouts — the map lines mark
   zodiac-independent events and don't move — and the Geodetic technique is

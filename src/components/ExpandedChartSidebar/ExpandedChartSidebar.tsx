@@ -321,6 +321,11 @@ interface ExpandedChartSidebarProps {
    *  as "CCG" (its label "Cyclo·carto·graphy" would otherwise truncate to "Cyclo" at
    *  the first middot). */
   overlayKind?: string | null;
+  /** The active overlay has NO CHART of its own (timeline CHARTLESS_OVERLAYS: Primary
+   *  Directions; Lina, 10 Nov 2026). The caller passes no overlay bodies, angles or tables
+   *  then, so the panel is the natal chart's exactly as with no overlay; this says why, for
+   *  the reason line under the wheel and the held Dual switch. Absent reads as false. */
+  overlayNoChart?: boolean;
   /** What the overlay's wheel is built from, for its houses line (lib/chartHeader WheelHouses;
    *  Lina, 22 Oct 2026, §3.2). Null for none (no overlay, Cyclocartography). */
   overlayHouses?: WheelHouses | null;
@@ -1152,6 +1157,7 @@ export function ExpandedChartSidebar({
   overlayLabel,
   header,
   overlayKind,
+  overlayNoChart = false,
   overlayHouses = null,
   overlayPartner = null,
   overlayReturn,
@@ -2323,7 +2329,7 @@ export function ExpandedChartSidebar({
   const housesLine = (h: WheelHouses | null, frameAngles: RelocatedAngles | null | undefined): string | null => {
     if (!h || !houseSystem || !frameAngles) return null;
     const calc = h.calc
-      ? t(`expandedSidebar.houses.calc.${h.calc.key}` as 'expandedSidebar.houses.calc.ptolemy', { rate: h.calc.rate ?? 0 })
+      ? t(`expandedSidebar.houses.calc.${h.calc.key}` as 'expandedSidebar.houses.calc.sa-long')
       : null;
     const word = (w: string, on: 'positions' | 'angles') =>
       calc && h.calc?.on === on ? t('expandedSidebar.houses.withCalc', { word: w, calc }) : w;
@@ -2461,16 +2467,26 @@ export function ExpandedChartSidebar({
             />
           </div>
           <div className="es-header-actions">
-            {frame && hasOverlay && (
+            {/* Under an overlay with no chart of its own (overlayNoChart: Primary Directions)
+                there is no second wheel to stack, so the switch is HELD: present, greyed,
+                showing the stored choice, inert, with the reason as its tip's note. Nothing
+                is written, so the reader's Dual choice is in force again under the next
+                overlay (CLAUDE.md rule 2; a control showing a held value refuses writes). */}
+            {frame && (hasOverlay || overlayNoChart) && (
               <TipButton
                 type="button"
-                className={`es-advanced-toggle ${dualWheels ? 'on' : 'off'}`}
-                onClick={() => setDualWheels(!dualWheels)}
+                className={`es-advanced-toggle ${dualWheels ? 'on' : 'off'}${overlayNoChart ? ' ui-inert' : ''}`}
+                onClick={() => {
+                  if (!overlayNoChart) setDualWheels(!dualWheels);
+                }}
                 role="switch"
                 aria-checked={dualWheels}
+                aria-disabled={overlayNoChart || undefined}
                 placement="bottom"
                 tip={t('expandedSidebar.dual.tip')}
                 hint={t('expandedSidebar.dual.hint')}
+                note={overlayNoChart ? t('expandedSidebar.overlayNoChart') : undefined}
+                unavailable={overlayNoChart}
               >
                 <span className="es-toggle-label">{t('expandedSidebar.dual.label')}</span>
                 <span className="es-toggle-track">
@@ -2878,6 +2894,10 @@ export function ExpandedChartSidebar({
             </>
           );
         })()}
+        {/* An overlay with no chart of its own (Primary Directions): where its ring, second
+            wheel or tables would have stood, the reason, in Lina's words (10 Nov 2026). One
+            string child, for a page translator. */}
+        {overlayNoChart && <p className="es-no-overlay-chart">{t('expandedSidebar.overlayNoChart')}</p>}
         {frame && (
           <div className="es-aspect-toggles">
             {ASPECT_TOGGLES.map((tg) => {

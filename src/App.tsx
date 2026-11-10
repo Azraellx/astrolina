@@ -266,6 +266,7 @@ import {
   overlayMinorSamples,
   tagMinor,
   normalizeAngle,
+  CHARTLESS_OVERLAYS,
   NO_CHART_BLOCKED_OVERLAYS,
   TIMELESS_GEODETIC_OVERLAYS,
   type AngleProgression,
@@ -2429,9 +2430,10 @@ export default function App() {
         ? 'mean-quotidian'
         : progAngleMethod;
   // The frame for the status strip: WHOSE ANGLES the drawn lines are measured against.
-  // Only where that is a live question. Solar Arc, Primary Directions and cyclo are
-  // natal-framed by construction and offer no choice, so naming a frame there would
-  // report a decision nobody made; synastry and eclipses have no timeline at all.
+  // Only where that is a live question. Solar Arc and cyclo are natal-framed by
+  // construction, and Primary Directions turns the frame by its own arc: none of them
+  // offers a choice, so naming a frame there would report a decision nobody made;
+  // synastry and eclipses have no timeline at all.
   //
   // And only on CELESTIAL lines. The geodetic mapping places a meridian from zodiacal
   // longitude and never reads the overlay's sidereal time, so under it both frames draw
@@ -5187,12 +5189,21 @@ export default function App() {
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
+  //
+  // None for an overlay with NO CHART of its own (CHARTLESS_OVERLAYS: Primary Directions,
+  // Lina, 10 Nov 2026). Its bodies are the natal ones, already on the wheel, and its layer
+  // turns the map's frame; there is no second set of positions to ring, table or list. Every
+  // wheel-side reader below hangs off this value and `overlayAngles`, so nulling the two here
+  // is what keeps the sidebar, the minimap wheel, the Coordinates box and the capture card
+  // natal — and `overlayChartless` says why, for the sidebar's reason line and its held Dual
+  // switch.
+  const overlayChartless = !!overlayLayer && CHARTLESS_OVERLAYS.has(overlayLayer.kind as OverlayMode);
   const overlayEcliptic = useMemo(
     () =>
-      overlayLayer
+      overlayLayer && !overlayChartless
         ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd)
         : null,
-    [overlayLayer],
+    [overlayLayer, overlayChartless],
   );
 
   // Overlay ▸ Display ▸ Natal off, with a time overlay active → promote the overlay
@@ -5212,7 +5223,11 @@ export default function App() {
   // compares a chart). `wheelOverlay` is the one test for "the overlay IS the wheel's chart":
   // a promoted overlay, or the sky. (2026-10-20)
   const wheelIsSky = skyAlone && !!overlayLayer && overlayLayer.kind !== 'synastry';
-  const wheelOverlay = promoteOverlay || wheelIsSky;
+  //
+  // Not a chartless overlay (Primary Directions), which has no chart to stand in with: with
+  // the Natal Chart hidden its LINES still take the map alone (promoteOverlay, unchanged),
+  // while the wheel and every readout stay the natal chart's. (2026-11-10)
+  const wheelOverlay = (promoteOverlay && !overlayChartless) || wheelIsSky;
   // The empty wheel's "choose Transits or Eclipses" line (chartWheel.skyHint,
   // expandedSidebar.skyEmpty), only while neither is chosen: with Eclipses chosen and its chart
   // hidden (or its module still loading) the line would send the reader to a pick already made.
@@ -5243,7 +5258,9 @@ export default function App() {
   const presentedEvent = presentedKind(current, eventsLocked) === 'event';
   const sidebarHeader = useMemo<SidebarHeaderInfo>(
     () => ({
-      overlay: overlayLayer
+      // A chartless overlay (Primary Directions) names nothing in the statement, like CCG:
+      // the wheel is the natal chart's, stated as it is with no overlay. (2026-11-10)
+      overlay: overlayLayer && !overlayChartless
         ? {
             kind: overlayLayer.kind,
             ms: overlayMs,
@@ -5256,7 +5273,7 @@ export default function App() {
       nodeType,
       event: presentedEvent,
     }),
-    [overlayLayer, overlayMs, wheelOverlay, overlayReturn, partner, effZodiacMode, nodeType, presentedEvent],
+    [overlayLayer, overlayChartless, overlayMs, wheelOverlay, overlayReturn, partner, effZodiacMode, nodeType, presentedEvent],
   );
   // Eclipses ▸ Display ▸ Other Lines: unlike the time overlays' Natal toggle
   // (which promotes the overlay to stand in for the chart), turning this off simply
@@ -6064,7 +6081,8 @@ export default function App() {
   // and eclipse layers have no directing arc to apply. No point, no angles: the wheel is
   // planets only. (2026-10-20)
   const overlayAngles = useMemo(() => {
-    if (!overlayLayer) return null;
+    // No chart of its own, so no angles of its own (CHARTLESS_OVERLAYS, at overlayEcliptic).
+    if (!overlayLayer || overlayChartless) return null;
     if (!current) {
       if (!wheelIsSky) return null;
       if (lineSystem === 'geodetic') return angles;
@@ -6090,7 +6108,7 @@ export default function App() {
       overlayLayer.angleArc,
       overlayLayer.angleFrame,
     );
-  }, [overlayLayer, activePoint, current, wheelIsSky, partner, effHouseSystem, lineSystem, angles]);
+  }, [overlayLayer, overlayChartless, activePoint, current, wheelIsSky, partner, effHouseSystem, lineSystem, angles]);
   // The overlay wheel's houses line (Lina, 22 Oct 2026, §3.2; one rule since 23 Oct, H-2): which
   // positions, and — only where the houses do NOT come from the wheel's own moment at the place —
   // which angles they come from. A wheel that is simply a chart for its moment (transits, a return,
@@ -6112,12 +6130,6 @@ export default function App() {
             : { positions: 'progressed', angles: 'progressed', calc: { key: progAngleMethod, on: 'angles' } };
       case 'solar-arc':
         return { positions: 'directed', angles: geo ? 'geodetic' : 'directed', calc: { key: arcMethod, on: 'positions' } };
-      case 'primary-directions':
-        return {
-          positions: 'directed',
-          angles: geo ? 'geodetic' : 'directed',
-          calc: { key: primaryRate, on: 'positions', rate: userPrimaryRate },
-        };
       case 'synastry':
         // The partner is a second person on the same wheel, not a chart of a moment: no houses line
         // under them, on either line system (H-3); the chart's own carries the geodetic one.
@@ -6125,9 +6137,9 @@ export default function App() {
       case 'eclipses':
         return { positions: 'eclipse', ...own };
       default:
-        return null; // Cyclocartography: no wheel
+        return null; // Cyclocartography and Primary Directions: no wheel
     }
-  }, [overlayLayer, lineSystem, overlayReturn, effProgAngleFrame, progAngleMethod, arcMethod, primaryRate, userPrimaryRate]);
+  }, [overlayLayer, lineSystem, overlayReturn, effProgAngleFrame, progAngleMethod, arcMethod]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
   // the same observer location as the relocated angles (active point, else natal).
@@ -6181,9 +6193,9 @@ export default function App() {
   // COLUMN comes from the display positions the sidebar already holds.
   const overlayAdvancedCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
-    if (wheelOverlay || !overlayLayer || !obs) return null;
+    if (wheelOverlay || !overlayLayer || !overlayEcliptic || !obs) return null;
     return getHorizontalCoords(
-      overlayEcliptic ?? [],
+      overlayEcliptic,
       overlayLayer.gmst,
       obliquity(overlayLayer.jd),
       obs.lat,
@@ -6443,7 +6455,7 @@ export default function App() {
   // alone, whose layer IS the wheel's chart (wheelOverlay). (2026-10-20)
   const overlayMinorWheel = useMemo<readonly WheelMinorBody[]>(
     () =>
-      !wheelOverlay && !isCyclo && overlayMinorSampled.length > 0
+      !wheelOverlay && !isCyclo && !overlayChartless && overlayMinorSampled.length > 0
         ? buildWheelMinor(overlayMinorSampled, {
             ayan: overlayAyan,
             decor: minorDecorInked,
@@ -6451,7 +6463,7 @@ export default function App() {
             list: minorPref.list,
           })
         : NO_WHEEL_MINOR,
-    [wheelOverlay, isCyclo, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
+    [wheelOverlay, isCyclo, overlayChartless, overlayMinorSampled, overlayAyan, minorDecorInked, t, minorPref.list],
   );
   const overlayMinorCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
@@ -8495,7 +8507,10 @@ export default function App() {
       // natal RAMC report 0 because their gmst IS the natal one.
       // 0 with no chart: there is no natal frame to be offset from (`gmst` is the placeholder
       // moment's then), and the sky layer is in the moment's own. (2026-10-20)
-      frameOffsetDeg: overlayLayer && current
+      // 0 for Primary Directions too, by name: its layer's frame IS advanced, by the arc, but
+      // that turn is the technique itself — what a dated list computes — not a frame the list
+      // cannot follow, which is the mismatch this number exists to disclose. (2026-11-10)
+      frameOffsetDeg: overlayLayer && current && overlayLayer.kind !== 'primary-directions'
         ? Math.abs((normalizeAngle(overlayLayer.gmst - gmst) * 180) / Math.PI)
         : 0,
       // As drawn: night shade is held on a geodetic map, its switch untouched. (2026-10-02)
@@ -9536,12 +9551,13 @@ export default function App() {
           overlayMinorCoords={overlayMinorCoords}
           overlayAngles={wheelOverlay || isCyclo ? null : displayOverlayAngles}
           overlayLabel={
-            wheelOverlay || isCyclo ? null : (overlayLayer?.labelFull ?? null)
+            wheelOverlay || isCyclo || overlayChartless ? null : (overlayLayer?.labelFull ?? null)
           }
           // The chart statement's inputs: the header, the wheel corners and the Dual
           // layout's second header all read the one model built from these. (2026-10-07)
           header={sidebarHeader}
           overlayKind={overlayLayer?.kind ?? null}
+          overlayNoChart={overlayChartless}
           // The overlay wheel's houses line (Lina, 22 Oct 2026, §3.2), both line systems.
           overlayHouses={overlayHouses}
           // The synastry partner's own record, so the second wheel's header can

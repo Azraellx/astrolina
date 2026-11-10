@@ -75,6 +75,7 @@ import { compositeEquatorial, compositeMinorSamples } from '../src/lib/astro/com
 import {
   buildOverlay,
   buildOverlayMinorLines,
+  CHARTLESS_OVERLAYS,
   OVERLAY_LABEL_PREFIX,
   overlayMinorLines,
   overlayMinorSamples,
@@ -2744,12 +2745,19 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
 //                  Exact: one engine, one arithmetic. With IDENTITY pins on the features:
 //                  the overlay's tag, and the body's own label (tagMinor, never tagLabels,
 //                  whose label-for-tag swap would give every catalog line one hover id).
+//                  Primary directions' rows mirror a layer that is the birth sky on an
+//                  advanced frame (its rule samples the birth moment): the mirror holds as
+//                  for any sampled layer, and on a geodetic map, which reads no frame, it
+//                  is the chart's own lines. That the frame really turned is 12c's.
 //   12b TWO PARTS  against the engine: an overlay's catalog MC is the engine's RA at the
 //                  layer's body instant less the ARMC at its frame instant, the zenith at
 //                  the engine's declination, ASC/DSC on the horizon (§3d's pattern).
-//   12c TWO PARTS  a directed catalog body moves by the directed Sun's own Δλ (in
-//                  longitude) or ΔRA (in RA), read off the planets' layer, and keeps its
-//                  ecliptic latitude or its declination; no directed body has a speed.
+//   12c TWO PARTS  a directed catalog body (solar arc, Naibod) moves by the directed Sun's
+//                  own Δλ (in longitude) or ΔRA (in RA), read off the planets' layer, and
+//                  keeps its ecliptic latitude or its declination; no directed body has a
+//                  speed. Primary directions direct no body: the sample is the chart's own,
+//                  speed and all, and its lines are the chart's own catalog lines carried
+//                  west by the turn the planets' lines take, read off the Sun's drawn MC.
 //   12d TWO PARTS  compositeMinorSamples([1]) is compositeEquatorial's Ceres row in all
 //                  four coordinates; a body one parent's date is outside drops out of both.
 //   12e IDENTITY   the rows' overlay side, on fixtures (status.ts): present only while an
@@ -2966,13 +2974,14 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
       firstBad || `${compared} of ${want}; worst MC ${worst.mc.toExponential(2)}°, zenith ${worst.zen.toExponential(2)}°, |alt| ${worst.alt.toExponential(2)} rad`);
   }
 
-  // 12c — the directed bodies against the directed Sun.
+  // 12c — the directed bodies against the directed Sun; then primary directions, which direct
+  // no body at all: the birth sample, on the planets' turned frame.
   {
     const ns = [5145, ...presentBodies.slice(0, 4).map((b) => b.n)];
     const natal = natalOf(ns);
     const eps = obliquity(natalJd);
     const sunNatal = getPlanetPositions(natalJd, 'mean').find((p) => p.name === 'Sun');
-    const DIRECTED = CASES.filter((c) => c.mode === 'solar-arc' || c.mode === 'primary-directions');
+    const DIRECTED = CASES.filter((c) => c.mode === 'solar-arc');
     let compared = 0;
     let firstBad = '';
     let worst = 0;
@@ -3009,8 +3018,107 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
       }
     }
     const want = DIRECTED.length * ns.length;
-    check(`12c ${DIRECTED.length} directed overlays × ${ns.length} bodies: each moves by the directed Sun's own Δλ (in longitude) or ΔRA (in RA, primaries' −arc included), keeps its latitude or declination, and has no speed`,
-      !firstBad && compared === want && DIRECTED.length === 6, firstBad || `${compared} of ${want}; worst ${worst.toExponential(2)} rad`);
+    check(`12c ${DIRECTED.length} directed overlays × ${ns.length} bodies: each moves by the directed Sun's own Δλ (in longitude) or ΔRA (in RA), keeps its latitude or declination, and has no speed`,
+      !firstBad && compared === want && DIRECTED.length === 4, firstBad || `${compared} of ${want}; worst ${worst.toExponential(2)} rad`);
+
+    // Primary directions (2026-11-10). The layer is the natal sky on a frame advanced by the
+    // arc, so a catalog body is not directed: its rule samples the BIRTH moment, and the frame
+    // turns it with the planets. Two things, then, where the directed overlays have one:
+    //   the sample is the chart's own — ra, dec, lon, lat and the engine's speed, to the bit,
+    //     whether the chart's samples are handed in or the engine is asked again;
+    //   the lines are the chart's own catalog lines (built as the chart builds them, in the
+    //     natal frame) carried west by the turn the PLANETS' lines take — read off the Sun's
+    //     drawn MC line, natal against the layer's, not off the layer's gmst — In Mundo and
+    //     In Zodiaco, the zenith point with them.
+    // The reused sample may also carry the chart's station flag, which a fresh one never has;
+    // only the fields an overlay sample declares are compared.
+    const PRIMARY = CASES.filter((c) => c.mode === 'primary-directions');
+    const PROJECTIONS: Array<[string, CoordSystem]> = [['In Mundo', 'mundo'], ['In Zodiaco', 'zodiaco']];
+    const natalGmst = gmstRadians(natalJd);
+    const mlNatal = meridianLngFor('celestial', eps, natalGmst);
+    const natalPlanets = getPlanetPositions(natalJd, 'mean');
+    const natalRaw = natal.samples.map(minorLinePositionOf);
+    const sunMcLng = (fc: ReturnType<typeof generateLines>) =>
+      fc.features.find((f) => f.properties.planet === 'Sun' && f.properties.lineType === 'MC')?.geometry.coordinates[0][0];
+    const circ = (d: number) => {
+      const m = Math.abs(d) % 360;
+      return Math.min(m, 360 - m);
+    };
+    let sampled = 0;
+    let turned = 0;
+    let vertices = 0;
+    let worstDeg = 0;
+    let firstBadP = '';
+    const turns: string[] = [];
+    for (const c of PRIMARY) {
+      const layer = layers.find(([x]) => x === c)?.[1];
+      const rule = layer?.bodyRule;
+      if (!layer || !rule || rule.by !== 'sample' || rule.jd !== natalJd || layer.jd !== natalJd) {
+        firstBadP ||= `${c.label}: not the birth sky sampled (rule ${rule?.by})`;
+        continue;
+      }
+      const natalMc = sunMcLng(generateLines(natalPlanets, mlNatal));
+      const layerMc = sunMcLng(generateLines(layer.positions, meridianLngFor('celestial', obliquity(layer.jd), layer.gmst)));
+      if (natalMc === undefined || layerMc === undefined) {
+        firstBadP ||= `${c.label}: no Sun MC line to read the turn off`;
+        continue;
+      }
+      const turn = normLng(natalMc - layerMc); // degrees, west-positive
+      turns.push(`${c.label} ${turn.toFixed(4)}°`);
+      if (Math.abs(turn) * DEG2RAD < 1e-3) firstBadP ||= `${c.label}: the planets' lines turned only ${turn}° — nothing was directed`;
+      if (circ(turn - wrapPi(layer.gmst - natalGmst) * RAD2DEG) > 1e-9) firstBadP ||= `${c.label}: the Sun's line turned ${turn}°, the frame ${wrapPi(layer.gmst - natalGmst) * RAD2DEG}°`;
+
+      const dir = overlayMinorSamples(rule, ns, natal);
+      const fresh = overlayMinorSamples(rule, ns, null);
+      if (dir.length !== natal.samples.length || fresh.length !== natal.samples.length) {
+        firstBadP ||= `${c.label}: ${dir.length} placed (${fresh.length} resampled) of ${natal.samples.length}`;
+      }
+      for (const s of natal.samples) {
+        const isChartsOwn = (x: (typeof dir)[number] | undefined) =>
+          !!x && x.ra === s.ra && x.dec === s.dec && x.lon === s.lon && x.lat === s.lat &&
+          x.speed !== undefined && x.speed === s.speed && x.ofRecord === false;
+        const d = dir.find((x) => x.n === s.n);
+        const f = fresh.find((x) => x.n === s.n);
+        if (!isChartsOwn(d) || !isChartsOwn(f)) {
+          firstBadP ||= `${c.label} ${s.n}: not the chart's own sample — handed in ${JSON.stringify(d)}, resampled ${JSON.stringify(f)}, chart ${JSON.stringify(s)}`;
+        } else sampled += 1;
+      }
+
+      for (const [fname, coordSystem] of PROJECTIONS) {
+        const got = buildOverlayMinorLines(layer, ns, natal, { lineSystem: 'celestial', coordSystem, visibleLineTypes: ALL_FOUR, zenith: true, decor });
+        const natalPos = coordSystem === 'zodiaco' ? projectMinorOntoEcliptic(natalRaw, natalJd) : natalRaw;
+        const nLines = generateMinorLines(natalPos, mlNatal, decor).features.filter((f) => ALL_FOUR.has(f.properties.lineType));
+        const nZen = generateMinorZenith(natalPos, mlNatal, decor).features;
+        for (const n of ns) {
+          const where = `${c.label}, ${fname}, ${n}`;
+          const a = nLines.filter((f) => f.properties.number === n);
+          const b = got.lines.features.filter((f) => f.properties.number === n);
+          const za = nZen.find((f) => f.properties.number === n);
+          const zb = got.zenith.features.find((f) => f.properties.number === n);
+          if (a.length !== FOUR.length || b.length !== a.length || !za || !zb ||
+              a.some((f, i) => f.properties.lineType !== b[i].properties.lineType || f.geometry.coordinates.length !== b[i].geometry.coordinates.length)) {
+            firstBadP ||= `${where}: chart's lines ${a.map((f) => f.properties.lineType).join('/')} vs the overlay's ${b.map((f) => f.properties.lineType).join('/')}, zenith ${!!za}/${!!zb}`;
+            continue;
+          }
+          let off = Math.max(circ(za.geometry.coordinates[0] - turn - zb.geometry.coordinates[0]), Math.abs(za.geometry.coordinates[1] - zb.geometry.coordinates[1]));
+          let seen = 1;
+          a.forEach((f, i) => f.geometry.coordinates.forEach(([lng, lat], k) => {
+            const [lng2, lat2] = b[i].geometry.coordinates[k];
+            off = Math.max(off, circ(lng - turn - lng2), Math.abs(lat - lat2));
+            seen += 1;
+          }));
+          worstDeg = Math.max(worstDeg, off);
+          vertices += seen;
+          if (!(off < 1e-9)) firstBadP ||= `${where}: up to ${off.toExponential(2)}° off the chart's own line carried ${turn.toFixed(4)}° west`;
+          else turned += 1;
+        }
+      }
+    }
+    const wantSampled = PRIMARY.length * ns.length;
+    const wantTurned = wantSampled * PROJECTIONS.length;
+    check(`12c ${PRIMARY.length} primary-direction keys × ${ns.length} bodies: nothing is directed — each is the chart's own sample (ra, dec, lon, lat, speed), handed in or resampled, and its lines and zenith are the chart's own carried west by the turn the Sun's MC line takes, In Mundo and In Zodiaco`,
+      !firstBadP && PRIMARY.length === 2 && sampled === wantSampled && turned === wantTurned && vertices > wantTurned,
+      firstBadP || `${sampled} of ${wantSampled} samples; ${turned} of ${wantTurned} line sets, ${vertices} vertices, worst ${worstDeg.toExponential(2)}°; turns: ${turns.join(', ')}`);
   }
 
   // 12d — a composite's catalog bodies against its planets.
@@ -3121,6 +3229,9 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
   // body carries the engine's own longitude and latitude, where the ring re-derives the
   // planet's from its ra/dec (toEclipticPositions); directed and midpoint figures are
   // derived alike on both sides, and those agree exactly.
+  // Primary directions have no wheel ring (timeline CHARTLESS_OVERLAYS), so their rows check the
+  // samples only: sampled at the birth moment, they carry a speed, and the wheel body they would
+  // make is the chart's own (buildWheelMinor over the chart's samples), coordinate for coordinate.
   {
     const MODES: ZodiacMode[] = ['tropical', 'lahiri', 'fagan-bradley'];
     const TOL = 1e-12; // radians
@@ -3128,11 +3239,23 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
     let compared = 0;
     let withSpeed = 0;
     let withoutSpeed = 0;
+    let chartless = 0;
     let firstBad = '';
     for (const [c, layer] of layers) {
       // Cyclo is never wheeled (App's isCyclo: no coherent chart to ring).
       if (!layer || c.mode === 'cyclo') continue;
       const samples = overlayMinorSamples(layer.bodyRule, [1], natalOf([1]));
+      if (CHARTLESS_OVERLAYS.has(c.mode)) {
+        for (const mode of MODES) {
+          const ayan = ayanamsaRad(natalJd, mode);
+          const [w] = buildWheelMinor(samples, { ayan, decor, t, list: [] });
+          const [own] = buildWheelMinor(natalOf([1]).samples, { ayan, decor, t, list: [] });
+          if (!w || !own || w.speed === undefined || w.lon !== own.lon || w.lat !== own.lat ||
+              w.ra !== own.ra || w.dec !== own.dec || w.speed !== own.speed) {
+            firstBad ||= `${c.label}, ${mode}: not the chart's own wheel body (lon ${w?.lon} vs ${own?.lon}, speed ${w?.speed} vs ${own?.speed})`;
+          } else chartless += 1;
+        }
+      }
       for (const mode of MODES) {
         const ayan = ayanamsaRad(layer.jd, mode);
         const [w] = buildWheelMinor(samples, { ayan, decor, t, list: [] });
@@ -3165,9 +3288,10 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
       }
     }
     const want = (CASES.length - 1) * MODES.length;
-    check(`12f the overlay wheel set: MPC 1 on Ceres's degree in the overlay ring — ${CASES.length - 1} overlays × ${MODES.length} zodiacs, each shifted by the overlay's own ayanamsa — with a speed exactly when the planet has one`,
-      !firstBad && compared === want && withSpeed > 0 && withoutSpeed > 0,
-      firstBad || `${compared} of ${want}; ${withSpeed} with a speed, ${withoutSpeed} without (directed and midpoint); worst ${worst.toExponential(2)} rad`);
+    const wantChartless = CASES.filter((c) => CHARTLESS_OVERLAYS.has(c.mode)).length * MODES.length;
+    check(`12f the overlay wheel set: MPC 1 on Ceres's degree in the overlay ring — ${CASES.length - 1} overlays × ${MODES.length} zodiacs, each shifted by the overlay's own ayanamsa — with a speed exactly when the planet has one; an overlay with no ring of its own (primary directions) gives the chart's own wheel body`,
+      !firstBad && compared === want && withSpeed > 0 && withoutSpeed > 0 && wantChartless > 0 && chartless === wantChartless,
+      firstBad || `${compared} of ${want}; ${withSpeed} with a speed, ${withoutSpeed} without (directed and midpoint); ${chartless} of ${wantChartless} chartless rows on the chart's own body; worst ${worst.toExponential(2)} rad`);
   }
 
   // 12g — MEASURED: what the catalog set adds to one playback tick. The timeline plays by

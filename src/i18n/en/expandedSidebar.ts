@@ -116,8 +116,17 @@ export const expandedSidebar = {
     // (Advanced reading mode moved to the profile strip's plan tag.)
     label: 'Dual',
     tip: 'Dual wheels',
-    hint: 'Split the bi-wheel into two full stacked wheels — the natal chart, then the overlay as its own chart with its own aspect lines. Applies whenever an overlay is on.',
+    // "…that has a chart of its own": Primary Directions has none, and the switch is held
+    // there with `overlayNoChart` below as its note (Lina, 10 Nov 2026, PD-10 test 6).
+    hint: 'Split the bi-wheel into two full stacked wheels — the natal chart, then the overlay as its own chart with its own aspect lines. For any overlay that has a chart of its own.',
   },
+  // Why Primary Directions draws no wheel, ring, mark or table: shown under the natal wheel
+  // while that overlay is on, as the note on the held Dual switch, and in a report where
+  // the block "The chart under Primary directions" stood. Lina's wording, word for word
+  // (10 Nov 2026, PD-5). A note of two sentences; it wraps.
+  // @i18n-verbatim
+  overlayNoChart:
+    'Primary Directions has no chart of its own. The bodies keep their natal positions and are carried to the angles by the rotation of the sky; the map shows where.',
 
   close: {
     aria: 'Hide expanded view',
@@ -210,20 +219,13 @@ export const expandedSidebar = {
       geodetic: 'geodetic angles',
     },
     // The calculations' short forms, each tied to its name on the methods page (her §3.2): the four
-    // arc methods (Solar Arc, a progression's angles), then the primary directions' rate keys by
-    // their existing names. {rate} is a user rate's degrees per year.
+    // arc methods (Solar Arc, a progression's angles). The primary directions' seven rate keys
+    // stood here until 10 Nov 2026, when that overlay stopped having a wheel to head.
     calc: {
       'sa-long': 'Solar arc, Long.',
       'sa-ra': 'Solar arc, R.A.',
       'naibod-long': 'Naibod, Long.',
       'naibod-ra': 'Naibod, R.A.',
-      ptolemy: 'Ptolemy, 1°/yr',
-      naibod: 'Naibod, 59′08″/yr',
-      cardan: 'Cardan, 59′12″/yr',
-      'kepler-ra': 'Solar Daily Motion, RA',
-      'solar-long': 'Solar Daily Motion, Longitude',
-      'placidus-ra': 'True Solar Arc, RA',
-      user: 'User rate, {rate}°/yr',
     },
   },
 
