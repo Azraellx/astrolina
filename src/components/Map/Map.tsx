@@ -168,7 +168,7 @@ import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { LINE_TYPE_LABEL, OPPOSITE_ANGLE } from '../../lib/astro/lines';
-import { PLANET_CODES, type PlanetName } from '../../lib/ephemeris';
+import type { PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { MsgKey, TFn } from '../../i18n';
@@ -440,13 +440,45 @@ function edgeChipFace(b: LineBadge): string {
 // and only for the one placement before the chip is measured and the labels re-placed.
 function estimateEdgeChip(b: LineBadge): BadgeSize {
   const angle = b.aspect ? aspectBranchReading(b.aspect, b.branch ?? b.lineType).angle : b.lineType;
-  const glyphs = 1 + (b.planetB ? 1 : 0) + (b.aspect ? 1 : 0) + (b.pair ? 1 : 0);
-  const codeChars =
-    ANGLE_CODE[angle].length + (b.pair ? ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]].length : 0);
   const prefixChars = b.aspect || b.planetB ? 0 : b.prefix.length;
-  const items = glyphs + (b.pair ? 2 : 1) + (prefixChars ? 1 : 0) + (b.pair ? 1 : 0);
+  // A node pair is two plain chips side by side (NODE_PAIR_CHIP_GAP): the North Node's on this
+  // angle, the South Node's on the opposite one, each with the overlay's tag.
+  if (b.pair) {
+    const one = (code: string) =>
+      12 + 11 + 6 * code.length + 4.5 * prefixChars + 3 * (prefixChars ? 2 : 1);
+    const w = one(ANGLE_CODE[angle]) + NODE_PAIR_CHIP_GAP + one(ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]]);
+    return { hw: w / 2, hh: 7.5 };
+  }
+  const glyphs = 1 + (b.planetB ? 1 : 0) + (b.aspect ? 1 : 0);
+  const codeChars = ANGLE_CODE[angle].length;
+  const items = glyphs + 1 + (prefixChars ? 1 : 0);
   const w = 12 + 11 * glyphs + 6 * codeChars + 4.5 * prefixChars + 3 * (items - 1);
   return { hw: w / 2, hh: 7.5 };
+}
+
+// A node pair's two chips (an edge chip's, and a paran row's): two lines lie together there, the
+// North Node's and the South Node's on the opposite angle, and each gets a chip of its own rather
+// than one chip naming both (Lina, 10 Nov 2026: "the line is not both the North and South Node at
+// the same time"). They stand either side of the one anchor the pair was placed at, this far
+// apart, and the placement treats them as one box: the first carries the `data-bface` the pair's
+// size is cached under, the second `data-btwin`, and pairChipBox measures the two together.
+const NODE_PAIR_CHIP_GAP = 3;
+function pairChipPos(x: number, y: number, side: 'first' | 'second'): CSSProperties {
+  const half = NODE_PAIR_CHIP_GAP / 2;
+  return {
+    // The first chip's right edge and the second's left edge, half the gap from the anchor: the
+    // pair is centred on its seam, within a pixel or two of its true centre (the two chips differ
+    // by an angle code's letters at most), and needs neither chip's width to be known here.
+    '--bx': side === 'first' ? `calc(${x - half}px - 100%)` : `${x + half}px`,
+    '--by': `calc(${y}px - 50%)`,
+  } as CSSProperties;
+}
+/** A drawn chip's box as the placement means it: its own, plus its twin's and the gap between
+ *  them when it is the first chip of a node pair. */
+function pairChipBox(el: HTMLElement): { w: number; h: number } {
+  const twin = el.nextElementSibling;
+  const tw = twin instanceof HTMLElement && twin.dataset.btwin !== undefined ? twin.offsetWidth : 0;
+  return { w: el.offsetWidth + (tw ? tw + NODE_PAIR_CHIP_GAP : 0), h: el.offsetHeight };
 }
 
 // A catalog minor body's edge chip (computeMinorBadges, #34), with the words it prints — resolved
@@ -1492,6 +1524,48 @@ function isHorizonLine(layerId: string, props: Record<string, unknown>): boolean
   return false;
 }
 
+// A paran's hover row: each body on its angle, the overlay's tag (`pre`) leading BOTH, as on the
+// chip — an overlay's paran pairs two of its own.
+function paranRowHtml(
+  pre: string,
+  pa: PlanetName,
+  angleA: LineType,
+  pb: PlanetName,
+  angleB: LineType,
+  labels: EnumLabels,
+): string {
+  const side = (p: PlanetName, angle: LineType) =>
+    glyphHtml(p, planetInk(p)) + `${labels.planet(p)} ${tagHtml(ANGLE_CODE[angle])}`;
+  return pre + side(pa, angleA) + `<span class="cross-tip-x">×</span>` + pre + side(pb, angleB);
+}
+
+// The South Node's own hover label where a node pair is drawn (`pair`: both nodes shown, so the
+// North Node's feature stands for the two — App mergeNodePairs / mergeNodeParans). Two lines lie
+// together there, and each is named by its own label, one under the other: "☊ N Node MC" then
+// "☋ S Node IC", or "♂ Mars IC × ☊ N Node As" then "♂ Mars IC × ☋ S Node Ds". Never one label
+// naming both with a slash, as it was until 2026-11-10 (Lina: "the line is not both the North and
+// South Node at the same time"). A whole .ui-tip of its own, which the line popup stacks under
+// the first (Map.css .line-tip-popup); null for every line that isn't a pair.
+function nodeTwinLabelHtml(layerId: string, props: Record<string, unknown>, labels: EnumLabels): string | null {
+  if (!props.pair) return null;
+  const pre = typeof props.tag === 'string' ? tagHtml(props.tag) : '';
+  let row: string | null = null;
+  if (layerId.startsWith('acg-lines')) {
+    row =
+      pre +
+      glyphHtml('SouthNode', planetInk('SouthNode')) +
+      `${labels.planet('SouthNode')} ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[props.lineType as LineType]])}`;
+  } else if (layerId.startsWith('parans')) {
+    // The North Node's side becomes the South Node on the opposite angle; the other body stays.
+    const swap = (p: PlanetName, angle: LineType): [PlanetName, LineType] =>
+      p === 'NorthNode' ? ['SouthNode', OPPOSITE_ANGLE[angle]] : [p, angle];
+    const [pa, angleA] = swap(props.planetA as PlanetName, props.angleA as LineType);
+    const [pb, angleB] = swap(props.planetB as PlanetName, props.angleB as LineType);
+    row = paranRowHtml(pre, pa, angleA, pb, angleB, labels);
+  }
+  return row ? `<div class="ui-tip"><span class="cross-tip-row">${row}</span></div>` : null;
+}
+
 function lineLabelHtml(
   layerId: string,
   props: Record<string, unknown>,
@@ -1506,23 +1580,12 @@ function lineLabelHtml(
   let row: string | null = null;
   if (layerId.startsWith('acg-lines')) {
     const planet = props.planet as PlanetName;
-    if (props.pair) {
-      // Merged lunar-node line: show both nodes, e.g. "NN MC / SN IC" (with the overlay
-      // tag ahead of it on overlay lines).
-      const opp = OPPOSITE_ANGLE[props.lineType as LineType];
-      row =
-        pre +
-        glyphHtml('NorthNode', planetInk('NorthNode')) +
-        `${labels.planet('NorthNode')} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}` +
-        `<span class="cross-tip-x">/</span>` +
-        glyphHtml('SouthNode', planetInk('SouthNode')) +
-        `${labels.planet('SouthNode')} ${tagHtml(ANGLE_CODE[opp])}`;
-    } else {
-      row =
-        pre +
-        glyphHtml(planet, props.color as string) +
-        `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
-    }
+    // A node pair's line (props.pair) names the North Node here, as any body's line names its
+    // body; the South Node's line, which lies on it, has a label of its own (nodeTwinLabelHtml).
+    row =
+      pre +
+      glyphHtml(planet, props.pair ? planetInk('NorthNode') : (props.color as string)) +
+      `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
   } else if (layerId === 'angle-lines-layer') {
     // "Aspects to angles" overlay: either "Sun □ MC" (planet square the MC here)
     // or "Sun/Moon MC" (the pair's midpoint culminates here).
@@ -1597,30 +1660,10 @@ function lineLabelHtml(
   } else if (layerId.startsWith('parans')) {
     const pa = props.planetA as PlanetName;
     const pb = props.planetB as PlanetName;
-    // One side of the row: the body on its angle — and, on a node-pair row (ParanProps.pair, both
-    // nodes shown), the North Node's side goes on to name the South Node on the opposite angle,
-    // "NN As / SN Ds". In short form there, and only there: with the other body's name beside
-    // them, the two nodes' full names ran out of the tip's fixed width (Salvatore, 2026-10-30).
-    // The line card, which has the room, still names them in full.
-    const sideHtml = (p: PlanetName, angle: LineType): string => {
-      const nodes = props.pair && p === 'NorthNode';
-      return (
-        glyphHtml(p, planetInk(p)) +
-        `${nodes ? PLANET_CODES.NorthNode : labels.planet(p)} ${tagHtml(ANGLE_CODE[angle])}` +
-        (nodes
-          ? `<span class="cross-tip-x">/</span>` +
-            glyphHtml('SouthNode', planetInk('SouthNode')) +
-            `${PLANET_CODES.SouthNode} ${tagHtml(ANGLE_CODE[OPPOSITE_ANGLE[angle]])}`
-          : '')
-      );
-    };
-    // The tag leads BOTH bodies, as on the chip: an overlay's paran pairs two of its own.
-    row =
-      pre +
-      sideHtml(pa, props.angleA as LineType) +
-      `<span class="cross-tip-x">×</span>` +
-      pre +
-      sideHtml(pb, props.angleB as LineType);
+    // A node-pair row (ParanProps.pair, both nodes shown) names the North Node's paran here, as
+    // any row names its two bodies; the South Node's, on the same latitude, has a label of its own
+    // (nodeTwinLabelHtml).
+    row = paranRowHtml(pre, pa, props.angleA as LineType, pb, props.angleB as LineType, labels);
   } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
     row = t('map.ecliptic');
   } else if (layerId.startsWith('eclipse')) {
@@ -1785,7 +1828,15 @@ function lineAtPoint(
   t: TFn,
   labels: EnumLabels,
   tol: number = LINE_HIT_TOLERANCE_PX,
-): { id: string; html: string; layerId: string; source: string; props: Record<string, unknown> } | null {
+): {
+  id: string;
+  html: string;
+  /** A node pair's second label, the South Node's (nodeTwinLabelHtml); null on every other line. */
+  twinHtml: string | null;
+  layerId: string;
+  source: string;
+  props: Record<string, unknown>;
+} | null {
   const layers = LINE_HIT_LAYERS.filter((l) => map.getLayer(l));
   if (!layers.length) return null;
   const feats = map.queryRenderedFeatures(
@@ -1829,6 +1880,7 @@ function lineAtPoint(
       polarKey,
     ].join('|'),
     html,
+    twinHtml: nodeTwinLabelHtml(f.layer.id, f.properties, labels),
     layerId: f.layer.id,
     // The GeoJSON source the line was drawn from — what the click's distance row looks the
     // line's FULL geometry up by (the rendered geometry is cut to its tile).
@@ -3017,13 +3069,12 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     }),
   );
 
-  // lineMetrics:true lets the node-pair layers below colour a single line with a
-  // line-gradient (half North Node colour, half South Node colour).
+  // (No lineMetrics: it was here for the node pair's line-gradient, which went on 2026-11-10 when
+  // the pair became two stripes side by side, below.)
   map.addSource('acg-lines', {
     type: 'geojson',
     data: EMPTY_FC(),
     ...LINE_SOURCE_OPTS,
-    lineMetrics: true,
   });
   map.addLayer(
     bind({
@@ -3066,44 +3117,35 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       },
     }),
   );
-  // Merged lunar-node pairs: the North Node line and its antipodal South Node line
-  // coincide, so we draw ONE line graded half North Node colour, half South Node colour
-  // (a hard split at the line's midpoint: ['step', ['line-progress'], nn, 0.5, sn], with
-  // the palette's two node colours — the bodies' own on every built-in) rather than two
-  // lines overdrawing. Same width/opacity as the solid layers above so it reads as the
-  // same kind of line.
-  map.addLayer(
-    bind({
-      id: 'acg-lines-meridian-pair',
-      source: 'acg-lines',
-      type: 'line',
-      filter: [
-        'all',
-        ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
-        ['==', ['get', 'pair'], true],
-      ],
-      paint: {
-        'line-opacity': 1,
-      },
-    }),
-  );
-  map.addLayer(
-    bind({
-      id: 'acg-lines-horizon-pair',
-      source: 'acg-lines',
-      type: 'line',
-      filter: [
-        'all',
-        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
-        ['==', ['get', 'pair'], true],
-      ],
-      paint: {
-        'line-opacity': 1,
-      },
-    }),
-  );
-  // ASC/DSC arrows skip merged node pairs (pair == true): a single line that is both a
-  // rising and a setting line can't carry a meaningful up/down arrow.
+  // The lunar-node pair: a North Node line and the South Node line on the opposite angle lie on
+  // each other (the nodes are antipodes), so the two are drawn SIDE BY SIDE, a solid stripe in
+  // each node's colour meeting on the true line — two layers per family, each offset to its side
+  // and at the palette's width for its own angle. Two lines lying together, each with its own
+  // label, and not one line that is both (Lina, 10 Nov 2026); until then it was one line shaded
+  // half and half by a line-gradient. mapStyleApply, "The lunar-node pair", has the rules and
+  // what was tried on the way.
+  // The feature drawn is the North Node's (App mergeNodePairs flags it `pair` and drops the South
+  // Node's twin), so the hit-test and the measure tool's snap list only the first layer of each.
+  for (const [id, family] of [
+    ['acg-lines-meridian-pair', ['MC', 'IC']],
+    ['acg-lines-meridian-pair-sn', ['MC', 'IC']],
+    ['acg-lines-horizon-pair', ['ASC', 'DSC', 'VX', 'AVX']],
+    ['acg-lines-horizon-pair-sn', ['ASC', 'DSC', 'VX', 'AVX']],
+  ] as const) {
+    map.addLayer(
+      bind({
+        id,
+        source: 'acg-lines',
+        type: 'line',
+        filter: ['all', ['in', ['get', 'lineType'], ['literal', [...family]]], ['==', ['get', 'pair'], true]],
+        paint: {
+          'line-opacity': 1,
+        },
+      }),
+    );
+  }
+  // ASC/DSC arrows skip node pairs (pair == true): the North Node rises along it and the South
+  // Node sets, so an arrow either way would be wrong for one of the two.
   addArrowLayer(
     map,
     style,
@@ -3264,17 +3306,13 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       },
     }),
   );
-  // Merged lunar-node pairs on the OVERLAY: the dashed two-tone counterpart of the base
-  // gradient pair. Two layers — North-node colour and South-node colour with complementary
-  // (offset) dashes, [d] and [0, ...d] — interleave into alternating green/salmon dashes all
-  // along the line, so the fused node line reads as both nodes everywhere on it while still
-  // reading as a derived overlay line. Not a gradient under a dash: the gradient's step
-  // splits a line into a North-node half and a South-node half, the chart's own pair's look.
-  // (Nor is that combination ruled out by the engine any more — maplibre-gl 5.24 draws a dash
-  // over a gradient, its line_gradient_sdf program — but the style spec still lists
-  // line-gradient as excluding line-dasharray, and a gradient needs lineMetrics, which this
-  // source doesn't carry.) One pair of layers covers all four angles via a data-driven width
-  // (MC widest, IC thinnest), and takes the meridians' dash on every angle, as it always has.
+  // The lunar-node pair on the OVERLAY, drawn as the chart's own is: two stripes side by side,
+  // the North Node's colour and the South Node's, each at the overlay's width for its own angle
+  // — and both dashed, as every overlay line is. (Until 2026-11-10 the two layers were one
+  // width with complementary dashes, [d] and [0, ...d], alternating along a line with no gap,
+  // which was the one overlay line that did not look dashed.) One pair of layers covers all
+  // four angles via a data-driven width and offset, and takes the meridians' dash on every
+  // angle, as it always has.
   map.addLayer(
     bind({
       id: 'acg-lines-ov-pair-nn',
@@ -3292,7 +3330,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       source: 'acg-lines-ov',
       type: 'line',
       filter: ['==', ['get', 'pair'], true],
-      // Its dash's leading 0 offsets these dashes into the North-node layer's gaps → alternating.
+      // The South Node's stripe, offset to the other side of the line from the North Node's.
       paint: {
         'line-opacity': 1,
       },
@@ -6569,8 +6607,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         if (seen.has(face)) return;
         seen.add(face);
         // A zero box isn't laid out (hidden), which is "no measurement", not "no size".
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
+        const { w, h } = pairChipBox(el);
         if (!w || !h) return;
         const s = sizes.get(face);
         if (s && s.hw * 2 === w && s.hh * 2 === h) return;
@@ -6595,8 +6632,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       .forEach((el) => {
         const face = el.dataset.bface as string;
         if (sizes.has(face)) return;
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
+        const { w, h } = pairChipBox(el);
         if (!w || !h) return;
         sizes.set(face, { hw: w / 2, hh: h / 2 });
         changed = true;
@@ -7384,12 +7420,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!crossPopup.isOpen()) crossPopup.addTo(map);
     };
     // The hovered bare line's .ui-tip (label only). Follows the cursor along the line.
+    // On a geodetic map it carries the place's readout too, as a second label under the line's
+    // own (Lina, 10 Nov 2026: "stack the labels so the planet line is over the GE label") — so
+    // its chrome is on each .ui-tip inside it, not on the popup (.line-tip-popup, Map.css). One
+    // popup rather than two at one point: MapLibre flips a popup at the map's edges by its own
+    // size, and two would flip separately and land on each other.
     let hoveredLine: string | null = null;
+    let lineHtml: string | null = null;
     const linePopup = new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 12,
-      className: 'zenith-popup',
+      className: 'zenith-popup line-tip-popup',
     });
     // The pinned eclipse local-circumstances card (click-to-open, ✕ to close).
     const eclipseCardPopup = new maplibregl.Popup({
@@ -7443,13 +7485,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const clearLine = () => {
       hoveredLine = null;
+      lineHtml = null;
       linePopup.remove();
       setBandHover(map, null);
     };
     // The geodetic readout: the place under the cursor's geodetic AS and MC to the minute, the
     // sign glyph between degree and minute as in the Coordinates box, then the place's name and
-    // its coordinates. The lowest-ranked tip — a zenith, a crossing or a line under the cursor
-    // names itself instead — and driven off the cursor here rather than off the app's hover,
+    // its coordinates. The lowest-ranked tip — a zenith or a crossing under the cursor names
+    // itself instead, and under a line the readout rides in the line's own popup, beneath the
+    // line's label (showLine) — and driven off the cursor here rather than off the app's hover,
     // which a placed pin freezes. Its HTML is re-set only when the text changes; it moves on
     // every frame.
     const geoPopup = new maplibregl.Popup({
@@ -7491,7 +7535,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       return null;
     };
-    const showGeo = (r: GeoReadout, at: maplibregl.LngLat) => {
+    // The readout's label, for its own popup (showGeo) or under a line's (showLine).
+    const geoTipHtml = (r: GeoReadout, at: maplibregl.LngLat): string => {
       const angles = geoAnglesText(
         geoAnglesParts(r.as, r.mc),
         { angles: t('map.geoReadout.angles'), anglesMcOnly: t('map.geoReadout.anglesMcOnly') },
@@ -7499,13 +7544,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       );
       // Inside the polar circles at the map's one tilt (90° − ε), her caution: two definitions of
       // the Ascendant, and which one the map uses. The line tips keep their own (map.polarNote).
-      const html =
+      return (
         `<div class="ui-tip geo-readout"><span class="geo-readout-angles">${angles}</span>` +
         (r.place ? `<span class="geo-readout-place" translate="no">${escapeHtml(r.place)}</span>` : '') +
         `<span class="geo-readout-coords" translate="no">${fmtLatDM(at.lat)} ${fmtLngDM(canonicalLng(at.lng))}</span>` +
         (r.polar ? `<span class="ui-tip-sub geo-readout-caution">${t('map.geoReadout.polar')}</span>` : '') +
         ((note) => (note ? `<span class="ui-tip-sub geo-readout-meridian">${escapeHtml(note)}</span>` : ''))(meridianNote(at)) +
-        `</div>`;
+        `</div>`
+      );
+    };
+    const showGeo = (r: GeoReadout, at: maplibregl.LngLat) => {
+      const html = geoTipHtml(r, at);
       geoPopup.setLngLat(at);
       if (html !== geoHtml) {
         geoHtml = html;
@@ -7534,17 +7583,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (prev) map.setFeatureState({ source, id: prev.id }, { hover: false, faint: false });
       if (id !== null) map.setFeatureState({ source, id }, { hover: true, faint });
     };
-    const showLine = (hit: { id: string; html: string; layerId: string }, at: maplibregl.LngLat) => {
+    // `under` is the geodetic readout's label for the same point (geoTipHtml), stacked beneath the
+    // line's own; null off a geodetic map. A node pair's second label (`twinHtml`, the South
+    // Node's) stands between them. The HTML is re-set when any label's text changes — the
+    // readout's does as the cursor slides along the line, the line's only with the line.
+    const showLine = (
+      hit: { id: string; html: string; twinHtml?: string | null; layerId: string },
+      at: maplibregl.LngLat,
+      under: string | null,
+    ) => {
       linePopup.setLngLat(at);
-      if (hoveredLine !== hit.id) {
-        hoveredLine = hit.id;
+      hoveredLine = hit.id;
+      const html = hit.html + (hit.twinHtml ?? '') + (under ?? '');
+      if (html !== lineHtml) {
+        lineHtml = html;
         // A paran's row names two bodies and can't wrap, so under the popup's default 240px cap
         // the longer ones ran out of the box: an overlay's, with its tag on both sides (243px of
         // text in 220px of room), and longer names in other languages (Меркурий, 225px). It fits
         // its own text instead. Only parans: a line near a pole carries a sentence that has to
-        // wrap, and they never do (isHorizonLine).
-        linePopup.setMaxWidth(hit.layerId.includes('parans') ? 'none' : '240px');
-        linePopup.setHTML(hit.html);
+        // wrap, and they never do (isHorizonLine). With the readout under it the popup takes the
+        // readout's own 260px (geoPopup), whose angle line can't wrap either.
+        linePopup.setMaxWidth(hit.layerId.includes('parans') ? 'none' : under ? '260px' : '240px');
+        linePopup.setHTML(html);
       }
       if (!linePopup.isOpen()) linePopup.addTo(map);
     };
@@ -7599,7 +7659,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const reach = hitReach(isTouchLayout());
       // The geodetic readout for the point under the cursor (null off a geodetic map), and the
       // highlight that follows it, Zone shading on or off — the highlight whatever tip wins
-      // below, the readout only where none does. Which highlight follows the grid's switches
+      // below, the readout where none does and under a line's label. Which highlight follows the grid's switches
       // (the host's geoHover, through the data each one feeds): the MC band with the meridians
       // on, the Ascendant zone with the curves on, both at once faint, so their overlap reads
       // darker. Within 0.01° of a pole the readout has no AS, and no zone is lit. The longitude
@@ -7691,11 +7751,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 { lat: e.lngLat.lat, lng: e.lngLat.lng },
               );
               if (sub) {
-                // Plain text by the seam's contract — escaped here as on the card.
-                line.html = line.html.replace(
-                  '</div>',
-                  `<span class="ui-tip-sub">${escapeHtml(sub)}</span></div>`,
-                );
+                // Plain text by the seam's contract — escaped here as on the card. About the
+                // latitude, so on a node pair it goes under the second label, below both names.
+                const note = `<span class="ui-tip-sub">${escapeHtml(sub)}</span></div>`;
+                if (line.twinHtml) line.twinHtml = line.twinHtml.replace('</div>', note);
+                else line.html = line.html.replace('</div>', note);
                 line.id += `@${Math.round(e.lngLat.lng * 4)}`;
               }
             }
@@ -7716,25 +7776,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 '</div>',
                 `<span class="ui-tip-sub">${t('map.bandRange', { range: bandRangeText(lineBand) })}</span></div>`,
               );
+              // A node pair's second label carries the South Node's own range: the band is the
+              // North Node's degrees, and the South Node stands opposite every one of them.
+              if (line.twinHtml) {
+                const south = { ...lineBand, lo: lineBand.lo + 180, hi: lineBand.hi + 180 };
+                line.twinHtml = line.twinHtml.replace(
+                  '</div>',
+                  `<span class="ui-tip-sub">${t('map.bandRange', { range: bandRangeText(south) })}</span></div>`,
+                );
+              }
             }
             const ownLine = line.layerId.startsWith('acg-lines') && !line.layerId.startsWith('acg-lines-ov');
             if (ownLine && line.props.band != null && (dataRef.current.orbBands?.features.length ?? 0) > 0) {
-              line.html = line.html.replace(
-                '</div>',
-                `<span class="ui-tip-sub">${t('map.bandCorridor')}</span></div>`,
-              );
+              // About the line's corridor, so on a node pair it goes under the second label.
+              const note = `<span class="ui-tip-sub">${t('map.bandCorridor')}</span></div>`;
+              if (line.twinHtml) line.twinHtml = line.twinHtml.replace('</div>', note);
+              else line.html = line.html.replace('</div>', note);
               line.id += '|corridor';
             }
             clearZenith();
             clearCross();
             clearGeo();
-            showLine(line, e.lngLat);
+            // On a geodetic map the place's readout goes under the line's label, in one popup.
+            showLine(line, e.lngLat, geo ? geoTipHtml(geo, readAt) : null);
           } else {
             clearZenith();
             clearCross();
             clearLine();
-            // The readout only over no line at all: a line whose tip is held down for its own
-            // open card is still a line, and the readout there would sit on that card instead.
+            // The readout by itself only over no line at all: a line whose tip is held down for its
+            // own open card is still a line, and the readout there would sit on that card instead.
             if (geo && !line) showGeo(geo, readAt);
             else clearGeo();
           }
@@ -7911,7 +7981,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               }) ?? null)
             : null;
         const builder = lineCardRef.current;
-        const html = hit ? builder(hit.layerId, hit.props, dist, extra) : null;
+        // A node pair's card reads the South Node's line too, and marks it in the colour its
+        // dashes are drawn in: the palette's, which the card builder has no way to ask for.
+        const cardProps =
+          hit && hit.props.pair && hit.layerId.startsWith('acg-lines')
+            ? {
+                ...hit.props,
+                pairColor: (hit.layerId.startsWith('acg-lines-ov')
+                  ? mapStyleRef.current.overlayNodePair
+                  : mapStyleRef.current.nodePair
+                ).sn,
+              }
+            : hit?.props;
+        const html = hit && cardProps ? builder(hit.layerId, cardProps, dist, extra) : null;
         // A tap on a banded line shows its band (and corridor), as a hover does (§2.1); a tap
         // anywhere else takes it down.
         const tappedBand = hit ? parseBand(hit.props.band) : null;
@@ -9898,21 +9980,40 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         {/* The ACG / aspect / node edge badges label the non-LS lines — hidden in the transparent
             LS-only export (those lines are emptied at the source), so their labels go too. */}
         {!chartSubject && !lsTransparent && badges.map((b) => {
+          // A lunar-node pair (both nodes shown): two lines lie together, and each gets its own
+          // chip — "☊ MC" and "☋ IC" side by side, in the two colours the pair's stripes are drawn
+          // in (MapStyle; an overlay's one ink when it has one) — where one two-tone chip used to
+          // name both (pairChipPos says why). Each is an ordinary chip, the overlay's tag on both.
+          // Plain labels, as a single node's chip is: the nodes draw no zenith stamp to fly to.
+          if (b.pair) {
+            const nodes = b.overlay ? mapStyle.overlayNodePair : mapStyle.nodePair;
+            const face = edgeChipFace(b);
+            const half = (planet: 'NorthNode' | 'SouthNode', angle: LineType, side: 'first' | 'second') => {
+              const fill = side === 'first' ? nodes.nn : nodes.sn;
+              const ink = badgeTextColor(fill);
+              // The first chip names the pair for the size cache; the second is its twin.
+              const marks = side === 'first' ? { 'data-bkey': b.key, 'data-bface': face } : { 'data-btwin': '' };
+              return (
+                <span
+                  {...marks}
+                  className="acg-badge"
+                  style={{ ...pairChipPos(b.x, b.y, side), background: fill, color: ink, zIndex: b.z }}
+                >
+                  {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
+                  <PlanetGlyph planet={planet} size={11} color={ink} />
+                  <span className="acg-badge-code" translate="no">{ANGLE_CODE[angle]}</span>
+                </span>
+              );
+            };
+            return (
+              <Fragment key={b.key}>
+                {half('NorthNode', b.lineType, 'first')}
+                {half('SouthNode', OPPOSITE_ANGLE[b.lineType], 'second')}
+              </Fragment>
+            );
+          }
           const text = badgeTextColor(b.color);
-          // A merged lunar-node pair gets a two-tone fill (North Node colour → South Node
-          // colour, matching the line) and a dual "NN MC / SN IC" label; every other
-          // badge keeps its solid planet colour and single label.
-          // Seam between the two node colours. 50% centres it for a natal pair, but an
-          // OVERLAY pair leads with a 2-char tag ("Tr"/"Sp") that widens the North-node
-          // half, so push the seam later (~60%) to keep it in the gap between the halves
-          // rather than slicing through the glyphs.
-          const seamPct = b.prefix ? 60 : 50;
-          // The two colours the pair's line is drawn in (MapStyle: the chart's gradient, or the
-          // overlay's two dashed layers, which take the overlay's one ink when it has one).
-          const nodes = b.overlay ? mapStyle.overlayNodePair : mapStyle.nodePair;
-          const bg = b.pair
-            ? `linear-gradient(100deg, ${nodes.nn} 0 ${seamPct}%, ${nodes.sn} ${seamPct}% 100%)`
-            : b.color;
+          const bg = b.color;
           // Aspect/midpoint badges fly to their computed point's sub-point —
           // where the aspect-offset (or midpoint) ecliptic degree is directly
           // overhead, on the set's dashed MC line — the analog of a planet
@@ -9961,22 +10062,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                   prefix: b.prefix ? `${b.prefix} ` : '',
                   planet: labels.planet(b.planet),
                 });
-          const inner = b.pair ? (
-            // No "/" separator — the two-tone fill splits North vs South node — but keep an
-            // empty spacer so the two halves read as two groups and the colour seam falls
-            // in the gap rather than through a glyph. The overlay tag (e.g. "Tr") still
-            // leads, as on every other overlay badge.
-            <>
-              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
-              <PlanetGlyph planet={b.planet} size={11} color={text} />
-              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.lineType]}</span>
-              <span className="acg-badge-sep" aria-hidden="true" />
-              <PlanetGlyph planet="SouthNode" size={11} color={text} />
-              <span className="acg-badge-code" translate="no">
-                {ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]]}
-              </span>
-            </>
-          ) : b.planetB ? (
+          const inner = b.planetB ? (
             // Midpoint line: both bodies' glyphs, then the angle ("Su Mo MC").
             <>
               <PlanetGlyph planet={b.planet} size={11} color={text} />
@@ -10116,49 +10202,66 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ) : (
               <PlanetGlyph planet={planet} size={11} color={paranText} />
             );
-          // A node-pair row (both nodes shown): the North Node's side goes on to name the South
-          // Node on the opposite angle — "☊ As / ☋ Ds" — so the South Node's reading can be found
-          // under its own name, as on a fused node line's chip.
-          const southNodeSide = (nnAngle: ParanBadge['angleA']) => (
-            <>
-              <span className="paran-badge-x" translate="no">/</span>
-              <PlanetGlyph planet="SouthNode" size={11} color={paranText} />
-              <span className="acg-badge-code" translate="no">
-                {ANGLE_CODE[OPPOSITE_ANGLE[nnAngle]]}
-              </span>
-            </>
-          );
+          // A chip's face: the paran's two bodies on their angles. `twin` is the South Node's chip of
+          // a node-pair row (both nodes shown): the same latitude is also the South Node's paran,
+          // on the angle opposite the North Node's, and it gets a chip of its own beside the North
+          // Node's ("♂ IC × ☊ As" then "♂ IC × ☋ Ds") rather than a slash inside one chip — two
+          // parans, two labels (Lina, 10 Nov 2026; pairChipPos). Both fly to the row's one spot.
+          const face = (twin: boolean) => {
+            const body = (s: 'A' | 'B', planet: PlanetName, angle: ParanBadge['angleA']) => {
+              const south = twin && planet === 'NorthNode';
+              return (
+                <>
+                  {/* An overlay's tag goes on BOTH bodies: both are the overlay's (a paran never
+                      pairs across frames). One tag in front read as "transiting ♀ × natal ♆" — a
+                      transit-to-natal paran, which is never drawn (2026-10-06). */}
+                  {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
+                  {south ? <PlanetGlyph planet="SouthNode" size={11} color={paranText} /> : side(s, planet)}
+                  <span className="acg-badge-code" translate="no">
+                    {ANGLE_CODE[south ? OPPOSITE_ANGLE[angle] : angle]}
+                  </span>
+                </>
+              );
+            };
+            return (
+              <>
+                {body('A', b.planetA, b.angleA)}
+                <span className="paran-badge-x" translate="no">×</span>
+                {body('B', b.planetB, b.angleB)}
+              </>
+            );
+          };
+          const look = { background: zenithFill, color: paranText, zIndex: b.z };
           return (
-            <TipButton
-              type="button"
-              key={b.key}
-              data-bkey={b.key}
-              data-bface={paranChipFace(b)}
-              tabIndex={-1}
-              className="acg-badge paran-badge acg-badge-btn"
-              style={{
-                ...badgePos(b.x, b.y),
-                background: zenithFill,
-                color: paranText,
-                zIndex: b.z,
-              }}
-              onClick={() => onParanClick(b)}
-              placement="top"
-              tip={t('map.flyToParan')}
-            >
-              {/* An overlay's tag goes on BOTH bodies: both are the overlay's (a paran never
-                  pairs across frames). One tag in front read as "transiting ♀ × natal ♆" — a
-                  transit-to-natal paran, which is never drawn (2026-10-06). */}
-              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
-              {side('A', b.planetA)}
-              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleA]}</span>
-              {b.pair && b.planetA === 'NorthNode' && southNodeSide(b.angleA)}
-              <span className="paran-badge-x" translate="no">×</span>
-              {b.prefix && <span className="acg-badge-prefix" translate="no">{b.prefix}</span>}
-              {side('B', b.planetB)}
-              <span className="acg-badge-code" translate="no">{ANGLE_CODE[b.angleB]}</span>
-              {b.pair && b.planetB === 'NorthNode' && southNodeSide(b.angleB)}
-            </TipButton>
+            <Fragment key={b.key}>
+              <TipButton
+                type="button"
+                data-bkey={b.key}
+                data-bface={paranChipFace(b)}
+                tabIndex={-1}
+                className="acg-badge paran-badge acg-badge-btn"
+                style={{ ...(b.pair ? pairChipPos(b.x, b.y, 'first') : badgePos(b.x, b.y)), ...look }}
+                onClick={() => onParanClick(b)}
+                placement="top"
+                tip={t('map.flyToParan')}
+              >
+                {face(false)}
+              </TipButton>
+              {b.pair && (
+                <TipButton
+                  type="button"
+                  data-btwin=""
+                  tabIndex={-1}
+                  className="acg-badge paran-badge acg-badge-btn"
+                  style={{ ...pairChipPos(b.x, b.y, 'second'), ...look }}
+                  onClick={() => onParanClick(b)}
+                  placement="top"
+                  tip={t('map.flyToParan')}
+                >
+                  {face(true)}
+                </TipButton>
+              )}
+            </Fragment>
           );
         })}
         {/* The geodetic grid's sign glyphs (geoGridLabels.ts) — the Coordinates box's own glyphs,

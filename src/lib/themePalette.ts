@@ -208,10 +208,12 @@ export interface MapStyle {
     readonly meridianDash: readonly number[];
     readonly horizonDash: readonly number[];
   };
-  /** The chart's merged node pair: the step gradient ['step',['line-progress'],nn,0.5,sn]. */
+  /** The chart's node pair: two stripes side by side, one in each colour (mapStyleApply
+   *  "The lunar-node pair"; a half-and-half gradient until 2026-11-10). */
   readonly nodePair: { readonly nn: string; readonly sn: string };
-  /** The overlay's node pair: two layers, nn on `nnDash`, sn on `snDash` = [0, ...nnDash]
-   *  (the leading 0 offsets sn into nn's gaps). Colours are the overlay ink when one is set. */
+  /** The overlay's node pair: two stripes side by side, both dashed on `nnDash`. Colours are the
+   *  overlay ink when one is set. (`snDash` = [0, ...nnDash] is the offset dash the two layers
+   *  alternated on until 2026-11-10; nothing draws with it now.) */
   readonly overlayNodePair: {
     readonly nn: string;
     readonly sn: string;

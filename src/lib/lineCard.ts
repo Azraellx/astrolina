@@ -424,7 +424,9 @@ export function buildLineCard(
   // invites exactly the reading the page rules out.
   const distanceRow = dist && !layerId.startsWith('local-space') ? distanceLine(dist, t) : '';
   const extraRow = extra ? `<span class="ui-tip-sub line-card-extra">${escapeHtml(extra)}</span>` : '';
-  const card = (title: string, body: string, notes: string[]): string => {
+  // `next` is a node pair's second reading, the South Node's, under its own title (see the two
+  // `pair` branches below): two lines lie together there, and the card reads each in turn.
+  const card = (title: string, body: string, notes: string[], next?: { title: string; body: string }): string => {
     // The disclaimer is always the LAST note (every return below appends t('…footer')). Pull
     // it out and render it as a hover-revealed tip (.line-card-disclaimer in Map.css) instead
     // of an always-on line, to cut clutter; the overlay-source notes stay inline.
@@ -434,6 +436,10 @@ export function buildLineCard(
       `<div class="ui-tip line-card">` +
       `<span class="ui-tip-title">${title}</span>` +
       `<p class="line-card-body">${body}</p>` +
+      (next
+        ? `<span class="ui-tip-title line-card-title-next">${next.title}</span>` +
+          `<p class="line-card-body">${next.body}</p>`
+        : '') +
       // The computed line first: it is about this line at this spot, as the reading is;
       // the overlay notes and the distance row are about the line's provenance and place.
       extraRow +
@@ -480,20 +486,18 @@ export function buildLineCard(
   }
 
   if (layerId.startsWith('parans')) {
-    // A node-pair row (both nodes shown): the same latitude read from the South Node, which is on
-    // the angle opposite the North Node's — named in full, as the title names the North Node's.
-    if (props.pair) {
-      const nnA = props.planetA === 'NorthNode';
-      const swap = (p: unknown, angle: unknown): [string, string] =>
-        p === 'NorthNode'
-          ? [t('planets.SouthNode.name'), angleLabel(OPPOSITE_ANGLE[angle as LineType])]
-          : [t(`planets.${p as PlanetName}.name`), angleLabel(angle)];
-      const [a, angleA] = swap(props.planetA, props.angleA);
-      const [b, angleB] = swap(props.planetB, props.angleB);
-      if (nnA || props.planetB === 'NorthNode') {
-        notes.unshift(
-          t('lineMeanings.paranNodePair', { reading: t('lineMeanings.paranTitle', { a, b, angleA, angleB }) }),
-        );
+    // A node-pair row (both nodes shown): the same latitude is the South Node's paran too, on the
+    // angle opposite the North Node's. A paran of its own with a reading of its own, under its own
+    // title after the North Node's — not a note on the North Node's reading, which it was until
+    // 2026-11-10 (Lina: the two are linked, and they are not the same).
+    if (props.pair && (props.planetA === 'NorthNode' || props.planetB === 'NorthNode')) {
+      const swap = (p: unknown, angle: unknown): [unknown, unknown] =>
+        p === 'NorthNode' ? ['SouthNode', OPPOSITE_ANGLE[angle as LineType]] : [p, angle];
+      const [planetA, angleA] = swap(props.planetA, props.angleA);
+      const [planetB, angleB] = swap(props.planetB, props.angleB);
+      const south = lineReading(layerId, { ...props, planetA, angleA, planetB, angleB }, t);
+      if (south) {
+        return card(reading.title, reading.body, [t('lineMeanings.nodePair'), ...notes, footer], south);
       }
     }
     return card(reading.title, reading.body, [...notes, footer]);
@@ -527,7 +531,25 @@ export function buildLineCard(
 
   if (layerId.startsWith('acg-lines')) {
     const planet = props.planet as PlanetName;
-    if (props.pair) notes.unshift(t('lineMeanings.nodePair'));
+    // A node pair's line (both nodes shown; the feature is the North Node's): the South Node's
+    // line on the opposite angle lies on it, and is read under its own title after the North
+    // Node's. Its glyph takes `pairColor`, the colour the map draws the South Node's dashes in
+    // (the map adds it to the clicked props; this module has no palette of its own).
+    if (props.pair) {
+      const south = lineReading(
+        layerId,
+        { ...props, planet: 'SouthNode', lineType: OPPOSITE_ANGLE[props.lineType as LineType] },
+        t,
+      );
+      if (south) {
+        return card(
+          glyph(planet, props.color) + reading.title,
+          reading.body,
+          [t('lineMeanings.nodePair'), ...notes, footer],
+          { title: glyph('SouthNode', props.pairColor) + south.title, body: south.body },
+        );
+      }
+    }
     return card(glyph(planet, props.color) + reading.title, reading.body, [...notes, footer]);
   }
 

@@ -564,15 +564,6 @@
   line-height: 11px;
 }
 
-/* Empty spacer between the two halves of a merged lunar-node badge (replacing the former
-   "/"): widens the gap between the North- and South-node halves — on top of the badge's
-   own 3px flex gaps — so they read as two groups and the two-tone colour seam lands in the
-   gap rather than through a glyph. */
-.acg-badge-sep {
-  width: 3px;
-  flex-shrink: 0;
-}
-
 /* The "×" between the two bodies of a paran badge — quieter than the codes. */
 .paran-badge-x {
   margin: 0 1px;
@@ -718,6 +709,30 @@
   text-align: center;
 }
 
+/* A hovered line's tip. On a geodetic map it holds two labels, the line's own over the place's
+   readout (Lina, 10 Nov 2026), so the box chrome moves from the popup onto each label and the
+   popup only stacks them; with one label it draws exactly as the shared chrome above does. */
+.line-tip-popup .maplibregl-popup-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.line-tip-popup .ui-tip {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 6px 10px;
+  background: rgb(var(--bg-menu));
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, calc(0.32 * var(--fx-shadow)));
+}
+
 /* The geodetic hover readout, in Lina's three lines (2026-10-20): "GE: AS … · MC …" to the minute
    with the sign glyph between degree and minute (as in the Coordinates box), then the place's
    name, then the cursor's coordinates — and, inside the polar circles, her caution, smaller and
@@ -826,6 +841,11 @@
 }
 .line-card-glyph {
   margin-right: 5px;
+}
+/* A node pair's card holds two readings, the North Node's and then the South Node's, each under
+   its own title (lineCard.ts): the second title stands a little off the first reading. */
+.line-card-title-next {
+  margin-top: 6px;
 }
 /* Anchor for the hover-revealed disclaimer below. */
 .line-card {

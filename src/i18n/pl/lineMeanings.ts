@@ -29,8 +29,7 @@ export const lineMeanings = {
     AVX: 'to, co się już umie, gdy los puka do drzwi',
   },
   generic: '{theme} Wzdłuż tej linii ten temat zabarwia sferę: {essence}.',
-  nodePair: 'Ta linia to Węzeł Północny na jednym kącie i Węzeł Południowy na przeciwległym.',
-  paranNodePair: 'Z perspektywy Węzła Południowego ten paran to {reading}: Węzeł Południowy zawsze zajmuje kąt przeciwległy do Węzła Północnego.',
+  nodePair: 'Dwie linie leżą tu razem. Węzły zawsze są naprzeciw siebie, więc gdy jeden leży na jednym z kątów, drugi leży na kącie przeciwległym.',
   meanings: {
     Sun: {
       MC: 'Tożsamość i kierunek życia wchodzą w światło reflektorów. Uznanie, przywództwo i widoczność tego, kim się naprawdę jest, przychodzą tu naturalnie, a kariera nosi osobisty ślad, choć w tym świetle niewiele pozostaje ukryte.',

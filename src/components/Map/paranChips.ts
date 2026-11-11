@@ -61,8 +61,9 @@ export interface ParanBadge {
   minorSide?: 'A' | 'B';
   minorColor?: string;
   prefix: string;
-  /** A North Node row standing for the South Node's too (ParanProps.pair, both nodes shown): the
-   *  chip names both, "NN As / SN Ds", the South Node on the opposite angle. */
+  /** A North Node row standing for the South Node's too (ParanProps.pair, both nodes shown): two
+   *  chips side by side at the row's one spot, the North Node's paran and the South Node's on the
+   *  opposite angle (Map.tsx pairChipPos; one chip reading "NN As / SN Ds" until 2026-11-10). */
   pair?: boolean;
   /** Click-to-fly target: the paran's intersection point. */
   targetLng: number;
@@ -139,15 +140,14 @@ export function paranChipFace(b: ParanBadge): string {
 // Ds — Map.tsx's ANGLE_CODE). A catalog row's mark stands in for one glyph and is up to a pixel
 // wider (the hollow ◇ of a hypothetical point, 12 px; Map.tsx's estimateMinorChip). A tag is
 // drawn TWICE, once before each body (2026-10-06): both bodies are the overlay's. A node pair
-// adds the South Node's glyph, its two-letter code and a "/" (~6 px with its margins): three
-// items more.
+// is two such chips side by side, the South Node's the same width as the North Node's, with
+// PARAN_PAIR_GAP between them (Map.tsx's NODE_PAIR_CHIP_GAP, which draws them).
+const PARAN_PAIR_GAP = 3;
 export function estimateParanChip(b: ParanBadge): BadgeSize {
-  const codeChars = 4 + (b.pair ? 2 : 0);
   const prefixChars = 2 * b.prefix.length;
-  const items = 5 + (b.prefix ? 2 : 0) + (b.pair ? 3 : 0);
-  const w =
-    12 + 22 + (b.pair ? 11 : 0) + (b.minorN !== undefined ? 1 : 0) + 6 * codeChars + 8 + (b.pair ? 6 : 0) +
-    4.5 * prefixChars + 3 * (items - 1);
+  const items = 5 + (b.prefix ? 2 : 0);
+  const one = 12 + 22 + (b.minorN !== undefined ? 1 : 0) + 6 * 4 + 8 + 4.5 * prefixChars + 3 * (items - 1);
+  const w = b.pair ? 2 * one + PARAN_PAIR_GAP : one;
   return { hw: w / 2, hh: 7.5 };
 }
 

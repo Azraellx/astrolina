@@ -44,13 +44,12 @@ export const lineMeanings = {
   // Generic card for bodies without bespoke texts (nodes, Lilith, Chiron,
   // asteroids): their one-line theme plus the angle essence.
   generic: '{theme} Along this line that theme colours {essence}.',
-  // Extra line on a merged node line: the same geometry is both nodes.
-  nodePair: 'This line is the North Node on one angle and the South Node on the opposite one.',
-  // Extra line on a merged node PARAN (both nodes shown): the same latitude read from the South
-  // Node, which always stands on the angle opposite the North Node's. {reading} is a full paran
-  // title built from paranTitle above, e.g. "Mars IC × South Node DSC". Shown under the card's
-  // reading, beside the overlay notes; one sentence.
-  paranNodePair: 'From the South Node, this paran is {reading}: the South Node always holds the angle opposite the North Node.',
+  // The note on a line card that holds TWO readings, shown under them: a North Node line (or
+  // paran) and the South Node's on the opposite angle, which fall in the same place on the map
+  // when both nodes are shown. It says why the two are together, and must not say that one line
+  // IS both nodes: they are two lines, linked but not the same (the house astrologer's ruling,
+  // 2026-11-10). Small muted text in a card about 250 px wide; keep it to two short sentences.
+  nodePair: 'Two lines lie together here. The nodes are always opposite each other, so where one is on an angle, the other is on the opposite angle.',
 
   // Bespoke body-on-angle readings, every computed body.
   meanings: {
