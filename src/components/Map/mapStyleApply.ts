@@ -58,70 +58,18 @@ const meridianWidth = (mc: number, ic: number) =>
 /** Horizon layers: the Vertex axis, else ASC/DSC; a banded line a hairline pair. */
 const horizonWidth = (vx: number, horizon: number) =>
   expr(['case', BANDED, BANDED_HAIRLINE, ['in', LT, ['literal', ['VX', 'AVX']]], vx, horizon]);
-// ── The lunar-node pair ──────────────────────────────────────────────────────────────────────
-// With both nodes shown, a North Node line and the South Node line on the OPPOSITE angle lie in
-// the same place (the nodes are antipodes, so North Node MC falls on South Node IC). They are two
-// lines, linked but not the same (Lina, 10 Nov 2026), and are drawn as two: SIDE BY SIDE, a stripe
-// in each node's colour, touching along the true line, the whole way.
-//
-// Each stripe is its own line by every rule the other lines follow: its own node's colour, and
-// the palette's width for ITS OWN angle, a Custom theme's included (Salvatore, 10 Nov 2026). The
-// feature drawn is the North Node's, so the South Node's layer reads the opposite angle: on a
-// North Node IC line the South Node's stripe is an MC line's width, beside an IC-thin North Node
-// stripe. `line-offset` puts each to its side: the North Node by half the SOUTH Node's width one
-// way, the South Node by half the North Node's the other, so the two meet on the line itself.
-//
-// What it replaced, all on that one day and all recorded so none comes back by accident:
-//  - one line shaded half and half (a line-gradient split at its midpoint, on a meridian the
-//    equator): it showed a boundary where nothing changes, and read as "the North Node in one
-//    hemisphere, the South Node in the other". Both hold along the whole line.
-//  - alternating dashes of the two colours: true, but a dashed line is how an OVERLAY is drawn,
-//    and at the two lines' own widths the thin dashes read as gaps in the thick ones.
-/** A node pair's stripe, half of its twin's width to its own side. */
-const beside = (twinWidth: number, south: boolean) => (south ? twinWidth / 2 : -twinWidth / 2);
-/** A banded pair (a chart with no birth time) keeps the banded look, two hairlines either side of
- *  the gap, one in each node's colour: each hairline half the gap and half itself off the line. */
-const BANDED_PAIR_OFFSET = (BANDED_GAP + BANDED_HAIRLINE) / 2;
-/** The chart pair's meridians. `south` reads the opposite angle (MC ↔ IC). */
-const pairMeridianWidth = (mc: number, ic: number, south: boolean) =>
-  south ? meridianWidth(ic, mc) : meridianWidth(mc, ic);
-/** …and its side: on a North Node MC line the twin is an IC line, and the other way round. */
-const pairMeridianOffset = (mc: number, ic: number, south: boolean) => {
-  // The twin's width under each of the feature's two angles. North Node on MC: the South Node is
-  // on IC. South Node's layer, feature on MC: its twin, the North Node, is the MC line.
-  const [twinOnMc, twinOnIc] = south ? [mc, ic] : [ic, mc];
-  return expr([
-    'case',
-    BANDED,
-    south ? BANDED_PAIR_OFFSET : -BANDED_PAIR_OFFSET,
-    ['==', LT, 'MC'],
-    beside(twinOnMc, south),
-    beside(twinOnIc, south),
-  ]);
-};
-/** The chart pair's rising/setting and Vertex lines: one width for both nodes (horizonWidth). */
-const pairHorizonOffset = (vx: number, horizon: number, south: boolean) =>
-  expr([
-    'case',
-    BANDED,
-    south ? BANDED_PAIR_OFFSET : -BANDED_PAIR_OFFSET,
-    ['in', LT, ['literal', ['VX', 'AVX']]],
-    beside(vx, south),
-    beside(horizon, south),
-  ]);
-/** The overlay node pairs, one layer for every angle (a Vertex pair takes the horizon width, as
- *  it always has). `south` reads the opposite angle, as the chart's pair does. */
-const pairWidth = (mc: number, ic: number, horizon: number, south: boolean) =>
-  expr(['case', ['==', LT, 'MC'], south ? ic : mc, ['==', LT, 'IC'], south ? mc : ic, horizon]);
-const pairOffset = (mc: number, ic: number, horizon: number, south: boolean) =>
-  expr([
-    'case',
-    ['==', LT, 'MC'],
-    beside(south ? mc : ic, south),
-    ['==', LT, 'IC'],
-    beside(south ? ic : mc, south),
-    beside(horizon, south),
-  ]);
+/** The overlay node pairs, one layer for every angle (a Vertex pair takes the horizon width,
+ *  as it always has). */
+const pairWidth = (mc: number, ic: number, horizon: number) =>
+  expr(['case', ['==', LT, 'MC'], mc, ['==', LT, 'IC'], ic, horizon]);
+/** The chart's node pair: one line, North Node's colour to its midpoint, South Node's after
+ *  (needs the source's lineMetrics). The line takes the North Node's angle's width.
+ *
+ *  For one day, 2026-11-10, the pair was two stripes side by side instead, one in each colour,
+ *  each offset by `line-offset` and at its own angle's width. Salvatore, 2026-11-11: the gradient
+ *  was the better drawing, and this is it again. Only the drawing came back: the pair's labels
+ *  and click card still name the two lines separately (Map.tsx pairChipPos, nodeTwinLabelHtml). */
+const nodeGradient = (nn: string, sn: string) => expr(['step', ['line-progress'], nn, 0.5, sn]);
 const visible = (on: boolean) => (on ? 'visible' : 'none');
 /** The orb bands carry their opacity per feature; the strength scales it, capped at opaque.
  *  At 1 the expression is the bare read the layer always had. */
@@ -211,18 +159,10 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
   paint('acg-lines-ov-meridian', 'line-gap-width', bandedGap),
   paint('acg-lines-ov-horizon', 'line-gap-width', bandedGap),
   paint('acg-lines-horizon', 'line-width', (s) => horizonWidth(s.natal.vxWidth, s.natal.horizonWidth)),
-  paint('acg-lines-meridian-pair', 'line-color', (s) => s.nodePair.nn),
-  paint('acg-lines-meridian-pair', 'line-width', (s) => pairMeridianWidth(s.natal.mcWidth, s.natal.icWidth, false)),
-  paint('acg-lines-meridian-pair', 'line-offset', (s) => pairMeridianOffset(s.natal.mcWidth, s.natal.icWidth, false)),
-  paint('acg-lines-meridian-pair-sn', 'line-color', (s) => s.nodePair.sn),
-  paint('acg-lines-meridian-pair-sn', 'line-width', (s) => pairMeridianWidth(s.natal.mcWidth, s.natal.icWidth, true)),
-  paint('acg-lines-meridian-pair-sn', 'line-offset', (s) => pairMeridianOffset(s.natal.mcWidth, s.natal.icWidth, true)),
-  paint('acg-lines-horizon-pair', 'line-color', (s) => s.nodePair.nn),
+  paint('acg-lines-meridian-pair', 'line-gradient', (s) => nodeGradient(s.nodePair.nn, s.nodePair.sn)),
+  paint('acg-lines-meridian-pair', 'line-width', (s) => meridianWidth(s.natal.mcWidth, s.natal.icWidth)),
+  paint('acg-lines-horizon-pair', 'line-gradient', (s) => nodeGradient(s.nodePair.nn, s.nodePair.sn)),
   paint('acg-lines-horizon-pair', 'line-width', (s) => horizonWidth(s.natal.vxWidth, s.natal.horizonWidth)),
-  paint('acg-lines-horizon-pair', 'line-offset', (s) => pairHorizonOffset(s.natal.vxWidth, s.natal.horizonWidth, false)),
-  paint('acg-lines-horizon-pair-sn', 'line-color', (s) => s.nodePair.sn),
-  paint('acg-lines-horizon-pair-sn', 'line-width', (s) => horizonWidth(s.natal.vxWidth, s.natal.horizonWidth)),
-  paint('acg-lines-horizon-pair-sn', 'line-offset', (s) => pairHorizonOffset(s.natal.vxWidth, s.natal.horizonWidth, true)),
 
   paint('local-space-ov-layer', 'line-width', (s) => s.localSpace.overlayWidth),
   paint('local-space-ov-layer', 'line-dasharray', (s) => dash(s.localSpace.overlayDash)),
@@ -247,22 +187,15 @@ export const LAYER_BINDINGS: readonly LayerBinding[] = Object.freeze([
   paint('acg-lines-ov-horizon', 'line-dasharray', (s) => dash(s.overlay.horizonDash)),
   paint('acg-lines-ov-pair-nn', 'line-color', (s) => s.overlayNodePair.nn),
   paint('acg-lines-ov-pair-nn', 'line-width', (s) =>
-    pairWidth(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth, false),
+    pairWidth(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth),
   ),
-  paint('acg-lines-ov-pair-nn', 'line-offset', (s) =>
-    pairOffset(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth, false),
-  ),
-  // Both stripes dashed as the overlay's meridians are: side by side, they need no offset dash.
   paint('acg-lines-ov-pair-nn', 'line-dasharray', (s) => dash(s.overlayNodePair.nnDash)),
   paint('acg-lines-ov-pair-sn', 'line-color', (s) => s.overlayNodePair.sn),
   paint('acg-lines-ov-pair-sn', 'line-width', (s) =>
-    pairWidth(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth, true),
+    pairWidth(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth),
   ),
-  paint('acg-lines-ov-pair-sn', 'line-offset', (s) =>
-    pairOffset(s.overlay.mcWidth, s.overlay.icWidth, s.overlay.horizonWidth, true),
-  ),
-  // Both stripes dashed as the overlay's meridians are: side by side, they need no offset dash.
-  paint('acg-lines-ov-pair-sn', 'line-dasharray', (s) => dash(s.overlayNodePair.nnDash)),
+  // [0, ...nnDash]: the leading 0 offsets these dashes into the North-node layer's gaps.
+  paint('acg-lines-ov-pair-sn', 'line-dasharray', (s) => dash(s.overlayNodePair.snDash)),
 
   ...each(ANGLE_ARROW_LAYERS, (l) => [layout(l, 'visibility', (s) => visible(s.arrows))]),
 

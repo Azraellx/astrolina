@@ -533,7 +533,7 @@ export function buildLineCard(
     const planet = props.planet as PlanetName;
     // A node pair's line (both nodes shown; the feature is the North Node's): the South Node's
     // line on the opposite angle lies on it, and is read under its own title after the North
-    // Node's. Its glyph takes `pairColor`, the colour the map draws the South Node's dashes in
+    // Node's. Its glyph takes `pairColor`, the colour the map draws the South Node's half in
     // (the map adds it to the clicked props; this module has no palette of its own).
     if (props.pair) {
       const south = lineReading(

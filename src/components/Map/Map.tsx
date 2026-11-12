@@ -3069,12 +3069,13 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     }),
   );
 
-  // (No lineMetrics: it was here for the node pair's line-gradient, which went on 2026-11-10 when
-  // the pair became two stripes side by side, below.)
+  // lineMetrics:true lets the node-pair layers below colour a single line with a
+  // line-gradient (half North Node colour, half South Node colour).
   map.addSource('acg-lines', {
     type: 'geojson',
     data: EMPTY_FC(),
     ...LINE_SOURCE_OPTS,
+    lineMetrics: true,
   });
   map.addLayer(
     bind({
@@ -3118,32 +3119,43 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
     }),
   );
   // The lunar-node pair: a North Node line and the South Node line on the opposite angle lie on
-  // each other (the nodes are antipodes), so the two are drawn SIDE BY SIDE, a solid stripe in
-  // each node's colour meeting on the true line — two layers per family, each offset to its side
-  // and at the palette's width for its own angle. Two lines lying together, each with its own
-  // label, and not one line that is both (Lina, 10 Nov 2026); until then it was one line shaded
-  // half and half by a line-gradient. mapStyleApply, "The lunar-node pair", has the rules and
-  // what was tried on the way.
-  // The feature drawn is the North Node's (App mergeNodePairs flags it `pair` and drops the South
-  // Node's twin), so the hit-test and the measure tool's snap list only the first layer of each.
-  for (const [id, family] of [
-    ['acg-lines-meridian-pair', ['MC', 'IC']],
-    ['acg-lines-meridian-pair-sn', ['MC', 'IC']],
-    ['acg-lines-horizon-pair', ['ASC', 'DSC', 'VX', 'AVX']],
-    ['acg-lines-horizon-pair-sn', ['ASC', 'DSC', 'VX', 'AVX']],
-  ] as const) {
-    map.addLayer(
-      bind({
-        id,
-        source: 'acg-lines',
-        type: 'line',
-        filter: ['all', ['in', ['get', 'lineType'], ['literal', [...family]]], ['==', ['get', 'pair'], true]],
-        paint: {
-          'line-opacity': 1,
-        },
-      }),
-    );
-  }
+  // each other (the nodes are antipodes), so ONE line is drawn there, graded half North Node
+  // colour, half South Node colour (a hard split at the line's midpoint: ['step',
+  // ['line-progress'], nn, 0.5, sn], with the palette's two node colours — the bodies' own on
+  // every built-in) rather than two lines overdrawing. Same width/opacity as the solid layers
+  // above so it reads as the same kind of line. (Two stripes side by side for one day,
+  // 2026-11-10; mapStyleApply nodeGradient says why this came back.) The drawing is one line;
+  // its labels and card name the two lines that lie there separately.
+  map.addLayer(
+    bind({
+      id: 'acg-lines-meridian-pair',
+      source: 'acg-lines',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+        ['==', ['get', 'pair'], true],
+      ],
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
+  map.addLayer(
+    bind({
+      id: 'acg-lines-horizon-pair',
+      source: 'acg-lines',
+      type: 'line',
+      filter: [
+        'all',
+        ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
+        ['==', ['get', 'pair'], true],
+      ],
+      paint: {
+        'line-opacity': 1,
+      },
+    }),
+  );
   // ASC/DSC arrows skip node pairs (pair == true): the North Node rises along it and the South
   // Node sets, so an arrow either way would be wrong for one of the two.
   addArrowLayer(
@@ -3306,13 +3318,18 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       },
     }),
   );
-  // The lunar-node pair on the OVERLAY, drawn as the chart's own is: two stripes side by side,
-  // the North Node's colour and the South Node's, each at the overlay's width for its own angle
-  // — and both dashed, as every overlay line is. (Until 2026-11-10 the two layers were one
-  // width with complementary dashes, [d] and [0, ...d], alternating along a line with no gap,
-  // which was the one overlay line that did not look dashed.) One pair of layers covers all
-  // four angles via a data-driven width and offset, and takes the meridians' dash on every
-  // angle, as it always has.
+  // The lunar-node pair on the OVERLAY: the dashed two-tone counterpart of the chart's gradient
+  // pair. Two layers — North-node colour and South-node colour with complementary (offset)
+  // dashes, [d] and [0, ...d] — interleave into alternating dashes all along the line, so it
+  // carries both nodes' colours everywhere on it while still reading as a derived overlay line.
+  // Not a gradient under a dash: the gradient's step splits a line into a North-node half and a
+  // South-node half, the chart's own pair's look. (Nor is that combination ruled out by the
+  // engine any more — maplibre-gl 5.24 draws a dash over a gradient, its line_gradient_sdf
+  // program — but the style spec still lists line-gradient as excluding line-dasharray, and a
+  // gradient needs lineMetrics, which this source doesn't carry.) One pair of layers covers all
+  // four angles via a data-driven width (MC widest, IC thinnest), and takes the meridians' dash
+  // on every angle, as it always has. (Two dashed stripes side by side for one day, 2026-11-10;
+  // back with the chart's gradient, mapStyleApply nodeGradient.)
   map.addLayer(
     bind({
       id: 'acg-lines-ov-pair-nn',
@@ -3330,7 +3347,7 @@ function setupCustomLayers(map: maplibregl.Map, style: MapStyle, measureColor: s
       source: 'acg-lines-ov',
       type: 'line',
       filter: ['==', ['get', 'pair'], true],
-      // The South Node's stripe, offset to the other side of the line from the North Node's.
+      // Its dash's leading 0 offsets these dashes into the North-node layer's gaps → alternating.
       paint: {
         'line-opacity': 1,
       },
@@ -7982,7 +7999,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             : null;
         const builder = lineCardRef.current;
         // A node pair's card reads the South Node's line too, and marks it in the colour its
-        // dashes are drawn in: the palette's, which the card builder has no way to ask for.
+        // half of the line is drawn in: the palette's, which the card builder has no way to ask for.
         const cardProps =
           hit && hit.props.pair && hit.layerId.startsWith('acg-lines')
             ? {
@@ -9981,7 +9998,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             LS-only export (those lines are emptied at the source), so their labels go too. */}
         {!chartSubject && !lsTransparent && badges.map((b) => {
           // A lunar-node pair (both nodes shown): two lines lie together, and each gets its own
-          // chip — "☊ MC" and "☋ IC" side by side, in the two colours the pair's stripes are drawn
+          // chip — "☊ MC" and "☋ IC" side by side, in the two colours the pair's line is drawn
           // in (MapStyle; an overlay's one ink when it has one) — where one two-tone chip used to
           // name both (pairChipPos says why). Each is an ordinary chip, the overlay's tag on both.
           // Plain labels, as a single node's chip is: the nodes draw no zenith stamp to fly to.
