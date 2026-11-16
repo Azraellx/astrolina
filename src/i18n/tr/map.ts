@@ -14,8 +14,8 @@ export const map = {
   },
   pin: {
     natal: 'Natal doğum yeri (kaldırmak için sağ tıklayın)',
-    custom: 'Sabitlenen konum (kaldırmak için sağ tıklayın)',
-    home: 'Ev — bu haritanın şu an yaşadığı yer (raptiyeyi kaldırmak için sağ tıklayın)',
+    custom: 'İşaretlenen konum (kaldırmak için sağ tıklayın)',
+    home: 'Ev — bu haritanın şu an yaşadığı yer (işareti kaldırmak için sağ tıklayın)',
   },
   home: {
     tip: 'Ev',
@@ -30,7 +30,7 @@ export const map = {
     trine: 'üçgen',
   },
   flyToParan: 'Bu paranın kesişim noktasına uçun (geri dönmek için yeniden tıklayın)',
-  flyToLocalSpaceOrigin: 'Yerel uzay başlangıç noktasına uçun (raptiye)',
+  flyToLocalSpaceOrigin: 'Pusula Astrolojisi başlangıç noktasına uçun (işaret)',
   ecliptic: 'Ekliptik',
   polarNote: 'Kutup bölgesi: bu çizginin zirvesinin ötesinde doğuş ve batış yer değiştirir.',
   bandRange: 'doğum saati bilinmiyor · aralık {range}',

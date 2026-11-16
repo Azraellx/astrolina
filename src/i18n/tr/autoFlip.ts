@@ -35,6 +35,6 @@ export const autoFlip = {
   },
   'no-chart-held': {
     title: 'Harita seçili değilken beklemede',
-    body: 'Bir haritayı ilerleten ya da karşılaştıran katmanlar ve Yerel Uzay penceresi, harita yokken bekler; transitler anın kendi çerçevesinde çizilir. Hiçbir şey silinmez: harita menüsünden bir harita seçin, hepsi bıraktığınız gibi geri gelir.',
+    body: 'Bir haritayı ilerleten ya da karşılaştıran katmanlar ve Pusula Astrolojisi penceresi, harita yokken bekler; transitler anın kendi çerçevesinde çizilir. Hiçbir şey silinmez: harita menüsünden bir harita seçin, hepsi bıraktığınız gibi geri gelir.',
   },
 } as const;

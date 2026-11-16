@@ -42,10 +42,10 @@ export const missions = {
     holdShift: 'Shift’i {icon} basılı tut',
   },
   mapBasics: {
-    subtitle: 'Bir {pin} raptiye nasıl konur',
-    createPin: 'raptiye koymak için',
-    removePin: 'raptiyeyi kaldırmak için',
-    placeNatal: 'natal raptiyeyi koymak için',
+    subtitle: 'Bir {pin} işaret nasıl konur',
+    createPin: 'işaret koymak için',
+    removePin: 'işareti kaldırmak için',
+    placeNatal: 'natal işareti koymak için',
   },
   measureBasics: {
     subtitle: '{ruler} Ölçüm aracı nasıl kullanılır',

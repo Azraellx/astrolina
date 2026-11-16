@@ -8,7 +8,7 @@
 // Values may be hand-edited (kept; see ../tr.lock.json). Keys, order and layout are rewritten on every run.
 export const settings = {
   sections: {
-    appearance: 'Görünüş',
+    appearance: 'Görünüm',
     mapFilters: 'Harita filtreleri',
     calculation: 'Hesaplama',
     advanced: 'Gelişmiş',
@@ -33,7 +33,7 @@ export const settings = {
     aspectOrbs: 'Açı orbları',
     primaryRate: 'Primer dir. anahtarı',
     display: 'Görüntüleme',
-    arc: 'Yay',
+    arc: 'Ark',
     progAngles: 'Köşeler',
     magnitudeSteps: 'Büyüklük adımları',
     fortuneFormula: 'Şans Noktası',
@@ -84,7 +84,7 @@ export const settings = {
   parans: {
     title: 'Paranlar',
     hint: 'İki gök cisminin aynı anda köşede olduğu enlemler: biri doğarken öteki kulmine olur ve benzeri. Haritanızın paranları bir katmanın yanında da açık kalır.',
-    blockedCyclo: 'Tek bir gökyüzü anı yok — Siklokartografi progres ve transit gök cisimlerini birlikte okur. Haritanın kendi paranlarını geri getirmek için “Natal harita”yı gösterin.',
+    blockedCyclo: 'Tek bir gökyüzü anı yok — Döngü Kartografisi progres ve transit gök cisimlerini birlikte okur. Haritanın kendi paranlarını geri getirmek için “Natal harita”yı gösterin.',
     blockedOverlay: 'Paranlar haritadan okunur ve bu katman onun yerine geçiyor. Haritanın paranlarını geri getirmek için “Natal harita”yı gösterin.',
   },
   aspectLines: {
@@ -225,7 +225,7 @@ export const settings = {
     },
   },
   fortuneFormula: {
-    hint: 'Şans Noktası, canlılık ve dünyevi rahatlıkla ilgili hesaplanmış bir kısımdır — gökyüzünde bir cisim değil, ekliptik üzerinde bir noktadır; bu yüzden onu yalnızca zodyakal bir çerçeve yerleştirebilir: harita çizgileri için Hesaplama bölümündeki Çizgi sistemi altında In Zodiaco (ya da Jeodezik çizgi sistemi) gerekir. Harita raptiyesinin yerini değiştirmek onu harita çarkında o yer için yeniden hesaplar; harita çizgileri ise natal Şans Noktanızı korur.',
+    hint: 'Şans Noktası, canlılık ve dünyevi rahatlıkla ilgili hesaplanmış bir Arap noktasıdır — gökyüzünde bir cisim değil, ekliptik üzerinde bir noktadır; bu yüzden onu yalnızca zodyakal bir çerçeve yerleştirebilir: harita çizgileri için Hesaplama bölümündeki Çizgi sistemi altında In Zodiaco (ya da Jeodezik çizgi sistemi) gerekir. Harita işaretinin yerini değiştirmek onu harita çarkında o yer için yeniden hesaplar; harita çizgileri ise natal Şans Noktanızı korur.',
     sect: {
       label: 'Sekte dayalı (gündüz/gece)',
       hint: 'Gündüz doğumlarında Yükselen + Ay − Güneş kullanılır; gece doğumlarında formül tersine döner: Yükselen + Güneş − Ay. Geleneksel uygulama.',
@@ -247,7 +247,7 @@ export const settings = {
     },
   },
   inert: {
-    fortuneMundo: 'Bir kısım, ekliptik üzerinde olup gökyüzünde konumu olmayan bir noktadır; bu yüzden In Mundo onu yerleştirecek bir yer bulamaz. Bu çizgiyi görmek için izdüşümü In Zodiaco olarak ayarlayın (Hesaplama).',
+    fortuneMundo: 'Bir Arap noktası, ekliptik üzerinde olup gökyüzünde konumu olmayan bir noktadır; bu yüzden In Mundo onu yerleştirecek bir yer bulamaz. Bu çizgiyi görmek için izdüşümü In Zodiaco olarak ayarlayın (Hesaplama).',
     fortuneAdvanced: 'Şans Noktası Gelişmiş bir yorumdur — kullanmak için Gelişmiş modu açın.',
     fortuneNoTime: 'Doğum saati olmayan bir haritada gösterilmez: Şans Noktası, derecesi belirsiz olan Ay’dan ve saati gerektiren doğum sektinden (gündüz ya da gece) oluşturulur.',
     geodeticSidereal: 'Jeodezik haritalar tropikal zodyağı Dünya’ya serer; sidereal zodyağın uzlaşılmış bir jeodezik kuralı yoktur. Kullanmak için zodyağı Tropikal yapın (Gelişmiş); seçiminiz korunur.',
@@ -338,8 +338,8 @@ export const settings = {
       hint: 'Natal Güneş’in ekliptik boylamdaki günlük hareketi × yıl.',
     },
     'placidus-ra': {
-      label: 'Gerçek Güneş yayı (RA)',
-      hint: 'Sabit bir yıllık oran yerine, progres Güneş’in bu yaşa kadar katettiği gerçek mesafeyi zaman anahtarı olarak kullanır. Güneş’in hızı yıl boyunca değiştiği için yay düzensiz birikir — bu yüzden bu anahtar, doğum mevsimine göre sabit oranlı seçeneklerin biraz önünde ya da gerisinde gider.',
+      label: 'Gerçek Solar ark (RA)',
+      hint: 'Sabit bir yıllık oran yerine, progres Güneş’in bu yaşa kadar katettiği gerçek mesafeyi zaman anahtarı olarak kullanır. Güneş’in hızı yıl boyunca değiştiği için ark düzensiz birikir — bu yüzden bu anahtar, doğum mevsimine göre sabit oranlı seçeneklerin biraz önünde ya da gerisinde gider.',
     },
     user: {
       label: 'Kullanıcı oranı',
@@ -372,12 +372,12 @@ export const settings = {
   },
   arcMethod: {
     'sa-long': {
-      label: 'Güneş yayı — boylamda',
+      label: 'Solar ark — boylamda',
       angles: 'Köşeleri, progres Güneş’in bu katmanın kendi anına kadar katettiği mesafe kadar ilerletir; mesafe ekliptik boyunca ölçülür.',
       bodies: 'Her gök cismini, bu haritanın progres Güneş’inin gerçekte katettiği mesafe kadar ilerletir; mesafe ekliptik boyunca ölçülür. Klasik yöntem.',
     },
     'sa-ra': {
-      label: 'Güneş yayı — sağ açıklıkta',
+      label: 'Solar ark — sağ açıklıkta',
       angles: 'Köşeleri, progres Güneş’in bu katmanın kendi anına kadar katettiği mesafe kadar ilerletir; mesafe ekvator boyunca ölçülür.',
       bodies: 'Her gök cismini, bu haritanın progres Güneş’inin gerçekte katettiği mesafe kadar ilerletir; mesafe ekvator boyunca ölçülür.',
     },
@@ -410,7 +410,7 @@ export const settings = {
     },
     idle: {
       tip: 'Devrede değil',
-      hint: 'Köşeler natal haritada sabit tutulur, bu yüzden onlara yay uygulanmaz. Burada bir hesaplama seçmek, haritayı da Progres köşeler seçeneğine geçirir.',
+      hint: 'Köşeler natal haritada sabit tutulur, bu yüzden onlara ark uygulanmaz. Burada bir hesaplama seçmek, haritayı da Progres köşeler seçeneğine geçirir.',
     },
   },
   eclipses: {

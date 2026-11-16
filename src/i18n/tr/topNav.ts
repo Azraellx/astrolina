@@ -34,16 +34,16 @@ export const topNav = {
         desc: 'Üçüncül progresyonlar: bir gün bir tropikal aya (27,32 gün) karşılık gelir; zamanlama için daha ince bir ibre.',
       },
       'solar-arc': {
-        label: 'Güneş yayı',
-        desc: 'Her nokta, Güneş’in yılda bir derecelik yayıyla ilerletilir.',
+        label: 'Solar ark',
+        desc: 'Her nokta, Güneş’in yılda bir derecelik arkıyla ilerletilir.',
       },
       'primary-directions': {
         label: 'Primer direksiyonlar',
         desc: 'Gökyüzünün dönüşüyle işleyen antik bir zamanlama yöntemi.',
       },
       cyclo: {
-        label: 'Siklokartografi',
-        tipTitle: 'Siklokartografi (CCG)',
+        label: 'Döngü Kartografisi',
+        tipTitle: 'Döngü Kartografisi (CCG)',
         desc: 'Progres Güneş–Mars ile transit Jüpiter–Plüton’u harmanlar.',
       },
       synastry: {
@@ -58,9 +58,9 @@ export const topNav = {
   },
   status: {
     natal: 'NATAL',
-    hover: 'İMLEÇ',
-    pinned: 'SABİTLENMİŞ',
-    'natal-pinned': 'NATAL RAPTİYE',
+    hover: 'İMLEÇ KONUMU',
+    pinned: 'İŞARETLENMİŞ',
+    'natal-pinned': 'NATAL İŞARET',
   },
   sidebarToggle: {
     showAria: 'Harita kenar çubuğunu göster',
@@ -69,9 +69,9 @@ export const topNav = {
     hideTip: 'Kenar çubuğunu gizleyin',
   },
   pin: {
-    centerTip: 'Haritayı raptiyeye ortalayın',
-    pinNatalTip: 'Raptiyeyi natal konuma yerleştirin',
-    controlsTip: 'Harita raptiyesi denetimleri',
+    centerTip: 'Haritayı işarete ortalayın',
+    pinNatalTip: 'Natal konumu işaretleyin',
+    controlsTip: 'Harita işareti denetimleri',
   },
   tools: {
     menuLabel: 'Araçlar',
@@ -114,7 +114,7 @@ export const topNav = {
     },
   },
   view: {
-    menuLabel: 'Görünüm',
+    menuLabel: 'Görüntüle',
     coordinates: 'Koordinatlar',
     coordinatesHint: 'Etkin noktanın yerini, koordinatlarını ve relokasyon haritası köşelerini gösteren canlı bir gösterge.',
     minimap: 'Mini harita',
@@ -125,8 +125,8 @@ export const topNav = {
     teleportHint: 'Herhangi bir yeri arayın ve haritayı doğrudan oraya uçurun.',
     skyTimes: 'Gökyüzü Saatleri',
     skyTimesHint: 'Etkin noktadaki günlük doğuş, kulminasyon ve batış zamanları, alttaki kuşak boyunca.',
-    localSpace: 'Yerel Uzay',
-    localSpaceHint: 'Haritanın başlangıç noktasından her gezegene uzanan yön çizgileri — yerel uzay pusulanız.',
+    localSpace: 'Pusula Astrolojisi',
+    localSpaceHint: 'Haritanın başlangıç noktasından her gezegene uzanan yön çizgileri — pusula astrolojisi çarkınız.',
     info: 'Bilgi',
     infoHint: 'Haritanın etkin sistemlerini özetleyen köşedeki bir kutucuk — çizgi çerçevesi, evler ve zodyak.',
     guides: 'Rehberler',

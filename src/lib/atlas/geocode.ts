@@ -8,6 +8,10 @@ export interface GeocodeResult {
   label: string;
   lat: number;
   lng: number;
+  /** The same label in English, where an offline atlas result reads in another language
+   *  (cityLookup, placeNames.ts). The online geocoder answers in English, so a comparison
+   *  with its answers reads this. Absent where the label is English already. */
+  enLabel?: string;
 }
 
 // Calls our own edge function (functions/api/geocode.ts), which proxies and

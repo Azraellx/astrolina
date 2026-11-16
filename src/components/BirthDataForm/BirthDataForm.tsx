@@ -6,6 +6,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { reverseGeocode, type GeocodeResult } from '../../lib/atlas/geocode';
+import { placeNamesReady } from '../../lib/atlas/placeNames';
 import { fmtCoordPair } from '../../lib/coordFormat';
 import { parseCoord } from '../../lib/import/fields';
 import {
@@ -469,6 +470,8 @@ export function BirthDataFields({
       let label: string | null = null;
       try {
         const { nearestCity } = await import('../../lib/atlas/cityLookup');
+        // The label is kept, so it is made in the interface language's names (placeNames.ts).
+        await placeNamesReady();
         if (ctrl.signal.aborted) return;
         label = nearestCity(lat, lng)?.label ?? null;
         if (!label) label = await reverseGeocode(lat, lng, ctrl.signal);

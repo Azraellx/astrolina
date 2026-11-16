@@ -33,6 +33,7 @@ import {
 } from 'react';
 import type { PlaceKind } from '../../lib/atlas/cityLookup';
 import { geocode, type GeocodeResult } from '../../lib/atlas/geocode';
+import { placeNamesReady } from '../../lib/atlas/placeNames';
 import {
   getPlaceSearchLibrary,
   getPlaceSearchProviders,
@@ -183,6 +184,9 @@ function makeBuiltinProvider(
     debounceMs: 400,
     async search(query, { limit, signal }) {
       const { searchPlaces, foldName } = await import('../../lib/atlas/cityLookup');
+      // The index also searches, and labels, by the interface language's place names
+      // (placeNames.ts): a first search must not run before they are in.
+      await placeNamesReady();
       if (signal?.aborted) return [];
       // Over-fetch before filtering: searchPlaces caps BEFORE we drop the kinds
       // this host doesn't accept (or the twins below), so a plain `limit` could
@@ -201,7 +205,14 @@ function makeBuiltinProvider(
               wanted.findIndex((o) => o.label === h.label && o.lat === h.lat && o.lng === h.lng) ===
               i,
           );
-      const hits = distinct.slice(0, limit);
+      // A hit leaves the field as a place and nothing else: the English twin of a localized
+      // label (enLabel) is for the comparison below, never for what a host stores.
+      const twins = distinct.slice(0, limit);
+      const hits = twins.map((h) => {
+        const hit = { ...h };
+        delete hit.enLabel;
+        return hit;
+      });
       // Offline-first, but a SHORT local answer is not the same as a complete
       // one: the bundled index holds populated places, so anything else with a
       // name — a bay, a park, a peak, a hamlet — leaves the list underfilled
@@ -225,13 +236,14 @@ function makeBuiltinProvider(
       // whole label can't be the only key; a matching leading name plus near-
       // identical coordinates catches the rest. Comparing the LEADING segment
       // (not the coordinates alone) is what keeps a named feature beside the
-      // town that contains it — "Lake Bled" is not a duplicate of "Bled".
+      // town that contains it — "Lake Bled" is not a duplicate of "Bled". The provider
+      // answers in English, so a localized hit is compared by its English label.
       const lead = (label: string) => foldName(label.split(',')[0].trim());
       const seen = (r: GeocodeResult) =>
-        hits.some(
-          (h) =>
-            foldName(h.label) === foldName(r.label) ||
-            (lead(h.label) === lead(r.label) &&
+        twins.some(
+          ({ enLabel, ...h }) =>
+            foldName(enLabel ?? h.label) === foldName(r.label) ||
+            (lead(enLabel ?? h.label) === lead(r.label) &&
               Math.abs(h.lat - r.lat) < 0.05 &&
               Math.abs(h.lng - r.lng) < 0.05),
         );

@@ -44,7 +44,7 @@ export const chartForm = {
     minute: 'DD',
   },
   timeZone: 'Saat dilimi',
-  compositeMoment: 'Kompozit harita: gezegenler iki ana haritanın orta noktalarıdır; aşağıdaki tarih ise dünya haritası çerçevesi için sentezlenmiş dayanak noktasıdır (otomatik olarak eşitlenir).',
+  compositeMoment: 'Kompozit harita: gezegenler iki ana haritanın orta noktalarıdır; aşağıdaki tarih ise dünya haritası çerçevesi için sentezlenmiş dayanak noktasıdır (otomatik olarak senkronize edilir).',
   tz: {
     modesAria: 'Saat diliminin nasıl verildiği',
     mode: {
@@ -197,9 +197,9 @@ export const chartForm = {
   homeClear: 'Temizle',
   homePlaceholder: 'Şu an yaşadığı yer…',
   homeAria: 'Bu kişinin şu an yaşadığı yeri ara',
-  homeMapPin: 'Harita raptiye',
-  homeMissHint: 'Bulamıyor musunuz? Haritada o yere bir raptiye bırakın, sonra buradan seçin.',
-  homeMissHintForm: 'Bulamıyor musunuz? Şimdilik kaydedin, haritada o yere bir raptiye bırakın; sonraki sefer burada önerilir.',
+  homeMapPin: 'Harita işareti',
+  homeMissHint: 'Bulamıyor musunuz? Haritada o noktayı işaretleyin, sonra buradan seçin.',
+  homeMissHintForm: 'Bulamıyor musunuz? Şimdilik kaydedin, haritada o noktayı işaretleyin; sonraki sefer burada önerilir.',
   placeTabsAria: 'Düzenlenecek yer',
   latitude: 'Enlem',
   longitude: 'Boylam',

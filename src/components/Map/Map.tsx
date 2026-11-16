@@ -80,6 +80,7 @@ import {
   NADIR_GLYPH_PREFIX,
 } from './glyphImages';
 import {
+  applyBasemapLanguage,
   applyBasemapPaint,
   applyBorderWeights,
   applyDetailToggles,
@@ -4425,7 +4426,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   home,
   onHomeClick,
 }: MapProps, ref) {
-  const { t, labels } = useT();
+  const { t, labels, locale } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   // The Capture frame wraps the map canvas + its DOM overlays (edge
   // labels, pin, local-horizon wheel); insetting it shrinks the working view, and
@@ -5490,6 +5491,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // size, so they are resolved where it is placed (minorChipText). The nav controls' tips read it
   // too, from listeners bound once per map (NAV_CTRL_TIPS).
   const tRef = useRef(t);
+  // The interface language, for the basemap's own names (applyBasemapLanguage): read by each
+  // style's build, which is bound once with the map, and kept current by the language effect.
+  const localeRef = useRef<string>(locale);
   // Slide active flag, read inside the data effect / badge anchoring while the tool
   // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
   // edge-badge work only during an actual spin-drag (whose per-frame setCenter would
@@ -6920,6 +6924,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Apply the persisted projection first (before the async glyph load): setStyle resets it,
       // and a 3D reload mustn't briefly flash the flat map.
       applyProjection(map, projectionRef.current);
+      // The served map's names in the interface language, before anything waits: the style has
+      // just parsed and no tile is laid out yet, so English names never flash up first. The
+      // offline / Outline style is the app's own and carries no names.
+      if (kind === 'live') applyBasemapLanguage(map, localeRef.current);
       await ensureGlyphImages(map, spriteRef.current);
       const style = mapStyleRef.current;
       applyDetailToggles(map, detailRef.current);
@@ -7236,6 +7244,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!root) return;
     for (const def of NAV_CTRL_TIPS) root.querySelector(def.sel)?.setAttribute('aria-label', t(def.key));
   }, [t]);
+
+  // The basemap's own place names follow a language change too (basemapStyle
+  // applyBasemapLanguage), written into the style that stands — never a reason to rebuild the
+  // map. A style still on its way is written by its own build, which reads localeRef.
+  useEffect(() => {
+    localeRef.current = locale;
+    const map = mapRef.current;
+    if (!map || drawnKindRef.current !== 'live') return;
+    applyBasemapLanguage(map, locale);
+  }, [locale]);
 
   const basemap = mapStyle.basemap;
   useEffect(() => {

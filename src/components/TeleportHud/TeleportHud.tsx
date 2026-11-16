@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
+import { usePlaceNamesVersion } from '../../lib/atlas/placeNames';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { PlaceSearchField } from '../ui/PlaceSearchField';
@@ -81,6 +82,8 @@ export function TeleportHud({
 
   // Rough place name for the back/forward target (where the next press jumps to).
   const [targetName, setTargetName] = useState<string | null>(null);
+  // The name reads in the interface language, and is looked up again when those names change.
+  const placeNames = usePlaceNamesVersion();
 
   // Resolve the back/forward target to a rough place name (nearest bundled city,
   // generous radius), lazily — reusing the same offline dataset as the search, so
@@ -100,7 +103,7 @@ export function TeleportHud({
     return () => {
       cancelled = true;
     };
-  }, [teleportTarget]);
+  }, [teleportTarget, placeNames]);
 
   return (
     <div

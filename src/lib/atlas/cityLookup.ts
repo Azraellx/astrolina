@@ -8,6 +8,15 @@ import KDBush from 'kdbush';
 import { around, distance } from 'geokdbush';
 import type { GeocodeResult } from './geocode';
 import { composePlaceLabel, foldName } from './placeLabel';
+import {
+  foldLocalName,
+  localCityName,
+  localCountryName,
+  localRegionName,
+  placeNamesFile,
+  placeNamesLang,
+  type PlaceNamesFile,
+} from './placeNames';
 import rowsJson from './data/cities15000.json';
 import admin1Json from './data/admin1.json';
 import countriesJson from './data/countries.json';
@@ -60,6 +69,24 @@ const foldedAlt: (string | 0)[] = rows.map((r, i) => {
   return f === folded[i] ? 0 : f;
 });
 
+// The interface language's names as a third key, for the rows that have one: a Turkish
+// reader finds Vienna by "viyana" as well as by "vienna". Rebuilt when the names in force
+// change (placeNames.ts); null while they are English.
+let localKeys: { from: PlaceNamesFile; keys: (string | 0)[]; regions: Map<string, string> } | null = null;
+function localKeysNow(): { keys: (string | 0)[]; regions: Map<string, string> } | null {
+  const file = placeNamesFile();
+  if (!file) return null;
+  if (localKeys?.from !== file) {
+    const keys = rows.map((r) => {
+      const n = r[7] ? file.cities[r[7]] : undefined;
+      return n ? foldLocalName(n) : 0;
+    });
+    const regions = new Map(Object.entries(file.admin1).map(([k, n]) => [k, foldLocalName(n)]));
+    localKeys = { from: file, keys, regions };
+  }
+  return localKeys;
+}
+
 // Spatial index for reverse lookups, built lazily on the first nearestCity call
 // (forward-only sessions never pay for it). kdbush/geokdbush take (lng, lat).
 let index: KDBush | null = null;
@@ -77,17 +104,33 @@ function getIndex(): KDBush {
 // ("Lisbon, Portugal", never "Lisbon, Lisbon, Portugal") — see composePlaceLabel.
 // Labels already SAVED with the repeat (a birthplace, a pin) are left as they
 // were written: every reader of one takes only its first part, so nothing breaks.
+//
+// In the interface language (placeNames.ts): each part reads in it where it has a name
+// there, and in English where not. englishLabelFor is the same label in English — what
+// the online geocoder answers in, so what a comparison with it has to use.
 function labelFor(r: Row): string {
+  const key = `${r[4]}.${r[5]}`;
+  const region = admin1[key];
+  const country = countries[r[4]] ?? r[4];
+  return composePlaceLabel([
+    localCityName(r[7], r[0]),
+    region && localRegionName(key, region),
+    localCountryName(r[4], country),
+  ]);
+}
+
+function englishLabelFor(r: Row): string {
   const region = admin1[`${r[4]}.${r[5]}`];
   const country = countries[r[4]] ?? r[4];
   return composePlaceLabel([r[0], region, country]);
 }
 
-const toResult = (r: Row): GeocodeResult => ({
-  label: labelFor(r),
-  lat: r[2],
-  lng: r[3],
-});
+// `enLabel` rides along only where it differs, so an English result is exactly what it was.
+const toResult = (r: Row): GeocodeResult => {
+  const label = labelFor(r);
+  const en = englishLabelFor(r);
+  return { label, lat: r[2], lng: r[3], ...(en !== label ? { enLabel: en } : {}) };
+};
 
 // Within this radius (km) of the closest hit, candidates are treated as the same
 // place; the most populous wins. This collapses a city's own sub-records — Paris
@@ -140,13 +183,17 @@ export function nearestCity(
 export function searchCity(query: string, limit = 8): GeocodeResult[] {
   const q = fold(query.trim());
   if (q.length < 2) return [];
+  // The interface language's names too (placeNames.ts), by their own folding.
+  const local = localKeysNow()?.keys;
+  const ql = foldLocalName(query.trim());
   const prefix: Row[] = [];
   const substr: Row[] = [];
   for (let i = 0; i < N; i++) {
     const alt = foldedAlt[i];
-    if (folded[i].startsWith(q) || (alt && alt.startsWith(q))) {
+    const loc = local ? local[i] : 0;
+    if (folded[i].startsWith(q) || (alt && alt.startsWith(q)) || (loc && loc.startsWith(ql))) {
       prefix.push(rows[i]);
-    } else if (folded[i].includes(q) || (alt && alt.includes(q))) {
+    } else if (folded[i].includes(q) || (alt && alt.includes(q)) || (loc && loc.includes(ql))) {
       substr.push(rows[i]);
     }
   }
@@ -185,6 +232,8 @@ function zoomFor(kind: PlaceKind, population: number): number {
 let largestByCountry: Map<string, Row> | null = null;
 let largestByAdmin1: Map<string, Row> | null = null;
 let countryEntries: { code: string; name: string; folded: string }[] | null = null;
+// The countries' names in the interface language, folded, by code — rebuilt per language.
+let countryLocal: { lang: string; keys: Map<string, string> } | null = null;
 let admin1Entries: { key: string; name: string; folded: string }[] | null = null;
 
 function buildPlaceIndexes() {
@@ -214,6 +263,20 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
   const q = fold(query.trim());
   if (q.length < 2) return [];
   buildPlaceIndexes();
+  // The interface language's names are searched beside the English ones (placeNames.ts),
+  // and a hit is labelled in that language whichever name it was found by.
+  const ql = foldLocalName(query.trim());
+  const local = localKeysNow();
+  const lang = placeNamesLang();
+  if (lang && countryLocal?.lang !== lang) {
+    countryLocal = {
+      lang,
+      keys: new Map(countryEntries!.map((c) => [c.code, foldLocalName(localCountryName(c.code, c.name))])),
+    };
+  }
+  const countryKeys = lang ? countryLocal!.keys : null;
+  const matchLocal = (key: string | 0 | undefined): 'prefix' | 'substr' | null =>
+    !key ? null : key.startsWith(ql) ? 'prefix' : key.includes(ql) ? 'substr' : null;
 
   // Collect candidates (row + precision + label), then rank: prefix matches first,
   // then by population (a region/country uses its largest city's population).
@@ -225,39 +288,58 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     pop: number;
     prefix: boolean;
     exact?: boolean;
+    enLabel?: string;
   }[] = [];
+  // The English label beside a localized one, where they differ (GeocodeResult.enLabel).
+  const en = (label: string, english: string) => (english !== label ? { enLabel: english } : {});
 
   for (let i = 0; i < N; i++) {
     const f = folded[i];
     const alt = foldedAlt[i];
-    const pre = f.startsWith(q) || (alt !== 0 && alt.startsWith(q));
-    if (!pre && !f.includes(q) && !(alt !== 0 && alt.includes(q))) continue;
+    const loc = matchLocal(local?.keys[i]);
+    const pre = f.startsWith(q) || (alt !== 0 && alt.startsWith(q)) || loc === 'prefix';
+    if (!pre && !f.includes(q) && !(alt !== 0 && alt.includes(q)) && !loc) continue;
     const r = rows[i];
-    cands.push({ kind: 'city', label: labelFor(r), lat: r[2], lng: r[3], pop: r[6], prefix: pre, exact: HAND_ADDED_GIDS.has(r[7]) });
+    const label = labelFor(r);
+    cands.push({
+      kind: 'city',
+      label,
+      lat: r[2],
+      lng: r[3],
+      pop: r[6],
+      prefix: pre,
+      exact: HAND_ADDED_GIDS.has(r[7]),
+      ...en(label, englishLabelFor(r)),
+    });
   }
   for (const c of countryEntries!) {
-    const pre = c.folded.startsWith(q);
-    if (!pre && !c.folded.includes(q)) continue;
+    const loc = matchLocal(countryKeys?.get(c.code));
+    const pre = c.folded.startsWith(q) || loc === 'prefix';
+    if (!pre && !c.folded.includes(q) && !loc) continue;
     const city = largestByCountry!.get(c.code);
     if (!city) continue;
-    cands.push({ kind: 'country', label: c.name, lat: city[2], lng: city[3], pop: city[6], prefix: pre });
+    const label = localCountryName(c.code, c.name);
+    cands.push({ kind: 'country', label, lat: city[2], lng: city[3], pop: city[6], prefix: pre, ...en(label, c.name) });
   }
   for (const a of admin1Entries!) {
-    const pre = a.folded.startsWith(q);
-    if (!pre && !a.folded.includes(q)) continue;
+    const loc = matchLocal(local?.regions.get(a.key));
+    const pre = a.folded.startsWith(q) || loc === 'prefix';
+    if (!pre && !a.folded.includes(q) && !loc) continue;
     const city = largestByAdmin1!.get(a.key);
     if (!city) continue;
     const cc = a.key.slice(0, a.key.indexOf('.'));
     const country = countries[cc] ?? cc;
+    // The same rule as a city's label: a region named for its country
+    // ("Taiwan, Taiwan") is one name, and its kind tag says which it is.
+    const label = composePlaceLabel([localRegionName(a.key, a.name), localCountryName(cc, country)]);
     cands.push({
       kind: 'region',
-      // The same rule as a city's label: a region named for its country
-      // ("Taiwan, Taiwan") is one name, and its kind tag says which it is.
-      label: composePlaceLabel([a.name, country]),
+      label,
       lat: city[2],
       lng: city[3],
       pop: city[6],
       prefix: pre,
+      ...en(label, composePlaceLabel([a.name, country])),
     });
   }
 
@@ -269,5 +351,6 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
     kind: c.kind,
     zoom: zoomFor(c.kind, c.pop),
     ...(c.exact ? { exact: true } : {}),
+    ...(c.enLabel ? { enLabel: c.enLabel } : {}),
   }));
 }

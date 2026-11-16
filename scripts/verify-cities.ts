@@ -15,6 +15,23 @@ import rows from '../src/lib/atlas/data/cities15000.json';
 import { HAND_ADDED_GIDS, nearestCity, searchCity, searchPlaces } from '../src/lib/atlas/cityLookup';
 import { fmtCoordPair } from '../src/lib/coordFormat';
 import { composePlaceLabel, foldName, leadPlaceName } from '../src/lib/atlas/placeLabel';
+import admin1 from '../src/lib/atlas/data/admin1.json';
+import { countryDisplayName } from '../src/lib/atlas/countryName';
+import {
+  foldLocalName,
+  PLACE_NAME_LANGS,
+  setPlaceNamesLangForTest,
+  type PlaceNameLang,
+  type PlaceNamesFile,
+} from '../src/lib/atlas/placeNames';
+import es from '../src/lib/atlas/data/names/es.json';
+import pt from '../src/lib/atlas/data/names/pt.json';
+import tr from '../src/lib/atlas/data/names/tr.json';
+import de from '../src/lib/atlas/data/names/de.json';
+import ru from '../src/lib/atlas/data/names/ru.json';
+import pl from '../src/lib/atlas/data/names/pl.json';
+
+const NAME_FILES: Record<PlaceNameLang, PlaceNamesFile> = { es, pt, tr, de, ru, pl };
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -143,6 +160,82 @@ check(
   'the settlement test reads the first part only',
   leadPlaceName('Madrid, Community of Madrid, Spain') === leadPlaceName('Madrid, Spain') &&
     leadPlaceName('Móstoles, Spain') !== leadPlaceName('Madrid, Spain'),
+);
+
+// ── Place names in the interface language (placeNames.ts) ─────────────────────
+// Everything above ran in English, with no names file loaded: those exact labels are
+// the English the app has always shown. An English result carries no English twin.
+check('an English result has no enLabel', nearestCity(48.2082, 16.3738)?.enLabel === undefined);
+
+// The names files: sparse — no name equal to the English, every key an atlas place.
+{
+  const gids = new Map(all.map((r) => [String((r as unknown as number[])[7]), r[0]]));
+  for (const lang of PLACE_NAME_LANGS) {
+    const file = NAME_FILES[lang];
+    const cities = Object.entries(file.cities);
+    const regions = Object.entries(file.admin1);
+    const sameCity = cities.filter(([g, n]) => gids.get(g) === n || !gids.has(g)).length;
+    const sameRegion = regions.filter(([k, n]) => admin1[k] === n || admin1[k] === undefined).length;
+    check(
+      `names/${lang}.json: no name equal to its English, no key outside the atlas`,
+      cities.length > 0 && regions.length > 0 && sameCity === 0 && sameRegion === 0,
+      `${cities.length} cities, ${regions.length} regions; ${sameCity + sameRegion} bad`,
+    );
+  }
+}
+
+await setPlaceNamesLangForTest('tr');
+{
+  const vienna = nearestCity(48.2082, 16.3738);
+  const country = countryDisplayName('AT', 'Austria', 'tr');
+  check(
+    'tr: Vienna reads "Viyana…" and ends with the Turkish country name',
+    !!vienna && vienna.label.startsWith('Viyana') && vienna.label.endsWith(`, ${country}`) && country !== 'Austria',
+    vienna?.label,
+  );
+  check(
+    'tr: its English twin is the English label, exactly',
+    vienna?.enLabel === 'Vienna, State of Vienna, Austria',
+    vienna?.enLabel,
+  );
+  for (const [q, lead] of [
+    ['viyana', 'Viyana'],
+    ['moskova', 'Moskova'],
+    ['atina', 'Atina'],
+    ['kahire', 'Kahire'],
+    ['vienna', 'Viyana'],
+  ] as const) {
+    const hit = searchPlaces(q)[0];
+    check(`tr: searchPlaces("${q}") finds ${lead}`, hit?.label.startsWith(`${lead},`) ?? false, hit?.label);
+    const city = searchCity(q)[0];
+    check(`tr: searchCity("${q}") finds ${lead}`, city?.label.startsWith(`${lead},`) ?? false, city?.label);
+  }
+  const ist = searchPlaces('İstanbul')[0];
+  check('tr: searchPlaces("İstanbul") finds İstanbul', ist?.label.startsWith('İstanbul,') ?? false, ist?.label);
+  check('tr: the localized fold reads dotless ı as i', foldLocalName('Kırıkkale') === 'kirikkale');
+  const country2 = searchPlaces('avusturya').find((p) => p.kind === 'country');
+  check('tr: a country is found and named by its Turkish name', country2?.label === country && country2.enLabel === 'Austria', country2?.label);
+}
+
+await setPlaceNamesLangForTest('de');
+{
+  const hit = searchPlaces('wien')[0];
+  check('de: searchPlaces("wien") finds Wien', hit?.label.startsWith('Wien,') ?? false, hit?.label);
+  const munich = nearestCity(48.137, 11.575);
+  check('de: Munich reads "München, Bayern, Deutschland"', munich?.label === 'München, Bayern, Deutschland', munich?.label);
+}
+
+await setPlaceNamesLangForTest('ru');
+{
+  const moscow = nearestCity(55.752, 37.618);
+  check('ru: Moscow reads "Москва…"', moscow?.label.startsWith('Москва') ?? false, moscow?.label);
+}
+
+await setPlaceNamesLangForTest(null);
+check(
+  'back in English, the labels are the English ones again',
+  at(48.2082, 16.3738) === 'Vienna, State of Vienna, Austria' && searchPlaces('viyana').length === 0,
+  at(48.2082, 16.3738),
 );
 
 process.exit(failures ? 1 : 0);

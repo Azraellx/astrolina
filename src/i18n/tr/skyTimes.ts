@@ -10,7 +10,7 @@ export const skyTimes = {
   title: 'Gökyüzü Saatleri',
   closeAria: 'Gökyüzü Saatleri penceresini kapat',
   closeHint: 'Gökyüzü Saatleri penceresini kapatın.',
-  noPlace: 'Gökyüzü saatini bir yerde okumak için bir harita seçin ya da bir raptiye bırakın.',
+  noPlace: 'Gökyüzü saatini bir yerde okumak için bir harita seçin ya da bir yeri işaretleyin.',
   col: {
     body: 'Cisim',
     rise: 'AS',
@@ -26,7 +26,7 @@ export const skyTimes = {
   },
   circumpolarUp: 'Bu enlemde gün boyu ufkun üzerinde',
   circumpolarDown: 'Bu enlemde gün boyu ufkun altında',
-  fortuneNote: 'Zamanlanacak kendi doğuşu ya da batışı yoktur: bu kısım Yükselenden türetilir, bu yüzden gün boyu ona neredeyse aynı uzaklıkta kalır.',
+  fortuneNote: 'Zamanlanacak kendi doğuşu ya da batışı yoktur: bu nokta Yükselenden türetilir, bu yüzden gün boyu ona neredeyse aynı uzaklıkta kalır.',
   today: 'Bugün',
   prevDay: 'Önceki gün',
   nextDay: 'Sonraki gün',
@@ -52,10 +52,10 @@ export const skyTimes = {
   follow: {
     label: 'Zaman damgası',
     tipOn: 'Gökyüzünü seçtiğiniz bir yerde okuyun',
-    tipOff: 'Durdurun — raptiyeye dönün',
-    hint: 'Gökyüzü saatini haritada gezinen imlecin altında canlı okuyun. Bir yeri tutmak için haritaya, sürdürmek için yeniden tıklayın. Raptiyeye ya da doğum yerine dönmek için kapatın.',
-    hintHeld: 'Tıklanan yerde sabit — izlemeyi sürdürmek için haritaya yeniden tıklayın ya da raptiyeye veya doğum yerine dönmek için bunu kapatın.',
-    hintTouch: 'Oradaki gökyüzü saatini okumak için haritada bir yere dokunun; damgayı taşımak için yeniden dokunun. Raptiyeye ya da doğum yerine dönmek için kapatın.',
+    tipOff: 'Durdurun — işarete dönün',
+    hint: 'Gökyüzü saatini haritada gezinen imlecin altında canlı okuyun. Bir yeri tutmak için haritaya, sürdürmek için yeniden tıklayın. İşarete ya da doğum yerine dönmek için kapatın.',
+    hintHeld: 'Tıklanan yerde sabit — izlemeyi sürdürmek için haritaya yeniden tıklayın ya da işarete veya doğum yerine dönmek için bunu kapatın.',
+    hintTouch: 'Oradaki gökyüzü saatini okumak için haritada bir yere dokunun; damgayı taşımak için yeniden dokunun. İşarete ya da doğum yerine dönmek için kapatın.',
   },
   planetary: {
     now: '{hour} saati, {end} saatine kadar',

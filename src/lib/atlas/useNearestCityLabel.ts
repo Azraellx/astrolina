@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { GeocodeResult } from './geocode';
+import { usePlaceNamesVersion } from './placeNames';
 
 export type NearestCity = (
   lat: number,
@@ -24,6 +25,9 @@ export type NearestCity = (
  */
 export function useNearestCity(active: boolean): NearestCity | null {
   const [nearestCity, setNearestCity] = useState<NearestCity | null>(null);
+  // The lookup labels in the interface language (placeNames.ts); a new function whenever
+  // those names change, so whatever memoizes on it relabels.
+  const names = usePlaceNamesVersion();
 
   useEffect(() => {
     if (!active || nearestCity) return;
@@ -36,7 +40,10 @@ export function useNearestCity(active: boolean): NearestCity | null {
     };
   }, [active, nearestCity]);
 
-  return nearestCity;
+  return useMemo(
+    () => (nearestCity && names >= 0 ? (lat, lng, maxKm) => nearestCity(lat, lng, maxKm) : null),
+    [nearestCity, names],
+  );
 }
 
 /**

@@ -9,6 +9,7 @@ import { reverseGeocode } from './geocode';
 // placeLabel, not cityLookup: this hook is on the main bundle and cityLookup
 // carries the atlas, which loads as its own chunk below.
 import { leadPlaceName } from './placeLabel';
+import { usePlaceNamesVersion } from './placeNames';
 
 interface Pt {
   lat: number;
@@ -32,6 +33,9 @@ const SETTLE_MS = 400;
 interface Cell {
   label: string | null;
   precise: boolean;
+  /** An atlas label's English twin, where the label reads in another language
+   *  (GeocodeResult.enLabel) — what the provider's English answer is compared with. */
+  en?: string;
 }
 
 // Module-level cache: persists across renders and component instances so a cell is
@@ -97,7 +101,10 @@ export function useReverseGeocodeCell(
     key: null,
     label: null,
   });
-  const key = point ? cellKey(point.lat, point.lng) : null;
+  // The atlas labels in the interface language (placeNames.ts), so a cell is resolved once
+  // per set of names: a language switch, or its names landing, relabels the point.
+  const names = usePlaceNamesVersion();
+  const key = point ? `${names}|${cellKey(point.lat, point.lng)}` : null;
 
   useEffect(() => {
     if (!key || !point) {
@@ -125,8 +132,9 @@ export function useReverseGeocodeCell(
     // Madrid, Spain" from the provider), so swapping the wording would rename
     // the pin on screen a beat after it was named, with nothing about the place
     // having changed. Only a different settlement replaces the text — the case
-    // this refine exists for.
-    const refine = (delayMs: number, provisional: string) => {
+    // this refine exists for. The provider answers in English, so it is weighed against the
+    // provisional label's English (`provisionalEn`) while the screen keeps the reader's.
+    const refine = (delayMs: number, provisional: string, provisionalEn: string) => {
       if (ctrl.signal.aborted) return;
       timers.push(
         setTimeout(() => {
@@ -134,7 +142,7 @@ export function useReverseGeocodeCell(
             .then((name) => {
               if (name == null) return; // see the docstring: a disclaimer, not a correction
               const label =
-                leadPlaceName(name) === leadPlaceName(provisional) ? provisional : name;
+                leadPlaceName(name) === leadPlaceName(provisionalEn) ? provisional : name;
               cache.set(key, { label, precise: true });
               show(label);
             })
@@ -156,7 +164,7 @@ export function useReverseGeocodeCell(
             // resolved online — precise — or not cached at all), so its label
             // is never null here; the check is for the type.
             if (!cached.precise && cached.label != null && allowNetwork) {
-              refine(SETTLE_MS, cached.label);
+              refine(SETTLE_MS, cached.label, cached.en ?? cached.label);
             }
             return;
           }
@@ -165,9 +173,9 @@ export function useReverseGeocodeCell(
               if (ctrl.signal.aborted) return;
               const hit = nearestCity(point.lat, point.lng);
               if (hit) {
-                cache.set(key, { label: hit.label, precise: false });
+                cache.set(key, { label: hit.label, precise: false, en: hit.enLabel });
                 show(hit.label);
-                if (allowNetwork) refine(0, hit.label);
+                if (allowNetwork) refine(0, hit.label, hit.enLabel ?? hit.label);
                 return;
               }
               if (!allowNetwork) {

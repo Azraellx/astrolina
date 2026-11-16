@@ -8,7 +8,8 @@
 // visibility toggles (Bright's ferry routes hidden whatever they say), a whole-basemap
 // blank (Local Space ▸ "Hide map"), and the palette's paint over the served style
 // (applyBasemapPaint: Dark's place-name contrast lift, and a Custom theme's land, water,
-// borders, roads, buildings and names). We mutate
+// borders, roads, buildings and names), and the map's own place names in the interface
+// language (applyBasemapLanguage). We mutate
 // the already-loaded style's layers rather than shipping custom style JSON, so it tracks
 // whatever OpenFreeMap serves.
 import type { Map as MlMap, LayerSpecification, StyleSpecification } from 'maplibre-gl';
@@ -394,5 +395,112 @@ export function applyBasemapPaint(map: MlMap, paint: BasemapPaint): void {
   // style's own to put back, since applyBorderWeights replaced it on load, and the default is a
   // value like any other. (Bound to the palette with the rest of its paint, never alone.)
   applyBorderStrength(map, paint.borderStrength);
+}
+
+// ── The map's own names in the interface language ────────────────────────────────────────────
+// The served maps write their names in Latin script (with the local script beside it where that
+// differs), whatever language the app is in, so a Turkish interface read "Vienna" and "Athens"
+// on the map where its own words would say Viyana and Atina. The tiles carry the names in many languages
+// (`name:<code>`, the OpenMapTiles schema all the served styles read), so the rule is: the map's
+// own names follow the interface language where the tiles carry it, and fall back to exactly what
+// the style showed where they don't. English is untouched: no layer is written at all.
+//
+// Every basemap symbol layer whose text-field reads a name (place, water, road, POI names — not
+// a route shield's `ref` or a `housenumber`) takes ["coalesce", ["get", "name:<code>"], <the
+// style's own text-field>]. A style written in the legacy token form ("{name:latin}\n{name:nonlatin}")
+// is turned into the equivalent expression first, since a token string can't be wrapped.
+//
+// The style's own value is snapshotted on the first write and put back for English, like the
+// palette's paint above — but checked against what was last WRITTEN rather than dropped by a
+// reset, so the call needs no "a new style has landed" step: a text-field that is not what this
+// wrote is the style's own (a new style, or a diffed theme swap that put the served value back),
+// and is taken as the original afresh. That also keeps a language change that lands while a new
+// style is building from wrapping the old style's names into the new one's layers.
+
+/** The `name:<code>` the tiles carry for each translated interface language; English, and any
+ *  language not listed, draw the style's own names. */
+const TILE_LANGUAGES: Readonly<Partial<Record<string, string>>> = {
+  es: 'es',
+  pt: 'pt',
+  tr: 'tr',
+  de: 'de',
+  ru: 'ru',
+  pl: 'pl',
+};
+
+/** The tiles' language code for an interface locale, or null to draw the style's own names. */
+export function tileLanguage(locale: string): string | null {
+  return TILE_LANGUAGES[locale] ?? null;
+}
+
+// A name key, as an expression reads it ("name", "name:latin", "name_en") or a legacy token
+// string does ("{name:latin}"). A shield's "ref" and a "{housenumber}" don't match.
+const READS_NAME_RE = /"name(?:[:_][^"]*)?"|\{name(?:[:_][^}]*)?\}/;
+
+/** A legacy token string ("{name:latin} {name:nonlatin}") as the equivalent expression: each
+ *  token a property read that is empty where the feature lacks it, as a token is. */
+function tokensToExpression(s: string): unknown {
+  const parts: unknown[] = [];
+  const re = /\{([^}]+)\}/g;
+  let at = 0;
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    if (m.index > at) parts.push(s.slice(at, m.index));
+    parts.push(['to-string', ['get', m[1]]]);
+    at = m.index + m[0].length;
+  }
+  if (at < s.length) parts.push(s.slice(at));
+  return parts.length === 1 ? parts[0] : ['concat', ...parts];
+}
+
+/** `own` in language `lang`: the tiles' name in it where the feature has one, `own` otherwise.
+ *  A value that is neither an expression nor a token string is left as it is. */
+function inLanguage(own: unknown, lang: string): unknown {
+  const expr = typeof own === 'string' ? tokensToExpression(own) : own;
+  if (!Array.isArray(expr)) return own;
+  return ['coalesce', ['get', `name:${lang}`], expr];
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const copyValue = (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+
+// Per map: each name layer's style's own text-field and the value last written over it.
+const basemapNameFields = new WeakMap<MlMap, Map<string, { own: unknown; wrote: unknown }>>();
+
+/**
+ * Write the served basemap's names in the language of `locale` (an interface locale id), or put
+ * the style's own back where it has no tile language. Idempotent; call on each style load and on
+ * a change of language — never a reason to rebuild the map. Reached through the layer list, like
+ * applyBasemapPaint, and only basemap layers are touched (never the chart's). setLayoutProperty
+ * re-lays the layer's tiles out, so nothing is written where the value already stands.
+ */
+export function applyBasemapLanguage(map: MlMap, locale: string): void {
+  let ids: string[];
+  try {
+    ids = map.getLayersOrder();
+  } catch {
+    return;
+  }
+  const lang = tileLanguage(locale);
+  const before = basemapNameFields.get(map);
+  const after = new Map<string, { own: unknown; wrote: unknown }>();
+  for (const id of ids) {
+    const l = map.getLayer(id);
+    if (!l || l.type !== 'symbol' || !l.source) continue;
+    if (isChartSource(l.source, map.getSource(l.source)?.type)) continue;
+    let cur: unknown;
+    try {
+      cur = map.getLayoutProperty(id, 'text-field');
+    } catch {
+      continue;
+    }
+    if (cur == null) continue;
+    const prev = before?.get(id);
+    const own = prev && sameValue(cur, prev.wrote) ? prev.own : copyValue(cur);
+    if (!READS_NAME_RE.test(JSON.stringify(own))) continue;
+    const want = lang ? inLanguage(own, lang) : own;
+    if (!sameValue(cur, want)) safe(() => map.setLayoutProperty(id, 'text-field', want));
+    after.set(id, { own, wrote: copyValue(want) });
+  }
+  basemapNameFields.set(map, after);
 }
 
