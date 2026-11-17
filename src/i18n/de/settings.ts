@@ -83,7 +83,7 @@ export const settings = {
   },
   parans: {
     title: 'Parans',
-    hint: 'Breiten, auf denen zwei Himmelskörper zugleich eckständig sind – einer aufgehend, ein anderer kulminierend usw. Die Parans deines Horoskops bleiben neben einem Overlay sichtbar.',
+    hint: 'Breiten, auf denen zwei Himmelskörper zugleich eckständig sind: die Himmelskörper selbst, nicht ihre Tierkreisgrade. Die Paranlinien sind immer Radix und In Mundo: sie gehören zum Radix und werden von den wirklichen Himmelspositionen der Himmelskörper aus gemessen, unabhängig von Liniensystem oder Overlay.',
     blockedCyclo: 'Kein einzelner Himmelsmoment – die Zyklokartografie kombiniert progressive und transitierende Himmelskörper. Schalte „Radix“ ein, um die eigenen Parans des Horoskops zurückzuholen.',
     blockedOverlay: 'Parans stammen aus dem Horoskop, und dieses Overlay steht gerade an seiner Stelle. Schalte „Radix“ ein, um die Parans des Horoskops zurückzuholen.',
   },
@@ -260,8 +260,6 @@ export const settings = {
     skyHeldForNow: 'Auf geodätischen Karten vorerst nicht verfügbar.',
     skyHeldForNowFull: 'Auf geodätischen Karten vorerst nicht verfügbar. Stelle das Liniensystem unter „Berechnung“ auf „Himmelsbezogen“, um es zu nutzen.',
     anglesHeld: 'Auf geodätischen Karten ergeben sich die Achsen eines Ortes aus seinen Koordinaten und bewegen sich daher nicht mit der Zeit.',
-    paransHeld: 'Parans werden auf geodätischen Karten nicht angezeigt.',
-    paransHeldFull: 'Parans werden auf geodätischen Karten nicht angezeigt. Stelle das Liniensystem unter „Berechnung“ auf „Himmelsbezogen“, um es zu nutzen.',
     needsChart: 'Braucht ein Horoskop. Wähle im Horoskopmenü in der oberen Leiste eines aus oder füge eines hinzu.',
   },
   nodeType: {

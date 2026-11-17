@@ -20,11 +20,12 @@ import { TipSpan } from '../ui/HoverTip';
 import './SkyHeldNote.css';
 
 /** Which sentence a held surface says. 'sky' is the standard reason
- *  (settings.inert.skyHeld) and the default. 'parans' is a paran listing's own
- *  ("Parans are not shown on geodetic maps."). 'forNow' is for a surface held only
+ *  (settings.inert.skyHeld) and the default. 'forNow' is for a surface held only
  *  because nothing projects it onto a geodetic map yet — where "which don't turn
- *  with the sky" would be untrue — and adds the same fix. */
-export type SkyHeldKind = 'sky' | 'parans' | 'forNow';
+ *  with the sky" would be untrue — and adds the same fix. (A paran listing's own
+ *  'parans' kind went on 2026-11-16, with the parans' hold: Lina's ruling shows the
+ *  chart's In Mundo parans on a geodetic map exactly as on a celestial one.) */
+export type SkyHeldKind = 'sky' | 'forNow';
 
 // The full form's sentence, and the compact form's short text. The fix half rides in
 // the compact form's tip (and its accessible description) instead of on the row. Each
@@ -33,12 +34,10 @@ export type SkyHeldKind = 'sky' | 'parans' | 'forNow';
 // joining them again.
 const FULL: Record<SkyHeldKind, MsgKey> = {
   sky: 'settings.inert.skyHeld',
-  parans: 'settings.inert.paransHeld',
   forNow: 'settings.inert.skyHeldForNowFull',
 };
 const SHORT: Record<SkyHeldKind, MsgKey> = {
   sky: 'settings.inert.skyHeldWhy',
-  parans: 'settings.inert.paransHeld',
   forNow: 'settings.inert.skyHeldForNow',
 };
 

@@ -16,11 +16,11 @@
 // (2026-10-02)
 const SKY_HELD_WHY = 'Not available on geodetic maps, which don’t turn with the sky.';
 const SKY_HELD_FIX = 'Switch the line system to Celestial, in Calculation, to use it.';
-// The two other reasons a held surface can give, kept as consts for the same reason: each
+// The other reason a held surface can give, kept as a const for the same reason: it
 // is said alone on a row that carries the fix elsewhere, and with the fix beside it on a
-// tip or a note that has room — so the joined forms below are built, never retyped.
+// tip or a note that has room — so the joined form below is built, never retyped. (A
+// second, the parans' own geodetic sentence, went on 2026-11-16 with the parans' hold.)
 const SKY_HELD_FOR_NOW = 'Not available on geodetic maps for now.';
-const PARANS_HELD = 'Parans are not shown on geodetic maps.';
 
 export const settings = {
   sections: {
@@ -179,11 +179,17 @@ export const settings = {
   userRate: { label: 'Degrees per year' },
   parans: {
     title: 'Parans',
-    // The second sentence is there because a transit overlay's rows used to REPLACE the
-    // chart's without a word anywhere in the app, and a reader compared them with another
-    // program's natal parans (2026-10-06). Time overlays now draw none of their own; a
-    // synastry partner's (and an eclipse's opt-in set) join the chart's, tagged.
-    hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Your chart’s parans stay on beside an overlay.',
+    // The Parans switch's hover tip in Settings ▸ Advanced ▸ Lines, under its title
+    // ("Parans", shown bold on the line above with the Shift P key): together they read as
+    // Lina's tip, "Parans. Latitudes where…". Her ruling of 16 Nov 2026: the map shows ONE
+    // set of parans, the natal chart's In Mundo parans, in every line system (Celestial · In
+    // Mundo, Celestial · In Zodiaco, Geodetic) and under every overlay, and this tip is what
+    // tells the reader so. "In Mundo" is the name of the line projection (Settings ▸
+    // Calculation), so keep it as the app's own label for that option in your language;
+    // "natal" is the birth chart. A full-paragraph tip: the card widens for it, so no hard
+    // length limit, but don't pad it.
+    // @i18n-verbatim
+    hint: 'Latitudes where two bodies are angular at the same moment: the bodies themselves, not their zodiac degrees. The paran lines are always natal and In Mundo: they belong to the natal chart and are measured from the bodies’ real positions in the sky, regardless of the line system or overlay selected.',
     // Shown on the grayed toggle while Cyclocartography stands in for the chart (its
     // "sky" mixes progressed and transiting bodies, so it has no simultaneous moment of
     // its own, and the chart's parans are off the map with the chart). Names the fix.
@@ -498,11 +504,6 @@ export const settings = {
     // the map doesn't turn, but that a place's angles are its own.
     anglesHeld:
       'On geodetic maps a place’s angles come from its coordinates, so they don’t move with time.',
-    // A paran listing on a geodetic map, in place of its empty state — one sentence,
-    // defined once here for every listing.
-    paransHeld: PARANS_HELD,
-    // …and with the fix beside it, for a tip with no button next to it (2026-10-02).
-    paransHeldFull: `${PARANS_HELD} ${SKY_HELD_FIX}`,
     // The reason a control needs a CHART and there is none: the reader picked "No chart"
     // (the sky alone) in the chart menu, or the library is empty. ONE sentence, reused word
     // for word wherever a technique is greyed for that reason: the Overlay menu's

@@ -1146,8 +1146,8 @@ export function MinorBodiesHud({
         )}
         {/* "Parans with the planets" — the list's bodies paired with the built-in ones, a
             switch of its own (off by default) because it acts on this list alone. Above the
-            rows so it stays in reach however long the list is. Held (the map's parans off,
-            the sky hold, Cyclocartography), it keeps the stored position, greyed and inert,
+            rows so it stays in reach however long the list is. Held (the map's parans off, a
+            time overlay standing in for the chart), it keeps the stored position, greyed and inert,
             and its tip's note names what to change (the .ui-inert convention). */}
         {paransSwitch}
         {column && capNote?.inList && capNoteEl}

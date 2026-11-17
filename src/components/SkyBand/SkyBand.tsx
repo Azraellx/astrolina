@@ -22,9 +22,17 @@
 // same DOM reflows to stacked rows (track / legend / context — see the CSS)
 // and the band pads itself by the home-indicator inset; the legend's tips are
 // tap-revealed there.
+//
+// The same band on every line system (Lina's ruling, 16 Nov 2026): it times the
+// bodies' real rising, culmination, setting and anticulmination at a place, which
+// the map's line system never changes. On a geodetic map it carries one more
+// thing, a slim info strip across its top saying so (skyTimes.geodeticNote) —
+// always shown there, never dismissible, and measured into the band's reserved
+// height (onNoteHeight) so it never sits over the map's controls.
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,7 +40,7 @@ import {
   type WheelEvent as ReactWheelEvent,
   type ReactNode,
 } from 'react';
-import type { NodeType, PlanetName } from '../../lib/ephemeris';
+import type { LineSystem, NodeType, PlanetName } from '../../lib/ephemeris';
 import {
   skyDayRows,
   skyEventsBetween,
@@ -63,6 +71,7 @@ import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClockIcon } from '../ui/ClockIcon';
 import { ClickIcon } from '../ui/ClickIcon';
+import { InfoIcon } from '../ui/InfoIcon';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { BIRTH_YEAR_MIN, BIRTH_YEAR_MAX } from '../DateTimeFields/DateTimeFields';
@@ -175,6 +184,15 @@ interface SkyBandProps {
   /** Bumped by the host when deferred ephemeris data arrives (the asteroid
    *  file): the shown day is re-solved with it. Never read otherwise. */
   ephemerisEpoch?: number;
+  /** The map's EFFECTIVE line system (App's derived `lineSystem`). The band reads the
+   *  same sky on either; on 'geodetic' it adds its info strip (skyTimes.geodeticNote)
+   *  across the top. Absent = celestial: no strip. */
+  lineSystem?: LineSystem;
+  /** Told the strip's rendered height (px, 0 while there is none), so the host adds it to
+   *  the band's reserved height — the map's bottomInset and the bottom-dock var — in the
+   *  same commit. The strip wraps to as many lines as the band's width and the language
+   *  need, so it is measured, not assumed. */
+  onNoteHeight?: (px: number) => void;
   onClose: () => void;
 }
 
@@ -199,9 +217,38 @@ export function SkyBand({
   openMinorBodies,
   fortuneOnMap = false,
   ephemerisEpoch = 0,
+  lineSystem = 'celestial',
+  onNoteHeight,
   onClose,
 }: SkyBandProps) {
   const { t, fmt } = useT();
+  // The geodetic info strip (see the header): on a geodetic map only. Its height is measured
+  // here, in a LAYOUT effect, and both padded into the band (so the rows below it keep their
+  // own height) and handed to the host (so the band's reserved height grows by it) before the
+  // browser paints — a strip that sat over the band's rows or the map's controls for a frame
+  // would be the first thing a reader saw.
+  // (`onNoteHeight` should be stable — App hands it a state setter; a fresh callback each
+  // render would only re-measure, since an unchanged height sets nothing.)
+  const geodeticNote = lineSystem === 'geodetic';
+  const noteRef = useRef<HTMLDivElement>(null);
+  const [noteH, setNoteH] = useState(0);
+  useLayoutEffect(() => {
+    const el = noteRef.current;
+    if (!geodeticNote || !el) return;
+    const report = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      setNoteH(h);
+      onNoteHeight?.(h);
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      setNoteH(0);
+      onNoteHeight?.(0);
+    };
+  }, [geodeticNote, onNoteHeight]);
   // Phone-sized screens reflow the band to stacked rows (the is-phone class —
   // the CSS owns the layout; the DOM is the same either way).
   const phone = usePhone();
@@ -819,10 +866,23 @@ export function SkyBand({
   return (
     <div
       ref={bandRef}
-      className={`sky-band${trackVisible ? '' : tableMode ? ' is-table' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}${phone ? ' is-phone' : ''}${narrow ? ' is-narrow' : ''}`}
+      className={`sky-band${trackVisible ? '' : tableMode ? ' is-table' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}${phone ? ' is-phone' : ''}${narrow ? ' is-narrow' : ''}${geodeticNote ? ' has-note' : ''}`}
+      // The strip sits in this padding (it is absolutely placed at the band's top), so the
+      // rows below keep exactly the height they have without it.
+      style={geodeticNote && noteH > 0 ? { paddingTop: noteH } : undefined}
       role="region"
       aria-label={t('skyTimes.title')}
     >
+      {/* The geodetic info strip: one muted line (wrapping where it must) across the top of
+          the band, on a geodetic map only. Not a control and not dismissible — the band is
+          simply the same on every line system, and this says so where the reader is looking.
+          The text is ONE string child, so a page translator can swap it whole. */}
+      {geodeticNote && (
+        <div ref={noteRef} className="sky-band-note" role="note">
+          <InfoIcon className="sky-band-note-icon" size={11} />
+          <span className="sky-band-note-text">{t('skyTimes.geodeticNote')}</span>
+        </div>
+      )}
       {!point ? (
         <div className="sky-band-empty">
           <span>{t('skyTimes.noPlace')}</span>

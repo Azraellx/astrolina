@@ -1328,8 +1328,9 @@ const ownKeys = (bodies: string[]) => bodies.flatMap((b) => BAND_TYPES.map((t) =
 // ── 6. App's sky families read one gate ─────────────────────────────────────────────
 section("6. App's sky families read one gate (SOURCE TRIPWIRE)");
 // A timeless chart draws its lines on a geodetic map, so nothing upstream empties the
-// families that read the sky's turning any more: parans, zenith stamps and the catalog's
-// zenith coins, the fixed stars' lines and parans, the ecliptic. Each is kept off by a gate
+// families that read the sky's turning any more: zenith stamps and the catalog's zenith
+// coins, the fixed stars' lines and parans, the ecliptic — and the parans, behind a gate of
+// their own since 2026-11-16 (paransOff, below). Each is kept off by a gate
 // in App.tsx, which no Node suite can import, so a deleted gate would pass every behaviour
 // check here. This reads the source instead — a tripwire, not a behaviour test: the gate is
 // one named value that holds whenever the birth time is unknown, and each of those memos
@@ -1348,8 +1349,8 @@ section("6. App's sky families read one gate (SOURCE TRIPWIRE)");
   const gate = decl('skyFamiliesOff');
   check('skyFamiliesOff is declared, and holds whenever the birth time is unknown (reads noTime)', !!gate && /=\s*noTime\b/.test(gate), gate ?? 'not found');
   // …and on every geodetic map, timed or not: the sky hold (lib/skyHold) is the gate's other
-  // half, so a deleted clause would publish parans and star lines into a plugin's complete
-  // set on a geodetic map. (2026-10-05: the check above alone passed with it gone.)
+  // half, so a deleted clause would publish star lines and zenith stamps into a plugin's
+  // complete set on a geodetic map. (2026-10-05: the check above alone passed with it gone.)
   // Further clauses may follow the two (the gate's own comment: anything else that turns the same
   // families off joins it here — since 22 Oct 2026 a stored line-system conflict, lineConflict).
   check('…and whenever the map is held (noTime || skyHeld, noTime first, any further clause after)', !!gate && /=\s*noTime\s*\|\|\s*skyHeld\s*(?:\|\|\s*\w+\s*)*;/.test(gate), gate ?? 'not found');
@@ -1361,12 +1362,50 @@ section("6. App's sky families read one gate (SOURCE TRIPWIRE)");
   // (natalStarLines left this list on 2026-10-20: the complete set's natal half is
   // lib/astro/allLines buildNatalLineSet now, whose gate §10 tests by what it builds, and §11
   // holds App's builder to calling it.)
-  const families = ['allParans', 'allZenith', 'eclipticLine', 'starLinesGeom', 'starParansGeom', 'minorZenithGeom'];
+  // (allParans left it on 2026-11-16, Lina's ruling: the chart's parans are one In Mundo set in
+  // every line system, so the sky hold no longer reaches them — they have their own gate,
+  // paransOff, checked below.)
+  const families = ['allZenith', 'eclipticLine', 'starLinesGeom', 'starParansGeom', 'minorZenithGeom'];
   // The body without its dependency list, which names the gate whether the body reads it or not.
   const bodyOf = (n: string) => decl(n)?.replace(/^\s*\[[^\n]*\],?[ \t]*$/gm, '') ?? null;
   const reads = (n: string) => !!bodyOf(n)?.includes('skyFamiliesOff');
   const ungated = families.filter((n) => !reads(n));
   check(`each sky family reads it: ${families.join(', ')}`, ungated.length === 0, `not gated: ${ungated.join(', ')}`);
+  // The parans' own gate (2026-11-16): no birth time, or a stored line-system conflict (which
+  // draws no body lines) — and NEVER the sky hold, which would empty them on a geodetic map.
+  // Both paran memos read it and not skyFamiliesOff, and both build from the TRUE sky
+  // (slidPositions, minorSlidPositions — never the projected linePositions /
+  // minorLinePositions) at the parans' own celestial mapping, paranMeridianLng, whatever the
+  // map's line system. §10 holds the builder a document reads to the same rule by what it builds.
+  const paransGate = decl('paransOff');
+  check(
+    'paransOff is declared as noTime || lineConflict — the birth time and the conflict, never the sky hold',
+    !!paransGate && /=\s*noTime\s*\|\|\s*lineConflict\s*;/.test(paransGate) && !/skyHeld|skyFamiliesOff/.test(paransGate),
+    paransGate ?? 'not found',
+  );
+  const paranMl = decl('paranMeridianLng');
+  check(
+    "paranMeridianLng is the celestial mapping at the chart's ε and GMST, whatever the line system",
+    !!paranMl && /meridianLngFor\(\s*'celestial'\s*,\s*eps\s*,\s*gmst\s*\)/.test(paranMl) && !/lineSystem/.test(bodyOf('paranMeridianLng') ?? ''),
+    paranMl ?? 'not found',
+  );
+  const PARAN_MEMOS: [memo: string, sky: RegExp, projected: RegExp][] = [
+    ['allParans', /generateParans\(\s*slidPositions\s*,\s*paranMeridianLng\s*\)/, /\blinePositions\b|\bmeridianLng\b/],
+    [
+      'minorParansGeom',
+      /generateMinorParans\(\s*minorSlidPositions\s*,\s*minorParanPartners\(\s*slidPositions\s*,\s*visiblePlanets\s*\)\s*,\s*paranMeridianLng\s*,/,
+      /\bminorLinePositions\b|\blinePositions\b|[^.\w]meridianLng\b/,
+    ],
+  ];
+  const paranStrays = PARAN_MEMOS.filter(([n, sky, projected]) => {
+    const b = bodyOf(n);
+    return !b || !b.includes('paransOff') || /skyFamiliesOff|skyHeld/.test(b) || !sky.test(b) || projected.test(b);
+  });
+  check(
+    `each paran memo reads paransOff (not the sky hold) and the true sky at paranMeridianLng: ${PARAN_MEMOS.map(([n]) => n).join(', ')}`,
+    paranStrays.length === 0,
+    paranStrays.map(([n]) => `${n}: ${(bodyOf(n) ?? 'not found').replace(/\s+/g, ' ').slice(0, 160)}`).join(' | '),
+  );
   const INKED: [inked: string, geom: string][] = [
     ['starLines', 'starLinesGeom'],
     ['starParans', 'starParansGeom'],
@@ -1408,8 +1447,10 @@ section("7. App's sky hold: masked, never written (SOURCE TRIPWIRE)");
   check('skyHeld reads the DERIVED line system (skyHeldFor(lineSystem), never the preference)', !!held && /=\s*skyHeldFor\(\s*lineSystem\s*\)\s*;/.test(held), shown(held));
 
   // The masked families: each effective flag, the local-space data, the night-shade wash.
+  // (effShowParans left this list on 2026-11-16, Lina's ruling: the chart's parans are one In
+  // Mundo set in every line system, drawn on a geodetic map as on a celestial one — so the flag
+  // must NOT read the hold, checked just below.)
   const masks: [string, RegExp][] = [
-    ['effShowParans', /&&\s*!skyHeld\s*;/],
     ['effShowStarLines', /&&\s*!skyHeld\s*;/],
     ['effShowZenith', /&&\s*!skyHeld\s*;/],
     // (…and, since 2026-10-20, with no chart in force: the skyAlone clause after it.)
@@ -1418,6 +1459,21 @@ section("7. App's sky hold: masked, never written (SOURCE TRIPWIRE)");
   ];
   const unmasked = masks.filter(([n, re]) => !re.test(decl(n) ?? ''));
   check(`each held flag masks on skyHeld: ${masks.map(([n]) => n).join(', ')}`, unmasked.length === 0, unmasked.map(([n]) => `${n}: ${shown(decl(n))}`).join(' | '));
+  // …and the parans' flag does not (2026-11-16): the stored switch and Advanced alone, so Parans
+  // on draws the chart's In Mundo set on a geodetic map. Its hotkey (Shift+P) likewise no longer
+  // stands down there: the one key that read the hold for parans is gone.
+  const parFlag = decl('effShowParans');
+  check(
+    'effShowParans is advancedWheel && showParans — not masked by the sky hold',
+    !!parFlag && /=\s*advancedWheel\s*&&\s*showParans\s*;/.test(parFlag) && !/skyHeld/.test(parFlag),
+    shown(parFlag),
+  );
+  const pKey = /case 'p': if \(([^)]*)\) setShowParans\(/.exec(app);
+  check(
+    "Shift+P's guard reads no hold (the held families' keys still do: 's' for the fixed stars)",
+    !!pKey && !/\bheld\b|skyHeld/.test(pKey[1]) && /case 's': if \([^)]*\bheld\b[^)]*\) setShowStarLines\(/.test(app),
+    pKey ? pKey[1] : 'not found',
+  );
   const dataGated = ['allLocalSpace', 'natalLocalSpaceCoords', 'relocatedLocalSpaceCoords', 'nightShade'];
   const dataOpen = dataGated.filter((n) => !/\bskyHeld\b/.test(body(n) ?? ''));
   check(`each held family's data reads skyHeld in its body: ${dataGated.join(', ')}`, dataOpen.length === 0, `not gated: ${dataOpen.join(', ')}`);
@@ -1450,10 +1506,31 @@ section("7. App's sky hold: masked, never written (SOURCE TRIPWIRE)");
   );
 
   // The openers refuse OPENING while held (closing is never held), through the ref a
-  // same-gesture line-system move has already written.
-  const openers = ['setShowLocalSpaceSafe', 'setShowSkyTimesSafe'];
+  // same-gesture line-system move has already written. Local Space alone since 2026-11-16: the
+  // Sky Times band is the same in every line system (Lina's ruling), so its opener — still the
+  // one route every caller takes — must NOT refuse on a geodetic map, and the band is no longer
+  // replaced by a held stand-in there.
+  const openers = ['setShowLocalSpaceSafe'];
   const leaky = openers.filter((n) => !/if\s*\(\s*v\s*&&\s*skyHeldRef\.current\s*\)\s*return;/.test(decl(n) ?? ''));
   check(`the view openers refuse opening while held: ${openers.join(', ')}`, leaky.length === 0, leaky.join(', '));
+  const skyTimesOpener = decl('setShowSkyTimesSafe');
+  check(
+    'the Sky Times opener exists and reads no hold, and no held stand-in replaces the band (SkyBandHeld is gone)',
+    !!skyTimesOpener && /setShowSkyTimes\(\s*v\s*\)/.test(skyTimesOpener) && !/skyHeld/.test(skyTimesOpener) && !/<SkyBandHeld\b|import \{[^}]*\bSkyBandHeld\b/.test(app),
+    shown(skyTimesOpener),
+  );
+  // The geodetic grid's Ascendant curves default on "while no body lines are drawn"
+  // (geoGridAscOn = geoGridAscPref ?? !bodyLinesDrawn). Parans are drawn on a geodetic map since
+  // 2026-11-16, and they are not body lines — a paran is a latitude row read off the bodies'
+  // angle lines — so the test counts none of the paran families, while it still counts the
+  // planet lines and the angle (aspect/midpoint) lines it was written for.
+  const bld = body('bodyLinesDrawn');
+  check(
+    "the Ascendant curves' auto default counts the bodies' lines and no paran family (geoGridAscOn ← !bodyLinesDrawn)",
+    !!bld && /\bdrawLines\b/.test(bld) && /\beffAngleLines\b/.test(bld) && !/[Pp]arans/.test(bld) &&
+      /const geoGridAscOn = geoGridAscPref \?\? !bodyLinesDrawn;/.test(app),
+    shown(bld),
+  );
   check(
     'a held needsSiderealTime tool renders the host’s held card, never its own render()',
     /ext\.needsSiderealTime && skyHeld \? \(\s*<HeldHud\b/.test(app),
@@ -1819,8 +1896,11 @@ section("10. A document's line set in its own system (INTERNAL IDENTITY + OUTSID
     again.lines.features.length === cel.lines.features.length &&
       again.lines.features.every((f, k) => lngOf(f) === lngOf(cel.lines.features[k])),
   );
-  // The sky hold, by what is built: on geodetic no parans, stars, local space or Vertex; on
-  // celestial all of them, so the empties above are the hold and not an empty chart.
+  // The sky hold, by what is built: on geodetic no stars, local space or Vertex; on celestial
+  // all of them, so the empties above are the hold and not an empty chart. The parans are NOT
+  // held since 2026-11-16 (Lina's ruling: one set, the natal chart's In Mundo parans, in every
+  // line system): built on both, and the same rows — held to that just below, and in full,
+  // across three charts and the catalog parans, in verify-parans §8.
   const vx = (set: typeof cel) => set.lines.features.filter((f) => /^A?VX$/.test(String((f.properties as P).lineType))).length;
   check(
     'celestial: parans, star lines, local space and the Vertex axis are all built',
@@ -1828,8 +1908,33 @@ section("10. A document's line set in its own system (INTERNAL IDENTITY + OUTSID
     `${cel.parans.features.length} parans, ${cel.starLines.features.length} star lines, ${cel.localSpace.features.length} local space, ${vx(cel)} Vx`,
   );
   check(
-    'geodetic: none of them (the sky hold), and the set says it is held and geodetic',
-    geo.parans.features.length === 0 && geo.starLines.features.length === 0 && geo.localSpace.features.length === 0 && vx(geo) === 0 && geo.skyHeld === true && geo.lineSystem === 'geodetic' && geo.angleLines.features.length > 0,
+    'geodetic: none of the held ones (the sky hold), and the set says it is held and geodetic',
+    geo.starLines.features.length === 0 && geo.localSpace.features.length === 0 && vx(geo) === 0 && geo.skyHeld === true && geo.lineSystem === 'geodetic' && geo.angleLines.features.length > 0,
+    `${geo.starLines.features.length} star lines, ${geo.localSpace.features.length} local space, ${vx(geo)} Vx`,
+  );
+  // MOVE THE SOURCE; THE PARANS MUST NOT MOVE. The MC lines moved with the line system above
+  // (`moved`); the paran rows, asked of the same two sets, are required to stay put — every row's
+  // latitude, theta and intersection longitude, in order — and to be the In Mundo rows: the
+  // celestial set's own, which §5 of verify-parans holds to the drawn In Mundo crossings.
+  type R = { label?: string; latitude: number; theta: number; intersectionLng: number };
+  const rowsOf = (fc: FeatureCollection) => fc.features.map((f) => f.properties as R);
+  const paranDiff = (a: FeatureCollection, b: FeatureCollection) => {
+    const ra = rowsOf(a);
+    const rb = rowsOf(b);
+    if (ra.length !== rb.length) return Infinity;
+    let worst = 0;
+    ra.forEach((p, k) => {
+      const q = rb[k];
+      if (p.label !== q.label) worst = Infinity;
+      worst = Math.max(worst, Math.abs(p.latitude - q.latitude), Math.abs(p.theta - q.theta), degDiff(p.intersectionLng, q.intersectionLng));
+    });
+    return worst;
+  };
+  const zod = buildNatalLineSet({ ...base, coordSystem: 'zodiaco' }, 'celestial');
+  check(
+    'geodetic and In Zodiaco: the parans are the In Mundo rows exactly, though the lines moved (latitude, theta, intersection ≤ 1e-12)',
+    moved >= 10 && cel.parans.features.length > 0 && paranDiff(cel.parans, geo.parans) <= 1e-12 && paranDiff(cel.parans, zod.parans) <= 1e-12,
+    `${cel.parans.features.length} / ${geo.parans.features.length} / ${zod.parans.features.length} rows; worst ${paranDiff(cel.parans, geo.parans)} (geodetic), ${paranDiff(cel.parans, zod.parans)} (In Zodiaco)`,
   );
   check(
     'a natal set carries no overlay, whichever system',
@@ -1855,6 +1960,15 @@ section("10. A document's line set in its own system (INTERNAL IDENTITY + OUTSID
   check(
     'timeless, celestial: no lines at all (the hour decides them)',
     tlCel.lines.features.length === 0 && tlCel.angleLines.features.length === 0,
+  );
+  // …and no parans on either map, though the geodetic one draws the chart's lines: a paran is a
+  // moment of the sky's turning, which the unknown hour decides. The same inputs timed have some
+  // (cel, geo above), so the empties are the missing hour and not an empty sky.
+  check(
+    'timeless: no parans on a celestial map or a geodetic one, where the same chart timed has them',
+    tlCel.parans.features.length === 0 && tlGeo.parans.features.length === 0 && tlGeo.lines.features.length > 0 &&
+      cel.parans.features.length > 0 && geo.parans.features.length > 0,
+    `${tlCel.parans.features.length} / ${tlGeo.parans.features.length} timeless; ${cel.parans.features.length} / ${geo.parans.features.length} timed`,
   );
   const own = bands(tlGeo.lines);
   const ownOk = own.every((f) => {

@@ -83,7 +83,7 @@ export const settings = {
   },
   parans: {
     title: 'Parany',
-    hint: 'Szerokości geograficzne, na których dwa ciała są kątowe w tej samej chwili, np. jedno wschodzi, gdy drugie kulminuje. Parany horoskopu pozostają włączone obok nakładki.',
+    hint: 'Szerokości geograficzne, na których dwa ciała są kątowe w tej samej chwili: same ciała, a nie ich stopnie zodiakalne. Linie paranów są zawsze urodzeniowe i In Mundo: należą do horoskopu urodzeniowego i są mierzone od rzeczywistych położeń ciał na niebie, niezależnie od wybranego systemu linii lub nakładki.',
     blockedCyclo: 'Brak jednej chwili nieba — Cyklokartografia odczytuje razem ciała progresywne i tranzytujące. Aby przywrócić parany horoskopu, pokaż „Horoskop urodzeniowy”.',
     blockedOverlay: 'Parany odczytuje się z horoskopu, a jego miejsce zajęła nakładka. Aby przywrócić parany horoskopu, pokaż „Horoskop urodzeniowy”.',
   },
@@ -260,8 +260,6 @@ export const settings = {
     skyHeldForNow: 'Na razie niedostępne na mapach geodezyjnych.',
     skyHeldForNowFull: 'Na razie niedostępne na mapach geodezyjnych. Aby z tego skorzystać, w sekcji „Obliczenia” przełącz „System linii” na „Astronomiczny”.',
     anglesHeld: 'Na mapach geodezyjnych kąty miejsca wynikają z jego współrzędnych, więc nie zmieniają się w czasie.',
-    paransHeld: 'Parany nie są pokazywane na mapach geodezyjnych.',
-    paransHeldFull: 'Parany nie są pokazywane na mapach geodezyjnych. Aby z tego skorzystać, w sekcji „Obliczenia” przełącz „System linii” na „Astronomiczny”.',
     needsChart: 'Wymaga horoskopu. Wybierz lub dodaj go w menu horoskopów na górnym pasku.',
   },
   nodeType: {

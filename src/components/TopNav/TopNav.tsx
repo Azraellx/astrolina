@@ -278,11 +278,12 @@ interface TopNavProps {
   onToggleTool: (id: string) => void;
   /** The EFFECTIVE line system (App's derived `lineSystem`), for what a geodetic map holds
    *  (lib/skyHold). Held rows grey with settings.inert.skyHeld and stay in the menu: the
-   *  Overlay menu's Primary Directions row; the Sky Times and Local Space view rows and
-   *  Slide; and any tool that declares `needsSiderealTime`, which also loses its readout
-   *  while held. A held view or tool that is OPEN stays clickable, to close it. Absent
-   *  reads as Celestial, which holds nothing. (Replaced `mundaneOnScreen` with the switch
-   *  it warned of, 2026-10-02.) */
+   *  Overlay menu's Primary Directions row; the Local Space view row and Slide; and any
+   *  tool that declares `needsSiderealTime`, which also loses its readout while held. A
+   *  held view or tool that is OPEN stays clickable, to close it. Absent reads as
+   *  Celestial, which holds nothing. (Replaced `mundaneOnScreen` with the switch it warned
+   *  of, 2026-10-02. The Sky Times row left the list on 2026-11-16: the band shows on a
+   *  geodetic map as on a celestial one.) */
   lineSystem?: LineSystem;
   /** The active Overlay-menu extension id (registerOverlayExtension), or null. Mutually
    *  exclusive with the core overlayMode — selecting one clears the other. */
@@ -934,8 +935,9 @@ export function TopNav({
   // lib/extensions/viewLock) — the trigger disables with the provider's reason.
   const viewLock = useViewLock();
   // The sky hold (lib/skyHold), on the EFFECTIVE line system: the rows below that read the
-  // sky's turning grey with its one sentence on a geodetic map — never leave the menu — and
-  // App's openers refuse them there, closing excepted. (2026-10-02)
+  // sky's turning (Local Space; Sky Times no longer, since 2026-11-16) grey with its one
+  // sentence on a geodetic map — never leave the menu — and App's openers refuse them there,
+  // closing excepted. (2026-10-02)
   const skyHeld = skyHeldFor(lineSystem);
   const skyHeldWhy = t('settings.inert.skyHeld');
   // The other reason a view can be held: no chart in force (App's skyAlone), for Local Space,
@@ -978,7 +980,9 @@ export function TopNav({
     // a product call to keep this menu short. It opens from Map filters ▸ Minor bodies ▸
     // More, which carries the key pill, and from the key itself; see App's showMinorHud.)
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
-    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes), held: skyHeld },
+    // Sky Times is not held on a geodetic map since 2026-11-16 (Lina's ruling): the band is the
+    // same on every line system, with a note on a geodetic one (SkyBand).
+    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
     { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace), held: skyHeld || skyAlone, heldWhy: skyHeld ? undefined : needsChartWhy, heldPutAway: skyAlone },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },

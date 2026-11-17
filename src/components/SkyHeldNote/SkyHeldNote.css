@@ -5,11 +5,11 @@
  * Licensed under the GNU AGPL v3.0 with an additional attribution term under
  * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
  *
- * The sky hold's reason in place (SkyHeldNote), and the two hosts the core gives it:
- * the card a held tool is replaced by (HeldHud) and the held Sky Times band
- * (SkyBandHeld). The sentence takes its host's note class; only the fix is styled
- * here — a small bordered inline action, inline rather than flex so it wraps with the
- * sentence on a narrow panel instead of squeezing it. (2026-10-02)
+ * The sky hold's reason in place (SkyHeldNote), and the host the core gives it: the
+ * card a held tool is replaced by (HeldHud). (The held Sky Times band, SkyBandHeld, went
+ * on 2026-11-16 with the band's hold.) The sentence takes its host's note class; only the
+ * fix is styled here — a small bordered inline action, inline rather than flex so it
+ * wraps with the sentence on a narrow panel instead of squeezing it. (2026-10-02)
  */
 
 .sky-held-fix {
@@ -90,8 +90,7 @@
 }
 /* The card's fix is its one action, so it stands as a button on its own line, clear of the
    sentence, rather than the inline chip the cramped hosts keep (2026-10-12: at 10.5 px it sat
-   tight under the text). The held Sky Times band keeps the chip — its strip has no height to
-   spare. */
+   tight under the text). */
 .held-hud .sky-held-fix {
   display: block;
   width: fit-content;
@@ -102,17 +101,4 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
-}
-
-/* SkyBandHeld: the reason centred in the band's empty-state slot. The band reserves a
-   taller strip while held on a desktop (App's band height), so a sentence that wraps
-   on a narrow window still fits; muted rather than the empty state's faint, because
-   this is a reason to read, not a placeholder. */
-.sky-band-held .sky-band-empty {
-  padding: 0 12px;
-}
-.sky-band-held .sky-held {
-  text-align: center;
-  line-height: 1.5;
-  color: var(--text-muted);
 }

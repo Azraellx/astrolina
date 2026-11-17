@@ -65,7 +65,9 @@ export interface ParanBadge {
    *  chips side by side at the row's one spot, the North Node's paran and the South Node's on the
    *  opposite angle (Map.tsx pairChipPos; one chip reading "NN As / SN Ds" until 2026-11-10). */
   pair?: boolean;
-  /** Click-to-fly target: the paran's intersection point. */
+  /** Click-to-fly target: the paran's intersection point (ParanProps.intersectionLng, the
+   *  Celestial · In Mundo crossing). Read only while the map offers the fly-to — Map's
+   *  `paranFlyTo`, true on Celestial · In Mundo alone; elsewhere the chip is a plain label. */
   targetLng: number;
   targetLat: number;
   /** Where it stacks among the map's labels (chipStack, from the occupancy). */

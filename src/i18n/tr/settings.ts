@@ -83,7 +83,7 @@ export const settings = {
   },
   parans: {
     title: 'Paranlar',
-    hint: 'İki gök cisminin aynı anda köşede olduğu enlemler: biri doğarken öteki kulmine olur ve benzeri. Haritanızın paranları bir katmanın yanında da açık kalır.',
+    hint: 'İki cismin aynı anda köşede olduğu enlemler: cisimlerin kendisi, zodya dereceleri değil. Paran çizgileri her zaman natal ve In Mundo olur: natal haritaya aittir ve seçilen çizgi sisteminden ya da katmandan bağımsız olarak cisimlerin gökyüzündeki gerçek konumlarından ölçülür.',
     blockedCyclo: 'Tek bir gökyüzü anı yok — Döngü Kartografisi progres ve transit gök cisimlerini birlikte okur. Haritanın kendi paranlarını geri getirmek için “Natal harita”yı gösterin.',
     blockedOverlay: 'Paranlar haritadan okunur ve bu katman onun yerine geçiyor. Haritanın paranlarını geri getirmek için “Natal harita”yı gösterin.',
   },
@@ -260,8 +260,6 @@ export const settings = {
     skyHeldForNow: 'Jeodezik haritalarda şimdilik kullanılamaz.',
     skyHeldForNowFull: 'Jeodezik haritalarda şimdilik kullanılamaz. Kullanmak için Hesaplama bölümünde çizgi sistemini Göksel olarak değiştirin.',
     anglesHeld: 'Jeodezik haritalarda bir yerin köşeleri koordinatlarından gelir; bu yüzden zamanla hareket etmez.',
-    paransHeld: 'Jeodezik haritalarda paranlar gösterilmez.',
-    paransHeldFull: 'Jeodezik haritalarda paranlar gösterilmez. Kullanmak için Hesaplama bölümünde çizgi sistemini Göksel olarak değiştirin.',
     needsChart: 'Bir harita gerektirir. Üst çubuktaki harita menüsünden bir harita seçin ya da ekleyin.',
   },
   nodeType: {

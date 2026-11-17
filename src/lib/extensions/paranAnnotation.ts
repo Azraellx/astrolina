@@ -19,13 +19,22 @@
 // No registration → both are unchanged. The provider does its own gating (return
 // null to stay silent), the same contract as CaptureSink.isActive: core never asks
 // why. The string is plain text, escaped wherever it is set — markup shows as text.
+//
+// `at.lineSystem` (2026-11-16) is the map's EFFECTIVE line system — App's derived
+// `lineSystem`, never the stored preference, so a Geodetic choice masked by a
+// sidereal zodiac reads 'celestial' here, as the map is drawn. The paran itself is the
+// same In Mundo row in every line system (Lina's ruling, lib/astro/parans), but a
+// reading tied to the place's own sky — "returns to the angles today" — belongs on a
+// celestial map only; a provider that says such a thing returns null on 'geodetic'.
+import type { LineSystem } from '../ephemeris';
 import type { ParanProps } from '../astro/parans';
 
 /** Extra line for a paran at a position along it: plain text, or null for no
- *  annotation. Called per processed hover frame, and once per click — keep it cheap. */
+ *  annotation. Called per processed hover frame, and once per click — keep it cheap.
+ *  `at` is the position (degrees) and the map's EFFECTIVE line system there. */
 export type ParanAnnotation = (
   props: ParanProps,
-  at: { lat: number; lng: number },
+  at: { lat: number; lng: number; lineSystem: LineSystem },
 ) => string | null;
 
 let annotation: ParanAnnotation | null = null;

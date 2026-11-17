@@ -37,6 +37,9 @@ export interface ParanProps {
   planetB: PlanetName;
   angleB: 'ASC' | 'DSC';
   latitude: number;
+  /** Where the pairing's two lines cross on the paran latitude, by the mapping the row was
+   *  generated with — in the app always the celestial one (generateParans), so the crossing
+   *  of the Celestial · In Mundo lines, in every line system. */
   intersectionLng: number;
   /** The pairing's shared LOCAL SIDEREAL TIME (radians, [0, 2π), equinox of
    *  date): the diurnal instant both bodies stand on their angles together,
@@ -196,12 +199,23 @@ function horizonParans(
   return out;
 }
 
-// `meridianLng` is the SAME meridian→longitude mapping the drawn lines use
-// (celestial: RA − GMST; geodetic: the zodiacal longitude), so the recorded
-// intersection point — the paran badge's fly-to target — always lands where the
-// drawn lines visibly cross the paran latitude, in either line system. The paran
-// LATITUDES are frame-independent (the bodies' mutual hour-angle geometry
-// survives the remapping); only this longitude metadata follows the frame.
+// ONE SET, IN MUNDO, IN EVERY LINE SYSTEM (Lina's ruling, 16 Nov 2026): "A paran is two
+// bodies on the angles at the same moment: the bodies themselves, not their zodiac
+// degrees. AstroLina therefore shows one set of parans, the natal chart's In Mundo
+// parans, in every line system (Celestial · In Mundo, Celestial · In Zodiaco,
+// Geodetic), under every overlay and in every tool."
+//
+// So the app's callers pass the bodies' TRUE-SKY positions (RA/dec as sampled, never
+// the In Zodiaco or geodetic ecliptic projection) and the CELESTIAL mapping
+// (meridianLngFor('celestial', …): RA − GMST at the chart's sidereal time), whatever
+// the map is drawing. Every row's latitude, theta and intersectionLng is then the same
+// on all three line-system states. On Celestial · In Mundo the mapping and positions are
+// the drawn lines' own, so the recorded intersection — the paran chip's fly-to target —
+// lands where the drawn lines visibly cross the paran latitude; elsewhere the lines are
+// drawn in another frame and the row is not a crossing of them, which is why the map
+// offers the fly-to on Celestial · In Mundo only. The generator itself still takes any
+// mapping (a suite may inject a synthetic one); the LATITUDES never depend on it, and
+// theta is frame-independent too.
 export function generateParans(
   positions: PlanetPosition[],
   meridianLng: MeridianLng,
@@ -330,9 +344,11 @@ function crossParans(
  * latitude-crossing listings) is a per-location list anyway. Star-to-star
  * parans are not computed.
  *
- * `stars` should already reflect the active star set (and, in geodetic mode,
- * the ecliptic projection — match the star LINES' positions); `positions` the
- * visibility-filtered planet set. `color` is the shared starlight tint.
+ * `stars` should already reflect the active star set; `positions` the
+ * visibility-filtered planet set. Both TRUE-SKY, with the celestial mapping, as for
+ * generateParans (one In Mundo set whatever the projection, 2026-11-16 — the app
+ * holds the fixed stars, star parans included, on a geodetic map). `color` is the
+ * shared starlight tint.
  */
 export function generateStarParans(
   stars: { name: string; ra: number; dec: number }[],
@@ -375,10 +391,12 @@ export function generateStarParans(
  * reason. Twenty bodies among themselves would be 190 pairs; with a partner it is
  * at most six rows each, and the partner is what gives the row its theme.
  *
- * `minors` and `partners` must be the positions the two families' LINES were drawn
- * from, and `meridianLng` their shared mapping, so each row crosses the drawn lines
- * where it says it does (slid, projected and framed identically). `partners` is the
- * caller's choice of built-in bodies (the visible set); it must hold no catalog body.
+ * `minors` and `partners` are TRUE-SKY positions, slid alike, and `meridianLng` the
+ * celestial mapping — the planets' parans' contract above (generateParans: one In Mundo
+ * set in every line system, 2026-11-16). On Celestial · In Mundo those are exactly what
+ * the two families' lines are drawn from, so each row crosses the drawn lines where it
+ * says it does. `partners` is the caller's choice of built-in bodies (the visible set);
+ * it must hold no catalog body.
  * `decor` is the catalog lines' own decoration — the row is coloured as its catalog
  * body is drawn.
  */

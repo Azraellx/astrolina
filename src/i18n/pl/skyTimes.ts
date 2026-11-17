@@ -10,7 +10,8 @@ export const skyTimes = {
   title: 'Godziny nieba',
   closeAria: 'Zamknij okno „Godziny nieba”',
   closeHint: 'Zamknij okno „Godziny nieba”.',
-  noPlace: 'Wybierz horoskop albo postaw pinezkę, aby odczytać zegar nieba w danym miejscu.',
+  noPlace: 'Godziny nieba wymagają miejsca. Wybierz horoskop albo postaw pinezkę.',
+  geodeticNote: 'Godziny nieba działają tak samo w każdym systemie linii: pokazują, kiedy każde ciało dociera do każdego z czterech kątów w tym miejscu na wybraną datę. Nie mają związku z kątami geodezyjnymi.',
   col: {
     body: 'Ciało',
     rise: 'AS',

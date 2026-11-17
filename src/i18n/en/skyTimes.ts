@@ -10,7 +10,20 @@ export const skyTimes = {
   title: 'Sky times',
   closeAria: 'Close sky times',
   closeHint: 'Close the sky-times window.',
-  noPlace: 'Pick a chart or drop a pin to read the sky clock somewhere.',
+  // The whole band's empty state, centred in it, while it has no place to read: no chart in
+  // force and no pin on the map. "Drop a pin" is placing the map's location pin, the same
+  // phrase the app uses elsewhere. One short line in a 28px band (two on a phone).
+  noPlace: 'Sky Times needs a place. Pick a chart or drop a pin.',
+  // A slim info strip across the TOP of the band, shown only while the map is on the Geodetic
+  // line system, always visible and never dismissible. It says the band is not a reading of
+  // the geodetic mapping: the times are each body's real rising, culmination, setting and
+  // anticulmination at the place, which are the same whatever line system the map draws.
+  // "Sky Times" is the band's own name (View ▸ Sky Times); "line system" the Calculation
+  // setting (Celestial or Geodetic); "the four angles" are AS, MC, DS and IC. Small muted
+  // text: one line on a desktop, wrapping on a phone — keep it about this length. A
+  // downstream build may replace it with its own wording.
+  geodeticNote:
+    'Sky Times is the same in every line system: it shows when each body reaches each of the four angles at this place on the selected date. It is not connected to the geodetic angles.',
   // Column headers use the map's own angle names, so the clock reads as the
   // time-domain twin of the lines: rising = AS, culminating = MC, … (AS and DS
   // since 2026-10-02, as on the map and the wheel.) The Paran Clock's lane gutter

@@ -2093,7 +2093,8 @@ export function Sidebar({
 
   // The sky hold (lib/skyHold), on the DERIVED line system: on a geodetic map nothing
   // turns, so the switches for what reads the turning — night shade, the Vertex axis,
-  // zenith points, parans, fixed stars — grey with the one sentence and its fix. (The
+  // zenith points, fixed stars — grey with the one sentence and its fix. (Parans left the
+  // list on 2026-11-16: one In Mundo set in every line system, Lina's ruling. The
   // line projection was on this list until 2026-10-20; it now shows only on Celestial.) Each keeps showing the STORED choice, which App masks only
   // out of what is drawn, so Celestial brings every one back as it was; the hotkeys
   // are refused in App while held, so nothing here can move a choice unseen.
@@ -2938,19 +2939,17 @@ export function Sidebar({
               <EyeIcon open={showNatalLines} />
               <span className="name">{t('settings.natalLines.title')}</span>
             </TipToggle>
-            {/* Parans and fixed stars are held on a geodetic map (lib/skyHold). The
-                hold's reason outranks Cyclocartography's for parans: switching the
-                overlay would not bring them back there, the line system would.
-                (2026-10-02) */}
+            {/* Fixed stars are held on a geodetic map (lib/skyHold); parans are not since
+                2026-11-16 (Lina's ruling: the natal chart's In Mundo parans in every line
+                system). Parans grey only while a time overlay stands in for the chart. */}
             <TipToggle
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
               onClick={() => setShowParans(!showParans)}
               ariaPressed={showParans}
-              disabled={skyHeld || paransOverlayBlocked}
-              disabledHint={
-                skyHeldWhy ??
-                t(overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay')
-              }
+              disabled={paransOverlayBlocked}
+              disabledHint={t(
+                overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay',
+              )}
               title={t('settings.parans.title')}
               hotkey="Shift P"
               hint={t('settings.parans.hint')}

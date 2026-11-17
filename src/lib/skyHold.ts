@@ -16,18 +16,25 @@
 // reused word for word, naming Calculation as the fix), never disappears, and keeps
 // the reader's own choice for when the map is Celestial again:
 //   · local space — the view and the expanded sidebar's section;
-//   · parans, star parans included (a paran listing says settings.inert.paransHeld);
-//   · fixed-star lines;
+//   · fixed-star lines, and the star parans with them;
 //   · the Vertex axis (Vx/Avx): a geodetic map draws the four angles only;
 //   · zenith/nadir points, and the ecliptic curve that goes with them;
 //   · night shade;
-//   · the Sky Times band, with any track a build registers in it;
 //   · Slide, which turns the sky by its sidereal time;
 //   · the Primary Directions overlay (SKY_HELD_OVERLAYS, lib/astro/timeline);
 //   · every tool that declares `needsSiderealTime` (lib/extensions/toolExtensions).
 // The angle-frame controls (the transits pair, the progressed Angles) hold at Natal
 // angles on the same predicate, with their own sentence, settings.inert.anglesHeld:
 // a place's angles come from its coordinates, so there is no moving frame to pick.
+//
+// Two left the list on 2026-11-16, by Lina's ruling, and are shown on a geodetic map
+// exactly as on a celestial one — neither is a reading of the geodetic mapping:
+//   · the planets' parans (and the catalog bodies'): one set, the natal chart's In
+//     Mundo parans, in every line system — built from the bodies' true sky at the
+//     celestial mapping (lib/astro/parans), so the map's line system never reaches them;
+//   · the Sky Times band: when each body reaches each angle at a place on a date, which
+//     is the same in every line system. A geodetic map shows it with a one-line note
+//     saying it is not connected to the geodetic angles (skyTimes.geodeticNote).
 //
 // It takes the EFFECTIVE line system — App.tsx's derived `lineSystem`, never the
 // stored preference. A geodetic choice that something else masks to Celestial (a

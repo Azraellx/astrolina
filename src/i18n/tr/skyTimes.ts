@@ -10,7 +10,8 @@ export const skyTimes = {
   title: 'Gökyüzü Saatleri',
   closeAria: 'Gökyüzü Saatleri penceresini kapat',
   closeHint: 'Gökyüzü Saatleri penceresini kapatın.',
-  noPlace: 'Gökyüzü saatini bir yerde okumak için bir harita seçin ya da bir yeri işaretleyin.',
+  noPlace: 'Gökyüzü Saatleri için bir yer gerekir. Bir harita seçin ya da bir yeri işaretleyin.',
+  geodeticNote: 'Gökyüzü Saatleri her çizgi sisteminde aynıdır: her cismin bu yerde seçilen tarihte dört köşenin her birine ne zaman ulaştığını gösterir. Jeodezik köşelerle bağlantılı değildir.',
   col: {
     body: 'Cisim',
     rise: 'AS',

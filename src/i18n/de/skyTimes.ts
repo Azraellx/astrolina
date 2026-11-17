@@ -10,7 +10,8 @@ export const skyTimes = {
   title: 'Himmelszeiten',
   closeAria: 'Himmelszeiten schließen',
   closeHint: 'Fenster Himmelszeiten schließen.',
-  noPlace: 'Wähle ein Horoskop oder setze einen Pin, um die Himmelsuhr an einem Ort abzulesen.',
+  noPlace: 'Himmelszeiten brauchen einen Ort. Wähle ein Horoskop oder setze einen Pin.',
+  geodeticNote: 'Himmelszeiten sind in jedem Liniensystem gleich: Sie zeigen, wann jeder Himmelskörper an diesem Ort am gewählten Datum jede der vier Achsen erreicht. Sie stehen in keinem Zusammenhang mit den geodätischen Achsen.',
   col: {
     body: 'Himmelskörper',
     rise: 'AS',

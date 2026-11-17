@@ -83,7 +83,7 @@ export const settings = {
   },
   parans: {
     title: 'Parans',
-    hint: 'Latitudes donde dos cuerpos son angulares en el mismo momento: uno sale mientras otro culmina, y así sucesivamente. Los parans de tu carta siguen activos junto a una capa.',
+    hint: 'Latitudes donde dos cuerpos son angulares a la vez: los cuerpos mismos, no sus grados zodiacales. Las líneas de parans son siempre natales e In Mundo: pertenecen a la carta natal y se miden desde las posiciones reales de los cuerpos en el cielo, sin importar el sistema de líneas ni la capa.',
     blockedCyclo: 'No hay un único momento del cielo: la ciclocartografía lee juntos cuerpos progresados y en tránsito. Muestra la Carta natal para recuperar los parans propios de la carta.',
     blockedOverlay: 'Los parans se leen en la carta, y esta capa ocupa su lugar. Muestra la Carta natal para recuperar los parans de la carta.',
   },
@@ -260,8 +260,6 @@ export const settings = {
     skyHeldForNow: 'No disponible por ahora en los mapas geodésicos.',
     skyHeldForNowFull: 'No disponible por ahora en los mapas geodésicos. Cambia el sistema de líneas a Celeste, en Cálculo, para usarlo.',
     anglesHeld: 'En los mapas geodésicos, los ángulos de un lugar salen de sus coordenadas, así que no se mueven con el tiempo.',
-    paransHeld: 'Los parans no se muestran en los mapas geodésicos.',
-    paransHeldFull: 'Los parans no se muestran en los mapas geodésicos. Cambia el sistema de líneas a Celeste, en Cálculo, para usarlo.',
     needsChart: 'Necesita una carta. Elige o agrega una en el menú de cartas de la barra superior.',
   },
   nodeType: {

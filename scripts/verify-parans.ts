@@ -22,6 +22,13 @@
 // equator to 51°) with the Sun through Pluto. Section 7 pairs catalog minor bodies
 // with the planets (generateMinorParans) on the same charts, and checks their chips'
 // rank and the switch that turns them on.
+//
+// Since Lina's ruling of 16 Nov 2026 the app shows ONE set of parans, the natal chart's
+// In Mundo set, in every line system. Section 5 holds the rows to the drawn crossings on
+// Celestial · In Mundo and requires them NOT to be the crossings on the other two
+// states (which is why the fly-to is offered there alone); section 8 moves the line
+// system under the app's own builder and requires every row, the catalog bodies'
+// included, not to move; section 9 is her acceptance figures for Jim Lewis's chart.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -36,8 +43,6 @@ import {
   obliquity,
   PLANET_CODES,
   PLANET_COLORS,
-  projectMinorOntoEcliptic,
-  projectOntoEcliptic,
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
@@ -51,6 +56,13 @@ import {
 } from '../src/lib/astro/parans';
 import { generateLines, meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
 import { generateMinorLines, minorLabelName, type MinorDecor } from '../src/lib/astro/minorLines';
+import {
+  buildNatalLineSet,
+  natalLinePositions,
+  natalMeridianLng,
+  type NatalLineInputs,
+} from '../src/lib/astro/allLines';
+import { fmtDM } from '../src/lib/astro/format';
 import { starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
 import { HYPOTHETICAL_POINTS, hypotheticalPoint } from '../src/lib/minorBodies/hypothetical';
@@ -181,6 +193,31 @@ const CHARTS: BirthData[] = [
   utChart('Sydney 1990', 1990, 7, 4, 12, 0, -33.869, 151.209),
   utChart('Singapore 2008', 2008, 12, 21, 3, 0, 1.352, 103.82),
 ];
+
+// The app's line-set inputs for a chart (allLines NatalLineInputs) as App's docNatalInputs hands
+// them: the chart's own sample, its obliquity and sidereal time, and the one tilt at the chart's
+// own obliquity (a chart is loaded). No catalog bodies unless a section adds them.
+function lineInputs(chart: BirthData, positions: PlanetPosition[], coordSystem: 'mundo' | 'zodiaco'): NatalLineInputs {
+  const jd = birthDataToJD(chart);
+  const eps = obliquity(jd);
+  return {
+    positions,
+    sampleJd: jd,
+    jd,
+    eps,
+    gmst: gmstRadians(jd),
+    geoEps: eps,
+    coordSystem,
+    noTime: false,
+    motion: null,
+    fortune: null,
+    starSet: 'bright',
+    starColor: '#cdbf8f',
+    localSpaceOrigin: { lat: chart.birthplace.lat, lng: chart.birthplace.lng },
+    minor: { positions: [], sampleJd: jd, decor: () => ({ name: '', color: '#888888', icon: '' }) },
+    minorParans: false,
+  };
+}
 
 for (const chart of CHARTS) verifyChart(chart);
 
@@ -427,41 +464,60 @@ function verifyChart(chart: BirthData) {
   console.log(`  note: equator-skip window |dec| < ${(Math.atan(1e-6) * RAD2DEG * 3600).toFixed(2)}″`);
 }
 
-// ── 5. Frame consistency with the drawn lines, celestial AND geodetic ─────────
-// The paran's recorded intersection point is the badge's fly-to target; it must
-// land where the drawn lines visibly cross the paran latitude, in BOTH line
-// systems (in Mundane/geodetic mode the meridian mapping changes — a celestial-
-// frame fly-to would miss the drawn crossing by roughly the GMST, ~96° on the
-// battery chart). Every chart, the ten bodies.
+// ── 5. The drawn-crossing contract: Celestial · In Mundo, and only there ──────
+// The paran's recorded intersection point is the chip's fly-to target. Since Lina's
+// ruling of 16 Nov 2026 the app builds ONE set of parans, the natal chart's In Mundo
+// set, in every line system — the bodies' true sky at the celestial mapping
+// (allLines natalParans; §8 holds the three line-system states to the same rows) — so
+// the rows land where the drawn lines visibly cross the paran latitude on Celestial ·
+// In Mundo, whose lines are drawn from exactly those positions and that mapping. That
+// is the contract kept here, every chart, the ten bodies: the rows built by the app's
+// own builder against the In Mundo lines it draws.
+//
+// On the other two states the same rows are NOT where the drawn lines cross — the lines
+// there are drawn from the ecliptic projection, and on Geodetic through another mapping
+// (a celestial-frame row misses a geodetic crossing by roughly the GMST, ~96° on the
+// battery chart). So the map offers the fly-to on Celestial · In Mundo alone (Map
+// `paranFlyTo`), and that is REQUIRED TO DISAGREE below rather than assumed: if the
+// rows ever sat on those lines too, the plain-label chips there would be withholding
+// a fly-to that works. (Until 2026-11-16 a geodetic map built its parans from the
+// projected positions and the geodetic mapping, and this section held THOSE to the
+// geodetic lines; that set no longer exists.)
 for (const chart of CHARTS) {
   const jd = birthDataToJD(chart);
   const gmst = gmstRadians(jd);
   const positions = getPlanetPositions(jd, 'mean').filter((p) => TEN.includes(p.name));
   const tag = chart.name;
   const eps = obliquity(jd);
-  // Both frames from the app's meridian factory, so the pair is one mapping, not a
-  // factory beside a copy. (2026-10-02)
-  const celestialLng = meridianLngFor('celestial', eps, gmst);
-  const geodeticLng = meridianLngFor('geodetic', eps, gmst);
-  const frames: Array<[string, PlanetPosition[], MeridianLng]> = [
-    ['celestial', positions, celestialLng],
-    ['geodetic', projectOntoEcliptic(positions, jd).filter((p) => TEN.includes(p.name)), geodeticLng],
+  const inputs = lineInputs(chart, positions, 'mundo');
+  // The rows as the app builds them, in each state (§8: the same rows every time).
+  const rows = buildNatalLineSet(inputs, 'celestial').parans;
+  // The lines each state DRAWS, from the app's own position rule and mapping (allLines
+  // natalLinePositions / natalMeridianLng — the helpers App's drawn memos read).
+  const drawnIn = (ls: 'celestial' | 'geodetic', coord: 'mundo' | 'zodiaco') => {
+    const pos = natalLinePositions(positions, jd, ls, coord, false, eps);
+    return generateLines(pos, natalMeridianLng({ eps, geoEps: eps, gmst }, ls));
+  };
+  const frames: Array<[string, ReturnType<typeof drawnIn>]> = [
+    ['Celestial · In Mundo', drawnIn('celestial', 'mundo')],
+    ['Celestial · In Zodiaco', drawnIn('celestial', 'zodiaco')],
+    ['Geodetic', drawnIn('geodetic', 'zodiaco')],
   ];
-  for (const [frame, pos, ml] of frames) {
-    const ps = generateParans(pos, ml);
-    const ls = generateLines(pos, ml);
+  for (const [frame, ls] of frames) {
     const byKey = new Map(
       ls.features.map((f) => [`${f.properties.planet}|${f.properties.lineType}`, f.geometry.coordinates as [number, number][]]),
     );
     let worstMc = 0; // intersectionLng vs the drawn MC/IC meridian longitude
     let worstHorizon = 0; // distance from the horizon curve to the intersection point
     let nMc = 0;
-    for (const f of ps.features) {
+    let mcOnDrawn = 0; // rows whose MC/IC meridian IS the drawn one, within 1e-6°
+    for (const f of rows.features) {
       const p = f.properties as ParanProps;
       if (p.angleA === 'MC' || p.angleA === 'IC') {
         const meridian = byKey.get(`${p.planetA}|${p.angleA}`)!;
         const d = Math.abs(normLng(p.intersectionLng - meridian[0][0]));
         if (d > worstMc) worstMc = d;
+        if (d < 1e-6) mcOnDrawn += 1;
         nMc += 1;
       }
       // The horizon body's drawn curve must pass through the intersection point
@@ -474,18 +530,43 @@ for (const chart of CHARTS) {
       }
       if (best > worstHorizon) worstHorizon = best;
     }
-    // Both fail on an empty set: a frame that generated no parans compared nothing.
-    check(
-      `${tag}: ${frame}: paran fly-to sits on the drawn MC/IC meridian (${nMc} parans)`,
-      nMc > 0 && worstMc < 1e-9,
-      `max Δlng ${worstMc.toExponential(2)}°`,
-    );
-    check(
-      `${tag}: ${frame}: drawn horizon curve passes through the fly-to point (${ps.features.length} parans)`,
-      ps.features.length > 0 && worstHorizon < 1.2,
-      `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`,
-    );
+    if (frame === 'Celestial · In Mundo') {
+      // Both fail on an empty set: a frame that generated no parans compared nothing.
+      check(
+        `${tag}: ${frame}: paran fly-to sits on the drawn MC/IC meridian (${nMc} parans)`,
+        nMc > 0 && worstMc < 1e-9,
+        `max Δlng ${worstMc.toExponential(2)}°`,
+      );
+      check(
+        `${tag}: ${frame}: drawn horizon curve passes through the fly-to point (${rows.features.length} parans)`,
+        rows.features.length > 0 && worstHorizon < 1.2,
+        `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`,
+      );
+    } else {
+      // REQUIRED TO DISAGREE: the In Mundo rows are not this state's crossings. A body on the
+      // ecliptic (the Sun) keeps its In Zodiaco MC line, so some rows may coincide there; not all.
+      check(
+        `${tag}: ${frame}: the In Mundo rows are not where these lines cross, so no fly-to here (${mcOnDrawn} of ${nMc} on the drawn meridian; worst ${worstMc.toFixed(3)}° off)`,
+        nMc > 0 && mcOnDrawn < nMc && worstMc > 0.01,
+        `max Δlng ${worstMc.toFixed(4)}°, horizon miss up to ${worstHorizon.toFixed(3)}°`,
+      );
+    }
   }
+}
+// The map's half of that contract, which no Node suite can mount (SOURCE TRIPWIRE): App
+// offers the fly-to from the EFFECTIVE line system and projection on Celestial · In Mundo
+// alone, and Map draws a plain label (no button, no click) when it is off.
+{
+  const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+  const map = readFileSync(resolve(process.cwd(), 'src/components/Map/Map.tsx'), 'utf8').replace(/\r\n/g, '\n');
+  const props = app.match(/paranFlyTo=\{([^}]*)\}/g) ?? [];
+  check(
+    "App hands the map paranFlyTo={lineSystem === 'celestial' && coordSystem === 'mundo'}, once",
+    props.length === 1 && /paranFlyTo=\{lineSystem === 'celestial' && coordSystem === 'mundo'\}/.test(props[0]),
+    props.join(' | ') || 'not found',
+  );
+  const plain = /if \(!paranFlyTo\) \{\s*return \(\s*<Fragment key=\{b\.key\}>\s*<span\b/.test(map);
+  check('Map: with paranFlyTo off a paran chip is a plain <span>, returned before the TipButton', plain);
 }
 
 // ── 6. Fixed-star × planet parans ─────────────────────────────────────────────
@@ -657,7 +738,10 @@ for (const chart of CHARTS) {
 //                 MC/IC line (generateMinorLines for a catalog body, generateLines for
 //                 a partner) sits at the row's intersection longitude, and the horizon
 //                 body's drawn curve passes through the intersection point. Both
-//                 directions, and horizon × horizon, celestial and geodetic, every chart.
+//                 directions, and horizon × horizon, on Celestial · In Mundo, every chart.
+//                 (Geodetic too until 2026-11-16, from the projected positions and the
+//                 geodetic mapping; since Lina's ruling the catalog parans are the In Mundo
+//                 rows in every line system — §8 — so In Mundo is where they are crossings.)
 //   7b TWO PARTS  simultaneity (§1's test): at the intersection, at the chart instant,
 //                 both bodies stand on their named angles, rising/setting labels included.
 //   7c IDENTITY   a PlanetName partner from the set on every row (no catalog × catalog),
@@ -724,8 +808,10 @@ for (const chart of CHARTS) {
     return best;
   };
 
-  // 7a + 7b + 7c, every chart, both frames.
-  for (const frame of ['celestial', 'geodetic'] as const) {
+  // 7a + 7b + 7c, every chart, on Celestial · In Mundo: the true sky at the celestial mapping,
+  // which is how the app builds the catalog parans in every line system (allLines
+  // buildNatalLineSet, App minorParansGeom) and what the In Mundo lines are drawn from.
+  for (const frame of ['celestial'] as const) {
     let rows = 0;
     let catMer = 0; // catalog body on MC/IC, partner on the horizon
     let planetMer = 0; // partner on MC/IC, catalog body on the horizon
@@ -742,8 +828,8 @@ for (const chart of CHARTS) {
       const ml = meridianLngFor(frame, obliquity(jd), gmstRadians(jd));
       const rawPlanets = getPlanetPositions(jd, 'mean').filter((p) => PARTNERS.includes(p.name));
       const rawMinors = getMinorPositions(jd, CATALOG);
-      const planets = frame === 'geodetic' ? projectOntoEcliptic(rawPlanets, jd) : rawPlanets;
-      const minors = frame === 'geodetic' ? projectMinorOntoEcliptic(rawMinors, jd) : rawMinors;
+      const planets = rawPlanets;
+      const minors = rawMinors;
       if (minors.length !== CATALOG.length) identity.push(`${chart.name}: ${minors.length}/${CATALOG.length} catalog positions`);
       const ps = generateMinorParans(minors, planets, ml, decor);
       const minorDrawn = runsOf(generateMinorLines(minors, ml, decor), (p) => `${p.number}|${p.lineType}`);
@@ -1009,6 +1095,136 @@ for (const chart of CHARTS) {
       if (prior) Object.defineProperty(globalThis, 'localStorage', prior);
       else delete (globalThis as { localStorage?: unknown }).localStorage;
     }
+  }
+
+  // ── 8. One set, In Mundo, in every line system ────────────────────────────────
+  // Lina's ruling, 16 Nov 2026: "A paran is two bodies on the angles at the same moment: the
+  // bodies themselves, not their zodiac degrees. AstroLina therefore shows one set of parans,
+  // the natal chart's In Mundo parans, in every line system (Celestial · In Mundo, Celestial ·
+  // In Zodiaco, Geodetic)."
+  //
+  // MOVE THE SOURCE; THE ROWS MUST NOT MOVE (CLAUDE.md, "Test a frozen parameter by trying to
+  // move it"). The app's own builder — allLines buildNatalLineSet, what a document's
+  // collectAllLinesFor builds and what the live set is assembled by — is asked for the chart's
+  // set in each of the three states, and every paran row, the planets' and the catalog bodies',
+  // is required to stay put: the same count, the same pairing in the same order, latitude,
+  // theta and intersection longitude within 1e-12. Beside it the drawn MC lines, built in the
+  // same calls, are REQUIRED TO MOVE, so the three states really were three. Jim Lewis's chart
+  // (Lina's fixture, §9) and the four others, every body the app samples (the default true
+  // node), the ten hypothetical points and the filed bodies with "Parans with the planets" on.
+  // Non-empty throughout: a check over no rows has proved nothing.
+  const LEWIS: BirthData = {
+    name: 'Jim Lewis',
+    year: 1941,
+    month: 6,
+    day: 5,
+    hour: 9,
+    minute: 30,
+    tzOffset: -4, // EDT
+    birthplace: { label: 'Yonkers', lat: 40 + 55 / 60 + 52 / 3600, lng: -(73 + 53 / 60 + 56 / 3600) },
+  };
+  type Row = Partial<ParanProps & MinorParanProps> & { latitude: number; theta: number; intersectionLng: number };
+  const rowsOf = (fc: { features: { properties: unknown }[] }) => fc.features.map((f) => f.properties as Row);
+  const identityOf = (p: Row) =>
+    [p.label, p.planetA, p.angleA, p.planetB, p.angleB, p.number, p.partner, p.side].map(String).join('|');
+  /** The worst difference between two row lists, or Infinity when their pairings differ. */
+  const rowDiff = (a: Row[], b: Row[]) => {
+    if (a.length !== b.length) return Infinity;
+    let worst = 0;
+    a.forEach((p, k) => {
+      const q = b[k];
+      if (identityOf(p) !== identityOf(q)) worst = Infinity;
+      worst = Math.max(
+        worst,
+        Math.abs(p.latitude - q.latitude),
+        Math.abs(p.theta - q.theta),
+        Math.abs(normLng(p.intersectionLng - q.intersectionLng)),
+      );
+    });
+    return worst;
+  };
+  const STATES = [
+    ['Celestial · In Mundo', 'celestial', 'mundo'],
+    ['Celestial · In Zodiaco', 'celestial', 'zodiaco'],
+    // A geodetic map draws the projection whatever the stored choice; the stored one is In Mundo.
+    ['Geodetic', 'geodetic', 'mundo'],
+  ] as const;
+  const mcLng = (set: { lines: { features: { properties: unknown; geometry: { coordinates: number[][] } }[] } }) =>
+    new Map(
+      set.lines.features
+        .filter((f) => (f.properties as LineRowProps).lineType === 'MC' && (f.properties as LineRowProps).kind === undefined)
+        .map((f) => [String((f.properties as LineRowProps).planet), f.geometry.coordinates[0][0]]),
+    );
+  type LineRowProps = { planet?: string; lineType?: string; kind?: string };
+  const lewisSets = new Map<string, ReturnType<typeof buildNatalLineSet>>();
+  for (const chart of [LEWIS, ...CHARTS.slice(1)]) {
+    const jd = birthDataToJD(chart);
+    const positions = getPlanetPositions(jd, 'true');
+    const minors = getMinorPositions(jd, CATALOG);
+    const inputsFor = (coord: 'mundo' | 'zodiaco'): NatalLineInputs => ({
+      ...lineInputs(chart, positions, coord),
+      minor: { positions: minors, sampleJd: jd, decor },
+      minorParans: true,
+    });
+    const sets = STATES.map(([name, ls, coord]) => [name, buildNatalLineSet(inputsFor(coord), ls)] as const);
+    const [, ref] = sets[0];
+    const refParans = rowsOf(ref.parans);
+    const refMinor = rowsOf(ref.minorParans ?? { features: [] });
+    const refMc = mcLng(ref);
+    if (chart === LEWIS) for (const [name, set] of sets) lewisSets.set(name, set);
+    for (const [name, set] of sets.slice(1)) {
+      const dP = rowDiff(refParans, rowsOf(set.parans));
+      const dM = rowDiff(refMinor, rowsOf(set.minorParans ?? { features: [] }));
+      const mc = mcLng(set);
+      const movedMc = [...refMc].filter(([b, lng]) => mc.has(b) && Math.abs(normLng(lng - mc.get(b)!)) > 0.01).length;
+      check(
+        `8 ${chart.name}: ${name} lists the In Mundo parans exactly — ${refParans.length} planet rows and ${refMinor.length} catalog rows, latitude, theta and intersection within 1e-12 — while ${movedMc} of ${refMc.size} MC lines moved`,
+        refParans.length > 0 && refMinor.length > 0 && dP <= 1e-12 && dM <= 1e-12 && movedMc > 0 &&
+          set.lineSystem === (name === 'Geodetic' ? 'geodetic' : 'celestial'),
+        `planet rows worst ${dP}, catalog rows worst ${dM}`,
+      );
+    }
+    // A chart with no birth time: no parans in any state — the unknown hour decides the moment
+    // a paran is — though the geodetic map draws its lines (from the 12:00 placeholder).
+    const timeless = STATES.map(([, ls, coord]) => buildNatalLineSet({ ...inputsFor(coord), noTime: true }, ls));
+    const timelessRows = timeless.reduce((n, s) => n + s.parans.features.length + (s.minorParans?.features.length ?? 0), 0);
+    check(
+      `8 ${chart.name}: with no birth time, no parans in any of the three states (${timelessRows}), where the same chart timed has ${refParans.length + refMinor.length}`,
+      timelessRows === 0 && refParans.length + refMinor.length > 0 && timeless[2].lines.features.length > 0,
+      `geodetic still draws ${timeless[2].lines.features.length} lines`,
+    );
+  }
+
+  // ── 9. GOLDEN: Lina's acceptance figures ──────────────────────────────────────
+  // OUTSIDE AGREEMENT: the figures her ruling of 16 Nov 2026 was checked against, for Jim
+  // Lewis (5 Jun 1941 09:30 EDT, Yonkers 40°55′52″N 73°53′56″W), default bodies — the In
+  // Mundo rows, and the SAME rows under In Zodiaco and Geodetic. Read to the arc-minute with
+  // the app's own degree-minute formatter (format.ts fmtDM, rounded to the minute). If these
+  // fail the app disagrees with her figures: report the measured values, don't move the check.
+  {
+    const dm = (deg: number, pos: string, neg: string) => `${fmtDM(Math.abs(deg)).replace("'", '′')}${deg >= 0 ? pos : neg}`;
+    const GOLDEN: Array<{ what: string; meridian: [PlanetName, 'MC' | 'IC']; horizon: [PlanetName, 'ASC' | 'DSC']; lat: string; lng?: string }> = [
+      { what: 'Jupiter IC × Pluto DS', meridian: ['Jupiter', 'IC'], horizon: ['Pluto', 'DSC'], lat: '43°20′N', lng: '144°20′E' },
+      { what: 'Saturn AS × Pluto IC', meridian: ['Pluto', 'IC'], horizon: ['Saturn', 'ASC'], lat: '39°15′N' },
+      { what: 'Mercury AS × Mars MC', meridian: ['Mars', 'MC'], horizon: ['Mercury', 'ASC'], lat: '40°34′N' },
+    ];
+    for (const [state, set] of lewisSets) {
+      const rows = rowsOf(set.parans);
+      for (const g of GOLDEN) {
+        const hits = rows.filter(
+          (p) => p.planetA === g.meridian[0] && p.angleA === g.meridian[1] && p.planetB === g.horizon[0] && p.angleB === g.horizon[1],
+        );
+        const p = hits[0];
+        const lat = p ? dm(p.latitude, 'N', 'S') : 'none';
+        const lng = p ? dm(normLng(p.intersectionLng), 'E', 'W') : 'none';
+        check(
+          `9 ${state}: ${g.what} at ${g.lat}${g.lng ? `, intersection ${g.lng}` : ''} (measured ${lat}, ${lng}; ${p ? `${p.latitude.toFixed(5)}°, ${normLng(p.intersectionLng).toFixed(5)}°` : 'no row'})`,
+          hits.length === 1 && lat === g.lat && (!g.lng || lng === g.lng),
+          `${hits.length} matching row(s)`,
+        );
+      }
+    }
+    check('9 the golden figures were read in all three states', lewisSets.size === 3, `${lewisSets.size} states`);
   }
 }
 

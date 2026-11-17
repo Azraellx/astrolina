@@ -72,9 +72,9 @@ export const minorBodies = {
     // a switch of their own under Your list, OFF by default (lib/minorBodies/prefs). One
     // constant label plus aria-checked, as Hide all. While the map's parans aren't drawn it
     // keeps its stored position, greyed, and its tip's note says what to change: `held` when
-    // the map's Parans toggle is off — named where that toggle is — or the sky hold's and
-    // Cyclocartography's own sentences (settings.inert.paransHeldFull,
-    // settings.parans.blockedCyclo). Every run stays under the 180-character tip cap. Draft
+    // the map's Parans toggle is off — named where that toggle is — or a time overlay's own
+    // sentences (settings.parans.blockedCyclo, settings.parans.blockedOverlay). Every run
+    // stays under the 180-character tip cap. Draft
     // wording: Lina defers on asteroid wording, and an expert may revisit.
     parans: {
       label: 'Parans with the planets',

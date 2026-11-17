@@ -169,7 +169,7 @@ import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
 import { LINE_TYPE_LABEL, OPPOSITE_ANGLE } from '../../lib/astro/lines';
-import type { PlanetName } from '../../lib/ephemeris';
+import type { LineSystem, PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
 import type { MsgKey, TFn } from '../../i18n';
@@ -2224,6 +2224,16 @@ interface MapProps {
    *  geodetic map (lib/skyHold), which holds the sky's turning: there those chips are plain
    *  labels, as planet chips already are once the zenith stamps are empty. (2026-10-02) */
   overheadTargets?: boolean;
+  /** The map's EFFECTIVE line system — App's derived `lineSystem`, never the stored
+   *  preference. Handed on to a registered paran annotation (lib/extensions/paranAnnotation),
+   *  whose readings tied to a place's own sky belong on a celestial map only. (2026-11-16) */
+  lineSystem: LineSystem;
+  /** Whether a paran chip flies to its row's intersection (and back on a second click). True
+   *  exactly on Celestial · In Mundo, from the EFFECTIVE line system and projection: the parans
+   *  are the chart's In Mundo set in every line system (Lina's ruling, 16 Nov 2026), and only
+   *  there is the recorded intersection where the drawn lines cross. False, the chips are plain
+   *  labels — no click, no fly-to tip — as aspect chips are where `overheadTargets` is false. */
+  paranFlyTo: boolean;
   /** Open state + setter for the credits / licenses dialog, lifted out of the map so
    *  it can be opened both from the attribution button here and from elsewhere in the
    *  app (see MapExtensionContext.openCredits); the map still renders the dialog. */
@@ -4416,6 +4426,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   spotlightActive,
   spotlightAiming,
   overheadTargets = true,
+  lineSystem,
+  paranFlyTo,
   creditsOpen,
   setCreditsOpen,
   skyFollow = 'off',
@@ -5603,6 +5615,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const eclipseTipRef = useRef(eclipseTip);
   // The geodetic grid's readout, read the same way: it changes as grid layers come and go.
   const geoReadoutRef = useRef(geoReadout);
+  // The effective line system, for the paran annotation the hover and click handlers ask for.
+  const lineSystemRef = useRef(lineSystem);
   // The MC band and the Ascendant zone the hover has lit (each its feature-state id, and whether
   // it was lit faint), or null. Component-level so the hover handler and the data effect below
   // can both clear them. (2026-10-20: the MC band joined the Ascendant zone.)
@@ -5663,6 +5677,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     lsTransparentRef.current = lsTransparent;
     eclipseTipRef.current = eclipseTip;
     geoReadoutRef.current = geoReadout;
+    lineSystemRef.current = lineSystem;
     eclipseCardRef.current = eclipseCard;
     lineCardRef.current = lineCard;
     distanceRefRef.current = distanceRef;
@@ -5776,6 +5791,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     },
     [flyToPoint],
   );
+  // Off Celestial · In Mundo the chips are plain labels (paranFlyTo), so a pending "click again
+  // to return" is forgotten: back on In Mundo, the first click on that chip flies to the paran
+  // again rather than to a view saved before the line system moved.
+  useEffect(() => {
+    if (!paranFlyTo) paranReturnRef.current = null;
+  }, [paranFlyTo]);
 
   // Clicking an ACG line's label flies to that body's zenith (its sub-planetary
   // point); clicking the SAME zenith again returns to wherever you were when you
@@ -7783,7 +7804,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               // without re-setting the popup HTML on every pixel.
               const sub = getParanAnnotation()?.(
                 line.props as unknown as ParanProps,
-                { lat: e.lngLat.lat, lng: e.lngLat.lng },
+                { lat: e.lngLat.lat, lng: e.lngLat.lng, lineSystem: lineSystemRef.current },
               );
               if (sub) {
                 // Plain text by the seam's contract — escaped here as on the card. About the
@@ -8013,6 +8034,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ? (getParanAnnotation()?.(hit.props as unknown as ParanProps, {
                 lat: e.lngLat.lat,
                 lng: e.lngLat.lng,
+                lineSystem: lineSystemRef.current,
               }) ?? null)
             : null;
         const builder = lineCardRef.current;
@@ -10267,6 +10289,33 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             );
           };
           const look = { background: zenithFill, color: paranText, zIndex: b.z };
+          // Off Celestial · In Mundo (paranFlyTo false) the chips are plain labels: the row is the
+          // chart's In Mundo paran there too, but the lines on the map are drawn in another
+          // frame, so its intersection is not where they cross. No click, no fly-to tip, no
+          // return — the same faces, measured under the same data-bface key.
+          if (!paranFlyTo) {
+            return (
+              <Fragment key={b.key}>
+                <span
+                  data-bkey={b.key}
+                  data-bface={paranChipFace(b)}
+                  className="acg-badge paran-badge"
+                  style={{ ...(b.pair ? pairChipPos(b.x, b.y, 'first') : badgePos(b.x, b.y)), ...look }}
+                >
+                  {face(false)}
+                </span>
+                {b.pair && (
+                  <span
+                    data-btwin=""
+                    className="acg-badge paran-badge"
+                    style={{ ...pairChipPos(b.x, b.y, 'second'), ...look }}
+                  >
+                    {face(true)}
+                  </span>
+                )}
+              </Fragment>
+            );
+          }
           return (
             <Fragment key={b.key}>
               <TipButton

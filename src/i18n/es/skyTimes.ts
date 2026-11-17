@@ -10,7 +10,8 @@ export const skyTimes = {
   title: 'Horarios del cielo',
   closeAria: 'Cerrar Horarios del cielo',
   closeHint: 'Cierra la ventana Horarios del cielo.',
-  noPlace: 'Elige una carta o coloca un marcador para leer el reloj del cielo en algún lugar.',
+  noPlace: 'Horarios del cielo necesita un lugar. Elige una carta o coloca un marcador.',
+  geodeticNote: 'Horarios del cielo es igual en cada sistema de líneas: muestra cuándo cada cuerpo alcanza cada uno de los cuatro ángulos en este lugar en la fecha seleccionada. No está relacionado con los ángulos geodésicos.',
   col: {
     body: 'Cuerpo',
     rise: 'AS',

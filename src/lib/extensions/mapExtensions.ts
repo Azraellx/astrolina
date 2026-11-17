@@ -46,6 +46,12 @@ import type { MapStyle } from '../themePalette';
 export interface AllLines {
   lines: FeatureCollection;
   angleLines: FeatureCollection;
+  /** The chart's parans: ONE In Mundo set in every line system (Lina's ruling, 16 Nov 2026) —
+   *  the bodies' true-sky positions at the celestial mapping (RA − GMST), so every row's
+   *  `latitude`, `theta` and `intersectionLng` is the same whatever {@link lineSystem} the set
+   *  was built in, and on Celestial · In Mundo it is where the drawn lines cross. EMPTY without
+   *  a birth time. Likewise {@link overlayParans}, {@link minorParans} and
+   *  {@link overlayMinorParans}. (2026-11-16) */
   parans: FeatureCollection;
   starLines: FeatureCollection;
   localSpace: FeatureCollection;
@@ -81,8 +87,8 @@ export interface AllLines {
    *  `kind: 'minor'`, the built-in side in `partner`, no `planet`/`planetA`/`planetB`),
    *  for the bodies in {@link minorLines}, paired with every built-in body, as {@link parans}
    *  pairs them. Generated only while the reader's "Parans with the planets" switch is in
-   *  effect (MapExtensionContext.minorParansOn — so EMPTY on a geodetic map, where parans
-   *  are held) and the chart has a birth time. The chart's, beside an overlay too, as
+   *  effect (MapExtensionContext.minorParansOn) and the chart has a birth time — In Mundo in
+   *  every line system, as {@link parans} (2026-11-16). The chart's, beside an overlay too, as
    *  {@link parans} are since 2026-10-06 (a synastry partner's are {@link overlayMinorParans};
    *  a time overlay makes none).
    *  OPTIONAL, and treated as EMPTY when absent, for the reason {@link minorLines} is. */
@@ -92,12 +98,14 @@ export interface AllLines {
    *  when absent. */
   overlayMinorParans?: FeatureCollection | null;
   /** {@link MapExtensionContext.skyHeld} as it was when this set was built: true when it
-   *  was built for a geodetic map, so its local-space, paran (star parans included) and
-   *  fixed-star families are EMPTY and its angle lines carry no Vx/Avx — because those
-   *  are held there, not because nothing is near. A listing reading this set prints the
-   *  held line rather than its empty state. Derived from the line system only. OPTIONAL,
-   *  and read as false when absent: a consumer that builds its own AllLines (for a
-   *  spotlight, say) holds nothing it didn't leave out itself. (2026-10-02) */
+   *  was built for a geodetic map, so its local-space and fixed-star families are EMPTY and
+   *  its angle lines carry no Vx/Avx — because those are held there, not because nothing is
+   *  near. A listing reading this set prints the held line rather than its empty state.
+   *  Derived from the line system only. NOT the parans since 2026-11-16: {@link parans},
+   *  {@link overlayParans} and the catalog parans are the same In Mundo set on a geodetic map
+   *  as on a celestial one. OPTIONAL, and read as false when absent: a consumer that builds
+   *  its own AllLines (for a spotlight, say) holds nothing it didn't leave out itself.
+   *  (2026-10-02) */
   skyHeld?: boolean;
   /** The line system the set was built in: the map's, from {@link MapExtensionContext.collectAllLines};
    *  the one asked for, from {@link MapExtensionContext.collectAllLinesFor}. OPTIONAL, and read as the
@@ -195,14 +203,18 @@ export interface MapExtensionContext {
    *  `skyHeldFor(ctx.lineSystem)` is the same value. A geodetic map lays the zodiac on
    *  Earth's longitudes and doesn't turn, so while this is true the held families are
    *  ABSENT from {@link lines}, {@link angleLines} and {@link minorLines} (no Vx/Avx),
-   *  {@link localSpace}, {@link overlayLocalSpace}, {@link parans}, {@link overlayParans},
-   *  {@link starParans}, {@link starLines} and {@link collectAllLines} — absent BECAUSE
-   *  held, not because nothing is near.
+   *  {@link localSpace}, {@link overlayLocalSpace}, {@link starParans}, {@link starLines}
+   *  and {@link collectAllLines} — absent BECAUSE held, not because nothing is near.
    *
    *  So a surface that lists those families says so instead of printing its empty state:
    *  the core's SkyHeldNote (components/SkyHeldNote) carries the one sentence,
-   *  settings.inert.skyHeld — settings.inert.paransHeld on a paran listing — with
-   *  `openSettings('calc')` as its fix. Optional: read absent as false. (2026-10-02) */
+   *  settings.inert.skyHeld, with `openSettings('calc')` as its fix. Optional: read absent
+   *  as false. (2026-10-02)
+   *
+   *  NOT the parans, since 2026-11-16 (Lina's ruling): {@link parans} and
+   *  {@link overlayParans} are the chart's (and a kept overlay's) In Mundo set in every line
+   *  system, drawn on a geodetic map exactly as on a celestial one, so a paran listing needs
+   *  no held state. Nor the Sky Times band, which shows the same times in every line system. */
   skyHeld?: boolean;
   /** Which sidereal time a DATED overlay's lines are framed by: the natal chart's
    *  ('relative-to-natal') or the overlay moment's own ('transit-moment'). EFFECTIVE
@@ -315,7 +327,8 @@ export interface MapExtensionContext {
   minorBodies?: readonly MinorRow[];
   /** Whether the reader's "Parans with the planets" switch (the Minor bodies window) is in
    *  effect: switched on, and not held — it is held while the map's parans are (Parans off,
-   *  the sky hold on a geodetic map, a time overlay standing in for the chart). DERIVED,
+   *  or a time overlay standing in for the chart; not the sky hold since 2026-11-16, the
+   *  parans being In Mundo in every line system). DERIVED,
    *  never the stored switch. A surface that builds a frame of its own (not from
    *  {@link collectAllLines}, whose AllLines.minorParans already follows it) reads this to
    *  pair the reader's catalog bodies with that frame's planets. Absent in builds that predate it; treat absent as false. */
@@ -349,10 +362,13 @@ export interface MapExtensionContext {
     detail: { showRoads: boolean; showRivers: boolean; showLabels: boolean };
   };
   angleLines: FeatureCollection;
+  /** The drawn parans, filtered as drawn: the chart's ONE In Mundo set in every line system
+   *  and projection (AllLines.parans says how; 2026-11-16). */
   parans: FeatureCollection;
   /** Fixed-star × planet parans (the Brady-school list). Computed but never drawn
    *  as map lines — provided for HUDs/readers that present the per-location list.
-   *  Empty unless the Fixed Stars layer is on. */
+   *  Empty unless the Fixed Stars layer is on (so empty on a geodetic map, where the fixed
+   *  stars are held); In Mundo, as {@link parans}, on either projection. */
   starParans: FeatureCollection;
   overlayLines: FeatureCollection | null;
   overlayParans: FeatureCollection | null;
@@ -497,9 +513,11 @@ export interface MapExtensionContext {
   /** Force a BUILT-IN view window open by id — the built-ins' twin of
    *  {@link openExtension} ('charts' is the chart browser). Idempotent. 'skyTimes' and
    *  'localSpace' open regardless of the Advanced switch — flip {@link setAdvancedMode}
-   *  first so the menus agree — and both are REFUSED while {@link skyHeld}: the call does
-   *  nothing and writes nothing, as their greyed View-menu rows do. One already open stays
-   *  open and shows the reason in place; closing is never refused (2026-10-02).
+   *  first so the menus agree — and 'localSpace' is REFUSED while {@link skyHeld}: the call
+   *  does nothing and writes nothing, as its greyed View-menu row does. One already open
+   *  stays open and shows the reason in place; closing is never refused (2026-10-02).
+   *  'skyTimes' opens on a geodetic map too since 2026-11-16 (the band is the same in every
+   *  line system, with a note there).
    *  'minorBodies' REQUIRES Advanced: its window renders only with Advanced on, so call
    *  {@link setAdvancedMode}(true) first (earlier in the same handler is enough); with
    *  Advanced off the call does nothing and writes nothing. A view lock doesn't block

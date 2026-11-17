@@ -66,7 +66,6 @@ import {
 } from './components/SkyBand/SkyBand';
 // What a geodetic map draws in place of the views and tools that read the sky's turning
 // (lib/skyHold, 2026-10-02).
-import { SkyBandHeld } from './components/SkyHeldNote/SkyBandHeld';
 import { HeldHud } from './components/SkyHeldNote/HeldHud';
 import { LineConflictBanner } from './components/SkyHeldNote/LineConflictBanner';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
@@ -169,7 +168,6 @@ import { useCountryOf } from './lib/atlas/useCountryOf';
 import {
   birthDataToJD,
   directedAngles,
-  eclipticToRaDec,
   ensureAsteroidEphemeris,
   EPS_J2000,
   fortunePosition,
@@ -191,7 +189,6 @@ import {
   partOfFortuneLon,
   PLANET_NAMES,
   projectOntoEcliptic,
-  raDecToEclipticLon,
   relocate,
   toEclipticPositions,
   TRADITIONAL_PLANETS,
@@ -548,6 +545,17 @@ function minorParanPartners(
 ): PlanetPosition[] {
   const bothNodes = visible.has('NorthNode') && visible.has('SouthNode');
   return positions.filter((p) => visible.has(p.name) && !(bothNodes && p.name === 'SouthNode'));
+}
+
+// The mapping an overlay's OWN parans are placed with (a synastry partner's, an eclipse
+// chart's opt-in set): always celestial, RA − GMST at the overlay's own sidereal time, read
+// with the layer's TRUE-SKY positions (layer.positions), never the In Zodiaco or geodetic
+// projection its lines are drawn from. Lina's ruling, 16 Nov 2026: one set of parans, In
+// Mundo, in every line system and under every overlay — the chart's own (allParans) and an
+// overlay's alike. On Celestial · In Mundo it is exactly what the overlay's lines read
+// (meridianLngFor('celestial', obliquity(jd), gmst); ε is unread there), so nothing moves.
+function overlayParanMeridianLng(layer: { jd: number; gmst: number }): MeridianLng {
+  return meridianLngFor('celestial', obliquity(layer.jd), layer.gmst);
 }
 
 // Persists the active Overlay-menu extension id (registerOverlayExtension). A single
@@ -1051,9 +1059,11 @@ export default function App() {
   // held, its stored choice is invisible and there is no conflict to show.
   const lineConflict = lineSystemPref === 'geodetic' && geodeticMaskFor(zodiacMode, advancedWheel) === 'sidereal';
   // The SKY HOLD (lib/skyHold): on a geodetic map, everything that reads the sky's turning
-  // rather than a zodiacal degree is held — local space, parans and star parans, fixed-star
-  // lines, the Vertex axis, zenith/nadir points and the ecliptic curve, night shade, the Sky
-  // Times band, Slide, Primary Directions, and every tool that declares `needsSiderealTime`.
+  // rather than a zodiacal degree is held — local space, fixed-star lines and their parans,
+  // the Vertex axis, zenith/nadir points and the ecliptic curve, night shade, Slide, Primary
+  // Directions, and every tool that declares `needsSiderealTime`. (Not the planets' parans
+  // nor the Sky Times band since 2026-11-16, Lina's ruling: both are shown on a geodetic map
+  // exactly as on Celestial — the chart's In Mundo parans, and the band's times at the place.)
   // CLAUDE.md rule 2's shape throughout: no preference is written, each one is masked by a
   // derived value (the eff* flags, visibleLineTypes, lsActive, effTransitFrame, …), every
   // guard reads THIS, and switching back to Celestial hands everything back as it was left.
@@ -1094,14 +1104,21 @@ export default function App() {
   // (2026-10-02)
   const timelessGeodetic = noTime && lineSystem === 'geodetic';
   // The natal families that read the sky's turning at the chart minute rather than a body's
-  // degree: parans, zenith stamps (the planets' and the catalog bodies' coins), the fixed
-  // stars' lines and parans, and the ecliptic, anchored at the minute's sidereal time. None
-  // is drawn without a birth time, in either line system, and the timeless chart's geodetic
+  // degree: zenith stamps (the planets' and the catalog bodies' coins), the fixed stars'
+  // lines and parans, and the ecliptic, anchored at the minute's sidereal time. None is
+  // drawn without a birth time, in either line system, and the timeless chart's geodetic
   // lines don't bring them back — nor on a geodetic map at all, which holds every one of
   // them (skyHeld above). Every one of those memos reads this ONE gate, so anything else
   // that comes to turn the same families off joins it here, never memo by memo.
   // verify-geodetic-chart §6 holds the memos to it. (2026-10-02)
   const skyFamiliesOff = noTime || skyHeld || lineConflict;
+  // The planets' and the catalog bodies' parans have their own gate since 2026-11-16 (Lina's
+  // ruling: one set, the natal chart's In Mundo parans, in every line system). They are built
+  // from the true sky and the celestial mapping whatever the map draws, so the sky hold no
+  // longer reaches them; a chart with no birth time still has none on either map (the hour
+  // decides the sky's turning a paran is a moment of), and a line-system conflict, which
+  // draws no body lines, draws no parans either.
+  const paransOff = noTime || lineConflict;
   // Acknowledgement for settings this app moves on the user's behalf (lib/autoFlipNotice).
   // Declared up here, ahead of the setters that announce. `announce` is called from event
   // handlers — with two documented exceptions, each arriving with no gesture to hang it on:
@@ -1618,13 +1635,18 @@ export default function App() {
       localStorage.getItem('astro:view-skytimes:v1') === '1' &&
       localStorage.getItem('astro:advanced:v1') === '1',
   );
-  // The two View windows that read the sky's turning, through their one opener each: on a
-  // geodetic map OPENING is refused (the menu row is greyed with the reason, and a hotkey or a
-  // plugin's openView does nothing and writes nothing), CLOSING never is. One already open
-  // stays open and shows the hold's reason in place of its content. Every route in — the View
-  // menu, the L and S hotkeys, ctx.openView — comes through these, so the check lives in one
-  // place rather than in each caller's memory. Read through skyHeldRef, so a line-system move
-  // made earlier in the same gesture counts. (2026-10-02)
+  // Local Space reads the sky's turning, so it opens through its one opener: on a geodetic map
+  // OPENING is refused (the menu row is greyed with the reason, and a hotkey or a plugin's
+  // openView does nothing and writes nothing), CLOSING never is. One already open stays open
+  // and shows the hold's reason in place of its content. Every route in — the View menu, the L
+  // hotkey, ctx.openView — comes through it, so the check lives in one place rather than in
+  // each caller's memory. Read through skyHeldRef, so a line-system move made earlier in the
+  // same gesture counts. (2026-10-02)
+  //
+  // Sky Times keeps its own opener for the same reason (every route through one place), but
+  // is no longer refused on a geodetic map (Lina's ruling, 16 Nov 2026): the band times each
+  // body's real angles at a place, which are the same in every line system, and on a geodetic
+  // map it says so in a strip across its top (SkyBand, skyTimes.geodeticNote).
   const setShowLocalSpaceSafe = useCallback((v: boolean) => {
     if (v && skyHeldRef.current) return;
     // …and with no chart in force: local space is cast from a chart's birthplace, and the sky
@@ -1634,7 +1656,6 @@ export default function App() {
     setShowLocalSpace(v);
   }, []);
   const setShowSkyTimesSafe = useCallback((v: boolean) => {
-    if (v && skyHeldRef.current) return;
     setShowSkyTimes(v);
   }, []);
   // The Planetary hours window — a module of the sky band, not a view: its only
@@ -2321,13 +2342,19 @@ export default function App() {
   // effZodiacMode belongs in this group but is resolved further up, where the derived
   // line system it feeds has to sit (see the comment there).
   const effFortuneFormula = advancedWheel ? fortuneFormula : 'sect';
-  // Parans, fixed-star lines and the zenith/nadir stamps also stand down on a geodetic map
+  // Fixed-star lines and the zenith/nadir stamps also stand down on a geodetic map
   // (skyHeld), masked the same way: the stored switch is untouched and shows on its greyed
   // control, and Celestial brings the family straight back. Each gates natal, overlay and
   // promoted draws alike, so one clause holds every frame — the zenith flag the ecliptic
   // curve and the catalog bodies' coins too. Their DATA empties; no layer is removed.
   // (2026-10-02)
-  const effShowParans = advancedWheel && showParans && !skyHeld;
+  //
+  // Parans are NOT held there any more (Lina's ruling, 16 Nov 2026): a paran is two bodies
+  // on the angles at one moment — the bodies themselves, not their zodiac degrees — so the
+  // map shows ONE set, the natal chart's In Mundo parans, in every line system and
+  // projection (allParans below). Nothing was written while the hold stood, so the stored
+  // switch comes back exactly as the reader left it.
+  const effShowParans = advancedWheel && showParans;
   const effShowAspectLines = advancedWheel && showAspectLines;
   const effShowMidpointLines = advancedWheel && showMidpointLines;
   const effShowStarLines = advancedWheel && showStarLines && !skyHeld;
@@ -2338,8 +2365,9 @@ export default function App() {
   // written only by its own switch (setMinorParansPref, below) and never on mount; nothing
   // but that switch and the derivation reads it. The catalog rows are drawn wherever the
   // planets' parans are, so whatever holds THOSE holds these: map Parans off (or Advanced
-  // off), the sky hold on a geodetic map, and Cyclocartography standing in for the chart
-  // (paransOverlayBlocked, below). A standing state, so it derives rather than writes
+  // off), and a time overlay standing in for the chart (paransOverlayBlocked, below). Not
+  // the sky hold since 2026-11-16: like the planets' parans they are the In Mundo set in
+  // every line system. A standing state, so it derives rather than writes
   // (CLAUDE.md rule 2): the switch shows the stored value greyed, and the reader's choice is
   // still there when the hold ends. Guards and generators read the DERIVED `minorParansOn`.
   //
@@ -2624,10 +2652,11 @@ export default function App() {
         // lock — map-surface-only details/projection/zones/stamps/parans, plus
         // the aspect/midpoint families a viewport owner drops from its drape.
         const parked = getViewLock() !== null;
-        // And on a geodetic map the four that switch a held family — parans, fixed stars,
-        // zenith points, night shade — stand down in BOTH directions, as their greyed rows
-        // do: a key that flipped the stored choice there would move it unseen, to surface
-        // only on Celestial (lib/skyHold, 2026-10-02).
+        // And on a geodetic map the three that switch a held family — fixed stars, zenith
+        // points, night shade — stand down in BOTH directions, as their greyed rows do: a key
+        // that flipped the stored choice there would move it unseen, to surface only on
+        // Celestial (lib/skyHold, 2026-10-02). Not parans since 2026-11-16: the chart's one
+        // In Mundo set is drawn in every line system (Lina's ruling), so Shift+P works there.
         const held = skyHeldRef.current;
         switch (e.key.toLowerCase()) {
           // Advanced ▸ Lines toggles — gated on Advanced mode (no-op while off,
@@ -2638,7 +2667,7 @@ export default function App() {
           // (2026-10-20)
           case 'n': if (advancedWheel && !parked && !skyAlone) setShowNatalLines((v) => !v); break;
           // …and, as its greyed row, while Cyclocartography stands in for the chart.
-          case 'p': if (advancedWheel && !parked && !held && !paransOverlayBlocked) setShowParans((v) => !v); break;
+          case 'p': if (advancedWheel && !parked && !paransOverlayBlocked) setShowParans((v) => !v); break;
           case 'a': if (advancedWheel && !parked) setShowAspectLines((v) => !v); break;
           case 'm': if (advancedWheel && !parked) setShowMidpointLines((v) => !v); break;
           case 's': if (advancedWheel && !parked && !held) setShowStarLines((v) => !v); break;
@@ -2717,8 +2746,9 @@ export default function App() {
         case '4': if (advancedWheel && !getViewLock()) setShowMinorHud((v) => !v); break;
         case 't': if (!getViewLock()) setShowTeleport((v) => !v); break;
         // Sky Times and Local Space are 'adv'-tier views (matching their View-menu rows),
-        // and both read the sky's turning: through their Safe openers, so on a geodetic
-        // map the key closes an open one and opens nothing (the hold check lives there).
+        // through their Safe openers. Local Space reads the sky's turning, so on a geodetic
+        // map L closes an open window and opens nothing (the hold check lives there); Sky
+        // Times opens there as anywhere since 2026-11-16.
         case 's': if (advancedWheel && !getViewLock()) setShowSkyTimesSafe(!showSkyTimes); break;
         // …and with no chart in force L stands down in BOTH directions: the window is put away
         // then (lsWindowOpen), so a press would flip the stored flag with nothing on screen
@@ -2932,8 +2962,8 @@ export default function App() {
   );
 
   // The Line system control's own setter. Choosing Geodetic closes nothing and switches
-  // nothing else: what reads the sky's turning — local space, Slide, the Sky Times band,
-  // a tool that declares `needsSiderealTime`, and the rest skyHeld lists — is HELD while the
+  // nothing else: what reads the sky's turning — local space, Slide, a tool that declares
+  // `needsSiderealTime`, and the rest skyHeld lists — is HELD while the
   // map is geodetic, each greyed or replaced in place by the reason, and resumes on
   // Celestial as it was left. (From 17 September to 2 October 2026 choosing Geodetic closed
   // them and opening one switched back to Celestial; that switch is retired.)
@@ -3100,10 +3130,9 @@ export default function App() {
   }, [skyBandTrackOn]);
   const skyBandTrackExt = getSkyBandTrack();
   const skyBandTrackAvailable = !!skyBandTrackExt && isSkyBandTrackEntitled(skyBandTrackExt);
-  // Neither the track nor the table shows on a geodetic map: the band itself is held there
-  // (SkyBandHeld draws in its place), and both switches keep the reader's choice for
-  // Celestial. (2026-10-02)
-  const skyBandTrackShown = skyBandTrackAvailable && skyBandTrackOn && !skyHeld;
+  // The track and the table show on a geodetic map as on a celestial one since 2026-11-16 (the
+  // band is no longer held there — Lina's ruling; it was replaced by SkyBandHeld on 2026-10-02).
+  const skyBandTrackShown = skyBandTrackAvailable && skyBandTrackOn;
   // Table layout for the band's legend (the inline times list is the default),
   // owned here like the track toggle: the table takes real height, so the
   // reserved height below must follow it. Persisted under the legacy density
@@ -3116,22 +3145,26 @@ export default function App() {
   }, [skyBandTable]);
   // The table layout only takes effect while no track shows (the expanded
   // track supersedes the legend layouts; the band suppresses them too).
-  const skyBandTableOn = skyBandTable && !skyBandTrackShown && !skyHeld;
-  // The held band reserves the table's height on a desktop, so the reason and its fix have
-  // two lines to sit on rather than one cramped row; a phone keeps its stacked height,
-  // which already has two. (2026-10-02)
-  const skyBandH = phoneLayout
-    ? SKY_BAND_H_PHONE +
-      (skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : 0) +
-      // Table mode: the 28px legend row grows to the table's height.
-      (skyBandTableOn ? SKY_BAND_H_TABLE - SKY_BAND_H_COMPACT : 0) +
-      safeBottom +
-      SKY_BAND_PHONE_CUSHION
-    : skyBandTrackShown && skyBandTrackExt
-      ? skyBandTrackExt.height
-      : skyBandTableOn || skyHeld
-        ? SKY_BAND_H_TABLE
-        : SKY_BAND_H_COMPACT;
+  const skyBandTableOn = skyBandTable && !skyBandTrackShown;
+  // The geodetic info strip across the band's top (SkyBand, on a geodetic map only), as the
+  // band MEASURED it: it wraps to as many lines as the band's width and the language need, so
+  // its height is reported rather than assumed, in a layout effect before the first paint.
+  // 0 with no strip. Added to the reserved height below, so the map's controls and the bottom
+  // furniture clear it as they clear the band.
+  const [skyNoteH, setSkyNoteH] = useState(0);
+  const skyBandH =
+    (phoneLayout
+      ? SKY_BAND_H_PHONE +
+        (skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : 0) +
+        // Table mode: the 28px legend row grows to the table's height.
+        (skyBandTableOn ? SKY_BAND_H_TABLE - SKY_BAND_H_COMPACT : 0) +
+        safeBottom +
+        SKY_BAND_PHONE_CUSHION
+      : skyBandTrackShown && skyBandTrackExt
+        ? skyBandTrackExt.height
+        : skyBandTableOn
+          ? SKY_BAND_H_TABLE
+          : SKY_BAND_H_COMPACT) + skyNoteH;
   useLayoutEffect(() => {
     publishBottomDock('sky-band', skyBandVisible ? skyBandH : 0);
     return () => retireBottomDock('sky-band');
@@ -3154,10 +3187,10 @@ export default function App() {
   // Point under the same name type-checks in every one of them while meaning "parked".
   const [skyParked, setSkyParked] = useState<Point | null>(null);
   // Active on desktop AND touch now — "Time Stamp". Touch has no cursor, so it works as
-  // tap-to-place (the held half); the live cursor-follow below stays desktop-only.
-  // Off while the band is held on a geodetic map: the stamp marks where the band reads,
-  // and a held band reads nowhere. The switch keeps its stored state. (2026-10-02)
-  const skyFollowActive = skyBandVisible && skyFollowOn && !skyHeld;
+  // tap-to-place (the held half); the live cursor-follow below stays desktop-only. On a
+  // geodetic map too since 2026-11-16, with the band (it was off there while the band was
+  // held, 2026-10-02).
+  const skyFollowActive = skyBandVisible && skyFollowOn;
   // Read by the (stable) onHover callback: push cursor points only while following, not
   // parked on a held spot, and only on desktop (touch has no hover to follow).
   const skyFollowLiveRef = useRef(false);
@@ -3528,8 +3561,10 @@ export default function App() {
     // `positions`/`ecliptic` (planets by sign hold). On a GEODETIC map they reach them,
     // read at the 12:00 placeholder (timelessGeodetic says why), and the fast bodies'
     // lines get their bands (uncertaintyBands below). The families that read the sky's
-    // turning — parans, zenith stamps, star parans — read skyFamiliesOff rather than
-    // leaning on this one, since on a geodetic map it no longer empties them. (2026-10-02)
+    // turning — zenith stamps, star parans — read skyFamiliesOff rather than leaning on this
+    // one, since on a geodetic map it no longer empties them. (2026-10-02) The parans don't
+    // read these positions at all since 2026-11-16: they are built from the true sky
+    // (slidPositions) in every line system, behind their own gate (paransOff).
     //
     // The rule itself is lib/astro/allLines natalLinePositions (2026-10-20), which a document's
     // own line set reads too (collectAllLinesFor): projected In Zodiaco and on a geodetic map,
@@ -3617,13 +3652,23 @@ export default function App() {
       fortuneMapPos && inZodiaco ? [...linePositions, fortuneMapPos] : linePositions;
     return stampNatalBands(generateLines(src, meridianLng, lineOpts), linePositions, natalMotion, lineSystem, geoEps);
   }, [linePositions, meridianLng, fortuneMapPos, lineSystem, coordSystem, lineOpts, natalMotion, geoEps]);
+  // The parans' own mapping: ALWAYS celestial (RA − GMST at the chart's sidereal time),
+  // whatever the map's line system. Lina's ruling, 16 Nov 2026: "A paran is two bodies on the
+  // angles at the same moment: the bodies themselves, not their zodiac degrees. AstroLina
+  // therefore shows one set of parans, the natal chart's In Mundo parans, in every line system
+  // (Celestial · In Mundo, Celestial · In Zodiaco, Geodetic), under every overlay and in every
+  // tool." On Celestial it is the same arithmetic as meridianLng above (gmst is all a
+  // celestial mapping reads), so an In Mundo map's parans are byte-identical to before.
+  const paranMeridianLng = useMemo<MeridianLng>(() => meridianLngFor('celestial', eps, gmst), [eps, gmst]);
+  // The chart's parans: the TRUE-SKY positions (slidPositions — never the In Zodiaco or
+  // geodetic projection linePositions carries) at the celestial mapping, so every row's
+  // latitude, theta and intersection longitude is the same in all three line-system states.
   // No birth time, no parans, in either line system: a paran is two bodies on angles at one
-  // moment of the sky's turning, which the unknown hour decides. Gated here (skyFamiliesOff)
-  // rather than by linePositions, which a geodetic map now fills for a timeless chart.
-  // (2026-10-02)
+  // moment of the sky's turning, which the unknown hour decides. Gated here (paransOff), and
+  // no longer by the sky hold. (2026-10-02; one In Mundo set, 2026-11-16)
   const allParans = useMemo(
-    () => (skyFamiliesOff ? EMPTY_FC : generateParans(linePositions, meridianLng)),
-    [skyFamiliesOff, linePositions, meridianLng],
+    () => (paransOff ? EMPTY_FC : generateParans(slidPositions, paranMeridianLng)),
+    [paransOff, slidPositions, paranMeridianLng],
   );
   // Local-space origin: follow the pin (default) or stay on the birthplace.
   const [lsOrigin, setLsOrigin] = useState(loadLsOrigin);
@@ -4131,22 +4176,23 @@ export default function App() {
   const parans = useMemo(() => withParanInks(paransGeom, inks), [paransGeom, inks]);
   // The catalog bodies' parans with the planets (Minor bodies ▸ "Parans with the planets"):
   // each body on the reader's list paired with the visible built-in bodies, never with
-  // another catalog body (parans.ts says why). From EXACTLY what the two families' lines are
-  // drawn from — minorLinePositions and linePositions, slid and projected alike, through the
-  // one meridianLng, with the catalog lines' own decoration — so every row crosses the drawn
-  // lines where it says it does (CLAUDE.md rule 5; verify-parans §7). No birth time, none, as
-  // for the planets' (allParans: skyFamiliesOff).
+  // another catalog body (parans.ts says why). Built as the planets' own parans are
+  // (allParans): from the TRUE sky — minorSlidPositions and slidPositions, slid alike, never
+  // projected — through the one celestial paranMeridianLng, with the catalog lines' own
+  // decoration. So on Celestial · In Mundo every row crosses the drawn lines where it says it
+  // does (verify-parans §7), and in every other line system it is the same In Mundo row
+  // (Lina's ruling, 16 Nov 2026). No birth time, none, as for the planets' (paransOff).
   const minorParansGeom = useMemo(
     () =>
-      !minorParansOn || skyFamiliesOff || minorLinePositions.length === 0
+      !minorParansOn || paransOff || minorSlidPositions.length === 0
         ? NO_MINOR_PARANS
         : generateMinorParans(
-            minorLinePositions,
-            minorParanPartners(linePositions, visiblePlanets),
-            meridianLng,
+            minorSlidPositions,
+            minorParanPartners(slidPositions, visiblePlanets),
+            paranMeridianLng,
             minorDecor,
           ),
-    [minorParansOn, skyFamiliesOff, minorLinePositions, linePositions, visiblePlanets, meridianLng, minorDecor],
+    [minorParansOn, paransOff, minorSlidPositions, slidPositions, visiblePlanets, paranMeridianLng, minorDecor],
   );
   // Coloured as their catalog body's lines are (the colour step, last).
   const minorParans = useMemo(() => withMinorInks(minorParansGeom, inks), [minorParansGeom, inks]);
@@ -4898,32 +4944,38 @@ export default function App() {
         : null,
     [overlayLayer, overlayMinorSampled, lineSystem, coordSystem, visibleLineTypes, effShowZenith, minorDecor, geoEps],
   );
-  // The overlay's catalog parans: its catalog bodies (overlayMinor's frame-projected positions
-  // and meridian) paired with its visible planets as its own parans read them (overlayFrame's
-  // ovPositions — the overlay memo's) — so they cross the overlay's drawn lines, as the
-  // chart's cross the chart's (rule 5). Wherever the overlay's planet parans are drawn: held
-  // with them by minorParansOn, and blocked on Cyclocartography as theirs are. Tagged as the
-  // overlay's catalog lines are (tagMinor: tagLabels would overwrite the label the map's hover
-  // keys on). Null with none.
+  // The overlay's catalog bodies as they stand in the sky — the samples' own RA/dec, before
+  // any In Zodiaco or geodetic projection (overlayMinorLines projects from exactly these) —
+  // which the overlay's catalog parans read, as the chart's read minorSlidPositions.
+  const overlayMinorSky = useMemo(
+    () => overlayMinorSampled.map(minorLinePositionOf),
+    [overlayMinorSampled],
+  );
+  // The overlay's catalog parans: its catalog bodies paired with its visible planets, both at
+  // their TRUE-SKY positions (overlayMinorSky, overlayLayer.positions) through the overlay's
+  // celestial mapping (overlayParanMeridianLng) — the overlay's own planet parans' frame, In
+  // Mundo in every line system (Lina's ruling, 16 Nov 2026). On Celestial · In Mundo that is
+  // exactly what the overlay's lines read, so each row crosses them where it says it does.
+  // Wherever the overlay's planet parans are drawn: held with them by minorParansOn, and
+  // blocked on every time overlay as theirs are. Tagged as the overlay's catalog lines are
+  // (tagMinor: tagLabels would overwrite the label the map's hover keys on). Null with none.
   const overlayMinorParans = useMemo(
     () =>
       minorParansOn &&
       overlayLayer &&
-      overlayMinor &&
-      overlayFrame &&
-      overlayMinor.positions.length > 0 &&
+      overlayMinorSky.length > 0 &&
       !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? tagMinor(
             generateMinorParans(
-              overlayMinor.positions,
-              minorParanPartners(overlayFrame.ovPositions, visiblePlanets),
-              overlayMinor.meridianLng,
+              overlayMinorSky,
+              minorParanPartners(overlayLayer.positions, visiblePlanets),
+              overlayParanMeridianLng(overlayLayer),
               minorDecor,
             ),
             OVERLAY_LABEL_PREFIX[overlayLayer.kind],
           )
         : null,
-    [minorParansOn, overlayLayer, overlayMinor, overlayFrame, visiblePlanets, minorDecor],
+    [minorParansOn, overlayLayer, overlayMinorSky, visiblePlanets, minorDecor],
   );
 
   // One-frame rule: when an overlay is active the auxiliary families (aspect,
@@ -5063,11 +5115,13 @@ export default function App() {
         ),
       ),
       // A time overlay draws no parans of its own (Cyclo has no single sky-moment; the
-      // rest no paran reading) — see overlayAuxBlocked. Synastry's and an eclipse's stay.
+      // rest no paran reading) — see overlayAuxBlocked. Synastry's and an eclipse's stay,
+      // In Mundo in every line system (overlayParanMeridianLng; Lina's ruling, 16 Nov 2026):
+      // the layer's true sky, not the projected ovPositions the lines read.
       parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
             filterParans(
-              tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
+              tagLabels(generateParans(overlayLayer.positions, overlayParanMeridianLng(overlayLayer)), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -5434,11 +5488,12 @@ export default function App() {
           visibleLineTypes,
         ),
       ),
-      // Parans suppressed under Cyclocartography (see the overlay memo above).
+      // Parans suppressed under every time overlay (see the overlay memo above); the kept
+      // ones In Mundo in every line system, as there (overlayParanMeridianLng).
       parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
         ? mergeNodeParans(
             filterParans(
-              tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
+              tagLabels(generateParans(overlayLayer.positions, overlayParanMeridianLng(overlayLayer)), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -7313,25 +7368,23 @@ export default function App() {
   // via extensionCtx; the engine (generateStarParans) lives in lib/astro/parans.
   // Never drawn as map lines (the catalog × planet set is hundreds of latitude
   // rows; the conventional reading is a per-location list). Follows the star-lines
-  // toggle/set and, in Geodetic mode, the same ecliptic projection.
+  // toggle/set. In Mundo like the planets' parans (allParans; Lina's ruling, 16 Nov 2026):
+  // the stars and planets as they stand in the sky, never projected, through the celestial
+  // paranMeridianLng — so In Zodiaco reads the same rows as In Mundo. Still held on a
+  // geodetic map, with the star lines (effShowStarLines, skyFamiliesOff).
   const starParansGeom = useMemo(() => {
     // Natal star × planet parans; hidden while an overlay is active (one-frame rule —
     // these are the natal frame's own parans). None without a birth time, as for the
     // planets' parans (allParans): a geodetic map's timeless lines don't bring them back.
     // (2026-10-02)
     if (!effShowStarLines || !current || overlayAux || skyFamiliesOff) return EMPTY_FC;
-    const stars = starsOfDate(jd, starSet).map((s) => {
-      if (lineSystem !== 'geodetic') return s;
-      const lon = raDecToEclipticLon(s.ra, s.dec, eps);
-      return { ...s, ...eclipticToRaDec(lon, 0, eps) };
-    });
     return generateStarParans(
-      stars,
-      linePositions.filter((p) => visiblePlanets.has(p.name)),
-      meridianLng,
+      starsOfDate(jd, starSet),
+      slidPositions.filter((p) => visiblePlanets.has(p.name)),
+      paranMeridianLng,
       STAR_LINE_COLORS[theme],
     );
-  }, [effShowStarLines, current, overlayAux, skyFamiliesOff, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
+  }, [effShowStarLines, current, overlayAux, skyFamiliesOff, jd, starSet, slidPositions, visiblePlanets, paranMeridianLng, theme]);
   // A star paran wears the star ink (withParanInks reads its `star`), as its star's lines do.
   const starParans = useMemo(() => withParanInks(starParansGeom, inks), [starParansGeom, inks]);
 
@@ -7476,7 +7529,8 @@ export default function App() {
   // advancedRef so a setAdvancedMode(true) earlier in the same gesture counts; otherwise the
   // call does nothing and writes nothing. A view lock doesn't block the state flip: the
   // window appears once the lock clears. 'skyTimes' and 'localSpace' go through their Safe
-  // openers, so on a geodetic map the call is refused, as their greyed menu rows are.
+  // openers, so on a geodetic map a 'localSpace' call is refused, as its greyed menu row is
+  // ('skyTimes' opens there as anywhere since 2026-11-16).
   const openViewById = useCallback(
     (
       id:
@@ -7670,13 +7724,15 @@ export default function App() {
     // Unknown birth time: on a celestial map the natal families are empty (linePositions is
     // emptied at the source). On a geodetic map the planet, aspect and midpoint lines are drawn
     // from the 12:00 placeholder, so they are here too, with their bands — every consumer of
-    // this set that lists lines for a timeless chart guards itself — while the parans and star
-    // lines keep their own gate (skyFamiliesOff). (2026-10-02)
+    // this set that lists lines for a timeless chart guards itself — while the parans (paransOff)
+    // and star lines (skyFamiliesOff) keep their own gates. (2026-10-02)
     //
     // On a geodetic map the whole set is built HELD (skyHeld, returned below so a listing
-    // can say so): that gate empties the natal parans and star lines, local space is
-    // empty, every generator leaves the Vertex axis out (lineOpts), and the overlay's
-    // parans, local space and star lines are left out below. (2026-10-02)
+    // can say so): that gate empties the natal star lines, local space is empty, every
+    // generator leaves the Vertex axis out (lineOpts), and the overlay's local space and star
+    // lines are left out below. (2026-10-02) The parans are not held since 2026-11-16: the
+    // chart's, and a kept overlay's, are the same In Mundo set in every line system (Lina's
+    // ruling; allParans, overlayParanMeridianLng).
     //
     // With no chart the natal half is empty (emptyNatalLineSet: every natal family, and the
     // set's skyHeld and lineSystem), and the sky alone's layer, when one is up, fills the
@@ -7724,12 +7780,13 @@ export default function App() {
           : tagLabels(generateLines(ovPositions, ovMeridianLng, lineOpts), prefix),
         ovPositions,
       );
-      // Parans suppressed under Cyclocartography (no single sky-moment across epochs), and
-      // held on a geodetic map.
-      overlayParans =
-        skyHeld || overlayAuxBlocked(overlayLayer.kind, 'paran')
-          ? null
-          : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix);
+      // Parans suppressed under every time overlay (Cyclo has no single sky-moment across
+      // epochs; the rest no paran reading). The kept ones (synastry, an eclipse's) are In
+      // Mundo in every line system, as drawn (overlayParanMeridianLng; Lina's ruling,
+      // 16 Nov 2026) — so no longer held on a geodetic map.
+      overlayParans = overlayAuxBlocked(overlayLayer.kind, 'paran')
+        ? null
+        : tagLabels(generateParans(overlayLayer.positions, overlayParanMeridianLng(overlayLayer)), prefix);
       // The catalog bodies beside it: the drawn set's samples and frame (overlayMinor),
       // every angle and no filter — what the natal minorLines below is for the chart.
       const ovMinor = overlayMinorLines(overlayLayer, overlayMinorSampled, {
@@ -7742,11 +7799,17 @@ export default function App() {
       });
       overlayMinorAll = ovMinor.lines;
       // …and their parans with the overlay's bodies, wherever its planet parans are in this
-      // set (overlayParans), the switch in effect — tagged as its catalog lines are.
+      // set (overlayParans), the switch in effect — tagged as its catalog lines are. In Mundo,
+      // as the planets' beside them: both sides' true sky at the overlay's celestial mapping.
       overlayMinorParansAll =
-        overlayParans && minorParansOn && ovMinor.positions.length > 0
+        overlayParans && minorParansOn && overlayMinorSky.length > 0
           ? tagMinor(
-              generateMinorParans(ovMinor.positions, ovPositions, ovMinor.meridianLng, minorDecor),
+              generateMinorParans(
+                overlayMinorSky,
+                overlayLayer.positions,
+                overlayParanMeridianLng(overlayLayer),
+                minorDecor,
+              ),
               prefix,
             )
           : null;
@@ -7830,6 +7893,7 @@ export default function App() {
     allLines,
     allMinorLines,
     overlayMinorSampled,
+    overlayMinorSky,
     minorDecor,
     minorParansOn,
     theme,
@@ -7955,8 +8019,9 @@ export default function App() {
       starColor: STAR_LINE_COLORS[theme],
       localSpaceOrigin,
       minor: { positions: minorPositions, sampleJd: jd, decor: minorDecor },
-      // The catalog parans' switch as it stands but for the sky hold, which the builder applies
-      // for the system asked — and with no overlay to stand in for the chart, nothing else holds.
+      // The catalog parans' switch as it stands — with no overlay to stand in for the chart,
+      // nothing else holds it. The sky hold does not reach it since 2026-11-16 (the parans are
+      // In Mundo in every line system), so it is the same for every system asked.
       minorParans: minorParansPref && advancedWheel && showParans,
     }),
     [
@@ -8024,7 +8089,9 @@ export default function App() {
         starSet,
         inksCommitted.key,
         minorNumbers.join(','),
-        docMinorParans && !skyHeldFor(want) ? 'mp' : '',
+        // Not keyed on the sky hold since 2026-11-16: the catalog parans are the same In Mundo
+        // set in every line system.
+        docMinorParans ? 'mp' : '',
         fortuneKey,
       ].join('|');
     },
@@ -8228,11 +8295,18 @@ export default function App() {
   // §2). The MC meridians and the zones are the same at any tilt; the Ascendant curves, the
   // readout and the Ascendant zones are drawn at it. (2026-10-02)
   const geoGridShown = lineSystem === 'geodetic';
-  // "Body lines visible" for the Ascendant curves' auto default: every family of body line as
-  // drawn — the planet lines (after the filters, the eclipse clean-up and the Natal Lines hide,
-  // promoted overlay included), an overlay's, the catalog bodies', the aspect/midpoint lines,
-  // the fixed stars' and the parans. A hold may empty the last two on a geodetic map; they are
-  // counted all the same, because the rule is about what is drawn, not what is held.
+  // "Body lines visible" for the Ascendant curves' auto default: every family of body ANGLE
+  // line as drawn — the planet lines (after the filters, the eclipse clean-up and the Natal
+  // Lines hide, promoted overlay included), an overlay's, the catalog bodies', the
+  // aspect/midpoint lines and the fixed stars'. The sky hold empties the fixed stars on a
+  // geodetic map; they are counted all the same, because the rule is about what is drawn, not
+  // what is held.
+  // The parans are NOT counted — the chart's, an overlay's, nor the catalog bodies' — though
+  // they are drawn on a geodetic map since 2026-11-16 (Lina's ruling: the chart's In Mundo set
+  // in every line system). The auto rule is about the bodies' own angle lines, which the
+  // Ascendant curves would crowd; a paran is a latitude row read off those lines, not one of
+  // them. Counted, a map with every body line hidden but Parans on would have kept the curves
+  // off, with nothing drawn for them to crowd.
   // Local space is not here: it never draws on a geodetic map, so never beside the grid.
   // The spotlight is not counted — it is a transient reveal, and the grid drops out under it
   // anyway. (2026-10-02)
@@ -8242,11 +8316,7 @@ export default function App() {
     drawMinorLines.features.length > 0 ||
     (effMapOverlay?.minorLines?.features.length ?? 0) > 0 ||
     effAngleLines.features.length > 0 ||
-    effStarLines.features.length > 0 ||
-    drawParans.features.length > 0 ||
-    (effOverlayParans?.features.length ?? 0) > 0 ||
-    drawMinorParans.features.length > 0 ||
-    (effMapOverlay?.minorParans?.features.length ?? 0) > 0;
+    effStarLines.features.length > 0;
   // How many of the reader's catalog bodies have parans drawn on the map now, the chart's and
   // an overlay's beside it — handed to the sky band's track (SkyBandTrackContext), which reads
   // only the built-in bodies and says so while any catalog body has some (rule 5).
@@ -8824,6 +8894,14 @@ export default function App() {
         // overhead — the sky at the chart minute, which a geodetic map holds. There they
         // stay plain labels; planet chips already have no zenith to fly to. (2026-10-02)
         overheadTargets={!skyHeld}
+        // The DERIVED line system, for a registered paran annotation (paranAnnotation's `at`).
+        lineSystem={lineSystem}
+        // A paran chip flies to its row's intersection only on Celestial · In Mundo, from the
+        // effective line system and projection (the stored coordSystem is the effective one on a
+        // celestial map). The parans are the chart's In Mundo set everywhere (allParans), so
+        // elsewhere their intersections aren't where the drawn lines cross, and the chips are
+        // plain labels. (Lina's ruling, 16 Nov 2026)
+        paranFlyTo={lineSystem === 'celestial' && coordSystem === 'mundo'}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
       {!wheelExpanded && (
@@ -9203,16 +9281,11 @@ export default function App() {
           onClose={() => setShowTeleport(false)}
         />
       )}
-      {/* On a geodetic map the band is HELD: SkyBandHeld draws in its place — the reason,
-          its fix, the band's own ✕ — and the band (with its track and the Planetary hours
-          window it hosts) isn't mounted at all. Its open flag stays as the reader left it,
-          and Celestial brings the band back as it was. (2026-10-02) */}
-      {skyBandVisible && (skyHeld ? (
-        <SkyBandHeld
-          onClose={() => setShowSkyTimes(false)}
-          onFix={() => openSettingsSection('calc')}
-        />
-      ) : (
+      {/* The same band on every line system (Lina's ruling, 16 Nov 2026; it was held on a
+          geodetic map, SkyBandHeld in its place, from 2026-10-02): its times are each body's
+          real angles at the place, which the line system never changes. On a geodetic map it
+          adds a strip across its top saying so, measured into skyBandH (skyNoteH). */}
+      {skyBandVisible && (
         <SkyBand
           // The day clock reads at the followed cursor point (while follow mode
           // is on), else the placed pin, else the chart's birthplace.
@@ -9263,9 +9336,13 @@ export default function App() {
           fortuneOnMap={fortuneMapPos !== null}
           // The deferred asteroid file arriving: re-solve the shown day with it.
           ephemerisEpoch={ephemerisEpoch}
+          // The DERIVED line system: on a geodetic map the band adds its info strip, and tells
+          // the strip's measured height back so the reserved height (skyBandH) grows by it.
+          lineSystem={lineSystem}
+          onNoteHeight={setSkyNoteH}
           onClose={() => setShowSkyTimes(false)}
         />
-      ))}
+      )}
       {lsWindowOpen && (
         <LocalSpaceHud
           // Kept up beside a viewport owner (ViewLock.keepsLocalSpace) the ✕ closes the owner too,
@@ -9344,18 +9421,17 @@ export default function App() {
             overlay: overlayLayer?.bodyRule.by === 'composite',
           }}
           // "Parans with the planets": the STORED choice, greyed while held, with the reason
-          // that holds it and where to change it (CLAUDE.md row A) — the sky hold first, as on
-          // the map's own Parans toggle, whose reason outranks Cyclocartography's. The window
-          // only renders with Advanced on, so the held map toggle is always reachable.
+          // that holds it and where to change it (CLAUDE.md row A) — a time overlay standing in
+          // for the chart first, as on the map's own Parans toggle. Not the sky hold since
+          // 2026-11-16: the parans are the In Mundo set in every line system. The window only
+          // renders with Advanced on, so the held map toggle is always reachable.
           parans={{
             on: minorParansPref,
             heldNote: !minorParansHeld
               ? null
-              : skyHeld
-                ? t('settings.inert.paransHeldFull')
-                : paransOverlayBlocked
-                  ? t(overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay')
-                  : t('minorBodies.hud.parans.held'),
+              : paransOverlayBlocked
+                ? t(overlayMode === 'cyclo' ? 'settings.parans.blockedCyclo' : 'settings.parans.blockedOverlay')
+                : t('minorBodies.hud.parans.held'),
             onChange: setMinorParansPref,
           }}
         />

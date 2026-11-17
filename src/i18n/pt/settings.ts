@@ -83,7 +83,7 @@ export const settings = {
   },
   parans: {
     title: 'Parans',
-    hint: 'Latitudes onde dois corpos estão angulares ao mesmo tempo, um nascendo enquanto outro culmina, e assim por diante. Os parans do seu mapa seguem ativos ao lado de uma sobreposição.',
+    hint: 'Latitudes onde dois corpos estão angulares no mesmo momento: os próprios corpos, não seus graus no zodíaco. As linhas de paran são sempre natais e In Mundo: pertencem ao mapa natal e são medidas a partir das posições reais dos corpos no céu, independentemente do sistema de linhas ou da sobreposição selecionados.',
     blockedCyclo: 'Não há um único momento do céu — a Ciclocartografia lê corpos progredidos e em trânsito juntos. Mostre o Mapa natal para trazer de volta os parans do próprio mapa.',
     blockedOverlay: 'Os parans são lidos do mapa, e esta sobreposição está no lugar dele. Mostre o Mapa natal para trazer de volta os parans do mapa.',
   },
@@ -260,8 +260,6 @@ export const settings = {
     skyHeldForNow: 'Indisponível em mapas geodésicos por enquanto.',
     skyHeldForNowFull: 'Indisponível em mapas geodésicos por enquanto. Mude o sistema de linhas para Celeste, em Cálculo, para usá-lo.',
     anglesHeld: 'Em mapas geodésicos, os ângulos de um local vêm das suas coordenadas, então não se movem com o tempo.',
-    paransHeld: 'Os parans não são mostrados em mapas geodésicos.',
-    paransHeldFull: 'Os parans não são mostrados em mapas geodésicos. Mude o sistema de linhas para Celeste, em Cálculo, para usá-lo.',
     needsChart: 'Requer um mapa. Escolha ou adicione um no menu de mapas da barra superior.',
   },
   nodeType: {

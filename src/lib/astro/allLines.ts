@@ -22,6 +22,13 @@
 // built here for 'geodetic' is the set the map would draw if it were switched to Geodetic —
 // which verify-geodetic-chart §9 holds it to, against the generators called directly.
 //
+// The parans are the exception that has no line system at all (Lina's ruling, 16 Nov 2026: "A
+// paran is two bodies on the angles at the same moment: the bodies themselves, not their zodiac
+// degrees. AstroLina therefore shows one set of parans, the natal chart's In Mundo parans, in
+// every line system"). The planets' and the catalog bodies' parans are built from the TRUE-SKY
+// positions at the celestial mapping whatever `ls` is, so every line system's set carries the
+// same rows, and none without a birth time.
+//
 // Geometry only, in the generators' own colours: the caller inks it (lib/lineInks inkAllLines),
 // as the live set is inked.
 import type { FeatureCollection, LineString } from 'geojson';
@@ -67,7 +74,8 @@ export interface NatalLineInputs {
    *  as the map does. */
   coordSystem: CoordSystem;
   /** No birth time: no lines at all on a celestial map, and no parans, stars or local space on
-   *  either. */
+   *  either. (The only gate the parans read: they are the same In Mundo set in every line
+   *  system.) */
   noTime: boolean;
   /** A chart with no birth time's motion over its birth date (timeless.ts birthDateMotion), which
    *  its geodetic lines' bands are read from; null for a timed chart. */
@@ -83,14 +91,15 @@ export interface NatalLineInputs {
   /** The catalog bodies in play, as sampled (true sky), their sample instant, and their
    *  decoration. Empty positions for none. */
   minor: { positions: readonly MinorPosition[]; sampleJd: number; decor: (n: number) => MinorDecor };
-  /** The "Parans with the planets" switch as it stands with every hold applied but the sky
-   *  hold, which depends on the line system and is applied below. */
+  /** The "Parans with the planets" switch as it stands with every hold applied. The sky hold
+   *  does not reach it (since 2026-11-16 the parans are In Mundo in every line system). */
   minorParans: boolean;
 }
 
 /** The families a caller already holds, generated from these same inputs in this same line
  *  system by the helpers below (App's drawn memos), handed in so the set reuses them rather
- *  than building them twice. Anything absent is built here. */
+ *  than building them twice. Anything absent is built here. (`parans` is the same In Mundo set
+ *  in every line system, natalParans below, so App's drawn one serves any `ls`.) */
 export interface NatalLineReuse {
   lines?: FeatureCollection;
   parans?: FeatureCollection;
@@ -105,7 +114,9 @@ export function natalLineEps(i: Pick<NatalLineInputs, 'eps' | 'geoEps'>, ls: Lin
   return ls === 'geodetic' ? i.geoEps : i.eps;
 }
 
-/** The meridian mapping of a line system's lines (lines.ts meridianLngFor at natalLineEps). */
+/** The meridian mapping of a line system's lines (lines.ts meridianLngFor at natalLineEps).
+ *  `natalMeridianLng(i, 'celestial')` is the parans' mapping in every line system (RA − GMST;
+ *  natalParans below). */
 export function natalMeridianLng(
   i: Pick<NatalLineInputs, 'eps' | 'geoEps' | 'gmst'>,
   ls: LineSystem,
@@ -129,6 +140,19 @@ export function natalLinePositions(
   return ls === 'geodetic' || coordSystem === 'zodiaco'
     ? projectOntoEcliptic(positions as PlanetPosition[], sampleJd, ls === 'geodetic' ? geoEps : undefined)
     : (positions as PlanetPosition[]);
+}
+
+/** The chart's parans: ONE In Mundo set, whatever the map's line system (Lina's ruling,
+ *  16 Nov 2026) — the TRUE-SKY positions, never projected, at the celestial mapping (RA − GMST
+ *  at the chart's sidereal time). Every row's latitude, theta and intersection longitude is
+ *  therefore identical on Celestial · In Mundo, Celestial · In Zodiaco and Geodetic, and on
+ *  In Mundo it is exactly the set the drawn lines cross. None without a birth time, on either
+ *  map: a paran is a moment of the sky's turning, which the unknown hour decides. App's
+ *  allParans is this, sliding aware (it passes its slid sample). */
+export function natalParans(
+  i: Pick<NatalLineInputs, 'positions' | 'eps' | 'geoEps' | 'gmst' | 'noTime'>,
+): FeatureCollection {
+  return i.noTime ? EMPTY : generateParans(i.positions as PlanetPosition[], natalMeridianLng(i, 'celestial'));
 }
 
 /** The catalog bodies' twin of natalLinePositions — the planets' frame rule exactly. */
@@ -199,7 +223,8 @@ export function buildNatalLineSet(
 ): AllLines {
   const skyHeld = skyHeldFor(ls);
   // The families that read the sky's turning at the chart minute: none without a birth time,
-  // and none on a geodetic map (the sky hold).
+  // and none on a geodetic map (the sky hold). Not the parans, which have no line system
+  // (natalParans): they read `i.noTime` alone.
   const skyFamiliesOff = i.noTime || skyHeld;
   // The Vertex axis is the sky's too.
   const lineOpts = { vertex: !skyHeld };
@@ -233,7 +258,7 @@ export function buildNatalLineSet(
     ls,
     i.geoEps,
   );
-  const parans = reuse.parans ?? (skyFamiliesOff ? EMPTY : generateParans(linePositions, meridianLng));
+  const parans = reuse.parans ?? natalParans(i);
   const starLines = skyFamiliesOff
     ? EMPTY
     : generateStarLines(starsOfDate(i.jd, i.starSet), meridianLng, ls === 'geodetic' ? lineEps : null, i.starColor);
@@ -252,9 +277,16 @@ export function buildNatalLineSet(
     i.geoEps,
   );
   const minorLines = reuse.minorLines ?? generateMinorLines(minorPositions, meridianLng, i.minor.decor);
+  // The catalog bodies' parans with the planets: In Mundo like natalParans — both sides' true
+  // sky at the celestial mapping, the same rows in every line system, none without a time.
   const minorParans =
-    i.minorParans && !skyFamiliesOff && minorPositions.length > 0
-      ? generateMinorParans(minorPositions, linePositions, meridianLng, i.minor.decor)
+    i.minorParans && !i.noTime && i.minor.positions.length > 0
+      ? generateMinorParans(
+          i.minor.positions,
+          i.positions as PlanetPosition[],
+          natalMeridianLng(i, 'celestial'),
+          i.minor.decor,
+        )
       : EMPTY;
   return {
     lines,
