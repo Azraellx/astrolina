@@ -1141,6 +1141,13 @@ html[data-mapstate='natal-pinned'] .sidebar {
   color: var(--accent);
 }
 
+/* A held menu (HintMenu `held`, .ui-inert): it won't open, so its hover doesn't promise a
+   press — the tip with the reason is all the hover does. */
+.calc-menu-trigger.ui-inert:hover {
+  background: rgba(var(--tint), 0.05);
+  border-color: rgba(var(--tint), 0.14);
+}
+
 /* Glyph + name on a planet tip's title row. */
 .planet-tip-title {
   display: inline-flex;

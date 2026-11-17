@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import type { EclipticPosition, RelocatedAngles } from '../../lib/ephemeris';
 import { planetInk } from '../../lib/themePalette';
+import { truncZodiac } from '../../lib/astro/format';
 import { useT } from '../../i18n';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import './ChartInfoPanel.css';
@@ -20,12 +21,9 @@ const SIGNS = [
 // planet names stay translatable. (2026-10-09 — the panel is mounted nowhere today, and its
 // three-letter sign codes are English that never reached the catalog.)
 function fmtLon(lonRad: number): string {
-  const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
-  const sign = SIGNS[Math.floor(lonDeg / 30)];
-  const inSign = lonDeg % 30;
-  const deg = Math.floor(inSign);
-  const min = Math.floor((inSign - deg) * 60);
-  return `${deg}°${String(min).padStart(2, '0')}' ${sign}`;
+  // Truncated by the one rule (format.ts truncZodiac; Lina CH-2, 17 Nov 2026).
+  const z = truncZodiac(lonRad, 'min');
+  return `${z.text} ${SIGNS[z.signIdx]}`;
 }
 
 interface ChartInfoPanelProps {

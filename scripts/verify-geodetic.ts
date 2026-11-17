@@ -467,8 +467,10 @@ check('the Appendix has 21 rows', ROWS.length === 21, `${ROWS.length}`);
   );
 
   // The trap the truncating rule exists for: Cape Town 18°22′E rises in Gemini's last
-  // minute. Rounding (lonToZodiac, right for a planet) would name Cancer — a sign the
-  // place is not in. The second check pins that the case really discriminates.
+  // minute. Rounding would name Cancer — a sign the place is not in. The second check pins
+  // that the case really discriminates, with a rounding formatter of its own: the app's
+  // lonToZodiac truncates too since Lina's CH-2 (17 Nov 2026), so it can no longer stand in
+  // for "rounding". The third pins that it does: one rule on every surface.
   const ct = placeOf(ROWS[17]);
   const ctAsc = geodeticAngles(ct.lng, ct.lat, EPS_J2000).asc;
   const shown = truncZodiac(ctAsc, 'min');
@@ -477,11 +479,25 @@ check('the Appendix has 21 rows', ROWS.length === 21, `${ROWS.length}`);
     shown.text === "29°59'" && shown.signIdx === 2,
     `${shown.text} ${SIGNS[shown.signIdx]}`,
   );
-  const rounded = lonToZodiac(ctAsc);
+  // Round to the nearest minute, carrying into the next degree and sign — what lonToZodiac did
+  // until CH-2.
+  const roundZodiac = (lonRad: number) => {
+    const total = Math.round(((((lonRad * 180) / Math.PI) % 360) + 360) % 360 * 60) % (360 * 60);
+    const signIdx = Math.floor(total / 1800);
+    const inSign = total - signIdx * 1800;
+    return { signIdx, degMin: `${Math.floor(inSign / 60)}°${String(inSign % 60).padStart(2, '0')}'` };
+  };
+  const rounded = roundZodiac(ctAsc);
   check(
     'Cape Town 18°22′E: rounding would roll it into Cancer (the case is a real trap)',
     rounded.signIdx === 3 && rounded.degMin === "0°00'",
-    `lonToZodiac → ${rounded.degMin} ${SIGNS[rounded.signIdx]}`,
+    `rounded → ${rounded.degMin} ${SIGNS[rounded.signIdx]}`,
+  );
+  const app = lonToZodiac(ctAsc);
+  check(
+    "Cape Town 18°22′E: the app's lonToZodiac truncates as the readout does (CH-2)",
+    app.signIdx === shown.signIdx && app.degMin === shown.text,
+    `lonToZodiac → ${app.degMin} ${SIGNS[app.signIdx]}`,
   );
 }
 

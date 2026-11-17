@@ -50,6 +50,7 @@ import {
   type LunarLocalView,
 } from './lunarEclipse';
 import { SIGN_GLYPHS } from './glyphChars';
+import { truncZodiac } from './format';
 import type { EclipseIsoStep } from '../overlayPrefs';
 import { ECLIPSE_PATH_COLORS, type Theme } from '../theme';
 
@@ -374,26 +375,15 @@ export function buildEclipseMap(
 // ── Details panel ─────────────────────────────────────────────────────────────
 
 /** "19°♈24′" — degrees-in-sign + sign glyph + minutes, the wheel's convention —
- *  plus the (carry-corrected) sign index, for UI that names the sign. Render
- *  the text inside an .astro-glyph-aware context (glyphify) for the bundled font. */
+ *  plus the sign index, for UI that names the sign. Truncated by the one rule
+ *  (format.ts truncZodiac; Lina CH-2, 17 Nov 2026), so it never rounds into a minute,
+ *  degree or sign the eclipse hasn't reached. Render the text inside an
+ *  .astro-glyph-aware context (glyphify) for the bundled font. */
 export function zodiacParts(lonRad: number): { text: string; signIndex: number } {
-  const deg = (((lonRad * 180) / Math.PI) % 360 + 360) % 360;
-  let sign = Math.floor(deg / 30) % 12;
-  const inSign = deg - Math.floor(deg / 30) * 30;
-  let d = Math.floor(inSign);
-  let m = Math.round((inSign - d) * 60);
-  if (m === 60) {
-    m = 0;
-    d += 1;
-  }
-  // The minute round can carry 29°59.5′ across the cusp — roll into the next sign.
-  if (d === 30) {
-    d = 0;
-    sign = (sign + 1) % 12;
-  }
+  const z = truncZodiac(lonRad, 'min');
   return {
-    text: `${d}°${SIGN_GLYPHS[sign]}${String(m).padStart(2, '0')}′`,
-    signIndex: sign,
+    text: `${z.deg}°${SIGN_GLYPHS[z.signIdx]}${String(z.min).padStart(2, '0')}′`,
+    signIndex: z.signIdx,
   };
 }
 

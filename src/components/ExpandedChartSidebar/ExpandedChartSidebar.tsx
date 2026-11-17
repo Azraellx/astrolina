@@ -81,7 +81,6 @@ import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { planetInk, wheelMotionInk } from '../../lib/themePalette';
 import {
   ANGLE_LABEL,
-  lonToZodiac,
   planetRank,
   truncZodiac,
   visibleAngleSpecs,
@@ -134,46 +133,24 @@ function fmtDM(deg: number, signed = false): string {
 // Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
 //
-// `trunc` is a geodetic frame's angle: a place's degree is quoted truncated and its
-// sign is the place's zone, so it reads through format.ts truncZodiac — the same rule
-// the capture list and the wheel use for it — and never rounds into the next sign.
-// (2026-10-02)
+// Every position reads format.ts truncZodiac — a body's as well as a geodetic frame's
+// angle — so a figure is never rounded into a minute, degree or sign it hasn't reached
+// (Lina CH-2, 17 Nov 2026; geodetic angles since 2026-10-02). The same rule the capture
+// list and the wheel use, so the three print the same figure. `trunc` is kept for the
+// geodetic angles' callers; it no longer changes the figure.
 function Longitude({
   lon,
   advanced,
-  trunc = false,
 }: {
   lon: number;
   advanced: boolean;
   trunc?: boolean;
 }) {
   const { labels } = useT();
-  // Compact form (minute precision) is shared with the Capture extras panel via
-  // lonToZodiac, so the two readouts can't disagree at this column's width cutoff.
-  const compact = lonToZodiac(lon);
-  let signIdx = compact.signIdx;
-  let dms = compact.degMin;
-  if (trunc) {
-    const z = truncZodiac(lon, advanced ? 'sec' : 'min');
-    signIdx = z.signIdx;
-    dms = z.text;
-  } else if (advanced) {
-    const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
-    signIdx = Math.floor(lonDeg / 30);
-    const inSign = lonDeg % 30;
-    const d = Math.floor(inSign);
-    const mFull = (inSign - d) * 60;
-    const m = Math.floor(mFull);
-    let dd = d;
-    let mm = m;
-    let ss = Math.round((mFull - m) * 60);
-    if (ss === 60) { ss = 0; mm += 1; }
-    if (mm === 60) { mm = 0; dd += 1; }
-    // The seconds cascade can carry 29°59'59.6" up to a full 30°: that is 0° of
-    // the NEXT sign, never "30°" of this one.
-    if (dd === 30) { dd = 0; signIdx = (signIdx + 1) % 12; }
-    dms = `${dd}°${pad2(mm)}'${pad2(ss)}"`;
-  }
+  // Minutes, or seconds in Advanced: one truncation either way.
+  const z = truncZodiac(lon, advanced ? 'sec' : 'min');
+  const signIdx = z.signIdx;
+  const dms = z.text;
   // The figure is a value that moves with every overlay tick, sitting beside the sign's
   // name: boxed on its own and not offered to a page translator, while the name (a word,
   // in its own span already) stays translatable. Bare, the figure was a text run between
@@ -191,21 +168,9 @@ function Longitude({
 
 // Compact zodiacal longitude for the Advanced table's narrow column: degree,
 // sign glyph, arcminute — e.g. 23°♑17' (the conventional "23 Cap 17" notation).
-// `trunc` as for Longitude above: a geodetic angle truncates. (2026-10-02)
-function SignLon({ lon, trunc = false }: { lon: number; trunc?: boolean }) {
-  const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
-  let signIdx = Math.floor(lonDeg / 30);
-  const inSign = lonDeg % 30;
-  let d = Math.floor(inSign);
-  let m = Math.round((inSign - d) * 60);
-  if (m === 60) { m = 0; d += 1; }
-  if (d === 30) { d = 0; signIdx = (signIdx + 1) % 12; }
-  if (trunc) {
-    const z = truncZodiac(lon, 'min');
-    signIdx = z.signIdx;
-    d = z.deg;
-    m = z.min;
-  }
+// Truncated, as Longitude above (Lina CH-2, 17 Nov 2026); `trunc` no longer changes it.
+function SignLon({ lon }: { lon: number; trunc?: boolean }) {
+  const { signIdx, deg: d, min: m } = truncZodiac(lon, 'min');
   // Figures and a glyph that change while the table is open (an overlay's playback): one
   // box, not offered to a page translator. (2026-10-09)
   return (
@@ -2349,8 +2314,9 @@ export function ExpandedChartSidebar({
   const outerHousesLine = housesLine(overlayHouses, overlayAngles);
   const chartHousesLine = !geoFrame && isEvent ? housesLine({ positions: 'event' }, angles) : null;
   // Cyclocartography has no wheel of its own (it blends two moments): where the overlay's wheel
-  // would be, a short card says so and what gives one (Lina, 22 Oct 2026, §2.6) — under the natal
-  // wheel, or in its place with Natal hidden. One string child per line, for a page translator.
+  // would be, a short card says so and what gives one (Lina, 22 Oct 2026, §2.6) — at the foot of
+  // the header, above the natal wheel, or in the wheel's place with Natal hidden (CY-1, 17 Nov
+  // 2026). One string child per line, for a page translator.
   const cycloCard = (
     <div className="es-cyclo-card">
       <span className="es-cyclo-card-title">{t('expandedSidebar.cyclo.title')}</span>
@@ -2592,7 +2558,13 @@ export function ExpandedChartSidebar({
             ))}
           </div>
         )}
-
+        {/* Cyclocartography over a visible natal chart: the card at the foot of the header,
+            straight above the wheel and the full width of the panel. It sat in the wheel's row
+            beside the wheel, which pushed it past the panel's right edge at any width short of
+            fully expanded (Lina CY-1, sent as R-5, 2026-11-17). After the spare rows, so a
+            relocation never moves it. With Natal hidden it stands in the wheel's place below,
+            which is the same spot on screen. */}
+        {overlayKind === 'cyclo' && !noChart && cycloCard}
       </section>
 
       <section className="es-section es-section-wheel">
@@ -2873,7 +2845,6 @@ export function ExpandedChartSidebar({
                         ranges={ranges}
                         overlayRanges={overlayRanges}
                       />
-                      {overlayKind === 'cyclo' && cycloCard}
                       {lsSlot}
                     </>
                   )

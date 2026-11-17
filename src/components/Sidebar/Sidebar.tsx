@@ -870,6 +870,7 @@ export function HintMenu<V extends string>({
   listMaxViewport,
   onOpen,
   notice,
+  held,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -941,6 +942,14 @@ export function HintMenu<V extends string>({
    *  false closes the menu, as Escape and a press outside it do. Its first `[data-autofocus]`
    *  element takes the focus once the panel is placed. */
   notice?: (answer: (accepted: boolean) => void) => ReactNode;
+  /** THE standard unavailable state (.ui-inert) for the WHOLE control: the reason it is
+   *  held, naming the setting to change. The trigger dims and shows the value in force (the
+   *  caller passes the effective one), a press doesn't open it, and its tip carries the
+   *  reason under the grey N/A badge — so nothing can write the stored choice beneath. For
+   *  a menu whose every option but the one already in force is held (Discovery's Frame on
+   *  a geodetic map; Lina DI-1, 2026-11-17), where a banner beside it said the same thing
+   *  twice. Options held one by one keep `disabled` / `disabledHint`. */
+  held?: string;
 }) {
   const [open, setOpen] = useState(false);
   // What the open panel shows: the caller's notice first, when it has one, then the options.
@@ -969,6 +978,15 @@ export function HintMenu<V extends string>({
     forNotice: boolean;
   } | null>(null);
   const current = options.find((o) => o.value === value);
+  // Held, the trigger's tip is what explains the control: its own tip when it has one,
+  // else the value in force and its hint, with the reason as the note.
+  const heldTip: typeof triggerTip = held
+    ? triggerTip ?? { title: current?.label ?? '', hint: current?.hint }
+    : undefined;
+  const shownTip = heldTip ?? triggerTip;
+  // A hold that arrives while the panel is open closes it: nothing in it can be picked. Adjusted
+  // during render (React's pattern for state that follows a prop), not in an effect.
+  if (held && open) setOpen(false);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -1176,8 +1194,10 @@ export function HintMenu<V extends string>({
           tipRef.current = el;
         }}
         type="button"
-        className={`thud-select calc-menu-trigger ${open ? 'open' : ''}`}
+        className={`thud-select calc-menu-trigger ${open ? 'open' : ''}${held ? ' ui-inert' : ''}`}
         onClick={() => {
+          // Held: the press opens nothing, and the tip that says why stays up.
+          if (held) return;
           tipHide(); // opening replaces the trigger tip with the options' own hints
           if (locked) {
             nudgeAction(); // tier-locked teaser → the account/upgrade flow
@@ -1190,15 +1210,17 @@ export function HintMenu<V extends string>({
           setOpen(!open);
         }}
         onMouseEnter={() => {
-          if (triggerTip && !open) tipShow();
+          if (shownTip && !open) tipShow();
         }}
         onMouseLeave={tipHide}
         onFocus={() => {
-          if (triggerTip && !open) tipShow();
+          if (shownTip && !open) tipShow();
         }}
         onBlur={tipHide}
         aria-haspopup={notice ? 'dialog' : 'listbox'}
         aria-expanded={open}
+        // aria-disabled rather than disabled, so the tip with the reason still fires.
+        aria-disabled={held ? true : undefined}
       >
         <span className="calc-menu-value">
           {current?.glyph && (
@@ -1221,13 +1243,15 @@ export function HintMenu<V extends string>({
           ▾
         </span>
       </button>
-      {triggerTip && !open && (
+      {shownTip && !open && (
         <HoverTip
           pos={tipPos}
           placement="top"
-          title={triggerTip.title}
-          hint={triggerTip.hint}
-          className={triggerTip.tipClassName}
+          title={shownTip.title}
+          hint={shownTip.hint}
+          note={held}
+          unavailable={!!held}
+          className={shownTip.tipClassName}
         />
       )}
       {open &&

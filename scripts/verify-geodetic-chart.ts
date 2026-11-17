@@ -885,43 +885,46 @@ const birth = (year: number, month: number, day: number, tzOffset: number, extra
 // ── 4. lonRange ─────────────────────────────────────────────────────────────────────
 section('4. lonRange: offsets, truncated ends, own signs, float noise (OUTSIDE AGREEMENT + INTERNAL IDENTITY)');
 // Since the range rule (2026-10-22) a range is carried as OFFSETS from the noon degree — lo ≤ 0
-// ≤ hi, and not necessarily equal — and each end is printed truncated to its whole degree in its
-// own sign.
+// ≤ hi, and not necessarily equal — and each end is printed truncated in its own sign: to the
+// minute since Lina's CH-1 (17 Nov 2026), "29°♊52'–12°♋05'", where it had been the whole degree.
 {
   const deg = (d: number) => d * D2R;
   // The expected text, built from the app's own sign glyphs (each carries the text-
-  // presentation selector), so a case reads as degrees and sign names.
+  // presentation selector), so a case reads as degrees, sign names and minutes.
   const S = ['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis'];
-  const want = (d0: number, s0: string, d1: number, s1: string) =>
-    `${d0}°${SIGN_GLYPHS[S.indexOf(s0)]}–${d1}°${SIGN_GLYPHS[S.indexOf(s1)]}`;
+  const end = (d: number, s: string, m: number) => `${d}°${SIGN_GLYPHS[S.indexOf(s)]}${String(m).padStart(2, '0')}'`;
+  const want = (d0: number, s0: string, m0: number, d1: number, s1: string, m1: number) =>
+    `${end(d0, s0, m0)}–${end(d1, s1, m1)}`;
   const sym = (h: number) => ({ lo: -h, hi: h });
   const cases: { what: string; lon: number; r: BodyRange; want: string; label: string }[] = [
-    // 10°20' Taurus, 7.7° either way: 2°38' Taurus to 18°02' Taurus — each end truncated.
-    { what: 'ends truncated to the whole degree', lon: deg(30 + 10 + 20 / 60), r: sym(7.7), want: want(2, 'Tau', 18, 'Tau'), label: '2° Tau – 18° Tau' },
+    // 10°20' Taurus, 7.7° either way: 2°38' Taurus to 18°02' Taurus.
+    { what: 'ends carry their minutes', lon: deg(30 + 10 + 20 / 60), r: sym(7.7), want: want(2, 'Tau', 38, 18, 'Tau', 2), label: "2°38' Tau – 18°02' Tau" },
+    // 10°20'59" Taurus, the same: 2°38'59" to 18°02'59" — truncated, never rounded up to 39' / 03'.
+    { what: 'ends truncated to the minute, not rounded', lon: deg(30 + 10 + 20 / 60 + 59 / 3600), r: sym(7.7), want: want(2, 'Tau', 38, 18, 'Tau', 2), label: "2°38' Tau – 18°02' Tau" },
     // The same degree, 3° back and 9° on: 7°20' Taurus to 19°20' Taurus.
-    { what: 'an asymmetric range: 3° back, 9° on', lon: deg(30 + 10 + 20 / 60), r: { lo: -3, hi: 9 }, want: want(7, 'Tau', 19, 'Tau'), label: '7° Tau – 19° Tau' },
+    { what: 'an asymmetric range: 3° back, 9° on', lon: deg(30 + 10 + 20 / 60), r: { lo: -3, hi: 9 }, want: want(7, 'Tau', 20, 19, 'Tau', 20), label: "7°20' Tau – 19°20' Tau" },
     // 25° Taurus, 7.7° either way: 17°18' Taurus to 2°42' Gemini — each end in its own sign.
-    { what: 'each end carries its own sign', lon: deg(55), r: sym(7.7), want: want(17, 'Tau', 2, 'Gem'), label: '17° Tau – 2° Gem' },
+    { what: 'each end carries its own sign', lon: deg(55), r: sym(7.7), want: want(17, 'Tau', 18, 2, 'Gem', 42), label: "17°18' Tau – 2°42' Gem" },
     // 25° Taurus, 1° back and 8° on: 24° Taurus to 3° Gemini.
-    { what: 'asymmetric, across a sign boundary', lon: deg(55), r: { lo: -1, hi: 8 }, want: want(24, 'Tau', 3, 'Gem'), label: '24° Tau – 3° Gem' },
+    { what: 'asymmetric, across a sign boundary', lon: deg(55), r: { lo: -1, hi: 8 }, want: want(24, 'Tau', 0, 3, 'Gem', 0), label: "24°00' Tau – 3°00' Gem" },
     // 1.9° Aries, 7.7° either way: 24°12' Pisces to 9°36' Aries — across 0° Aries.
-    { what: 'a range across 0° Aries', lon: deg(1.9), r: sym(7.7), want: want(24, 'Pis', 9, 'Ari'), label: '24° Pis – 9° Ari' },
+    { what: 'a range across 0° Aries', lon: deg(1.9), r: sym(7.7), want: want(24, 'Pis', 12, 9, 'Ari', 36), label: "24°12' Pis – 9°36' Ari" },
     // 1.9° Aries, 2.4° back and 0.3° on: 29°30' Pisces to 2°12' Aries.
-    { what: 'asymmetric, across 0° Aries', lon: deg(1.9), r: { lo: -2.4, hi: 0.3 }, want: want(29, 'Pis', 2, 'Ari'), label: '29° Pis – 2° Ari' },
+    { what: 'asymmetric, across 0° Aries', lon: deg(1.9), r: { lo: -2.4, hi: 0.3 }, want: want(29, 'Pis', 30, 2, 'Ari', 12), label: "29°30' Pis – 2°12' Ari" },
     // Exactly 7.7°, 7.7° back: the low end is 0° Aries, never 29° Pisces.
-    { what: '7.7° less 7.7° starts at 0° Aries', lon: deg(7.7), r: sym(7.7), want: want(0, 'Ari', 15, 'Ari'), label: '0° Ari – 15° Ari' },
+    { what: '7.7° less 7.7° starts at 0° Aries', lon: deg(7.7), r: sym(7.7), want: want(0, 'Ari', 0, 15, 'Ari', 24), label: "0°00' Ari – 15°24' Ari" },
     // The same with the low end a float hair below 0° — the noise a round trip leaves.
-    { what: 'a hair below 0° Aries (−1e-13 rad) is 0° Aries', lon: deg(7.7) - 1e-13, r: sym(7.7), want: want(0, 'Ari', 15, 'Ari'), label: '0° Ari – 15° Ari' },
+    { what: 'a hair below 0° Aries (−1e-13 rad) is 0° Aries', lon: deg(7.7) - 1e-13, r: sym(7.7), want: want(0, 'Ari', 0, 15, 'Ari', 24), label: "0°00' Ari – 15°24' Ari" },
     // A high end landing on 30° by addition (22.3 + 7.7): 0° of the next sign.
-    { what: '22.3° + 7.7° ends at 0° Taurus', lon: deg(22.3), r: sym(7.7), want: want(14, 'Ari', 0, 'Tau'), label: '14° Ari – 0° Tau' },
+    { what: '22.3° + 7.7° ends at 0° Taurus', lon: deg(22.3), r: sym(7.7), want: want(14, 'Ari', 36, 0, 'Tau', 0), label: "14°36' Ari – 0°00' Tau" },
     // A real distance below the boundary, past the 0.001″ snap: the noise rule only
-    // absorbs noise — 0.02″ short of 0° Aries is still Pisces.
-    { what: '0.02″ short of 0° Aries stays Pisces', lon: deg(7.7) - 1e-7, r: sym(7.7), want: want(29, 'Pis', 15, 'Ari'), label: '29° Pis – 15° Ari' },
+    // absorbs noise — 0.02″ short of 0° Aries is still Pisces, at its last minute.
+    { what: '0.02″ short of 0° Aries stays Pisces', lon: deg(7.7) - 1e-7, r: sym(7.7), want: want(29, 'Pis', 59, 15, 'Ari', 23), label: "29°59' Pis – 15°23' Ari" },
     // 2° Libra, 8° back and 1.5° on: 24° Virgo to 3°30' Libra — across 0° Libra.
-    { what: 'asymmetric, across 0° Libra', lon: deg(182), r: { lo: -8, hi: 1.5 }, want: want(24, 'Vir', 3, 'Lib'), label: '24° Vir – 3° Lib' },
+    { what: 'asymmetric, across 0° Libra', lon: deg(182), r: { lo: -8, hi: 1.5 }, want: want(24, 'Vir', 0, 3, 'Lib', 30), label: "24°00' Vir – 3°30' Lib" },
     // Noon at an end of the range (a body at the day's extreme at noon): one end IS the noon degree.
-    { what: 'noon at the low end (lo = 0)', lon: deg(22.3), r: { lo: 0, hi: 5 }, want: want(22, 'Ari', 27, 'Ari'), label: '22° Ari – 27° Ari' },
-    { what: 'noon at the high end (hi = 0)', lon: deg(22.3), r: { lo: -5, hi: 0 }, want: want(17, 'Ari', 22, 'Ari'), label: '17° Ari – 22° Ari' },
+    { what: 'noon at the low end (lo = 0)', lon: deg(22.3), r: { lo: 0, hi: 5 }, want: want(22, 'Ari', 18, 27, 'Ari', 18), label: "22°18' Ari – 27°18' Ari" },
+    { what: 'noon at the high end (hi = 0)', lon: deg(22.3), r: { lo: -5, hi: 0 }, want: want(17, 'Ari', 18, 22, 'Ari', 18), label: "17°18' Ari – 22°18' Ari" },
   ];
   // The noise case is only a test if the low end really is below zero before the snap.
   check('the noise case is real: its low end is negative before the snap', deg(7.7) - 1e-13 - deg(7.7) < 0);
@@ -930,16 +933,16 @@ section('4. lonRange: offsets, truncated ends, own signs, float noise (OUTSIDE A
     check(`${c.what}: ${c.label}`, got === c.want, got);
   }
   // Sweep: 200,000 random longitudes and random ranges, lo in −10…0 and hi in 0…10 apiece. Each
-  // end is truncZodiac's whole degree at lon + lo (lon + hi), in 0–29, in its own sign; the text is
-  // "D°G–D°G" with an en dash; and the two printed ends lie the range's width apart, to within the
-  // degree truncation can take off either end.
+  // end is truncZodiac's degree and minute at lon + lo (lon + hi), in 0–29 and 0–59, in its own
+  // sign; the text is "D°GMM'–D°GMM'" with an en dash; and the two printed ends lie the range's
+  // width apart, to within the minute truncation can take off either end.
   const rand = rng(7);
   let n = 0;
   let bad = 0;
   let straddles = 0;
   let asym = 0;
   const glyph = `(?:${SIGN_GLYPHS.join('|')})`;
-  const shape = new RegExp(`^\\d{1,2}°${glyph}–\\d{1,2}°${glyph}$`, 'u');
+  const shape = new RegExp(`^\\d{1,2}°${glyph}\\d{2}'–\\d{1,2}°${glyph}\\d{2}'$`, 'u');
   for (let i = 0; i < 200000; i++) {
     const lon = rand() * 2 * Math.PI;
     const r = { lo: -10 * rand(), hi: 10 * rand() };
@@ -947,14 +950,18 @@ section('4. lonRange: offsets, truncated ends, own signs, float noise (OUTSIDE A
     const zlo = truncZodiac(lon + r.lo * D2R, 'min');
     const zhi = truncZodiac(lon + r.hi * D2R, 'min');
     const text = lonRangeText(lon, r);
-    const fwd = norm360(hi.signIdx * 30 + hi.deg - (lo.signIdx * 30 + lo.deg));
+    const at = (e: { signIdx: number; deg: number; min: number }) => e.signIdx * 30 + e.deg + e.min / 60;
+    const fwd = norm360(at(hi) - at(lo));
     const ok =
       lo.deg === zlo.deg &&
+      lo.min === zlo.min &&
       lo.signIdx === zlo.signIdx &&
       hi.deg === zhi.deg &&
+      hi.min === zhi.min &&
       hi.signIdx === zhi.signIdx &&
       [lo.deg, hi.deg].every((d) => Number.isInteger(d) && d >= 0 && d <= 29) &&
-      Math.abs(fwd - (r.hi - r.lo)) < 1 + 1e-9 &&
+      [lo.min, hi.min].every((m) => Number.isInteger(m) && m >= 0 && m <= 59) &&
+      Math.abs(fwd - (r.hi - r.lo)) < 1 / 60 + 1e-9 &&
       shape.test(text);
     if (lo.signIdx !== hi.signIdx) straddles++;
     if (Math.abs(r.hi + r.lo) > 1) asym++;
@@ -962,7 +969,7 @@ section('4. lonRange: offsets, truncated ends, own signs, float noise (OUTSIDE A
     if (!ok) bad++;
   }
   check(
-    'sweep: every end is truncZodiac\'s degree at its own offset, in its own sign, 0–29, the ends a range apart, text "D°G–D°G"',
+    'sweep: every end is truncZodiac\'s degree and minute at its own offset, in its own sign, the ends a range apart, text "D°GMM\'–D°GMM\'"',
     bad === 0 && n === 200000 && straddles > 0 && asym > n / 2,
     `${bad} bad of ${n}; ${straddles} straddle a boundary; ${asym} asymmetric by more than a degree`,
   );

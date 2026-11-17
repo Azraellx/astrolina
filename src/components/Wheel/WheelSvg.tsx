@@ -338,12 +338,9 @@ export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
 export type AspectCategory = 'harmonious' | 'hard' | 'conjunction';
 
 export function fmtLon(lonRad: number): string {
-  const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
-  const sign = SIGNS[Math.floor(lonDeg / 30)];
-  const inSign = lonDeg % 30;
-  const deg = Math.floor(inSign);
-  const min = Math.floor((inSign - deg) * 60);
-  return `${deg}°${String(min).padStart(2, '0')}' ${sign}`;
+  // Truncated by the one rule (format.ts truncZodiac; Lina CH-2, 17 Nov 2026).
+  const z = truncZodiac(lonRad, 'min');
+  return `${z.text} ${SIGNS[z.signIdx]}`;
 }
 
 export interface Aspect {
@@ -2597,11 +2594,9 @@ export function WheelSvg({
           const signPos = svgPos(overlayLonFor(p), frameAnchor, rOverlayReadout, cx, cy);
           const minPos = svgPos(overlayLonFor(p), frameAnchor, rOverlayReadout - OV_FAN, cx, cy);
           const sc = advanced ? statusColor(p) : null;
-          const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
-          const signIdx = Math.floor(lonDeg / 30);
-          const inSign = lonDeg % 30;
-          const deg = Math.floor(inSign);
-          const min = Math.floor((inSign - deg) * 60);
+          // The one truncation rule (format.ts truncZodiac), as the angles' and the tables'
+          // (Lina CH-2, 17 Nov 2026).
+          const { signIdx, deg, min } = truncZodiac(p.lon, 'min');
           return (
             <g
               key={`ovrdo-${p.name}`}
@@ -2648,11 +2643,9 @@ export function WheelSvg({
           const signPos = svgPos(lonFor(p), frameAnchor, g.rReadoutSign, cx, cy);
           const minPos = svgPos(lonFor(p), frameAnchor, g.rReadoutMin, cx, cy);
           const sc = advanced ? statusColor(p) : null;
-          const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
-          const signIdx = Math.floor(lonDeg / 30);
-          const inSign = lonDeg % 30;
-          const deg = Math.floor(inSign);
-          const min = Math.floor((inSign - deg) * 60);
+          // The one truncation rule (format.ts truncZodiac), as the angles' and the tables'
+          // (Lina CH-2, 17 Nov 2026).
+          const { signIdx, deg, min } = truncZodiac(p.lon, 'min');
           return (
             <g
               key={`rdo-${p.name}`}

@@ -450,8 +450,8 @@ export function generateUncertaintyBands(
   return { type: 'FeatureCollection', features };
 }
 
-/** A band's range as the tips and the listing rows print it, "14°♋–21°♋": each end truncated
- *  to its whole degree in its own sign (format.ts lonRange). A band is drawn only on a geodetic
+/** A band's range as the tips and the listing rows print it, "29°♊52'–12°♋05'": each end
+ *  truncated to the minute in its own sign (format.ts lonRange). A band is drawn only on a geodetic
  *  map, so the zodiac is always the tropical one. */
 export function bandRangeText(band: LineBand): string {
   return lonRangeText((band.lo * Math.PI) / 180, { lo: 0, hi: band.hi - band.lo });

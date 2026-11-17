@@ -30,32 +30,28 @@ export function planetRank(name: PlanetName): number {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-// Ecliptic longitude (radians) → the compact "DD°MM'" readout (rounded to the
-// arcminute) plus the zodiac sign index (0 = Aries … 11 = Pisces). Mirrors the
-// compact branch of the expanded sidebar's Longitude readout, with the same
-// 60'→degree and 30°→next-sign rollover so the two never disagree.
+// Ecliptic longitude (radians) → the compact "DD°MM'" readout plus the zodiac sign
+// index (0 = Aries … 11 = Pisces): truncZodiac's, to the minute. It ROUNDED until Lina's
+// CH-2 (17 Nov 2026) — "Positions are truncated to the minute, not rounded, so a body is
+// never shown in a degree or sign it has not reached" — and the wheel, which already
+// truncated, and the table, which rounded, printed the same Mars a minute apart (07°♌49'
+// and 7°50'). Kept as a name for its many callers; every zodiacal readout now reads the
+// one truncation rule below.
 export function lonToZodiac(lon: number): { signIdx: number; degMin: string } {
-  const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
-  let signIdx = Math.floor(lonDeg / 30);
-  const inSign = lonDeg % 30;
-  const d = Math.floor(inSign);
-  const mFull = (inSign - d) * 60;
-  let cd = d;
-  let cm = Math.round(mFull);
-  if (cm === 60) { cm = 0; cd += 1; }
-  if (cd === 30) { cd = 0; signIdx = (signIdx + 1) % 12; }
-  return { signIdx, degMin: `${cd}°${pad2(cm)}'` };
+  const z = truncZodiac(lon, 'min');
+  return { signIdx: z.signIdx, degMin: z.text };
 }
 
 // ── The truncation and sign rule (2026-10-02) ────────────────────────────────
-// lonToZodiac above ROUNDS, and its rollover is right for a planet's readout. It is
-// wrong for a place's geodetic angles, which are quoted truncated (the reference
-// values verify-geodetic checks are truncated, not rounded) — and wrong in a worse
-// way at a sign's last minute: Cape Town 18°22′E has AS 29°59′35″ Gemini, which
+// Rounding is wrong for a place's geodetic angles, which are quoted truncated (the
+// reference values verify-geodetic checks are truncated, not rounded) — and wrong in a
+// worse way at a sign's last minute: Cape Town 18°22′E has AS 29°59′35″ Gemini, which
 // rounding prints as 0°00′ Cancer, a sign the place is not in. So everything that
 // names a place's geodetic degree or sign — the grid readout, zone membership, the
 // hover highlight, the GE box, the wheels' geodetic angles, a timeless range — reads
 // THIS one function, and the sign a readout names is the zone's sign by construction.
+// Since Lina's CH-2 (17 Nov 2026) so does every body's and angle's position on every
+// surface (lonToZodiac above): truncated to the minute, never rounded.
 //
 // Truncation alone would undo that on float noise: a round trip turns an exact
 // 18°57′ into 18°56′59.9999″, which plain truncation shows as 18°56′. So the value is
@@ -93,32 +89,43 @@ export function truncZodiac(lonRad: number, unit: 'min' | 'sec'): TruncZodiac {
   return { signIdx, deg, min, sec, text };
 }
 
-/** One end of a printed range: a whole degree (0–29) in its own sign. */
+/** One end of a printed range: a degree (0–29) and minute (0–59) in its own sign, truncated. */
 export interface RangeEnd {
   signIdx: number;
   deg: number;
+  min: number;
 }
 
 /** A longitude known only to a range — a body on a chart with no birth time, over its birth
- *  date (lib/astro/timeless) — as the two ends of that range, each truncated to the whole
- *  degree in its OWN sign (2026-10-02; offsets since the range rule of 22 Oct). `range` is the
- *  ends as offsets in degrees from `lonRad` (lo ≤ 0 ≤ hi). Read through truncZodiac above, so
- *  it is the same rule as every truncated readout: the snap keeps an end that is exactly 0°
- *  Aries from printing as 29° Pisces on float noise, and an end never names a sign it isn't
- *  in. A range across a sign boundary therefore carries two signs (24°♓–9°♈), and one inside a
- *  sign the same one twice (2°♉–18°♉). `lonRad` in radians, like truncZodiac. */
+ *  date (lib/astro/timeless) — as the two ends of that range, each truncated to the minute in
+ *  its OWN sign (2026-10-02; offsets since the range rule of 22 Oct; to the minute rather than
+ *  the whole degree since Lina's CH-1, 17 Nov 2026). `range` is the ends as offsets in degrees
+ *  from `lonRad` (lo ≤ 0 ≤ hi). Read through truncZodiac above, so it is the same rule as every
+ *  truncated readout: the snap keeps an end that is exactly 0° Aries from printing as 29°
+ *  Pisces on float noise, and an end never names a sign it isn't in. A range across a sign
+ *  boundary therefore carries two signs (29°♊52'–12°♋05'), and one inside a sign the same one
+ *  twice (2°♉10'–18°♉04'). `lonRad` in radians, like truncZodiac. */
 export function lonRange(lonRad: number, range: { lo: number; hi: number }): { lo: RangeEnd; hi: RangeEnd } {
   const lo = truncZodiac(lonRad + (range.lo * Math.PI) / 180, 'min');
   const hi = truncZodiac(lonRad + (range.hi * Math.PI) / 180, 'min');
-  return { lo: { signIdx: lo.signIdx, deg: lo.deg }, hi: { signIdx: hi.signIdx, deg: hi.deg } };
+  return {
+    lo: { signIdx: lo.signIdx, deg: lo.deg, min: lo.min },
+    hi: { signIdx: hi.signIdx, deg: hi.deg, min: hi.min },
+  };
 }
 
-/** lonRange as plain text, "2°♉–18°♉": each end's degree then its sign glyph, joined by an
- *  en dash with no spaces. For an attribute, a map tip or a test; the rendered form is
- *  ZodiacRange. */
+/** A range end's minutes as printed after its sign: "05'". */
+export function rangeEndMin(end: RangeEnd): string {
+  return `${pad2(end.min)}'`;
+}
+
+/** lonRange as plain text, "29°♊52'–12°♋05'": each end's degree, its sign glyph, then its
+ *  minutes, joined by an en dash with no spaces. For an attribute, a map tip or a test; the
+ *  rendered form is ZodiacRange. */
 export function lonRangeText(lonRad: number, range: { lo: number; hi: number }): string {
   const { lo, hi } = lonRange(lonRad, range);
-  return `${lo.deg}°${SIGN_GLYPHS[lo.signIdx]}–${hi.deg}°${SIGN_GLYPHS[hi.signIdx]}`;
+  const end = (e: RangeEnd) => `${e.deg}°${SIGN_GLYPHS[e.signIdx]}${rangeEndMin(e)}`;
+  return `${end(lo)}–${end(hi)}`;
 }
 
 // Degrees → "DD°MM'" — the same degree+arcminute form the Advanced planet table

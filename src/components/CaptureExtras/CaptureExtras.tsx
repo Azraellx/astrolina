@@ -42,6 +42,7 @@ import {
   ANGLE_LABEL,
   lonRange,
   lonToZodiac,
+  rangeEndMin,
   truncZodiac,
   type AngleCode,
   type BalanceSeg,
@@ -230,8 +231,9 @@ export function CaptureExtras({
     return (
       <span className="cx-lon" translate="no">
         {lo.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[lo.signIdx]}</span>
-        {'–'}
+        {`${rangeEndMin(lo)}–`}
         {hi.deg}°<span className="astro-glyph cx-sign">{SIGN_GLYPHS[hi.signIdx]}</span>
+        {rangeEndMin(hi)}
       </span>
     );
   };
