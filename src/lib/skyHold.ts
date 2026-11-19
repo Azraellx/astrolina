@@ -5,7 +5,16 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // ── THE SKY HOLD ─────────────────────────────────────────────────────────────
-// What a geodetic map cannot show (2026-10-02). One test settles every surface:
+// What a geodetic map cannot show (2026-10-02).
+//
+// The reader is given NO reason (Lina's GE-1, 17 Nov 2026): every held surface says "Not
+// available on geodetic maps." and the fix. The reason below was the user-facing one until
+// then ("which don't turn with the sky"), and she withdrew it because it was not true of
+// every feature it was attached to — it had not been true of parans or Sky Times — and each
+// feature is to be reviewed in turn. It stands here as the history of how the list was
+// drawn up, not as a claim the app makes; nothing changed in what is held.
+//
+// One test settled every surface:
 // if it reads a zodiacal DEGREE, it works on a geodetic map; if it reads the sky's
 // ROTATION, it doesn't. In practice — freeze every planet at its degree and move
 // the clock an hour. If the answer changes, the surface needs the sky. A geodetic

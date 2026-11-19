@@ -98,10 +98,6 @@ interface EclipseHudProps {
    *  the toggle flips this. */
   showChart: boolean;
   setShowChart: (v: boolean) => void;
-  /** The eclipse-time planet/angle LINES on the map (off by default, opt-in elsewhere —
-   *  see App.tsx). Not toggled from this HUD; exposed here only so a plain click that
-   *  turns the chart OFF can also clear the lines. */
-  setShowMapLines: (v: boolean) => void;
   isoStep: EclipseIsoStep;
   setIsoStep: (s: EclipseIsoStep) => void;
 }
@@ -129,7 +125,6 @@ export function EclipseHud({
   setShowOtherLines,
   showChart,
   setShowChart,
-  setShowMapLines,
   isoStep,
   setIsoStep,
 }: EclipseHudProps) {
@@ -703,9 +698,9 @@ export function EclipseHud({
                 </TipButton>
                 {/* The "Eclipse Chart" toggle. A plain click toggles the eclipse chart
                     as the overlay ring in the chart wheel (showChart) and never touches
-                    the map; its eye/aria reflect that chart state. The separate eclipse-
-                    time map LINES layer isn't toggled here (it's opt-in elsewhere — see
-                    App.tsx); turning the chart off does still clear it. */}
+                    the map; its eye/aria reflect that chart state. The eclipse chart
+                    draws no lines or parans on the map (Lina's PC-14; the hidden opt-in
+                    that did was retired 2026-11-19). */}
                 <TipButton
                   type="button"
                   className={`eclipse-hud-toggle ${showChart ? 'on' : 'off'}`}
@@ -714,13 +709,7 @@ export function EclipseHud({
                   hint={t('settings.eclipses.chartLines.hint')}
                   aria-label={t('settings.eclipses.chartLines.title')}
                   aria-pressed={showChart}
-                  onClick={() => {
-                    // Toggle the wheel-ring chart; a plain click never draws the map
-                    // lines, so clear them as the chart switches off (the hide path).
-                    const next = !showChart;
-                    setShowChart(next);
-                    if (!next) setShowMapLines(false);
-                  }}
+                  onClick={() => setShowChart(!showChart)}
                 >
                   <EyeIcon open={showChart} />
                   <span className="eclipse-hud-toggle-name">

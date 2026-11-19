@@ -53,6 +53,7 @@ import {
   type GeoZoneProps,
 } from '../../lib/astro/geodeticGrid';
 import { geoAnglesParts, geoAnglesText, type GeoAnglePart } from '../../lib/astro/geoReadoutText';
+import { fmtDM } from '../../lib/astro/format';
 import { canonicalLng, fmtLatDM, fmtLngDM } from '../../lib/coordFormat';
 import { BASEMAP_STYLE_URLS, BORDER_COLORS, type Theme } from '../../lib/theme';
 import { builtinPalette, planetInk, type BasemapChoice, type MapStyle } from '../../lib/themePalette';
@@ -6107,15 +6108,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         const angle = north + (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
         // This half's bearing — geographic azimuth, 0° at North, clockwise (matches
         // the dial and the sidebar's coordinate table): out = toward the planet,
-        // in = the reciprocal. Formatted as degrees + arcminutes.
+        // in = the reciprocal. Formatted as degrees + arcminutes through format.ts fmtDM,
+        // truncated to the minute like every other azimuth (Lina's CH-3, 17 Nov 2026).
         const bearingAzN = out ? lp.azimuth : (lp.azimuth + 180) % 360;
-        let azWhole = Math.floor(bearingAzN);
-        let azMin = Math.round((bearingAzN - azWhole) * 60);
-        if (azMin === 60) {
-          azMin = 0;
-          azWhole = (azWhole + 1) % 360;
-        }
-        const azLabel = `${azWhole}°${String(azMin).padStart(2, '0')}'`;
+        const azLabel = fmtDM(bearingAzN);
         // Keep the label on screen. At rest it sits at the ring point. Once that's off
         // screen we hug the edge where the line exits — but WHICH end depends on the
         // pin: while the pin is still visible, hug the planet-ward exit; once the pin

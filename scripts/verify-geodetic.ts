@@ -20,7 +20,7 @@
 //   2. The Ascendant is on the horizon, in the east                   OUTSIDE AGREEMENT
 //   3. Swiss's own houses at the RAMC the place culminates            OUTSIDE AGREEMENT
 //   4. meridianLngFor is the old inline arithmetic, float for float   INTERNAL IDENTITY
-//   5. truncZodiac: named cases, never 60′/60″, never rolls           OUTSIDE AGREEMENT (cases) + INTERNAL IDENTITY (sweep)
+//   5. truncZodiac: named cases, never 60′/60″, never rolls; fmtDM    OUTSIDE AGREEMENT (cases) + INTERNAL IDENTITY (sweep)
 //   6. geodeticFrame, ten systems; shiftAngles keeps the flag         INTERNAL IDENTITY (+ one OUTSIDE fixture)
 //   7. Where each Ascendant curve ends                                OUTSIDE AGREEMENT
 //   8. The grid's curve generator against the place readout          INTERNAL IDENTITY (two parts agree)
@@ -80,7 +80,7 @@ import {
   type HouseSystem,
 } from '../src/lib/ephemeris';
 import { meridianLngFor, normLng, type MeridianLng } from '../src/lib/astro/lines';
-import { TRUNC_SNAP_ARCSEC, lonToZodiac, truncZodiac } from '../src/lib/astro/format';
+import { TRUNC_SNAP_ARCSEC, fmtDM, lonToZodiac, truncZodiac } from '../src/lib/astro/format';
 import { shiftAngles } from '../src/lib/astro/ayanamsa';
 import { GEO_ZONES_OPACITY_PCT } from '../src/lib/overlayPrefs';
 import {
@@ -748,6 +748,54 @@ section('§5 OUTSIDE AGREEMENT + INTERNAL IDENTITY — truncZodiac');
     n > 3_000_000 && bad === 0,
     bad ? firstBad.join('; ') : '',
   );
+
+  // fmtDM — the chart tables' other figures (speed, latitude, right ascension, declination,
+  // azimuth and altitude) — truncates to the minute by the same rule (Lina's CH-3, 17 Nov
+  // 2026): toward zero in magnitude, the sign after, the same snap. OUTSIDE AGREEMENT for the
+  // named cases (her own: −5°52′53″ shows as −5°52′), then INTERNAL IDENTITY for a sweep:
+  // never more than the value in magnitude, less than a minute below it, never 60′.
+  {
+    const deg = (d: number, m: number, s: number) => d + m / 60 + s / 3600;
+    const dmCases: Array<[string, number, boolean, string]> = [
+      // [label, degrees, signed, want]
+      ["Lina's −5°52′53″ declination shows −5°52′", -deg(5, 52, 53), true, "-5°52'"],
+      ['+14°31′40″ speed shows +14°31′', deg(14, 31, 40), true, "+14°31'"],
+      ['14°31′ exactly, float noise below it, shows +14°31′ (the snap)', deg(14, 31, 0) - 1e-12, true, "+14°31'"],
+      ['198°22′59.9″ right ascension shows 198°22′', deg(198, 22, 59.9), false, "198°22'"],
+      ['−54°46′59″ altitude shows −54°46′', -deg(54, 46, 59), true, "-54°46'"],
+      ['359°59′59″ azimuth shows 359°59′, not 0°00′', deg(359, 59, 59), false, "359°59'"],
+      ['360° exactly wraps to 0°00′', 360, false, "0°00'"],
+      ['−0°00′20″ truncates to an unsigned 0°00′', -deg(0, 0, 20), true, "0°00'"],
+      ['+0°00′00″ takes no sign', 0, true, "0°00'"],
+    ];
+    for (const [label, v, signed, want] of dmCases) {
+      const got = fmtDM(v, signed);
+      check(`fmtDM: ${label}`, got === want, got);
+    }
+    let dn = 0;
+    let dbad = 0;
+    const dFirst: string[] = [];
+    for (let v = -90; v <= 360; v += 0.000137) {
+      dn += 1;
+      const txt = fmtDM(v, true);
+      const m = /^([+-]?)(\d+)°(\d\d)'$/.exec(txt);
+      const shown = m ? Number(m[2]) * 60 + Number(m[3]) : NaN;
+      const trueMin = Math.abs(v) * 60;
+      const ok =
+        !!m && Number(m[3]) <= 59 &&
+        shown <= trueMin + TRUNC_SNAP_ARCSEC / 60 + 1e-9 && shown > trueMin - 1 &&
+        (shown === 0 ? m[1] === '' : m[1] === (v < 0 ? '-' : '+'));
+      if (!ok) {
+        dbad += 1;
+        if (dFirst.length < 3) dFirst.push(`${v} → ${txt}`);
+      }
+    }
+    check(
+      `fmtDM sweep: truncated toward zero, never 60′, the sign only off zero (${dn} values)`,
+      dn > 3_000_000 && dbad === 0,
+      dbad ? dFirst.join('; ') : '',
+    );
+  }
 
   // The coordinates printed beside these angles (coordFormat: the panel header's "Cast for",
   // the Coordinates box, the readout over open water) ROUND rather than truncate — a

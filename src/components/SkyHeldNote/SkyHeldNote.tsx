@@ -13,33 +13,26 @@
 //
 // It carries no typography for the sentence: the host passes its own note class, so
 // the reason reads as one of that panel's notes. Only the fix is styled here. Neutral,
-// not warning-toned — nothing is wrong, the map is simply one that doesn't turn.
+// not warning-toned — nothing is wrong, the feature is simply not on a geodetic map.
 import { useId } from 'react';
 import { useT, type MsgKey } from '../../i18n';
 import { TipSpan } from '../ui/HoverTip';
 import './SkyHeldNote.css';
 
-/** Which sentence a held surface says. 'sky' is the standard reason
- *  (settings.inert.skyHeld) and the default. 'forNow' is for a surface held only
- *  because nothing projects it onto a geodetic map yet — where "which don't turn
- *  with the sky" would be untrue — and adds the same fix. (A paran listing's own
- *  'parans' kind went on 2026-11-16, with the parans' hold: Lina's ruling shows the
- *  chart's In Mundo parans on a geodetic map exactly as on a celestial one.) */
-export type SkyHeldKind = 'sky' | 'forNow';
-
+// One sentence for every held surface (Lina's GE-1, 17 Nov 2026): "Not available on
+// geodetic maps.", with the fix beside it. There were two kinds until then — the
+// standard one gave the sky's turning as the reason, and a 'forNow' kind said "for now"
+// where that reason was untrue — and GE-1 withdrew the reason, so one kind says it
+// everywhere. (A paran listing's own 'parans' kind went on 2026-11-16 with the parans'
+// hold.)
+//
 // The full form's sentence, and the compact form's short text. The fix half rides in
-// the compact form's tip (and its accessible description) instead of on the row. Each
+// the compact form's tip (and its accessible description) instead of on the row. The
 // full form is ONE catalog key, joined in the catalog from its halves, so a host that
 // needs the same words on a tip (Discovery's frame menu) reads the same key rather than
 // joining them again.
-const FULL: Record<SkyHeldKind, MsgKey> = {
-  sky: 'settings.inert.skyHeld',
-  forNow: 'settings.inert.skyHeldForNowFull',
-};
-const SHORT: Record<SkyHeldKind, MsgKey> = {
-  sky: 'settings.inert.skyHeldWhy',
-  forNow: 'settings.inert.skyHeldForNow',
-};
+const FULL: MsgKey = 'settings.inert.skyHeld';
+const SHORT: MsgKey = 'settings.inert.skyHeldWhy';
 
 // A plugin can mount this in a React root of its own. Until 2026-10-09 useT() threw there
 // (it read a provider's context), so this fell back to the English base catalog outside
@@ -50,7 +43,6 @@ export function SkyHeldNote({
   onFix,
   className,
   compact,
-  kind = 'sky',
 }: {
   /** Opens Settings ▸ Calculation, where the line system is (a host passes its own
    *  opener — `openSettings('calc')` on the extension context). The full form shows
@@ -62,15 +54,13 @@ export function SkyHeldNote({
   /** The one-line form for a cramped row: the short text, with the whole sentence as
    *  its tip (tap on touch, focus from the keyboard) and no button. */
   compact?: boolean;
-  /** Which sentence to say — see {@link SkyHeldKind}. Default 'sky'. */
-  kind?: SkyHeldKind;
 }) {
   const { t } = useT();
   const fixId = useId();
   const cls = className ? ` ${className}` : '';
 
   if (compact) {
-    const short = t(SHORT[kind]);
+    const short = t(SHORT);
     const fix = t('settings.inert.skyHeldFix');
     // A span, not a div: the compact form stands in for a row's inline empty text.
     // The tip card is aria-hidden, so the fix half also reaches assistive tech as the
@@ -99,7 +89,7 @@ export function SkyHeldNote({
   // user-agent margins would leak into a host whose note class never reset them.
   return (
     <div className={`sky-held${cls}`} role="note">
-      <span className="sky-held-text">{t(FULL[kind])}</span>
+      <span className="sky-held-text">{t(FULL)}</span>
       {onFix && (
         <>
           {' '}

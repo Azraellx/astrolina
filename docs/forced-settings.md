@@ -1,9 +1,9 @@
 # When a setting changes by itself
 
 Occasionally you will ask for one thing and find that something else moved, or became
-unavailable. A sidereal zodiac and the geodetic mapping grey each other out; the geodetic
-mapping greys out whatever reads the sky's turning; jumping to a return, on a celestial
-map, changes the overlay frame. This page says exactly when that happens, why, and what
+unavailable. A sidereal zodiac and the geodetic mapping grey each other out; some features
+are not available on geodetic maps; jumping to a return, on a celestial map, changes the
+overlay frame. This page says exactly when that happens, why, and what
 becomes of the setting you had chosen.
 
 The short version: **the settings on this page are held, never rewritten.** While
@@ -19,13 +19,9 @@ onto Earth's longitudes, so there is no sidereal version of it to draw. A chart 
 birth time is unknown has no angles of its own, so there is no natal frame for a dated
 overlay to hold.
 
-The geodetic mapping also leaves nothing to read for anything that needs the sky's
-*turning*. It lays the zodiac on the Earth once and for all, so nothing on a geodetic map
-turns. The test: freeze every planet at its degree and move the clock an hour — if the
-answer changes, the feature needs the sky. On a geodetic map that holds local space, the
-globe-spin tool, fixed-star lines, zenith points, night shade, primary directions and the
-Vertex lines. Two things are not held there. The parans are always the chart's In Mundo
-parans, the bodies themselves on the angles together, so a geodetic map draws the same set
+Some features are not available on geodetic maps: local space, the globe-spin tool,
+fixed-star lines, zenith points, night shade, primary directions and the Vertex lines. Two
+things are not held there. The parans are always the chart's In Mundo parans, the bodies themselves on the angles together, so a geodetic map draws the same set
 a celestial one does. And the Sky Times band gives the place's own rising, setting and
 culmination times for the day, which have nothing to do with its geodetic angles. The
 transit and progressed overlays' angle controls stay at Natal angles, because a place's
@@ -39,10 +35,10 @@ whichever you touch second. Settings saved before that rule can arrive with both
 set; then the map draws no lines at all, never a line system you didn't choose, and a
 banner over it offers the two fixes: set the zodiac to Tropical, or switch to Celestial.
 
-For everything that needs the sky, that line is the same: *Not available on geodetic maps,
-which don't turn with the sky. Switch the line system to Celestial, in Calculation, to use
-it.* A window that was already open stays open and shows it in place of its content, and
-nothing closes on your behalf; the globe-spin tool, a gesture in progress rather than a
+For every feature not available on a geodetic map, that line is the same: *Not available
+on geodetic maps. Switch the line system to Celestial, in Calculation, to use it.* A window
+that was already open stays open and shows it in place of its content, and nothing closes
+on your behalf; the globe-spin tool, a gesture in progress rather than a
 setting, is put down, and stays down until you pick it up again. Switch the line system
 back to Celestial and everything else is as you left it.
 
@@ -74,10 +70,10 @@ there the whole time it is held, and every way out is something you did.
 | The sidereal zodiacs are unavailable | While the line system is Geodetic | **Greyed** with the reason. Switch to Celestial to read in a sidereal zodiac |
 | No lines are drawn | When Geodetic and a sidereal zodiac arrive set together (settings saved before they greyed each other) | **Nothing is written.** A banner offers both fixes; both settings stay as stored until you pick one |
 | The overlay frame is held on the moment's own sky | While the chart's birth time is unknown, on a celestial map | **Held.** No preference is written |
-| Whatever reads the sky's turning becomes unavailable — local space, the globe-spin tool, fixed-star lines, zenith points, night shade, the Vertex lines. Not the parans or the Sky Times band, which are the same in every line system | While the geodetic mapping is on | **Held.** Each is greyed with the reason and the setting to change, and none is drawn; a window already open shows the reason in its place. Nothing is written; back on Celestial as you left it, except the globe-spin tool, which is put down and waits for you to pick it up again |
+| Some features become unavailable — local space, the globe-spin tool, fixed-star lines, zenith points, night shade, the Vertex lines. Not the parans or the Sky Times band, which are the same in every line system | While the geodetic mapping is on | **Held.** Each is greyed with that line and the setting to change, and none is drawn; a window already open shows the line in its place. Nothing is written; back on Celestial as you left it, except the globe-spin tool, which is put down and waits for you to pick it up again |
 | The transit and progressed overlays' angle controls read *Natal angles* | While the geodetic mapping is on — a place's angles come from its coordinates, so there is no moving frame to choose | **Held.** Greyed with that reason; your frames come back on Celestial |
 | The projection choice (In Mundo / In Zodiaco) is not shown | While the geodetic mapping is on | **Held.** Geodetic places every body on the ecliptic by construction, so there is no choice left to make; the pair belongs to the celestial line system and sits just under it. Nothing is written: yours is shown again, as you left it, on Celestial |
-| Your overlay technique reads as None | While the active chart can't carry it — a composite has no moment to advance, a chart with no birth time has no exact one, a two-person chart has nobody left to add — or, for primary directions, while the geodetic mapping is on: they advance the sky's turning over the place, which a geodetic map doesn't have. On a geodetic map a chart with no birth time keeps its secondary and tertiary progressions and Solar Arc: a place's angles there come from its coordinates, so only the planets advance, and their lines carry the chart's bands. Primary Directions and Cyclocartography still need the birth time there | **Held.** Back the moment you select a chart, or a line system, that can carry it |
+| Your overlay technique reads as None | While the active chart can't carry it — a composite has no moment to advance, a chart with no birth time has no exact one, a two-person chart has nobody left to add — or, for primary directions, while the geodetic mapping is on. On a geodetic map a chart with no birth time keeps its secondary and tertiary progressions and Solar Arc: a place's angles there come from its coordinates, so only the planets advance, and their lines carry the chart's bands. Primary Directions and Cyclocartography still need the birth time there | **Held.** Back the moment you select a chart, or a line system, that can carry it |
 | The overlays that advance or compare a chart read as None — the secondary and tertiary progressions, Solar Arc, Primary Directions, Cyclocartography and Synastry | While no chart is selected: *No chart · the sky alone* is chosen in the chart menu, or there are no charts yet. There is nothing to advance and nothing to compare | **Held.** Each is greyed with the reason, *Needs a chart*; your technique comes back as you left it when you pick a chart |
 | Transits are drawn in the moment's own sky, which stands in for the chart: the Natal Chart switch and the overlay frame are greyed, and local space, Natal Lines, the returns and the globe-spin tool are unavailable | While *No chart · the sky alone* is chosen — with no chart there are no natal angles to hold, no chart lines to show or hide, no birthplace to cast local space from and no birth degree to return to | **Held**, and said when choosing it sets an overlay, your frame or an open Local Space window aside. Nothing is written: an open Local Space window is hidden rather than closed, and your choices come back as you left them when you pick a chart |
 | The Dual wheels switch is unavailable and the wheel stays the natal chart's | While Primary Directions is the overlay. It has no chart of its own: the bodies keep their natal positions and the sky's rotation carries them to the angles, which the map shows | **Held.** The switch is greyed with the reason and still shows your choice, which is in force again under the next overlay |

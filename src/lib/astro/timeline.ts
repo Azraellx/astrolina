@@ -301,7 +301,9 @@ export type AuxFamily = 'aspect' | 'midpoint' | 'paran' | 'star';
 //     established paran reading either.
 // A reader with Transits on took the transit sky's rows for her natal parans and
 // compared them with another program's (the report behind seam L23's addendum).
-// Synastry (the partner's own parans) and Eclipses (an opt-in) keep theirs.
+// Synastry (the partner's own parans) keeps its own. Eclipses is not blocked here, and
+// needs no entry: the eclipse chart draws no lines or parans on the map at all (App.tsx
+// overlayGeom; its opt-in was retired 2026-11-19 with Lina's PC-14).
 export const AUX_BLOCKED_OVERLAYS: Record<AuxFamily, ReadonlySet<OverlayMode>> = {
   aspect: new Set<OverlayMode>(),
   midpoint: new Set<OverlayMode>(['cyclo']),

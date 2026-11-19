@@ -224,14 +224,15 @@ export function saveTransitFrame(f: TransitFrame) {
 // ── Eclipses overlay ─────────────────────────────────────────────────────────
 // The selected eclipse (a catalog id, "YYYY-MM-DD" of greatest eclipse), the
 // magnitude-isoline interval, and the display toggles: every OTHER line on the map
-// (on by default), the eclipse CHART (the overlay ring in the chart wheel), and
-// — HIDDEN — the eclipse-time planet/angle LINES on the map.
+// (on by default), and the eclipse CHART (the overlay ring in the chart wheel).
 const ECLIPSE_ID_KEY = 'astro:eclipse-id:v1';
 const ECLIPSE_ISO_STEP_KEY = 'astro:eclipse-iso-step:v1';
 // Legacy key name ('…-chart-lines…') kept so existing prefs survive: it now backs
 // the eclipse CHART (wheel ring) ALONE — the map lines split off to their own key.
 const ECLIPSE_CHART_KEY = 'astro:eclipse-chart-lines:v1';
-const ECLIPSE_MAP_LINES_KEY = 'astro:eclipse-map-lines:v1';
+// 'astro:eclipse-map-lines:v1' backed the eclipse chart's hidden map lines, an opt-in
+// retired 2026-11-19 (Lina's PC-14: no control draws them). Nothing reads the key now, so
+// a stored '1' is abandoned rather than migrated: there is no setting left to carry it to.
 // Legacy key name ('…-natal-lines…') kept so existing prefs survive. The toggle it backs
 // was called "Natal Lines" while it already cleared every other family alongside them;
 // only the NAME moved, so the stored value means exactly what it always did and there
@@ -263,16 +264,6 @@ export function loadEclipseChart(): boolean {
 }
 export function saveEclipseChart(show: boolean) {
   localStorage.setItem(ECLIPSE_CHART_KEY, show ? '1' : '0');
-}
-
-// The eclipse-time planet/angle lines on the MAP. Off by default and opt-in: a fork can
-// turn them on (e.g. from a dev console via the `astro:cheat` event in App.tsx) or just
-// default them on. A plain click on the Eclipse-Chart toggle only shows the wheel ring.
-export function loadEclipseMapLines(): boolean {
-  return localStorage.getItem(ECLIPSE_MAP_LINES_KEY) === '1';
-}
-export function saveEclipseMapLines(show: boolean) {
-  localStorage.setItem(ECLIPSE_MAP_LINES_KEY, show ? '1' : '0');
 }
 
 // Every line on the map that ISN'T the eclipse — the chart's own angle lines, parans,

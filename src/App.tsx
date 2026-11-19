@@ -359,7 +359,6 @@ import {
   loadProgAngleFrame,
   loadProgAngleMethod,
   loadEclipseChart,
-  loadEclipseMapLines,
   loadEclipseId,
   loadEclipseIsoStep,
   loadEclipseOtherLines,
@@ -397,7 +396,6 @@ import {
   saveProgAngleFrame,
   saveProgAngleMethod,
   saveEclipseChart,
-  saveEclipseMapLines,
   saveEclipseId,
   saveEclipseIsoStep,
   saveEclipseOtherLines,
@@ -547,8 +545,8 @@ function minorParanPartners(
   return positions.filter((p) => visible.has(p.name) && !(bothNodes && p.name === 'SouthNode'));
 }
 
-// The mapping an overlay's OWN parans are placed with (a synastry partner's, an eclipse
-// chart's opt-in set): always celestial, RA − GMST at the overlay's own sidereal time, read
+// The mapping an overlay's OWN parans are placed with (a synastry partner's; an eclipse
+// chart's too until its map opt-in was retired, 2026-11-19): always celestial, RA − GMST at the overlay's own sidereal time, read
 // with the layer's TRUE-SKY positions (layer.positions), never the In Zodiaco or geodetic
 // projection its lines are drawn from. Lina's ruling, 16 Nov 2026: one set of parans, In
 // Mundo, in every line system and under every overlay — the chart's own (allParans) and an
@@ -1969,13 +1967,10 @@ export default function App() {
   const [showEclipseChart, setShowEclipseChart] = useState(() =>
     loadEclipseChart(),
   );
-  // The eclipse-time planet/angle LINES on the map. Decoupled from the chart above so a
-  // plain click shows the wheel ring WITHOUT the map lines. Off by default and opt-in —
-  // a fork can enable them (e.g. from a dev console via the `astro:cheat` event handled
-  // below) or default them on. Turning the chart off clears these again.
-  const [showEclipseMapLines, setShowEclipseMapLines] = useState(() =>
-    loadEclipseMapLines(),
-  );
+  // The eclipse chart draws nothing on the MAP. Its planet/angle lines and parans were an
+  // opt-in (`showEclipseMapLines`, revealed through an `astro:cheat` event) until Lina's
+  // PC-14 (17 Nov 2026): no control should draw them, and the Calculation Methods page says
+  // none does. Retired 2026-11-19 with the event seam; see overlayGeom and buildAllLines.
   // Eclipses ▸ Display ▸ Other Lines: everything on the map that isn't the eclipse.
   // On by default; while it is off it OVERRIDES each of those families' own toggles,
   // which is the whole point — one press for a clean map, not a tour of the settings.
@@ -2850,22 +2845,6 @@ export default function App() {
     setShowSkyTimesSafe,
   ]);
 
-  // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
-  // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
-  // 'eclipse-map-lines' } }))` — e.g. from a dev console — to reveal them. Reveal only;
-  // to hide, a plain click on the Eclipse-Chart toggle (which clears the lines).
-  useEffect(() => {
-    const onCheat = (e: Event) => {
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
-      if (id === 'eclipse-map-lines') {
-        setShowEclipseChart(true);
-        setShowEclipseMapLines(true);
-      }
-    };
-    window.addEventListener('astro:cheat', onCheat);
-    return () => window.removeEventListener('astro:cheat', onCheat);
-  }, []);
-
   // Neutral seam: open My Charts — the same window the chart switcher's "Search + Add" and
   // the A key open. A downstream build's onboarding dispatches
   // `window.dispatchEvent(new Event('astro:open-my-charts'))` to take a new reader straight
@@ -3359,10 +3338,6 @@ export default function App() {
   useEffect(() => saveEclipseId(eclipseId), [eclipseId]);
   useEffect(() => saveEclipseIsoStep(eclipseIsoStep), [eclipseIsoStep]);
   useEffect(() => saveEclipseChart(showEclipseChart), [showEclipseChart]);
-  useEffect(
-    () => saveEclipseMapLines(showEclipseMapLines),
-    [showEclipseMapLines],
-  );
   useEffect(
     () => saveEclipseOtherLines(showEclipseOtherLines),
     [showEclipseOtherLines],
@@ -4764,10 +4739,9 @@ export default function App() {
       overlayMode === 'tertiary-progressed' ? 'tertiary' : 'secondary';
     if (overlayMode === 'eclipses') {
       // The eclipse CHART: the sky at the eclipse maximum as a transit overlay pinned
-      // to that instant. This layer feeds the bi-wheel's overlay ring; whether its
-      // planet/angle lines also reach the MAP is gated separately (mapOverlay, below)
-      // by the opt-in showEclipseMapLines flag. (resolvedEclipse non-null implies the
-      // lazy eclipses module is in.)
+      // to that instant. This layer feeds the bi-wheel's overlay ring and nothing else: it
+      // draws no lines or parans on the map (overlayGeom, buildAllLines; Lina's PC-14,
+      // 17 Nov 2026). (resolvedEclipse non-null implies the lazy eclipses module is in.)
       if (!showEclipseChart || !resolvedEclipse || !eclipsesMod) return null;
       return buildOverlay(
         current,
@@ -4981,16 +4955,17 @@ export default function App() {
   // One-frame rule: when an overlay is active the auxiliary families (aspect,
   // midpoint, star) render from the OVERLAY's frame and the natal set is hidden —
   // never both. Independent of the Natal display toggle, which keeps governing only
-  // the primary angle lines' dual display. Eclipses are excluded: their map linework
-  // is a separate opt-in (showEclipseMapLines / eclipseSolo).
+  // the primary angle lines' dual display. Eclipses are excluded: the eclipse chart draws
+  // nothing on the map (PC-14, 2026-11-19), so the natal auxiliaries stay.
   //
   // PARANS LEFT THIS RULE on 2026-10-06 (Salvatore, from a support report; seam L23's
   // addendum). A reader who turned Parans on with Transits running found only the transit
   // sky's rows, compared them with another program's natal parans, and concluded ours were
   // wrong. Now the chart's own parans stay on the map beside an overlay, following the
   // Natal Lines switch, and the time overlays draw none of their own (timeline
-  // AUX_BLOCKED_OVERLAYS says why); a synastry partner's, and an eclipse's opt-in set,
-  // are drawn beside the chart's, tagged. Pairing is untouched: a paran is still two
+  // AUX_BLOCKED_OVERLAYS says why); a synastry partner's are drawn beside the chart's,
+  // tagged (an eclipse chart's were an opt-in until 2026-11-19; it draws none now).
+  // Pairing is untouched: a paran is still two
   // bodies of ONE chart, and no cross-chart row is drawn. See effParans/drawParans.
   const overlayAux = !!overlayLayer && overlayMode !== 'eclipses';
 
@@ -5081,8 +5056,11 @@ export default function App() {
   );
 
   // The overlay's own families as geometry; the colour step is the memo after this one.
+  // The eclipse chart has none: it is the wheel's second ring only, and draws no lines or
+  // parans on the map or in the complete set (Lina's PC-14, 17 Nov 2026; the opt-in that
+  // drew them was retired 2026-11-19).
   const overlayGeom = useMemo<OverlayData | null>(() => {
-    if (!overlayLayer) return null;
+    if (!overlayLayer || overlayLayer.kind === 'eclipses') return null;
     const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
     // CCG names each feature's actual source — Sp on the progressed personal
     // planets, Tr on the transiting outers — instead of one mode tag. (It draws no
@@ -5115,7 +5093,7 @@ export default function App() {
         ),
       ),
       // A time overlay draws no parans of its own (Cyclo has no single sky-moment; the
-      // rest no paran reading) — see overlayAuxBlocked. Synastry's and an eclipse's stay,
+      // rest no paran reading) — see overlayAuxBlocked. Synastry's stay,
       // In Mundo in every line system (overlayParanMeridianLng; Lina's ruling, 16 Nov 2026):
       // the layer's true sky, not the projected ovPositions the lines read.
       parans: effShowParans && !overlayAuxBlocked(overlayLayer.kind, 'paran')
@@ -5214,16 +5192,13 @@ export default function App() {
     [overlayMinorParans, inks],
   );
 
-  // The overlay layer as it reaches the MAP (and the plugin context). For every mode
-  // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are
-  // withheld from the map unless showEclipseMapLines is on (off by default, opt-in —
-  // see the showEclipseMapLines state + the `astro:cheat` seam above). The wheel's
-  // overlay ring is unaffected — it reads overlayLayer directly — so the eclipse chart
-  // still shows in the wheel, just never on the map. Withheld from the plugin context
-  // too, so a plugin can't act on lines no one can see.
+  // The overlay layer as it reaches the MAP (and the plugin context). In the eclipses mode
+  // there is none: overlayGeom builds nothing for the eclipse chart, which is the wheel's
+  // ring only (it reads overlayLayer directly). The opt-in that let its lines through here
+  // (showEclipseMapLines) was retired 2026-11-19 with Lina's PC-14.
   //
   // The catalog bodies' lines and coins ride in the same bundle, so every gate on it —
-  // the eclipse opt-in here, the promoted swap (effMapOverlay), the spotlight
+  // the line conflict here, the promoted swap (effMapOverlay), the spotlight
   // (spotMapOverlay) — takes them with the planets'. Joined here rather than built in the
   // memo above, so a catalog file landing doesn't regenerate the planets' lines.
   const overlayWithMinor = useMemo<OverlayData | null>(
@@ -5238,8 +5213,7 @@ export default function App() {
         : overlay,
     [overlay, overlayMinorInked, overlayMinorParansInked],
   );
-  const mapOverlay =
-    lineConflict || (overlayMode === 'eclipses' && !showEclipseMapLines) ? null : overlayWithMinor;
+  const mapOverlay = lineConflict || overlayMode === 'eclipses' ? null : overlayWithMinor;
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -5572,7 +5546,7 @@ export default function App() {
   // The chart's parans as they reach everything but the map's own drawing: gone under the
   // eclipse clean-up, the overlay's own while it is promoted (it IS the chart then), and
   // otherwise the chart's — with an overlay up too, since 2026-10-06, when parans left the
-  // one-frame rule (see overlayAux). A synastry partner's or an eclipse's own rows ride
+  // one-frame rule (see overlayAux). A synastry partner's own rows ride
   // beside them in the overlay's bundle (effOverlayParans); a time overlay has none. Resolved here rather than with the other eff* families further down
   // because the orb bands below need it.
   const effParans = mapCleared ? EMPTY_FC : promoted ? promoted.parans : parans;
@@ -7762,7 +7736,11 @@ export default function App() {
     // beside an overlay, as they stay on the map, and the overlay's ride in `overlayParans`.
     let angleLinesOut: FeatureCollection = natalAngleLines;
     let starLinesOut: FeatureCollection = natalStarLines;
-    if (overlayLayer) {
+    // The eclipse chart is left out, as the map leaves it out (overlayGeom): it draws no lines
+    // or parans anywhere. Until 2026-11-19 this set carried them regardless, so Radar's
+    // spotlight drew the eclipse chart's lines and parans inside its circle with no opt-in
+    // at all (found answering Lina's PC-14).
+    if (overlayLayer && overlayLayer.kind !== 'eclipses') {
       const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
       const isCyclo = overlayLayer.kind === 'cyclo';
       // The one tilt on a geodetic map, and the §15 bands, as the drawn overlay memos read them.
@@ -7781,7 +7759,7 @@ export default function App() {
         ovPositions,
       );
       // Parans suppressed under every time overlay (Cyclo has no single sky-moment across
-      // epochs; the rest no paran reading). The kept ones (synastry, an eclipse's) are In
+      // epochs; the rest no paran reading). The kept ones (synastry's) are In
       // Mundo in every line system, as drawn (overlayParanMeridianLng; Lina's ruling,
       // 16 Nov 2026) — so no longer held on a geodetic map.
       overlayParans = overlayAuxBlocked(overlayLayer.kind, 'paran')
@@ -9259,7 +9237,6 @@ export default function App() {
           setShowOtherLines={setShowEclipseOtherLines}
           showChart={showEclipseChart}
           setShowChart={setShowEclipseChart}
-          setShowMapLines={setShowEclipseMapLines}
           isoStep={eclipseIsoStep}
           setIsoStep={setEclipseIsoStep}
         />

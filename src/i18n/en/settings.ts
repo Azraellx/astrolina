@@ -9,18 +9,20 @@
 // reads the same label maps via makeEnumLabels so the two never drift. Proper-noun house
 // systems (placidus, koch, …) keep their eponyms verbatim.
 
-// The sky hold's reason (lib/skyHold), in its two halves. It is ONE sentence, reused
+// The sky hold's sentence (lib/skyHold), in its two halves. It is ONE sentence, reused
 // word for word on every held surface, so inert.skyHeld below is built from these two
 // rather than typed a second time: the why, the fix and the whole cannot drift apart.
-// The why alone is the compact form, for a row that carries the fix in its tip.
+// The first half alone is the compact form, for a row that carries the fix in its tip.
 // (2026-10-02)
-const SKY_HELD_WHY = 'Not available on geodetic maps, which don’t turn with the sky.';
+//
+// It gives NO reason, by Lina's GE-1 (17 Nov 2026), word for word. It said "…geodetic
+// maps, which don't turn with the sky." until then; she withdrew that reason because it
+// was not true of every feature it was attached to (it had not been true of parans or Sky
+// Times), and each feature is to be reviewed in turn. Nothing changed in what is held. A
+// "for now" variant, for Discovery's frame menu, went in the same change: one sentence
+// everywhere.
+const SKY_HELD_WHY = 'Not available on geodetic maps.';
 const SKY_HELD_FIX = 'Switch the line system to Celestial, in Calculation, to use it.';
-// The other reason a held surface can give, kept as a const for the same reason: it
-// is said alone on a row that carries the fix elsewhere, and with the fix beside it on a
-// tip or a note that has room — so the joined form below is built, never retyped. (A
-// second, the parans' own geodetic sentence, went on 2026-11-16 with the parans' hold.)
-const SKY_HELD_FOR_NOW = 'Not available on geodetic maps for now.';
 
 export const settings = {
   sections: {
@@ -484,21 +486,14 @@ export const settings = {
     geodeticHeld:
       'Geodetic is under review while we check how it draws — we would rather hold it than draw a map we cannot stand behind. Your choice is kept, not cleared; check back soon.',
     // The SKY hold (lib/skyHold): a third hold beside the sidereal mask and the review
-    // hold above, and unlike them a property of the mapping itself — anything that
-    // reads the sky's turning has nothing to read on a geodetic map. skyHeld is the
-    // whole sentence, skyHeldWhy the compact form, skyHeldFix the half that names the
-    // setting, and skyHeldAction the button that opens it. (2026-10-02)
+    // hold above, and unlike them keyed on the mapping itself. skyHeld is the whole
+    // sentence, skyHeldWhy the compact form (the key's name predates GE-1, when it was a
+    // reason; it is the sentence's first half now), skyHeldFix the half that names the
+    // setting, and skyHeldAction the button that opens it. (2026-10-02; GE-1, 2026-11-17)
     skyHeldWhy: SKY_HELD_WHY,
     skyHeldFix: SKY_HELD_FIX,
     skyHeld: `${SKY_HELD_WHY} ${SKY_HELD_FIX}`,
     skyHeldAction: 'Open Calculation',
-    // For a surface held only because nothing projects it onto a geodetic map YET (a
-    // second sky's frame needs no turning there), where the standard reason would be
-    // untrue. "For now" rather than "currently": that word is the wording of a hold
-    // frozen onto a saved document, and this one is live.
-    skyHeldForNow: SKY_HELD_FOR_NOW,
-    // …and with the fix beside it, built from the two halves (2026-10-02).
-    skyHeldForNowFull: `${SKY_HELD_FOR_NOW} ${SKY_HELD_FIX}`,
     // The angle-frame controls on a geodetic map (the transits pair, the progressed
     // Angles), held at Natal angles. Not the sky sentence: the reason here is not that
     // the map doesn't turn, but that a place's angles are its own.
@@ -768,9 +763,9 @@ export const settings = {
     },
     chartLines: {
       title: 'Eclipse Chart',
-      // NOTE: describes only the wheel ring — the eclipse-time MAP lines are a separate,
-      // off-by-default opt-in layer (see showEclipseMapLines in App.tsx) and aren't
-      // hinted at here.
+      // Describes the wheel ring, which is all it is: the eclipse chart draws no lines or
+      // parans on the map (Lina's PC-14, 17 Nov 2026; the hidden map opt-in was retired
+      // 2026-11-19).
       hint: 'The chart of the eclipse maximum — the sky framed at that instant — added to the chart wheel as a second ring beside the natal chart.',
     },
     isoStep: {

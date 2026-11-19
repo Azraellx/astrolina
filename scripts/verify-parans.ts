@@ -62,7 +62,6 @@ import {
   natalMeridianLng,
   type NatalLineInputs,
 } from '../src/lib/astro/allLines';
-import { fmtDM } from '../src/lib/astro/format';
 import { starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
 import { HYPOTHETICAL_POINTS, hypotheticalPoint } from '../src/lib/minorBodies/hypothetical';
@@ -1198,11 +1197,18 @@ for (const chart of CHARTS) {
   // ── 9. GOLDEN: Lina's acceptance figures ──────────────────────────────────────
   // OUTSIDE AGREEMENT: the figures her ruling of 16 Nov 2026 was checked against, for Jim
   // Lewis (5 Jun 1941 09:30 EDT, Yonkers 40°55′52″N 73°53′56″W), default bodies — the In
-  // Mundo rows, and the SAME rows under In Zodiaco and Geodetic. Read to the arc-minute with
-  // the app's own degree-minute formatter (format.ts fmtDM, rounded to the minute). If these
-  // fail the app disagrees with her figures: report the measured values, don't move the check.
+  // Mundo rows, and the SAME rows under In Zodiaco and Geodetic. Read to the arc-minute,
+  // ROUNDED, as her figures were read. This used the app's own fmtDM until Lina's CH-3 (17 Nov
+  // 2026) made that formatter truncate; her figures are geographic latitudes and longitudes,
+  // which CH-3 does not cover, so the check keeps its own rounding helper rather than move a
+  // golden figure. If these fail the app disagrees with her figures: report the measured
+  // values, don't move the check.
   {
-    const dm = (deg: number, pos: string, neg: string) => `${fmtDM(Math.abs(deg)).replace("'", '′')}${deg >= 0 ? pos : neg}`;
+    const roundDM = (deg: number): string => {
+      const whole = Math.round(Math.abs(deg) * 60);
+      return `${Math.floor(whole / 60)}°${String(whole % 60).padStart(2, '0')}′`;
+    };
+    const dm = (deg: number, pos: string, neg: string) => `${roundDM(deg)}${deg >= 0 ? pos : neg}`;
     const GOLDEN: Array<{ what: string; meridian: [PlanetName, 'MC' | 'IC']; horizon: [PlanetName, 'ASC' | 'DSC']; lat: string; lng?: string }> = [
       { what: 'Jupiter IC × Pluto DS', meridian: ['Jupiter', 'IC'], horizon: ['Pluto', 'DSC'], lat: '43°20′N', lng: '144°20′E' },
       { what: 'Saturn AS × Pluto IC', meridian: ['Pluto', 'IC'], horizon: ['Saturn', 'ASC'], lat: '39°15′N' },

@@ -138,17 +138,33 @@ export function lonRangeText(lonRad: number, range: { lo: number; hi: number }):
 // needed it: the zodiac wheel's own hover readout wants it too, and that wheel is
 // where the dial imports its tip chrome from, so keeping it there would have made
 // the two modules import each other.
+//
+// TRUNCATED to the minute, never rounded (Lina's CH-3, 17 Nov 2026, following CH-2 for
+// positions): speed, latitude, right ascension, declination, azimuth and altitude are
+// cut at the minute wherever they are printed. A negative value loses its seconds the
+// same way, toward zero: −5°52′53″ prints −5°52′. The magnitude is truncated by the
+// same arithmetic as truncZodiac — whole arcseconds after the TRUNC_SNAP_ARCSEC snap,
+// so an exact 14°31′ that float noise left at 14°30′59.9999″ still prints 14°31′ — and
+// the sign goes on afterwards. Rounding used to print the Moon's −5°52′53″ as −5°53′,
+// a figure the body had not reached.
 export function fmtDM(deg: number, signed = false): string {
-  const abs = Math.abs(deg);
-  let d = Math.floor(abs);
-  let m = Math.round((abs - d) * 60);
-  if (m === 60) {
-    m = 0;
-    d += 1;
-  }
-  if (d >= 360 && !signed) d -= 360; // 359°59.6' rounds to 0°00', not 360°00'
+  const wholeMin = Math.floor((Math.abs(deg) * 3600 + TRUNC_SNAP_ARCSEC) / 60);
+  let d = Math.floor(wholeMin / 60);
+  const m = wholeMin % 60;
+  // A 0–360 quantity wraps: only an exact 360° (or the snap just under it) reaches here.
+  if (d >= 360 && !signed) d -= 360;
+  // A value that truncates to zero shows unsigned (no "-0°00'").
   const sign = d === 0 && m === 0 ? '' : deg < 0 ? '-' : signed ? '+' : '';
   return `${sign}${d}°${pad2(m)}'`;
+}
+
+/** A 0–360 bearing (a body's azimuth, a local-space line's) in WHOLE degrees, for the
+ *  surfaces that print no minutes: truncated by fmtDM's rule — the same snap, never
+ *  rounded up into a degree the body has not reached — and wrapped into 0–359. (Lina's
+ *  CH-3, 17 Nov 2026; these rounded until then, so 359.6° printed as 360°.) */
+export function truncBearing(deg: number): number {
+  const whole = Math.floor((((deg % 360) + 360) % 360) + TRUNC_SNAP_ARCSEC / 3600);
+  return whole % 360;
 }
 
 // The six chart angles as static rows, in the display order AS, MC, DS, IC, then

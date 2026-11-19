@@ -81,6 +81,7 @@ import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { planetInk, wheelMotionInk } from '../../lib/themePalette';
 import {
   ANGLE_LABEL,
+  fmtDM,
   planetRank,
   truncZodiac,
   visibleAngleSpecs,
@@ -116,19 +117,10 @@ function decClass(decRad: number, limitDeg: number): string {
 
 const RAD2DEG = 180 / Math.PI;
 
-// Degrees → "DD°MM'" (degrees + arcminutes), signed when asked. Used for every
-// numeric column of the Advanced planet table (speed, latitude, RA, declination,
-// azimuth, altitude). Azimuth/RA pass signed=false (they read 0–360).
-function fmtDM(deg: number, signed = false): string {
-  const abs = Math.abs(deg);
-  let d = Math.floor(abs);
-  let m = Math.round((abs - d) * 60);
-  if (m === 60) { m = 0; d += 1; }
-  if (d >= 360 && !signed) d -= 360; // 359°59.6' is "0°00'", not "360°00'"
-  // A value rounding to zero shows unsigned (no "-0°00'").
-  const sign = d === 0 && m === 0 ? '' : deg < 0 ? '-' : signed ? '+' : '';
-  return `${sign}${d}°${pad2(m)}'`;
-}
+// Every numeric column of the Advanced planet table (speed, latitude, RA, declination,
+// azimuth, altitude) prints through format.ts fmtDM: degrees + arcminutes, signed when
+// asked (azimuth/RA pass signed=false, they read 0–360), TRUNCATED to the minute (Lina's
+// CH-3, 17 Nov 2026). This panel kept a private rounding copy until then.
 
 // Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
