@@ -285,8 +285,23 @@ section('§3 plurals — BYTE-IDENTICAL to the resolver before placeholders in f
     });
   }
 
-  const plural = leaves(composeEnglish()).filter(([, s]) => /(?:plural|selectordinal),/.test(s));
+  const allPlural = leaves(composeEnglish()).filter(([, s]) => /(?:plural|selectordinal),/.test(s));
   const NS = [...Array.from({ length: 31 }, (_, i) => i), 101, 111, 1000];
+  // The old resolver's DOMAIN: a template whose plural blocks it could read at all. It could
+  // not read a placeholder inside a form ({count, plural, one {{held} needs …} …}) — its
+  // pattern allows one level of braces — and left such a block as the raw template, which is
+  // the very gap the new resolver closed. Comparing the two on those strings asks the new
+  // resolver to reproduce the old bug, so they are checked on their own below instead. This
+  // section went red on 2026-10-20 for exactly that reason, when chartSwitcher.sky.hintMasks
+  // became the first English string of the kind; the app's wording was right and the check
+  // was out of date (Lina asked which, 20 Nov 2026).
+  const oldReads = (s: string) => {
+    const v: TVars = {};
+    for (const m of s.matchAll(/\{(\w+)[,}]/g)) v[m[1]] = 1;
+    return !/(?:plural|selectordinal),/.test(oldApplyPlurals(s, 'en', v));
+  };
+  const plural = allPlural.filter(([, s]) => oldReads(s));
+  const beyondOld = allPlural.filter(([, s]) => !oldReads(s));
   const cases = plural.flatMap(([key, s]) => {
     const vars: TVars = {};
     // Every `{name}` the template mentions gets a value, so interpolation is compared too.
@@ -305,6 +320,41 @@ section('§3 plurals — BYTE-IDENTICAL to the resolver before placeholders in f
       return got === want ? null : `${key} n=${n}: got "${got}", want "${want}"`;
     });
   }
+  check(
+    'the old resolver could read most English plurals, so the comparison above is not vacuous',
+    plural.length > 0 && plural.length > beyondOld.length,
+    `${plural.length} compared, ${beyondOld.length} beyond the old resolver`,
+  );
+  // The strings beyond the old resolver: every one resolves fully — no plural block, brace or
+  // selector left — in every rule set above, each placeholder in the chosen form filled, and
+  // the English singular and plural forms are different sentences.
+  for (const lang of ['en', 'ru', 'tr', 'de']) {
+    every(`every English plural with a placeholder in a form resolves fully under '${lang}' rules`, beyondOld.flatMap(([key, s]) => {
+      const vars: TVars = {};
+      for (const m of s.matchAll(/\{(\w+)[,}]/g)) vars[m[1]] = `«${m[1]}»`;
+      const counted = [...s.matchAll(/\{(\w+),\s*(?:plural|selectordinal)/g)].map((m) => m[1]);
+      return NS.map((n) => {
+        const v = { ...vars };
+        for (const name of counted) v[name] = n;
+        return { key, s, v, n };
+      });
+    }), ({ key, s, v, n }) => {
+      const got = interpolate(applyPlurals(s, lang, v), v);
+      const ok = got.length > 0 && !/[{}]/.test(got) && !/(?:plural|selectordinal),/.test(got) && got.includes('«');
+      return ok ? null : `${key} n=${n}: "${got}"`;
+    });
+  }
+  every('each such English plural says something different for one and for several', beyondOld, ([key, s]) => {
+    const vars: TVars = {};
+    for (const m of s.matchAll(/\{(\w+)[,}]/g)) vars[m[1]] = `«${m[1]}»`;
+    const counted = [...s.matchAll(/\{(\w+),\s*(?:plural|selectordinal)/g)].map((m) => m[1]);
+    const at = (n: number) => {
+      const v = { ...vars };
+      for (const name of counted) v[name] = n;
+      return interpolate(applyPlurals(s, 'en', v), v);
+    };
+    return at(1) !== at(2) ? null : `${key}: "${at(1)}" for both`;
+  });
   check('no vars leaves a plural template untouched', applyPlurals(plural[0]?.[1] ?? 'x', 'en') === (plural[0]?.[1] ?? 'y'));
 
   // What the new pattern adds.
