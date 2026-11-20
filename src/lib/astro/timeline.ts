@@ -26,8 +26,6 @@ import {
   raDecToEclipticLon,
   shiftEclipticLongitude,
   shiftMinorEclipticLongitude,
-  shiftMinorRightAscension,
-  shiftRightAscension,
   solarDailyMotionLong,
   solarDailyMotionRA,
   type CoordSystem,
@@ -291,10 +289,11 @@ export type AuxFamily = 'aspect' | 'midpoint' | 'paran' | 'star';
 // PARANS are not drawn for ANY time overlay (2026-10-06, Salvatore). Parans are read
 // from a chart: the natal one (which stays on the map beside an overlay), a synastry
 // partner's, an eclipse's. Of the time overlays, none has a paran reading of its own:
-//   · Primary directions, and solar arc applied in right ascension (true or Naibod),
-//     turn the natal set rigidly in RA — every RA gap and declination is kept, so
-//     every paran latitude is the NATAL one, exactly (all 410 rows of a test chart
-//     on their natal twins to 0.000°). Drawn beside the chart's, each row twice.
+//   · Primary directions turn the natal set rigidly in RA — every RA gap and
+//     declination is kept, so every paran latitude is the NATAL one, exactly (all 410
+//     rows of a test chart on their natal twins to 0.000°). Drawn beside the chart's,
+//     each row twice. (Solar arc in RA did the same until 2026-11-20; since Lina's
+//     SA-1 it moves the bodies in longitude like every Solar Arc option.)
 //   · A transit sky's parans are that day's sky, the same for everyone on Earth;
 //     what an astrologer times with parans is a transit angular WITH a natal body,
 //     which these are not. Progressed and longitude-directed sets have no
@@ -346,6 +345,14 @@ export type AngleProgression =
  *  It stays in AngleProgression above, which is the value the overlay builder and every
  *  downstream consumer read: what changed is which UI can produce it, not what it means. */
 export type ArcMethod = Exclude<AngleProgression, 'mean-quotidian'>;
+
+/** The Solar Arc overlay's three options (Lina's SA-2, 19 Nov 2026). Naibod has one form
+ *  here: under SA-1 every option moves the bodies in longitude and differs only in the
+ *  arc's SIZE, and a yearly mean is the same number on either measure, so 'naibod-ra'
+ *  gave exactly the wheel and the lines 'naibod-long' gives. It stays on the progressed
+ *  Angles control (ArcMethod), where the RAMC advance makes the two genuinely differ. */
+export type SolarArcMethod = Exclude<ArcMethod, 'naibod-ra'>;
+export const SOLAR_ARC_METHODS: readonly SolarArcMethod[] = ['sa-long', 'sa-ra', 'naibod-long'];
 
 /** Whether a progressed overlay's ANGLES advance, or hold the birth chart's. The
  *  calculation (ArcMethod) only comes into it once they do. */
@@ -480,13 +487,14 @@ export interface OverlayLayer {
   /** Directed-overlay angle inference. Solar-arc / progressed have no
    *  relocatable "second moment": their bi-wheel angle marks are the NATAL angles advanced
    *  by the directional arc. `angleArc` is that arc (radians); `angleFrame` is how it
-   *  advances the angles — 'long' adds it to each angle's ecliptic longitude (solar-arc-in-
-   *  longitude); 'ramc' advances the RAMC by the arc and re-derives MC/ASC (the classical
-   *  meridian operation — see ephemeris.directedAngles). Absent for transits / synastry,
+   *  advances the angles — 'shift' adds it to every angle and cusp in longitude (Solar Arc,
+   *  every option: Lina's SA-1); 'long' advances the MC's longitude and re-derives the rest
+   *  from its RAMC, 'ramc' advances the RAMC by the arc and re-derives MC/ASC (the
+   *  progressed overlays — see ephemeris.directedAngles). Absent for transits / synastry,
    *  whose overlay angles come straight from relocate() at the target moment, and for
    *  primary directions, which has no chart of its own to mark (CHARTLESS_OVERLAYS). */
   angleArc?: number;
-  angleFrame?: 'long' | 'ramc';
+  angleFrame?: 'shift' | 'long' | 'ramc';
   /** The moment whose relocated angles seed the bi-wheel's overlay ring (defaults to
    *  `jd`). The progressed overlay sets it to the BIRTH moment: its angle methods direct
    *  the NATAL angles (matching the map frame's RAMC treatment — the default holds them),
@@ -501,22 +509,23 @@ export interface OverlayLayer {
 
 /**
  * How an overlay layer's bodies were placed, as a rule another family of bodies can
- * follow. Four, because every overlay mode reduces to one of them:
+ * follow. Three, because every overlay mode reduces to one of them:
  *  - `sample`: the sky at one instant — transits and eclipses (the target), the
  *    progressed overlays (their progressed instant), synastry (the partner's moment),
  *    Cyclo's transiting side (the target), and primary directions (the BIRTH moment:
  *    the natal sky itself, which the layer's advanced frame turns);
  *  - `shift-long`: the birth sky directed by one arc in ecliptic longitude, at `eps`
- *    (solar arc and Naibod in longitude);
- *  - `shift-ra`: the birth sky directed by one arc in right ascension (solar arc and
- *    Naibod in RA);
+ *    (Solar Arc, every option — the option sizes the arc, never the direction);
  *  - `composite`: a composite partner's midpoints.
- * `baseJd` is the birth moment the directed rules shift FROM.
+ * `baseJd` is the birth moment the directed rule shifts FROM.
+ *
+ * (`shift-ra`, the birth sky turned by one arc in right ascension, was retired
+ * 2026-11-20 with the RA body turn it described: Lina's SA-1 moves every Solar Arc
+ * option's bodies in longitude, and nothing else produced it.)
  */
 export type OverlayBodyRule =
   | { by: 'sample'; jd: number }
   | { by: 'shift-long'; baseJd: number; arc: number; eps: number }
-  | { by: 'shift-ra'; baseJd: number; arc: number }
   | { by: 'composite'; parents: CompositeParents };
 
 const TROPICAL_YEAR_DAYS = 365.2422;
@@ -686,24 +695,30 @@ function directionContext(chart: StoredChart, targetDate: number, nodeType: Node
 // instead of restating it. A restated switch is the failure this prevents: it agrees
 // on the day it is written and nothing checks it afterwards.
 
-/** How a solar-arc method sources its arc, and the coordinate it is applied in. */
-export type SolarArcChoice = { source: 'true' | 'naibod'; frame: 'long' | 'ra' };
+/** How a Solar Arc option sizes its arc: the true arc (the progressed Sun's travel) or
+ *  Naibod's mean rate, and — for the true arc — which measure that travel is taken in.
+ *
+ *  Only the SIZE. Under every option the arc is then added to every body, angle and cusp
+ *  in ecliptic longitude, keeping each body's natal latitude (Lina's SA-1, 19 Nov 2026:
+ *  "the Arc option decides only how large the arc is"). Until 2026-11-20 the RA options
+ *  also turned the bodies in right ascension; there is no `frame` here any more, so no
+ *  consumer can reintroduce that by switching on it. */
+export type SolarArcChoice = { source: 'true' | 'naibod'; measure: 'long' | 'ra' };
 
 /** Mean Quotidian ("Natal Frame") has no native solar-arc form, so it falls back to
- *  SA in longitude — which makes those two options produce identical directed BODIES,
- *  differing only in how the frame itself is drawn. */
+ *  SA in longitude. 'naibod-ra' is withdrawn from the Solar Arc menu (SA-2) and reads as
+ *  Naibod: a yearly mean is the same number on either measure. */
 export function solarArcChoice(angleProgression: AngleProgression): SolarArcChoice {
   switch (angleProgression) {
     case 'sa-ra':
-      return { source: 'true', frame: 'ra' };
+      return { source: 'true', measure: 'ra' };
     case 'naibod-long':
-      return { source: 'naibod', frame: 'long' };
     case 'naibod-ra':
-      return { source: 'naibod', frame: 'ra' };
+      return { source: 'naibod', measure: 'long' };
     case 'sa-long':
     case 'mean-quotidian':
     default:
-      return { source: 'true', frame: 'long' };
+      return { source: 'true', measure: 'long' };
   }
 }
 
@@ -712,7 +727,7 @@ export function solarArcAt(base: DirectedBase, choice: SolarArcChoice, jd: numbe
   if (choice.source === 'naibod') {
     return (base.yearsAt(jd) * NAIBOD_DEG_PER_YR * Math.PI) / 180;
   }
-  return choice.frame === 'ra' ? base.arcRAAt(jd) : base.arcLongAt(jd);
+  return choice.measure === 'ra' ? base.arcRAAt(jd) : base.arcLongAt(jd);
 }
 
 /** A primary-direction time-key. `trueArcRA` marks the one nonlinear rate (the real
@@ -886,21 +901,19 @@ export function buildOverlay(
     }
     case 'solar-arc': {
       const c = directionContext(chart, targetDate, nodeType);
-      // Every natal body is advanced by the arc (and, via the natal gmst, the
-      // angles too), so directed MC = natal MC + arc. The method picks the arc's
-      // source (true solar arc vs Naibod's mean rate) and frame (longitude vs RA).
-      // Mean Quotidian has no native solar-arc form → falls back to SA in longitude.
+      // The Solar Arc wheel is the natal wheel plus one arc (Lina's SA-1, 19 Nov 2026).
+      // The option picks only the arc's SIZE — the progressed Sun's travel measured along
+      // the ecliptic or along the equator, or Naibod's mean rate — and then every body,
+      // angle and house cusp advances by that one number in ecliptic longitude. Bodies
+      // keep their natal latitude (shiftLonCoords); the angles and cusps take the same
+      // arc in ephemeris.directedAngles' 'shift' frame. The map stays drawn against the
+      // natal angles (gmst below), so a directed body's line moves only with the body.
+      //
+      // Until 2026-11-20 the RA options turned the bodies in right ascension instead, and
+      // the wheel's Ascendant and cusps were re-derived from the directed meridian.
       const choice = solarArcChoice(angleProgression);
       const arc = solarArcAt(c, choice, epochMsToJD(targetDate));
-      const frame = choice.frame;
-      // Bodies shift by the arc in `frame`; the bi-wheel angle marks advance by the same
-      // arc — in longitude for 'long', and via RAMC + arc for 'ra' (an angle has no
-      // declination to freeze, so it's re-derived from the advanced RAMC, not RA-shifted;
-      // see ephemeris.directedAngles). directed MC/IC/As/Ds thus move with the planets.
-      const positions =
-        frame === 'ra'
-          ? c.natal.map((p) => shiftRightAscension(p, arc))
-          : c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
+      const positions = c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
       return {
         kind: mode,
         moment,
@@ -913,13 +926,10 @@ export function buildOverlay(
         positions,
         gmst: c.natalGMST,
         angleArc: arc,
-        angleFrame: frame === 'ra' ? 'ramc' : 'long',
+        angleFrame: 'shift',
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
-        bodyRule:
-          frame === 'ra'
-            ? { by: 'shift-ra', baseJd: c.birthJD, arc }
-            : { by: 'shift-long', baseJd: c.birthJD, arc, eps: c.eps },
+        bodyRule: { by: 'shift-long', baseJd: c.birthJD, arc, eps: c.eps },
       };
     }
     case 'primary-directions': {
@@ -1214,8 +1224,8 @@ export interface NatalMinorSamples {
  *
  * - `sample`: one sample per body at the rule's instant, without the station bracket —
  *   the overlay ring shows no station for the planets either (toEclipticPositions).
- * - `shift-long` / `shift-ra`: the natal sample directed by the planets' own helpers
- *   (shiftMinorEclipticLongitude / shiftMinorRightAscension). Only coordinates of record
+ * - `shift-long`: the natal sample directed by the planets' own helper
+ *   (shiftMinorEclipticLongitude). Only coordinates of record
  *   go in — a direct sample's lon/lat are derived and stay behind, exactly as the
  *   planets' natal positions carry none — so a catalog body and a planet at one ra/dec
  *   are directed to one place. `natal` is reused only when it was taken at the rule's
@@ -1239,13 +1249,10 @@ export function overlayMinorSamples(
       return getMinorSamples(rule.jd, numbers).map((s) => ({ ...s, ofRecord: false }));
     case 'composite':
       return compositeMinorSamples(rule.parents, numbers);
-    case 'shift-long':
-    case 'shift-ra': {
+    case 'shift-long': {
       const base = natal && natal.jd === rule.baseJd ? natal.samples : getMinorSamples(rule.baseJd, numbers);
       const want = new Set(numbers);
-      // The obliquity the planets' directed ring is read back at: toEclipticPositions at
-      // the layer's jd, which for every directed mode is the birth moment.
-      const eps = rule.by === 'shift-long' ? rule.eps : obliquity(rule.baseJd);
+      const eps = rule.eps;
       const out: OverlayMinorSample[] = [];
       for (const s of base) {
         if (!want.has(s.n)) continue;
@@ -1253,10 +1260,7 @@ export function overlayMinorSamples(
           'ofRecord' in s && s.ofRecord
             ? { n: s.n, ra: s.ra, dec: s.dec, lon: s.lon, lat: s.lat }
             : { n: s.n, ra: s.ra, dec: s.dec };
-        const d =
-          rule.by === 'shift-long'
-            ? shiftMinorEclipticLongitude(from, rule.arc, rule.eps)
-            : shiftMinorRightAscension(from, rule.arc);
+        const d = shiftMinorEclipticLongitude(from, rule.arc, eps);
         out.push({
           n: s.n,
           ra: d.ra,

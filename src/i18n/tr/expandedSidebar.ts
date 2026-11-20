@@ -104,6 +104,7 @@ export const expandedSidebar = {
       'sa-ra': 'Solar ark, sağ açıklık',
       'naibod-long': 'Naibod, boylam',
       'naibod-ra': 'Naibod, sağ açıklık',
+      naibod: 'Naibod',
     },
   },
   tzUncertain: 'Saat dilimi belirsiz',

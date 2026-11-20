@@ -104,6 +104,7 @@ export const expandedSidebar = {
       'sa-ra': 'Sonnenbogen, RA',
       'naibod-long': 'Naibod, Länge',
       'naibod-ra': 'Naibod, RA',
+      naibod: 'Naibod',
     },
   },
   tzUncertain: 'Zeitzone unsicher',

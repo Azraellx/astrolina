@@ -380,13 +380,13 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, tasa media — en longitud',
       angles: 'Hace avanzar los ángulos a la tasa media del Sol durante el intervalo propio de esta capa, midiendo a lo largo de la eclíptica.',
-      bodies: 'Hace avanzar cada cuerpo al ritmo del movimiento anual medio del Sol, medido a lo largo de la eclíptica.',
+      bodies: 'Hace avanzar cada cuerpo al ritmo del movimiento anual medio del Sol, 59′08″ por año. Un promedio de todo un año es el mismo a lo largo del zodiaco y del ecuador, por eso Naibod tiene aquí una sola forma.',
     },
     'naibod-ra': {
       label: 'Naibod, tasa media — en ascensión recta',
       angles: 'Hace avanzar los ángulos a la tasa media del Sol durante el intervalo propio de esta capa, midiendo a lo largo del ecuador.',
-      bodies: 'Hace avanzar cada cuerpo al ritmo del movimiento anual medio del Sol, medido a lo largo del ecuador.',
     },
+    naibodOneForm: 'Naibod — tasa media',
     headerAngles: 'Cuánto avanzan los ángulos',
     headerBodies: 'Cuánto avanzan los cuerpos',
   },

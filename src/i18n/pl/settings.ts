@@ -380,13 +380,13 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, tempo średnie — w długości',
       angles: 'Przesuwa kąty w średnim tempie Słońca przez własny przedział tej nakładki, mierzony wzdłuż ekliptyki.',
-      bodies: 'Przesuwa każde ciało o średni roczny ruch Słońca, mierzony wzdłuż ekliptyki.',
+      bodies: 'Przesuwa każde ciało o średni roczny ruch Słońca, 59′08″ na rok. Średnia z całego roku jest taka sama wzdłuż zodiaku i równika, dlatego Naibod ma tu jedną postać.',
     },
     'naibod-ra': {
       label: 'Naibod, tempo średnie — w rektascensji',
       angles: 'Przesuwa kąty w średnim tempie Słońca przez własny przedział tej nakładki, mierzony wzdłuż równika.',
-      bodies: 'Przesuwa każde ciało o średni roczny ruch Słońca, mierzony wzdłuż równika.',
     },
+    naibodOneForm: 'Naibod — tempo średnie',
     headerAngles: 'O ile przesuwają się kąty',
     headerBodies: 'O ile przesuwają się ciała',
   },

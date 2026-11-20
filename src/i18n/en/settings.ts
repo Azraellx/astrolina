@@ -631,13 +631,18 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, mean rate — in longitude',
       angles: 'Advances the angles at the Sun’s mean rate over this overlay’s own interval, measured along the ecliptic.',
-      bodies: 'Advances every body at the Sun’s average yearly motion, measured along the ecliptic.',
+      // The Solar Arc menu's Naibod entry, whose label is `naibodOneForm` below: Naibod has one
+      // form there (Lina's SA-2, 19 Nov 2026), so this hint says why there is no second one.
+      // Her wording. @i18n-verbatim
+      bodies: 'Advances every body at the Sun’s average yearly motion, 59′08″ a year. An average over a whole year is the same along the zodiac and the equator, so Naibod has one form here.',
     },
     'naibod-ra': {
       label: 'Naibod, mean rate — in right ascension',
       angles: 'Advances the angles at the Sun’s mean rate over this overlay’s own interval, measured along the equator.',
-      bodies: 'Advances every body at the Sun’s average yearly motion, measured along the equator.',
     },
+    // The Solar Arc menu's label for Naibod, which has one form there (Lina's SA-2): the
+    // progressed Angles menu keeps the two labels above. Her wording. @i18n-verbatim
+    naibodOneForm: 'Naibod — mean rate',
     // Menu headers — the question the four entries answer, which differs by overlay and
     // is the whole reason these are two controls now.
     headerAngles: 'How far the angles advance',

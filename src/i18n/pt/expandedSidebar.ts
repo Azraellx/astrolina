@@ -104,6 +104,7 @@ export const expandedSidebar = {
       'sa-ra': 'Arco solar, A.R.',
       'naibod-long': 'Naibod, Long.',
       'naibod-ra': 'Naibod, A.R.',
+      naibod: 'Naibod',
     },
   },
   tzUncertain: 'Fuso horário incerto',

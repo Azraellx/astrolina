@@ -268,6 +268,7 @@ import {
   TIMELESS_GEODETIC_OVERLAYS,
   type AngleProgression,
   type ArcMethod,
+  type SolarArcMethod,
   type ProgAngleFrame,
   type OverlayMinorSample,
   type OverlayMode,
@@ -1880,7 +1881,7 @@ export default function App() {
   // calculation for Solar Arc, and — for the progressed overlays — whether the angles
   // advance at all, plus which calculation they advance by when they do. See
   // overlayPrefs for why they are separate keys and how the old one migrates.
-  const [arcMethod, setArcMethod] = useState<ArcMethod>(() => loadArcMethod());
+  const [arcMethod, setArcMethod] = useState<SolarArcMethod>(() => loadArcMethod());
   const [progAngleFrame, setProgAngleFrame] = useState<ProgAngleFrame>(() =>
     loadProgAngleFrame(),
   );
@@ -6102,7 +6103,9 @@ export default function App() {
   // A place's geodetic angles don't move with time, so a transit, a progression or a
   // partner has no other set to show; the overlay still moves its PLANETS through
   // them. The bi-wheel's outer angle marks then repeat the inner ones, which is the
-  // honest picture rather than a second, sky-turned frame. (2026-10-02)
+  // honest picture rather than a second, sky-turned frame. (2026-10-02) Solar Arc is the one
+  // exception since 2026-11-20: its wheel is the natal wheel plus the arc (Lina's SA-1), so on a
+  // geodetic map it is the place's frame turned by the arc — see its branch below.
   //
   // With no chart in force the sky's layer is the wheel's only chart (wheelIsSky), and its
   // angles are the point's: on a geodetic map the place's frame (`angles`, at J2000 then); on
@@ -6116,6 +6119,17 @@ export default function App() {
       if (!wheelIsSky) return null;
       if (lineSystem === 'geodetic') return angles;
       return activePoint ? relocate(overlayLayer.jd, activePoint.lat, activePoint.lng, effHouseSystem) : null;
+    }
+    // The Solar Arc wheel is the natal wheel plus one arc (Lina's SA-1, 19 Nov 2026): every
+    // angle and cusp is the value the NATAL wheel shows for the place being read — `angles`,
+    // so relocated to the pin, or the place's geodetic frame on a geodetic map — plus the
+    // arc in longitude (directedAngles' 'shift'). On a geodetic map this is the one overlay
+    // whose wheel turns away from the place's frame: her rule names no exception for it, and
+    // Salvatore took it literally (20 Nov 2026). No birth time → no natal angles → none here.
+    if (overlayLayer.kind === 'solar-arc') {
+      return angles
+        ? directedAngles(angles, overlayLayer.jd, 0, 0, effHouseSystem, overlayLayer.angleArc, overlayLayer.angleFrame)
+        : null;
     }
     if (lineSystem === 'geodetic') return angles;
     // The transit wheel is the full transit chart, the moment's own angles at the place, whatever the
@@ -6158,7 +6172,14 @@ export default function App() {
             ? { positions: 'progressed', angles: 'natal' }
             : { positions: 'progressed', angles: 'progressed', calc: { key: progAngleMethod, on: 'angles' } };
       case 'solar-arc':
-        return { positions: 'directed', angles: geo ? 'geodetic' : 'directed', calc: { key: arcMethod, on: 'positions' } };
+        // 'directed' on both line systems: since SA-1 the houses come from the directed angles
+        // (the place's geodetic ones plus the arc on a geodetic map). Naibod's short form is the
+        // one-form "(Naibod)" here (SA-2), not the progressed menu's "(Naibod, Long.)".
+        return {
+          positions: 'directed',
+          angles: 'directed',
+          calc: { key: arcMethod === 'naibod-long' ? 'naibod' : arcMethod, on: 'positions' },
+        };
       case 'synastry':
         // The partner is a second person on the same wheel, not a chart of a moment: no houses line
         // under them, on either line system (H-3); the chart's own carries the geodetic one.

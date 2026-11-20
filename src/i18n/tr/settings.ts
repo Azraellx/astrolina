@@ -380,13 +380,13 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, ortalama hız — boylamda',
       angles: 'Köşeleri, bu katmanın kendi zaman aralığı boyunca Güneş’in ortalama hızıyla ilerletir; ekliptik boyunca ölçülür.',
-      bodies: 'Her gök cismini Güneş’in ortalama yıllık hareketiyle ilerletir; ekliptik boyunca ölçülür.',
+      bodies: 'Her gök cismini Güneş’in ortalama yıllık hareketiyle, yılda 59′08″ ilerletir. Bütün bir yıl üzerinden alınan ortalama zodyak boyunca da ekvator boyunca da aynıdır; bu yüzden Naibod’un burada tek bir biçimi vardır.',
     },
     'naibod-ra': {
       label: 'Naibod, ortalama hız — sağ açıklıkta',
       angles: 'Köşeleri, bu katmanın kendi zaman aralığı boyunca Güneş’in ortalama hızıyla ilerletir; ekvator boyunca ölçülür.',
-      bodies: 'Her gök cismini Güneş’in ortalama yıllık hareketiyle ilerletir; ekvator boyunca ölçülür.',
     },
+    naibodOneForm: 'Naibod — ortalama hız',
     headerAngles: 'Köşeler ne kadar ilerler',
     headerBodies: 'Gök cisimleri ne kadar ilerler',
   },

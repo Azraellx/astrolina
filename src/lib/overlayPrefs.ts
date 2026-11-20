@@ -12,6 +12,7 @@ import type {
   PrimaryRate,
   ProgAngleFrame,
   RelationshipMethod,
+  SolarArcMethod,
   TimeUnit,
   TransitFrame,
 } from './astro/timeline';
@@ -141,12 +142,24 @@ function legacyArcMethod(): ArcMethod | null {
 // of this migration and reach a reader through their stored choice rather than because of
 // it. The DEFAULT path is untouched: an install that never opened the control still holds
 // the natal frame with no arc applied, and draws exactly what it drew before.
-export function loadArcMethod(): ArcMethod {
-  const v = localStorage.getItem(ARC_METHOD_KEY);
-  if (v && (ARC_METHODS as string[]).includes(v)) return v as ArcMethod;
-  return legacyArcMethod() ?? 'sa-long';
+//
+// Solar Arc's own menu has THREE of the four since 2026-11-20 (Lina's SA-2): 'naibod-ra' is
+// withdrawn there and a stored one reads as 'naibod-long'. That is not a new default reaching
+// past stored ones (CLAUDE.md rule 6), and not a masked choice (rule 2): the option no longer
+// exists, and under SA-1 the two drew the identical wheel and lines — a yearly mean is the
+// same number on either measure, and every Solar Arc option now moves the bodies in
+// longitude — so the reader's choice survives exactly, under its one remaining name. The key
+// stays :v1 for that reason. The progressed Angles control (loadProgAngleMethod) keeps all four.
+function asSolarArcMethod(m: ArcMethod): SolarArcMethod {
+  return m === 'naibod-ra' ? 'naibod-long' : m;
 }
-export function saveArcMethod(m: ArcMethod) {
+export function loadArcMethod(): SolarArcMethod {
+  const v = localStorage.getItem(ARC_METHOD_KEY);
+  if (v && (ARC_METHODS as string[]).includes(v)) return asSolarArcMethod(v as ArcMethod);
+  const legacy = legacyArcMethod();
+  return legacy ? asSolarArcMethod(legacy) : 'sa-long';
+}
+export function saveArcMethod(m: SolarArcMethod) {
   localStorage.setItem(ARC_METHOD_KEY, m);
 }
 

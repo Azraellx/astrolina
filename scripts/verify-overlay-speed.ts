@@ -73,7 +73,7 @@ const eps = obliquity(JD);
 const arc = (30 * Math.PI) / 180;
 const inRa = sampled.map((p) => shiftRightAscension(p, arc));
 const inLon = sampled.map((p) => shiftEclipticLongitude(p, arc, eps));
-check('solar arc (in RA) carries no speed',
+check('an RA shift (the primaries mover) carries no speed',
   inRa.every((p) => p.speed == null));
 check('solar arc (in longitude) carries no speed', inLon.every((p) => p.speed == null));
 check('…and so their table cells stay empty',
@@ -101,17 +101,16 @@ check('…and still moved every body',
   mRa.every((p, i) => Math.abs(p.ra - asLines[i].ra) > 1e-9) &&
     mLon.every((p, i) => Math.abs(p.ra - asLines[i].ra) > 1e-9));
 const natalMinor = { jd: JD, samples: minors };
-const directed = [
-  ...overlayMinorSamples({ by: 'shift-ra', baseJd: JD, arc }, [1, 5145], natalMinor),
-  ...overlayMinorSamples({ by: 'shift-long', baseJd: JD, arc, eps }, [1, 5145], natalMinor),
-];
+// One directed rule since 2026-11-20 (Lina's SA-1: every Solar Arc option moves the bodies in
+// longitude); the RA twin above is still the helper the Activations primaries mover uses.
+const directed = overlayMinorSamples({ by: 'shift-long', baseJd: JD, arc, eps }, [1, 5145], natalMinor);
 const t = ((key: string) => key) as unknown as TFn;
 const wheel = buildWheelMinor(directed, {
   ayan: 0, decor: () => ({ name: '', color: '#000', icon: 'i' }), t, list: [{ n: 1 }, { n: 5145 }],
 });
 check('directed overlay samples carry no speed, and the wheel built from them prints none (no ℞ either)',
-  directed.length === 4 && directed.every((s) => !('speed' in s)) &&
-    wheel.length === 4 && wheel.every((w) => w.speed === undefined && w.retrograde === undefined),
+  directed.length === 2 && directed.every((s) => !('speed' in s)) &&
+    wheel.length === 2 && wheel.every((w) => w.speed === undefined && w.retrograde === undefined),
   `${directed.length} directed, ${wheel.length} on the wheel`);
 const [ovCeres] = overlayMinorSamples({ by: 'sample', jd: JD }, [1], null);
 const ceres = sampled.find((p) => p.name === 'Ceres');

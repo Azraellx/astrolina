@@ -2799,7 +2799,6 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
     { label: 'solar arc in longitude', mode: 'solar-arc', ap: 'sa-long' },
     { label: 'solar arc in RA', mode: 'solar-arc', ap: 'sa-ra' },
     { label: 'Naibod in longitude', mode: 'solar-arc', ap: 'naibod-long' },
-    { label: 'Naibod in RA', mode: 'solar-arc', ap: 'naibod-ra' },
     { label: 'primary directions, Ptolemy', mode: 'primary-directions' },
     { label: 'primary directions, true arc in RA', mode: 'primary-directions', rate: 'placidus-ra' },
     { label: 'Cyclo', mode: 'cyclo' },
@@ -2989,14 +2988,12 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
       const layer = layers.find(([x]) => x === c)?.[1];
       const sunDir = layer?.positions.find((p) => p.name === 'Sun');
       const rule = layer?.bodyRule;
-      if (!layer || !sunDir || !sunNatal || !rule || (rule.by !== 'shift-long' && rule.by !== 'shift-ra')) {
-        firstBad ||= `${c.label}: no directed layer (rule ${rule?.by})`;
+      // Every Solar Arc option directs in longitude since 2026-11-20 (Lina's SA-1).
+      if (!layer || !sunDir || !sunNatal || !rule || rule.by !== 'shift-long') {
+        firstBad ||= `${c.label}: no longitude-directed layer (rule ${rule?.by})`;
         continue;
       }
-      const inLon = rule.by === 'shift-long';
-      const dSun = inLon
-        ? wrapPi(raDecToEclipticLon(sunDir.ra, sunDir.dec, eps) - raDecToEclipticLon(sunNatal.ra, sunNatal.dec, eps))
-        : wrapPi(sunDir.ra - sunNatal.ra);
+      const dSun = wrapPi(raDecToEclipticLon(sunDir.ra, sunDir.dec, eps) - raDecToEclipticLon(sunNatal.ra, sunNatal.dec, eps));
       const dir = overlayMinorSamples(rule, ns, natal);
       // The fallback: no natal samples in hand, the same answer from a fresh sample.
       const fresh = overlayMinorSamples(rule, ns, null);
@@ -3005,21 +3002,17 @@ const deg360 = (d: number) => ((d % 360) + 360) % 360;
       if (dir.length !== natal.samples.length) firstBad ||= `${c.label}: ${dir.length} directed of ${natal.samples.length}`;
       for (const d of dir) {
         const s = natal.samples.find((x) => x.n === d.n)!;
-        const dBody = inLon
-          ? wrapPi(raDecToEclipticLon(d.ra, d.dec, eps) - raDecToEclipticLon(s.ra, s.dec, eps))
-          : wrapPi(d.ra - s.ra);
-        const kept = inLon
-          ? Math.abs(raDecToEclipticLat(d.ra, d.dec, eps) - raDecToEclipticLat(s.ra, s.dec, eps))
-          : Math.abs(d.dec - s.dec);
+        const dBody = wrapPi(raDecToEclipticLon(d.ra, d.dec, eps) - raDecToEclipticLon(s.ra, s.dec, eps));
+        const kept = Math.abs(raDecToEclipticLat(d.ra, d.dec, eps) - raDecToEclipticLat(s.ra, s.dec, eps));
         worst = Math.max(worst, Math.abs(dBody - dSun), kept);
         if (!(Math.abs(dBody - dSun) < 1e-11 && kept < 1e-11 && d.speed === undefined && !('speed' in d) && d.ofRecord === false)) {
-          firstBad ||= `${c.label} ${d.n}: Δ ${dBody} vs the Sun's ${dSun}, ${inLon ? 'latitude' : 'declination'} moved ${kept}, speed ${d.speed}, ofRecord ${d.ofRecord}`;
+          firstBad ||= `${c.label} ${d.n}: Δ ${dBody} vs the Sun's ${dSun}, latitude moved ${kept}, speed ${d.speed}, ofRecord ${d.ofRecord}`;
         } else compared += 1;
       }
     }
     const want = DIRECTED.length * ns.length;
-    check(`12c ${DIRECTED.length} directed overlays × ${ns.length} bodies: each moves by the directed Sun's own Δλ (in longitude) or ΔRA (in RA), keeps its latitude or declination, and has no speed`,
-      !firstBad && compared === want && DIRECTED.length === 4, firstBad || `${compared} of ${want}; worst ${worst.toExponential(2)} rad`);
+    check(`12c ${DIRECTED.length} directed overlays × ${ns.length} bodies: each moves by the directed Sun's own Δλ, keeps its latitude, and has no speed`,
+      !firstBad && compared === want && DIRECTED.length === 3, firstBad || `${compared} of ${want}; worst ${worst.toExponential(2)} rad`);
 
     // Primary directions (2026-11-10). The layer is the natal sky on a frame advanced by the
     // arc, so a catalog body is not directed: its rule samples the BIRTH moment, and the frame

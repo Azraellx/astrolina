@@ -21,6 +21,7 @@ import type {
 import type {
   ArcMethod,
   PrimaryRate,
+  SolarArcMethod,
 } from '../lib/astro/timeline';
 import type { LineType } from '../lib/astro/lines';
 import type { Theme } from '../lib/theme';
@@ -70,7 +71,10 @@ export function makeEnumLabels(t: TFn) {
     // the arc is being applied TO — the angles (progressions) or every body (Solar Arc).
     arcMethod: (a: ArcMethod) => t(`settings.arcMethod.${a}.label`),
     arcMethodAnglesHint: (a: ArcMethod) => t(`settings.arcMethod.${a}.angles`),
-    arcMethodBodiesHint: (a: ArcMethod) => t(`settings.arcMethod.${a}.bodies`),
+    // Solar Arc's own menu (SolarArcMethod): three entries, Naibod in its one form (SA-2).
+    solarArcMethod: (a: SolarArcMethod) =>
+      a === 'naibod-long' ? t('settings.arcMethod.naibodOneForm') : t(`settings.arcMethod.${a}.label`),
+    arcMethodBodiesHint: (a: SolarArcMethod) => t(`settings.arcMethod.${a}.bodies`),
 
     lineTypeHint: (lt: LineType) => t(`settings.lineType.${lt}.hint`),
   };

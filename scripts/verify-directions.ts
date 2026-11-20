@@ -8,8 +8,9 @@
 // via the harness: `npm run verify:directions`): progression clocks, solar-arc
 // and primary-direction arcs and frames, transit framing, synastry framing, and
 // the Davison midpoints. Each assertion pins either a textbook identity (the
-// day-for-a-year ratio, solar-arc-in-longitude's directed MC = natal MC + arc, the
-// RAMC+arc directed angles of the solar-arc and progressed bi-wheels, the classical
+// day-for-a-year ratio, the Solar Arc wheel as the natal wheel plus one arc in longitude
+// under every option (§2b, SA-1), the RAMC+arc directed angles of the progressed
+// bi-wheels, the classical
 // arcs of direction) or a deliberate design equivalence (primary directions are the
 // natal sky on a frame advanced by the arc, so every line family the map draws from
 // that layer is the natal one carried west by the arc — and the layer has no wheel
@@ -25,6 +26,7 @@ import {
   initEphemeris,
   obliquity,
   projectOntoEcliptic,
+  raDecToEclipticLat,
   raDecToEclipticLon,
   eclipticLonOfRA,
   eclipticToRaDec,
@@ -325,6 +327,58 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   // Age 0 → arc 0 (the directed chart IS the natal chart at birth).
   const sa0 = buildOverlay(CHART, 'solar-arc', jdToEpochMs(birthJD), null, 'mean', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
   check('solar arc at age 0 is 0', Math.abs(sa0.angleArc ?? 0) < 1e-9);
+
+  // ── 2b. The Solar Arc wheel is the natal wheel plus one arc (Lina's SA-1, 19 Nov 2026) ──
+  // Internal identities. Under EVERY option the arc is added in longitude to every body,
+  // angle and cusp; the option sets only its size. Until 2026-11-20 the RA options turned
+  // the bodies in right ascension, and the Ascendant and cusps were re-derived from the
+  // directed meridian under all of them.
+  const natalLon = (p: PlanetPosition) => raDecToEclipticLon(p.ra, p.dec, eps);
+  const natalLat = (p: PlanetPosition) => raDecToEclipticLat(p.ra, p.dec, eps);
+  const sizes: Record<string, number> = {};
+  for (const ap of ['sa-long', 'sa-ra', 'naibod-long', 'naibod-ra'] as const) {
+    const L = buildOverlay(CHART, 'solar-arc', target, null, 'mean', ap, 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+    const arc = L.angleArc!;
+    sizes[ap] = arc;
+    let worstLon = 0, worstLat = 0;
+    for (const p of L.positions) {
+      const n = natal.find((q) => q.name === p.name)!;
+      worstLon = Math.max(worstLon, dAng(natalLon(p), natalLon(n) + arc));
+      worstLat = Math.max(worstLat, Math.abs(natalLat(p) - natalLat(n)));
+    }
+    check(`SA-1 ${ap}: every body = natal longitude + arc`, worstLon < 1e-9, `worst ${worstLon.toExponential(2)} rad`);
+    check(`SA-1 ${ap}: every body keeps its natal ecliptic latitude`, worstLat < 1e-9, `worst ${worstLat.toExponential(2)} rad`);
+    check(`SA-1 ${ap}: the map stays on the natal angles (gmst = natal)`, dAng(L.gmst, natalGmst) < 1e-12);
+    check(`SA-1 ${ap}: one rule for the catalog bodies (shift-long), the 'shift' frame for the wheel`,
+      L.bodyRule.by === 'shift-long' && L.angleFrame === 'shift');
+    for (const sys of ['placidus', 'regiomontanus', 'equal'] as HouseSystem[]) {
+      const b = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, sys);
+      const d = directedAngles(b, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, sys, arc, L.angleFrame);
+      const pts: [string, number, number][] = [
+        ['AS', d.asc, b.asc], ['MC', d.mc, b.mc], ['DS', d.dsc, b.dsc], ['IC', d.ic, b.ic],
+        ['Vx', d.vertex, b.vertex],
+        ...d.cusps.map((c, k): [string, number, number] => [`cusp ${k + 1}`, c, b.cusps[k]]),
+      ];
+      const worst = Math.max(...pts.map(([, x, n]) => dAng(x, n + arc)));
+      check(`SA-1 ${ap}, ${sys}: every angle and all twelve cusps = natal + arc`, worst < 1e-12, `worst ${worst.toExponential(2)} rad`);
+    }
+    // Whole Sign: the houses are signs, anchored on the DIRECTED Ascendant's sign — and they
+    // stay on sign boundaries, which is how WheelSvg recognises Whole Sign at all.
+    const bw = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'whole');
+    const dw = directedAngles(bw, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'whole', arc, L.angleFrame);
+    const signOf = (r: number) => Math.floor((((r * RAD2DEG) % 360) + 360) % 360 / 30);
+    // TRUNCATED to the minute, as every readout prints a degree: a boundary an ulp short of
+    // the sign would print 0° Taurus as 29°59′ Aries, and only a truncating test sees it.
+    const onBoundaries = dw.cusps.every((c, k) => {
+      const deg = (((c * RAD2DEG) % 360) + 360) % 360;
+      return Math.floor(deg * 60) % 1800 === 0 && signOf(c) === (signOf(dw.asc) + k) % 12;
+    });
+    check(`SA-1 ${ap}, Whole Sign: cusp 1 is the directed Ascendant's sign, all twelve on sign boundaries (truncated)`, onBoundaries);
+  }
+  check('SA-1: the RA option sizes the arc by the Sun\'s RA travel, and it differs from the longitude one',
+    dAng(sizes['sa-ra'], sizes['sa-long']) > 1e-3);
+  check('SA-2: the withdrawn naibod-ra draws exactly what Naibod draws',
+    dAng(sizes['naibod-ra'], sizes['naibod-long']) < 1e-15);
 }
 
 // ── 3. Primary directions ─────────────────────────────────────────────────────
@@ -790,6 +844,95 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   check('…and it is 31° from the Solar Fire Ascendant',
     Math.abs(dAng(retired, zod('Ari', 5, 18)) * RAD2DEG - 31.18) < 0.1,
     `${(dAng(retired, zod('Ari', 5, 18)) * RAD2DEG).toFixed(2)}°`);
+}
+
+// ── 8b. External: Lina's Solar Arc figures (SA-1, 19 Nov 2026) ────────────────
+// The same KIND as §8 — agreement with an outside source, not an identity — so breaking
+// here means the code is self-consistent and wrong. Provenance: Lina's instruction of
+// 19 Nov 2026, items SA-1 tests 1–6, her figures worked independently of this code. She
+// truncates minutes, as the app does; the tolerance is 1.5′ around the truncated figure,
+// because two truncations of one value can part by a minute at a boundary (Davis's Mars
+// declination, Lewis's RA-arc MC and Santa Fe's both land on one).
+{
+  const dms = (d: number, m: number, s = 0) => d + m / 60 + s / 3600;
+  const zod = (sign: string, d: number, m: number) =>
+    ((['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis']
+      .indexOf(sign) * 30) + d + m / 60) * DEG2RAD;
+  const TOL = (1.5 / 60) * DEG2RAD;
+  const fmtD = (r: number) => `${(normalizeAngle(r) * RAD2DEG * 60).toFixed(2)}′`;
+  const at = Date.UTC(2026, 10, 11, 0, 0); // 10 Nov 18:00 CST = 19:00 EST = 17:00 MST
+  const DAVIS = stored({
+    name: 'Martin Davis', year: 1937, month: 9, day: 7, hour: 10, minute: 58, tzOffset: -6,
+    birthplace: { label: 'Saint Louis', lat: dms(38, 37, 31), lng: -dms(90, 11, 24) },
+  });
+  const LEWIS = stored({
+    name: 'Jim Lewis', year: 1941, month: 6, day: 5, hour: 9, minute: 30, tzOffset: -4,
+    birthplace: { label: 'Yonkers', lat: dms(40, 55, 52), lng: -dms(73, 53, 56) },
+  });
+  type Want = { as?: number; mc?: number; bodies?: [string, number][]; arcDeg?: number };
+  const run = (
+    label: string, c: StoredChart, place: { lat: number; lng: number }, ap: AngleProgression, want: Want,
+  ) => {
+    const jd = birthDataToJD(c);
+    const e = obliquity(jd);
+    const L = buildOverlay(c, 'solar-arc', at, null, 'true', ap, 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+    const d = directedAngles(relocate(jd, place.lat, place.lng, 'whole'), jd, place.lat, place.lng, 'whole', L.angleArc, L.angleFrame);
+    const near = (name: string, got: number, w: number) =>
+      check(`${label}: ${name}`, dAng(got, w + TOL / 3) < TOL, `Δ ${fmtD(got - w)} from the truncated figure`);
+    if (want.arcDeg !== undefined) {
+      check(`${label}: timeline "Solar Arc ${want.arcDeg.toFixed(1)}°"`, L.measure === `${want.arcDeg.toFixed(1)}°`, `got ${L.measure}`);
+    }
+    if (want.as !== undefined) near('AS', d.asc, want.as);
+    if (want.mc !== undefined) near('MC', d.mc, want.mc);
+    for (const [name, w] of want.bodies ?? []) {
+      const p = L.positions.find((q) => q.name === name)!;
+      near(name, raDecToEclipticLon(p.ra, p.dec, e), w);
+    }
+    return { L, d, e };
+  };
+  // Test 1 — Davis, Solar arc in longitude: Mars with its natal latitude and equatorial place.
+  const t1 = run('Davis, sa-long', DAVIS, DAVIS.birthplace, 'sa-long', {
+    as: zod('Aqu', 17, 20), mc: zod('Sco', 27, 12), bodies: [['Mars', zod('Pis', 14, 20)]],
+  });
+  {
+    const m = t1.L.positions.find((p) => p.name === 'Mars')!;
+    check('Davis, sa-long: Mars latitude −2°35′', Math.abs(raDecToEclipticLat(m.ra, m.dec, t1.e) * RAD2DEG + dms(2, 35, 30)) < 1.5 / 60);
+    check('Davis, sa-long: Mars RA 346°35′', Math.abs((((m.ra * RAD2DEG) % 360) + 360) % 360 - dms(346, 35, 30)) < 1.5 / 60);
+    check('Davis, sa-long: Mars dec −8°33′', Math.abs(m.dec * RAD2DEG + dms(8, 33)) < 1.5 / 60, `${(m.dec * RAD2DEG).toFixed(4)}°`);
+    check('Davis, Whole Sign: the outer ring anchors on Aquarius', Math.abs(t1.d.cusps[0] - zod('Aqu', 0, 0)) < 1e-9);
+  }
+  // Test 2 — Davis, Solar arc in right ascension.
+  run('Davis, sa-ra', DAVIS, DAVIS.birthplace, 'sa-ra', {
+    arcDeg: 86.1, as: zod('Aqu', 14, 43), mc: zod('Sco', 24, 35),
+    bodies: [['Mars', zod('Pis', 11, 43)], ['Sun', zod('Sag', 10, 43)], ['Pluto', zod('Lib', 25, 36)]],
+  });
+  // Test 3 — Davis, Naibod: the bodies as before SA-1, only the angles move.
+  run('Davis, naibod', DAVIS, DAVIS.birthplace, 'naibod-long', {
+    as: zod('Aqu', 16, 32), mc: zod('Sco', 26, 24), bodies: [['Mars', zod('Pis', 13, 32)]],
+  });
+  // Test 5 — Jim Lewis, both true-arc options.
+  run('Lewis, sa-long', LEWIS, LEWIS.birthplace, 'sa-long', { as: zod('Lib', 28, 29), mc: zod('Can', 15, 42) });
+  run('Lewis, sa-ra', LEWIS, LEWIS.birthplace, 'sa-ra', {
+    arcDeg: 84.8, as: zod('Sco', 1, 35), mc: zod('Can', 18, 48),
+    bodies: [['Pluto', zod('Lib', 27, 25)], ['Sun', zod('Vir', 9, 18)]],
+  });
+  // Test 6 — Jim Lewis relocated to Santa Fe: Santa Fe's natal angles plus the arc, not
+  // Yonkers's. Checked as HER directed figure less HER relocated natal figure, against our arc,
+  // because the place is a pin she dropped near 35°N22′ 105°W56′ and the angles move a minute
+  // with a few hundred metres of it; the difference doesn't. Two truncations: 2′.
+  {
+    const arc = buildOverlay(LEWIS, 'solar-arc', at, null, 'true', 'sa-ra', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!.angleArc!;
+    const pairs: [string, number, number][] = [
+      ['AS', zod('Lib', 2, 4), zod('Can', 7, 14)],
+      ['MC', zod('Gem', 14, 6), zod('Pis', 19, 16)],
+    ];
+    for (const [name, dir, nat] of pairs) {
+      check(`Lewis at Santa Fe, sa-ra: her directed ${name} − her natal ${name} = the arc`,
+        dAng(dir - nat, arc) < (2 / 60) * DEG2RAD, `Δ ${fmtD(dir - nat - arc)}`);
+    }
+    // And her Yonkers figures are NOT what Santa Fe reads (the defect test 6 guards).
+    check('Lewis at Santa Fe: the directed MC is not Yonkers\'s', dAng(zod('Gem', 14, 6), zod('Can', 18, 48)) > DEG2RAD);
+  }
 }
 
 // ── 9. The arc-separation bound ───────────────────────────────────────────────

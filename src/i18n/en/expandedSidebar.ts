@@ -226,6 +226,9 @@ export const expandedSidebar = {
       'sa-ra': 'Solar arc, R.A.',
       'naibod-long': 'Naibod, Long.',
       'naibod-ra': 'Naibod, R.A.',
+      // Solar Arc's Naibod, which has one form (Lina's SA-2, 19 Nov 2026): "Directed positions
+      // (Naibod) · houses: …". The progressed angles keep the two forms above.
+      naibod: 'Naibod',
     },
   },
 

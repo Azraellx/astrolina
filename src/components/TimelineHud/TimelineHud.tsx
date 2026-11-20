@@ -14,9 +14,11 @@ import {
 } from 'react';
 import {
   minorStepMs,
+  SOLAR_ARC_METHODS,
   TIME_UNITS,
   type ArcMethod,
   type OverlayMode,
+  type SolarArcMethod,
   type PrimaryRate,
   type ProgAngleFrame,
   type TimeUnit,
@@ -128,10 +130,11 @@ interface TimelineHudProps {
    *
    *  `arcMethod` is Solar Arc's `Arc`: how far the BODIES advance. The progressed pair is
    *  `Angles`: whose angles the map is drawn against, and — only once they advance — the
-   *  calculation they advance by. Same four calculations either side, different question,
+   *  calculation they advance by. Four calculations on the progressed side, three on Solar
+   *  Arc (Naibod has one form there — Lina's SA-2), and a different question either side,
    *  which is why they are no longer one control. */
-  arcMethod: ArcMethod;
-  setArcMethod: (m: ArcMethod) => void;
+  arcMethod: SolarArcMethod;
+  setArcMethod: (m: SolarArcMethod) => void;
   /** The EFFECTIVE frame ('natal' on a geodetic map), so the pair marks what the map
    *  draws; the setter still writes the stored preference, and is never called while
    *  the pair is held. (2026-10-02) */
@@ -171,13 +174,12 @@ const FRAME_VALUES: TransitFrame[] = ['relative-to-natal', 'transit-moment'];
 // were exported back to here, from when the Calculations tab drew them; all three controls
 // are on this bar now and nothing else reads the lists, so they came with them.
 //
-// The two arc lists hold the SAME four calculations in different orders, on purpose: each
-// menu leads with its own overlay's default. A fixed shared order would have to bury one of
-// the two defaults, and leading with a default the reader can't have is the less honest of
-// the two options.
-const ARC_METHOD_VALUES: ArcMethod[] = [
-  'sa-long', 'sa-ra', 'naibod-long', 'naibod-ra',
-];
+// The two arc lists are in different orders, on purpose: each menu leads with its own
+// overlay's default. A fixed shared order would have to bury one of the two defaults, and
+// leading with a default the reader can't have is the less honest of the two options. Solar
+// Arc's has three entries (SOLAR_ARC_METHODS, Lina's SA-2): every option there moves the
+// bodies in longitude and sizes the arc, and a yearly mean is one number on either measure.
+const ARC_METHOD_VALUES = SOLAR_ARC_METHODS;
 const PROG_METHOD_VALUES: ArcMethod[] = [
   'naibod-ra', 'naibod-long', 'sa-ra', 'sa-long',
 ];
@@ -529,7 +531,7 @@ export function TimelineHud({
   // orders, because each leads with its own overlay's default.
   const arcOptions = ARC_METHOD_VALUES.map((value) => ({
     value,
-    label: labels.arcMethod(value),
+    label: labels.solarArcMethod(value),
     hint: labels.arcMethodBodiesHint(value),
   }));
   const progMethodOptions = PROG_METHOD_VALUES.map((value) => ({
@@ -1443,7 +1445,7 @@ export function TimelineHud({
         </div>
       )}
 
-      {/* Solar Arc's ARC: how far the bodies advance. Four calculations, no frame answer
+      {/* Solar Arc's ARC: how far the bodies advance. Three calculations, no frame answer
           among them — Solar Arc is natal-framed by construction, and the "Natal Frame"
           entry this menu used to carry had no distinct solar-arc form, so it produced the
           same map as SA-in-longitude under a different name. */}

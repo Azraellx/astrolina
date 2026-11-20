@@ -380,13 +380,13 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, ritmo médio — em longitude',
       angles: 'Avança os ângulos no ritmo médio do Sol, medido ao longo da eclíptica, durante o intervalo próprio desta sobreposição.',
-      bodies: 'Avança cada corpo no movimento anual médio do Sol, medido ao longo da eclíptica.',
+      bodies: 'Avança cada corpo no movimento anual médio do Sol, 59′08″ por ano. Uma média ao longo de um ano inteiro é a mesma no zodíaco e no equador, por isso o Naibod tem aqui uma só forma.',
     },
     'naibod-ra': {
       label: 'Naibod, ritmo médio — em ascensão reta',
       angles: 'Avança os ângulos no ritmo médio do Sol, medido ao longo do equador, durante o intervalo próprio desta sobreposição.',
-      bodies: 'Avança cada corpo no movimento anual médio do Sol, medido ao longo do equador.',
     },
+    naibodOneForm: 'Naibod — ritmo médio',
     headerAngles: 'Quanto os ângulos avançam',
     headerBodies: 'Quanto os corpos avançam',
   },

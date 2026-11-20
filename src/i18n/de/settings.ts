@@ -380,13 +380,13 @@ export const settings = {
     'naibod-long': {
       label: 'Naibod, mittlere Rate – in Länge',
       angles: 'Rückt die Achsen mit der mittleren Rate der Sonne über das eigene Intervall dieses Overlays vor, gemessen entlang der Ekliptik.',
-      bodies: 'Rückt jeden Himmelskörper mit der durchschnittlichen jährlichen Bewegung der Sonne vor, gemessen entlang der Ekliptik.',
+      bodies: 'Rückt jeden Himmelskörper mit der durchschnittlichen jährlichen Bewegung der Sonne vor, 59′08″ im Jahr. Ein Durchschnitt über ein ganzes Jahr ist entlang des Tierkreises und des Äquators derselbe, deshalb hat Naibod hier nur eine Form.',
     },
     'naibod-ra': {
       label: 'Naibod, mittlere Rate – in Rektaszension',
       angles: 'Rückt die Achsen mit der mittleren Rate der Sonne über das eigene Intervall dieses Overlays vor, gemessen entlang des Äquators.',
-      bodies: 'Rückt jeden Himmelskörper mit der durchschnittlichen jährlichen Bewegung der Sonne vor, gemessen entlang des Äquators.',
     },
+    naibodOneForm: 'Naibod – mittlere Rate',
     headerAngles: 'Wie weit die Achsen vorrücken',
     headerBodies: 'Wie weit die Himmelskörper vorrücken',
   },

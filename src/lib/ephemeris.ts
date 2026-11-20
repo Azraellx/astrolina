@@ -1608,6 +1608,17 @@ export function relocate(
  *     never natal ones arc-shifted. The cusps matter beyond the house spokes: `WheelSvg`
  *     INFERS Whole Sign from them and anchors the wheel on `cusps[0]`, so leaving them
  *     natal drew the whole directed wheel on the natal rising sign.
+ *   - 'shift' (Solar Arc, every option — Lina's SA-1, 19 Nov 2026): every point is the
+ *     `base` point plus the arc in longitude — the four angles, the Vertex pair and the
+ *     twelve cusps alike, so the directed wheel is the natal wheel the reader already
+ *     sees for this place, turned by one arc. Nothing is re-derived from a meridian: a
+ *     Solar Arc chart is a directed chart, read for its contacts with the natal one, not
+ *     as a horizon at a real place — which is exactly where it parts from the two frames
+ *     above, whose angles DO stand for a horizon and a meridian (the progressed overlays,
+ *     whose chart has a moment of its own). Under Whole Sign the houses are signs, so
+ *     they anchor on the directed Ascendant's sign rather than on the arc-shifted natal
+ *     sign boundaries; `WheelSvg` infers Whole Sign from cusps on sign boundaries, so the
+ *     shifted cusps have to stay on them.
  * `arc`/`frame` absent (transits / synastry / Natal-Frame progressed) → `base`.
  * See docs/calculation-methods.md, "Directed-overlay angles".
  */
@@ -1618,9 +1629,31 @@ export function directedAngles(
   lngDeg: number,
   system: HouseSystem,
   arc: number | undefined,
-  frame: 'long' | 'ramc' | undefined,
+  frame: 'shift' | 'long' | 'ramc' | undefined,
 ): RelocatedAngles {
   if (!arc || !frame) return base;
+  if (frame === 'shift') {
+    const asc = norm2pi(base.asc + arc);
+    const mc = norm2pi(base.mc + arc);
+    // Whole-sign cusps built in DEGREES and converted once, exactly as relocate() converts
+    // Swiss's own (h.cusps × DEG2RAD): a boundary assembled from radian multiples of π/6
+    // can land an ulp short of the sign, and a truncating readout then prints 0° Taurus as
+    // 29°59′ Aries.
+    const sign0 = Math.floor(((asc / DEG2RAD) + 1e-9) / 30) * 30;
+    return {
+      ...base,
+      asc,
+      mc,
+      dsc: norm2pi(asc + Math.PI),
+      ic: norm2pi(mc + Math.PI),
+      vertex: norm2pi(base.vertex + arc),
+      antivertex: norm2pi(base.antivertex + arc),
+      cusps:
+        system === 'whole'
+          ? base.cusps.map((_, k) => norm2pi((((sign0 + 30 * k) % 360) * DEG2RAD)))
+          : base.cusps.map((c) => norm2pi(c + arc)),
+    };
+  }
   if (frame === 'long') {
     const mc = norm2pi(base.mc + arc);
     // Advance the MC in longitude, convert THAT to an RAMC, and re-derive every

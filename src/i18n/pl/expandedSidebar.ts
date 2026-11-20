@@ -104,6 +104,7 @@ export const expandedSidebar = {
       'sa-ra': 'Łuk słoneczny, RA',
       'naibod-long': 'Naibod, dł.',
       'naibod-ra': 'Naibod, RA',
+      naibod: 'Naibod',
     },
   },
   tzUncertain: 'Strefa czasowa niepewna',

@@ -104,6 +104,7 @@ export const expandedSidebar = {
       'sa-ra': 'Солнечная дуга, прям. восх.',
       'naibod-long': 'Найбод, долг.',
       'naibod-ra': 'Найбод, прям. восх.',
+      naibod: 'Найбод',
     },
   },
   tzUncertain: 'Часовой пояс под вопросом',
