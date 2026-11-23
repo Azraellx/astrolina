@@ -564,19 +564,19 @@ for (const b of CHARTS) {
     try {
       const h = relocate(jd, 80, lng80, sys);
       finite = [h.asc, h.mc, ...h.cusps].every(Number.isFinite);
-      flagged = !!h.fallback;
+      flagged = !!h.housesBreakDown;
       const ascDeg = (h.asc * RAD2DEG).toFixed(2);
       const mcDeg = (h.mc * RAD2DEG).toFixed(2);
-      outcome = `asc ${ascDeg}° mc ${mcDeg}°${flagged ? ' (porphyry fallback)' : ''}`;
+      outcome = `asc ${ascDeg}° mc ${mcDeg}°${flagged ? ' (houses break down: angles only)' : ''}`;
     } catch (e) {
       outcome = `THROWS: ${(e as Error).message}`;
     }
     console.log(`  polar 80°N RAMC 280° [${sys}] ${outcome}`);
     check(`polar: relocate(80°N, ${sys}) survives with finite angles`, !outcome.startsWith('THROWS') && finite, outcome);
-    // The axial systems are genuinely defined polewards — they must come back
-    // as themselves, never as a flagged Porphyry substitution.
+    // The axial systems are genuinely defined polewards — they must come back with
+    // their twelve cusps, never broken down (WH-1).
     if (sys === 'meridian' || sys === 'morinus') {
-      check(`polar: ${sys} needs no fallback at 80°N`, !outcome.startsWith('THROWS') && !flagged, outcome);
+      check(`polar: ${sys} never breaks down at 80°N`, !outcome.startsWith('THROWS') && !flagged, outcome);
     }
   }
 
@@ -600,25 +600,27 @@ for (const b of CHARTS) {
     }
     check(`Hand table golden: ${sys} cusps 10–3 at 80°N RAMC 280°`, worst < 0.2, `max Δ ${worst.toFixed(4)}°`);
   }
-  // Sweep the whole sidereal day at 80°N under Placidus — the system Swiss
-  // documents as undefined there. Whatever the wrapper does must hold app-wide,
-  // and every fallback must be FLAGGED (the wheel shows a caution from it).
+  // Sweep the whole sidereal day at 80°N under Placidus — the system Swiss documents as
+  // undefined there. It must never crash, and every frame must BREAK DOWN: the angles with
+  // no cusps, flagged (the wheel draws the angles only and says why). No other system's
+  // cusps are ever put in its place (WH-1, 22 Nov 2026; until then they were Porphyry's).
   let throws = 0;
-  let unflagged = 0;
+  let notBroken = 0;
   for (let ramcDeg = 0; ramcDeg < 360; ramcDeg += 15) {
     const lng = normLng((ramcDeg * DEG2RAD - gmst) * RAD2DEG);
     try {
       const h = relocate(jd, 80, lng, 'placidus');
       if (![h.asc, h.mc, ...h.cusps].every(Number.isFinite)) throws += 1;
-      if (!h.fallback) unflagged += 1;
+      if (!h.housesBreakDown || h.cusps.length !== 0) notBroken += 1;
     } catch {
       throws += 1;
     }
   }
   check('polar: Placidus RAMC sweep at 80°N never crashes', throws === 0, `${throws}/24 failures`);
-  check('polar: every Porphyry fallback carries the flag', unflagged === 0, `${unflagged}/24 unflagged`);
-  // ...and a mid-latitude chart must NOT be flagged.
-  check('mid-latitude Placidus is not flagged as fallback', !relocate(jd, 48.4, 9.99, 'placidus').fallback);
+  check('polar: Placidus breaks down at every RAMC at 80°N — angles only, no stand-in cusps', notBroken === 0, `${notBroken}/24 not broken down`);
+  // ...and a mid-latitude chart has its twelve cusps.
+  const mid = relocate(jd, 48.4, 9.99, 'placidus');
+  check('mid-latitude Placidus has its twelve cusps', !mid.housesBreakDown && mid.cusps.length === 12);
 }
 
 // ── Rising and setting lines run south→north, whatever the declination ────────────

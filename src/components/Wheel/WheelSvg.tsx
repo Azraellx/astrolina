@@ -935,6 +935,10 @@ export function WheelSvg({
   // An overlay's catalog bodies belong to its ring, so they are drawn only with one.
   const overlayMinorList = hasOverlay ? (overlayMinorBodies ?? NO_MINOR) : NO_MINOR;
   const wantOverlayMinor = overlayMinorList.length > 0;
+  // No houses to draw: the chosen system breaks down for this chart inside the polar circles
+  // (WH-1, 22 Nov 2026). The wheel keeps its angles and bodies; the geometry drops the house
+  // band and the cusp rim, so neither an empty ring nor a blank zodiac band is left behind.
+  const noHouses = !!angles.housesBreakDown || angles.cusps.length === 0;
   const g = useMemo(
     () =>
       wheelGeometry({
@@ -943,11 +947,12 @@ export function WheelSvg({
         advanced,
         hasOverlay,
         planetsOnly,
+        noHouses,
         readouts,
         minorRing: wantMinorRing,
         overlayMinor: wantOverlayMinor,
       }),
-    [size, detailed, advanced, hasOverlay, planetsOnly, readouts, wantMinorRing, wantOverlayMinor],
+    [size, detailed, advanced, hasOverlay, planetsOnly, noHouses, readouts, wantMinorRing, wantOverlayMinor],
   );
   const {
     cx, cy,

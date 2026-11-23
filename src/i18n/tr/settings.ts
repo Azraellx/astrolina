@@ -292,7 +292,7 @@ export const settings = {
       hint: 'Her çeyrek ekliptik boylamda üçe bölünür',
     },
     alcabitus: {
-      label: 'Alcabitus',
+      label: 'Alcabitius',
       hint: 'Gündüz / gece yayları üzerinde antik yarı yay',
     },
     meridian: {

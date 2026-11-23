@@ -30,6 +30,7 @@ import {
   raDecToEclipticLon,
   eclipticLonOfRA,
   eclipticToRaDec,
+  geodeticFrame,
   relocate,
   trueMidnightsAround,
 } from '../src/lib/ephemeris';
@@ -932,6 +933,125 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
     }
     // And her Yonkers figures are NOT what Santa Fe reads (the defect test 6 guards).
     check('Lewis at Santa Fe: the directed MC is not Yonkers\'s', dAng(zod('Gem', 14, 6), zod('Can', 18, 48)) > DEG2RAD);
+  }
+}
+
+// ── 8c. External: Lina's polar wheel figures (WH-1, 22 Nov 2026) ──────────────
+// The same KIND as §8 and §8b — agreement with an outside source, here Lina's own figures
+// from her instruction of 22 Nov 2026 (WH-1 tests 1–7). Inside the polar circles: ONE
+// Midheaven under every house system — the degree on the upper meridian, even below the
+// horizon — and, where the chosen system breaks down, no cusps at all (`housesBreakDown`),
+// never another system's. Her figures are truncated to the minute; tolerance as in §8b.
+{
+  const dms = (d: number, m: number, s = 0) => d + m / 60 + s / 3600;
+  const zod = (sign: string, d: number, m: number) =>
+    ((['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis']
+      .indexOf(sign) * 30) + d + m / 60) * DEG2RAD;
+  const TOL = (1.5 / 60) * DEG2RAD;
+  const near = (got: number, want: number) => dAng(got, want + TOL / 3) < TOL;
+  const fmtD = (r: number) => `${(normalizeAngle(r) * RAD2DEG * 60).toFixed(2)}′`;
+  const TEN: HouseSystem[] = ['placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus', 'meridian', 'morinus', 'whole', 'equal'];
+  const BREAKS = new Set<HouseSystem>(['placidus', 'koch', 'regiomontanus', 'campanus']);
+  const DAVIS = stored({
+    name: 'Martin Davis', year: 1937, month: 9, day: 7, hour: 10, minute: 58, tzOffset: -6,
+    birthplace: { label: 'Saint Louis', lat: dms(38, 37, 31), lng: -dms(90, 11, 24) },
+  });
+  const LEWIS = stored({
+    name: 'Jim Lewis', year: 1941, month: 6, day: 5, hour: 9, minute: 30, tzOffset: -4,
+    birthplace: { label: 'Yonkers', lat: dms(40, 55, 52), lng: -dms(73, 53, 56) },
+  });
+  const TROMSO = { lat: dms(69, 39), lng: dms(18, 57) };
+  const dJd = birthDataToJD(DAVIS);
+  const dEps = obliquity(dJd);
+
+  // Test 1: one Midheaven under all ten systems — 20°♐37′, IC 20°♊37′; the table's RA 259°48′
+  // and declination −23°06′; the Ascendant as before (16°♉11′).
+  {
+    let mcBad = '';
+    for (const sys of TEN) {
+      const a = relocate(dJd, TROMSO.lat, TROMSO.lng, sys);
+      if (!near(a.mc, zod('Sag', 20, 37)) || !near(a.ic, zod('Gem', 20, 37)) || !near(a.asc, zod('Tau', 16, 11))) {
+        mcBad ||= `${sys}: MC Δ ${fmtD(a.mc - zod('Sag', 20, 37))}, AS Δ ${fmtD(a.asc - zod('Tau', 16, 11))}`;
+      }
+    }
+    check('WH-1 test 1 — Davis at Tromsø: MC 20°♐37′, IC 20°♊37′, AS 16°♉11′ under all ten house systems', !mcBad, mcBad || 'ten systems');
+    const a = relocate(dJd, TROMSO.lat, TROMSO.lng, 'porphyry');
+    const { ra, dec } = eclipticToRaDec(a.mc, 0, dEps);
+    check('WH-1 test 1 — the Midheaven row: RA 259°48′, declination −23°06′',
+      Math.abs(((ra * RAD2DEG + 360) % 360) - dms(259, 48, 30)) < 1.5 / 60 && Math.abs(dec * RAD2DEG + dms(23, 6, 30)) < 1.5 / 60,
+      `RA ${((ra * RAD2DEG + 360) % 360).toFixed(4)}°, dec ${(dec * RAD2DEG).toFixed(4)}°`);
+  }
+  // Tests 2–3: Placidus, Koch, Regiomontanus and Campanus break down there — no cusps; the other
+  // six draw twelve, and under Porphyry cusp 10 reads 20°♐37′ and cusp 11 9°♒08′.
+  {
+    let bad = '';
+    for (const sys of TEN) {
+      const a = relocate(dJd, TROMSO.lat, TROMSO.lng, sys);
+      const ok = BREAKS.has(sys) ? a.housesBreakDown === true && a.cusps.length === 0 : !a.housesBreakDown && a.cusps.length === 12;
+      if (!ok) bad ||= `${sys}: breaks down ${!!a.housesBreakDown}, ${a.cusps.length} cusps`;
+    }
+    check('WH-1 tests 2–3 — Davis at Tromsø: P, K, R, C draw the angles only; the other six their twelve cusps', !bad, bad || 'ten systems');
+    const p = relocate(dJd, TROMSO.lat, TROMSO.lng, 'porphyry');
+    check('WH-1 test 3 — Porphyry cusp 10 20°♐37′, cusp 11 9°♒08′', near(p.cusps[9], zod('Sag', 20, 37)) && near(p.cusps[10], zod('Aqu', 9, 8)),
+      `Δ ${fmtD(p.cusps[9] - zod('Sag', 20, 37))}, ${fmtD(p.cusps[10] - zod('Aqu', 9, 8))}`);
+  }
+  // Test 4: Jim Lewis at the same pin — the Midheaven above the horizon (23°♋11′), so
+  // Regiomontanus and Campanus work (twelve cusps in order, cusp 10 on the MC); Placidus and
+  // Koch still break down.
+  {
+    const lJd = birthDataToJD(LEWIS);
+    let bad = '';
+    for (const sys of ['regiomontanus', 'campanus'] as HouseSystem[]) {
+      const a = relocate(lJd, TROMSO.lat, TROMSO.lng, sys);
+      const inOrder = a.cusps.length === 12 && a.cusps.every((c, k) => {
+        const w = normalizeAngle(a.cusps[(k + 1) % 12] - c);
+        return w > 0 && w < Math.PI;
+      });
+      if (a.housesBreakDown || !inOrder || !near(a.mc, zod('Can', 23, 11)) || !near(a.cusps[9], zod('Can', 23, 11))) {
+        bad ||= `${sys}: breaks down ${!!a.housesBreakDown}, in order ${inOrder}, MC Δ ${fmtD(a.mc - zod('Can', 23, 11))}`;
+      }
+    }
+    for (const sys of ['placidus', 'koch'] as HouseSystem[]) {
+      if (!relocate(lJd, TROMSO.lat, TROMSO.lng, sys).housesBreakDown) bad ||= `${sys} did not break down`;
+    }
+    check('WH-1 test 4 — Jim Lewis at Tromsø: R/C twelve cusps in order, cusp 10 = MC 23°♋11′; P/K angles only', !bad, bad || 'four systems');
+  }
+  // Test 5: the Solar Arc ring at Tromsø, "Solar arc — in longitude", 10 Nov 2026 18:00 CST —
+  // MC 19°♓19′ under every system; P, K, R, C draw the ring's angles only.
+  {
+    const L = buildOverlay(DAVIS, 'solar-arc', Date.UTC(2026, 10, 11, 0, 0), null, 'true', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+    let bad = '';
+    for (const sys of TEN) {
+      const n = relocate(dJd, TROMSO.lat, TROMSO.lng, sys);
+      const r = directedAngles(n, dJd, TROMSO.lat, TROMSO.lng, sys, L.angleArc, L.angleFrame);
+      const cuspsOk = BREAKS.has(sys) ? r.housesBreakDown === true && r.cusps.length === 0 : r.cusps.length === 12;
+      if (!near(r.mc, zod('Pis', 19, 19)) || !cuspsOk) bad ||= `${sys}: MC Δ ${fmtD(r.mc - zod('Pis', 19, 19))}, ${r.cusps.length} cusps`;
+    }
+    check('WH-1 test 5 — the Solar Arc ring at Tromsø: MC 19°♓19′ under every system; P, K, R, C angles only', !bad, bad || 'ten systems');
+  }
+  // Test 6: the geodetic wheel. At the Tromsø pin, AS 24°♌43′ · MC 18°♈57′ under every system;
+  // at 74°N41′ 094°W50′, where the geodetic MC is below the horizon, MC 25°♐10′ under every
+  // system, and Regiomontanus draws the angles only.
+  {
+    let bad = '';
+    const far = { lat: dms(74, 41), lng: -dms(94, 50) };
+    for (const sys of TEN) {
+      const g = geodeticFrame(dJd, TROMSO.lat, TROMSO.lng, sys);
+      if (!near(g.asc, zod('Leo', 24, 43)) || !near(g.mc, zod('Ari', 18, 57))) bad ||= `Tromsø ${sys}: AS Δ ${fmtD(g.asc - zod('Leo', 24, 43))}`;
+      const f = geodeticFrame(dJd, far.lat, far.lng, sys);
+      if (!near(f.mc, zod('Sag', 25, 10))) bad ||= `74°N41′ ${sys}: MC Δ ${fmtD(f.mc - zod('Sag', 25, 10))}`;
+    }
+    const fr = geodeticFrame(dJd, far.lat, far.lng, 'regiomontanus');
+    if (!fr.housesBreakDown || fr.cusps.length !== 0) bad ||= 'Regiomontanus at 74°N41′ did not break down';
+    check('WH-1 test 6 — geodetic: Tromsø AS 24°♌43′ · MC 18°♈57′; 74°N41′ 094°W50′ MC 25°♐10′, Regiomontanus angles only', !bad, bad || 'ten systems × two places');
+  }
+  // Test 7: outside the circles nothing changes — Davis at Saint Louis under Regiomontanus,
+  // cusp 11 0°♎36′ and cusp 12 25°♎35′.
+  {
+    const a = relocate(dJd, DAVIS.birthplace.lat, DAVIS.birthplace.lng, 'regiomontanus');
+    check('WH-1 test 7 — Davis at Saint Louis, Regiomontanus: cusp 11 0°♎36′, cusp 12 25°♎35′',
+      !a.housesBreakDown && near(a.cusps[10], zod('Lib', 0, 36)) && near(a.cusps[11], zod('Lib', 25, 35)),
+      `Δ ${fmtD(a.cusps[10] - zod('Lib', 0, 36))}, ${fmtD(a.cusps[11] - zod('Lib', 25, 35))}`);
   }
 }
 

@@ -403,7 +403,11 @@ export function compositeAngles(
   const asc = shortArcMidLon(a.asc, b.asc);
   const mc = shortArcMidLon(a.mc, b.mc);
   const vertex = shortArcMidLon(a.vertex, b.vertex);
-  const cusps = a.cusps.map((c, i) => shortArcMidLon(c, b.cusps[i] ?? c));
+  // A midpoint cusp needs BOTH parents' cusp. Where either parent's system breaks down
+  // inside the polar circles (WH-1) the composite has none either, and says so — until
+  // 22 Nov 2026 a missing B cusp silently read as A's own, unmixed.
+  const breakDown = !!(a.housesBreakDown || b.housesBreakDown);
+  const cusps = breakDown ? [] : a.cusps.map((c, i) => shortArcMidLon(c, b.cusps[i]));
   return {
     asc,
     mc,
@@ -412,8 +416,6 @@ export function compositeAngles(
     cusps,
     vertex,
     antivertex: wrap2pi(vertex + Math.PI),
-    // A parent above the polar circle falls back to Porphyry cusps; surface it so
-    // the wheel's house-system note still fires for the midpoint cusps.
-    fallback: a.fallback || b.fallback,
+    ...(breakDown ? { housesBreakDown: true as const } : {}),
   };
 }

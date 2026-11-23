@@ -292,7 +292,7 @@ export const settings = {
       hint: 'Cada quadrante dividido em três em longitude eclíptica',
     },
     alcabitus: {
-      label: 'Alcabitus',
+      label: 'Alcabitius',
       hint: 'Semiarco antigo sobre os arcos diurno / noturno',
     },
     meridian: {

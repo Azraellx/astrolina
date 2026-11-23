@@ -152,6 +152,11 @@ export interface WheelGeometryInput {
   hasOverlay?: boolean;
   /** Planets on the zodiac only — no houses, cusps or angle marks. */
   planetsOnly?: boolean;
+  /** The angles and the bodies, with no houses: the chosen system breaks down for this chart
+   *  inside the polar circles (Lina's WH-1, 22 Nov 2026). Like `planetsOnly` for the house band
+   *  and the cusp rim — no empty band is drawn, and the zodiac band keeps its sign glyphs —
+   *  but the four angle axes stay. */
+  noHouses?: boolean;
   /** Opt in to the readout below the size at which it would appear on its own
    *  (the Capture wheel). The geometry still governs: if it does not fit it is
    *  shed exactly as it would be otherwise. */
@@ -395,6 +400,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   const advanced = input.advanced ?? false;
   const hasOverlay = input.hasOverlay ?? false;
   const planetsOnly = input.planetsOnly ?? false;
+  const noHouses = planetsOnly || (input.noHouses ?? false);
   const wantReadouts = input.readouts ?? false;
 
   const R = size / 2;
@@ -641,7 +647,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
     // fit, this trial fails its hub check and something further out sheds instead.
     // That is the whole difference from `min(24, max(0, houseRingOuter - 12))`, which
     // could and did reach zero.
-    const houseBand = planetsOnly ? 0 : clamp(houseRingOuter, 0, houseBandWidth);
+    const houseBand = noHouses ? 0 : clamp(houseRingOuter, 0, houseBandWidth);
     const houseRingInner = houseRingOuter - houseBand;
 
     return {
@@ -669,7 +675,7 @@ export function wheelGeometry(input: WheelGeometryInput): WheelGeometry {
   // phone meant the small screen — the one where scrolling to the table below costs
   // most — was the screen that lost the house cusps. A band that is redundant in one
   // house system out of ten is not a band to shed by default.
-  const rimAvailable = advanced && !planetsOnly;
+  const rimAvailable = advanced && !noHouses;
   const readoutOffered = wantReadouts || size >= READOUT_OFFER_MIN;
   const overlayOffered = hasOverlay && size >= OVERLAY_READOUT_MIN;
 

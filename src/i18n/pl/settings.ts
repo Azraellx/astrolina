@@ -292,7 +292,7 @@ export const settings = {
       hint: 'Każdy kwadrant podzielony na trzy w długości ekliptycznej',
     },
     alcabitus: {
-      label: 'Alcabitus',
+      label: 'Alcabitius',
       hint: 'Starożytne półłuki na łukach dziennych i nocnych',
     },
     meridian: {

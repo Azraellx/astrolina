@@ -109,10 +109,10 @@ copy in `src/i18n/machine/terms.ts`; `npm run verify:i18n-machine` fails until i
 - The 2-letter planet and point codes (`Su`, `Mo`, `Me` … `NN`, `SN`, `Fo`) and the 3-letter sign
   codes (`Ari` … `Pis`) wherever they are used as codes.
 - The Latin convention labels **In Mundo** and **In Zodiaco**, and the house-system eponyms Placidus,
-  Koch, Regiomontanus, Campanus, Porphyry, Alcabitus and Morinus — except where a language's
+  Koch, Regiomontanus, Campanus, Porphyry, Alcabitius and Morinus — except where a language's
   astrologers write an eponym in their own established form, which `dnt.json` records for that
-  language (`locales`): Cyrillic in Russian (Плацидус, Кох…), *Porfirio* in Spanish, *Porphyrios* and
-  *Alcabitius* in German. There the translation uses that spelling, and may decline it.
+  language (`locales`): Cyrillic in Russian (Плацидус, Кох…), *Porfirio* in Spanish, *Porphyrios* in
+  German. There the translation uses that spelling, and may decline it.
 - Proper names: the product's (AstroLina), and those of libraries and packages, data sources and
   the institutions behind them, map and font providers, services, and licences (in every form the
   text uses: full name, identifier, abbreviation); the people credited by name; and web addresses.

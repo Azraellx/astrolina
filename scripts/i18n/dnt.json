@@ -300,11 +300,10 @@
       }
     },
     {
-      "term": "Alcabitus",
+      "term": "Alcabitius",
       "kind": "exact",
-      "note": "House-system eponym, spelled as the app spells it.",
+      "note": "House-system eponym, spelled as the app spells it (Alcabitius since 22 Nov 2026, Lina's WH-2; Alcabitus before).",
       "locales": {
-        "de": "Alcabitius",
         "ru": "Алькабитиус"
       }
     },

@@ -134,15 +134,17 @@ export const expandedSidebar = {
     label: 'Hide',
   },
 
-  // Shown under the wheel-state title (with an (i) whose .ui-tip carries the reason) when
-  // the chosen quadrant house system is undefined at this latitude (above the polar circles)
-  // and Porphyry cusps are drawn instead — so the wheel never silently shows a different system.
-  houseFallback: 'Porphyry cusps',
-  // The same notice in a narrow panel, where the full one meets the wheel's rim; the tip
-  // keeps the full name (2026-10-09).
-  houseFallbackShort: 'Porphyry',
-  houseFallbackHint:
-    'Above the polar circles, quadrant house systems like Placidus become undefined, so the wheel falls back to Porphyry — which trisects the arcs between the angles and stays well-defined at any latitude.',
+  // Where the chosen house system breaks down for this chart inside the polar circles (Lina's
+  // WH-1, 22 Nov 2026): the wheel draws the four angles and the bodies, no houses. `label` is a
+  // short notice under the wheel-state title, in the wheel's top-left corner (keep it to two or
+  // three words: the corner sits over the wheel); `note` is the .ui-tip behind its (i), and
+  // Reports prints it under a wheel. No other house system is ever drawn in its place.
+  housesBreakDown: {
+    label: 'Angles only',
+    // Lina's wording, exactly. "Whole Sign" and "Equal" are the menu's names for those systems.
+    // @i18n-verbatim
+    note: 'NOTE: Above the polar circles this house system breaks down for this chart, so only the four angles are shown. To see houses, switch to Whole Sign or Equal, which work at every latitude.',
+  },
 
   // Shown under the wheel-state title on a planets-only wheel. Kept terse — the
   // chart form's note carries the full explanation of the degrade.
@@ -161,9 +163,8 @@ export const expandedSidebar = {
   // chart's own planets inside a PLACE's geodetic angles and houses. After the
   // statement's place lines (header.*, where the label reads GEODETIC CHART since
   // 2026-10-07): the place's AS and MC, and these planets lines, which say where the
-  // planets and the houses come from. {system} is the house system's own name, Porphyry
-  // wherever the chosen one is undefined at the place's latitude (houseFallback says
-  // why). (2026-10-02)
+  // planets and the houses come from. {system} is the house system the reader chose.
+  // (2026-10-02)
   // The panel header's geodetic data block. Its angle line is the map readout's own
   // (map.geoReadout.angles, since 2026-10-20), so the two surfaces print one format.
   geodetic: {
@@ -181,6 +182,13 @@ export const expandedSidebar = {
     // above. One line in the panel header, under the place's angles.
     // @i18n-verbatim
     planetsEvent: 'Event positions · houses: {system}, from the geodetic angles',
+    // The same four where the chosen system breaks down at the place inside the polar circles
+    // (WH-1, 22 Nov 2026): no houses are drawn, so the line says so and names the system, in the
+    // wording of houses.lineNone below. {system} as above.
+    planetsNone: 'Natal positions · no houses: {system} breaks down here',
+    planetsCompositeNone: 'Planets at the composite’s positions · no houses: {system} breaks down here',
+    planetsPromotedNone: 'Planets from {overlay} · no houses: {system} breaks down here',
+    planetsEventNone: 'Event positions · no houses: {system} breaks down here',
   },
 
   // The houses line on every overlay wheel, both line systems (Lina, 22 Oct 2026, §3.2, her words):
@@ -196,6 +204,11 @@ export const expandedSidebar = {
     // own moment at the place — transits, a return, an eclipse, an event chart — names no angles:
     // "Transit positions · houses: Whole Sign".
     lineOwn: '{positions} · houses: {system}',
+    // The line for a wheel whose chosen system breaks down inside the polar circles (WH-1, 22 Nov
+    // 2026): it draws no houses, so neither "houses: {system}" nor an angle clause would be true.
+    // "Directed positions (Solar arc, Long.) · no houses: Regiomontanus breaks down here". Our
+    // proposal to Lina (her question 2), not yet her wording.
+    lineNone: '{positions} · no houses: {system} breaks down here',
     // A word with its calculation in brackets after it: "Directed positions (Solar arc, Long.)",
     // "progressed angles (Naibod, R.A.)". {word} and {calc} as built by the code.
     withCalc: '{word} ({calc})',

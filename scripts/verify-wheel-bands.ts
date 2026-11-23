@@ -1089,6 +1089,30 @@ const biRingCases: Case[] = atGate.filter((c) => c.input.hasOverlay).map(ringTwi
 
 }
 
+// §11 — a wheel with no houses (Lina's WH-1, 22 Nov 2026): where the chosen system breaks down
+// inside the polar circles the wheel draws the four angles and the bodies only. No house band is
+// reserved (an empty ring would be drawn), no cusp rim is offered — so the zodiac band keeps its
+// sign glyphs in Advanced rather than going blank — and the same wheel with houses still has both.
+{
+  let n = 0;
+  for (const size of [180, 320, 480, 640, 900]) {
+    for (const advanced of [false, true]) {
+      for (const hasOverlay of [false, true]) {
+        const label = `§11 no houses ${size}px${advanced ? ' adv' : ''}${hasOverlay ? ' bi' : ''}`;
+        const none = wheelGeometry({ size, detailed: true, advanced, hasOverlay, noHouses: true });
+        const withHouses = wheelGeometry({ size, detailed: true, advanced, hasOverlay });
+        n += 1;
+        if (none.houseBand !== 0) fail(label, `still reserves a ${px(none.houseBand)}px house band`);
+        if (none.detail.cuspRim) fail(label, 'still offers the cusp rim (the zodiac band would lose its sign glyphs)');
+        // The control at the sizes a bi-wheel is drawn at in the panel (180 px is the minimap, single).
+        if (withHouses.houseBand <= 0 && !(hasOverlay && size < 320)) fail(label, 'control: the same wheel with houses lost its band');
+        if (advanced && !withHouses.detail.cuspRim) fail(label, 'control: the Advanced wheel with houses lost its cusp rim');
+      }
+    }
+  }
+  console.log(`  §11 ${n} angles-only wheels: no house band, no cusp rim; their twins with houses keep both`);
+}
+
 if (measuredProblems) {
   console.log(
     `\n${measuredProblems} problem(s) measured in a catalog ring the app does not draw (the \`meas\` lines ` +

@@ -562,10 +562,13 @@ for (const [label, eps] of [
 // sidereal time IS that RAMC must return the primitive's angles — at the same ε,
 // obliquity(jd), on both sides. 43,200 places (every 1° of latitude × 1.5° of
 // longitude, both hemispheres, inside and outside the polar circles) × six systems ×
-// two moments. The Ascendant (and Descendant) agree everywhere. The MC (and IC) agree
-// everywhere except under Regiomontanus and Campanus inside the polar circles, where
-// Swiss turns its MC by exactly 180° — and only where the swap fired (geodeticFrame
-// reads those cusps the other way round; §6).
+// two moments. The Ascendant (and Descendant) agree everywhere, and so — since Lina's WH-1
+// (22 Nov 2026) — does the MC (and IC), under every system: relocate()'s Midheaven is the
+// upper-meridian degree even where Swiss's Regiomontanus and Campanus turn theirs. (Until then
+// the MC was turned by 180° for R/C wherever the swap fired, and geodeticFrame read those cusps
+// the other way round.) And where a system breaks down — no cusps, `housesBreakDown` — is checked
+// against the rule her letter states for us to confirm: Placidus inside the polar circles,
+// Regiomontanus and Campanus exactly where the MC is below the horizon, no other system ever.
 section('§3 OUTSIDE AGREEMENT — Swiss at the fictitious longitude, 43,200 places × 6 systems × 2 jds');
 {
   const SYS6: HouseSystem[] = ['placidus', 'porphyry', 'regiomontanus', 'campanus', 'equal', 'whole'];
@@ -573,45 +576,59 @@ section('§3 OUTSIDE AGREEMENT — Swiss at the fictitious longitude, 43,200 pla
   for (const [label, jd] of JDS) {
     const eps = obliquity(jd);
     const gmst = gmstRadians(jd);
+    const polar = 90 - eps * R2D;
     let places = 0;
     let calls = 0;
     let worstAsc = 0;
     let worstMc = 0;
     let mcBad = 0;
-    let flips = 0;
+    let breakDowns = 0;
+    let ruleBad = 0;
+    let firstRuleBad = '';
+    let rcBelow = 0;
     let swaps = 0;
-    let fallbacks = 0;
     for (let i = 0; i < 180; i++) {
       const lat = -89.5 + i;
+      const phi = lat * D2R;
       for (let j = 0; j < 240; j++) {
         const lng = j * 1.5;
         const g = geodeticAngles(lng, lat, eps);
-        const swapped = angDiff(bareAsc(lng, lat, eps), g.asc) > 1;
-        if (swapped) swaps += 1;
+        if (angDiff(bareAsc(lng, lat, eps), g.asc) > 1) swaps += 1;
+        // Is the Midheaven below the horizon here? Its altitude, from the RAMC that culminates it.
+        const zen = [Math.cos(phi) * Math.cos(g.ramc), Math.cos(phi) * Math.sin(g.ramc), Math.sin(phi)];
+        const mcBelow = dot(eclVec(g.mc, eps), zen) < 0;
         const fict = ((g.ramc - gmst) * 180) / Math.PI;
         places += 1;
         for (const sys of SYS6) {
           const d = relocate(jd, lat, fict, sys);
           calls += 1;
-          if (d.fallback) fallbacks += 1;
           worstAsc = Math.max(worstAsc, angDiff(d.asc, g.asc), angDiff(d.dsc, g.dsc));
-          const rc = sys === 'regiomontanus' || sys === 'campanus';
-          const turn = rc && swapped ? Math.PI : 0;
-          const dm = Math.max(angDiff(d.mc, g.mc + turn), angDiff(d.ic, g.ic + turn));
+          const dm = Math.max(angDiff(d.mc, g.mc), angDiff(d.ic, g.ic));
           worstMc = Math.max(worstMc, dm);
           if (dm > 1e-9) mcBad += 1;
-          if (rc && swapped) flips += 1;
+          const rc = sys === 'regiomontanus' || sys === 'campanus';
+          if (rc && mcBelow) rcBelow += 1;
+          const want = sys === 'placidus' ? Math.abs(lat) > polar : rc ? mcBelow : false;
+          const got = !!d.housesBreakDown;
+          if (got) breakDowns += 1;
+          if (got !== want || (got ? d.cusps.length !== 0 : d.cusps.length !== 12)) {
+            ruleBad += 1;
+            firstRuleBad ||= `${sys} at ${lat}°, ${lng}°: broke down ${got}, expected ${want}, ${d.cusps.length} cusps`;
+          }
         }
       }
     }
     check(`${label}: ${places} places × 6 systems — the Ascendant and Descendant agree with Swiss`, places === 43200 && calls === 259200 && worstAsc < 1e-9, `max Δ ${fmt(worstAsc)} rad`);
     check(
-      `${label}: the MC and IC agree, turned by exactly 180° only for R/C where the swap fired`,
+      `${label}: the MC and IC agree under every system, R/C inside the polar circles included — one Midheaven (WH-1)`,
       calls > 0 && mcBad === 0,
-      `${mcBad} disagree; max Δ from expected ${fmt(worstMc)} rad`,
+      `${mcBad} disagree; max Δ ${fmt(worstMc)} rad`,
     );
-    check(`${label}: the R/C turn was exercised`, flips > 0, `${flips} R/C turns over ${swaps} swapped places`);
-    note(`${fallbacks} Porphyry fallbacks (Placidus inside the polar circles)`);
+    check(
+      `${label}: houses break down exactly where the rule says — Placidus inside the polar circles, R/C where the MC is below the horizon, no other system`,
+      calls > 0 && breakDowns > 0 && rcBelow > 0 && ruleBad === 0,
+      firstRuleBad || `${breakDowns} break-downs, ${rcBelow} R/C frames with the MC below the horizon, ${swaps} swapped places`,
+    );
   }
   note(`${((Date.now() - t0) / 1000).toFixed(1)} s for §3 — the full grid, not a subsample`);
 }
@@ -874,11 +891,13 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
     let n1 = 0;
     let badWidth = 0;
     let badWhole = 0;
-    let badFallback = 0;
+    let badBreakDown = 0;
     let badFlags = 0;
     let badRange = 0;
-    let turned = 0;
-    let polarRc = 0;
+    let brokenDown = 0;
+    let badWho = 0;
+    let firstWho = '';
+    const polarLat = 90 - eps * R2D;
     const firstBad: string[] = [];
     let idx = 0;
     for (let i = 0; i < 180; i++) {
@@ -894,6 +913,24 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
           frames += 1;
           if (f.asc !== g.asc || f.mc !== g.mc || f.dsc !== g.dsc || f.ic !== g.ic) anglesDiffer += 1;
           if (![f.asc, f.mc, f.dsc, f.ic, ...f.cusps].every((x) => x >= 0 && x < TWO_PI)) badRange += 1;
+          // A frame whose system breaks down here carries no cusps at all (WH-1): nothing to
+          // check but that it says so, and that relocate() said so too.
+          if (!!f.housesBreakDown !== !!d.housesBreakDown) badBreakDown += 1;
+          // Lina's list (WH-1), for the systems §3 does not sample: Koch breaks down exactly
+          // inside the polar circles, as Placidus does, and Alcabitius, Meridian and Morinus
+          // never — so only the four quadrant systems ever break down.
+          const pk = sys === 'placidus' || sys === 'koch';
+          const rc = sys === 'regiomontanus' || sys === 'campanus';
+          if ((pk && !!f.housesBreakDown !== Math.abs(lat) > polarLat) || (!pk && !rc && f.housesBreakDown)) {
+            badWho += 1;
+            firstWho ||= `${sys} at ${lat}°, ${lng}°: broke down ${!!f.housesBreakDown}`;
+          }
+          if (f.housesBreakDown) {
+            brokenDown += 1;
+            if (f.cusps.length !== 0) badBreakDown += 1;
+            if (!Number.isNaN(f.vertex) || !Number.isNaN(f.antivertex) || f.geodetic !== true) badFlags += 1;
+            continue;
+          }
           if (CUSP10_IS_MC.has(sys)) {
             n10 += 1;
             worst10 = Math.max(worst10, angDiff(f.cusps[9], f.mc));
@@ -915,24 +952,19 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
           // boundary — 0° Aries along 90°W — the closed form lands 1e-12° short of it,
           // and only the snap says which side a reader is shown.
           if (sys === 'whole' && angDiff(f.cusps[0], truncZodiac(f.asc, 'sec').signIdx * (Math.PI / 6)) > 1e-12) badWhole += 1;
-          if (!!f.fallback !== !!d.fallback) badFallback += 1;
           if (!Number.isNaN(f.vertex) || !Number.isNaN(f.antivertex) || f.geodetic !== true) badFlags += 1;
-          if (sys === 'regiomontanus' || sys === 'campanus') {
-            if (Math.abs(lat) > 90 - (eps * R2D)) polarRc += 1;
-            if (angDiff(d.mc, g.mc) > Math.PI / 2) turned += 1;
-          }
         }
       }
     }
     check(`${label}: ${frames} frames — asc/mc/dsc/ic === the primitive at obliquity(jd)`, frames === 144000 && anglesDiffer === 0, `${anglesDiffer} differ`);
     check(`${label}: the four angles and twelve cusps all lie in [0, 2π)`, frames > 0 && badRange === 0, `${badRange} frames out of range`);
-    check(`${label}: cusp 10 = MC for the seven systems that put it there, R/C at the poles included`, n10 > 0 && worst10 < 1e-9, `${n10} frames, max Δ ${fmt(worst10)} rad`);
+    check(`${label}: cusp 10 = MC for the seven systems that put it there, wherever they have cusps`, n10 > 0 && worst10 < 1e-9, `${n10} frames, max Δ ${fmt(worst10)} rad`);
     check(`${label}: cusp 1 = AS for the seven systems that put it there`, n1 > 0 && worst1 < 1e-9, `${n1} frames, max Δ ${fmt(worst1)} rad`);
-    check(`${label}: every house runs forward and is under 180°`, frames > 0 && badWidth === 0, `${badWidth} frames${firstBad.length ? `: ${firstBad.join('; ')}` : ''}`);
+    check(`${label}: every frame that has cusps has twelve in zodiacal order, each house forward and under 180°`, frames > 0 && badWidth === 0, `${badWidth} frames${firstBad.length ? `: ${firstBad.join('; ')}` : ''}`);
     check(`${label}: whole-sign cusp 1 starts the sign the readout names for the Ascendant`, frames > 0 && badWhole === 0, `${badWhole} differ`);
-    check(`${label}: the fallback flag is relocate()'s`, frames > 0 && badFallback === 0, `${badFallback} differ`);
+    check(`${label}: a frame breaks down exactly where relocate() does, with no cusps — and some do`, brokenDown > 0 && badBreakDown === 0, `${brokenDown} broken down; ${badBreakDown} differ`);
+    check(`${label}: Koch breaks down exactly inside the polar circles; Porphyry, Alcabitius, Meridian, Morinus, Equal and Whole Sign never`, frames > 0 && badWho === 0, firstWho || `${frames} frames`);
     check(`${label}: vertex and antivertex NaN, geodetic === true`, frames > 0 && badFlags === 0, `${badFlags} differ`);
-    check(`${label}: R/C cusps read the other way round where Swiss turned them`, turned > 0, `${turned} of ${polarRc} polar R/C frames`);
   }
   note(`${((Date.now() - t0) / 1000).toFixed(1)} s for §6`);
 
@@ -982,7 +1014,7 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
         n += 1;
         const a = geodeticFrame(CHART_JD, lat, lng, sys);
         const b = geodeticFrame(CHART_JD, lat, lng, sys, obliquity(CHART_JD));
-        if (a.asc === b.asc && a.mc === b.mc && a.cusps.every((c, k) => c === b.cusps[k]) && !!a.fallback === !!b.fallback) same += 1;
+        if (a.asc === b.asc && a.mc === b.mc && a.cusps.every((c, k) => c === b.cusps[k]) && !!a.housesBreakDown === !!b.housesBreakDown) same += 1;
       }
     }
     check('geodeticFrame with eps = obliquity(jd) is the default frame, float for float (ten systems × four places)', n === 40 && same === n, `${same}/${n}`);
@@ -1007,6 +1039,8 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
           const f = geodeticFrame(jd, lat, lng, sys, eps);
           frames += 1;
           if (f.asc !== g.asc || f.mc !== g.mc || f.dsc !== g.dsc || f.ic !== g.ic) anglesDiffer += 1;
+          // No cusps where the system breaks down at the place (WH-1): only the angles to check.
+          if (f.housesBreakDown) continue;
           if (CUSP10_IS_MC.has(sys)) worst10 = Math.max(worst10, angDiff(f.cusps[9], f.mc));
           if (CUSP1_IS_AS.has(sys)) worst1 = Math.max(worst1, angDiff(f.cusps[0], f.asc));
           for (let k = 0; k < 12; k++) {
@@ -1020,7 +1054,7 @@ section('§6 INTERNAL IDENTITY — geodeticFrame, ten systems, every third place
           // given tilt really reaches them (not only the angles).
           if (sys === 'placidus' || sys === 'regiomontanus') {
             const own = geodeticFrame(jd, lat, lng, sys);
-            if (own.cusps.some((c, k) => angDiff(c, f.cusps[k]) > 1e-9)) cuspsMoved += 1;
+            if (!own.housesBreakDown && own.cusps.some((c, k) => angDiff(c, f.cusps[k]) > 1e-9)) cuspsMoved += 1;
           }
         }
       }

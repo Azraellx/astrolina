@@ -51,7 +51,7 @@ geocoding.
 - **Relocated chart wheel**: a compact wheel beside the map, plus an expandable
   detailed view with an Advanced mode (degree · sign · minute readouts and the
   aspect grid). Ten house systems: Placidus (default), Koch, Regiomontanus,
-  Campanus, Porphyry, Alcabitus, Meridian, Morinus, Whole Sign, Equal.
+  Campanus, Porphyry, Alcabitius, Meridian, Morinus, Whole Sign, Equal.
 - **Calculation conventions** as live toggles: Celestial vs Geodetic line
   placement, In Mundo vs In Zodiaco, house system, tropical vs sidereal
   zodiac (Lahiri / Fagan-Bradley), lunar-node type (mean/true), and the

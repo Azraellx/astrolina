@@ -142,7 +142,7 @@ const base = (over: Partial<ChartHeaderInput> = {}): ChartHeaderInput => ({
   lineSystem: 'celestial',
   overlay: null,
   noChart: false,
-  houses: { system: 'whole', fallback: false },
+  houses: { system: 'whole' },
   zodiac: 'tropical',
   nodeType: 'true',
   discreet: false,
@@ -577,8 +577,10 @@ console.log('\n── 7. INTERNAL IDENTITY: the settings line reads the effectiv
   const set = (over: Partial<ChartHeaderInput>) => lineText(byRole(model(over), 'settings')[0]);
   const cases: { name: string; over: Partial<ChartHeaderInput>; want: string }[] = [
     { name: 'tropical, whole sign, true node', over: {}, want: 'Geocentric · Tropical · Whole Sign · True Node' },
-    { name: 'sidereal Lahiri, Placidus, mean node', over: { zodiac: 'lahiri', houses: { system: 'placidus', fallback: false }, nodeType: 'mean' }, want: 'Geocentric · Sidereal · Lahiri · Placidus · Mean Node' },
-    { name: 'Placidus undefined here: Porphyry', over: { houses: { system: 'placidus', fallback: true } }, want: 'Geocentric · Tropical · Porphyry · True Node' },
+    { name: 'sidereal Lahiri, Placidus, mean node', over: { zodiac: 'lahiri', houses: { system: 'placidus' }, nodeType: 'mean' }, want: 'Geocentric · Sidereal · Lahiri · Placidus · Mean Node' },
+    // WH-1 (22 Nov 2026): the header names the CHOSEN system even where it breaks down inside
+    // the polar circles; until then a Placidus breakdown read "Porphyry" here.
+    { name: 'Koch, the chosen system, named as chosen', over: { houses: { system: 'koch' } }, want: 'Geocentric · Tropical · Koch · True Node' },
     { name: 'no houses drawn (no birth time)', over: { houses: null }, want: 'Geocentric · Tropical · True Node' },
     { name: 'geodetic is tropical-only', over: { lineSystem: 'geodetic', zodiac: 'lahiri' }, want: 'Geocentric · Tropical · Whole Sign · True Node' },
     { name: 'the same line on a composite', over: { chart: COMPOSITE }, want: 'Geocentric · Tropical · Whole Sign · True Node' },

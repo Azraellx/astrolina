@@ -922,7 +922,9 @@ section('§6 the engine version, first-letter capitals, the tier’s own sentenc
   // THE PIN. Any change above retranslates every reader's cache, by design — this makes it a
   // decision rather than a side effect: when it fails, check the change was meant, then copy
   // the new value here.
-  const PINNED = 'mt-3 2026-10-10 751aad4e'; // mt-3: the capital rule skips leading punctuation (engine.ts)
+  // 35f6fe11 (22 Nov 2026): the kept-term list spells the house system "Alcabitius" (Lina's WH-2), so
+  // the on-device translator keeps the new spelling whole; moved knowingly, every cache retranslates once.
+  const PINNED = 'mt-3 2026-10-10 35f6fe11'; // mt-3: the capital rule skips leading punctuation (engine.ts)
   check(`ENGINE_VERSION is pinned — a change retranslates every cache; update the pin knowingly`, ENGINE_VERSION === PINNED, ENGINE_VERSION);
 
   // Capitals (mask capitaliseLike): where the English starts with one and the translation with a

@@ -232,12 +232,16 @@ export interface RelocatedAngles {
   vertex: number;
   antivertex: number;
   /**
-   * True when the chosen system (Placidus/Koch) was undefined at this latitude
-   * — above the polar circles — and the cusps are the Porphyry fallback instead.
-   * The UI surfaces this so the wheel never silently shows a different system
-   * than the one selected. The angles themselves are system-independent.
+   * True when the chosen house system breaks down for this chart at this place —
+   * it cannot give twelve cusps in zodiacal order — and `cusps` is then EMPTY: the
+   * wheel draws the four angles and the bodies, no houses, and says why. Inside the
+   * polar circles only: Placidus and Koch always (some degrees never rise or set),
+   * Regiomontanus and Campanus exactly when the Midheaven is below the horizon. No
+   * other system is ever put in its place (Lina's WH-1, 22 Nov 2026; until then
+   * Placidus and Koch were silently given Porphyry cusps under a `fallback` flag).
+   * The angles never depend on it.
    */
-  fallback?: boolean;
+  housesBreakDown?: true;
   /**
    * Marks a geodetic frame (geodeticFrame sets it, shiftAngles carries it): these
    * angles belong to a PLACE, not to a moment — everyone born there has the same
@@ -1548,30 +1552,44 @@ export function relocate(
   lngDeg: number,
   system: HouseSystem = 'placidus',
 ): RelocatedAngles {
+  // Inside the polar circles (Lina's WH-1, 22 Nov 2026; see docs/calculation-methods.md,
+  // "Houses at extreme latitudes"):
+  //  · ONE Midheaven under every system: the degree of the ecliptic on the UPPER meridian —
+  //    the one whose MC line runs through the place — even where it lies below the horizon.
+  //  · Where the chosen system cannot give twelve cusps in zodiacal order it BREAKS DOWN:
+  //    the angles come back with no cusps (`housesBreakDown`), and no other system is ever
+  //    put in its place.
   let h;
-  let fallback = false;
+  let breakDown = false;
   try {
     h = eph().calculateHouses(jd, latDeg, lngDeg, HOUSE_MAP[system]);
   } catch (err) {
-    // Placidus and Koch are mathematically undefined above the polar circles
-    // (some house cusps never rise or set there). The Swiss Ephemeris C library
-    // handles that case by computing Porphyry cusps instead and flagging an
-    // error; the JS wrapper turns the flag into a throw WITHOUT the fallback
-    // values, which would crash any chart relocated to a polar latitude. Apply
-    // the same documented fallback here: Porphyry is defined at every latitude,
-    // and the ASC/MC angles are house-system-independent either way. Only these
-    // two systems get the fallback — a throw from any other system signals a
-    // genuinely bad input and must surface, not silently become Porphyry. (See
-    // docs/calculation-methods.md, "Houses at extreme latitudes".)
+    // Placidus and Koch have no cusps inside the polar circles (some degrees never rise or
+    // set there). Swiss computes Porphyry cusps and flags an error, which the JS wrapper
+    // turns into a throw. Until 22 Nov 2026 those Porphyry cusps were drawn under the
+    // chosen system's name with a caution; now the call only supplies the ANGLES, which no
+    // house system changes, and the cusps are left out. Only these two systems refuse here
+    // — a throw from any other signals a genuinely bad input and must surface.
     if (system !== 'placidus' && system !== 'koch') throw err;
     h = eph().calculateHouses(jd, latDeg, lngDeg, SweHouse.Porphyrius);
-    fallback = true;
+    breakDown = true;
   }
   const asc = norm2pi(h.ascendant * DEG2RAD);
-  const mc = norm2pi(h.mc * DEG2RAD);
+  // Swiss's MC is the upper-meridian degree under every system but Regiomontanus and
+  // Campanus inside the polar circles, where — with that degree below the horizon — it hands
+  // back the OPPOSITE degree, above the horizon, and turns every cusp with it (so they run
+  // backward through the zodiac). The degree on the upper meridian is the one whose right
+  // ascension is the ARMC; Swiss's own MC is either it or its antipode, so the test is which,
+  // and the antipode of Swiss's value is taken rather than a recomputation, which keeps the
+  // Midheaven to Swiss's own figure exactly. A turned MC means the system broke down.
+  const swissMc = norm2pi(h.mc * DEG2RAD);
+  const upper = eclipticLonOfRA(norm2pi(h.armc * DEG2RAD), obliquity(jd));
+  const turned = Math.abs(Math.atan2(Math.sin(swissMc - upper), Math.cos(swissMc - upper))) > Math.PI / 2;
+  const mc = turned ? norm2pi(swissMc + Math.PI) : swissMc;
+  if (turned) breakDown = true;
   const vertex = norm2pi(h.vertex * DEG2RAD);
   // Swiss cusps are 1-indexed (cusps[1] = house 1); re-base to 0-indexed.
-  const cusps = Array.from({ length: 12 }, (_, i) => norm2pi(h.cusps[i + 1] * DEG2RAD));
+  const cusps = breakDown ? [] : Array.from({ length: 12 }, (_, i) => norm2pi(h.cusps[i + 1] * DEG2RAD));
   return {
     asc,
     mc,
@@ -1580,7 +1598,7 @@ export function relocate(
     vertex,
     antivertex: norm2pi(vertex + Math.PI),
     cusps,
-    ...(fallback ? { fallback } : {}),
+    ...(breakDown ? { housesBreakDown: true as const } : {}),
   };
 }
 
@@ -1675,8 +1693,9 @@ export function directedAngles(
       vertex: d.vertex,
       antivertex: d.antivertex,
       cusps: d.cusps,
-      // Describes the cusps being RETURNED, so it must follow d, not base.
-      fallback: d.fallback,
+      // Describes the cusps being RETURNED, so it must follow d, not base: each ring breaks
+      // down (or not) by its OWN Midheaven (WH-1).
+      housesBreakDown: d.housesBreakDown,
     };
   }
   // 'ramc': advance the RAMC by the arc and re-derive ALL angles — including the
@@ -1691,7 +1710,7 @@ export function directedAngles(
     vertex: d.vertex,
     antivertex: d.antivertex,
     cusps: d.cusps,
-    fallback: d.fallback,
+    housesBreakDown: d.housesBreakDown,
   };
 }
 
@@ -1747,17 +1766,14 @@ function houseMomentFor(eps: number, nearJd: number): number {
  *   with the Swiss cusps below to ~1e-12 (verify-geodetic §3, §6).
  * - Cusps: the same RAMC inversion directedAngles' 'long' frame uses — relocate()
  *   at the fictitious longitude whose sidereal time is that RAMC.
- * - Regiomontanus and Campanus inside the polar circles: where the closed-form
- *   Ascendant lands on the western horizon, Swiss turns its MC (and every cusp) by
- *   180° and numbers the twelve house circles CLOCKWISE from it, so its cusp 10
- *   lands on the geodetic IC. The geodetic MC is the longitude by definition, so the
- *   same twelve points are read COUNTER-clockwise instead (cusp 1 = AS, cusp 10 = MC,
- *   every house positive). Porphyry with the fallback caution is the alternative
- *   put to review; the mirror is the default until that is ruled on. No other
- *   system turns. (2026-10-02)
+ * - Inside the polar circles the frame follows relocate()'s rule, as every wheel does
+ *   (Lina's WH-1, 22 Nov 2026): relocate() at the geodetic RAMC returns the
+ *   upper-meridian Midheaven, which IS the geodetic MC, and where the chosen system
+ *   breaks down — Placidus and Koch always, Regiomontanus and Campanus where the
+ *   geodetic MC is below the horizon — no cusps (`housesBreakDown`). Until then
+ *   Regiomontanus and Campanus were read counter-clockwise from Swiss's turned cusps
+ *   (2026-10-02), and Placidus and Koch were Porphyry cusps under a caution.
  * - The Vertex is NaN: geodetic maps draw the four angles only.
- * - `fallback` is relocate()'s, unchanged: Placidus/Koch inside the circles are
- *   Porphyry cusps here too, and the wheel's caution must still say so.
  * - Two places have no Ascendant: where the ecliptic lies IN the horizon (latitude
  *   90° − ε on 90°W, and its antipode). There the closed form and the Ascendant
  *   Swiss builds its cusps from can be tens of degrees apart, so cusp 1 = AS fails;
@@ -1786,8 +1802,9 @@ export function geodeticFrame(
   const hjd = e === own ? jd : houseMomentFor(e, jd);
   const g = geodeticAngles(lngDeg, latDeg, e);
   const d = relocate(hjd, latDeg, ((g.ramc - gmstRadians(hjd)) * 180) / Math.PI, system);
-  const turned = Math.abs(Math.atan2(Math.sin(d.mc - g.mc), Math.cos(d.mc - g.mc))) > Math.PI / 2;
-  const cusps = turned ? d.cusps.map((_, k) => d.cusps[(12 - k) % 12]) : d.cusps;
+  // relocate() already applies the polar rule: its Midheaven is the upper-meridian degree
+  // (= g.mc), and a system that breaks down returns no cusps.
+  const cusps = d.cusps;
   return {
     asc: g.asc,
     mc: g.mc,
@@ -1797,6 +1814,6 @@ export function geodeticFrame(
     vertex: NaN,
     antivertex: NaN,
     geodetic: true,
-    ...(d.fallback ? { fallback: true } : {}),
+    ...(d.housesBreakDown ? { housesBreakDown: true as const } : {}),
   };
 }

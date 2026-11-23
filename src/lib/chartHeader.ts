@@ -175,9 +175,12 @@ export interface ChartHeaderInput {
    *  person, as every header was before event charts (2026-10-20). Ignored on a
    *  relationship chart, which states its own derivation. */
   event?: boolean;
-  /** The house frame the wheel draws, or null where it draws none (no birth time on a
-   *  celestial map). `fallback`: the chosen system is undefined there, Porphyry used. */
-  houses: { system: HouseSystem; fallback: boolean } | null;
+  /** The house system the reader chose, or null where the wheel draws no frame at all (no
+   *  birth time on a celestial map). Always the CHOSEN system: where it breaks down inside
+   *  the polar circles the wheel draws the angles only and says so beside the wheel, and no
+   *  other system is named in its place (Lina's WH-1, 22 Nov 2026; until then the header
+   *  read "Porphyry" there). */
+  houses: { system: HouseSystem } | null;
   /** The EFFECTIVE zodiac (tropical with Advanced off). */
   zodiac: ZodiacMode;
   nodeType: NodeType;
@@ -300,15 +303,15 @@ const plainSeg = (kind: SegmentKind, text: string, sep = SEP): Segment => ({ kin
 
 // Chart-data settings, and only those (line-geometry settings live in the map's status
 // line): geocentric, the zodiac in force (geodetic is tropical-only), the house system
-// the wheel's cusps were drawn in — Porphyry wherever the chosen one is undefined —
-// left out where the wheel draws no houses, and the node.
+// the reader chose — named even where it breaks down inside the polar circles (WH-1) —
+// left out where the wheel draws no frame, and the node.
 function settingsLineFor(input: ChartHeaderInput, geo: boolean): HeaderLine {
   const { t } = input;
   return lineOf('settings', [
     plainSeg('text', t('expandedSidebar.header.geocentric')),
     plainSeg('text', t(`settings.zodiac.${geo ? 'tropical' : input.zodiac}.label`)),
     input.houses
-      ? plainSeg('text', t(`settings.houseSystem.${input.houses.fallback ? 'porphyry' : input.houses.system}.label`))
+      ? plainSeg('text', t(`settings.houseSystem.${input.houses.system}.label`))
       : null,
     plainSeg('text', t(`settings.nodeType.${input.nodeType}.label`)),
   ]);

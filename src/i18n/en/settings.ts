@@ -529,7 +529,9 @@ export const settings = {
     regiomontanus: { label: 'Regiomontanus', hint: 'Equal divisions of the celestial equator' },
     campanus: { label: 'Campanus', hint: 'Equal divisions of the prime vertical' },
     porphyry: { label: 'Porphyry', hint: 'Each quadrant trisected in ecliptic longitude' },
-    alcabitus: { label: 'Alcabitus', hint: 'Ancient semi-arc on the diurnal / nocturnal arcs' },
+    // "Alcabitius" since 22 Nov 2026 (Lina's WH-2), the spelling her sources and the methods page
+    // use. The key is the stored id and stays `alcabitus`, so a saved choice opens unchanged.
+    alcabitus: { label: 'Alcabitius', hint: 'Ancient semi-arc on the diurnal / nocturnal arcs' },
     meridian: { label: 'Meridian', hint: 'Equal 30° arcs of the equator from the MC, projected by hour circles; the 1st cusp is an East Point, not the Ascendant. Well-defined at every latitude.' },
     morinus: { label: 'Morinus', hint: 'Equal equator arcs projected by ecliptic-pole circles; uses no Ascendant or MC at all, so it survives even polar latitudes untroubled.' },
     whole: { label: 'Whole Sign', hint: 'Each house is a whole sign from the rising sign' },

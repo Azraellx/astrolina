@@ -1395,9 +1395,10 @@ export function ExpandedChartSidebar({
         noChart,
         // The kind as presented (EVENT CHART, "Event:"). (2026-10-20)
         event: header.event,
-        // The houses the wheel draws: in the frame's own system, Porphyry where that one
-        // is undefined at the place — and none where there are no angles.
-        houses: angles && houseSystem ? { system: houseSystem, fallback: !!angles.fallback } : null,
+        // The house system the reader chose — named even where it breaks down inside the
+        // polar circles (WH-1; the wheel says so in its corner) — and none where there are
+        // no angles.
+        houses: angles && houseSystem ? { system: houseSystem } : null,
         zodiac: header.zodiac,
         nodeType: header.nodeType,
         discreet: id.on,
@@ -2282,7 +2283,9 @@ export function ExpandedChartSidebar({
   // §3.2; one rule since 23 Oct, H-2): "{positions} · houses: {system}, from the {angles}", the
   // calculation in brackets after the word it moves — and no angle clause where the houses come from
   // the wheel's own moment at the place ("Transit positions · houses: {system}"). The house system
-  // named is the one the wheel's cusps were computed in: Porphyry where its frame fell back to it.
+  // named is always the reader's. Where it breaks down for this wheel inside the polar circles
+  // (WH-1, 22 Nov 2026) the line says so instead: "… · no houses: Regiomontanus breaks down here"
+  // (Salvatore's proposal to Lina's question 2; until then it named Porphyry).
   const housesLine = (h: WheelHouses | null, frameAngles: RelocatedAngles | null | undefined): string | null => {
     if (!h || !houseSystem || !frameAngles) return null;
     const calc = h.calc
@@ -2291,7 +2294,8 @@ export function ExpandedChartSidebar({
     const word = (w: string, on: 'positions' | 'angles') =>
       calc && h.calc?.on === on ? t('expandedSidebar.houses.withCalc', { word: w, calc }) : w;
     const positions = word(t(`expandedSidebar.houses.positions.${h.positions}`), 'positions');
-    const system = labels.houseSystem(frameAngles.fallback ? 'porphyry' : houseSystem);
+    const system = labels.houseSystem(houseSystem);
+    if (frameAngles.housesBreakDown) return t('expandedSidebar.houses.lineNone', { positions, system });
     return h.angles
       ? t('expandedSidebar.houses.line', {
           positions,
@@ -2303,6 +2307,33 @@ export function ExpandedChartSidebar({
   // The overlay wheel's line, from its own frame; and, on a celestial map, an event chart's own
   // (a person's natal wheel has none there, per her table; on a geodetic map the chart's line is
   // the geodetic block's, geoLines below).
+  // The polar "Angles only" notice (WH-1, 22 Nov 2026): one element, shown in the wheel's corner
+  // for the chart's own wheel and under the second wheel's header in Dual, each wheel by its own
+  // Midheaven. The short label sits where the Porphyry caution did; the tip carries Lina's note.
+  const housesBreakDownNote = (
+    <TipSpan
+      className="es-house-fallback es-house-fallback-info"
+      tip={t('expandedSidebar.housesBreakDown.label')}
+      hint={t('expandedSidebar.housesBreakDown.note')}
+      tapReveal
+    >
+      <span className="es-house-fallback-full">{t('expandedSidebar.housesBreakDown.label')}</span>
+      <svg
+        className="es-info-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v4.5" />
+        <path d="M12 7.75h.01" />
+      </svg>
+    </TipSpan>
+  );
   const outerHousesLine = housesLine(overlayHouses, overlayAngles);
   const chartHousesLine = !geoFrame && isEvent ? housesLine({ positions: 'event' }, angles) : null;
   // Cyclocartography has no wheel of its own (it blends two moments): where the overlay's wheel
@@ -2325,21 +2356,21 @@ export function ExpandedChartSidebar({
       angles: t('map.geoReadout.angles'),
       anglesMcOnly: t('map.geoReadout.anglesMcOnly'),
     });
-    const system = houseSystem
-      ? labels.houseSystem(angles.fallback ? 'porphyry' : houseSystem)
-      : null;
+    const system = houseSystem ? labels.houseSystem(houseSystem) : null;
+    // Where the system breaks down at this place (WH-1) each line says "no houses" instead.
+    const none = angles.housesBreakDown ? 'None' : '';
     // Whose planets: a promoted overlay's bodies are another instant's (the sky alone's too,
     // which App names the same way), a composite's are the composite's own, an event chart's
     // the event's; otherwise they are the chart's natal positions. (Event, 2026-10-20.)
     const planetsLine = !system
       ? null
       : promotedLabel
-        ? (outerHousesLine ?? t('expandedSidebar.geodetic.planetsPromoted', { overlay: promotedLabel, system }))
+        ? (outerHousesLine ?? t(`expandedSidebar.geodetic.planetsPromoted${none}`, { overlay: promotedLabel, system }))
         : chart?.composite
-          ? t('expandedSidebar.geodetic.planetsComposite', { system })
+          ? t(`expandedSidebar.geodetic.planetsComposite${none}`, { system })
           : isEvent
-            ? t('expandedSidebar.geodetic.planetsEvent', { system })
-            : t('expandedSidebar.geodetic.planets', { system });
+            ? t(`expandedSidebar.geodetic.planetsEvent${none}`, { system })
+            : t(`expandedSidebar.geodetic.planets${none}`, { system });
     return (
       <div className="es-geo-lines">
         <span className="es-geo-ge">
@@ -2697,32 +2728,10 @@ export function ExpandedChartSidebar({
                   part per line; in Dual Wheels, the first wheel's (chartView). */}
               {frame && (
                 <div className="es-wheel-corner es-wheel-corner-left">
-                  {frame.fallback && (
-                    <TipSpan
-                      className="es-house-fallback es-house-fallback-info"
-                      tip={t('expandedSidebar.houseFallback')}
-                      hint={t('expandedSidebar.houseFallbackHint')}
-                      tapReveal
-                    >
-                      {/* Both forms; the panel's width picks one (CSS, .es-section-wheel). */}
-                      <span className="es-house-fallback-full">{t('expandedSidebar.houseFallback')}</span>
-                      <span className="es-house-fallback-short">{t('expandedSidebar.houseFallbackShort')}</span>
-                      <svg
-                        className="es-info-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M12 11v4.5" />
-                        <path d="M12 7.75h.01" />
-                      </svg>
-                    </TipSpan>
-                  )}
+                  {/* Where the chosen house system breaks down inside the polar circles (WH-1,
+                      22 Nov 2026), in the slot the Porphyry caution held until then (Salvatore's
+                      call): the wheel draws the angles only, and the note says why and what works. */}
+                  {frame.housesBreakDown && housesBreakDownNote}
                   {timeUnknownShown && (
                     <span className="es-house-fallback">
                       {t(isEvent ? 'expandedSidebar.timeUnknownNoteEvent' : 'expandedSidebar.timeUnknownNote')}
@@ -2789,6 +2798,7 @@ export function ExpandedChartSidebar({
                           ? partnerLines(overlayPartner, 'p')
                           : renderLines(headerModel.overlayView?.lines ?? [], 'o')}
                         {outerHousesLine && <div className="es-hl es-houses-line">{outerHousesLine}</div>}
+                        {overlayAngles?.housesBreakDown && housesBreakDownNote}
                       </div>
                       <div className="es-wheel-slot">
                         {/* The overlay chart's own catalog bodies, placed by its rule —

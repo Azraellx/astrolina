@@ -82,7 +82,7 @@ export const PROTECTED_TERMS: readonly ProtectedTerm[] = [
   { term: 'Regiomontanus', kind: 'exact' },
   { term: 'Campanus', kind: 'exact' },
   { term: 'Porphyry', kind: 'exact' },
-  { term: 'Alcabitus', kind: 'exact' },
+  { term: 'Alcabitius', kind: 'exact' },
   { term: 'Morinus', kind: 'exact' },
   { term: 'AstroLina', kind: 'exact' },
   { term: '© AstroLina', kind: 'exact', pattern: '©\\s*\\d{4}\\s+AstroLina' },
