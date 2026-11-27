@@ -5,7 +5,7 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import tzlookup from 'tz-lookup';
-import { DateTime } from 'luxon';
+import { DateTime, type Zone } from 'luxon';
 // Per zone, the date its local-mean-time era ended (tzdb source, see
 // scripts/build-lmt-table.mjs) plus the legacy-alias Link map.
 import lmtEras from './data/lmtEras.json';
@@ -22,6 +22,11 @@ export interface TimezoneInfo {
    *  local mean time: the birthplace's own (detected path) or the zone reference
    *  city's (explicit-zone path, which is why that path also flags uncertain). */
   lmt: boolean;
+  /** The wall clock was read twice in this zone, as the clocks went back, and
+   *  `offsetHours` is the EARLIER pass (wallClockPasses). Absent otherwise. */
+  ambiguous?: boolean;
+  /** With `ambiguous`: the offset of the other, later pass, east-positive hours. */
+  otherOffsetHours?: number;
 }
 
 const HISTORICAL_DST_CONFIDENT_REGIONS = /^(America|Europe|Pacific\/Honolulu|US\/)/;
@@ -59,10 +64,56 @@ function inLmtEra(
   return false; // exactly the transition moment: standard time
 }
 
+const DAY_MS = 86_400_000;
+
+/** Epoch ms of a wall-clock reading taken as if it were UT, safe for years below
+ *  100 (which Date.UTC would move into the 1900s). */
+function wallAsUtMs(year: number, month: number, day: number, hour: number, minute: number): number {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month - 1, day);
+  d.setUTCHours(hour, minute, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * The offsets (minutes east) at which the zone's clock read this wall-clock time,
+ * from the zone's own offset function alone: one in the ordinary case; two in the
+ * hour the clocks go back, the EARLIER pass first (the larger offset east reads the
+ * clock sooner in absolute time); none in a spring-forward gap. `wall` is the wall
+ * clock read as if it were UT (wallAsUtMs).
+ *
+ * The candidates are the offsets in force a day either side, which bracket any
+ * change that can touch one wall-clock reading (no zone is a day from UT); a
+ * candidate counts if the instant it gives is one at which the zone kept it.
+ *
+ * Why not DateTime.fromObject's own answer (2026-11-27): Luxon starts from the
+ * zone's offset on the day the CODE RUNS (Settings.now) and keeps that guess
+ * whenever it round-trips. In a repeated hour both passes round-trip, so New
+ * York's 01:30 on 1 November 2026 came out EST on a winter day and EDT on a
+ * summer one — verify:timechain failed in winter. And where today's offset is
+ * neither of the two around a change, the guess can land on an offset that does
+ * not read the clock back at all: London's 01:00 on 4 May 1941 resolved to +2,
+ * an hour before double summer time began, and New York's 12:30 on 18 November
+ * 1883 to the mean time it had left half an hour earlier, on a summer day.
+ */
+function wallClockPasses(zone: Zone, wall: number): number[] {
+  const found: number[] = [];
+  for (const o of [zone.offset(wall - DAY_MS), zone.offset(wall + DAY_MS)]) {
+    if (!Number.isFinite(o) || found.includes(o)) continue;
+    if (zone.offset(wall - Math.round(o * 60_000)) === o) found.push(o);
+  }
+  return found.sort((a, b) => b - a);
+}
+
 // The offset (east-positive hours, DST-aware) and DST-confidence of an EXPLICIT IANA
 // zone for a wall-clock birth moment. This is the heart of timezone handling: the user
 // picks a zone (defaulting to the one detected from the birthplace) and we derive the
 // exact offset birthDataToJD subtracts to get the UT instant.
+//
+// A wall clock the zone read twice, as its clocks went back, takes the EARLIER pass
+// and says so (`ambiguous`); one it never read, in a spring-forward gap, keeps
+// Luxon's reading, the post-gap offset. Both are the methods page's stated
+// convention, and neither depends on the date the code runs on (wallClockPasses).
 export function resolveZoneInfo(
   iana: string,
   year: number,
@@ -81,13 +132,16 @@ export function resolveZoneInfo(
   if (!dt.isValid || !Number.isFinite(dt.offset)) {
     return { iana, offsetHours: 0, uncertain: true, lmt: false };
   }
-  const offsetHours = dt.offset / 60;
+  const passes = wallClockPasses(dt.zone, wallAsUtMs(year, month, day, hour, minute));
+  const offsetHours = (passes.length ? passes[0] : dt.offset) / 60;
   const lmt = inLmtEra(iana, year, month, day, hour, minute);
   // An explicitly chosen zone in its LMT era yields the REFERENCE CITY's mean
   // time, which is almost certainly not the birthplace's — flag it.
   const uncertain =
     lmt || (year < 1970 && !HISTORICAL_DST_CONFIDENT_REGIONS.test(iana));
-  return { iana, offsetHours, uncertain, lmt };
+  return passes.length > 1
+    ? { iana, offsetHours, uncertain, lmt, ambiguous: true, otherOffsetHours: passes[1] / 60 }
+    : { iana, offsetHours, uncertain, lmt };
 }
 
 // resolveZoneInfo for the zone detected from coordinates — the default a fresh chart

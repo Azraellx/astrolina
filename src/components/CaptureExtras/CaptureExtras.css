@@ -198,8 +198,26 @@
   gap: 10px;
 }
 /* Keep the wheel at its intrinsic size; never let the flex row squeeze it. */
-.cx-wheel-cluster-row .wheel-svg-wrap {
+.cx-wheel-cluster-row .wheel-svg-wrap,
+.cx-wheel-cluster-row .cx-wheel-box {
   flex-shrink: 0;
+}
+/* The wheel's own box (CaptureExtras.tsx): the containing block for the polar label. */
+.cx-wheel-box {
+  position: relative;
+}
+/* "Angles only" on a wheel with no houses (WH-1.2): the sidebar wheel's corner label, in the
+   circle's empty top-left corner, at the panel's own text size (the root's clamp, which follows
+   the caption band) in the muted ink the sidebar gives it. */
+.cx-wheel-angles-only {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 0.92em;
+  line-height: 1.2;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* Beside the wheel the grid aligns to its top edge — drop the stacked layout's top gap. */
 .cx-wheel-cluster-row .capture-balance-grid {

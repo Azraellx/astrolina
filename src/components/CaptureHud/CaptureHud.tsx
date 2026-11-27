@@ -6,9 +6,9 @@
 
 // The movable "Capture" window (Tools ▸ Capture). Opening it arms the capture
 // frame on the map (App sets mapTool='capture'); this window picks the frame's aspect
-// ratio and which caption fields appear, then renders the framed view to a PNG —
-// downloaded or copied to the clipboard — entirely client-side via captureFrame. The
-// pin, edge labels and watermark are always included; the caption fields live in App
+// ratio, which pins (CA-2) and which caption fields appear, then renders the framed view to a
+// PNG — downloaded or copied to the clipboard — entirely client-side via captureFrame. The
+// edge labels and watermark are always included; the pins and caption fields live in App
 // (the Map reserves a footer band for the caption), so this window is a controlled view.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -273,6 +273,10 @@ interface CaptureHudProps {
    *  owned by App, which withholds them from the map only while the tool is armed. */
   hiddenOverlays: ReadonlySet<string>;
   onToggleOverlay: (id: string) => void;
+  /** Which pins the image shows (owned by App, persisted; CA-2): every pin, only the placed
+   *  one, or none. The image only — no pin leaves the map, and the caption keeps the place. */
+  pins: 'all' | 'current' | 'none';
+  onSetPins: (v: 'all' | 'current' | 'none') => void;
   /** The download / share filename (App derives it from the shown caption fields). */
   fileName: string;
   /** Composite + rasterise the framed view to a PNG Blob (MapHandle.captureFrame). */
@@ -326,6 +330,8 @@ export function CaptureHud({
   onToggleExtra,
   hiddenOverlays,
   onToggleOverlay,
+  pins,
+  onSetPins,
   fileName,
   onCapture,
   shareLink,
@@ -849,6 +855,28 @@ export function CaptureHud({
             <EyeIcon open={effTransparent} className="location-ls-eye" size={14} />
             <span className="location-ls-name">{t('captureHud.transparent.title')}</span>
           </TipButton>
+        )}
+
+        {/* Which pins the image shows (CA-2, Lina 23 Nov 2026; labels Salvatore's). A framed map
+            only: a chart card has no map to pin, and the transparent export draws no marker. */}
+        {!chartSubject && !effTransparent && (
+          <div className="capture-hud-group">
+            <div className="capture-hud-label">{t('captureHud.pins.label')}</div>
+            <div className="location-ls-seg capture-hud-seg" role="group">
+              {(['all', 'current', 'none'] as const).map((k) => (
+                <TipBtn
+                  key={k}
+                  className={`location-ls-seg-btn ${pins === k ? 'active' : ''}`}
+                  onClick={() => onSetPins(k)}
+                  ariaPressed={pins === k}
+                  title={t(`captureHud.pins.${k}`)}
+                  hint={t(`captureHud.pins.${k}Hint`)}
+                >
+                  {t(`captureHud.pins.${k}`)}
+                </TipBtn>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Details heading — shown in every mode. The phone "i" (why no wheel/list) belongs

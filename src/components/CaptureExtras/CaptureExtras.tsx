@@ -172,7 +172,7 @@ export function CaptureExtras({
   wheelSize,
   onMeasure,
 }: CaptureExtrasProps) {
-  const { labels } = useT();
+  const { labels, t } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Report the panel's measured size so the Map can inset the framed view to match.
@@ -253,30 +253,42 @@ export function CaptureExtras({
           // definite width to stretch to. Elsewhere the cluster hugs its content.
           style={orientation === 'left' ? { width: wheelSize } : undefined}
         >
-          <WheelSvg
-            size={wheelSize}
-            angles={data.angles}
-            planets={data.planets}
-            minorBodies={data.minorBodies ?? null}
-            detailed
-            interactive
-            // No house focus on a wheel that is headed for an image: a tap leaves it up,
-            // and the export would carry the faded houses with it. (2026-10-23)
-            houseFocus={false}
-            readouts
-            advanced={data.advanced ?? false}
-            planetsOnly={data.planetsOnly ?? false}
-            overlayPlanets={data.overlayPlanets ?? null}
-            overlayMinorBodies={data.overlayMinorBodies ?? null}
-            overlayName={data.overlayName ?? null}
-            overlayAngles={data.overlayAngles ?? null}
-            aspectOrbs={data.aspectOrbs}
-            visibleAspects={data.visibleAspects ?? NO_ASPECTS}
-            visibleAngles={data.visibleAngles}
-            maskAngleText={data.maskAngleText ?? false}
-            ranges={data.ranges ?? null}
-            bodyNotes={data.bodyNotes ?? null}
-          />
+          {/* The wheel's own box, so the polar label below can sit in its top-left corner
+              whatever the cluster does around it (a centred card, a grid beside or under). */}
+          <div className="cx-wheel-box">
+            <WheelSvg
+              size={wheelSize}
+              angles={data.angles}
+              planets={data.planets}
+              minorBodies={data.minorBodies ?? null}
+              detailed
+              interactive
+              // No house focus on a wheel that is headed for an image: a tap leaves it up,
+              // and the export would carry the faded houses with it. (2026-10-23)
+              houseFocus={false}
+              readouts
+              advanced={data.advanced ?? false}
+              planetsOnly={data.planetsOnly ?? false}
+              overlayPlanets={data.overlayPlanets ?? null}
+              overlayMinorBodies={data.overlayMinorBodies ?? null}
+              overlayName={data.overlayName ?? null}
+              overlayAngles={data.overlayAngles ?? null}
+              aspectOrbs={data.aspectOrbs}
+              visibleAspects={data.visibleAspects ?? NO_ASPECTS}
+              visibleAngles={data.visibleAngles}
+              maskAngleText={data.maskAngleText ?? false}
+              ranges={data.ranges ?? null}
+              bodyNotes={data.bodyNotes ?? null}
+            />
+            {/* A wheel with no houses says so in the image (WH-1.2, Lina 23 Nov 2026: "a capture
+                is the image that leaves the app"). The label alone, as the sidebar's corner
+                shows it; the note behind its (i) stays in the app, since a still image has no
+                tip. HTML outside the wheel's SVG, so the DOM pass captures it and the wheel's
+                fit is untouched. Not on the planets-only frame, which has no houses by design. */}
+            {data.angles.housesBreakDown && !data.planetsOnly && (
+              <span className="cx-wheel-angles-only">{t('expandedSidebar.housesBreakDown.label')}</span>
+            )}
+          </div>
           {data.balanceGrid && <CaptureBalanceGrid grid={data.balanceGrid} />}
         </div>
       ) : (

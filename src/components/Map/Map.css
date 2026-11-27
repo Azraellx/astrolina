@@ -954,6 +954,26 @@
      assumes it applies about the layer's own origin — never the default center. */
   transform-origin: 0 0;
 }
+/* While framing, the track is inset with the map view (.map-container above): an overlay is
+   placed at map.project() pixels, which count from the MAP's corner, and the tracking math
+   scales about the track's origin, so the two corners must coincide. Without this every
+   overlay in the track (saved pins, the journal circles, the radar reticle) sat one Extras
+   panel to the left, or above on 1:1 and 4:5, of its place, and the capture stamped it there:
+   a pin in Britain printed over northern Quebec beside the wheel (CA-1, 23 Nov 2026). */
+.map-frame.framed .map-overlay-track {
+  left: var(--capture-extra-left, 0px);
+  top: var(--capture-extra-top, 0px);
+  bottom: var(--capture-caption-h, 0px);
+}
+/* Capture ▸ Pins (CA-2): the markers the image leaves out, out of the framed view too, so the
+   frame shows what the file will. display:none, not visibility — the export's pin stamp skips a
+   marker with no box, and would stamp a merely invisible one. The markers stay mounted, so the
+   pin and the home place come back the moment the choice or the frame changes. */
+.map-frame.pins-current .map-home-mark,
+.map-frame.pins-none .map-home-mark,
+.map-frame.pins-none .map-pin {
+  display: none !important;
+}
 
 /* The placed-location marker: the app's teardrop pin icon (SVG, .map-pin-body). The
    tip marks the exact point (marker anchored 'bottom'); the location-state colour

@@ -26,6 +26,15 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Rahmen im Querformat (16:9) – breit, für Folien und Titelbilder.',
   },
+  pins: {
+    label: 'Pins',
+    all: 'Alle',
+    allHint: 'Alle Pins im Bild so anzeigen, wie die Karte sie zeigt.',
+    current: 'Aktueller',
+    currentHint: 'Nur den Pin anzeigen, auf dem du stehst. Alle anderen Pins bleiben auf der Karte, nicht im Bild.',
+    none: 'Keine',
+    noneHint: 'Keine Pins im Bild anzeigen. Die Bildunterschrift nennt weiterhin den Ort, und alle Pins bleiben auf der Karte.',
+  },
   transparent: {
     title: 'Transparent (Local Space)',
     hint: 'Ein Schalter für einen sauberen Local-Space-Export: blendet die Linienpfeile aus, beschriftet die Linien wie im übrigen Horoskop (Beschriftungen liegen an den Rahmenkanten, keine Richtungsgrade) und blendet die Grundkarte aus, sodass der Export einen transparenten Hintergrund behält – bereit, um über einen Grundriss oder deinen eigenen Hintergrund gelegt zu werden. Alles kehrt zurück, sobald Aufnahme oder Local Space geschlossen wird.',
@@ -43,7 +52,7 @@ export const captureHud = {
   },
   view: {
     none: 'Keine',
-    noneHint: 'Keine Horoskopdetails im Rahmen – nur Karte, Pin, Randbeschriftungen und Bildunterschrift.',
+    noneHint: 'Keine Horoskopdetails im Rahmen – nur Karte, Pins, Randbeschriftungen und Bildunterschrift.',
     wheel: 'Zeichnung',
     wheelHint: 'Horoskopzeichnung im Rahmen anzeigen – dieselbe wie in der Seitenleiste. Die Schalter Planeten / Achsen füllen sie; Gewichtung fügt darunter das Raster Element·Modalität an.',
     list: 'Liste',

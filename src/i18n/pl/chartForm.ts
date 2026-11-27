@@ -154,6 +154,7 @@ export const chartForm = {
     keptAsSavedUtc: 'Zachowano zgodnie z zapisem. Przesunięcie o pełne godziny dałoby teraz: {now}.',
     keptAsSavedTerms: 'Zachowano zgodnie z zapisem. Zapisane z nim warunki dałyby teraz: {now}.',
     keptAsSavedUnread: 'Zachowano zgodnie z zapisem. Zapisanych z nim warunków nie można odczytać.',
+    repeatedHour: '{time} zdarza się tu dwa razy przy cofaniu zegarów; przyjęto {clock}, czyli pierwszą. Aby wybrać drugą, użyj „Ustaw ręcznie”.',
     composite: 'UT, stałe dla horoskopu kompozytowego',
     errorPending: 'Wybierz strefę czasową albo wróć do trybu automatycznego.',
     errorRange: 'Strefa czasowa nie może odbiegać od UT o więcej niż 15 godzin. Wybierz inną korektę albo wróć do trybu automatycznego.',

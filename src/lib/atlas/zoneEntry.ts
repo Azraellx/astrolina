@@ -876,11 +876,20 @@ export function proposeStandardEntry(
   at: Pick<ZoneMoment, 'year' | 'month' | 'day' | 'hour' | 'minute'>,
 ): StandardProposal | null {
   if (!detected || detected.lmt) return null;
-  const dt = DateTime.fromObject(
-    { year: at.year, month: at.month, day: at.day, hour: at.hour, minute: at.minute },
-    { zone: detected.iana },
-  );
-  return proposeIn(detected.iana, dt, Math.round(detected.offsetHours * H), at.year);
+  const fields = { year: at.year, month: at.month, day: at.day, hour: at.hour, minute: at.minute };
+  const offset = Math.round(detected.offsetHours * H);
+  let dt = DateTime.fromObject(fields, { zone: detected.iana });
+  // The detected offset names the pass of a repeated hour (resolveZoneInfo takes the
+  // earlier one); DateTime.fromObject picks a pass by the zone's offset on the day the
+  // code runs. Where the two part, the clock is read at the instant the detected offset
+  // casts: otherwise, on a winter day, New York's 01:30 on 1 November 2026 was detected
+  // as EDT, read as EST, and proposed nothing, so the radios lost their EST half
+  // (2026-11-27). A spring-forward gap never parts them, and keeps its reading.
+  if (dt.isValid && Math.round(dt.offset * 60) !== offset) {
+    const wall = DateTime.fromObject(fields, { zone: 'utc' }).toMillis();
+    dt = DateTime.fromMillis(wall - offset * 1000, { zone: detected.iana });
+  }
+  return proposeIn(detected.iana, dt, offset, at.year);
 }
 
 /**
@@ -888,9 +897,10 @@ export function proposeStandardEntry(
  * naming a clock that is read at a moment — the timeline, a place's clock, a
  * stored chart once its offset has fixed the instant (zoneName.ts). Rebuilding
  * the moment from its wall clock cannot say which pass of a fall-back hour was
- * meant: DateTime.fromObject takes the first, so New York's second 01:30 on
- * 2 November 2025 (EST) was proposed as EDT. An instant has one offset. Same
- * rules otherwise, including no proposal in the zone's mean-time era.
+ * meant: a wall clock there names two instants, and detection takes the first
+ * (resolveZoneInfo), so New York's second 01:30 on 2 November 2025 (EST) would be
+ * proposed as EDT. An instant has one offset. Same rules otherwise, including no
+ * proposal in the zone's mean-time era.
  */
 export function proposeStandardEntryAt(iana: string, ms: number): StandardProposal | null {
   const dt = DateTime.fromMillis(ms, { zone: iana });

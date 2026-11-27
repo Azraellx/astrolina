@@ -305,6 +305,16 @@ export const chartForm = {
     keptAsSavedUtc: 'Kept as saved. Its whole-hour offset would now give {now}.',
     keptAsSavedTerms: 'Kept as saved. The terms recorded with it would now give {now}.',
     keptAsSavedUnread: 'Kept as saved. The terms recorded with it can’t be read.',
+    // A line under the time zone (2026-11-27) when the time the reader TYPED falls in the
+    // hour the clocks go back, so the place's clocks showed it twice, and the zone is
+    // Automatic. Automatic takes the first of the two; this says which was taken and how
+    // to choose the second. Never shown once a zone is chosen by hand. {time} is the time
+    // as typed ("01:30"); {clock} is that time with the zone named as the row above names
+    // it ("01:30 EDT (UTC−04:00)"). "Set manually" is the link beside the zone
+    // (setManually): write it exactly as that link reads. Sits under the zone in a narrow
+    // form, so keep it no longer than the English.
+    repeatedHour:
+      '{time} happens twice here as the clocks go back; it is taken as {clock}, the first. Set manually to choose the second.',
     composite: 'UT, fixed for a composite chart',
     errorPending: 'Choose a time zone, or switch back to Automatic.',
     errorRange: 'A time zone can’t be more than 15 hours from UT. Choose another correction, or switch back to Automatic.',

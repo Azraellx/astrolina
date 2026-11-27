@@ -5,8 +5,8 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The movable "Capture" window (Tools ▸ Capture): pick a capture frame aspect
-// ratio and which caption fields appear, then download the framed map as a PNG or copy
-// it to the clipboard. The map, pin, edge labels and watermark are always included;
+// ratio, which pins and caption fields appear, then download the framed map as a PNG or copy
+// it to the clipboard. The map, edge labels and watermark are always included;
 // everything is rendered client-side — no server round-trip.
 export const captureHud = {
   title: 'Capture',
@@ -31,6 +31,20 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Landscape frame (16:9) — wide, for slides and headers.',
   },
+  // Which pins the image shows (CA-2, 27 Nov 2026): a three-way segmented control after Frame,
+  // hidden for a chart capture and the transparent export, which carry no pins. It changes the
+  // image only: every pin stays on the map, and the caption still names the place. The three
+  // labels share one row in a narrow window, so keep each to a word.
+  pins: {
+    label: 'Pins',
+    all: 'All',
+    allHint: 'Show every pin in the image, as the map shows them.',
+    current: 'Current',
+    currentHint:
+      'Show only the pin you are on. Every other pin stays on the map, out of the image.',
+    none: 'None',
+    noneHint: 'Show no pins in the image. The caption still names the place, and every pin stays on the map.',
+  },
   // The Local-Space export preset, shown in the Frame section only while Local Space is on.
   transparent: {
     title: 'Transparent (Local Space)',
@@ -52,7 +66,7 @@ export const captureHud = {
   },
   view: {
     none: 'None',
-    noneHint: 'No chart details in the frame — just the map, pin, edge labels and caption.',
+    noneHint: 'No chart details in the frame — just the map, its pins, edge labels and caption.',
     wheel: 'Wheel',
     wheelHint:
       'Show the chart as a wheel inside the frame — the same wheel as the sidebar. The Planets / Angles toggles fill it in; Balance adds the element·modality grid below it.',

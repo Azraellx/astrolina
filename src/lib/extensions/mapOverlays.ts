@@ -71,6 +71,10 @@ export interface MapOverlay {
    *  applies only WHILE the Capture tool is armed (App reverts the map to every
    *  overlay the moment it closes); omit to keep the overlay always drawn. */
   captureToggle?: { title: string; hint: string };
+  /** This overlay draws pins — markers of places, like the core's placed pin. The Capture
+   *  window's Pins choice then withholds it from the image under "Current" and "None",
+   *  exactly as a per-overlay hide does: only while the tool is armed, never off the map. */
+  capturePinLayer?: boolean;
   /** The positioned DOM, re-rendered on every map move. */
   render: (api: MapOverlayApi) => ReactNode;
 }

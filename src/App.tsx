@@ -2021,8 +2021,9 @@ export default function App() {
       /* ignore */
     }
   }, []);
-  // Capture caption fields, persisted. The pin, edge labels and watermark are now
-  // always included (no toggles); only WHICH parts of the caption appear is configurable.
+  // Capture caption fields, persisted. The edge labels and watermark are always included
+  // (no toggles), and the pins follow Capture ▸ Pins below; only WHICH parts of the caption
+  // appear is configurable here.
   // The caption fields are lifted here (not kept in CaptureHud) because the Map reserves a
   // footer band for the caption while the frame is armed.
   const [captureCaptionFields, setCaptureCaptionFields] = useState<{
@@ -2106,6 +2107,24 @@ export default function App() {
       }
       return next;
     });
+  }, []);
+  // Capture ▸ Pins (CA-2, Lina 23 Nov 2026): which pins the image shows. 'all' — every pin, as
+  // the map shows them (the default, and the only behaviour before); 'current' — only the placed
+  // pin, the place being composed around; 'none' — no pin at all. The IMAGE only: no pin leaves the
+  // map, and nothing attached to one is touched — the markers are withheld from the framed view
+  // while the tool is armed (Map's capturePins, and the pin overlays below), and the caption reads
+  // the place from the pin's state, never from its marker. Written by the control's own click.
+  const [capturePins, setCapturePins] = useState<'all' | 'current' | 'none'>(() => {
+    const v = localStorage.getItem('astro:capture-pins:v1');
+    return v === 'current' || v === 'none' ? v : 'all';
+  });
+  const setCapturePinsPersist = useCallback((v: 'all' | 'current' | 'none') => {
+    setCapturePins(v);
+    try {
+      localStorage.setItem('astro:capture-pins:v1', v);
+    } catch {
+      /* ignore */
+    }
   }, []);
   // Capture ▸ per-overlay visibility: registered map overlays the user hides from
   // captures (MapOverlay.captureToggle — e.g. an add-on's plotted markers). The set
@@ -6607,6 +6626,20 @@ export default function App() {
   // Every registered map overlay id — withheld from the frame while lsTransparent (a clean
   // LS-only export). The registry is populated at startup, so the set is stable.
   const allCaptureOverlayIds = useMemo(() => new Set(getMapOverlays().map((o) => o.id)), []);
+  // The overlays that draw pins (MapOverlay.capturePinLayer — a downstream build's saved pins),
+  // added to the capture's withheld set while Capture ▸ Pins is Current or None (CA-2). Same
+  // reach as the per-overlay hides: only while the tool is armed, so the map keeps every pin.
+  const capturePinOverlayIds = useMemo(
+    () => new Set(getMapOverlays().filter((o) => o.capturePinLayer).map((o) => o.id)),
+    [],
+  );
+  const captureWithheldOverlays = useMemo(
+    () =>
+      capturePins === 'all' || capturePinOverlayIds.size === 0
+        ? captureHiddenOverlays
+        : new Set([...captureHiddenOverlays, ...capturePinOverlayIds]),
+    [capturePins, capturePinOverlayIds, captureHiddenOverlays],
+  );
   // The view actually drawn, which is never written back to the stored preference — so a
   // choice made where it fits survives a detour through a frame where it doesn't.
   //  • CHART card — there is no 'none' (the details ARE the picture), and the phone rule
@@ -8751,7 +8784,7 @@ export default function App() {
           mapTool === 'capture'
             ? lsTransparent
               ? allCaptureOverlayIds // transparent mode: withhold every overlay (journal etc.)
-              : captureHiddenOverlays
+              : captureWithheldOverlays // the per-overlay hides, and the pin layers (Pins)
             : undefined
         }
         // Line families are narrowed to the spotlight (applySpot: passthrough when off, all
@@ -8869,6 +8902,9 @@ export default function App() {
         // Transparent export: clip the LS lines to a circle ~30% wider than the compass with their
         // badges on that rim, and render those badges glyph-only (no "LS") and ~50% larger.
         lsTransparent={lsTransparent}
+        // Capture ▸ Pins (CA-2): which of the core's markers the framed view shows. The Map applies
+        // it only while framing a map (a chart card and the transparent export draw no pin).
+        capturePins={capturePins}
         // Transparent badge labels (only meaningful there): planet name after the glyph, and the
         // line's bearing printed along the line toward the compass centre.
         lsLabelName={lsTransparent && lsLabelName}
@@ -9484,6 +9520,8 @@ export default function App() {
           onToggleExtra={toggleCaptureExtra}
           hiddenOverlays={captureHiddenOverlays}
           onToggleOverlay={toggleCaptureOverlay}
+          pins={capturePins}
+          onSetPins={setCapturePinsPersist}
           fileName={captureFileName}
           onCapture={() => mapRef.current?.captureFrame() ?? Promise.resolve(null)}
           // Share link: the chart + this camera + the pin as a #c= URL. A composite
@@ -9729,6 +9767,9 @@ export default function App() {
             planets={wheelPlanets}
             minorBodies={wheelMinor}
             visiblePlanets={visiblePlanets}
+            // The angle marks the map's line-type toggles show, from the DERIVED
+            // visibleLineTypes, the set the sidebar and capture wheels draw (WH-3).
+            visibleAngles={captureWheelAngles}
             noChart={cycloEmpty}
             planetsOnly={wheelPlanetsOnly}
             // No chart and no sky overlay: the placeholder says how to get the sky's wheel.

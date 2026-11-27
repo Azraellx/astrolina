@@ -2100,6 +2100,12 @@ interface MapProps {
    *  anchor their badges on that rim (a self-contained compass rose, only while the compass is
    *  shown), and render those badges glyph-only (no "LS" prefix) and ~50% larger. */
   lsTransparent?: boolean;
+  /** Capture ▸ Pins (CA-2, 27 Nov 2026): which pins the framed image shows — 'all' (default),
+   *  'current' (the placed pin only: the home marker is withheld) or 'none' (neither). Applies
+   *  only while a map is framed; the markers stay mounted and their places untouched, and a
+   *  withheld marker stops being a place the labels step off. A downstream build's pin layers
+   *  are withheld by App through hiddenOverlayIds (MapOverlay.capturePinLayer). */
+  capturePins?: 'all' | 'current' | 'none';
   /** Transparent export, "Label Name": print each local-space planet's name after its glyph
    *  (e.g. "♂ Mars") on the badge. */
   lsLabelName?: boolean;
@@ -4391,6 +4397,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   hideBasemap = false,
   hideLsArrows = false,
   lsTransparent = false,
+  capturePins = 'all',
   lsLabelName = false,
   lsLineDeg = false,
   lsEdgeLabels = false,
@@ -4459,6 +4466,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // the frame edges. Assigned during render so it's current before any badge recompute.
   const frameActiveRef = useRef(!!frameActive);
   frameActiveRef.current = !!frameActive;
+  // Capture ▸ Pins as drawn (CA-2): the choice applies only to a framed MAP — a chart card and
+  // the transparent export carry no pin anyway — and is 'all' everywhere else, so nothing about
+  // the live map changes. Mirrored for computeBadges, which steps the labels off only the markers
+  // the image will show. Assigned during render, like frameActiveRef above.
+  const pinsShown: 'all' | 'current' | 'none' =
+    frameActive && !chartSubject && !lsTransparent ? capturePins : 'all';
+  const pinsShownRef = useRef(pinsShown);
+  pinsShownRef.current = pinsShown;
   // One-slot "go back" view for the Location window: teleportTo() stashes the
   // pre-jump camera here; teleportBack() swaps current<->saved so the same button
   // toggles between the two locations (two-deep, like browser back/forward).
@@ -5359,17 +5374,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
 
           /** One teardrop marker, in its live on-screen state colours. The SVG viewBox is
            *  0 0 24 24 for every pin kind, so one routine draws them all. */
+          // The map view's box: inside the frame, less the Extras panel and the caption band
+          // (Map.css, .map-frame.framed .map-container). A pin is a mark on the MAP, so it is
+          // drawn within the map and clipped to it, never stamped over the wheel or the list
+          // beside it, nor over the caption (CA-1, 27 Nov 2026).
+          const mapView = frameEl.querySelector(':scope > .map-container') ?? frameEl;
+          const mapRect = mapView.getBoundingClientRect();
           const drawPin = async (body: Element, shape: Element) => {
             const br = body.getBoundingClientRect();
             if (br.width <= 0 || br.height <= 0) return;
-            // In frame, or not drawn at all. The canvas would clip a stray pin anyway,
-            // but a marker parked off-viewport by MapLibre still has a rect, and half a
-            // teardrop bleeding in from outside the composition is not what was framed.
+            // In the map view, or not drawn at all. The clip below would trim a stray pin
+            // anyway, but a marker parked off-viewport by MapLibre still has a rect, and
+            // half a teardrop bleeding in from outside the composition is not what was framed.
             if (
-              br.right <= frameRect.left ||
-              br.left >= frameRect.right ||
-              br.bottom <= frameRect.top ||
-              br.top >= frameRect.bottom
+              br.right <= mapRect.left ||
+              br.left >= mapRect.right ||
+              br.bottom <= mapRect.top ||
+              br.top >= mapRect.bottom
             )
               return;
             const cs = getComputedStyle(shape);
@@ -5392,6 +5413,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             const art = href ? await emblem(href) : null;
             const s = (br.width / 24) * scale;
             ctx.save();
+            ctx.beginPath();
+            ctx.rect(
+              (mapRect.left - frameRect.left) * scale,
+              (mapRect.top - frameRect.top) * scale,
+              mapRect.width * scale,
+              mapRect.height * scale,
+            );
+            ctx.clip();
             ctx.translate((br.left - frameRect.left) * scale, (br.top - frameRect.top) * scale);
             ctx.scale(s, s);
             const teardrop = new Path2D('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z');
@@ -5904,12 +5933,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         overlay = readHudRects(map, OVERLAY_MARKER_SELECTORS);
         overlayMarkersRef.current = { rects: overlay, key: rectsKey(overlay) };
       }
+      // A marker the capture withholds (Capture ▸ Pins) is not a place the labels step off: the
+      // image would show a gap around nothing. Its overlay layers are not rendered at all then,
+      // so the DOM read above finds none of them.
+      const pins = pinsShownRef.current;
       return (markersRead =
         framing && lsTransparentRef.current
           ? []
           : [
-              markerHitRect(map, markerRef.current, scaledHit(PIN_HIT)),
-              markerHitRect(map, homeMarkerRef.current, HOME_HIT),
+              pins === 'none' ? null : markerHitRect(map, markerRef.current, scaledHit(PIN_HIT)),
+              pins === 'all' ? markerHitRect(map, homeMarkerRef.current, HOME_HIT) : null,
             ]
               .filter((r): r is AvoidRect => r !== null)
               .concat(overlay));
@@ -9899,10 +9932,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // The basemap's own place names leave the space under the pin and the home marker
   // (labelCollider.ts): both are DOM, which MapLibre's label collision can't see, so the pin
   // sat on the very name it marked. Re-added on every style by the module itself.
+  // While a capture withholds a marker (Capture ▸ Pins, CA-2) its place name has nothing to make
+  // room for, so it drops out of the colliders until the choice or the frame changes.
+  const colliderPin = pinsShown === 'none' ? null : pin;
+  const colliderHome = pinsShown === 'all' ? home : null;
   useEffect(() => {
     const map = mapRef.current;
-    if (map) setLabelColliders(map, { pin, home });
-  }, [pin, home]);
+    if (map) setLabelColliders(map, { pin: colliderPin, home: colliderHome });
+  }, [colliderPin, colliderHome]);
 
   // The placed pin and the home marker are places the labels step off (PIN_HIT), and neither
   // one appearing, moving or going is a camera move — so re-place the labels when it happens,
@@ -9915,7 +9952,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     if (!mapRef.current) return;
     scheduleBadgesRef.current();
-  }, [pinAt, homeAt]);
+  }, [pinAt, homeAt, pinsShown]);
 
   // Tell the app when we cross into "detail" zoom (the level where the Zoom-out
   // button appears), so it can gate the network reverse-geocoder to where town-level
@@ -9975,7 +10012,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           together, and so a single `captureFrame` rasterises them as one unit. */}
       <div
         ref={frameRef}
-        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}${lsTransparent ? ' transparent' : ''}${frameActive && chartSubject ? ' chart-only' : ''}`}
+        className={`map-frame${frameActive ? ' framed' : ''}${frameInset?.cap ? ' has-caption' : ''}${lsTransparent ? ' transparent' : ''}${frameActive && chartSubject ? ' chart-only' : ''}${pinsShown !== 'all' ? ` pins-${pinsShown}` : ''}`}
         style={
           frameInset
             ? ({

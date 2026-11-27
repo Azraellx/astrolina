@@ -70,7 +70,13 @@ export function applyTimeHypothesis<T extends BirthData>(
 // Birth date + place are documented (Wikipedia / Astro-Databank); the 09:30
 // birth time is the commonly-cited record (Astro-Seek). New York City observed
 // daylight saving in summer 1941, so the zone is EDT (UTC−4).
-export const SEED_BIRTHS: BirthData[] = [
+//
+// The zone is recorded with it (2026-11-27). Without it the timeline bar, which reads a
+// chart's own zone, kept the fixed UTC−4 all year, while the header read Yonkers' clock:
+// an hour apart all winter, at the very return Lina was checking (RT-1). The offset is
+// unchanged and still the record; only a fresh library starts from this, and a copy
+// already saved keeps its own record, as every saved chart does.
+export const SEED_BIRTHS: (BirthData & { tzIana?: string })[] = [
   {
     name: 'Jim Lewis',
     year: 1941,
@@ -79,6 +85,7 @@ export const SEED_BIRTHS: BirthData[] = [
     hour: 9,
     minute: 30,
     tzOffset: -4,
+    tzIana: 'America/New_York',
     birthplace: {
       label: 'Yonkers, New York, United States',
       lat: 40.9312,

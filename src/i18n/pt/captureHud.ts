@@ -26,6 +26,15 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Enquadramento paisagem (16:9) — largo, para slides e cabeçalhos.',
   },
+  pins: {
+    label: 'Alfinetes',
+    all: 'Todos',
+    allHint: 'Mostrar todos os alfinetes na imagem, como o mapa os exibe.',
+    current: 'Atual',
+    currentHint: 'Mostrar só o alfinete em que você está. Os demais alfinetes continuam no mapa, fora da imagem.',
+    none: 'Nenhum',
+    noneHint: 'Não mostrar alfinetes na imagem. A legenda continua nomeando o local, e todos os alfinetes continuam no mapa.',
+  },
   transparent: {
     title: 'Transparente (Espaço local)',
     hint: 'Um único botão para uma exportação limpa do espaço local: oculta as setas das linhas, rotula as linhas como o resto do mapa astral (os rótulos ficam junto às bordas do enquadramento, sem graus de rumo) e apaga o mapa-base para que a exportação mantenha o fundo transparente — pronta para sobrepor a uma planta baixa ou ao seu próprio fundo. Tudo volta quando a Captura ou o Espaço local é fechado.',
@@ -43,7 +52,7 @@ export const captureHud = {
   },
   view: {
     none: 'Nenhum',
-    noneHint: 'Sem detalhes do mapa astral no enquadramento — só o mapa-múndi, o alfinete, os rótulos das bordas e a legenda.',
+    noneHint: 'Sem detalhes do mapa astral no enquadramento — só o mapa-múndi, os alfinetes, os rótulos das bordas e a legenda.',
     wheel: 'Roda',
     wheelHint: 'Mostrar o mapa astral como roda no enquadramento — a mesma da barra lateral. Os botões Planetas / Ângulos a preenchem; Balanço acrescenta abaixo a grade elemento·modalidade.',
     list: 'Lista',

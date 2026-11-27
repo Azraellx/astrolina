@@ -239,8 +239,8 @@ function bodyTip(
 // The chart angles, keyed by their angle code (format.ts AngleCode). The title +
 // sub hint text is resolved via wheel.angles.<key> at render time; the mark itself
 // prints ANGLE_LABEL[key] (AS, MC, DS, IC — the codes were drawn as they stand until
-// 2026-10-02). Vx/Avx (the Vertex axis) are opt-in via the Advanced ▸ Vertex axis
-// setting.
+// 2026-10-02). Vx/Avx (the Vertex axis) are opt-in: they follow the map's Vx and
+// Avx line-type toggles (visibleAngles), both off by default.
 type AngleKey = 'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx';
 const ANGLE_HINTS: { key: AngleKey }[] = [
   { key: 'As' },
@@ -691,10 +691,11 @@ interface WheelSvgProps {
   aspectOrbs?: AspectOrbs;
   /**
    * Which angle marks (by code: As/Ds/Mc/Ic and the Vx/Avx Vertex axis) to draw,
-   * mirroring the Map Filter's line-type toggles. Omitted → all (the minimap
-   * draws no angle marks, so it never reaches this).
+   * mirroring the Map Filter's line-type toggles. Omitted → all six, so every
+   * caller that follows the map's filter must pass it: the enlarged minimap did
+   * not, and drew the Vertex axis with Vx and Avx off (WH-3, 23 Nov 2026).
    */
-  visibleAngles?: Set<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>;
+  visibleAngles?: ReadonlySet<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>;
   /**
    * Enable novice hover hints: a responsive scale on the planet discs + rim
    * signs, the four angle labels (AS/MC/DS/IC), and a floating tag naming each

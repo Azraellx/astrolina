@@ -154,6 +154,7 @@ export const chartForm = {
     keptAsSavedUtc: 'Kaydedildiği gibi korundu. Tam saatlik farkı şimdi {now} verirdi.',
     keptAsSavedTerms: 'Kaydedildiği gibi korundu. Onunla birlikte kaydedilen koşullar şimdi {now} verirdi.',
     keptAsSavedUnread: 'Kaydedildiği gibi korundu. Onunla birlikte kaydedilen koşullar okunamıyor.',
+    repeatedHour: 'Saatler geri alınırken {time} burada iki kez yaşanır; ilki olan {clock} esas alınır. İkincisini seçmek için “Elle belirle” bağlantısını kullanın.',
     composite: 'UT, kompozit harita için sabit',
     errorPending: 'Bir saat dilimi seçin ya da yeniden Otomatik seçeneğine geçin.',
     errorRange: 'Bir saat diliminin UT farkı 15 saati aşamaz. Başka bir düzeltme seçin ya da yeniden Otomatik seçeneğine geçin.',

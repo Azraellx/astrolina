@@ -26,6 +26,15 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Kadr poziomy (16:9) — szeroki, do slajdów i nagłówków.',
   },
+  pins: {
+    label: 'Pinezki',
+    all: 'Wszystkie',
+    allHint: 'Pokaż na obrazie wszystkie pinezki, tak jak na mapie.',
+    current: 'Bieżąca',
+    currentHint: 'Pokaż tylko pinezkę, na której jesteś. Pozostałe zostają na mapie, poza obrazem.',
+    none: 'Brak',
+    noneHint: 'Nie pokazuj pinezek na obrazie. Podpis nadal wymienia miejsce, a wszystkie pinezki zostają na mapie.',
+  },
   transparent: {
     title: 'Przezroczyste (Przestrzeń lokalna)',
     hint: 'Jeden przełącznik czystego eksportu przestrzeni lokalnej: ukrywa strzałki linii, oznacza linie tak jak resztę horoskopu (plakietki przy krawędziach kadru, bez stopni kierunku) i czyści mapę podkładową, by eksport miał przezroczyste tło — gotowe do nałożenia na plan piętra lub własne tło. Wszystko wraca po zamknięciu narzędzia Ujęcie lub przestrzeni lokalnej.',
@@ -43,7 +52,7 @@ export const captureHud = {
   },
   view: {
     none: 'Brak',
-    noneHint: 'Bez szczegółów horoskopu w kadrze — tylko mapa, pinezka, etykiety przy krawędziach i podpis.',
+    noneHint: 'Bez szczegółów horoskopu w kadrze — tylko mapa, pinezki, etykiety przy krawędziach i podpis.',
     wheel: 'Koło',
     wheelHint: 'Pokaż horoskop jako koło w kadrze — to samo koło co w panelu bocznym. Przełączniki Planety / Kąty je uzupełniają; Równowaga dodaje pod nim siatkę żywioł·krzyż.',
     list: 'Lista',

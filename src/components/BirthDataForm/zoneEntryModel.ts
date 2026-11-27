@@ -924,8 +924,10 @@ function savedOffsetSeconds(v: ZoneView): number | null {
  * offset is tried, until the two agree.
  *
  * They never agree only in the repeated autumn hour, where the field's Automatic reads
- * the clock as its first occurrence: the second is then `ambiguous`, with the `fix` that
- * states its offset. LMT-era offsets carry seconds, so the wall clock is rounded by the
+ * the clock as its first occurrence (resolveZoneInfo's rule, whatever day the code runs
+ * on — until 2026-11-27 Luxon chose by the zone's offset that day, so in winter it read
+ * the second and this flagged the first): the second is then `ambiguous`, with the `fix`
+ * that states its offset. LMT-era offsets carry seconds, so the wall clock is rounded by the
  * instant's rule after the offset is applied: the record casts the instant to within
  * 30 seconds there, exactly otherwise.
  */

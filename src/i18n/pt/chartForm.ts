@@ -154,6 +154,7 @@ export const chartForm = {
     keptAsSavedUtc: 'Mantido como foi salvo. O deslocamento em horas inteiras agora daria {now}.',
     keptAsSavedTerms: 'Mantido como foi salvo. Os termos registrados com ele agora dariam {now}.',
     keptAsSavedUnread: 'Mantido como foi salvo. Os termos registrados com ele não podem ser lidos.',
+    repeatedHour: '{time} ocorre duas vezes aqui, quando os relógios são atrasados; foi tomado como {clock}, o primeiro. Use Definir manualmente para escolher o segundo.',
     composite: 'UT, fixo para um mapa composto',
     errorPending: 'Escolha um fuso horário ou volte para Automático.',
     errorRange: 'Um fuso horário não pode ficar a mais de 15 horas do UT. Escolha outra correção ou volte para Automático.',

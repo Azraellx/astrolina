@@ -36,6 +36,11 @@ interface ChartWheelProps {
   minorBodies?: readonly WheelMinorBody[];
   /** Map Filter visibility — planets toggled off are hidden in the wheel too. */
   visiblePlanets: Set<PlanetName>;
+  /** The angle marks the map's line-type toggles show (App's DERIVED visibleLineTypes, as
+   *  the sidebar and capture wheels take it). Required: WheelSvg reads an omitted set as
+   *  "all six", which is how the enlarged minimap drew the Vertex axis with Vx and Avx
+   *  switched off (Lina's WH-3, 23 Nov 2026). The compact minimap draws no angle marks. */
+  visibleAngles: ReadonlySet<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>;
   /** A promoted overlay with no coherent chart (Cyclo·cartography, Natal hidden): show
    *  an empty "NO CHART" wheel instead of a chart. `angles` is null in this state. */
   noChart?: boolean;
@@ -81,6 +86,7 @@ export function ChartWheel({
   planets,
   minorBodies,
   visiblePlanets,
+  visibleAngles,
   noChart = false,
   planetsOnly = false,
   onExpand,
@@ -182,6 +188,7 @@ export function ChartWheel({
             minorBodies={minorBodies}
             detailed={enlarged}
             visibleAspects={NO_ASPECTS}
+            visibleAngles={visibleAngles}
             planetsOnly={planetsOnly && !angles}
             maskAngleText={maskAngleText}
             ranges={ranges}

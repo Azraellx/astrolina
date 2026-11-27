@@ -20,6 +20,7 @@
 //   4. South Node derivation, ecliptic↔equatorial round-trips, the
 //      true-obliquity frame consistency proof, and station-flag semantics.
 import { createRequire } from 'node:module';
+import { DateTime, Settings } from 'luxon';
 import {
   birthDataToJD,
   bodyLonSpeed,
@@ -132,6 +133,60 @@ const birth = (
   check('DST gap 1918-03-31 02:30 → post-gap offset −4', Math.abs(gap.offsetHours + 4) < 1e-9, `got ${gap.offsetHours}`);
   const amb = resolveBirthTimezone(40.71, -74.006, 1918, 10, 27, 1, 30);
   check('DST ambiguity 1918-10-27 01:30 → earlier offset −4', Math.abs(amb.offsetHours + 4) < 1e-9, `got ${amb.offsetHours}`);
+
+  // …whatever day the code runs on (2026-11-27). Luxon's DateTime.fromObject starts
+  // from the zone's offset at Settings.now and keeps that guess whenever it reads the
+  // clock back, which both passes of a repeated hour do — so the check above passed in
+  // summer and failed in winter. Move the live source: each repeated hour is resolved
+  // with "now" in January and in July, and must give the same, earlier pass both times,
+  // flagged ambiguous with the later pass beside it, while the hours either side are not
+  // flagged. Luxon's own reading is required to have MOVED between the two runs, or the
+  // comparison tested nothing.
+  {
+    const realNow = Settings.now;
+    const nows: Array<[string, number]> = [
+      ['January', Date.UTC(2026, 0, 15, 12)],
+      ['July', Date.UTC(2026, 6, 15, 12)],
+    ];
+    const overlaps: Array<{ label: string; iana: string; at: [number, number, number, number, number]; want: number; other: number }> = [
+      { label: 'New York 1918-10-27 01:30', iana: 'America/New_York', at: [1918, 10, 27, 1, 30], want: -4, other: -5 },
+      { label: 'New York 2026-11-01 01:30', iana: 'America/New_York', at: [2026, 11, 1, 1, 30], want: -4, other: -5 },
+      { label: 'London 2026-10-25 01:30', iana: 'Europe/London', at: [2026, 10, 25, 1, 30], want: 1, other: 0 },
+      { label: 'Melbourne 2026-04-05 02:30', iana: 'Australia/Melbourne', at: [2026, 4, 5, 2, 30], want: 11, other: 10 },
+    ];
+    for (const c of overlaps) {
+      const [y, mo, d, h, mi] = c.at;
+      const got: string[] = [];
+      const luxon: number[] = [];
+      let ok = true;
+      try {
+        for (const [name, ms] of nows) {
+          Settings.now = () => ms;
+          const z = resolveZoneInfo(c.iana, y, mo, d, h, mi);
+          const before = resolveZoneInfo(c.iana, y, mo, d, h - 1, mi);
+          const after = resolveZoneInfo(c.iana, y, mo, d, h + 1, mi);
+          luxon.push(DateTime.fromObject({ year: y, month: mo, day: d, hour: h, minute: mi }, { zone: c.iana }).offset / 60);
+          ok &&=
+            z.offsetHours === c.want &&
+            z.ambiguous === true &&
+            z.otherOffsetHours === c.other &&
+            before.ambiguous !== true &&
+            after.ambiguous !== true;
+          got.push(
+            `${name} now: ${z.offsetHours} (other ${z.otherOffsetHours}, ambiguous ${z.ambiguous}; an hour before ${before.ambiguous === true}, after ${after.ambiguous === true})`,
+          );
+        }
+      } finally {
+        Settings.now = realNow;
+      }
+      const moved = luxon.length === nows.length && new Set(luxon).size > 1;
+      check(
+        `DST ambiguity ${c.label} → earlier offset ${c.want}, the same with "now" in January and July`,
+        ok && got.length === nows.length && moved,
+        `${got.join('; ')}; Luxon alone read ${luxon.join(' / ')}${moved ? '' : ' (did not move: nothing tested)'}`,
+      );
+    }
+  }
 }
 
 // ── 2. Calendar cutover + jdToCivil round-trips ───────────────────────────────

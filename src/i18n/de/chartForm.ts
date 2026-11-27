@@ -154,6 +154,7 @@ export const chartForm = {
     keptAsSavedUtc: 'Wie gespeichert beibehalten. Die ganzstündige Zeitdifferenz ergäbe jetzt {now}.',
     keptAsSavedTerms: 'Wie gespeichert beibehalten. Die damit gespeicherten Angaben ergäben jetzt {now}.',
     keptAsSavedUnread: 'Wie gespeichert beibehalten. Die damit gespeicherten Angaben lassen sich nicht lesen.',
+    repeatedHour: '{time} gibt es hier zweimal, weil die Uhren zurückgedreht werden; angenommen wird die erste, {clock}. Mit „Manuell festlegen“ lässt sich die zweite wählen.',
     composite: 'UT, fest für ein Composit-Horoskop',
     errorPending: 'Wähle eine Zeitzone oder wechsle zurück zu „Automatisch“.',
     errorRange: 'Eine Zeitzone kann nicht mehr als 15 Stunden von UT entfernt sein. Wähle eine andere Korrektur oder wechsle zurück zu „Automatisch“.',

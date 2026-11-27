@@ -53,7 +53,8 @@ import { useT } from '../../i18n';
 import type { TFn } from '../../i18n';
 import { TimeZoneField } from './TimeZoneField';
 import { useZoneEntry } from './useZoneEntry';
-import { zoneFixHolds, zoneFixStep, type FormInstant, type ZoneFix } from './zoneEntryModel';
+import { zoneFixHolds, zoneFixStep, zoneNameOf, type FormInstant, type ZoneFix } from './zoneEntryModel';
+import { formatZoneClock } from '../../lib/atlas/zoneName';
 import { foundEventOf, type FoundEvent } from '../../lib/astro/eventNaming';
 import { EventFinder } from './EventFinder';
 import {
@@ -389,9 +390,11 @@ export function BirthDataFields({
   };
 
   // The hour that happens twice (2026-10-20). A moment handed to the form can fall in
-  // the repeated autumn hour, where Automatic reads the clock as its FIRST occurrence;
-  // the second can then only be cast by stating its offset. That is a precondition of
-  // the moment the reader asked for (CLAUDE.md row B), so the form states it — once per
+  // the repeated autumn hour, where Automatic reads the clock as its FIRST occurrence
+  // (resolveZoneInfo's rule; before 2026-11-27 Luxon picked by the zone's offset on the
+  // day the code ran, so in winter it was the second); the second can then only be cast
+  // by stating its offset. That is a precondition of the moment the reader asked for
+  // (CLAUDE.md row B), so the form states it — once per
   // moment and place, through the zone field's own `choose` — and says why under the
   // zone field. A zone the reader changes afterwards is theirs: it is not stated again,
   // and the note says what would keep the moment instead.
@@ -432,6 +435,21 @@ export function BirthDataFields({
       ? t(fixHolds ? 'chartForm.instant.overlap' : 'chartForm.instant.overlapUnfixed', {
           time: `${pad2(shown.hour)}:${pad2(shown.minute)}`,
           offset: formatUtcNotation(Math.round(shown.offsetSeconds)),
+        })
+      : null;
+  // A TYPED time in the hour that happens twice (Salvatore, 2026-11-27). Automatic takes
+  // the first reading (resolveZoneInfo), and nothing on the row says there was a second:
+  // one line under the zone names the reading taken, as the row names it, and where to
+  // choose the other. Only while the zone is Automatic's (a zone stated here or in the
+  // record has already chosen its reading), only for a typed time (a blank one is
+  // unknown, read at noon), and never under a moment the form was handed, which has the
+  // note above. One string.
+  const typedTwiceAt = !instant && hour != null && zone.mode === 'auto' ? zone.at : null;
+  const typedTwiceNote =
+    typedTwiceAt && zone.toSave && zone.resolved?.detected?.ambiguous
+      ? t('chartForm.tz.repeatedHour', {
+          time: `${pad2(typedTwiceAt.hour)}:${pad2(typedTwiceAt.minute)}`,
+          clock: formatZoneClock(typedTwiceAt.hour, typedTwiceAt.minute, zoneNameOf(typedTwiceAt, zone.toSave)),
         })
       : null;
 
@@ -935,6 +953,9 @@ export function BirthDataFields({
             hour (the fix effect above) — or, once the reader has changed it, what would
             keep the moment. One string. */}
         {overlapNote && <p className="instant-note instant-note--zone">{overlapNote}</p>}
+        {/* A typed time the place's clocks showed twice: which reading Automatic took
+            (typedTwiceNote above). One string. */}
+        {typedTwiceNote && <p className="instant-note instant-note--zone">{typedTwiceNote}</p>}
 
         {/* Coordinates: a read-only summary of the auto-chosen lat/lng by default,
             in DMS with the longitude padded to three digits (2026-10-07: every

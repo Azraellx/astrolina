@@ -26,6 +26,15 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Encuadre horizontal (16:9): panorámico, para diapositivas y encabezados.',
   },
+  pins: {
+    label: 'Marcadores',
+    all: 'Todos',
+    allHint: 'Muestra todos los marcadores en la imagen, como los muestra el mapa.',
+    current: 'Actual',
+    currentHint: 'Muestra solo el marcador en el que estás. Los demás marcadores siguen en el mapa, fuera de la imagen.',
+    none: 'Ninguno',
+    noneHint: 'No muestra marcadores en la imagen. El pie de imagen sigue nombrando el lugar y todos los marcadores siguen en el mapa.',
+  },
   transparent: {
     title: 'Transparente (Espacio local)',
     hint: 'Un solo interruptor para una exportación limpia del espacio local: oculta las flechas de las líneas, rotula las líneas como el resto de la carta (las etiquetas se pegan a los bordes del encuadre, sin grados de rumbo) y deja en blanco el mapa base para que la exportación conserve un fondo transparente, lista para superponer a un plano de planta o a tu propio fondo. Todo vuelve cuando se cierra Captura o Espacio local.',
@@ -43,7 +52,7 @@ export const captureHud = {
   },
   view: {
     none: 'Ninguno',
-    noneHint: 'Sin detalles de la carta en el encuadre: solo el mapa, el marcador, las etiquetas de los bordes y el pie de imagen.',
+    noneHint: 'Sin detalles de la carta en el encuadre: solo el mapa, sus marcadores, las etiquetas de los bordes y el pie de imagen.',
     wheel: 'Rueda',
     wheelHint: 'Muestra la carta como rueda en el encuadre, la misma de la barra lateral. Planetas / Ángulos la completan; Balance agrega debajo la cuadrícula elemento·modalidad.',
     list: 'Lista',

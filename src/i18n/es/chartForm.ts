@@ -154,6 +154,7 @@ export const chartForm = {
     keptAsSavedUtc: 'Se conserva tal como se guardó. Su desfase de hora entera daría ahora {now}.',
     keptAsSavedTerms: 'Se conserva tal como se guardó. Los términos que se registraron darían ahora {now}.',
     keptAsSavedUnread: 'Se conserva tal como se guardó. Los términos que se registraron no se pueden leer.',
+    repeatedHour: '{time} ocurre dos veces aquí al retrasarse los relojes; se toma como {clock}, la primera. Elige la segunda con Definir a mano.',
     composite: 'UT, fija para una carta compuesta',
     errorPending: 'Elige una zona horaria o vuelve a Automática.',
     errorRange: 'Una zona horaria no puede estar a más de 15 horas de UT. Elige otra corrección o vuelve a Automática.',

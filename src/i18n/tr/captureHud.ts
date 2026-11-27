@@ -26,6 +26,15 @@ export const captureHud = {
     landscape: '16:9',
     landscapeHint: 'Yatay çerçeve (16:9) — geniş; slaytlar ve başlık görselleri için.',
   },
+  pins: {
+    label: 'İşaretler',
+    all: 'Tümü',
+    allHint: 'Görüntüde, haritada göründüğü gibi her işareti gösterin.',
+    current: 'Geçerli',
+    currentHint: 'Yalnızca üzerinde bulunduğunuz işareti gösterin. Diğer tüm işaretler haritada kalır, görüntüde yer almaz.',
+    none: 'Yok',
+    noneHint: 'Görüntüde hiç işaret göstermeyin. Resim yazısı yine yeri belirtir ve tüm işaretler haritada kalır.',
+  },
   transparent: {
     title: 'Saydam (Pusula Astrolojisi)',
     hint: 'Temiz bir pusula astrolojisi dışa aktarımı için tek anahtar: çizgi oklarını gizler, çizgileri haritanın geri kalanı gibi etiketler (etiketler çerçeve kenarlarına yaslanır, yön dereceleri gösterilmez) ve altlık haritayı boş bırakır; böylece dışa aktarılan görüntünün arka planı saydam kalır — bir kat planının ya da kendi arka planınızın üzerine yerleştirmeye hazır. Görüntü Alma ya da Pusula Astrolojisi kapandığında her şey geri gelir.',
@@ -43,7 +52,7 @@ export const captureHud = {
   },
   view: {
     none: 'Yok',
-    noneHint: 'Çerçevede harita ayrıntısı yok — yalnızca dünya haritası, konum işareti, kenar etiketleri ve resim yazısı.',
+    noneHint: 'Çerçevede harita ayrıntısı yok — yalnızca dünya haritası, işaretler, kenar etiketleri ve resim yazısı.',
     wheel: 'Çark',
     wheelHint: 'Haritayı çerçevenin içinde bir çark olarak gösterin — kenar çubuğundakiyle aynı çark. Gezegenler / Köşeler anahtarları onu doldurur; Denge altına element·nitelik tablosunu ekler.',
     list: 'Liste',
